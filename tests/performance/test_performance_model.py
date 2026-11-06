@@ -931,3 +931,179 @@ def test_the_rolling_kelly_criterion_matches_each_window():
 def test_an_unknown_kelly_method_raises():
     with pytest.raises(ValueError, match="discrete"):
         performance_model.get_kelly_criterion(TRADES, method="binary")
+
+
+def lagged_market_returns(size=750, seed=1):
+    """An asset that takes half its market reaction a day late, as a thinly traded stock does."""
+    rng = np.random.default_rng(seed)
+    benchmark = pd.Series(rng.normal(0, 0.01, size))
+    asset = (
+        0.6 * benchmark
+        + 0.6 * benchmark.shift(1).fillna(0)
+        + rng.normal(0, 0.004, size)
+    )
+
+    return pd.DataFrame({"Late": asset, "Same": 1.2 * benchmark}), benchmark
+
+
+def test_dimson_and_scholes_williams_betas_match_their_regressions():
+    sm = pytest.importorskip("statsmodels.api")
+    returns, benchmark = lagged_market_returns()
+    shifted = pd.concat(
+        {shift: benchmark.shift(-shift) for shift in (-1, 0, 1)}, axis=1
+    )
+    sample = pd.concat([returns["Late"], shifted], axis=1).dropna()
+
+    dimson = sm.OLS(sample["Late"], sm.add_constant(sample[[-1, 0, 1]])).fit()
+    slopes = [
+        sm.OLS(sample["Late"], sm.add_constant(sample[shift])).fit().params[shift]
+        for shift in (-1, 0, 1)
+    ]
+    autocorrelation = np.corrcoef(sample[0], sample[-1])[0, 1]
+
+    assert performance_model.get_beta_estimate(returns, benchmark, "dimson")[
+        "Late"
+    ] == pytest.approx(dimson.params[[-1, 0, 1]].sum())
+    assert performance_model.get_beta_estimate(returns, benchmark, "scholes_williams")[
+        "Late"
+    ] == pytest.approx(sum(slopes) / (1 + 2 * autocorrelation))
+
+
+def test_the_lagged_betas_recover_a_late_market_reaction():
+    returns, benchmark = lagged_market_returns()
+
+    ordinary = performance_model.get_beta(returns, benchmark)
+    dimson = performance_model.get_beta_estimate(returns, benchmark, "dimson")
+
+    # The OLS beta only sees the same-day half of the reaction of 1.2.
+    assert ordinary["Late"] == pytest.approx(0.6, abs=0.05)
+    assert dimson["Late"] == pytest.approx(1.2, abs=0.05)
+    assert dimson["Same"] == pytest.approx(1.2)
+
+
+def test_blume_and_vasicek_betas_move_towards_their_priors():
+    returns, benchmark = lagged_market_returns()
+    ordinary = performance_model.get_beta(returns, benchmark)
+
+    blume = performance_model.get_beta_estimate(returns, benchmark, "blume")
+    vasicek = performance_model.get_beta_estimate(returns, benchmark, "vasicek")
+
+    assert blume.to_dict() == pytest.approx((0.67 * ordinary + 0.33).to_dict())
+    prior = ordinary.mean()
+    # Each beta lies between its own estimate and the cross-sectional mean.
+    for ticker in returns:
+        low, high = sorted([ordinary[ticker], prior])
+        assert low <= vasicek[ticker] <= high
+
+    # A single asset is shrunk towards the market's beta of 1.
+    single = performance_model.get_beta_estimate(
+        returns[["Late"]], benchmark, "vasicek"
+    )
+    assert ordinary["Late"] < single["Late"] < 1
+
+
+def test_upside_and_downside_betas_split_by_the_benchmark_direction():
+    benchmark = pd.Series([0.01, -0.02, 0.03, -0.01, 0.02, -0.03, 0.015, -0.005])
+    asset = benchmark.where(benchmark > 0, 2 * benchmark)
+    returns = asset.to_frame("Asymmetric")
+
+    upside = performance_model.get_beta_estimate(returns, benchmark, "upside")
+    downside = performance_model.get_beta_estimate(returns, benchmark, "downside")
+
+    assert upside["Asymmetric"] == pytest.approx(1)
+    assert downside["Asymmetric"] == pytest.approx(2)
+
+
+def test_beta_estimates_per_period_and_rolling():
+    returns, benchmark = lagged_market_returns(size=500)
+    periods = pd.MultiIndex.from_arrays([np.repeat([2024, 2025], 250), returns.index])
+
+    within_period = performance_model.get_beta_estimate(
+        returns.set_axis(periods), benchmark.set_axis(periods), "dimson"
+    )
+    rolling = performance_model.get_beta_estimate(
+        returns, benchmark, "dimson", window_size=250
+    )
+
+    assert within_period.index.tolist() == [2024, 2025]
+    assert rolling["Late"].iloc[:249].isna().all()
+    assert within_period.loc[2025].to_numpy() == pytest.approx(
+        rolling.iloc[-1].to_numpy(), rel=0.05
+    )
+
+
+def test_an_unknown_beta_method_is_refused():
+    returns, benchmark = lagged_market_returns(size=10)
+
+    with pytest.raises(ValueError, match="must be one of"):
+        performance_model.get_beta_estimate(returns, benchmark, "bloomberg")
+
+
+def test_morningstar_risk_adjusted_return_matches_morningstar_illustration():
+    # Morningstar's "MRAR Illustrated" factsheet: two funds with the same compounded excess
+    # return of 9.38%, of which the steadier earns an MRAR of 9.37% and the other 9.10%.
+    excess_returns = (
+        pd.DataFrame(
+            {
+                "A": [0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1],
+                "B": [0.1, 2, -0.9, 0.5, 3.82, 0.6, 0.7, 0, -0.2, -1.5, 1, 3],
+            }
+        )
+        / 100
+    )
+
+    mrar = performance_model.get_morningstar_risk_adjusted_return(excess_returns)
+    morningstar_return = performance_model.get_morningstar_risk_adjusted_return(
+        excess_returns, gamma=0
+    )
+
+    assert mrar["A"] == pytest.approx(0.0937, abs=5e-5)
+    assert mrar["B"] == pytest.approx(0.0910, abs=5e-5)
+    assert morningstar_return["A"] == pytest.approx(0.0938, abs=5e-5)
+    # Morningstar Risk, the return given up for the variation, is never negative.
+    assert (morningstar_return - mrar).ge(0).all()
+
+
+def test_morningstar_risk_adjusted_return_of_steady_returns_is_their_annual_return():
+    excess_returns = pd.Series([0.01] * 24)
+
+    assert performance_model.get_morningstar_risk_adjusted_return(
+        excess_returns
+    ) == pytest.approx(1.01**12 - 1)
+
+
+def test_geometric_excess_return_divides_by_the_risk_free_return():
+    returns = pd.DataFrame({"A": [0.02, -0.01]})
+    risk_free_rate = pd.Series([0.01, 0.01])
+
+    excess_returns = performance_model.get_geometric_excess_return(
+        returns, risk_free_rate
+    )
+
+    np.testing.assert_allclose(excess_returns["A"], [1.02 / 1.01 - 1, 0.99 / 1.01 - 1])
+
+
+def test_rolling_morningstar_risk_adjusted_return_matches_every_full_window():
+    rng = np.random.default_rng(3)
+    excess_returns = pd.DataFrame({"A": rng.normal(0.005, 0.04, 40)})
+    excess_returns.iloc[5, 0] = np.nan
+
+    rolling = performance_model.get_rolling_morningstar_risk_adjusted_return(
+        excess_returns, 12
+    )
+
+    # A window holding the missing month is not full, so it has no value.
+    assert rolling["A"].iloc[:17].isna().all()
+    for end in range(17, 40):
+        assert rolling["A"].iloc[end] == pytest.approx(
+            performance_model.get_morningstar_risk_adjusted_return(
+                excess_returns["A"].iloc[end - 11 : end + 1]
+            )
+        )
+
+
+def test_morningstar_risk_adjusted_return_refuses_a_negative_gamma():
+    with pytest.raises(ValueError, match="cannot be negative"):
+        performance_model.get_morningstar_risk_adjusted_return(
+            pd.Series([0.01, 0.02]), gamma=-1
+        )

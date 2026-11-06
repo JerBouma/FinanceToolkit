@@ -187,6 +187,218 @@ def get_rolling_beta(
     return rolling_beta
 
 
+BETA_METHODS = (
+    "ols",
+    "blume",
+    "vasicek",
+    "dimson",
+    "scholes_williams",
+    "upside",
+    "downside",
+)
+
+# Blume (1971, 1975) found betas regress towards 1 by about a third between estimation
+# windows; Bloomberg's adjusted beta applies the rounded weights 2/3 and 1/3.
+BLUME_WEIGHT = 0.67
+
+# The Vasicek prior for a single asset, which has no cross-section to estimate it from:
+# the market's own beta as the mean and a standard deviation of 0.5 around it.
+VASICEK_SINGLE_ASSET_PRIOR = (1.0, 0.25)
+
+
+def _slope(asset: np.ndarray, market: np.ndarray) -> tuple[float, float]:
+    """
+    The least squares slope of the asset on the market and the squared standard
+    error of that slope, over the observations both have. Fewer than three shared
+    observations (or a market without variance) give NaN.
+    """
+    shared = ~(np.isnan(asset) | np.isnan(market))
+    asset, market = asset[shared], market[shared]
+
+    if len(asset) < 3:  # noqa: PLR2004
+        return np.nan, np.nan
+
+    market_deviation = market - market.mean()
+    sum_of_squares = (market_deviation**2).sum()
+
+    if sum_of_squares == 0:
+        return np.nan, np.nan
+
+    slope = (market_deviation * (asset - asset.mean())).sum() / sum_of_squares
+    residuals = asset - asset.mean() - slope * market_deviation
+
+    return slope, (residuals**2).sum() / (len(asset) - 2) / sum_of_squares
+
+
+def _beta_of_sample(
+    asset_returns: pd.DataFrame, market_returns: pd.DataFrame, method: str, lags: int
+) -> pd.Series:
+    """
+    The beta of every asset over one sample of returns.
+
+    Args:
+        asset_returns (pd.DataFrame): The asset returns of the sample (one column per asset).
+        market_returns (pd.DataFrame): The benchmark returns on the same rows, one column per
+            shift k from -lags to lags holding the benchmark return of k periods later.
+        method (str): One of BETA_METHODS.
+        lags (int): The number of leads and lags of the Dimson beta.
+
+    Returns:
+        pd.Series: The beta per asset.
+    """
+    market = market_returns[0].to_numpy(dtype=float)
+    betas, variances = {}, {}
+
+    for column in asset_returns.columns:
+        asset = asset_returns[column].to_numpy(dtype=float)
+
+        if method in ("ols", "blume", "vasicek"):
+            betas[column], variances[column] = _slope(asset, market)
+        elif method in ("upside", "downside"):
+            # The benchmark's direction picks the observations, as in empyrical's
+            # up_alpha_beta and down_alpha_beta; a flat benchmark falls in neither.
+            direction = market > 0 if method == "upside" else market < 0
+            betas[column] = _slope(asset[direction], market[direction])[0]
+        elif method == "dimson":
+            shifts = market_returns.loc[:, list(range(-lags, lags + 1))].to_numpy(
+                dtype=float
+            )
+            complete = ~(np.isnan(asset) | np.isnan(shifts).any(axis=1))
+
+            if complete.sum() <= shifts.shape[1] + 1:
+                betas[column] = np.nan
+                continue
+
+            design = np.column_stack([np.ones(complete.sum()), shifts[complete]])
+            coefficients = np.linalg.lstsq(design, asset[complete], rcond=None)[0]
+            # The intercept is left out: the beta is the sum of the slopes on the
+            # lagged, contemporaneous and leading benchmark returns.
+            betas[column] = coefficients[1:].sum()
+        else:
+            # Scholes and Williams (1977): the three simple slopes and the benchmark's
+            # first-order autocorrelation over the same observations.
+            shifts = market_returns.loc[:, [-1, 0, 1]].to_numpy(dtype=float)
+            complete = ~(np.isnan(asset) | np.isnan(shifts).any(axis=1))
+            sample, shifted = asset[complete], shifts[complete]
+
+            if len(sample) < 3:  # noqa: PLR2004
+                betas[column] = np.nan
+                continue
+
+            slopes = sum(_slope(sample, shifted[:, index])[0] for index in range(3))
+            autocorrelation = np.corrcoef(shifted[:, 1], shifted[:, 0])[0, 1]
+            betas[column] = slopes / (1 + 2 * autocorrelation)
+
+    beta = pd.Series(betas, dtype=float)
+
+    if method == "blume":
+        return BLUME_WEIGHT * beta + (1 - BLUME_WEIGHT)
+
+    if method == "vasicek":
+        variance = pd.Series(variances, dtype=float)
+        estimated = beta.dropna()
+
+        if len(estimated) >= 2:  # noqa: PLR2004
+            prior_mean, prior_variance = estimated.mean(), estimated.var(ddof=1)
+        else:
+            prior_mean, prior_variance = VASICEK_SINGLE_ASSET_PRIOR
+
+        # The posterior weighs the asset's own beta against the prior by their
+        # precisions: a noisy estimate (a large standard error) moves towards the
+        # prior mean, a precise one keeps close to its own value.
+        return (prior_variance * beta + variance * prior_mean) / (
+            prior_variance + variance
+        )
+
+    return beta
+
+
+def get_beta_estimate(
+    returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    method: str = "blume",
+    lags: int = 1,
+    window_size: int | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate beta with an estimator other than ordinary least squares:
+
+        - Blume: 0.67 x OLS Beta + 0.33, the adjusted beta of Bloomberg (Blume, 1971, 1975).
+        - Vasicek: the OLS beta shrunk towards the cross-sectional mean beta of the assets,
+          weighted by the precisions: (σ²_prior x β + SE² x β_prior) / (σ²_prior + SE²)
+          (Vasicek, 1973). The prior is the mean and sample variance (ddof=1) of the OLS
+          betas of the assets in the same period; one asset alone gets a prior mean of 1
+          with a variance of 0.25.
+        - Dimson: the sum of the slopes of a regression of the asset returns on the
+          benchmark returns from `lags` periods before to `lags` periods after (Dimson, 1979).
+        - Scholes-Williams: (β₋₁ + β₀ + β₊₁) / (1 + 2ρ), the simple slopes on the previous,
+          same and next benchmark return over the benchmark's first-order autocorrelation
+          ρ (Scholes and Williams, 1977).
+        - Upside and downside: the OLS beta over the observations on which the benchmark
+          rose or fell.
+
+    Dimson and Scholes-Williams correct the downward bias of the OLS beta of assets that
+    trade infrequently or react late to the market. The leads and lags come from the full
+    history, so the first observation of a period uses the benchmark return before it.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The asset returns, either a flat index or a
+            'within period' MultiIndex (period, date) to get one beta per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
+        method (str, optional): One of "blume", "vasicek", "dimson", "scholes_williams",
+            "upside", "downside" or "ols". Defaults to "blume".
+        lags (int, optional): The leads and lags of the Dimson beta. Defaults to 1.
+        window_size (int | None, optional): A rolling window over a flat index instead of
+            one beta per period. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The betas per period (rows) and asset (columns) for a
+        'within period' index or a rolling window, otherwise a Series of betas per asset.
+        Assets with fewer than three shared observations get NaN.
+    """
+    if method not in BETA_METHODS:
+        raise ValueError(
+            f"The method must be one of {', '.join(BETA_METHODS)}, not {method}."
+        )
+
+    if lags < 1:
+        raise ValueError("The number of lags must be at least 1.")
+
+    frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
+    market = pd.concat(
+        {shift: benchmark_returns.shift(-shift) for shift in range(-lags, lags + 1)},
+        axis=1,
+    )
+
+    if window_size:
+        betas = {
+            frame.index[end - 1]: _beta_of_sample(
+                frame.iloc[end - window_size : end],
+                market.iloc[end - window_size : end],
+                method,
+                lags,
+            )
+            for end in range(window_size, len(frame) + 1)
+        }
+
+        return pd.DataFrame(betas, index=frame.columns).T.reindex(frame.index)
+
+    if frame.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        periods = frame.index.get_level_values(0)
+
+        return pd.DataFrame(
+            {
+                period: _beta_of_sample(
+                    frame[periods == period], market[periods == period], method, lags
+                )
+                for period in periods.unique()
+            },
+            index=frame.columns,
+        ).T.rename_axis(frame.index.names[0])
+
+    return _beta_of_sample(frame, market, method, lags)
+
+
 def get_capital_asset_pricing_model(
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,
@@ -3475,3 +3687,134 @@ def get_rolling_style_analysis(
     )
 
     return result
+
+
+def get_geometric_excess_return(
+    returns: pd.Series | pd.DataFrame, risk_free_rate: pd.Series
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the geometric excess return, the return relative to the risk-free return of the
+    same period instead of minus it, as Morningstar defines it for its risk-adjusted return.
+
+    The formula is as follows:
+
+        - Geometric Excess Return = (1 + Return) / (1 + Risk Free Rate) - 1
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns per period, as decimals.
+        risk_free_rate (pd.Series): The risk-free return of the same periods, as decimals
+            per period (not annualized).
+
+    Returns:
+        pd.Series | pd.DataFrame: The geometric excess returns, with the index of the returns.
+    """
+    return (1 + returns).div(1 + risk_free_rate, axis=0) - 1
+
+
+def _morningstar_risk_adjusted_return(
+    excess_returns: np.ndarray, gamma: float, periods_per_year: int
+) -> float:
+    """
+    The Morningstar Risk-Adjusted Return of one series of geometric excess returns, without
+    its missing values; NaN without any return.
+    """
+    excess_returns = excess_returns[~np.isnan(excess_returns)]
+    if excess_returns.size == 0:
+        return np.nan
+
+    if gamma == 0:
+        # The limit of the formula for a gamma of zero: the annualized geometric mean.
+        return float(
+            np.prod(1 + excess_returns) ** (periods_per_year / excess_returns.size) - 1
+        )
+
+    return float(
+        np.mean((1 + excess_returns) ** -gamma) ** (-periods_per_year / gamma) - 1
+    )
+
+
+def get_morningstar_risk_adjusted_return(
+    excess_returns: pd.Series | pd.DataFrame,
+    gamma: float = 2.0,
+    periods_per_year: int = 12,
+) -> float | pd.Series:
+    """
+    Calculate the Morningstar Risk-Adjusted Return (MRAR), the annualized certainty
+    equivalent of a series of geometric excess returns for an investor with risk aversion
+    gamma. It is the return a risk-averse investor would accept with certainty instead of the
+    uncertain returns: the more the returns vary, the further it falls below their geometric
+    mean. Morningstar ranks funds within their category on it, with a gamma of 2, for its
+    star rating.
+
+    The formula is as follows:
+
+        - MRAR(gamma) = [1/T * SUM((1 + Geometric Excess Return t)^-gamma)]^(-12/gamma) - 1
+        - MRAR(0) = [PRODUCT(1 + Geometric Excess Return t)]^(12/T) - 1
+
+    with T the number of months. MRAR(0), the annualized geometric mean excess return, is
+    Morningstar Return.
+
+    For more information, see the following:
+
+    - Morningstar (2023). "The Morningstar Rating for Funds." Morningstar Methodology, April 2023.
+      https://s25.q4cdn.com/634000362/files/doc_downloads/1/1157231.pdf
+    - Morningstar (2009). "MRAR Illustrated."
+      https://www.morningstar.com/content/dam/marketing/apac/au/pdfs/Legal/MRARIllustrated_Factsheet.pdf
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The geometric excess returns per month (see
+            get_geometric_excess_return), as decimals.
+        gamma (float, optional): The risk aversion. Defaults to 2.0, Morningstar's choice.
+        periods_per_year (int, optional): The number of periods in a year, to annualize.
+            Defaults to 12 for monthly returns.
+
+    Returns:
+        float | pd.Series: The MRAR as a decimal, a float for a Series and one value per
+        column for a DataFrame. Each column uses its own returns, without its missing values.
+    """
+    if gamma < 0:
+        raise ValueError("The risk aversion gamma cannot be negative.")
+
+    if isinstance(excess_returns, pd.Series):
+        return _morningstar_risk_adjusted_return(
+            excess_returns.to_numpy(dtype=float), gamma, periods_per_year
+        )
+
+    return excess_returns.apply(
+        lambda column: _morningstar_risk_adjusted_return(
+            column.to_numpy(dtype=float), gamma, periods_per_year
+        )
+    )
+
+
+def get_rolling_morningstar_risk_adjusted_return(
+    excess_returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    gamma: float = 2.0,
+    periods_per_year: int = 12,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Morningstar Risk-Adjusted Return over a rolling window, e.g. 36, 60 or 120
+    months for the three, five and ten year figures Morningstar rates funds on.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The geometric excess returns per month, as
+            decimals.
+        window_size (int): The number of periods in each window.
+        gamma (float, optional): The risk aversion. Defaults to 2.0.
+        periods_per_year (int, optional): The number of periods in a year. Defaults to 12.
+
+    Returns:
+        pd.Series | pd.DataFrame: The MRAR at the end of every window, NaN until a window is
+        full of returns.
+    """
+    if gamma < 0:
+        raise ValueError("The risk aversion gamma cannot be negative.")
+
+    # A window with a missing return is not a full window of the fund's history.
+    return excess_returns.rolling(window_size, min_periods=window_size).apply(
+        lambda window: _morningstar_risk_adjusted_return(
+            window, gamma, periods_per_year
+        ),
+        raw=True,
+    )

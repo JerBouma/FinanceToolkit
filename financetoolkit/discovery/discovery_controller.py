@@ -9,6 +9,7 @@ import pandas as pd
 from financetoolkit import fmp_model
 from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
+from financetoolkit.models import damodaran_model
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
 
@@ -899,27 +900,52 @@ class Discovery:
 
         return index_list
 
-    def get_index_constituents(self, index: str = "S&P 500") -> pd.DataFrame:
+    def get_index_constituents(
+        self, index: str = "S&P 500", date: str | None = None
+    ) -> pd.DataFrame:
         """
-        Returns the current constituents of an index (the S&P 500, the NASDAQ 100 or the Dow
-        Jones Industrial Average) with their sector, sub-sector, headquarters, the date they were
-        added, CIK and founding year. The symbols make a Toolkit of the whole index, for example
-        to measure market breadth from every constituent (`toolkit.technicals.get_market_breadth`)
-        or to rank them by relative strength.
+        Returns the constituents of an index (the S&P 500, the NASDAQ 100 or the Dow Jones
+        Industrial Average), today's or those on a past date, with their sector, sub-sector,
+        headquarters, the date they were added, CIK and founding year. The symbols make a
+        Toolkit of the whole index, for example to measure market breadth from every
+        constituent (`toolkit.technicals.get_market_breadth`) or to rank them by relative
+        strength.
 
-        These are today's members only. Breadth, relative strength or returns of past dates
-        computed from them leave out the companies that were removed from the index since,
-        often after falling behind, so the history is biased towards the survivors
-        (survivorship bias), the more so the further back it goes.
+        Today's members alone bias any history computed from them: the companies removed from
+        the index since, often after falling behind, are left out (survivorship bias), the
+        more so the further back it goes. With `date`, the members on that date are returned
+        instead: today's members with every later change undone, from the newest back, using
+        the dated changes of `get_index_constituent_changes`. A company added since is taken
+        out and a company removed since is put back, with the date it left the index ('Date
+        Removed'), so a backtest can hold each company only while it was a member.
 
-        Also known as: index members, index constituents, S&P 500 components.
+        Also known as: index members, index constituents, S&P 500 components,
+        survivorship-free index membership, point-in-time index constituents.
 
         Args:
             index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to
                 "S&P 500".
+            date (str | None, optional): The date (YYYY-MM-DD) to list the members of. A
+                change takes effect on its own date, so the members on a change's date include
+                it. Defaults to None, today's members.
 
         Returns:
-            pd.DataFrame: The constituents, indexed by symbol.
+            pd.DataFrame: The constituents, indexed by symbol. On a past date, the companies
+                no longer in the index have the name they were removed under and no sector or
+                other details, and every member has the date it last joined up to the date
+                ('Date Added') and the date it left after it ('Date Removed', empty while it is
+                still a member).
+
+        Notes:
+            - The reconstruction is as accurate as the change log of Financial Modeling Prep,
+              which covers only these three indices. It starts in 1957 for the S&P 500, 1985
+              for the NASDAQ 100 and 1994 for the Dow Jones; an earlier date raises an error.
+            - Removed companies carry the ticker recorded at their removal, which can differ
+              from the ticker they traded under before (Lehman Brothers is LEHMQ, its ticker
+              after the bankruptcy) or have been reused by another company since.
+            - Small gaps in the log (a removal recorded without its addition, or the other way
+              round) add up the further back the date is: the S&P 500 counts 503 to 505
+              members from 2015 onwards, 500 in 2008 and 494 in 2000.
 
         As an example:
 
@@ -928,23 +954,108 @@ class Discovery:
 
         discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        constituents = discovery.get_index_constituents("Dow Jones")
+        constituents = discovery.get_index_constituents("S&P 500", date="2008-09-01")
 
-        constituents[["Name", "Sector", "Date Added"]].head()
+        constituents.loc[
+            ["AAPL", "FNMA", "LEHMQ", "MER", "WB"], ["Name", "Date Added", "Date Removed"]
+        ]
         ```
 
         Which returns:
 
-        | Symbol   | Name                       | Sector             | Date Added   |
-        |:---------|:---------------------------|:-------------------|:-------------|
-        | AAPL     | Apple Inc.                 | Technology         | 2015-03-19   |
-        | AMGN     | Amgen Inc.                 | Healthcare         | 2020-08-31   |
-        | AMZN     | Amazon.com, Inc.amazon.com | Consumer Cyclical  | 2024-02-26   |
-        | AXP      | American Express Company   | Financial Services | 1982-08-30   |
-        | BA       | The Boeing Company         | Industrials        | 1987-03-12   |
+        | Symbol   | Name                    | Date Added   | Date Removed   |
+        |:---------|:------------------------|:-------------|:---------------|
+        | AAPL     | Apple Inc.              | 1982-11-18   | nan            |
+        | FNMA     | Fannie Mae (FNMA)       | 1988-08-11   | 2008-09-10     |
+        | LEHMQ    | Lehman Brothers Holding | 1998-01-09   | 2008-09-16     |
+        | MER      | Merrill Lynch & Co      | 1982-04-08   | 2008-12-31     |
+        | WB       | Wachovia Corp.          | 1993-09-30   | 2008-12-31     |
         """
+        _validate_arguments(date=date)
+
         return discovery_model.get_index_constituents(
-            api_key=self._api_key, index=index, user_subscription=self._fmp_plan
+            api_key=self._api_key,
+            index=index,
+            date=date,
+            user_subscription=self._fmp_plan,
+        )
+
+    def get_index_constituent_changes(
+        self,
+        index: str = "S&P 500",
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Returns the dated changes to the members of an index (the S&P 500, the NASDAQ 100 or
+        the Dow Jones Industrial Average): the company added, the company removed, the kind of
+        change (an addition, a removal or a replacement of one by the other) and its reason,
+        such as an acquisition or a change in market capitalization.
+
+        These are the changes `get_index_constituents(date=...)` undoes to reconstruct the
+        members on a past date. They also show the turnover of an index and the companies
+        that left it, which today's members leave out (survivorship bias).
+
+        Also known as: index additions and deletions, index rebalancing history, S&P 500
+        changes.
+
+        Args:
+            index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to
+                "S&P 500".
+            start_date (str | None, optional): The first date (YYYY-MM-DD) to include.
+                Defaults to None, the first change recorded.
+            end_date (str | None, optional): The last date (YYYY-MM-DD) to include. Defaults
+                to None, the latest change.
+
+        Returns:
+            pd.DataFrame: The changes in date order, indexed by date, with the added and
+                removed ticker and company, the kind of change and its reason. An addition
+                has no removed company and a removal no added one.
+
+        Notes:
+            - The log of Financial Modeling Prep covers only these three indices. It starts
+              in 1957 for the S&P 500, 1985 for the NASDAQ 100 and 1994 for the Dow Jones; the
+              earliest entries record when the members of that time first joined.
+            - Tickers are those recorded at the time of the change, which can differ from the
+              ticker a company trades under today or have been reused since.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        changes = discovery.get_index_constituent_changes(
+            "Dow Jones", start_date="2020-01-01", end_date="2026-10-31"
+        )
+
+        changes[["Added Ticker", "Removed Ticker", "Change Type"]]
+        ```
+
+        Which returns:
+
+        | Date       | Added Ticker   | Removed Ticker   | Change Type   |
+        |:-----------|:---------------|:-----------------|:--------------|
+        | 2020-08-31 | nan            | PFE              | Removal       |
+        | 2020-08-31 | AMGN           | nan              | Addition      |
+        | 2020-08-31 | nan            | XOM              | Removal       |
+        | 2020-08-31 | HON            | nan              | Addition      |
+        | 2020-08-31 | nan            | RTX              | Removal       |
+        | 2020-08-31 | CRM            | nan              | Addition      |
+        | 2024-02-26 | AMZN           | WBA              | Replacement   |
+        | 2024-11-08 | SHW            | DOW              | Replacement   |
+        | 2024-11-08 | NVDA           | INTC             | Replacement   |
+        | 2026-06-29 | GOOGL          | VZ               | Replacement   |
+        """
+        _validate_arguments(start_date=start_date, end_date=end_date)
+
+        return discovery_model.get_index_constituent_changes(
+            api_key=self._api_key,
+            index=index,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
         )
 
     def get_stock_news(
@@ -1933,6 +2044,112 @@ class Discovery:
         )
 
         return industry_pe
+
+    def get_industry_statistics(
+        self,
+        dataset: str = "cost_of_capital",
+        region: str = "United States",
+    ) -> pd.DataFrame:
+        """
+        Returns Aswath Damodaran's industry averages: betas, the cost of capital, margins
+        and valuation multiples for each of his roughly 95 industries and the market as a
+        whole, per region. They are the inputs of a bottom-up valuation: a company's beta
+        is better estimated from the unlevered beta of its industry, relevered at its own
+        debt-to-equity ratio, than from a regression on its own noisy returns, and its
+        multiples and margins read best next to those of its industry.
+
+        Damodaran computes the averages from the financial statements and prices of all
+        listed companies (about 6,000 in the United States and 48,000 globally) at the
+        start of each year, and publishes them every January. The figures are therefore a
+        snapshot at the start of the current year and do not change during it.
+
+        The datasets are:
+
+        - **betas**: the average levered Beta (2-year and 5-year weekly regressions),
+          D/E Ratio, Effective Tax rate, Unlevered beta, Cash/Firm value, the Unlevered
+          beta corrected for cash, HiLo Risk and the standard deviations of equity and
+          operating income.
+        - **total_betas**: the market betas next to the Total Unlevered and Levered Beta,
+          the beta divided by the correlation with the market, for an investor who is not
+          diversified.
+        - **cost_of_capital**: Beta, Cost of Equity, E/(D+E), Cost of Debt, Tax Rate,
+          After-tax Cost of Debt, D/(D+E) and Cost of Capital, from the treasury rate and
+          implied equity risk premium of the start of the year.
+        - **margins**: gross, net, operating (unadjusted, lease adjusted, lease and R&D
+          adjusted, before and after tax) and EBITDA margins, and expense ratios.
+        - **price_to_earnings**: the Current, Trailing and Forward PE, aggregate multiples,
+          the expected growth of the next five years and the PEG Ratio.
+        - **price_to_book**: PBV, ROE, EV/ Invested Capital and ROIC.
+        - **price_to_sales**: Price/Sales, Net Margin, EV/Sales and the pre-tax operating
+          margin.
+        - **enterprise_value_multiples**: EV/EBITDAR&D, EV/EBITDA, EV/EBIT and
+          EV/EBIT (1-t), for firms with a positive EBITDA and for all firms.
+
+        The regions are the United States, Europe, Japan, Australia, New Zealand and
+        Canada, Emerging Markets, China, India and Global. Rates, margins and returns are
+        decimals (0.08 is 8%), betas and multiples plain numbers.
+
+        Also known as: Damodaran industry data, industry betas, unlevered beta by
+        industry, bottom-up beta, industry cost of capital, industry WACC, industry
+        margins, industry multiples, sector EV/EBITDA, industry PE.
+
+        Args:
+            dataset (str, optional): The dataset: "betas", "total_betas", "cost_of_capital",
+                "margins", "price_to_earnings", "price_to_book", "price_to_sales" or
+                "enterprise_value_multiples". Defaults to "cost_of_capital".
+            region (str, optional): The region: "United States", "Europe", "Japan",
+                "Australia, New Zealand and Canada", "Emerging Markets", "China", "India" or
+                "Global". Defaults to "United States".
+
+        Returns:
+            pd.DataFrame: One row per industry, indexed by Industry, followed by the
+                "Total Market" and "Total Market (without financials)" rows, with the
+                Number of Firms and the dataset's figures as columns.
+
+        Raises:
+            ValueError: When the dataset or region is not available.
+
+        Notes:
+            - The yearly beta history at the end of Damodaran's beta files is left out:
+              its label differs per region, so it cannot be named reliably.
+            - The averages are simple averages across the firms of an industry for
+              betas, and aggregates (sums of the numerators over sums of the
+              denominators) for margins and multiples, as Damodaran computes them.
+            - The source is Damodaran's data page, https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datacurrent.html,
+              which also lists the companies in each industry.
+
+        References:
+            - Damodaran, A. (2012). Investment Valuation: Tools and Techniques for
+              Determining the Value of Any Asset (3rd ed.). Wiley.
+            - Damodaran, A. (2002). Estimating Risk Parameters. NYU Stern Working Paper.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        cost_of_capital = discovery.get_industry_statistics(
+            dataset="cost_of_capital", region="Europe"
+        )
+
+        cost_of_capital.loc[
+            ["Semiconductor", "Software (System & Application)", "Utility (General)", "Total Market"],
+            ["Beta", "Cost of Equity", "After-tax Cost of Debt", "D/(D+E)", "Cost of Capital"],
+        ].round(4)
+        ```
+
+        Which returns:
+
+        | Industry                        |   Beta |   Cost of Equity |   After-tax Cost of Debt |   D/(D+E) |   Cost of Capital |
+        |:--------------------------------|-------:|-----------------:|-------------------------:|----------:|------------------:|
+        | Semiconductor                   | 1.3221 |           0.1092 |                   0.0427 |    0.1635 |            0.0983 |
+        | Software (System & Application) | 0.9573 |           0.0899 |                   0.0427 |    0.0632 |            0.087  |
+        | Utility (General)               | 0.6367 |           0.0731 |                   0.0386 |    0.4786 |            0.0565 |
+        | Total Market                    | 0.9101 |           0.0875 |                   0.0411 |    0.4031 |            0.0688 |
+        """
+        return damodaran_model.get_industry_statistics(dataset=dataset, region=region)
 
     def get_mergers_acquisitions_latest(
         self, limit: int = 100, page: int = 0

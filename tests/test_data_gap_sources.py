@@ -430,3 +430,86 @@ def test_imf_country_names_match_the_other_sources(monkeypatch):
     }
     assert COUNTRY_CODES["MK"] == CODE_TO_COUNTRY["MKD"] == "Macedonia"
     assert COUNTRY_CODES["CV"] == "Cape Verde"
+
+
+def test_bis_credit_statistics_are_decimals_per_country(monkeypatch):
+    from financetoolkit.economics import bis_model
+
+    requested = []
+    # The credit-to-GDP gap of two countries and the BIS aggregate of all reporting
+    # economies (5R), which has no country and is left out.
+    gap = (
+        "FREQ,BORROWERS_CTY,TC_BORROWERS,TC_LENDERS,CG_DTYPE,TIME_PERIOD,OBS_VALUE\n"
+        "Q,US,P,A,C,2025-Q3,-12.0\nQ,US,P,A,C,2025-Q4,-11.59\n"
+        "Q,XM,P,A,C,2025-Q4,-18.15\nQ,5R,P,A,C,2025-Q4,-3.2\n"
+    )
+
+    def fake(url, timeout):
+        requested.append(url)
+        return FakeResponse(text=gap)
+
+    monkeypatch.setattr(bis_model, "get_request", fake)
+
+    data = bis_model.get_credit_statistics(
+        "WS_CREDIT_GAP", "Q..P.A.C", "2025-07-01", "2025-12-31"
+    )
+
+    assert "WS_CREDIT_GAP/~/Q..P.A.C?" in requested[0]
+    assert "startPeriod=2025-Q3" in requested[0]
+    assert list(data.columns) == ["United States", "Euro Area"]
+    assert data.loc[pd.Period("2025Q4", "Q"), "United States"] == pytest.approx(-0.1159)
+    assert pd.isna(data.loc[pd.Period("2025Q3", "Q"), "Euro Area"])
+
+
+@pytest.mark.parametrize(
+    ("method", "borrowers", "dataflow", "key"),
+    [
+        ("get_credit_to_gdp_gap", None, "WS_CREDIT_GAP", "Q..P.A.C"),
+        ("get_debt_service_ratio", "households", "WS_DSR", "Q..H"),
+        ("get_debt_service_ratio", "corporations", "WS_DSR", "Q..N"),
+        ("get_credit_to_gdp_ratio", "private", "WS_TC", "Q..P.A.M.770.A"),
+        ("get_credit_to_gdp_ratio", "government", "WS_TC", "Q..G.A.N.770.A"),
+    ],
+)
+def test_the_borrowers_select_the_bis_series(
+    monkeypatch, method, borrowers, dataflow, key
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics import bis_model
+
+    requested = []
+
+    def fake(requested_dataflow, requested_key, start_date, end_date):
+        requested.append((requested_dataflow, requested_key))
+        return pd.DataFrame(
+            {"United States": [0.10, 0.12]},
+            index=pd.PeriodIndex(["2025Q3", "2025Q4"], freq="Q"),
+        )
+
+    monkeypatch.setattr(bis_model, "get_credit_statistics", fake)
+
+    economics = Economics(
+        start_date="2025-07-01", end_date="2025-12-31", gmdb_source=False
+    )
+    arguments = {} if borrowers is None else {"borrowers": borrowers}
+    data = getattr(economics, method)(**arguments)
+
+    assert requested == [(dataflow, key)]
+    assert data.loc[pd.Period("2025Q4", "Q"), "United States"] == pytest.approx(0.12)
+
+
+def test_an_unknown_sector_of_borrowers_gives_no_data(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import bis_model
+
+    monkeypatch.setattr(
+        bis_model,
+        "get_credit_statistics",
+        lambda *args: pytest.fail("no request expected"),
+    )
+
+    economics = Economics(
+        start_date="2025-07-01", end_date="2025-12-31", gmdb_source=False
+    )
+
+    assert economics.get_debt_service_ratio(borrowers="banks").empty

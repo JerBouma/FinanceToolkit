@@ -410,3 +410,79 @@ def test_an_empty_premium_says_why(etf, caplog):
 
     assert "No premium data is available for AAA: its prices end on" in caplog.text
     assert "stale_nav=True" in caplog.text
+
+
+@pytest.fixture(name="index_fund")
+def fixture_index_fund():
+    dates = pd.bdate_range("2026-09-21", "2026-11-03")
+    prices = pd.DataFrame(100.0, index=dates, columns=["FND", "X", "Y", "^IDX"])
+    # The month runs from the close of September 30: X gains 10%, Y loses 20% and both
+    # stay there until the holdings are published on November 3.
+    october = (dates > "2026-09-30") & (dates <= "2026-10-30")
+    later = dates > "2026-10-30"
+    prices.loc[october | later, "X"] = 110.0
+    prices.loc[october | later, "Y"] = 80.0
+    prices.loc[october | later, "FND"] = 100.0 * (1 + 0.5 * 0.1 + 0.4 * -0.2)
+    prices["^IDX"] = 5000.0
+    holdings = pd.DataFrame(
+        {
+            # The weights of November 3, after X's gain and Y's loss (the fund lost 3%),
+            # and a bond.
+            "Weight": [0.5 * 1.1 / 0.97, 0.4 * 0.8 / 0.97, 0.0],
+            "ISIN": ["I1", "I2", "US0000000001"],
+            "Updated At": ["2026-11-03 18:00:00"] * 3,
+        },
+        index=pd.MultiIndex.from_tuples(
+            [("FND", "X"), ("FND", "Y"), ("FND", "")], names=[None, "Asset"]
+        ),
+    )
+    # The rest of the fund is cash.
+    requested = []
+
+    def prices_function(tickers, start, end):
+        requested.append((tickers, start, end))
+        return prices.loc[start:end, [t for t in tickers if t in prices]]
+
+    etf = ETF(
+        tickers=["FND"],
+        historical_function=pd.DataFrame,
+        fund_data_function=lambda dataset, overwrite=False: {"holdings": holdings}.get(
+            dataset
+        ),
+        ratios_function=lambda tickers: pd.DataFrame(),
+        start_date="2026-10-01",
+        end_date="2026-10-30",
+        prices_function=prices_function,
+        sector_function=lambda tickers: pd.Series({"X": "Technology", "Y": "Energy"}),
+    )
+    return etf, requested
+
+
+def test_contributions_add_up_to_the_fund_return(index_fund):
+    etf, requested = index_fund
+    contribution = etf.get_contribution(index="^IDX", rounding=8)
+
+    # The holdings and the index are priced, from before the start date to the holdings' date.
+    assert set(requested[0][0]) == {"FND", "X", "Y", "^IDX"}
+    assert requested[0][1] < "2026-10-01" and requested[0][2] >= "2026-11-03"
+    assert contribution.loc["X", "Start Weight"] == pytest.approx(0.5)
+    assert contribution.loc["Y", "Start Weight"] == pytest.approx(0.4)
+    assert contribution.loc["X", "Contribution"] == pytest.approx(0.05)
+    assert contribution.loc["Y", "Contribution"] == pytest.approx(-0.08)
+    assert contribution.loc["Remainder", "Start Weight"] == pytest.approx(0.1)
+    assert contribution.loc["Remainder", "Contribution"] == pytest.approx(0)
+    assert contribution.loc["Total", "Contribution"] == pytest.approx(-0.03)
+    assert contribution.loc["Y", "Points"] == pytest.approx(-0.08 * 5000)
+    assert list(contribution.index) == ["X", "Y", "Remainder", "Total"]
+
+
+def test_contributions_per_sector_and_without_a_sector(index_fund):
+    etf, _ = index_fund
+    sectors = etf.get_contribution(group_by="sector", rounding=8)
+    excluding = etf.get_return_excluding("technology", rounding=8)
+
+    assert sectors.loc["Energy", "Return"] == pytest.approx(-0.2)
+    assert sectors.loc["Technology", "Points"] == pytest.approx(0.05 * 100)
+    assert excluding.loc["Excluded Weight", "FND"] == pytest.approx(0.5)
+    assert excluding.loc["Return Excluding", "FND"] == pytest.approx(-0.2)
+    assert excluding.loc["Priced Holdings Return", "FND"] == pytest.approx(-0.03 / 0.9)

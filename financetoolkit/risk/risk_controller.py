@@ -1688,34 +1688,46 @@ class Risk:
     def get_drawdown_series(
         self,
         period: str | None = None,
+        recovery: bool = False,
         rounding: int | None = None,
     ):
         """
-        Calculate the drawdown in every period: how far an asset stands below its highest value so far.
+        Calculate the drawdown in every period: how far an asset stands below its highest value so far,
+        or the gain it needs to get back there.
 
         The drawdown series, also known as the underwater curve, shows the whole history of losses from a
         previous high instead of only the worst one. It is 0 at every new high and negative while the
         value is below one, so its lowest point is the Maximum Drawdown (see `get_maximum_drawdown`) and
         the stretches below 0 are the drawdowns that `get_drawdown_table` lists.
 
+        Losses and gains are not symmetric: after a fall of 20% the asset needs a gain of 25% to be back
+        at its high, after a fall of 50% a gain of 100%. With recovery=True the series shows that gain,
+        the return needed from each period's value to get back to the running peak.
+
         The formula is as follows:
 
         - Wealth(t) = Π (1 + Return(s)) for s <= t
-        - Drawdown(t) = Wealth(t) / max(1, max(Wealth(s) for s <= t)) - 1
+        - Peak(t) = max(1, max(Wealth(s) for s <= t))
+        - Drawdown(t) = Wealth(t) / Peak(t) - 1
+        - Recovery Needed(t) = Peak(t) / Wealth(t) - 1 = -Drawdown(t) / (1 + Drawdown(t))
 
         Returns are total returns (Adj Close). Wealth starts at 1 at the first close of the window, so a
         decline from the start of the window counts as well.
 
-        Also known as: underwater curve, underwater plot, drawdown curve.
+        Also known as: underwater curve, underwater plot, drawdown curve, distance from the high, gain needed
+        to recover, breakeven return, recovery return.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
+            recovery (bool, optional): Whether to return the gain needed to get back to the running peak
+                (Recovery Needed) instead of the drawdown. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
-            pd.DataFrame: The drawdown per period as a negative decimal (0 at a new high), with time as the index.
+            pd.DataFrame: The drawdown per period as a negative decimal or, with recovery=True, the gain needed
+                as a positive decimal (0 at a new high), with time as the index.
 
         Notes:
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close
@@ -1774,7 +1786,7 @@ class Risk:
         # the drawdowns are measured from; _get_returns would drop it.
         returns = self._historical_data[period]["Return"]
 
-        drawdown_series = risk_model.get_drawdown_series(returns)
+        drawdown_series = risk_model.get_drawdown_series(returns, recovery=recovery)
 
         return finalize_dataset(
             dataset=drawdown_series,
@@ -1800,7 +1812,8 @@ class Risk:
         largest declines side by side: when each started (the last high before it), when it bottomed
         out, when the asset was back at its high and how many periods each phase took. It shows whether
         an asset has one bad episode or recurring ones, and how long recoveries usually take, which a
-        single figure hides.
+        single figure hides. Recovery Needed is the gain needed from the trough to be back at the peak,
+        which is larger than the drawdown itself: a 50% fall needs a 100% gain.
 
         The formula is as follows:
 
@@ -1809,13 +1822,14 @@ class Risk:
           that high), with its Trough at the lowest Drawdown in between
         - To Trough = t(trough) - t(peak), To Recovery = t(recovery) - t(trough) and
           Length = t(recovery) - t(peak), in periods
+        - Recovery Needed = -Drawdown / (1 + Drawdown)
 
         The dates follow pyfolio's drawdown table (peak, valley and recovery dates). QuantStats and ffn
         instead start a drawdown at the first period below the peak and count calendar days. The deepest
         drawdown matches `get_maximum_drawdown`, `get_maximum_drawdown_duration` (To Trough) and
         `get_maximum_drawdown_recovery_time` (To Recovery).
 
-        Also known as: worst drawdowns, drawdown details, drawdown periods.
+        Also known as: worst drawdowns, drawdown details, drawdown periods, gain needed to recover.
 
         Args:
             top (int, optional): The number of drawdowns per asset, deepest first. Defaults to 5.
@@ -1826,12 +1840,14 @@ class Risk:
 
         Returns:
             pd.DataFrame: One row per drawdown, indexed by ticker and rank, with the dates of the Peak, Trough
-                and Recovery, the Drawdown as a negative decimal and, in periods, the time from peak to trough
+                and Recovery, the Drawdown as a negative decimal, the gain needed from the trough back to the peak
+                (Recovery Needed) as a positive decimal and, in periods, the time from peak to trough
                 (To Trough), from trough to recovery (To Recovery) and from peak to recovery (Length).
 
         Notes:
         - A drawdown that has not recovered by the end of the window has no Recovery, To Recovery or
-        Length (NaN).
+        Length (NaN). Its Recovery Needed is the gain from its trough; the gain still needed from the latest
+        value is the last row of `get_drawdown_series(recovery=True)`.
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close.
         - The table depends on the window: a drawdown that started before the start date is measured from
         the first close of the window.
@@ -1853,17 +1869,17 @@ class Risk:
 
         Which returns:
 
-        |                  | Peak       | Trough     | Recovery   |   Drawdown |   To Trough |   To Recovery |   Length |
-        |:-----------------|:-----------|:-----------|:-----------|-----------:|------------:|--------------:|---------:|
-        | ('META', 1)      | 2021-09-07 | 2022-11-03 | 2024-01-19 |    -0.7672 |         293 |           302 |      595 |
-        | ('META', 2)      | 2025-02-14 | 2025-04-21 | 2025-06-30 |    -0.3416 |          44 |            48 |       92 |
-        | ('META', 3)      | 2025-08-12 | 2025-11-20 | NaT        |    -0.2537 |          71 |           nan |      nan |
-        | ('NFLX', 1)      | 2021-11-17 | 2022-05-11 | 2024-08-20 |    -0.7593 |         120 |           571 |      691 |
-        | ('NFLX', 2)      | 2025-06-30 | 2025-12-10 | NaT        |    -0.3076 |         114 |           nan |      nan |
-        | ('NFLX', 3)      | 2025-02-14 | 2025-04-04 | 2025-04-24 |    -0.1916 |          34 |            13 |       47 |
-        | ('Benchmark', 1) | 2022-01-03 | 2022-10-12 | 2023-12-13 |    -0.245  |         195 |           294 |      489 |
-        | ('Benchmark', 2) | 2025-02-19 | 2025-04-08 | 2025-06-26 |    -0.1877 |          34 |            54 |       88 |
-        | ('Benchmark', 3) | 2024-07-16 | 2024-08-05 | 2024-09-19 |    -0.0841 |          14 |            32 |       46 |
+        |                  | Peak       | Trough     | Recovery   |   Drawdown |   Recovery Needed |   To Trough |   To Recovery |   Length |
+        |:-----------------|:-----------|:-----------|:-----------|-----------:|------------------:|------------:|--------------:|---------:|
+        | ('META', 1)      | 2021-09-07 | 2022-11-03 | 2024-01-19 |    -0.7672 |            3.2955 |         293 |           302 |      595 |
+        | ('META', 2)      | 2025-02-14 | 2025-04-21 | 2025-06-30 |    -0.3416 |            0.5189 |          44 |            48 |       92 |
+        | ('META', 3)      | 2025-08-12 | 2025-11-20 | NaT        |    -0.2537 |            0.34   |          71 |           nan |      nan |
+        | ('NFLX', 1)      | 2021-11-17 | 2022-05-11 | 2024-08-20 |    -0.7593 |            3.1548 |         120 |           571 |      691 |
+        | ('NFLX', 2)      | 2025-06-30 | 2025-12-10 | NaT        |    -0.3076 |            0.4443 |         114 |           nan |      nan |
+        | ('NFLX', 3)      | 2025-02-14 | 2025-04-04 | 2025-04-24 |    -0.1916 |            0.237  |          34 |            13 |       47 |
+        | ('Benchmark', 1) | 2022-01-03 | 2022-10-12 | 2023-12-13 |    -0.245  |            0.3245 |         195 |           294 |      489 |
+        | ('Benchmark', 2) | 2025-02-19 | 2025-04-08 | 2025-06-26 |    -0.1877 |            0.2311 |          34 |            54 |       88 |
+        | ('Benchmark', 3) | 2024-07-16 | 2024-08-05 | 2024-09-19 |    -0.0841 |            0.0918 |          14 |            32 |       46 |
         """
         period = period if period else "daily"
 
@@ -1881,7 +1897,9 @@ class Risk:
         decimals = rounding if rounding is not None else self._rounding
 
         if decimals is not None:
-            drawdown_table["Drawdown"] = drawdown_table["Drawdown"].round(decimals)
+            drawdown_table[["Drawdown", "Recovery Needed"]] = drawdown_table[
+                ["Drawdown", "Recovery Needed"]
+            ].round(decimals)
 
         return drawdown_table
 
@@ -6092,23 +6110,29 @@ class Risk:
         self,
         period: str = "daily",
         window: int | None = None,
+        alpha: float = 0.05,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how unusual each move of an investment portfolio or asset is: the return in
-        units of its trailing volatility, its percentile among the earlier moves and the date of
-        the last move at least as large in the same direction.
+        units of its trailing volatility and of its trailing Value at Risk, its percentile among
+        the earlier moves and the date of the last move at least as large in the same direction.
 
         A return only says how far a price moved, not whether that is a lot for the asset: a 3%
         day is ordinary for a volatile growth stock and exceptional for a utility or an index.
         Dividing the return by the volatility of the returns before it (the "sigma" of a move)
         makes moves comparable across assets and calm or turbulent markets, the percentile says
         how many earlier moves were smaller, and "largest since" gives the familiar headline
-        ("the biggest one-day fall since March 2020").
+        ("the biggest one-day fall since March 2020"). The VaR Multiple measures the move against
+        the historic Value at Risk of the same earlier returns instead of their standard deviation,
+        so it does not assume normal returns: a fall with a VaR Multiple below -1 is a VaR
+        exceedance, worse than the loss the trailing VaR expected on all but a share alpha of days.
 
         The formula is as follows:
 
         - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1)), with ddof=1
+        - VaR Multiple(t) = Return(t) / |VaR(t)|, with VaR(t) the historic VaR: the alpha quantile of
+          Return(t - window), ..., Return(t - 1), interpolated linearly as in `get_value_at_risk`
         - Percentile(t) = share of the returns before t with |Return(s)| < |Return(t)|
         - Largest Since(t) = the last date s < t with Return(s) <= Return(t) for a fall, or
           Return(s) >= Return(t) for a rise
@@ -6118,7 +6142,8 @@ class Risk:
         compares falls with falls and rises with rises, as a headline does: a 6% fall is the
         largest fall since the last fall of 6% or more, whatever the rises in between.
 
-        Also known as: sigma move, standardized return, biggest move since, return z-score.
+        Also known as: sigma move, standardized return, biggest move since, return z-score, worst day
+        since, VaR exceedance, VaR breach ratio.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly,
@@ -6127,19 +6152,23 @@ class Risk:
                 measured over, which the percentile also needs at least. Defaults to None, which
                 uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20
                 monthly, quarterly or yearly returns).
+            alpha (float, optional): The tail probability of the trailing historic Value at Risk
+                the VaR Multiple divides by (0.05 for the 95% VaR). Defaults to 0.05.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
-            pd.DataFrame: Return, Volatility Multiple, Percentile and Largest Since (the date as
-            text) per asset, with time as the index and the measures and tickers as the column
+            pd.DataFrame: Return, Volatility Multiple, VaR Multiple, Percentile and Largest Since
+            (the date as text) per asset, with time as the index and the measures and tickers as the column
             levels.
 
         Notes:
         - The returns are total returns (Adj Close), compounded within each period for a period
           other than daily.
-        - The history a move is compared with starts at the Toolkit's start_date: the volatility
-          and the percentile are NaN until `window` returns are available, and Largest Since is
+        - `get_value_at_risk` reports the VaR as a return (negative for a loss); the VaR Multiple
+          divides by its size, so its sign is the move's, like the Volatility Multiple.
+        - The history a move is compared with starts at the Toolkit's start_date: the volatility,
+          the VaR and the percentile are NaN until `window` returns are available, and Largest Since is
           NaN when no earlier move in the data was as large, which makes the move the largest
           since the start_date. Choose an early start_date for a long history.
         - Each ticker uses its own history, so a ticker that listed later starts later.
@@ -6163,11 +6192,11 @@ class Risk:
 
         Which returns:
 
-        |           |   Return |   Volatility Multiple |   Percentile | Largest Since   |
-        |:----------|---------:|----------------------:|-------------:|:----------------|
-        | NVDA      |  -0.1696 |               -5.0657 |       0.9976 | 2020-03-16      |
-        | KO        |   0.0319 |                3.9007 |       0.9818 | 2022-11-10      |
-        | Benchmark |  -0.0141 |               -1.7544 |       0.8613 | 2025-01-10      |
+        |           |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
+        |:----------|---------:|----------------------:|---------------:|-------------:|:----------------|
+        | NVDA      |  -0.1696 |               -5.0657 |        -3.4612 |       0.9976 | 2020-03-16      |
+        | KO        |   0.0319 |                3.9007 |         2.343  |       0.9818 | 2022-11-10      |
+        | Benchmark |  -0.0141 |               -1.7546 |        -1.0217 |       0.8613 | 2025-01-10      |
         """
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
@@ -6180,12 +6209,16 @@ class Risk:
             raise ValueError(
                 "The window needs at least 2 returns to measure a volatility."
             )
+        if not 0 < alpha < 1:
+            raise ValueError(
+                "alpha must be between 0 and 1, e.g. 0.05 for the 95% VaR."
+            )
 
         returns = self._historical_data[period]["Return"]
 
         move_significance = pd.concat(
             {
-                ticker: risk_model.get_move_significance(returns[ticker], window)
+                ticker: risk_model.get_move_significance(returns[ticker], window, alpha)
                 for ticker in returns.columns
             },
             axis=1,
@@ -6195,7 +6228,13 @@ class Risk:
         move_significance = move_significance[
             pd.MultiIndex.from_product(
                 [
-                    ["Return", "Volatility Multiple", "Percentile", "Largest Since"],
+                    [
+                        "Return",
+                        "Volatility Multiple",
+                        "VaR Multiple",
+                        "Percentile",
+                        "Largest Since",
+                    ],
                     returns.columns,
                 ]
             )

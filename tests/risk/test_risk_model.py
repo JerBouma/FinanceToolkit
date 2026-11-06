@@ -511,6 +511,22 @@ def test_move_significance_only_compares_a_move_with_the_moves_before_it():
     assert significance.loc[:"2024-01-03", "Percentile"].isna().all()
 
 
+def test_the_var_multiple_divides_a_move_by_the_var_of_the_moves_before_it():
+    dates = pd.period_range("2024-01-01", periods=6, freq="D")
+    returns = pd.Series([0.01, -0.02, 0.005, -0.04, 0.03, -0.06], index=dates)
+
+    significance = risk_model.get_move_significance(returns, window=4, alpha=0.25)
+
+    # The 25% quantile of the four returns before the day (linear interpolation), a loss.
+    var = np.quantile([-0.02, 0.005, -0.04, 0.03], 0.25)
+    assert var < 0
+    assert significance.loc["2024-01-06", "VaR Multiple"] == pytest.approx(-0.06 / -var)
+    # A rise keeps its sign.
+    var = np.quantile([0.01, -0.02, 0.005, -0.04], 0.25)
+    assert significance.loc["2024-01-05", "VaR Multiple"] == pytest.approx(0.03 / -var)
+    assert significance.loc[:"2024-01-04", "VaR Multiple"].isna().all()
+
+
 def test_largest_since_compares_falls_with_falls_and_rises_with_rises():
     dates = pd.period_range("2024-01-01", periods=6, freq="D")
     returns = pd.Series([-0.05, 0.04, -0.01, 0.02, -0.03, 0.05], index=dates)
@@ -550,12 +566,25 @@ def test_the_drawdown_series_starts_at_each_tickers_first_close():
     assert np.isclose(drawdowns["A"].iloc[5], -0.2)
 
 
+def test_the_recovery_series_is_the_gain_needed_to_get_back_to_the_peak():
+    recovery = risk_model.get_drawdown_series(drawdown_returns(), recovery=True)
+
+    # A 10% fall needs 1 / 0.9 - 1 = 11.1%, a 20% fall 25%, a new high nothing.
+    assert np.isclose(recovery["A"].iloc[1], 1 / 0.9 - 1)
+    assert np.isclose(recovery["A"].iloc[5], 0.25)
+    assert recovery["A"].iloc[3] == 0
+    # B halves after its first gain: it needs 100% to be back at that high.
+    assert np.isclose(recovery["B"].iloc[4], 1.0)
+    assert recovery["B"].iloc[:2].isna().all()
+
+
 def test_the_drawdown_table_lists_each_drawdown_deepest_first():
     returns = drawdown_returns()
     table = risk_model.get_drawdown_table(returns, top=5)
 
     first, second = table.loc["A"].iloc[0], table.loc["A"].iloc[1]
     assert np.isclose(first["Drawdown"], -0.2)
+    assert np.isclose(first["Recovery Needed"], 0.25)
     assert first["Peak"] == pd.Period("2024-01-05", freq="D")
     assert first["Trough"] == pd.Period("2024-01-06", freq="D")
     # Not recovered by the end of the window.

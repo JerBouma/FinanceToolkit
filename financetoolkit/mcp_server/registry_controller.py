@@ -166,6 +166,16 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "downside, e.g. 0.0 for downside relative to a zero return."
     ),
     "days": "Number of calendar days used in day-count-based calculations.",
+    "metrics": (
+        "get_factor_analysis only: the metric(s) to analyse, a method name such as "
+        "'get_price_to_earnings_ratio', a comma-separated list, or a collection of the tool "
+        "(see the tool description), e.g. 'profitability'."
+    ),
+    "detail": (
+        "get_factor_analysis only: 'information_coefficient', 'quantile_returns', "
+        "'quantile_turnover' or 'rank_autocorrelation' returns that part for a single metric "
+        "instead of the summary."
+    ),
     "period": (
         "Observation frequency, e.g. 'daily', 'weekly', 'monthly', 'quarterly', or 'annual' "
         "(supported values differ per method)."
@@ -193,7 +203,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     ),
     "window": "The number of periods the indicator looks back over, e.g. 14 or 20.",
     "lags": "The number of lags (past periods) the test or model uses, e.g. 1 or 5.",
-    "column": "The price column to use, e.g. 'Close' or 'Adj Close'.",
+    "column": (
+        "The price column to use, e.g. 'Close' or 'Adj Close'; for get_factor_analysis the "
+        "output of a metric with several, e.g. 'Signal Line'."
+    ),
     "strike_price_range": (
         "Only strikes within this fraction of the current stock price, e.g. 0.05 for the "
         "strikes within 5% of it."
@@ -1437,6 +1450,18 @@ class ToolRegistry:
             m: list(inspect.signature(getattr(owning_class(m), m)).parameters)
             for m in group_methods
         }
+        # Indicators that take **kwargs (get_factor_analysis) pass the parameters of the other
+        # indicators of the tool on to the metrics they analyse.
+        keyword_methods = {
+            m
+            for m in group_methods
+            if any(
+                p.kind is inspect.Parameter.VAR_KEYWORD
+                for p in inspect.signature(
+                    getattr(owning_class(m), m)
+                ).parameters.values()
+            )
+        }
         param_meta = [(p.name, p.annotation, p.default) for p in extra_params]
         all_indicators = group_methods
 
@@ -1712,7 +1737,9 @@ class ToolRegistry:
                     )
                     if val not in (None, "") and val != advertised:
                         given_params.add(pname)
-                    if pname not in accepted_params:
+                    if pname not in accepted_params and not (
+                        method_name in keyword_methods and pname in given_params
+                    ):
                         if pname in given_params:
                             ignored_params.append(pname)
                         continue
@@ -2021,6 +2048,8 @@ class ToolRegistry:
                         pname.endswith(("_ticker", "_tickers"))
                         for pname in method_kwargs
                     )
+                    # A factor analysis answers for the tickers together, not per ticker.
+                    and method_name != "get_factor_analysis"
                 ):
                     # An empty column of its own counts as missing too.
                     if isinstance(result, pd.DataFrame) and result.columns.nlevels == 1:

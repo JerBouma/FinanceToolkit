@@ -839,6 +839,9 @@ class Toolkit:
             end_date=self._end_date,
             peer_function=compare_with_peers,
             country_risk_premiums=self._get_country_risk_premiums,
+            period_end_dates=lambda: self._get_daily_start_dates(
+                self._get_module_statement("balance_sheet_statement", "Models")
+            ),
         )
 
     @property

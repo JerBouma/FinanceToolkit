@@ -48,6 +48,8 @@ def join_initials(text: str) -> str:
 # Words for what an analyst wants to know that no indicator is named after, and the
 # indicators that answer them. A query with such a word lists these first.
 SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
+    "predictive": ("get_factor_analysis",),
+    "predict": ("get_factor_analysis",),
     "expensive": (
         "get_price_to_earnings_ratio",
         "get_ev_to_ebitda_ratio",

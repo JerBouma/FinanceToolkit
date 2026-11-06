@@ -2832,16 +2832,14 @@ class Models:
 
         The formula is as follows:
 
-            - Growth Rate = Return on Equity * (1 - Payout Ratio), the sustainable growth
-            rate, unless a growth rate is given
-            - Justified Trailing P/E = Payout Ratio * (1 + Growth Rate) / (Rate of Return -
-            Growth Rate)
-            - Justified Leading P/E = Payout Ratio / (Rate of Return - Growth Rate)
-            - Justified P/B = (Return on Equity - Growth Rate) / (Rate of Return - Growth
-            Rate)
-            - Price-to-Earnings Ratio = Share Price / (Net Income / Weighted Average Shares)
-            - Price-to-Book Ratio = Share Price / (Total Shareholder Equity / Weighted Average
-            Shares)
+        - Growth Rate = Return on Equity * (1 - Payout Ratio)
+        - Justified Trailing P/E = Payout Ratio * (1 + Growth Rate) / (Rate of Return - Growth Rate)
+        - Justified Leading P/E = Payout Ratio / (Rate of Return - Growth Rate)
+        - Justified P/B = (Return on Equity - Growth Rate) / (Rate of Return - Growth Rate)
+        - Price-to-Earnings Ratio = Share Price / (Net Income / Weighted Average Shares)
+        - Price-to-Book Ratio = Share Price / (Total Shareholder Equity / Weighted Average Shares)
+
+        The Growth Rate is the sustainable growth rate above unless a growth rate is given.
 
         Also known as: justified P/E, justified P/B, fundamental P/E, warranted multiples.
 
@@ -7774,8 +7772,8 @@ class Models:
         Which returns:
         |                                      |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:-------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_piotroski_score', '12 Months') |   -0.146  |                  0.3791 |                -0.3852 |       -3.6131 |    0.0005 |           0.2841 |             88 |            -0.1812 |              0.0794 |                 0.9301 |
-        | ('get_altman_z_score', '12 Months')  |    0.1209 |                  0.3923 |                 0.3082 |        3.0824 |    0.0027 |           0.7    |            100 |             0.1264 |              0.0285 |                 0.9941 |
+        | ('get_piotroski_score', '12 Months') |    -0.146 |                  0.3791 |                -0.3852 |       -3.6131 |    0.0005 |           0.2841 |             88 |            -0.1812 |              0.0794 |                 0.9301 |
+        | ('get_altman_z_score', '12 Months')  |     0.121 |                  0.3923 |                 0.3085 |        3.0853 |    0.0026 |           0.7    |            100 |             0.1264 |              0.0285 |                 0.9941 |
         """
         factors = factor_model.get_daily_factors(
             self,

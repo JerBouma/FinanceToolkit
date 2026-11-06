@@ -7973,7 +7973,6 @@ class Economics:
         | 2025Q2 |         -0.1236 |     -0.1894 | -0.053  |  0.0335 |
         | 2025Q3 |         -0.12   |     -0.1873 | -0.0639 |  0.0418 |
         | 2025Q4 |         -0.1159 |     -0.1815 | -0.0769 |  0.0587 |
-        TABLE
         """
         gap = bis_model.get_credit_statistics(
             "WS_CREDIT_GAP",
@@ -8075,7 +8074,6 @@ class Economics:
         | 2025Q2 |           0.14  |     0.123 |   0.189 |   0.15  |
         | 2025Q3 |           0.139 |     0.123 |   0.188 |   0.152 |
         | 2025Q4 |           0.139 |     0.122 |   0.188 |   0.154 |
-        TABLE
         """
         if borrowers not in self.DEBT_SERVICE_BORROWERS:
             raise ValueError(
@@ -8189,7 +8187,6 @@ class Economics:
         | 2025Q2 |           1.41  |       1.545 |   2.018 |   1.701 |
         | 2025Q3 |           1.406 |       1.537 |   2.015 |   1.713 |
         | 2025Q4 |           1.402 |       1.533 |   2.008 |   1.734 |
-        TABLE
         """
         if borrowers not in self.CREDIT_BORROWERS:
             raise ValueError(

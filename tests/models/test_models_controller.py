@@ -1396,6 +1396,77 @@ def test_country_premiums_follow_the_premium_table_names(
     assert "VG" in caplog.text
 
 
+def test_get_h_model_values_every_period(models_module):
+    h_model = models_module.get_h_model(
+        rate_of_return=0.10, high_growth_rate=0.12, stable_growth_rate=0.03
+    )
+    dividends = models_module._annual_dividends_per_share().loc[h_model.index]
+
+    expected = dividends * 1.03 / 0.07 + dividends * 5 * 0.09 / 0.07
+    pd.testing.assert_frame_equal(
+        h_model, expected.round(4)[h_model.columns], check_names=False
+    )
+
+
+def test_three_stage_model_adds_a_transition_phase(models_module):
+    two_stage = models_module.get_two_stage_dividend_discount_model(
+        rate_of_return=0.10, high_growth_rate=0.12, stable_growth_rate=0.03
+    )
+    three_stage = models_module.get_two_stage_dividend_discount_model(
+        rate_of_return=0.10,
+        high_growth_rate=0.12,
+        stable_growth_rate=0.03,
+        transition_periods=4,
+    )
+
+    # A slower decline to the stable rate keeps the growth higher for longer.
+    assert (
+        three_stage.xs("Intrinsic Value", level=1).iloc[:, 0]
+        > two_stage.xs("Intrinsic Value", level=1).iloc[:, 0]
+    ).all()
+
+
+def test_get_justified_multiples(models_module):
+    multiples = models_module.get_justified_multiples(
+        rate_of_return=0.10, growth_rate=0.04
+    )
+    payout = multiples.xs("Payout Ratio", level=1)
+    return_on_equity = multiples.xs("Return on Equity", level=1)
+
+    pd.testing.assert_frame_equal(
+        multiples.xs("Justified Leading P/E", level=1),
+        (payout / 0.06).round(4),
+        check_names=False,
+        atol=1e-2,
+    )
+    pd.testing.assert_frame_equal(
+        multiples.xs("Justified P/B", level=1),
+        ((return_on_equity - 0.04) / 0.06).round(4),
+        check_names=False,
+        atol=1e-3,
+    )
+
+
+def test_historical_intrinsic_valuation_ends_at_the_single_valuation(models_module):
+    single = models_module.get_intrinsic_valuation(
+        growth_rate=0.05,
+        perpetual_growth_rate=0.02,
+        weighted_average_cost_of_capital=0.10,
+    ).xs("Intrinsic Value", level=1)
+    historical = models_module.get_intrinsic_valuation(
+        growth_rate=0.05,
+        perpetual_growth_rate=0.02,
+        weighted_average_cost_of_capital=0.10,
+        historical=True,
+    )
+
+    assert not historical.empty
+    for ticker in historical.index:
+        last_period = historical.loc[ticker].dropna().index[-1]
+        if last_period == historical.columns[-1]:
+            assert historical.loc[ticker, last_period] == single.loc[ticker].iloc[0]
+
+
 def test_get_return_decomposition(recorder, models_module):
     recorder.capture(models_module.get_return_decomposition())
     recorder.capture(models_module.get_return_decomposition(logarithmic=True))

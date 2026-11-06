@@ -201,3 +201,46 @@ def test_quarterly_lag_compares_with_the_year_before():
     assert signals[4].loc["A", "Q7"] == 1
     assert signals[1].loc["A", "Q7"] == 0
     assert np.isnan(signals[4].loc["A", "Q3"])
+
+
+def test_rank_z_score_standardizes_the_ranks_per_period():
+    frame = pd.DataFrame(
+        {"2024": [0.30, 0.10, 0.20, None], "2025": [1.0, 1.0, 5.0, 2.0]},
+        index=["A", "B", "C", "D"],
+    )
+
+    z_score = quality_model.get_rank_z_score(frame)
+
+    # Ranks 3, 1, 2 have a mean of 2 and a standard deviation of 1.
+    assert z_score["2024"].tolist()[:3] == pytest.approx([1.0, -1.0, 0.0])
+    assert pd.isna(z_score.loc["D", "2024"])
+    # Ties share the average rank, and outliers count as one rank.
+    assert z_score.loc["A", "2025"] == z_score.loc["B", "2025"]
+    assert z_score["2025"].mean() == pytest.approx(0.0)
+    assert z_score["2025"].std() == pytest.approx(1.0)
+
+
+def test_quality_minus_junk_orders_the_tickers_by_every_component():
+    better = pd.DataFrame({"2025": [3.0, 2.0, 1.0]}, index=["A", "B", "C"])
+    components = {
+        "Profitability": {"Return on Equity": better, "Gross Margin": better * 2},
+        "Safety": {"Low Leverage": better},
+    }
+
+    scores = quality_model.get_quality_minus_junk(components)
+
+    assert list(scores) == ["Profitability", "Safety", "Quality Score"]
+    assert scores["Quality Score"]["2025"].tolist() == pytest.approx([1.0, 0.0, -1.0])
+
+
+def test_a_ticker_without_a_component_has_no_quality_score():
+    values = pd.DataFrame({"2025": [3.0, 2.0, 1.0]}, index=["A", "B", "C"])
+    missing = values.copy()
+    missing.loc["C", "2025"] = float("nan")
+
+    scores = quality_model.get_quality_minus_junk(
+        {"Profitability": {"ROE": values}, "Payout": {"Net Payout Ratio": missing}}
+    )
+
+    assert pd.isna(scores["Quality Score"].loc["C", "2025"])
+    assert scores["Quality Score"].loc[["A", "B"], "2025"].notna().all()

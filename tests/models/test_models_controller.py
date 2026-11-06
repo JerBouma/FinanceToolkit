@@ -1394,3 +1394,9 @@ def test_country_premiums_follow_the_premium_table_names(
 
     assert premiums.isna().to_dict() == {"AAPL": False, "MSFT": True}
     assert "VG" in caplog.text
+
+
+def test_get_quality_score_needs_three_tickers(models_module, caplog):
+    # The offline dataset holds two tickers, which cannot be ranked into z-scores.
+    assert models_module.get_quality_score().empty
+    assert "at least three tickers" in caplog.text

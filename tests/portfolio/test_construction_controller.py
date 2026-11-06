@@ -275,3 +275,49 @@ def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit
     assert attribution.loc["Technology", "Portfolio Return"] == pytest.approx(
         expected, abs=1e-4
     )
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_minimum_variance_weights",
+        "get_maximum_sharpe_weights",
+        "get_risk_parity_weights",
+        "get_hierarchical_risk_parity_weights",
+        "get_inverse_volatility_weights",
+        "get_black_litterman_weights",
+    ],
+)
+@pytest.mark.parametrize(
+    "covariance", ["ledoit_wolf", "oas", "semicovariance", "exponential"]
+)
+def test_the_optimizers_take_a_covariance_estimator(
+    portfolio_module, method, covariance
+):
+    # Black-Litterman needs market weights, which come from FMP profiles otherwise.
+    extra = (
+        {"market_weights": {"AAPL": 2.0, "MSFT": 1.5}} if "litterman" in method else {}
+    )
+    weights = getattr(portfolio_module, method)(covariance=covariance, **extra)[
+        "Weight"
+    ].drop("Portfolio", errors="ignore")
+
+    assert weights.sum() == pytest.approx(1, abs=1e-4)
+    assert (weights >= -1e-8).all()
+
+
+def test_a_covariance_estimator_changes_the_weights_and_their_risk(portfolio_module):
+    sample = portfolio_module.get_minimum_variance_weights(rounding=10)
+    exponential = portfolio_module.get_minimum_variance_weights(
+        covariance="exponential", covariance_span=20, rounding=10
+    )
+    contributions = portfolio_module.get_risk_contributions(
+        covariance="oas", rounding=10
+    )
+
+    assert not np.allclose(sample["Weight"], exponential["Weight"])
+    assert not np.allclose(
+        sample.loc["Portfolio", "Volatility"],
+        exponential.loc["Portfolio", "Volatility"],
+    )
+    assert contributions.loc["Total", "Percentage Contribution"] == pytest.approx(1)

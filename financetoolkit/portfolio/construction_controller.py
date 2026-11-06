@@ -144,13 +144,17 @@ class PortfolioConstruction:
         return returns
 
     def _get_inputs(
-        self, period: str, include_benchmark: bool
+        self,
+        period: str,
+        include_benchmark: bool,
+        covariance: str = "sample",
+        covariance_span: int = 180,
     ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, float]:
         """The returns, annualized expected returns, covariance and risk free rate."""
         returns = self._get_returns(period, include_benchmark)
-        expected_returns, covariance = (
+        expected_returns, covariance_matrix = (
             optimization_model.get_expected_returns_and_covariance(
-                returns, PERIODS_PER_YEAR[period]
+                returns, PERIODS_PER_YEAR[period], covariance, covariance_span
             )
         )
         risk_free = self._risk_free_rate_data.get(period)
@@ -161,7 +165,7 @@ class PortfolioConstruction:
         )
         if np.isnan(risk_free_rate):
             risk_free_rate = 0.0
-        return returns, expected_returns, covariance, risk_free_rate
+        return returns, expected_returns, covariance_matrix, risk_free_rate
 
     def _resolve_weights(
         self, weights: dict[str, float] | pd.Series | None, assets: list[str]
@@ -260,6 +264,8 @@ class PortfolioConstruction:
     def get_minimum_variance_weights(
         self,
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         minimum_weight: float = 0.0,
         maximum_weight: float = 1.0,
         include_benchmark: bool = False,
@@ -285,6 +291,15 @@ class PortfolioConstruction:
             period (str, optional): The frequency of the returns the covariance matrix is
                 estimated from (daily, weekly, monthly, quarterly or yearly). Defaults to
                 "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             minimum_weight (float, optional): The lowest weight an asset may have; a
                 negative value allows short positions. Defaults to 0.
             maximum_weight (float, optional): The highest weight an asset may have.
@@ -330,20 +345,22 @@ class PortfolioConstruction:
         | XOM       |   0.1801 |            0.291  |       0.2702 |         0.9522 |              0.1801 |
         | Portfolio |   1      |            0.1575 |       0.135  |         0.9166 |              1      |
         """
-        _, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_minimum_variance_weights(
-            covariance, minimum_weight, maximum_weight
+            covariance_matrix, minimum_weight, maximum_weight
         )
         return self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, rounding
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
 
     @handle_errors
     def get_maximum_sharpe_weights(
         self,
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         minimum_weight: float = 0.0,
         maximum_weight: float = 1.0,
         include_benchmark: bool = False,
@@ -371,6 +388,15 @@ class PortfolioConstruction:
         Args:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             minimum_weight (float, optional): The lowest weight an asset may have; a
                 negative value allows short positions. Defaults to 0.
             maximum_weight (float, optional): The highest weight an asset may have.
@@ -415,14 +441,18 @@ class PortfolioConstruction:
         | XOM       |   0.4    |            0.291  |       0.2702 |         0.9522 |              0.5369 |
         | Portfolio |   1      |            0.2105 |       0.1568 |         1.1275 |              1      |
         """
-        _, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_maximum_sharpe_weights(
-            expected_returns, covariance, risk_free_rate, minimum_weight, maximum_weight
+            expected_returns,
+            covariance_matrix,
+            risk_free_rate,
+            minimum_weight,
+            maximum_weight,
         )
         return self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, rounding
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
 
     @handle_errors
@@ -431,6 +461,8 @@ class PortfolioConstruction:
         target_return: float | None = None,
         risk_aversion: float = 2.5,
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         minimum_weight: float = 0.0,
         maximum_weight: float = 1.0,
         include_benchmark: bool = False,
@@ -459,6 +491,15 @@ class PortfolioConstruction:
                 give less risky portfolios. Defaults to 2.5.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             minimum_weight (float, optional): The lowest weight an asset may have. Defaults
                 to 0.
             maximum_weight (float, optional): The highest weight an asset may have.
@@ -501,19 +542,19 @@ class PortfolioConstruction:
         | XOM       |   0.1467 |            0.291  |       0.2702 |         0.9522 |              0.1279 |
         | Portfolio |   1      |            0.15   |       0.1355 |         0.8583 |              1      |
         """
-        _, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_mean_variance_weights(
             expected_returns,
-            covariance,
+            covariance_matrix,
             target_return,
             risk_aversion,
             minimum_weight,
             maximum_weight,
         )
         return self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, rounding
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
 
     @handle_errors
@@ -521,6 +562,8 @@ class PortfolioConstruction:
         self,
         points: int = 20,
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         minimum_weight: float = 0.0,
         maximum_weight: float = 1.0,
         include_benchmark: bool = False,
@@ -542,6 +585,15 @@ class PortfolioConstruction:
             points (int, optional): The number of portfolios on the frontier. Defaults to 20.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             minimum_weight (float, optional): The lowest weight an asset may have. Defaults
                 to 0.
             maximum_weight (float, optional): The highest weight an asset may have.
@@ -580,12 +632,12 @@ class PortfolioConstruction:
         |           4 |            0.2576 |       0.2016 |         1.111  | 0.0111 | 0.3616 | 0      | 0.6274 |
         |           5 |            0.291  |       0.2702 |         0.9522 | 0      | 0      | 0      | 1      |
         """
-        _, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
         )
         frontier = optimization_model.get_efficient_frontier(
             expected_returns,
-            covariance,
+            covariance_matrix,
             risk_free_rate,
             points,
             minimum_weight,
@@ -598,6 +650,8 @@ class PortfolioConstruction:
         self,
         risk_budget: dict[str, float] | None = None,
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -626,6 +680,15 @@ class PortfolioConstruction:
                 Defaults to None, an equal share for every asset.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -660,15 +723,15 @@ class PortfolioConstruction:
         | XOM       |   0.2303 |            0.291  |       0.2702 |         0.9522 |                0.25 |
         | Portfolio |   1      |            0.1817 |       0.1452 |         1.0189 |                1    |
         """
-        _, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_risk_parity_weights(
-            covariance,
+            covariance_matrix,
             pd.Series(risk_budget, dtype=float) if risk_budget is not None else None,
         )
         return self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, rounding
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
 
     @handle_errors
@@ -676,6 +739,8 @@ class PortfolioConstruction:
         self,
         linkage_method: str = "single",
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -705,6 +770,15 @@ class PortfolioConstruction:
                 paper.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -739,20 +813,22 @@ class PortfolioConstruction:
         | XOM       |   0.1996 |            0.291  |       0.2702 |         0.9522 |              0.2161 |
         | Portfolio |   1      |            0.1647 |       0.1374 |         0.9534 |              1      |
         """
-        _, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_hierarchical_risk_parity_weights(
-            covariance, linkage_method
+            covariance_matrix, linkage_method
         )
         return self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, rounding
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
 
     @handle_errors
     def get_inverse_volatility_weights(
         self,
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -766,6 +842,15 @@ class PortfolioConstruction:
         Args:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -800,12 +885,12 @@ class PortfolioConstruction:
         | XOM       |   0.2157 |            0.291  |       0.2702 |         0.9522 |              0.2152 |
         | Portfolio |   1      |            0.1832 |       0.1491 |         1.0028 |              1      |
         """
-        _, expected_returns, covariance, risk_free_rate = self._get_inputs(
-            period, include_benchmark
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
         )
-        weights = optimization_model.get_inverse_volatility_weights(covariance)
+        weights = optimization_model.get_inverse_volatility_weights(covariance_matrix)
         return self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, rounding
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
 
     @handle_errors
@@ -909,6 +994,8 @@ class PortfolioConstruction:
         risk_aversion: float = 2.5,
         tau: float = 0.05,
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         minimum_weight: float = 0.0,
         maximum_weight: float = 1.0,
         rounding: int | None = None,
@@ -960,6 +1047,15 @@ class PortfolioConstruction:
                 covariance matrix. Defaults to 0.05.
             period (str, optional): The frequency of the returns the covariance matrix is
                 estimated from. Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             minimum_weight (float, optional): The lowest weight an asset may have. Defaults
                 to 0.
             maximum_weight (float, optional): The highest weight an asset may have.
@@ -997,8 +1093,10 @@ class PortfolioConstruction:
         | JNJ  |          0.0614 |           0.0509 |                   0.052  |   0.0145 |
         | XOM  |          0.0727 |           0.0709 |                   0.0853 |   0.1387 |
         """
-        _, _, covariance, risk_free_rate = self._get_inputs(period, False)
-        assets = covariance.index.tolist()
+        _, _, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, False, covariance, covariance_span
+        )
+        assets = covariance_matrix.index.tolist()
 
         if market_weights is not None:
             market = pd.Series(market_weights, dtype=float).reindex(assets)
@@ -1014,7 +1112,7 @@ class PortfolioConstruction:
             )
 
         returns = optimization_model.get_black_litterman_returns(
-            covariance,
+            covariance_matrix,
             market,
             views=views,
             view_confidences=view_confidences,
@@ -1024,7 +1122,7 @@ class PortfolioConstruction:
         )
         weights = optimization_model.get_mean_variance_weights(
             returns["Black-Litterman Return"],
-            covariance,
+            covariance_matrix,
             risk_aversion=risk_aversion,
             minimum_weight=minimum_weight,
             maximum_weight=maximum_weight,
@@ -1039,6 +1137,8 @@ class PortfolioConstruction:
         self,
         weights: dict[str, float] | None = None,
         period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -1063,6 +1163,15 @@ class PortfolioConstruction:
                 or equal weights.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
+                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
+                estimators stabilize the weights when there are many assets compared to
+                the number of periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1099,9 +1208,11 @@ class PortfolioConstruction:
         | XOM     |      0.1 |                  0.0862 |              0.0086 |                    0.0465 |
         | Total   |      1   |                nan      |              0.1855 |                    1      |
         """
-        _, _, covariance, _ = self._get_inputs(period, include_benchmark)
-        resolved = self._resolve_weights(weights, covariance.index.tolist())
-        table = optimization_model.get_risk_contributions(resolved, covariance)
+        _, _, covariance_matrix, _ = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
+        )
+        resolved = self._resolve_weights(weights, covariance_matrix.index.tolist())
+        table = optimization_model.get_risk_contributions(resolved, covariance_matrix)
         table.index.name = "Asset"
         table.loc["Total"] = [
             table["Weight"].sum(),

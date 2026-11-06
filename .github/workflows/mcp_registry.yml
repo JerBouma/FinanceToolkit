@@ -1,10 +1,17 @@
 name: Publish to the MCP Registry
 
 # Publishes server.json to registry.modelcontextprotocol.io, which MCP directories read the listed
-# version from. Runs on every release; run it by hand to republish the current version.
+# version from. The Release workflow calls it after publishing a release; it also runs on a release
+# published by hand, and can be run by hand to republish the current version.
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      ref:
+        description: The tag to publish server.json from.
+        type: string
+        required: true
   workflow_dispatch:
 
 permissions:
@@ -19,6 +26,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Check the version matches pyproject.toml
         run: |

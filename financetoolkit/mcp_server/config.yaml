@@ -919,12 +919,8 @@ tool_groups:
 # ──────────────────────────────────────────────────────────────────────────────
 # Utility tools (search / discovery helpers — not router groups)
 # These are registered by UtilityToolRegistry in tools_model.py.
-# Listed here so build-mcpb.sh can include them in the manifest without
-# hard-coding them in the build script.
-#
-# summary (optional on any tool): Short description used in the mcpb
-# marketplace listing. Falls back to description if absent. description is
-# the AI-facing prompt hint and may be verbose.
+# The MCP bundle's manifest.json lists every tool group and utility tool with
+# the same description (tests/test_version_alignment.py checks this).
 # ──────────────────────────────────────────────────────────────────────────────
 utility_tools:
   - tool_name: "search_metric_categories"

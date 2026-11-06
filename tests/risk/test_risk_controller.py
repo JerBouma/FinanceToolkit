@@ -246,6 +246,25 @@ def test_get_maximum_drawdown_duration(recorder, risk_module):
     )
 
 
+def test_the_deepest_drawdown_in_the_table_is_the_maximum_drawdown(risk_module):
+    table = risk_module.get_drawdown_table(top=3, rounding=10)
+    deepest = table.xs(1, level="Rank")
+
+    assert np.allclose(
+        deepest["Drawdown"],
+        risk_module.get_maximum_drawdown(rounding=10)[deepest.index],
+    )
+    assert np.allclose(
+        deepest["To Trough"],
+        risk_module.get_maximum_drawdown_duration()[deepest.index],
+    )
+    assert (table.groupby(level="Ticker").size() <= 3).all()
+    assert np.allclose(
+        risk_module.get_drawdown_series(rounding=10).min()[deepest.index],
+        deepest["Drawdown"],
+    )
+
+
 def test_get_maximum_drawdown_recovery_time(recorder, risk_module):
     recorder.capture(risk_module.get_maximum_drawdown_recovery_time())
     recorder.capture(

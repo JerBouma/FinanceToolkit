@@ -7948,9 +7948,10 @@ class Technicals:
         of its members fall; breadth shows that divergence, which often comes before the index
         itself turns. Breadth is most meaningful across many tickers, such as the constituents
         of an index, which `Discovery.get_index_constituents` lists (e.g. the 500 tickers of the
-        S&P 500). Those are today's members: breadth of past dates computed from them leaves out
-        the companies that were removed from the index since (often after falling behind), so
-        it is biased towards the survivors, the further back the more.
+        S&P 500). Today's members leave out the companies that were removed from the index
+        since (often after falling behind), so breadth of past dates computed from them is
+        biased towards the survivors, the further back the more; its `date=` gives the members
+        on the first date of the window instead.
 
         Per date it returns:
 
@@ -8172,8 +8173,8 @@ class Technicals:
           score share the highest rank among them, so the rating reads as the share of the
           other tickers outperformed or matched and tied leaders both rate 99. It needs many
           tickers to be meaningful, such as the constituents of an index (see
-          `Discovery.get_index_constituents`, whose current members leave out the companies
-          removed from the index since).
+          `Discovery.get_index_constituents`, whose `date=` gives the members on a past date;
+          today's members leave out the companies removed from the index since).
 
         For more information, see the following papers and books:
 

@@ -221,3 +221,38 @@ def test_statistics_from_an_unexpected_answer_are_empty(monkeypatch, payload):
     monkeypatch.setattr(yfinance_model, "get_request", lambda *_, **__: Response())
 
     assert yfinance_model.get_historical_statistics("AAPL").empty
+
+
+def test_prices_come_unrepaired_without_the_repair_extra(monkeypatch):
+    import pandas as pd
+
+    repairs = []
+
+    class FakeTicker:
+        def __init__(self, ticker):
+            pass
+
+        def history(self, repair, **kwargs):  # noqa: ARG002
+            repairs.append(repair)
+            if repair:
+                # Recent yfinance versions import scikit-learn for the repair.
+                raise ModuleNotFoundError("No module named 'sklearn'")
+            return pd.DataFrame(
+                {
+                    "Open": 1.0,
+                    "High": 1.0,
+                    "Low": 1.0,
+                    "Close": [1.0, 2.0],
+                    "Volume": 1,
+                },
+                index=pd.to_datetime(["2025-01-02", "2025-01-03"]),
+            )
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
+
+    data = yfinance_model.get_historical_data(
+        "ASML.AS", start="2025-01-02", end="2025-01-03"
+    )
+
+    assert repairs == [True, False]
+    assert not data.empty

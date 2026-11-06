@@ -538,6 +538,21 @@ def record_stdout_markers(request: SubRequest) -> list[Mark]:
 
 
 @pytest.fixture(autouse=True)
+def closed_sessions(monkeypatch):
+    """
+    Treat today's trading session as closed, so the cache records today's bars as covered
+    whatever the time of the test run; the tests of an unclosed session say so themselves.
+    """
+    import datetime as dt
+
+    from financetoolkit.cache import policy_model
+
+    monkeypatch.setattr(
+        policy_model, "get_last_closed_session", lambda now=None: dt.date.today()
+    )
+
+
+@pytest.fixture(autouse=True)
 def record_stdout(
     disable_recording: bool,
     rewrite_expected: bool,

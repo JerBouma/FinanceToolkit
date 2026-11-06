@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from financetoolkit import currencies_model
+from financetoolkit import currencies_model, earnings_model, finra_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
 from financetoolkit.discovery.discovery_model import (
     search_crypto_news as _search_crypto_news,
@@ -20,8 +20,10 @@ from financetoolkit.discovery.discovery_model import (
     search_stock_news as _search_stock_news,
 )
 from financetoolkit.fmp_model import (
+    add_price_target_metrics as _add_price_target_metrics,
     determine_subscription_plan as _determine_subscription_plan,
     get_analyst_estimates as _get_analyst_estimates,
+    get_analyst_recommendations as _get_analyst_recommendations,
     get_commitment_of_traders as _get_commitment_of_traders,
     get_company_notes as _get_company_notes,
     get_dividend_calendar as _get_dividend_calendar,
@@ -36,8 +38,11 @@ from financetoolkit.fmp_model import (
     get_executive_compensation as _get_executive_compensation,
     get_executives as _get_executives,
     get_insider_trade_statistics as _get_insider_trade_statistics,
+    get_institutional_ownership as _get_institutional_ownership,
     get_market_risk_premium as _get_market_risk_premium,
     get_mergers_acquisitions as _get_mergers_acquisitions,
+    get_price_target_history as _get_price_target_history,
+    get_price_targets as _get_price_targets,
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
@@ -474,7 +479,11 @@ class Toolkit:
             self._mergers_acquisitions: pd.DataFrame = pd.DataFrame()
             self._stock_splits: pd.DataFrame = pd.DataFrame()
             self._insider_trade_statistics: pd.DataFrame = pd.DataFrame()
+            self._institutional_ownership: pd.DataFrame = pd.DataFrame()
             self._stock_grades: pd.DataFrame = pd.DataFrame()
+            self._price_targets: pd.DataFrame = pd.DataFrame()
+            self._price_target_history: pd.DataFrame = pd.DataFrame()
+            self._analyst_recommendations: pd.DataFrame = pd.DataFrame()
             self._etf_holdings: pd.DataFrame = pd.DataFrame()
             self._etf_information: pd.DataFrame = pd.DataFrame()
             self._etf_country_weightings: pd.DataFrame = pd.DataFrame()
@@ -1953,6 +1962,166 @@ class Toolkit:
             return filter_columns(earnings_calendar.loc[self._tickers[0]], show_columns)
 
         return filter_columns(earnings_calendar, show_columns)
+
+    def get_earnings_surprise(
+        self,
+        window: int = 1,
+        sue_window: int = 8,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how far each reported EPS and revenue came in above or below the analyst
+        consensus, and how the share price reacted to it, in one table per announcement.
+
+        - The EPS Surprise and Revenue Surprise are (reported - estimate) / |estimate|.
+        - The SUE (standardized unexpected earnings) divides the EPS surprise (reported -
+          estimate) by the standard deviation (ddof=1) of the EPS surprises of the sue_window
+          announcements before it. Only surprises known at the time are used, so it can be
+          compared across companies and over time. This follows Livnat and Mendenhall (2006),
+          "Comparing the Post-Earnings Announcement Drift for Surprises Calculated from Analyst
+          and Time Series Forecasts", with the analyst consensus as the expectation. Bernard
+          and Thomas (1989), "Post-Earnings-Announcement Drift: Delayed Price Response or Risk
+          Premium?", scale a time-series surprise the same way and show that shares keep
+          drifting in the direction of the SUE for weeks after the announcement.
+        - The Reaction compounds the share's (dividend-adjusted) returns over the trading days
+          from window days before to window days after the announcement. Day 0 is the
+          announcement date or, when that isn't a trading day, the next one.
+        - The Benchmark Reaction is the benchmark's return between the same dates, and the
+          Abnormal Reaction is the Reaction minus the Benchmark Reaction (a market-adjusted
+          return). Both need the Toolkit's benchmark_ticker.
+
+        The source doesn't say whether a company reported before the open or after the close.
+        The default window of 1 covers days -1, 0 and +1, so the reaction is captured either
+        way: on day 0 for a report before the open and on day +1 for one after the close. This
+        is the three-day window of the post-earnings drift literature.
+
+        Each ticker's own trading days are used. An announcement too close to the start_date
+        or end_date of the Toolkit for its window has no reaction, and the SUE needs sue_window
+        earlier announcements. The full reporting history is retrieved for this, so it is
+        usually available.
+
+        Note that this information requires a Premium FMP subscription.
+
+        Also known as: earnings surprise, earnings beat or miss, standardized unexpected
+        earnings, SUE, earnings reaction, post-earnings announcement drift (PEAD).
+
+        Args:
+            window (int, optional): The trading days before and after the announcement the
+                reaction covers. Defaults to 1, the three days -1, 0 and +1.
+            sue_window (int, optional): The number of earlier announcements whose EPS surprises
+                scale the SUE. Defaults to 8 (two years of quarterly reports).
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding set on the Toolkit.
+            show_columns (list[str] | None, optional): A list of column names to keep in the
+                result. Invalid names are reported and ignored. Defaults to None, which keeps
+                every column.
+
+        Returns:
+            pd.DataFrame: Per reported announcement the EPS, Estimated EPS, EPS Surprise,
+                Revenue, Estimated Revenue, Revenue Surprise, SUE, Reaction, Benchmark Reaction
+                and Abnormal Reaction. The surprises and reactions are decimals (0.05 is 5%).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2024-06-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.get_earnings_surprise(
+            show_columns=["EPS Surprise", "Revenue Surprise", "SUE", "Reaction", "Abnormal Reaction"]
+        )
+        ```
+
+        Which returns:
+
+        | date                |   EPS Surprise |   Revenue Surprise |    SUE |   Reaction |   Abnormal Reaction |
+        |:--------------------|---------------:|-------------------:|-------:|-----------:|--------------------:|
+        | 2024-08-28 00:00:00 |         0.0543 |             0.0438 | 1.123  |    -0.0701 |             -0.0657 |
+        | 2024-11-20 00:00:00 |         0.08   |             0.0581 | 2.2513 |     0.0466 |              0.0372 |
+        | 2025-02-26 00:00:00 |         0.0495 |             0.0323 | 2.0736 |    -0.0778 |             -0.0574 |
+        | 2025-05-28 00:00:00 |         0.0991 |             0.0168 | 4.8777 |     0.0602 |              0.0413 |
+        | 2025-08-27 00:00:00 |         0.0396 |             0.0151 | 3.3169 |     0.002  |             -0.008  |
+        | 2025-11-19 00:00:00 |         0.0317 |             0.0372 | 3.0966 |    -0.0319 |             -0.0122 |
+        """
+        if not self._api_key:
+            logger.error(
+                "The requested data requires the api_key parameter to be set, consider obtaining a key with the "
+                "following link: https://www.jeroenbouma.com/fmp"
+                "\nThis functionality also requires a Premium subscription. You can get 15% off by using "
+                "the above affiliate link which also supports the project."
+            )
+            return pd.DataFrame()
+
+        # The whole reporting history, so the SUE of the first announcements in the period
+        # is scaled by the surprises before it.
+        earnings, _ = self._collect_per_ticker(
+            dataset="earnings_calendar",
+            tickers=self._tickers,
+            ticker_axis=ticker_model.TICKER_ON_INDEX,
+            parameters={
+                "start_date": None,
+                "end_date": self._end_date,
+                "actual_dates": True,
+                "user_subscription": self._fmp_plan,
+            },
+            collector=lambda tickers: _get_earnings_calendar(
+                tickers=tickers,
+                api_key=self._api_key,
+                start_date=None,
+                end_date=self._end_date,
+                actual_dates=True,
+                sleep_timer=self._sleep_timer,
+                user_subscription=self._fmp_plan,
+            ),
+        )
+
+        historical_data = self.get_historical_data()
+
+        if earnings.empty or historical_data.empty:
+            return pd.DataFrame()
+
+        prices = historical_data["Adj Close"]
+        # A date only another ticker traded on is filled with volume 0; leaving it out keeps
+        # each ticker's own trading days.
+        traded = historical_data["Volume"] != 0
+        benchmark_prices = (
+            prices["Benchmark"].where(traded["Benchmark"])
+            if "Benchmark" in prices.columns
+            else None
+        )
+
+        surprises = {}
+        for ticker in self._tickers:
+            if ticker not in earnings.index.get_level_values(0) or ticker not in prices:
+                continue
+            surprise = earnings_model.get_earnings_surprise(
+                earnings=earnings.loc[ticker],
+                prices=prices[ticker].where(traded[ticker]),
+                benchmark_prices=benchmark_prices,
+                window=window,
+                sue_window=sue_window,
+            )
+            surprises[ticker] = surprise.loc[self._start_date : self._end_date]
+
+        if not surprises:
+            return pd.DataFrame()
+
+        earnings_surprise = apply_rounding(
+            pd.concat(surprises, axis=0),
+            rounding if rounding is not None else self._rounding,
+        )
+
+        if len(self._tickers) == 1:
+            return filter_columns(earnings_surprise.loc[self._tickers[0]], show_columns)
+
+        return filter_columns(earnings_surprise, show_columns)
 
     def get_stock_news(
         self,
@@ -3858,6 +4027,264 @@ class Toolkit:
 
         return filter_columns(insider_trade_statistics, show_columns)
 
+    def get_institutional_ownership(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain the institutional ownership of each company per quarter, based on the Form 13F
+        filings of institutional investment managers (those managing over $100 million in US
+        equities): the number of holders and its change, the shares and value they hold, their
+        share of the shares outstanding (Ownership) and its change, the positions opened,
+        increased, reduced and closed, the put/call ratio of the options they report and the
+        share of the shares outstanding held by the ten largest holders (Top 10 Ownership).
+
+        Institutional ownership shows how widely professional investors hold a company. A
+        rising number of holders and ownership points to growing interest, while many closed
+        and reduced positions can signal the opposite. A high Top 10 Ownership means a few
+        holders can move the share price when they buy or sell, and crowding in a share
+        increases the risk of forced selling (Sias, Starks and Titman, 2006; Gompers and
+        Metrick, 2001, "Institutional Investors and Equity Prices").
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: 13F holdings, institutional holders, institutional investors, ownership
+        concentration.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The ownership per ticker, indexed by quarter.
+
+        Notes:
+            - The figures are dated by the quarter end the holdings are reported for, but the
+              filings only become public up to 45 days later. Each quarter shows from the day
+              its filing deadline has passed; a quarter still within its 45 days is left out,
+              as its totals are still filling up. Late and amended filings can still change a
+              quarter slightly afterwards.
+            - Ownership, Ownership Change and Top 10 Ownership are decimals of the shares
+              outstanding as Financial Modeling Prep reports them (0.63 is 63%), and the
+              changes compare with the previous quarter. Ownership Change is the change in
+              percentage points, as a decimal.
+            - 13F filings cover US-listed shares only, so companies listed elsewhere have no
+              data, and the filings include holdings managed for clients (index funds
+              included). Ownership can exceed 100% when shares are lent out and the borrowed
+              shares are held by another filer.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.get_institutional_ownership(
+            show_columns=["Holders", "Ownership", "Ownership Change", "New Positions", "Closed Positions", "Top 10 Ownership"]
+        )
+        ```
+
+        Which returns:
+
+        | Period   |   Holders |   Ownership |   Ownership Change |   New Positions |   Closed Positions |   Top 10 Ownership |
+        |:---------|----------:|------------:|-------------------:|----------------:|-------------------:|-------------------:|
+        | 2025Q1   |      5882 |      0.6263 |             0      |             167 |                240 |             0.3302 |
+        | 2025Q2   |      5893 |      0.6319 |             0.0056 |             206 |                212 |             0.332  |
+        | 2025Q3   |      5898 |      0.6165 |            -0.0155 |             204 |                198 |             0.3267 |
+        | 2025Q4   |      6416 |      0.6474 |             0.0309 |             733 |                210 |             0.3343 |
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._institutional_ownership.empty or overwrite:
+            self._institutional_ownership, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="institutional_ownership",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_institutional_ownership(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        institutional_ownership = apply_rounding(
+            self._institutional_ownership,
+            rounding if rounding is not None else self._rounding,
+        )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not self._institutional_ownership.empty:
+            return filter_columns(
+                institutional_ownership.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(institutional_ownership, show_columns)
+
+    def get_short_volume(
+        self,
+        history_days: int | None = 92,
+        window: int = 20,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain the daily short sale volume of each company from FINRA's Reg SHO files: the
+        number of shares sold short, of which short exempt, the total number of shares
+        reported to FINRA, the short volume ratio (short volume divided by total volume, as
+        a decimal) and the z-score of that ratio against the `window` trading days before
+        it. A ratio well above its usual level means an unusually large share of the day's
+        selling was short selling.
+
+        This is short sale VOLUME, the shares sold short during a day, not short interest,
+        the short positions still open (which FINRA publishes twice a month through
+        api.finra.org). Most short sales are closed again within days, and market makers
+        sell short to fill buy orders, so a ratio around 0.4 to 0.5 is normal for liquid
+        stocks. The total volume is only the volume reported to FINRA's facilities (the
+        Trade Reporting Facilities, where off-exchange trades are reported, and the
+        Alternative Display Facility), not the consolidated volume of all exchanges, so it
+        is lower than the volume of the historical data. The short volume includes the short
+        exempt volume, and volumes include fractional shares.
+
+        FINRA publishes one file per trading day, from August 2018, covering securities
+        listed in the United States only: a ticker with an exchange suffix (such as ASML.AS)
+        has no data. Each day is a separate download of about half a megabyte, so only the
+        `history_days` before the Toolkit's end date are retrieved, by default about three months
+        (some 65 files, a few seconds). The days are cached per ticker, so a rerun only
+        downloads the days that are new.
+
+        The z-score is (ratio − mean) / standard deviation (ddof=1) of the `window` trading
+        days before each day, so a day is not part of its own comparison, and it is empty
+        for the first `window` days. Research finds that heavy short selling predicts lower
+        returns in the following weeks, see Boehmer, Jones and Zhang (2008), "Which Shorts
+        Are Informed?", Journal of Finance 63(2), and Diether, Lee and Werner (2009),
+        "Short-Sale Strategies and Return Predictability", Review of Financial Studies 22(2).
+
+        Also known as: short sale volume, short volume ratio, daily short volume, Reg SHO
+        short volume.
+
+        Args:
+            history_days (int | None): The number of calendar days before the Toolkit's end date to
+            retrieve, never before its start date. Defaults to 92, about three months. None
+            retrieves the Toolkit's whole date range (one download per trading day).
+            window (int): The number of earlier trading days the z-score compares with.
+            Defaults to 20, about a month.
+            rounding (int | None): The number of decimals to round the results to. Defaults to
+            None, which uses the rounding of the Toolkit.
+            show_columns (list[str] | None): A list of column names to keep in the result.
+            Invalid names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Short Volume, Short Exempt Volume, Total Volume, Short Volume
+            Ratio and Short Volume Ratio Z-Score per ticker (columns) per trading day (index).
+
+        Notes:
+            Short Volume Ratio = Short Volume / Total Volume. A ticker FINRA has no data for
+            is left out with a warning.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["GME"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2026-09-01",
+            end_date="2026-10-30",
+        )
+
+        toolkit.get_short_volume().drop(columns="Short Exempt Volume").tail()
+        ```
+
+        Which returns:
+
+        | Date       |   Short Volume |   Total Volume |   Short Volume Ratio |   Short Volume Ratio Z-Score |
+        |:-----------|---------------:|---------------:|---------------------:|-----------------------------:|
+        | 2026-10-26 |    1.64656e+06 |    3.75988e+06 |               0.4379 |                      -2.0905 |
+        | 2026-10-27 |    1.34555e+06 |    2.42539e+06 |               0.5548 |                      -0.5315 |
+        | 2026-10-28 |    1.51079e+06 |    2.53413e+06 |               0.5962 |                       0.0279 |
+        | 2026-10-29 |    1.34307e+06 |    2.34151e+06 |               0.5736 |                      -0.2147 |
+        | 2026-10-30 |    2.39821e+06 |    4.14535e+06 |               0.5785 |                      -0.1479 |
+        """
+        start = pd.Timestamp(self._start_date)
+        end = pd.Timestamp(self._end_date)
+
+        if history_days is not None:
+            start = max(start, end - pd.Timedelta(days=history_days))
+
+        symbols = {
+            ticker: finra_model.to_finra_symbol(ticker) for ticker in self._tickers
+        }
+        uncovered = [ticker for ticker, symbol in symbols.items() if symbol is None]
+        symbols = {
+            ticker: symbol for ticker, symbol in symbols.items() if symbol is not None
+        }
+
+        volumes = finra_model.collect_short_volume(
+            symbols=list(dict.fromkeys(symbols.values())),
+            start_date=start.strftime("%Y-%m-%d"),
+            end_date=end.strftime("%Y-%m-%d"),
+        )
+
+        statistics = {}
+
+        for ticker, symbol in symbols.items():
+            if volumes[symbol].empty:
+                uncovered.append(ticker)
+                continue
+
+            statistics[ticker] = finra_model.get_short_volume_ratio_statistics(
+                volumes[symbol], window
+            )
+
+        if uncovered:
+            logger.warning(
+                "FINRA has no short sale volume for the following tickers, which it only "
+                "reports for securities listed in the United States: %s",
+                ", ".join(uncovered),
+            )
+
+        if not statistics:
+            return pd.DataFrame()
+
+        # Metrics on the outer level and tickers on the inner level, as in the historical data.
+        short_volume = pd.concat(statistics, axis=1).swaplevel(axis=1)
+        short_volume = short_volume[
+            pd.MultiIndex.from_product(
+                [statistics[next(iter(statistics))].columns, list(statistics)]
+            )
+        ]
+        short_volume = apply_rounding(
+            short_volume, rounding if rounding is not None else self._rounding
+        )
+
+        if len(statistics) == 1:
+            short_volume = short_volume.droplevel(1, axis=1)
+
+        return filter_columns(short_volume, show_columns)
+
     def get_stock_grades(
         self, overwrite: bool = False, show_columns: list[str] | None = None
     ):
@@ -3953,6 +4380,337 @@ class Toolkit:
             )
 
         return filter_columns(self._stock_grades, show_columns)
+
+    def get_price_targets(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain the analysts' price targets of each company and the measures they are read
+        with. A price target is the share price an analyst expects in about twelve months;
+        the consensus target relative to today's price shows how much upside analysts see,
+        the range of the targets how much they disagree, and the change in the average
+        target whether they have been raising or cutting their targets.
+
+        The rows are:
+
+        - Target Consensus, Target Median, Target High and Target Low: the current targets.
+        - Price: the latest traded share price (the quote).
+        - Upside: Target Consensus / Price − 1.
+        - Dispersion: (Target High − Target Low) / Target Consensus. Dispersion in analysts'
+          forecasts is a measure of disagreement, studied for earnings forecasts by
+          Diether, Malloy and Scherbina (2002).
+        - Revision Momentum: Last Quarter Average / Last Year Average − 1, positive when the
+          targets published over the last quarter are higher than those of the last year.
+        - Last Month, Last Quarter, Last Year and All Time Count and Average: the number of
+          targets published in each window and their average.
+
+        The targets are today's: they are not filtered to this Toolkit instance's
+        start_date and end_date. The targets as they were published over time come from
+        get_price_target_history.
+
+        Also known as: analyst price target, consensus price target, target upside.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            show_columns (list[str] | None): A list of tickers to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every ticker.
+
+        Returns:
+            pd.DataFrame: The price targets and their measures with a column per ticker.
+            Upside, Dispersion and Revision Momentum are decimals (0.05 is 5%).
+
+        Notes:
+            A window without published targets has no average (NaN). The targets are those
+            of the analysts covered by Financial Modeling Prep, so they can differ from
+            other data providers' consensus.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "NVDA", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.get_price_targets()
+        ```
+
+        Which returns:
+
+        |                      |     AAPL |     NVDA |     MSFT |
+        |:---------------------|---------:|---------:|---------:|
+        | Target Consensus     | 344.46   | 339.17   | 611.74   |
+        | Target Median        | 355      | 325      | 625      |
+        | Target High          | 400      | 515      | 750      |
+        | Target Low           | 245      | 210      | 440      |
+        | Price                | 344.17   | 181.6    | 535.93   |
+        | Upside               |   0.0008 |   0.8677 |   0.1415 |
+        | Dispersion           |   0.45   |   0.8993 |   0.5068 |
+        | Revision Momentum    |   0.0557 |   0.0891 |   0.0824 |
+        | Last Month Count     |  12      |   0      |  20      |
+        | Last Month Average   | 349.42   | nan      | 643.95   |
+        | Last Quarter Count   |  18      |  25      |  30      |
+        | Last Quarter Average | 348.65   | 332.32   | 629.23   |
+        | Last Year Count      |  61      |  83      |  92      |
+        | Last Year Average    | 330.27   | 305.12   | 581.32   |
+        | All Time Count       | 275      | 343      | 299      |
+        | All Time Average     | 239.2    | 152.9    | 466.96   |
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._price_targets.empty or overwrite:
+            self._price_targets, self._invalid_tickers = self._collect_per_ticker(
+                dataset="price_targets",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_price_targets(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        self._remove_invalid()
+
+        if self._price_targets.empty:
+            return self._price_targets
+
+        quote = self.get_quote()
+        prices = (
+            quote.loc["Price"]
+            if isinstance(quote, pd.DataFrame) and "Price" in quote.index
+            else pd.Series(dtype=float)
+        )
+
+        return filter_columns(
+            apply_rounding(
+                _add_price_target_metrics(self._price_targets, prices),
+                rounding if rounding is not None else self._rounding,
+            ),
+            show_columns,
+        )
+
+    def get_price_target_history(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain every price target analysts published for each company: per date and
+        analyst company the target (adjusted for stock splits), the share price when it
+        was published and the upside it implied at that moment. Following the targets
+        over time shows how analysts revise their expectations, and unlike today's
+        consensus each row only uses what was known on its date.
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: price target changes, analyst target revisions, price target news.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The price targets per ticker, indexed by date and analyst company,
+            with the Price Target, the Price When Posted and the Implied Upside
+            (Price Target / Price When Posted − 1, a decimal).
+
+        Notes:
+            The targets come from the news articles that report them. A target reported by
+            several publishers on the same day is kept once; a change of target that no
+            article reported is missing.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-11-01",
+            end_date="2025-11-30",
+        )
+
+        toolkit.get_price_target_history()
+        ```
+
+        Which returns:
+
+        |                                        |   Price Target |   Price When Posted |   Implied Upside |
+        |:---------------------------------------|---------------:|--------------------:|-----------------:|
+        | ('2025-11-03', 'Loop Capital Markets') |            350 |             202.49  |           0.7285 |
+        | ('2025-11-14', 'Wells Fargo')          |            265 |             186.52  |           0.4208 |
+        | ('2025-11-20', 'Barclays')             |            275 |             194.17  |           0.4163 |
+        | ('2025-11-20', 'Bernstein')            |            275 |             186.52  |           0.4744 |
+        | ('2025-11-20', 'Deutsche Bank')        |            215 |             186.52  |           0.1527 |
+        | ('2025-11-20', 'Evercore ISI')         |            352 |             184.615 |           0.9067 |
+        | ('2025-11-20', 'Jefferies')            |            250 |             195.096 |           0.2814 |
+        | ('2025-11-20', 'KeyBanc')              |            275 |             189.96  |           0.4477 |
+        | ('2025-11-20', 'Mizuho Securities')    |            245 |             184.615 |           0.3271 |
+        | ('2025-11-20', 'Morgan Stanley')       |            235 |             186.52  |           0.2599 |
+        | ('2025-11-20', 'Raymond James')        |            272 |             180.64  |           0.5058 |
+        | ('2025-11-20', 'Robert W. Baird')      |            275 |             186.52  |           0.4744 |
+        | ('2025-11-20', 'Susquehanna')          |            250 |             186.52  |           0.3403 |
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._price_target_history.empty or overwrite:
+            self._price_target_history, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="price_target_history",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_price_target_history(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        price_target_history = apply_rounding(
+            self._price_target_history,
+            rounding if rounding is not None else self._rounding,
+        )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not price_target_history.empty:
+            return filter_columns(
+                price_target_history.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(price_target_history, show_columns)
+
+    def get_analyst_recommendations(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain how many analysts recommend each company as a strong buy, buy, hold, sell
+        or strong sell, per month. Next to the counts come the number of analysts, the
+        share of them recommending a (strong) buy and the mean recommendation on the
+        conventional scale from 1 (strong buy) to 5 (strong sell), as used by I/B/E/S and
+        Zacks. A falling mean recommendation means analysts are turning more positive;
+        changes in consensus recommendations predict returns (Jegadeesh, Kim, Krische and
+        Lee, 2004).
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: analyst consensus, buy/hold/sell ratings, recommendation trends.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The recommendations per ticker, indexed by month, with the Strong
+            Buy, Buy, Hold, Sell and Strong Sell counts, the number of Analysts, the Buy
+            Share (a decimal) and the Mean Recommendation.
+
+        Notes:
+            The mean recommendation is (1 × Strong Buy + 2 × Buy + 3 × Hold + 4 × Sell +
+            5 × Strong Sell) / Analysts. The individual grade changes behind the counts come
+            from get_stock_grades.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-07-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.get_analyst_recommendations()
+        ```
+
+        Which returns:
+
+        |                        |   Strong Buy |   Buy |   Hold |   Sell |   Strong Sell |   Analysts |   Buy Share |   Mean Recommendation |
+        |:-----------------------|-------------:|------:|-------:|-------:|--------------:|-----------:|------------:|----------------------:|
+        | ('AAPL', '2025-07-01') |            6 |    23 |     18 |      2 |             1 |         50 |      0.58   |                2.38   |
+        | ('AAPL', '2025-08-01') |            5 |    23 |     15 |      1 |             1 |         45 |      0.6222 |                2.3333 |
+        | ('AAPL', '2025-09-01') |            5 |    23 |     15 |      1 |             3 |         47 |      0.5957 |                2.4468 |
+        | ('AAPL', '2025-10-01') |            6 |    24 |     15 |      2 |             3 |         50 |      0.6    |                2.44   |
+        | ('AAPL', '2025-11-01') |            5 |    24 |     15 |      1 |             3 |         48 |      0.6042 |                2.4375 |
+        | ('AAPL', '2025-12-01') |            5 |    24 |     15 |      1 |             3 |         48 |      0.6042 |                2.4375 |
+        | ('NVDA', '2025-07-01') |           12 |    49 |      7 |      1 |             0 |         69 |      0.8841 |                1.9565 |
+        | ('NVDA', '2025-08-01') |           11 |    49 |      6 |      1 |             1 |         68 |      0.8824 |                2      |
+        | ('NVDA', '2025-09-01') |           11 |    48 |      6 |      1 |             0 |         66 |      0.8939 |                1.9545 |
+        | ('NVDA', '2025-10-01') |           11 |    49 |      5 |      1 |             0 |         66 |      0.9091 |                1.9394 |
+        | ('NVDA', '2025-11-01') |           11 |    50 |      4 |      1 |             0 |         66 |      0.9242 |                1.9242 |
+        | ('NVDA', '2025-12-01') |           11 |    49 |      3 |      1 |             0 |         64 |      0.9375 |                1.9062 |
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._analyst_recommendations.empty or overwrite:
+            self._analyst_recommendations, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="analyst_recommendations",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_analyst_recommendations(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        analyst_recommendations = apply_rounding(
+            self._analyst_recommendations,
+            rounding if rounding is not None else self._rounding,
+        )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not analyst_recommendations.empty:
+            return filter_columns(
+                analyst_recommendations.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(analyst_recommendations, show_columns)
 
     def _collect_fund_data(
         self, dataset: str, overwrite: bool = False

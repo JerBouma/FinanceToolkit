@@ -408,3 +408,76 @@ def test_optimizers_explain_a_covariance_they_cannot_use():
         pd.DataFrame([[1e-34]], index=["A"], columns=["A"]),
     )
     assert np.isnan(statistics["Sharpe Ratio"])
+
+
+# Eight periods of three assets; the expected values below are scikit-learn's LedoitWolf and
+# OAS and PyPortfolioOpt's semicovariance and exp_cov on the same returns.
+SHRINKAGE_RETURNS = pd.DataFrame(
+    {
+        "A": [0.01, -0.02, 0.015, 0.003, -0.01, 0.02, -0.005, 0.007],
+        "B": [0.004, -0.01, 0.02, -0.006, 0.001, 0.012, -0.015, 0.009],
+        "C": [-0.003, 0.006, 0.001, 0.01, -0.012, 0.004, 0.002, -0.008],
+    }
+)
+
+
+def test_ledoit_wolf_matches_scikit_learn():
+    covariance, shrinkage = optimization_model.get_ledoit_wolf_covariance(
+        SHRINKAGE_RETURNS
+    )
+
+    assert shrinkage == pytest.approx(0.3210581082483753, rel=1e-12)
+    assert covariance.loc["A", "B"] == pytest.approx(7.234974533978252e-05, rel=1e-12)
+    assert covariance.loc["C", "C"] == pytest.approx(6.66137982702211e-05, rel=1e-12)
+
+
+def test_oracle_approximating_shrinkage_matches_scikit_learn():
+    covariance, shrinkage = (
+        optimization_model.get_oracle_approximating_shrinkage_covariance(
+            SHRINKAGE_RETURNS
+        )
+    )
+
+    assert shrinkage == pytest.approx(0.6338126146782789, rel=1e-12)
+    assert covariance.loc["A", "B"] == pytest.approx(3.902184324834591e-05, rel=1e-12)
+    assert covariance.loc["C", "C"] == pytest.approx(8.59638544258504e-05, rel=1e-12)
+
+
+def test_semicovariance_and_exponential_covariance_match_pyportfolioopt():
+    semicovariance = optimization_model.get_semicovariance(SHRINKAGE_RETURNS)
+    exponential = optimization_model.get_exponential_covariance(SHRINKAGE_RETURNS, 4)
+
+    assert semicovariance.loc["A", "B"] == pytest.approx(3.4375e-05, rel=1e-12)
+    assert semicovariance.loc["C", "C"] == pytest.approx(2.7125e-05, rel=1e-12)
+    assert exponential.loc["A", "B"] == pytest.approx(8.306283588151976e-05, rel=1e-12)
+    assert exponential.loc["C", "C"] == pytest.approx(4.810124354274288e-05, rel=1e-12)
+
+
+def test_shrinkage_keeps_the_average_variance_and_pulls_correlations_in():
+    sample = SHRINKAGE_RETURNS.cov(ddof=0)
+    covariance, _ = optimization_model.get_ledoit_wolf_covariance(SHRINKAGE_RETURNS)
+
+    # The target has the sample's average variance, so the trace is unchanged.
+    assert np.trace(covariance) == pytest.approx(np.trace(sample))
+    assert abs(covariance.loc["A", "B"]) < abs(sample.loc["A", "B"])
+
+
+@pytest.mark.parametrize(
+    "covariance", ["sample", "ledoit_wolf", "oas", "semicovariance", "exponential"]
+)
+def test_every_covariance_estimator_is_annualized(covariance):
+    _, annual = optimization_model.get_expected_returns_and_covariance(
+        SHRINKAGE_RETURNS, 252, covariance
+    )
+    _, per_period = optimization_model.get_expected_returns_and_covariance(
+        SHRINKAGE_RETURNS, 1, covariance
+    )
+
+    pd.testing.assert_frame_equal(annual, per_period * 252)
+
+
+def test_an_unknown_covariance_estimator_is_refused():
+    with pytest.raises(ValueError, match="ledoit_wolf"):
+        optimization_model.get_expected_returns_and_covariance(
+            SHRINKAGE_RETURNS, 252, "shrunk"
+        )

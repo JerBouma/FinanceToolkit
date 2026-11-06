@@ -951,6 +951,115 @@ def get_max_drawdown_recovery_time(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+def get_drawdown_series(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate the drawdown of every period: the decline of the wealth path from its
+    running peak, also known as the underwater curve.
+
+    Each column starts from a wealth of 1 at the row before its first return (the first
+    close a return is measured from) or, when its first return is on the first row, before
+    the data (see `get_wealth_and_peak`). Rows before that start are NaN, so a ticker that
+    listed later keeps its own history; missing returns after it count as 0.
+
+    Args:
+        returns (pd.DataFrame): The returns, one column per asset.
+
+    Returns:
+        pd.DataFrame: The drawdown per period as a negative decimal (0 at a new high), NaN
+            before each column's start.
+    """
+    values = returns.to_numpy(dtype=float)
+    has_return = ~np.isnan(values)
+    # The row before the first return holds the close that return is measured from.
+    start = np.maximum(has_return.argmax(axis=0) - 1, 0).astype(float)
+    start[~has_return.any(axis=0)] = np.inf
+
+    wealth, peak = get_wealth_and_peak(returns)
+    drawdowns = wealth / peak - 1
+
+    before_start = np.arange(len(returns))[:, None] < start[None, :]
+
+    return drawdowns.mask(before_start)
+
+
+def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
+    """
+    List the largest drawdowns of every column with their peak, trough and recovery.
+
+    A drawdown runs from the last row at a high (the peak) until wealth is back at that
+    high (the recovery). Its depth is the lowest drawdown in between (the trough), and its
+    lengths count periods (rows), so the deepest drawdown matches `get_max_drawdown`,
+    `get_max_drawdown_duration` (To Trough) and `get_max_drawdown_recovery_time`
+    (To Recovery). The dates follow pyfolio's `gen_drawdown_table` (peak, valley and
+    recovery dates); QuantStats' `drawdown_details` and ffn instead start at the first
+    day below the peak and count calendar days.
+
+    Args:
+        returns (pd.DataFrame): The returns, one column per asset.
+        top (int, optional): The number of drawdowns per column, deepest first. Defaults
+            to 5.
+
+    Returns:
+        pd.DataFrame: One row per drawdown, indexed by column and rank, with the dates of
+            the Peak, Trough and Recovery (NaN when not yet recovered), the Drawdown as a
+            negative decimal and, in periods, the time from peak to trough (To Trough),
+            from trough to recovery (To Recovery) and from peak to recovery (Length). The
+            Peak is NaN when it is the starting wealth before the first row.
+    """
+    drawdown_series = get_drawdown_series(returns)
+    dates = drawdown_series.index
+    rows = []
+
+    for column in drawdown_series.columns:
+        drawdowns = drawdown_series[column].to_numpy()
+        below_peak = np.nan_to_num(drawdowns, nan=0.0) < 0
+        # Edges of each run of rows below the peak.
+        changes = np.diff(np.concatenate([[0], below_peak.astype(int), [0]]))
+        run_starts = np.flatnonzero(changes == 1)
+        run_ends = np.flatnonzero(changes == -1) - 1
+
+        episodes = []
+
+        for run_start, run_end in zip(run_starts, run_ends, strict=True):
+            trough = run_start + int(np.argmin(drawdowns[run_start : run_end + 1]))
+            peak = run_start - 1
+            recovery = run_end + 1 if run_end + 1 < len(drawdowns) else None
+            episodes.append(
+                {
+                    "Peak": dates[peak] if peak >= 0 else np.nan,
+                    "Trough": dates[trough],
+                    "Recovery": dates[recovery] if recovery is not None else np.nan,
+                    "Drawdown": drawdowns[trough],
+                    "To Trough": float(trough - peak),
+                    "To Recovery": (
+                        float(recovery - trough) if recovery is not None else np.nan
+                    ),
+                    "Length": (
+                        float(recovery - peak) if recovery is not None else np.nan
+                    ),
+                }
+            )
+
+        episodes = sorted(episodes, key=lambda episode: episode["Drawdown"])[:top]
+
+        for rank, episode in enumerate(episodes, start=1):
+            rows.append({"Ticker": column, "Rank": rank, **episode})
+
+    columns = [
+        "Ticker",
+        "Rank",
+        "Peak",
+        "Trough",
+        "Recovery",
+        "Drawdown",
+        "To Trough",
+        "To Recovery",
+        "Length",
+    ]
+
+    return pd.DataFrame(rows, columns=columns).set_index(["Ticker", "Rank"])
+
+
 def get_rolling_skewness(
     returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -1495,3 +1604,77 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     poly = np.polyfit(np.log(lags[usable]), np.log(standard_deviations[usable]), 1)
 
     return poly[0]
+
+
+def get_move_significance(returns: pd.Series, window: int = 252) -> pd.DataFrame:
+    """
+    Calculate how unusual each return is compared with the returns before it: in units
+    of the trailing volatility, as a percentile of the earlier moves, and the date of the
+    last move at least as large in the same direction.
+
+    The formula is as follows:
+
+    - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1)), with ddof=1
+    - Percentile(t) = share of the returns before t with |Return(s)| < |Return(t)|
+    - Largest Since(t) = the last date s < t with Return(s) <= Return(t) for a fall, or
+      Return(s) >= Return(t) for a rise
+
+    Every measure only uses the returns before the day itself, so a day is never compared
+    with the move it is measuring. The volatility and the percentile need `window` earlier
+    returns and are NaN before that. Largest Since is NaN when no earlier return in the
+    series was as large, i.e. the move is the largest of the history available.
+
+    Args:
+        returns (pd.Series): The returns of a single asset.
+        window (int, optional): The number of earlier returns the volatility and the
+            percentile need at least. The volatility uses exactly the last `window`
+            returns; the percentile uses all earlier returns. Defaults to 252.
+
+    Returns:
+        pd.DataFrame: Return, Volatility Multiple, Percentile and Largest Since (the date as
+        text, YYYY-MM-DD for daily data) per date.
+    """
+    observed = returns.dropna()
+    values = observed.to_numpy(dtype=float)
+    labels = observed.index.astype(str)
+    count = len(values)
+
+    # Shifted by one so the volatility on a day only covers the returns before it.
+    trailing_volatility = (
+        observed.rolling(window, min_periods=window).std(ddof=1).shift(1)
+    )
+
+    percentile = np.full(count, np.nan)
+    largest_since = np.full(count, None, dtype=object)
+    absolute = np.abs(values)
+
+    for position in range(1, count):
+        earlier = values[:position]
+
+        if position >= window:
+            percentile[position] = np.mean(absolute[:position] < absolute[position])
+
+        # The same direction, so a fall is compared with falls ("the largest drop since")
+        # and a rise with rises; a flat day has no direction and gets no date.
+        if values[position] < 0:
+            as_large = np.flatnonzero(earlier <= values[position])
+        elif values[position] > 0:
+            as_large = np.flatnonzero(earlier >= values[position])
+        else:
+            continue
+
+        if as_large.size:
+            largest_since[position] = labels[as_large[-1]]
+
+    significance = pd.DataFrame(
+        {
+            "Return": values,
+            "Volatility Multiple": values / trailing_volatility.to_numpy(),
+            "Percentile": percentile,
+            "Largest Since": largest_since,
+        },
+        index=observed.index,
+    ).replace([np.inf, -np.inf], np.nan)
+
+    # Back on the full index, so a gap in the history stays a NaN row instead of vanishing.
+    return significance.reindex(returns.index)

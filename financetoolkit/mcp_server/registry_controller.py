@@ -30,6 +30,7 @@ from pydantic import (
     Field as PydanticField,
 )
 
+from financetoolkit.cache import policy_model
 from financetoolkit.fmp_model import parse_fiscal_period
 from financetoolkit.mcp_server import series_model
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thread
@@ -96,7 +97,9 @@ def _curve_maturity(maturity: Any) -> float | str:
 
 # The indicators that read the returns of the period itself rather than results within each
 # period, so a blocked period (e.g. daily performance) does not apply to them.
-PERIOD_BLOCK_EXEMPT = frozenset({"get_style_analysis"})
+PERIOD_BLOCK_EXEMPT = frozenset(
+    {"get_style_analysis", "get_beta_implied_return", "get_return_statistics"}
+)
 # The indicators whose own limit also takes a negative number, for the last rows.
 NEGATIVE_LIMIT_METHODS = frozenset({"get_holdings"})
 
@@ -204,7 +207,8 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "limit": (
         "The rows to return, like head and tail: 5 for the first five, -5 for the last five "
         "(the most recent of a time series). A table with its periods as columns (financial "
-        "statements, ratios) keeps its first or last periods instead. For ETF holdings the "
+        "statements, ratios) keeps its first or last periods instead, and rows per ticker (an "
+        "earnings calendar) are selected per ticker. For ETF holdings the "
         "largest (or, negative, the smallest) by weight, and for a list (e.g. news or a "
         "screener) its length. 0 returns every row."
     ),
@@ -616,14 +620,54 @@ def _labels(result: pd.DataFrame | pd.Series) -> set[str]:
     }
 
 
-def _mentions_benchmark(result: object) -> bool:
-    """Whether a result has a 'Benchmark' row or column, as a benchmark-based metric does.
+def _unclosed_session_note(result: object) -> str | None:
+    """
+    A note when the last row of a daily series is a session that has not closed yet,
+    whose prices are then the latest ones rather than the close.
 
     Args:
         result (object): The value returned by the indicator.
 
     Returns:
-        bool: True when one of the index or column labels is 'Benchmark'.
+        str | None: The note, or None when the last row is a closed session (or the
+            rows are no daily dates).
+    """
+    if (
+        not isinstance(result, pd.DataFrame | pd.Series)
+        or result.empty
+        or not is_time_index_of(result)
+    ):
+        return None
+
+    dates = result.index.get_level_values(0)
+
+    # A year or a month is not one session.
+    if isinstance(dates, pd.PeriodIndex):
+        if dates.freqstr != "D":
+            return None
+        dates = dates.to_timestamp()
+
+    last_date = dates.max().date()
+
+    if last_date <= policy_model.get_last_closed_session():
+        return None
+
+    return (
+        f"The last row ({last_date}) is a session that has not closed yet, so its prices "
+        "are the latest ones rather than the close; ask again after the close for the "
+        "final figures."
+    )
+
+
+def _mentions_benchmark(result: object) -> bool:
+    """Whether a result has a benchmark row or column, as a benchmark-based metric does:
+    a 'Benchmark' row, or a column such as 'Benchmark Return'.
+
+    Args:
+        result (object): The value returned by the indicator.
+
+    Returns:
+        bool: True when one of the index or column labels contains 'Benchmark'.
     """
     if not isinstance(result, pd.DataFrame | pd.Series):
         return False
@@ -633,9 +677,10 @@ def _mentions_benchmark(result: object) -> bool:
     )
 
     return any(
-        "Benchmark" in axis.get_level_values(level).astype(str)
+        "Benchmark" in str(label)
         for axis in axes
         for level in range(axis.nlevels)
+        for label in axis.get_level_values(level).unique()
     )
 
 
@@ -1879,19 +1924,37 @@ class ToolRegistry:
                             **method_kwargs,
                         )
                     else:
+                        call_arguments = {
+                            "module_name": dispatch_module,
+                            "method_name": method_name,
+                            "category": dispatch_category,
+                            "tickers": tickers,
+                            "countries": countries,
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "quarterly": quarterly,
+                            "portfolio": portfolio_inputs,
+                        }
                         result = provider.call_method(
-                            module_name=dispatch_module,
-                            method_name=method_name,
-                            category=dispatch_category,
-                            tickers=tickers,
-                            countries=countries,
-                            start_date=start_date,
-                            end_date=end_date,
-                            quarterly=quarterly,
+                            **call_arguments,
                             benchmark_ticker=benchmark_ticker,
-                            portfolio=portfolio_inputs,
                             **method_kwargs,
                         )
+                        upper_tickers = {ticker.upper() for ticker in tickers or []}
+                        # The Toolkit leaves out a ticker that is also the benchmark and reports it as "Benchmark"; a Toolkit method without a benchmark (a quote, a profile) would lose that ticker altogether, so it is asked again without one. Sub-module methods (a beta) need the benchmark and keep it.  # noqa: E501
+                        if (
+                            dispatch_category == "toolkit"
+                            and benchmark_ticker
+                            and benchmark_ticker.upper() in upper_tickers
+                            and len(upper_tickers) > 1
+                            and not _mentions_benchmark(result)
+                        ):
+                            benchmark_ticker = None
+                            result = provider.call_method(
+                                **call_arguments,
+                                benchmark_ticker=None,
+                                **method_kwargs,
+                            )
                     input_info = call_input_info()
                 # Per-call timing at debug level, so a "tool X is slow" report can be
                 # diagnosed from the logs alone (a first call pays for data collection,
@@ -2131,10 +2194,27 @@ class ToolRegistry:
                         + ", ".join(available_columns[:40])
                         + "."
                     )
+                if dispatch_category in ("ticker", "toolkit"):
+                    session_note = _unclosed_session_note(result)
+                    if session_note:
+                        notes.append(session_note)
                 # A note on how the benchmark was chosen only confuses an answer that has
                 # no benchmark in it, such as an ETF's holdings.
                 if not _mentions_benchmark(result):
                     notes = [note for note in notes if "the benchmark" not in note]
+                    requested = {ticker.upper() for ticker in tickers or []}
+                    # A requested ticker that is the benchmark is then simply absent, which needs saying; as the only ticker it is kept (with another benchmark).  # noqa: E501
+                    if (
+                        benchmark_ticker
+                        and benchmark_ticker.upper() in requested
+                        and len(requested) > 1
+                        and isinstance(result, pd.DataFrame | pd.Series)
+                        and benchmark_ticker not in _labels(result)
+                    ):
+                        notes.append(
+                            f"{benchmark_ticker} is the benchmark, so it is left out as a "
+                            "ticker; set benchmark_ticker to another ticker to include it."
+                        )
                 formatted = format_result(
                     result,
                     notes=notes or None,

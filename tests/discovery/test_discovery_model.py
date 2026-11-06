@@ -459,3 +459,79 @@ def test_a_listing_in_the_united_kingdom_is_its_home_listing(monkeypatch):
 
     assert list(primary.index) == ["SHEL.L"]
     assert every_listing["Market Cap (USD)"].tolist() == pytest.approx([195.3e9] * 2)
+
+
+def index_with_history(monkeypatch):
+    """Today's two members (AAPL, NEW) and a log in which NEW replaced OLD and GONE left."""
+    requested = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        if "historical-" in url:
+            return pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2010-01-04", "2020-06-01", "2022-03-01"]),
+                    "addedTicker": ["AAPL", "NEW", ""],
+                    "addedSecurity": ["Apple", "New Co", ""],
+                    "removedTicker": ["", "OLD", "GONE"],
+                    "removedSecurity": ["", "Old Co", "Gone Co"],
+                    "changeType": ["addition", "replacement", "removal"],
+                    "reason": ["", "Acquired.", "Market capitalization change."],
+                }
+            )
+        return pd.DataFrame(
+            {
+                "symbol": ["NEW", "AAPL"],
+                "name": ["New Co", "Apple"],
+                "sector": ["Technology"] * 2,
+                "dateFirstAdded": ["2020-06-01", "1982-11-30"],
+            }
+        )
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+    return requested
+
+
+def test_index_constituent_changes_are_dated_and_complete(monkeypatch):
+    requested = index_with_history(monkeypatch)
+
+    changes = discovery_model.get_index_constituent_changes(
+        api_key="KEY", index="Dow Jones", start_date="2015-01-01"
+    )
+
+    # The endpoint is always asked for a range, as several fall back to old data without one.
+    assert "historical-dowjones-constituent" in requested[0]
+    assert "from=2015-01-01" in requested[0] and "&to=" in requested[0]
+    assert list(changes.index) == ["2020-06-01", "2022-03-01"]
+    assert changes.loc["2022-03-01", "Change Type"] == "Removal"
+    assert pd.isna(changes.loc["2022-03-01", "Added Ticker"])
+
+
+def test_the_members_on_a_past_date_undo_every_later_change(monkeypatch):
+    index_with_history(monkeypatch)
+
+    before = discovery_model.get_index_constituents(
+        api_key="KEY", index="S&P 500", date="2015-01-01"
+    )
+    # A change takes effect on its own date.
+    on_change = discovery_model.get_index_constituents(
+        api_key="KEY", index="S&P 500", date="2020-06-01"
+    )
+
+    assert list(before.index) == ["AAPL", "GONE", "OLD"]
+    assert before.loc["OLD", "Name"] == "Old Co"
+    assert before.loc["OLD", "Date Removed"] == "2020-06-01"
+    assert before.loc["GONE", "Date Removed"] == "2022-03-01"
+    assert pd.isna(before.loc["AAPL", "Date Removed"])
+    assert before.loc["AAPL", "Date Added"] == "2010-01-04"
+    assert list(on_change.index) == ["AAPL", "GONE", "NEW"]
+    assert on_change.loc["NEW", "Sector"] == "Technology"
+
+
+def test_the_members_before_the_log_starts_are_not_guessed(monkeypatch):
+    index_with_history(monkeypatch)
+
+    with pytest.raises(ValueError, match="recorded from 2010-01-04"):
+        discovery_model.get_index_constituents(
+            api_key="KEY", index="S&P 500", date="2000-01-01"
+        )

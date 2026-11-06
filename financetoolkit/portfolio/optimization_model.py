@@ -172,8 +172,166 @@ def _as_series(weights: np.ndarray, assets: pd.Index) -> pd.Series:
     return pd.Series(weights, index=assets, name="Weight")
 
 
+def _shrink_to_identity(
+    sample: np.ndarray, shrinkage: float, assets: pd.Index
+) -> pd.DataFrame:
+    """The sample covariance shrunk towards the identity scaled by its average variance."""
+    target = np.trace(sample) / len(sample) * np.eye(len(sample))
+    return pd.DataFrame(
+        (1 - shrinkage) * sample + shrinkage * target, index=assets, columns=assets
+    )
+
+
+def get_ledoit_wolf_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, float]:
+    """
+    The Ledoit-Wolf shrinkage estimator of the covariance matrix: the sample covariance
+    pulled towards the identity matrix scaled by the average variance, with the shrinkage
+    intensity that minimizes the expected squared (Frobenius) error. This keeps the matrix
+    well-conditioned when there are many assets compared to the number of periods, which
+    is where the sample covariance makes optimizers chase estimation noise.
+
+    The formula and the maximum likelihood sample covariance it shrinks (divided by the
+    number of periods, not one less) follow scikit-learn's LedoitWolf, so the results
+    agree with it.
+
+    See Ledoit, O. and Wolf, M. (2004), "A well-conditioned estimator for large-dimensional
+    covariance matrices", Journal of Multivariate Analysis, 88(2), 365-411.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+
+    Returns:
+        tuple[pd.DataFrame, float]: The covariance matrix per period and the shrinkage
+            intensity between 0 (the sample covariance) and 1 (the scaled identity).
+    """
+    values = returns.to_numpy(dtype=float)
+    centered = values - values.mean(axis=0)
+    periods, assets = centered.shape
+    sample = centered.T @ centered / periods
+
+    squared = centered**2
+    average_variance = squared.sum() / periods / assets
+    # beta is the estimated variance of the sample covariance's entries, delta the squared
+    # distance between the sample covariance and the target; their ratio is the intensity.
+    beta = (
+        np.sum(squared.T @ squared) / periods
+        - np.sum((centered.T @ centered) ** 2) / periods**2
+    ) / (assets * periods)
+    delta = (
+        np.sum((centered.T @ centered) ** 2) / periods**2
+        - 2 * average_variance * squared.sum() / periods
+        + assets * average_variance**2
+    ) / assets
+    beta = min(beta, delta)
+    shrinkage = 0.0 if beta == 0 else beta / delta
+
+    return _shrink_to_identity(sample, shrinkage, returns.columns), shrinkage
+
+
+def get_oracle_approximating_shrinkage_covariance(
+    returns: pd.DataFrame,
+) -> tuple[pd.DataFrame, float]:
+    """
+    The Oracle Approximating Shrinkage (OAS) estimator of the covariance matrix: like
+    Ledoit-Wolf, the sample covariance shrunk towards the identity matrix scaled by the
+    average variance, but with an intensity derived for normally distributed returns,
+    which converges faster and shrinks more when there are few periods.
+
+    The formula and the maximum likelihood sample covariance it shrinks follow
+    scikit-learn's OAS, so the results agree with it.
+
+    See Chen, Y., Wiesel, A., Eldar, Y. C. and Hero, A. O. (2010), "Shrinkage Algorithms
+    for MMSE Covariance Estimation", IEEE Transactions on Signal Processing, 58(10),
+    5016-5029.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+
+    Returns:
+        tuple[pd.DataFrame, float]: The covariance matrix per period and the shrinkage
+            intensity between 0 (the sample covariance) and 1 (the scaled identity).
+    """
+    values = returns.to_numpy(dtype=float)
+    centered = values - values.mean(axis=0)
+    periods, assets = centered.shape
+    sample = centered.T @ centered / periods
+
+    mean_squared_entry = np.mean(sample**2)
+    squared_average_variance = (np.trace(sample) / assets) ** 2
+    numerator = mean_squared_entry + squared_average_variance
+    denominator = (periods + 1) * (
+        mean_squared_entry - squared_average_variance / assets
+    )
+    shrinkage = 1.0 if denominator == 0 else min(numerator / denominator, 1.0)
+
+    return _shrink_to_identity(sample, shrinkage, returns.columns), shrinkage
+
+
+def get_semicovariance(returns: pd.DataFrame, threshold: float = 0.0) -> pd.DataFrame:
+    """
+    The semicovariance matrix: the co-movement of the returns below a threshold, each
+    return above it counting as zero. It measures only the downside risk, which is what
+    an investor who doesn't mind upside surprises wants to minimize.
+
+    Every period counts in the average, the ones above the threshold as zero, as in
+    Estrada and in PyPortfolioOpt's semicovariance.
+
+    See Estrada, J. (2007), "Mean-Semivariance Optimization: A Heuristic Approach",
+    Journal of Applied Finance, 18(1), 57-72.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        threshold (float, optional): The return per period below which a return counts
+            as downside. Defaults to 0.
+
+    Returns:
+        pd.DataFrame: The semicovariance matrix per period.
+    """
+    downside = (returns - threshold).clip(upper=0)
+    return downside.T @ downside / len(downside)
+
+
+def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.DataFrame:
+    """
+    The exponentially weighted covariance matrix: the products of the deviations from
+    the mean return weighted by (1 − α)^age with α = 2 / (span + 1), so that recent
+    periods count most and the matrix follows changes in volatility and correlation.
+
+    The deviations are taken from the mean over the whole range and the weights are
+    normalized to sum to one, as in PyPortfolioOpt's exp_cov.
+
+    See RiskMetrics Technical Document (J.P. Morgan/Reuters, 1996), chapter 5.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        span (int, optional): The span of the weights in periods; the weight halves
+            after about span / 2.9 periods. Defaults to 180.
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    if span < 1:
+        raise ValueError("The span of the exponential covariance must be at least 1.")
+    deviations = (returns - returns.mean()).to_numpy(dtype=float)
+    decay = 1 - 2 / (span + 1)
+    weights = decay ** np.arange(len(deviations) - 1, -1, -1)
+    weights /= weights.sum()
+    covariance = (deviations * weights[:, None]).T @ deviations
+    return pd.DataFrame(covariance, index=returns.columns, columns=returns.columns)
+
+
+COVARIANCE_METHODS = ("sample", "ledoit_wolf", "oas", "semicovariance", "exponential")
+
+
 def get_expected_returns_and_covariance(
-    returns: pd.DataFrame, periods_per_year: int
+    returns: pd.DataFrame,
+    periods_per_year: int,
+    covariance: str = "sample",
+    covariance_span: int = 180,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """
     The annualized expected returns (the mean return per period times the number of
@@ -182,6 +340,11 @@ def get_expected_returns_and_covariance(
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset.
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
+        covariance (str, optional): The estimator of the covariance matrix: "sample"
+            (ddof=1), "ledoit_wolf", "oas", "semicovariance" (below a zero return) or
+            "exponential". Defaults to "sample".
+        covariance_span (int, optional): The span in periods of the "exponential"
+            covariance. Defaults to 180.
 
     Returns:
         tuple[pd.Series, pd.DataFrame]: The expected returns and the covariance matrix.
@@ -191,7 +354,23 @@ def get_expected_returns_and_covariance(
     if len(returns) < 2:  # noqa: PLR2004
         raise ValueError("At least two periods of returns are needed for every asset.")
 
-    return returns.mean() * periods_per_year, returns.cov() * periods_per_year
+    if covariance == "sample":
+        matrix = returns.cov()
+    elif covariance == "ledoit_wolf":
+        matrix, _ = get_ledoit_wolf_covariance(returns)
+    elif covariance == "oas":
+        matrix, _ = get_oracle_approximating_shrinkage_covariance(returns)
+    elif covariance == "semicovariance":
+        matrix = get_semicovariance(returns)
+    elif covariance == "exponential":
+        matrix = get_exponential_covariance(returns, covariance_span)
+    else:
+        raise ValueError(
+            f"The covariance must be one of {', '.join(COVARIANCE_METHODS)}, not "
+            f"'{covariance}'."
+        )
+
+    return returns.mean() * periods_per_year, matrix * periods_per_year
 
 
 def get_portfolio_statistics(

@@ -468,3 +468,86 @@ def test_get_beta_implied_return(performance_module):
     assert yearly.loc[common, "Actual Return"].to_numpy() == pytest.approx(
         returns.loc[common, yearly["Actual Return"].columns].to_numpy(), nan_ok=True
     )
+
+
+def test_the_kelly_criterion_per_period_over_the_history_and_rolling(
+    performance_module,
+):
+    per_period = performance_module.get_kelly_criterion(rounding=8)
+    half_kelly = performance_module.get_kelly_criterion(fraction=0.5, rounding=8)
+
+    assert not per_period.empty
+    pd.testing.assert_frame_equal(half_kelly, per_period / 2, atol=1e-8)
+    assert not performance_module.get_kelly_criterion(within_period=False).empty
+    assert (
+        not performance_module.get_kelly_criterion(
+            period="daily", rolling=20, method="continuous"
+        )
+        .dropna(how="all")
+        .empty
+    )
+
+
+def test_the_return_statistics_over_the_history_and_per_period(performance_module):
+    statistics = performance_module.get_return_statistics()
+
+    assert "Profit Factor" in statistics.index
+    assert statistics.loc["Win Rate"].between(0, 1).all()
+
+    per_period = performance_module.get_return_statistics(within_period=True)
+
+    assert "Payoff Ratio" in per_period.columns.get_level_values(0)
+
+
+@pytest.mark.parametrize(
+    "method", ["blume", "vasicek", "dimson", "scholes_williams", "upside", "downside"]
+)
+def test_get_beta_with_another_estimator(performance_module, method):
+    ordinary = performance_module.get_beta()
+    estimated = performance_module.get_beta(method=method)
+
+    assert estimated.shape == ordinary.shape
+    assert estimated.notna().all().all()
+
+    if method == "blume":
+        pd.testing.assert_frame_equal(
+            estimated, (0.67 * ordinary + 0.33).round(4), check_exact=False, atol=1e-4
+        )
+
+    rolling = performance_module.get_beta(method=method, period="monthly", rolling=6)
+    assert not rolling.dropna(how="all").empty
+
+
+def test_morningstar_measures_use_the_monthly_geometric_excess_returns(
+    performance_module,
+):
+    monthly_returns = performance_module._get_column(
+        "monthly", "Return", within_period=False
+    )
+    excess_returns = (1 + monthly_returns).div(
+        1 + performance_module._risk_free_rate_data["monthly"], axis=0
+    ) - 1
+    ticker = excess_returns.columns[0]
+
+    mrar = performance_module.get_morningstar_risk_adjusted_return(
+        within_period=False, rounding=10
+    )
+    risk = performance_module.get_morningstar_risk(within_period=False, rounding=10)
+
+    values = excess_returns[ticker].dropna()
+    expected = np.mean((1 + values) ** -2) ** -6 - 1
+    assert mrar[ticker] == pytest.approx(expected, abs=1e-9)
+    assert risk[ticker] == pytest.approx(
+        np.prod(1 + values) ** (12 / len(values)) - 1 - expected, abs=1e-9
+    )
+
+    yearly = performance_module.get_morningstar_risk_adjusted_return()
+    assert not yearly.empty
+    assert performance_module.get_morningstar_risk(rolling=12).notna().any().all()
+
+
+def test_morningstar_measures_need_a_yearly_or_quarterly_period(performance_module):
+    with pytest.raises(ValueError, match="yearly or quarterly"):
+        performance_module._get_morningstar_risk_adjusted_return(
+            2, "monthly", True, None
+        )

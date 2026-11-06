@@ -444,7 +444,7 @@ def get_daily_factors(
         if (
             method is None
             or not name.startswith("get_")
-            or name == "get_factor_analysis"
+            or name in ("get_factor_analysis", "get_indicator_summary")
         ):
             raise ValueError(
                 f"{name} is not a metric of the {type(module).__name__} module."

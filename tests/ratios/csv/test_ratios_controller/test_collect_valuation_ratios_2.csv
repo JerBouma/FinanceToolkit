@@ -5,7 +5,7 @@ AAPL,Earnings per Share,Lag 3,,,,0.8728
 AAPL,Revenue per Share,Lag 1,,0.385,0.1135,0.0035
 AAPL,Revenue per Share,Lag 2,,,0.5422,0.1175
 AAPL,Revenue per Share,Lag 3,,,,0.5477
-AAPL,Price-to-Earnings,Lag 1,,-0.2193,-0.328,
+AAPL,Price-to-Earnings,Lag 1,,-0.2192,-0.328,
 AAPL,Price-to-Earnings,Lag 2,,,-0.4754,
 AAPL,Price-to-Earnings,Lag 3,,,,
 AAPL,Price-to-Earnings-Growth,Lag 1,,,4.3968,

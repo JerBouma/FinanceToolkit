@@ -50,6 +50,8 @@ def join_initials(text: str) -> str:
 SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
     "predictive": ("get_factor_analysis",),
     "predict": ("get_factor_analysis",),
+    "oversold": ("get_indicator_summary", "get_relative_strength_index"),
+    "overbought": ("get_indicator_summary", "get_relative_strength_index"),
     "expensive": (
         "get_price_to_earnings_ratio",
         "get_ev_to_ebitda_ratio",
@@ -103,6 +105,9 @@ SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
     "bond": ("get_present_value", "get_yield_to_maturity", "get_duration"),
     "buyback": ("get_buyback_yield", "get_shareholder_yield"),
     "buybacks": ("get_buyback_yield", "get_shareholder_yield"),
+    "breakeven": ("get_drawdown_series", "get_drawdown_table"),
+    "recover": ("get_drawdown_series", "get_drawdown_table"),
+    "exceedance": ("get_move_significance", "get_var_backtest"),
 }
 
 # Shorter search words must match a whole word, as fuzzy matching makes them match anything.

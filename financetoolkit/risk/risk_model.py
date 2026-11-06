@@ -951,22 +951,31 @@ def get_max_drawdown_recovery_time(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_drawdown_series(returns: pd.DataFrame) -> pd.DataFrame:
+def get_drawdown_series(returns: pd.DataFrame, recovery: bool = False) -> pd.DataFrame:
     """
     Calculate the drawdown of every period: the decline of the wealth path from its
-    running peak, also known as the underwater curve.
+    running peak, also known as the underwater curve, or the return needed to get back
+    to that peak.
 
     Each column starts from a wealth of 1 at the row before its first return (the first
     close a return is measured from) or, when its first return is on the first row, before
     the data (see `get_wealth_and_peak`). Rows before that start are NaN, so a ticker that
     listed later keeps its own history; missing returns after it count as 0.
 
+    The formula is as follows:
+
+    - Drawdown(t) = Wealth(t) / Peak(t) - 1
+    - Recovery Needed(t) = Peak(t) / Wealth(t) - 1 = -Drawdown(t) / (1 + Drawdown(t))
+
     Args:
         returns (pd.DataFrame): The returns, one column per asset.
+        recovery (bool, optional): Whether to return the gain needed to get back to the
+            running peak instead of the drawdown. Defaults to False.
 
     Returns:
-        pd.DataFrame: The drawdown per period as a negative decimal (0 at a new high), NaN
-            before each column's start.
+        pd.DataFrame: The drawdown per period as a negative decimal, or with recovery=True
+            the gain needed as a positive decimal (0 at a new high), NaN before each
+            column's start.
     """
     values = returns.to_numpy(dtype=float)
     has_return = ~np.isnan(values)
@@ -975,7 +984,8 @@ def get_drawdown_series(returns: pd.DataFrame) -> pd.DataFrame:
     start[~has_return.any(axis=0)] = np.inf
 
     wealth, peak = get_wealth_and_peak(returns)
-    drawdowns = wealth / peak - 1
+    # Peak / Wealth - 1 is the same as -Drawdown / (1 + Drawdown): a 50% fall needs a 100% gain.
+    drawdowns = peak / wealth - 1 if recovery else wealth / peak - 1
 
     before_start = np.arange(len(returns))[:, None] < start[None, :]
 
@@ -1002,7 +1012,8 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     Returns:
         pd.DataFrame: One row per drawdown, indexed by column and rank, with the dates of
             the Peak, Trough and Recovery (NaN when not yet recovered), the Drawdown as a
-            negative decimal and, in periods, the time from peak to trough (To Trough),
+            negative decimal, the gain needed from the trough back to the peak (Recovery
+            Needed = -Drawdown / (1 + Drawdown)) and, in periods, the time from peak to trough (To Trough),
             from trough to recovery (To Recovery) and from peak to recovery (Length). The
             Peak is NaN when it is the starting wealth before the first row.
     """
@@ -1030,6 +1041,7 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
                     "Trough": dates[trough],
                     "Recovery": dates[recovery] if recovery is not None else np.nan,
                     "Drawdown": drawdowns[trough],
+                    "Recovery Needed": -drawdowns[trough] / (1 + drawdowns[trough]),
                     "To Trough": float(trough - peak),
                     "To Recovery": (
                         float(recovery - trough) if recovery is not None else np.nan
@@ -1052,6 +1064,7 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
         "Trough",
         "Recovery",
         "Drawdown",
+        "Recovery Needed",
         "To Trough",
         "To Recovery",
         "Length",
@@ -1606,15 +1619,19 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     return poly[0]
 
 
-def get_move_significance(returns: pd.Series, window: int = 252) -> pd.DataFrame:
+def get_move_significance(
+    returns: pd.Series, window: int = 252, alpha: float = 0.05
+) -> pd.DataFrame:
     """
     Calculate how unusual each return is compared with the returns before it: in units
-    of the trailing volatility, as a percentile of the earlier moves, and the date of the
-    last move at least as large in the same direction.
+    of the trailing volatility and of the trailing Value at Risk, as a percentile of the
+    earlier moves, and the date of the last move at least as large in the same direction.
 
     The formula is as follows:
 
     - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1)), with ddof=1
+    - VaR Multiple(t) = Return(t) / |VaR(t)|, with VaR(t) the historic VaR: the alpha quantile
+      (linear interpolation) of Return(t - window), ..., Return(t - 1)
     - Percentile(t) = share of the returns before t with |Return(s)| < |Return(t)|
     - Largest Since(t) = the last date s < t with Return(s) <= Return(t) for a fall, or
       Return(s) >= Return(t) for a rise
@@ -1629,10 +1646,12 @@ def get_move_significance(returns: pd.Series, window: int = 252) -> pd.DataFrame
         window (int, optional): The number of earlier returns the volatility and the
             percentile need at least. The volatility uses exactly the last `window`
             returns; the percentile uses all earlier returns. Defaults to 252.
+        alpha (float, optional): The tail probability of the trailing Value at Risk.
+            Defaults to 0.05.
 
     Returns:
-        pd.DataFrame: Return, Volatility Multiple, Percentile and Largest Since (the date as
-        text, YYYY-MM-DD for daily data) per date.
+        pd.DataFrame: Return, Volatility Multiple, VaR Multiple, Percentile and Largest
+        Since (the date as text, YYYY-MM-DD for daily data) per date.
     """
     observed = returns.dropna()
     values = observed.to_numpy(dtype=float)
@@ -1642,6 +1661,13 @@ def get_move_significance(returns: pd.Series, window: int = 252) -> pd.DataFrame
     # Shifted by one so the volatility on a day only covers the returns before it.
     trailing_volatility = (
         observed.rolling(window, min_periods=window).std(ddof=1).shift(1)
+    )
+    # The historic VaR of the same earlier returns, as var_model.get_var_historic takes it (a return,
+    # negative for a loss); its size scales the move, so the sign stays the move's.
+    trailing_var = (
+        observed.rolling(window, min_periods=window)
+        .quantile(alpha, interpolation="linear")
+        .shift(1)
     )
 
     percentile = np.full(count, np.nan)
@@ -1670,6 +1696,7 @@ def get_move_significance(returns: pd.Series, window: int = 252) -> pd.DataFrame
         {
             "Return": values,
             "Volatility Multiple": values / trailing_volatility.to_numpy(),
+            "VaR Multiple": values / np.abs(trailing_var.to_numpy()),
             "Percentile": percentile,
             "Largest Since": largest_since,
         },

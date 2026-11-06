@@ -900,27 +900,52 @@ class Discovery:
 
         return index_list
 
-    def get_index_constituents(self, index: str = "S&P 500") -> pd.DataFrame:
+    def get_index_constituents(
+        self, index: str = "S&P 500", date: str | None = None
+    ) -> pd.DataFrame:
         """
-        Returns the current constituents of an index (the S&P 500, the NASDAQ 100 or the Dow
-        Jones Industrial Average) with their sector, sub-sector, headquarters, the date they were
-        added, CIK and founding year. The symbols make a Toolkit of the whole index, for example
-        to measure market breadth from every constituent (`toolkit.technicals.get_market_breadth`)
-        or to rank them by relative strength.
+        Returns the constituents of an index (the S&P 500, the NASDAQ 100 or the Dow Jones
+        Industrial Average), today's or those on a past date, with their sector, sub-sector,
+        headquarters, the date they were added, CIK and founding year. The symbols make a
+        Toolkit of the whole index, for example to measure market breadth from every
+        constituent (`toolkit.technicals.get_market_breadth`) or to rank them by relative
+        strength.
 
-        These are today's members only. Breadth, relative strength or returns of past dates
-        computed from them leave out the companies that were removed from the index since,
-        often after falling behind, so the history is biased towards the survivors
-        (survivorship bias), the more so the further back it goes.
+        Today's members alone bias any history computed from them: the companies removed from
+        the index since, often after falling behind, are left out (survivorship bias), the
+        more so the further back it goes. With `date`, the members on that date are returned
+        instead: today's members with every later change undone, from the newest back, using
+        the dated changes of `get_index_constituent_changes`. A company added since is taken
+        out and a company removed since is put back, with the date it left the index ('Date
+        Removed'), so a backtest can hold each company only while it was a member.
 
-        Also known as: index members, index constituents, S&P 500 components.
+        Also known as: index members, index constituents, S&P 500 components,
+        survivorship-free index membership, point-in-time index constituents.
 
         Args:
             index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to
                 "S&P 500".
+            date (str | None, optional): The date (YYYY-MM-DD) to list the members of. A
+                change takes effect on its own date, so the members on a change's date include
+                it. Defaults to None, today's members.
 
         Returns:
-            pd.DataFrame: The constituents, indexed by symbol.
+            pd.DataFrame: The constituents, indexed by symbol. On a past date, the companies
+                no longer in the index have the name they were removed under and no sector or
+                other details, and every member has the date it last joined up to the date
+                ('Date Added') and the date it left after it ('Date Removed', empty while it is
+                still a member).
+
+        Notes:
+            - The reconstruction is as accurate as the change log of Financial Modeling Prep,
+              which covers only these three indices. It starts in 1957 for the S&P 500, 1985
+              for the NASDAQ 100 and 1994 for the Dow Jones; an earlier date raises an error.
+            - Removed companies carry the ticker recorded at their removal, which can differ
+              from the ticker they traded under before (Lehman Brothers is LEHMQ, its ticker
+              after the bankruptcy) or have been reused by another company since.
+            - Small gaps in the log (a removal recorded without its addition, or the other way
+              round) add up the further back the date is: the S&P 500 counts 503 to 505
+              members from 2015 onwards, 500 in 2008 and 494 in 2000.
 
         As an example:
 
@@ -929,23 +954,108 @@ class Discovery:
 
         discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        constituents = discovery.get_index_constituents("Dow Jones")
+        constituents = discovery.get_index_constituents("S&P 500", date="2008-09-01")
 
-        constituents[["Name", "Sector", "Date Added"]].head()
+        constituents.loc[
+            ["AAPL", "FNMA", "LEHMQ", "MER", "WB"], ["Name", "Date Added", "Date Removed"]
+        ]
         ```
 
         Which returns:
 
-        | Symbol   | Name                       | Sector             | Date Added   |
-        |:---------|:---------------------------|:-------------------|:-------------|
-        | AAPL     | Apple Inc.                 | Technology         | 2015-03-19   |
-        | AMGN     | Amgen Inc.                 | Healthcare         | 2020-08-31   |
-        | AMZN     | Amazon.com, Inc.amazon.com | Consumer Cyclical  | 2024-02-26   |
-        | AXP      | American Express Company   | Financial Services | 1982-08-30   |
-        | BA       | The Boeing Company         | Industrials        | 1987-03-12   |
+        | Symbol   | Name                    | Date Added   | Date Removed   |
+        |:---------|:------------------------|:-------------|:---------------|
+        | AAPL     | Apple Inc.              | 1982-11-18   | nan            |
+        | FNMA     | Fannie Mae (FNMA)       | 1988-08-11   | 2008-09-10     |
+        | LEHMQ    | Lehman Brothers Holding | 1998-01-09   | 2008-09-16     |
+        | MER      | Merrill Lynch & Co      | 1982-04-08   | 2008-12-31     |
+        | WB       | Wachovia Corp.          | 1993-09-30   | 2008-12-31     |
         """
+        _validate_arguments(date=date)
+
         return discovery_model.get_index_constituents(
-            api_key=self._api_key, index=index, user_subscription=self._fmp_plan
+            api_key=self._api_key,
+            index=index,
+            date=date,
+            user_subscription=self._fmp_plan,
+        )
+
+    def get_index_constituent_changes(
+        self,
+        index: str = "S&P 500",
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Returns the dated changes to the members of an index (the S&P 500, the NASDAQ 100 or
+        the Dow Jones Industrial Average): the company added, the company removed, the kind of
+        change (an addition, a removal or a replacement of one by the other) and its reason,
+        such as an acquisition or a change in market capitalization.
+
+        These are the changes `get_index_constituents(date=...)` undoes to reconstruct the
+        members on a past date. They also show the turnover of an index and the companies
+        that left it, which today's members leave out (survivorship bias).
+
+        Also known as: index additions and deletions, index rebalancing history, S&P 500
+        changes.
+
+        Args:
+            index (str, optional): "S&P 500", "NASDAQ 100" or "Dow Jones". Defaults to
+                "S&P 500".
+            start_date (str | None, optional): The first date (YYYY-MM-DD) to include.
+                Defaults to None, the first change recorded.
+            end_date (str | None, optional): The last date (YYYY-MM-DD) to include. Defaults
+                to None, the latest change.
+
+        Returns:
+            pd.DataFrame: The changes in date order, indexed by date, with the added and
+                removed ticker and company, the kind of change and its reason. An addition
+                has no removed company and a removal no added one.
+
+        Notes:
+            - The log of Financial Modeling Prep covers only these three indices. It starts
+              in 1957 for the S&P 500, 1985 for the NASDAQ 100 and 1994 for the Dow Jones; the
+              earliest entries record when the members of that time first joined.
+            - Tickers are those recorded at the time of the change, which can differ from the
+              ticker a company trades under today or have been reused since.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Discovery
+
+        discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        changes = discovery.get_index_constituent_changes(
+            "Dow Jones", start_date="2020-01-01", end_date="2026-10-31"
+        )
+
+        changes[["Added Ticker", "Removed Ticker", "Change Type"]]
+        ```
+
+        Which returns:
+
+        | Date       | Added Ticker   | Removed Ticker   | Change Type   |
+        |:-----------|:---------------|:-----------------|:--------------|
+        | 2020-08-31 | nan            | PFE              | Removal       |
+        | 2020-08-31 | AMGN           | nan              | Addition      |
+        | 2020-08-31 | nan            | XOM              | Removal       |
+        | 2020-08-31 | HON            | nan              | Addition      |
+        | 2020-08-31 | nan            | RTX              | Removal       |
+        | 2020-08-31 | CRM            | nan              | Addition      |
+        | 2024-02-26 | AMZN           | WBA              | Replacement   |
+        | 2024-11-08 | SHW            | DOW              | Replacement   |
+        | 2024-11-08 | NVDA           | INTC             | Replacement   |
+        | 2026-06-29 | GOOGL          | VZ               | Replacement   |
+        """
+        _validate_arguments(start_date=start_date, end_date=end_date)
+
+        return discovery_model.get_index_constituent_changes(
+            api_key=self._api_key,
+            index=index,
+            start_date=start_date,
+            end_date=end_date,
+            user_subscription=self._fmp_plan,
         )
 
     def get_stock_news(

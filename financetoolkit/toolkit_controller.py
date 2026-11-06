@@ -20,8 +20,10 @@ from financetoolkit.discovery.discovery_model import (
     search_stock_news as _search_stock_news,
 )
 from financetoolkit.fmp_model import (
+    add_price_target_metrics as _add_price_target_metrics,
     determine_subscription_plan as _determine_subscription_plan,
     get_analyst_estimates as _get_analyst_estimates,
+    get_analyst_recommendations as _get_analyst_recommendations,
     get_commitment_of_traders as _get_commitment_of_traders,
     get_company_notes as _get_company_notes,
     get_dividend_calendar as _get_dividend_calendar,
@@ -38,6 +40,8 @@ from financetoolkit.fmp_model import (
     get_insider_trade_statistics as _get_insider_trade_statistics,
     get_market_risk_premium as _get_market_risk_premium,
     get_mergers_acquisitions as _get_mergers_acquisitions,
+    get_price_target_history as _get_price_target_history,
+    get_price_targets as _get_price_targets,
     get_profile as _get_profile,
     get_quote as _get_quote,
     get_rating as _get_rating,
@@ -475,6 +479,9 @@ class Toolkit:
             self._stock_splits: pd.DataFrame = pd.DataFrame()
             self._insider_trade_statistics: pd.DataFrame = pd.DataFrame()
             self._stock_grades: pd.DataFrame = pd.DataFrame()
+            self._price_targets: pd.DataFrame = pd.DataFrame()
+            self._price_target_history: pd.DataFrame = pd.DataFrame()
+            self._analyst_recommendations: pd.DataFrame = pd.DataFrame()
             self._etf_holdings: pd.DataFrame = pd.DataFrame()
             self._etf_information: pd.DataFrame = pd.DataFrame()
             self._etf_country_weightings: pd.DataFrame = pd.DataFrame()
@@ -4232,6 +4239,337 @@ class Toolkit:
             )
 
         return filter_columns(self._stock_grades, show_columns)
+
+    def get_price_targets(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain the analysts' price targets of each company and the measures they are read
+        with. A price target is the share price an analyst expects in about twelve months;
+        the consensus target relative to today's price shows how much upside analysts see,
+        the range of the targets how much they disagree, and the change in the average
+        target whether they have been raising or cutting their targets.
+
+        The rows are:
+
+        - Target Consensus, Target Median, Target High and Target Low: the current targets.
+        - Price: the latest traded share price (the quote).
+        - Upside: Target Consensus / Price − 1.
+        - Dispersion: (Target High − Target Low) / Target Consensus. Dispersion in analysts'
+          forecasts is a measure of disagreement, studied for earnings forecasts by
+          Diether, Malloy and Scherbina (2002).
+        - Revision Momentum: Last Quarter Average / Last Year Average − 1, positive when the
+          targets published over the last quarter are higher than those of the last year.
+        - Last Month, Last Quarter, Last Year and All Time Count and Average: the number of
+          targets published in each window and their average.
+
+        The targets are today's: they are not filtered to this Toolkit instance's
+        start_date and end_date. The targets as they were published over time come from
+        get_price_target_history.
+
+        Also known as: analyst price target, consensus price target, target upside.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            show_columns (list[str] | None): A list of tickers to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every ticker.
+
+        Returns:
+            pd.DataFrame: The price targets and their measures with a column per ticker.
+            Upside, Dispersion and Revision Momentum are decimals (0.05 is 5%).
+
+        Notes:
+            A window without published targets has no average (NaN). The targets are those
+            of the analysts covered by Financial Modeling Prep, so they can differ from
+            other data providers' consensus.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "NVDA", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.get_price_targets()
+        ```
+
+        Which returns:
+
+        |                      |     AAPL |     NVDA |     MSFT |
+        |:---------------------|---------:|---------:|---------:|
+        | Target Consensus     | 344.46   | 339.17   | 611.74   |
+        | Target Median        | 355      | 325      | 625      |
+        | Target High          | 400      | 515      | 750      |
+        | Target Low           | 245      | 210      | 440      |
+        | Price                | 344.17   | 181.6    | 535.93   |
+        | Upside               |   0.0008 |   0.8677 |   0.1415 |
+        | Dispersion           |   0.45   |   0.8993 |   0.5068 |
+        | Revision Momentum    |   0.0557 |   0.0891 |   0.0824 |
+        | Last Month Count     |  12      |   0      |  20      |
+        | Last Month Average   | 349.42   | nan      | 643.95   |
+        | Last Quarter Count   |  18      |  25      |  30      |
+        | Last Quarter Average | 348.65   | 332.32   | 629.23   |
+        | Last Year Count      |  61      |  83      |  92      |
+        | Last Year Average    | 330.27   | 305.12   | 581.32   |
+        | All Time Count       | 275      | 343      | 299      |
+        | All Time Average     | 239.2    | 152.9    | 466.96   |
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._price_targets.empty or overwrite:
+            self._price_targets, self._invalid_tickers = self._collect_per_ticker(
+                dataset="price_targets",
+                tickers=self._tickers,
+                ticker_axis=ticker_model.TICKER_ON_COLUMNS,
+                collector=lambda tickers: _get_price_targets(
+                    tickers=tickers,
+                    api_key=self._api_key,
+                    user_subscription=self._fmp_plan,
+                ),
+            )
+
+        self._remove_invalid()
+
+        if self._price_targets.empty:
+            return self._price_targets
+
+        quote = self.get_quote()
+        prices = (
+            quote.loc["Price"]
+            if isinstance(quote, pd.DataFrame) and "Price" in quote.index
+            else pd.Series(dtype=float)
+        )
+
+        return filter_columns(
+            apply_rounding(
+                _add_price_target_metrics(self._price_targets, prices),
+                rounding if rounding is not None else self._rounding,
+            ),
+            show_columns,
+        )
+
+    def get_price_target_history(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain every price target analysts published for each company: per date and
+        analyst company the target (adjusted for stock splits), the share price when it
+        was published and the upside it implied at that moment. Following the targets
+        over time shows how analysts revise their expectations, and unlike today's
+        consensus each row only uses what was known on its date.
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: price target changes, analyst target revisions, price target news.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The price targets per ticker, indexed by date and analyst company,
+            with the Price Target, the Price When Posted and the Implied Upside
+            (Price Target / Price When Posted − 1, a decimal).
+
+        Notes:
+            The targets come from the news articles that report them. A target reported by
+            several publishers on the same day is kept once; a change of target that no
+            article reported is missing.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-11-01",
+            end_date="2025-11-30",
+        )
+
+        toolkit.get_price_target_history()
+        ```
+
+        Which returns:
+
+        |                                        |   Price Target |   Price When Posted |   Implied Upside |
+        |:---------------------------------------|---------------:|--------------------:|-----------------:|
+        | ('2025-11-03', 'Loop Capital Markets') |            350 |             202.49  |           0.7285 |
+        | ('2025-11-14', 'Wells Fargo')          |            265 |             186.52  |           0.4208 |
+        | ('2025-11-20', 'Barclays')             |            275 |             194.17  |           0.4163 |
+        | ('2025-11-20', 'Bernstein')            |            275 |             186.52  |           0.4744 |
+        | ('2025-11-20', 'Deutsche Bank')        |            215 |             186.52  |           0.1527 |
+        | ('2025-11-20', 'Evercore ISI')         |            352 |             184.615 |           0.9067 |
+        | ('2025-11-20', 'Jefferies')            |            250 |             195.096 |           0.2814 |
+        | ('2025-11-20', 'KeyBanc')              |            275 |             189.96  |           0.4477 |
+        | ('2025-11-20', 'Mizuho Securities')    |            245 |             184.615 |           0.3271 |
+        | ('2025-11-20', 'Morgan Stanley')       |            235 |             186.52  |           0.2599 |
+        | ('2025-11-20', 'Raymond James')        |            272 |             180.64  |           0.5058 |
+        | ('2025-11-20', 'Robert W. Baird')      |            275 |             186.52  |           0.4744 |
+        | ('2025-11-20', 'Susquehanna')          |            250 |             186.52  |           0.3403 |
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._price_target_history.empty or overwrite:
+            self._price_target_history, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="price_target_history",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_price_target_history(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        price_target_history = apply_rounding(
+            self._price_target_history,
+            rounding if rounding is not None else self._rounding,
+        )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not price_target_history.empty:
+            return filter_columns(
+                price_target_history.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(price_target_history, show_columns)
+
+    def get_analyst_recommendations(
+        self,
+        overwrite: bool = False,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ):
+        """
+        Obtain how many analysts recommend each company as a strong buy, buy, hold, sell
+        or strong sell, per month. Next to the counts come the number of analysts, the
+        share of them recommending a (strong) buy and the mean recommendation on the
+        conventional scale from 1 (strong buy) to 5 (strong sell), as used by I/B/E/S and
+        Zacks. A falling mean recommendation means analysts are turning more positive;
+        changes in consensus recommendations predict returns (Jegadeesh, Kim, Krische and
+        Lee, 2004).
+
+        Automatically filtered to this Toolkit instance's start_date and end_date.
+
+        Also known as: analyst consensus, buy/hold/sell ratings, recommendation trends.
+
+        Args:
+            overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
+                rounding of the Toolkit (4 unless set otherwise).
+            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
+            names are reported and ignored. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The recommendations per ticker, indexed by month, with the Strong
+            Buy, Buy, Hold, Sell and Strong Sell counts, the number of Analysts, the Buy
+            Share (a decimal) and the Mean Recommendation.
+
+        Notes:
+            The mean recommendation is (1 × Strong Buy + 2 × Buy + 3 × Hold + 4 × Sell +
+            5 × Strong Sell) / Analysts. The individual grade changes behind the counts come
+            from get_stock_grades.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-07-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.get_analyst_recommendations()
+        ```
+
+        Which returns:
+
+        |                        |   Strong Buy |   Buy |   Hold |   Sell |   Strong Sell |   Analysts |   Buy Share |   Mean Recommendation |
+        |:-----------------------|-------------:|------:|-------:|-------:|--------------:|-----------:|------------:|----------------------:|
+        | ('AAPL', '2025-07-01') |            6 |    23 |     18 |      2 |             1 |         50 |      0.58   |                2.38   |
+        | ('AAPL', '2025-08-01') |            5 |    23 |     15 |      1 |             1 |         45 |      0.6222 |                2.3333 |
+        | ('AAPL', '2025-09-01') |            5 |    23 |     15 |      1 |             3 |         47 |      0.5957 |                2.4468 |
+        | ('AAPL', '2025-10-01') |            6 |    24 |     15 |      2 |             3 |         50 |      0.6    |                2.44   |
+        | ('AAPL', '2025-11-01') |            5 |    24 |     15 |      1 |             3 |         48 |      0.6042 |                2.4375 |
+        | ('AAPL', '2025-12-01') |            5 |    24 |     15 |      1 |             3 |         48 |      0.6042 |                2.4375 |
+        | ('NVDA', '2025-07-01') |           12 |    49 |      7 |      1 |             0 |         69 |      0.8841 |                1.9565 |
+        | ('NVDA', '2025-08-01') |           11 |    49 |      6 |      1 |             1 |         68 |      0.8824 |                2      |
+        | ('NVDA', '2025-09-01') |           11 |    48 |      6 |      1 |             0 |         66 |      0.8939 |                1.9545 |
+        | ('NVDA', '2025-10-01') |           11 |    49 |      5 |      1 |             0 |         66 |      0.9091 |                1.9394 |
+        | ('NVDA', '2025-11-01') |           11 |    50 |      4 |      1 |             0 |         66 |      0.9242 |                1.9242 |
+        | ('NVDA', '2025-12-01') |           11 |    49 |      3 |      1 |             0 |         64 |      0.9375 |                1.9062 |
+        """
+        if not self._api_key:
+            self._missing_api_key_message()
+            return None
+
+        if self._analyst_recommendations.empty or overwrite:
+            self._analyst_recommendations, self._invalid_tickers = (
+                self._collect_per_ticker(
+                    dataset="analyst_recommendations",
+                    tickers=self._tickers,
+                    ticker_axis=ticker_model.TICKER_ON_INDEX,
+                    parameters={
+                        "start_date": self._start_date,
+                        "end_date": self._end_date,
+                    },
+                    collector=lambda tickers: _get_analyst_recommendations(
+                        tickers=tickers,
+                        api_key=self._api_key,
+                        start_date=self._start_date,
+                        end_date=self._end_date,
+                        user_subscription=self._fmp_plan,
+                    ),
+                )
+            )
+
+        analyst_recommendations = apply_rounding(
+            self._analyst_recommendations,
+            rounding if rounding is not None else self._rounding,
+        )
+
+        self._remove_invalid()
+
+        if len(self._tickers) == 1 and not analyst_recommendations.empty:
+            return filter_columns(
+                analyst_recommendations.loc[self._tickers[0]], show_columns
+            )
+
+        return filter_columns(analyst_recommendations, show_columns)
 
     def _collect_fund_data(
         self, dataset: str, overwrite: bool = False

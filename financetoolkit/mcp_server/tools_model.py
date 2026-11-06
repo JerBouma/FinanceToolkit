@@ -77,7 +77,12 @@ SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
     ),
     "correlation": ("get_correlation_matrix",),
     "insider": ("get_insider_trade_statistics", "get_insider_trading_latest"),
-    "target": ("get_analyst_estimates", "get_stock_grades"),
+    "target": (
+        "get_price_targets",
+        "get_price_target_history",
+        "get_analyst_estimates",
+    ),
+    "recommendation": ("get_analyst_recommendations", "get_stock_grades"),
     "forecast": (
         "get_analyst_estimates",
         "get_inflation_expectations",

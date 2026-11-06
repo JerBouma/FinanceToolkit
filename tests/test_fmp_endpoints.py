@@ -1065,3 +1065,190 @@ def test_free_plan_dividends_when_yahoo_fails(monkeypatch, ticker):
         assert fmp_model._complete_older_dividends("AAPL", latest).equals(latest)
 
     assert warning.call_args[0][0].startswith("No dividend data is available for")
+
+
+def test_price_targets_leave_the_average_of_an_empty_window_out(responses):
+    canned, _ = responses
+    canned["price-target-consensus"] = [
+        {
+            "symbol": "NVDA",
+            "targetHigh": 300,
+            "targetLow": 150,
+            "targetConsensus": 250,
+            "targetMedian": 240,
+        }
+    ]
+    canned["price-target-summary"] = [
+        {
+            "symbol": "NVDA",
+            "lastMonthCount": 0,
+            "lastMonthAvgPriceTarget": 0,
+            "lastQuarterCount": 4,
+            "lastQuarterAvgPriceTarget": 260,
+            "lastYearCount": 20,
+            "lastYearAvgPriceTarget": 200,
+            "allTimeCount": 80,
+            "allTimeAvgPriceTarget": 120,
+        }
+    ]
+
+    targets, missing = fmp_model.get_price_targets(["NVDA"], "key")
+
+    assert targets.loc["Target Consensus", "NVDA"] == 250
+    # The endpoint reports the average of a window without targets as 0.
+    assert pd.isna(targets.loc["Last Month Average", "NVDA"])
+    assert targets.loc["Last Quarter Average", "NVDA"] == 260
+    assert missing == []
+
+
+def test_price_target_measures():
+    targets = pd.DataFrame(
+        {"NVDA": [250.0, 240.0, 300.0, 150.0, 260.0, 200.0]},
+        index=[
+            "Target Consensus",
+            "Target Median",
+            "Target High",
+            "Target Low",
+            "Last Quarter Average",
+            "Last Year Average",
+        ],
+    )
+
+    measures = fmp_model.add_price_target_metrics(targets, pd.Series({"NVDA": 200.0}))
+
+    assert measures.loc["Price", "NVDA"] == 200
+    assert measures.loc["Upside", "NVDA"] == pytest.approx(0.25)
+    assert measures.loc["Dispersion", "NVDA"] == pytest.approx(0.6)
+    assert measures.loc["Revision Momentum", "NVDA"] == pytest.approx(0.3)
+    # The measures follow the targets they are calculated from.
+    assert list(measures.index[:5]) == [
+        "Target Consensus",
+        "Target Median",
+        "Target High",
+        "Target Low",
+        "Price",
+    ]
+
+
+def test_a_price_target_without_a_quote_has_no_upside():
+    targets = pd.DataFrame(
+        {"NVDA": [250.0, 240.0, 300.0, 150.0]},
+        index=["Target Consensus", "Target Median", "Target High", "Target Low"],
+    )
+
+    measures = fmp_model.add_price_target_metrics(targets, pd.Series(dtype=float))
+
+    assert pd.isna(measures.loc["Upside", "NVDA"])
+    assert measures.loc["Dispersion", "NVDA"] == pytest.approx(0.6)
+    assert "Revision Momentum" not in measures.index
+
+
+def test_price_target_history_pages_back_to_the_start_date(monkeypatch):
+    requested = []
+
+    def target(day, company, price_target, price):
+        return {
+            "publishedDate": f"{day}T12:00:00.000Z",
+            "analystCompany": company,
+            "priceTarget": price_target,
+            "adjPriceTarget": price_target,
+            "priceWhenPosted": price,
+        }
+
+    recent = [target("2025-06-30", "Firm", 220, 200)] * 99 + [
+        target("2025-03-03", "Bank", 150, 120)
+    ]
+    older = [
+        target("2025-02-03", "Bank", 140, 140),
+        target("2025-01-06", "Broker", 100, 125),
+        target("2024-12-02", "Broker", 90, 100),
+    ]
+
+    def fake_get_financial_data(
+        url, sleep_timer=True, raw=False, user_subscription="Free"
+    ):  # noqa: ARG001
+        requested.append(url)
+        page = int(url.split("page=")[1].split("&")[0])
+
+        return pd.DataFrame({0: recent, 1: older}.get(page, []))
+
+    monkeypatch.setattr(fmp_model, "get_financial_data", fake_get_financial_data)
+
+    history, missing = fmp_model.get_price_target_history(
+        ["NVDA"], "key", start_date="2025-01-01", end_date="2025-03-31"
+    )
+
+    # The second page reaches back before the start date, so no third page is requested.
+    assert len(requested) == 2
+    assert "from=2025-01-01" in requested[0] and "to=2025-03-31" in requested[0]
+    nvda = history.loc["NVDA"]
+    assert nvda.index.get_level_values("Analyst Company").tolist() == [
+        "Broker",
+        "Bank",
+        "Bank",
+    ]
+    assert nvda["Implied Upside"].tolist() == pytest.approx([-0.2, 0.0, 0.25])
+    assert missing == []
+
+
+def test_analyst_recommendations_count_the_analysts_and_score_them(responses):
+    canned, requested = responses
+    canned["grades-historical"] = [
+        {
+            "symbol": "AAPL",
+            "date": "2025-02-01",
+            "analystRatingsStrongBuy": 2,
+            "analystRatingsBuy": 4,
+            "analystRatingsHold": 3,
+            "analystRatingsSell": 1,
+            "analystRatingsStrongSell": 0,
+        },
+        {
+            "symbol": "AAPL",
+            "date": "2024-01-01",
+            "analystRatingsStrongBuy": 1,
+            "analystRatingsBuy": 1,
+            "analystRatingsHold": 1,
+            "analystRatingsSell": 1,
+            "analystRatingsStrongSell": 1,
+        },
+    ]
+
+    recommendations, _ = fmp_model.get_analyst_recommendations(
+        ["AAPL"], "key", start_date="2025-01-01", end_date="2025-12-31"
+    )
+
+    assert "from=2025-01-01" in requested[0]
+    aapl = recommendations.loc["AAPL"]
+    # The endpoint ignores the date range, so the 2024 month is filtered out here.
+    assert aapl.index.tolist() == [pd.Timestamp("2025-02-01")]
+    assert aapl["Analysts"].iloc[0] == 10
+    assert aapl["Buy Share"].iloc[0] == pytest.approx(0.6)
+    # (1 × 2 + 2 × 4 + 3 × 3 + 4 × 1) / 10
+    assert aapl["Mean Recommendation"].iloc[0] == pytest.approx(2.3)
+
+
+def test_the_toolkit_measures_the_upside_against_the_quote(responses, cache_location):
+    canned, _ = responses
+    canned["price-target-consensus"] = [
+        {
+            "symbol": "AAPL",
+            "targetHigh": 300,
+            "targetLow": 200,
+            "targetConsensus": 250,
+            "targetMedian": 250,
+        }
+    ]
+    canned["quote"] = [{"symbol": "AAPL", "price": 200.0}]
+
+    toolkit = toolkit_controller.Toolkit(
+        ["AAPL"],
+        api_key="test-key",
+        sleep_timer=False,
+        use_cached_data=cache_location,
+        benchmark_ticker=None,
+    )
+    targets = toolkit.get_price_targets()
+
+    assert targets.loc["Upside", "AAPL"] == pytest.approx(0.25)
+    assert targets.loc["Dispersion", "AAPL"] == pytest.approx(0.4)

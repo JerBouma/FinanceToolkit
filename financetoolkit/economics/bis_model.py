@@ -311,3 +311,70 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
         end_date=end_date,
         description=description,
     )
+
+
+def get_credit_statistics(
+    dataflow: str, key: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    """
+    Retrieves one quarterly series per country from the BIS credit statistics: the
+    credit-to-GDP gaps (WS_CREDIT_GAP), the debt service ratios (WS_DSR) or the total
+    credit to the non-financial sector (WS_TC). The key selects the series within the
+    dataflow, such as the borrowing sector and the unit, and leaves the country open, so
+    that each country gives exactly one series. Aggregates such as "all reporting
+    economies" have no country and are left out.
+
+    Args:
+        dataflow (str): The BIS dataflow, e.g. "WS_DSR".
+        key (str): The series key with the country left empty, e.g. "Q..P".
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The series as decimals (the BIS publishes percentages, of GDP or of
+        income), indexed by quarter with a column per country.
+    """
+    description = f"BIS credit statistics ({dataflow})"
+
+    def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
+        text = request_csv(
+            f"{BASE_URL}{dataflow}/~/{key}?format=csv&detail=dataonly"
+            # Quarters are written as "2026-Q2".
+            f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
+            f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",
+            timeout=120,
+        )
+
+        if not text.strip():
+            return pd.DataFrame()
+
+        data = pd.read_csv(io.StringIO(text))
+        require_columns(
+            data, {"BORROWERS_CTY", "TIME_PERIOD", "OBS_VALUE"}, description
+        )
+
+        data = data[data["BORROWERS_CTY"].isin(COUNTRY_CODES.keys())]
+        if data.empty:
+            return pd.DataFrame()
+
+        statistics = data.pivot(
+            index="TIME_PERIOD", columns="BORROWERS_CTY", values="OBS_VALUE"
+        )
+        statistics = statistics.rename(columns=COUNTRY_CODES)
+        statistics.index = pd.PeriodIndex(
+            statistics.index.str.replace("-", ""), freq="Q"
+        )
+        statistics.index.name = None
+        statistics.columns.name = None
+
+        return statistics.sort_index() / 100
+
+    return collect_ranged_data(
+        source=policy_model.BANK_FOR_INTERNATIONAL_SETTLEMENTS,
+        dataset="credit",
+        entity=f"{dataflow}/{key}",
+        fetch=fetch,
+        start_date=start_date,
+        end_date=end_date,
+        description=description,
+    )

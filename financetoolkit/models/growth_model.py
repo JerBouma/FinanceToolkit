@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 
+import numpy as np
 import pandas as pd
 
 # pylint: disable=too-many-locals
@@ -118,3 +119,90 @@ def get_internal_growth_rate(
     return_on_assets_retained = return_on_assets * retention_ratio
 
     return return_on_assets_retained / (1 - return_on_assets_retained)
+
+
+def get_return_decomposition(
+    close_prices: pd.DataFrame,
+    earnings_per_share: pd.DataFrame,
+    dividends_per_share: pd.DataFrame,
+    lag: int = 1,
+    logarithmic: bool = False,
+) -> pd.DataFrame:
+    """
+    Splits the share price return over a window into the growth of the Earnings per Share and
+    the change of the Price-to-Earnings ratio, and adds the dividends paid over the window for
+    the total return.
+
+    Since the share price equals the Earnings per Share times the P/E ratio, the price relative
+    over a window is the product of the earnings relative and the multiple relative:
+
+        - Price_t / Price_t-lag = (EPS_t / EPS_t-lag) * (P/E_t / P/E_t-lag)
+        - Dividend Return = Dividends per Share paid over the window / Price_t-lag
+        - Total Return = Price Return + Dividend Return
+
+    In logarithms the parts add up: ln(1 + Total Return) = ln(1 + EPS Growth) +
+    ln(1 + P/E Change) + ln(1 + Dividends / Price_t).
+
+    Args:
+        close_prices (pd.DataFrame): The share price at the end of every period, with the
+            tickers as index and the periods as columns.
+        earnings_per_share (pd.DataFrame): The Earnings per Share of every period, in the same
+            layout.
+        dividends_per_share (pd.DataFrame): The Dividends per Share paid within every period,
+            in the same layout.
+        lag (int): The number of periods the window spans. Defaults to 1.
+        logarithmic (bool): Whether to return log returns, which add up, instead of simple
+            returns, which multiply. Defaults to False.
+
+    Returns:
+        pd.DataFrame: The Price Return, EPS Growth, P/E Change, Dividend Return and Total Return
+        with the tickers and these parts as index and the periods as columns.
+
+    Notes:
+    - The P/E ratio has no meaning when the earnings are zero or negative, so the EPS Growth and
+    P/E Change are NaN when the Earnings per Share at either end of the window is not positive.
+    The Price Return, Dividend Return and Total Return remain.
+    - Dividends are added as paid, without reinvestment.
+    """
+    price_relative = close_prices / close_prices.shift(lag, axis=1)
+    previous_earnings = earnings_per_share.shift(lag, axis=1)
+    positive_earnings = (earnings_per_share > 0) & (previous_earnings > 0)
+    # Without a price at both ends there is no return to split, even when earnings are reported.
+    earnings_relative = (earnings_per_share / previous_earnings).where(
+        positive_earnings & price_relative.notna()
+    )
+    multiple_relative = price_relative / earnings_relative
+
+    window_dividends = dividends_per_share.T.rolling(lag, min_periods=lag).sum().T
+    dividend_return = window_dividends / close_prices.shift(lag, axis=1)
+    total_relative = price_relative + dividend_return
+
+    if logarithmic:
+        price_relative, earnings_relative, multiple_relative = (
+            np.log(price_relative),
+            np.log(earnings_relative),
+            np.log(multiple_relative),
+        )
+        dividend_return = np.log(total_relative) - price_relative
+        total_relative = np.log(total_relative)
+        parts = {
+            "Price Return": price_relative,
+            "EPS Growth": earnings_relative,
+            "P/E Change": multiple_relative,
+            "Dividend Return": dividend_return,
+            "Total Return": total_relative,
+        }
+    else:
+        parts = {
+            "Price Return": price_relative - 1,
+            "EPS Growth": earnings_relative - 1,
+            "P/E Change": multiple_relative - 1,
+            "Dividend Return": dividend_return,
+            "Total Return": total_relative - 1,
+        }
+
+    decomposition = pd.concat(parts, names=["Part", "Ticker"])
+
+    return decomposition.swaplevel().reindex(
+        pd.MultiIndex.from_product([close_prices.index, list(parts)])
+    )

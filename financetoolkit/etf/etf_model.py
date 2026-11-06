@@ -94,6 +94,48 @@ def get_overlap(weights: dict[str, pd.Series]) -> pd.DataFrame:
     return overlap
 
 
+def get_active_share(weights: dict[str, pd.Series]) -> pd.DataFrame:
+    """
+    Calculate the active share between every pair of funds: half the sum, over all holdings
+    of either fund, of the absolute difference between their weights. It is the share of a
+    fund's portfolio that differs from the other's, 0 for identical holdings and 1 for funds
+    without a holding in common.
+
+    The formula is as follows:
+
+        - Active Share = 1/2 * SUM(|Weight Fund i - Weight Benchmark i|)
+
+    For more information, see the following paper:
+
+    - Cremers, K.J.M., & Petajisto, A. (2009). "How Active Is Your Fund Manager? A New
+      Measure That Predicts Performance." Review of Financial Studies, 22(9), 3329-3365.
+
+    Args:
+        weights (dict[str, pd.Series]): The weights of every fund's holdings, as decimals.
+
+    Returns:
+        pd.DataFrame: The active share of every fund (rows) against every other fund
+        (columns), as decimals. The weights of each fund are scaled to add up to one, so an
+        incomplete list of holdings is compared by its proportions.
+    """
+    funds = list(weights)
+    active_share = pd.DataFrame(np.nan, index=funds, columns=funds)
+    for first in funds:
+        for second in funds:
+            first_total = weights[first].sum()
+            second_total = weights[second].sum()
+            # A fund without holdings data has an unknown active share, not none.
+            if first_total <= 0 or second_total <= 0:
+                continue
+            first_weights, second_weights = (weights[first] / first_total).align(
+                weights[second] / second_total, fill_value=0
+            )
+            active_share.loc[first, second] = float(
+                (first_weights - second_weights).abs().sum() / 2
+            )
+    return active_share
+
+
 def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.Series:
     """
     Calculate the valuation of a fund from the valuation of its holdings, weighted by their
@@ -201,5 +243,56 @@ def get_tracking(
             "Correlation": correlation,
             "Beta": float(fund.cov(benchmark) / benchmark.var()),
             "R Squared": correlation**2,
+        }
+    )
+
+
+def get_contribution(
+    weights: pd.Series,
+    start_prices: pd.Series,
+    end_prices: pd.Series,
+    weight_date_prices: pd.Series,
+    fund_change: float,
+) -> pd.DataFrame:
+    """
+    Calculate the contribution of every holding to a fund's return over a period: its weight
+    at the start of the period times its return over the period, so the contributions add up
+    to the return of the part of the fund the holdings cover.
+
+    The weights are those of a later date (a fund publishes only its current holdings). They
+    are rolled back to the start of the period with every holding's own price change between
+    the two dates, relative to the fund's: w_start = w × (P_start / P_weights) × (F_weights /
+    F_start), with F the fund's price. That is exact for a fund that kept the same number of
+    shares of each holding (and the same cash), as a market capitalization weighted index does
+    between its rebalancings.
+
+    Args:
+        weights (pd.Series): The weight of every holding on the date of the holdings, as decimals.
+        start_prices (pd.Series): The price of every holding at the start of the period.
+        end_prices (pd.Series): The price of every holding at the end of the period.
+        weight_date_prices (pd.Series): The price of every holding on the date of the holdings.
+        fund_change (float): The fund's price on the date of the holdings over its price at the
+            start of the period, F_weights / F_start.
+
+    Returns:
+        pd.DataFrame: The Start Weight, Return and Contribution of every holding with a price on
+        all three dates, as decimals.
+    """
+    prices = pd.concat(
+        [start_prices, end_prices, weight_date_prices],
+        axis=1,
+        keys=["start", "end", "weights"],
+    ).reindex(weights.index)
+    priced = prices.notna().all(axis=1) & (prices > 0).all(axis=1)
+    weights, prices = weights[priced], prices[priced]
+
+    start_weights = weights * prices["start"] / prices["weights"] * fund_change
+    returns = prices["end"] / prices["start"] - 1
+
+    return pd.DataFrame(
+        {
+            "Start Weight": start_weights,
+            "Return": returns,
+            "Contribution": start_weights * returns,
         }
     )

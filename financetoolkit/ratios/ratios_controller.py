@@ -360,6 +360,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.Series | pd.DataFrame:
@@ -378,6 +379,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -478,6 +481,7 @@ class Ratios:
             self._all_ratios_growth = calculate_growth(
                 dataset=self._all_ratios,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
@@ -517,6 +521,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
     ):
         """
@@ -534,6 +539,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -736,6 +743,7 @@ class Ratios:
             self._custom_ratios_growth = calculate_growth(
                 dataset=self._custom_ratios,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
@@ -774,6 +782,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.Series | pd.DataFrame:
@@ -788,6 +797,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -934,6 +945,7 @@ class Ratios:
             self._efficiency_ratios_growth = calculate_growth(
                 dataset=self._efficiency_ratios,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
@@ -974,6 +986,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -998,6 +1011,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1063,6 +1078,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -1074,6 +1090,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -1106,6 +1123,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1174,6 +1193,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -1186,6 +1206,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -1213,6 +1234,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1289,6 +1312,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -1301,6 +1325,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -1337,6 +1362,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1406,6 +1433,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -1418,6 +1446,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -1444,6 +1473,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1537,6 +1568,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -1548,6 +1580,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -1573,6 +1606,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1645,6 +1680,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -1657,6 +1693,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -1684,6 +1721,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1760,6 +1799,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -1772,6 +1812,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -1806,6 +1847,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -1922,6 +1965,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -1933,6 +1977,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -1957,6 +2002,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2027,6 +2074,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2038,6 +2086,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2063,6 +2112,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2126,6 +2177,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2137,6 +2189,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2160,6 +2213,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2226,6 +2281,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2237,6 +2293,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2264,6 +2321,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2329,6 +2388,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2340,6 +2400,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2371,6 +2432,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2442,6 +2505,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2453,6 +2517,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2484,6 +2549,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2551,6 +2618,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2562,6 +2630,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2592,6 +2661,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2654,6 +2725,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2665,6 +2737,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2688,6 +2761,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2754,6 +2829,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2765,6 +2841,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2788,6 +2865,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2855,6 +2934,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2866,6 +2946,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2889,6 +2970,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -2951,6 +3034,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -2962,6 +3046,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -2989,6 +3074,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3053,6 +3140,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -3063,6 +3151,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -3074,6 +3163,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3172,6 +3263,7 @@ class Ratios:
             self._liquidity_ratios_growth = calculate_growth(
                 dataset=self._liquidity_ratios,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
@@ -3212,6 +3304,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -3242,6 +3335,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3307,6 +3402,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -3318,6 +3414,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -3345,6 +3442,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3420,6 +3519,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -3431,6 +3531,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -3454,6 +3555,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3524,6 +3627,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -3535,6 +3639,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -3557,6 +3662,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3622,6 +3729,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -3633,6 +3741,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -3655,6 +3764,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3720,6 +3831,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -3731,6 +3843,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -3753,6 +3866,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3822,6 +3937,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -3833,6 +3949,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -3854,6 +3971,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -3910,6 +4029,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -3922,6 +4042,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -3961,6 +4082,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4068,6 +4191,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -4078,6 +4202,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -4089,6 +4214,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4243,6 +4370,7 @@ class Ratios:
             self._profitability_ratios_growth = calculate_growth(
                 dataset=self._profitability_ratios,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
@@ -4283,6 +4411,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -4312,6 +4441,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4388,6 +4519,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -4399,6 +4531,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -4427,6 +4560,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4489,6 +4624,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -4500,6 +4636,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -4522,6 +4659,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4584,6 +4723,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -4595,6 +4735,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -4621,6 +4762,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4687,6 +4830,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -4698,6 +4842,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -4731,6 +4876,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4796,6 +4943,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -4807,6 +4955,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -4828,6 +4977,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4897,6 +5048,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -4908,6 +5060,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -4938,6 +5091,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -4999,6 +5154,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5010,6 +5166,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -5039,6 +5196,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5108,6 +5267,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5119,6 +5279,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -5145,6 +5306,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5212,6 +5375,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5223,6 +5387,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -5258,6 +5423,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5325,6 +5492,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5336,6 +5504,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -5368,6 +5537,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5456,6 +5627,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5467,6 +5639,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -5496,6 +5669,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5559,6 +5734,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5570,6 +5746,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -5597,6 +5774,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5679,6 +5858,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5690,6 +5870,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -5722,6 +5903,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5797,6 +5980,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5808,6 +5992,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -5835,6 +6020,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -5900,6 +6087,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -5911,6 +6099,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -5934,6 +6123,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6002,6 +6193,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -6013,6 +6205,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -6036,6 +6229,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6098,6 +6293,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -6109,6 +6305,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -6135,6 +6332,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6198,6 +6397,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -6209,6 +6409,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -6233,6 +6434,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6311,6 +6514,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -6322,6 +6526,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -6352,6 +6557,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6422,6 +6629,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -6433,6 +6641,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -6461,6 +6670,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6522,6 +6733,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -6533,6 +6745,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -6564,6 +6777,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6617,6 +6832,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -6628,6 +6844,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -6640,6 +6857,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6764,6 +6983,7 @@ class Ratios:
             self._solvency_ratios_growth = calculate_growth(
                 dataset=self._solvency_ratios,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
@@ -6804,6 +7024,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -6828,6 +7049,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -6891,6 +7114,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -6902,6 +7126,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -6928,6 +7153,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7006,6 +7233,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -7017,6 +7245,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7050,6 +7279,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7113,6 +7344,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -7124,6 +7356,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7155,6 +7388,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7218,6 +7453,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -7229,6 +7465,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7259,6 +7496,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7328,6 +7567,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -7339,6 +7579,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7371,6 +7612,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7456,6 +7699,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -7469,6 +7713,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7502,6 +7747,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7591,6 +7838,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -7604,6 +7852,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7631,6 +7880,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7699,6 +7950,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -7710,6 +7962,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7735,6 +7988,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7803,6 +8058,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -7814,6 +8070,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7834,6 +8091,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7897,6 +8156,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -7908,6 +8168,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -7932,6 +8193,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -7995,6 +8258,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -8006,6 +8270,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -8032,6 +8297,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8104,6 +8371,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -8115,6 +8383,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -8139,6 +8408,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8202,6 +8473,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -8213,6 +8485,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -8232,6 +8505,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8302,6 +8577,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -8313,6 +8589,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -8344,6 +8621,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8411,6 +8690,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -8423,6 +8703,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ) -> pd.DataFrame:
@@ -8437,6 +8718,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8606,6 +8889,7 @@ class Ratios:
             self._valuation_ratios_growth = calculate_growth(
                 dataset=self._valuation_ratios,
                 lag=lag,
+                compound=compound,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
@@ -8648,6 +8932,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -8678,6 +8963,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8763,6 +9050,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -8775,6 +9063,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -8798,6 +9087,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8862,6 +9153,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -8876,6 +9168,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -8912,6 +9205,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -8984,6 +9279,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -9000,6 +9296,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
     ):
         """
@@ -9039,6 +9336,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9112,6 +9411,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -9200,6 +9500,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
     ):
         """
@@ -9235,6 +9536,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9304,6 +9607,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -9315,6 +9619,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
     ):
         """
@@ -9352,6 +9657,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9482,6 +9789,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -9494,6 +9802,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -9516,6 +9825,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9589,6 +9900,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -9602,6 +9914,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -9636,6 +9949,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9712,6 +10027,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -9726,6 +10042,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -9747,6 +10064,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9820,6 +10139,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -9832,6 +10152,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -9861,6 +10182,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -9929,6 +10252,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -9941,6 +10265,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -9971,6 +10296,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -10062,6 +10389,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -10077,6 +10405,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -10103,6 +10432,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -10194,6 +10525,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -10209,6 +10541,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -10235,6 +10568,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -10308,6 +10643,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -10323,6 +10659,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -10347,6 +10684,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -10422,6 +10761,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -10437,6 +10777,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -10466,6 +10807,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -10539,6 +10882,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -10554,6 +10898,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
     ):
         """
@@ -10588,6 +10933,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -10648,6 +10995,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -10663,6 +11011,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
     ):
         """
@@ -10697,6 +11046,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -10779,6 +11130,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -10794,6 +11146,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -10820,6 +11173,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -10889,6 +11244,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -10904,6 +11260,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -10936,6 +11293,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11015,6 +11374,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -11030,6 +11390,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11055,6 +11416,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11126,6 +11489,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -11142,6 +11506,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11171,6 +11536,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11237,6 +11604,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -11250,6 +11618,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11280,6 +11649,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11339,6 +11710,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -11350,6 +11722,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11374,6 +11747,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11427,6 +11802,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -11438,6 +11814,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11458,6 +11835,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11517,6 +11896,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -11528,6 +11908,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11552,6 +11933,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11611,6 +11994,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -11624,6 +12008,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11651,6 +12036,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11718,6 +12105,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -11733,6 +12121,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11759,6 +12148,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11827,6 +12218,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
             axis="rows" if show_daily else "columns",
@@ -11841,6 +12233,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11872,6 +12265,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -11937,6 +12332,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -11949,6 +12345,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -11969,6 +12366,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -12034,6 +12433,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )
@@ -12045,6 +12445,7 @@ class Ratios:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
     ):
@@ -12070,6 +12471,8 @@ class Ratios:
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
@@ -12139,6 +12542,7 @@ class Ratios:
             default_rounding=self._rounding,
             growth=growth,
             lag=lag,
+            compound=compound,
             rounding=rounding,
             standardize=standardize,
         )

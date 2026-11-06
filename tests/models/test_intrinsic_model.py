@@ -298,3 +298,81 @@ def test_implied_growth_rate_is_missing_with_a_missing_input():
     )
 
     assert np.isnan(growth)
+
+
+def test_h_model_is_gordon_plus_the_extra_growth():
+    value = intrinsic_model.get_h_model(
+        dividends_per_share=2.0,
+        rate_of_return=0.10,
+        high_growth_rate=0.20,
+        stable_growth_rate=0.05,
+        high_growth_periods=8,
+    )
+    # Gordon at 5%: 2 * 1.05 / 0.05 = 42; extra growth: 2 * 4 * 0.15 / 0.05 = 24.
+    assert value == pytest.approx(66.0)
+
+    # Without extra growth it is the Gordon Growth Model.
+    assert intrinsic_model.get_h_model(2.0, 0.10, 0.05, 0.05) == pytest.approx(
+        intrinsic_model.get_gorden_growth_model(2.0, 0.10, 0.05)
+    )
+
+    with pytest.raises(ValueError):
+        intrinsic_model.get_h_model(2.0, 0.05, 0.20, 0.05)
+
+
+def test_three_stage_model_discounts_a_linearly_declining_growth_rate():
+    result = intrinsic_model.get_two_stage_dividend_discount_model(
+        dividends_per_share=1.0,
+        rate_of_return=0.09,
+        high_growth_rate=0.15,
+        stable_growth_rate=0.03,
+        high_growth_periods=3,
+        transition_periods=3,
+    )
+
+    # The dividends grow 15% for three years, then 12%, 9% and 6%, then 3% forever.
+    growth_rates = [0.15, 0.15, 0.15, 0.12, 0.09, 0.06]
+    dividends, dividend = [], 1.0
+    for growth_rate in growth_rates:
+        dividend *= 1 + growth_rate
+        dividends.append(dividend)
+    expected = sum(value / 1.09**year for year, value in enumerate(dividends, 1))
+    expected += dividends[-1] * 1.03 / (0.09 - 0.03) / 1.09**6
+
+    assert result.loc["Intrinsic Value"].iloc[0] == pytest.approx(expected)
+    assert "Transition Phase Present Value" in result.index
+
+
+def test_two_stage_model_without_transition_is_unchanged():
+    result = intrinsic_model.get_two_stage_dividend_discount_model(
+        1.0, 0.09, 0.15, 0.03, 3
+    )
+
+    assert "Transition Phase Present Value" not in result.index
+    assert list(result.columns) == ["High-Growth Periods = 3"]
+
+
+def test_justified_multiples():
+    payout_ratio = pd.Series([0.6, 0.6])
+    return_on_equity = pd.Series([0.15, 0.15])
+    growth_rate = pd.Series([0.06, 0.12])
+
+    trailing = intrinsic_model.get_justified_price_to_earnings(
+        payout_ratio, 0.10, growth_rate
+    )
+    leading = intrinsic_model.get_justified_price_to_earnings(
+        payout_ratio, 0.10, growth_rate, leading=True
+    )
+    price_to_book = intrinsic_model.get_justified_price_to_book(
+        return_on_equity, 0.10, growth_rate
+    )
+
+    assert trailing.iloc[0] == pytest.approx(0.6 * 1.06 / 0.04)
+    assert leading.iloc[0] == pytest.approx(0.6 / 0.04)
+    assert price_to_book.iloc[0] == pytest.approx(0.09 / 0.04)
+    # Growth at or above the rate of return has no finite value.
+    assert (
+        trailing.isna().iloc[1]
+        and leading.isna().iloc[1]
+        and price_to_book.isna().iloc[1]
+    )

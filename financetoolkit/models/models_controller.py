@@ -5,6 +5,7 @@ __docformat__ = "google"
 from collections.abc import Callable
 from functools import cached_property
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import LazyDict
@@ -7307,6 +7308,210 @@ class Models:
             show_columns,
             first_columns=first_columns,
             name="The Montier C-Score",
+        )
+
+    @handle_errors
+    def get_quality_score(
+        self,
+        growth_years: int = 5,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        The Quality Score follows the Quality Minus Junk (QMJ) score of Asness, Frazzini and
+        Pedersen (2019): a company is of high quality when it is profitable, growing, safe and
+        pays out to its shareholders. Every measure is ranked across the tickers given in each
+        period and turned into a z-score, each of the four components is the z-score of the
+        average of its measures, and the Quality Score is the z-score of their sum. A positive
+        score is a higher quality than the average of the tickers given.
+
+        The measures are as follows (a higher value is a higher quality, so the measures marked
+        "low" enter with a minus sign):
+
+            - Profitability: Gross Profits to Assets ((Revenue - Cost of Goods Sold) / Total
+            Assets, Novy-Marx 2013), Return on Equity, Return on Assets, Cash Flow to Assets
+            ((Operating Cash Flow - Capital Expenditure) / Total Assets), Gross Margin and low
+            accruals ((Operating Cash Flow - Net Income) / Total Assets)
+            - Growth: the change in Gross Profits to Assets, Return on Equity, Return on Assets,
+            Cash Flow to Assets and Gross Margin over `growth_years`
+            - Safety: low Beta (of the period's returns against the benchmark), low leverage
+            (Total Debt / Total Assets), low Ohlson O-Score, high Altman Z-Score and low
+            earnings volatility (the standard deviation of the Return on Equity over
+            `growth_years`)
+            - Payout: low equity issuance (-ln of the change in the diluted shares over a year),
+            low debt issuance (-ln of the change in Total Debt over a year) and the net payout
+            ratio ((Dividends + Share Repurchases - Shares Issued) / Net Income)
+
+        Also known as: QMJ, Quality Minus Junk, quality factor, quality composite.
+
+        Args:
+            growth_years (int, optional): The number of years over which the growth and the
+                earnings volatility are measured. Defaults to 5, as in the paper.
+            trailing (int | None, optional): Sum the flows over this many periods. Defaults to
+                None, which is 4 for quarterly data (a trailing twelve months) and 1 otherwise.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Toolkit (4 unless set
+                otherwise).
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the z-scores of Profitability, Growth, Safety
+            and Payout, and the Quality Score.
+
+        Notes:
+        - The scores are relative to the tickers given: AQR ranks every stock in the market,
+        while this ranks the tickers passed to the Toolkit, so pass a broad or comparable set
+        (at least three tickers, preferably many more). With fewer than three, it is empty.
+        - The growth measures need `growth_years` of earlier statements, so the first Quality
+        Score is `growth_years` after the first period (with quarterly data, plus the three
+        quarters of the first trailing year). Set an earlier start_date to obtain it.
+        - The paper measures growth as the change in profits per share scaled by the assets
+        of five years earlier; this takes the change in the profitability ratios themselves,
+        and it leaves out the idiosyncratic volatility of the safety component.
+        - A ticker without one of the components has no Quality Score.
+        - Asness, C. S., A. Frazzini and L. H. Pedersen, "Quality Minus Junk," Review of
+        Accounting Studies 24, 2019, pp. 34-112. Novy-Marx, R., "The Other Side of Value: The
+        Gross Profitability Premium," Journal of Financial Economics 108(1), 2013, pp. 1-28.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "META", "NVDA", "INTC", "IBM", "ORCL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_quality_score().xs("Quality Score", level=1)
+        ```
+
+        Which returns:
+
+        |       |    2020 |    2021 |    2022 |    2023 |    2024 |     2025 |
+        |:------|--------:|--------:|--------:|--------:|--------:|---------:|
+        | AAPL  |  0.6124 |  1.0206 |  1.4289 |  0.6124 |  0.6124 |   1.3363 |
+        | GOOGL | -1.0206 |  0.2041 |  0.6124 |  1.0206 |  1.0206 |   0.8018 |
+        | IBM   | -1.4289 | -0.6124 | -0.6124 | -0.6124 | -0.6124 |  -0.2673 |
+        | INTC  | -0.6124 | -1.0206 | -1.4289 | -1.4289 | -1.4289 |  -1.3363 |
+        | META  |  1.4289 |  1.4289 |  0.2041 | -0.2041 |  0.2041 |   0.2673 |
+        | MSFT  |  1.0206 |  0.6124 |  1.0206 |  0.2041 | -0.2041 |  -0.8018 |
+        | NVDA  |  0.2041 | -0.2041 | -0.2041 |  1.4289 |  1.4289 | nan      |
+        | ORCL  | -0.2041 | -1.4289 | -1.0206 | -1.0206 | -1.0206 | nan      |
+        """
+        if len(self._tickers) < quality_model.QUALITY_MINIMUM_TICKERS:
+            logger.warning(
+                "The Quality Score ranks the tickers against each other and needs at least "
+                "three tickers, while %s were given.",
+                len(self._tickers),
+            )
+            return pd.DataFrame()
+
+        if trailing is None and self._quarterly:
+            trailing = 4
+        year = 4 if self._quarterly else 1
+        growth_lag = growth_years * year
+        inputs = self._score_inputs(trailing)
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            frame = self._rows(statement, row)
+            return frame.T.rolling(trailing).sum().T if trailing else frame
+
+        total_assets = inputs["Total Assets"]
+        net_income = inputs["Net Income"]
+        operating_cash_flow = inputs["Operating Cash Flow"]
+        gross_profit = inputs["Revenue"] - inputs["Cost of Goods Sold"]
+        total_debt = inputs["Total Debt"]
+        total_equity = self._rows(self._balance_sheet_statement, "Total Equity")
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+
+        profitability = {
+            "Gross Profits to Assets": gross_profit / total_assets,
+            "Return on Equity": net_income / total_equity,
+            "Return on Assets": net_income / total_assets,
+            "Cash Flow to Assets": (
+                operating_cash_flow - inputs["Capital Expenditure"].abs()
+            )
+            / total_assets,
+            "Gross Margin": gross_profit / inputs["Revenue"],
+            "Low Accruals": (operating_cash_flow - net_income) / total_assets,
+        }
+        growth = {
+            name: profitability[name] - profitability[name].shift(growth_lag, axis=1)
+            for name in [
+                "Gross Profits to Assets",
+                "Return on Equity",
+                "Return on Assets",
+                "Cash Flow to Assets",
+                "Gross Margin",
+            ]
+        }
+
+        def score_row(scores: pd.DataFrame, row: str) -> pd.DataFrame:
+            return scores.xs(row, level=1).reindex(
+                index=self._tickers, columns=total_assets.columns
+            )
+
+        period = "quarterly" if self._quarterly else "yearly"
+        returns = self._within_historical_data[period]["Return"]
+        # Periods by tickers, as the tickers are at least three.
+        beta = pd.DataFrame(
+            get_beta(returns[self._tickers], returns[self._benchmark_name])
+        ).T
+        beta.columns = beta.columns.asfreq(total_assets.columns.freq)
+
+        safety = {
+            "Low Beta": -beta.reindex(
+                index=self._tickers, columns=total_assets.columns
+            ),
+            "Low Leverage": -(total_debt / total_assets),
+            "Low Ohlson O-Score": -score_row(
+                self.get_ohlson_o_score(trailing=trailing), "Ohlson O-Score"
+            ),
+            "Altman Z-Score": score_row(
+                self.get_altman_z_score(trailing=trailing), "Altman Z-Score"
+            ),
+            "Low Earnings Volatility": -profitability["Return on Equity"]
+            .T.rolling(growth_lag, min_periods=growth_lag)
+            .std()
+            .T,
+        }
+
+        # Logarithms of the change only exist between two positive values.
+        def log_change(frame: pd.DataFrame) -> pd.DataFrame:
+            previous = frame.shift(year, axis=1)
+            return np.log(frame.where(frame > 0) / previous.where(previous > 0))
+
+        net_payout = (
+            flow(self._cash_flow_statement, "Dividends Paid").abs().fillna(0)
+            + flow(self._cash_flow_statement, "Common Stock Purchased").abs().fillna(0)
+            - inputs["Common Stock Issued"].abs().fillna(0)
+        )
+        payout = {
+            "Low Equity Issuance": -log_change(shares),
+            "Low Debt Issuance": -log_change(total_debt),
+            "Net Payout Ratio": net_payout / net_income.where(net_income > 0),
+        }
+
+        results = quality_model.get_quality_minus_junk(
+            {
+                "Profitability": profitability,
+                "Growth": growth,
+                "Safety": safety,
+                "Payout": payout,
+            }
+        )
+
+        return self._finish_score(
+            results,
+            rounding,
+            show_columns,
+            first_columns=growth_lag + ((trailing or 1) - 1),
+            name="The Quality Score",
         )
 
     @handle_errors

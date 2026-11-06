@@ -2,6 +2,9 @@
 
 __docformat__ = "google"
 
+import operator
+from functools import reduce
+
 import numpy as np
 import pandas as pd
 
@@ -28,6 +31,9 @@ MONTIER_ASSET_GROWTH = 0.10
 # five years and requires at least three of them.
 MOHANRAM_VARIANCE_PERIODS = 5
 MOHANRAM_MINIMUM_VARIANCE_PERIODS = 3
+
+# Z-scores of ranks need a spread of ranks, which three tickers are the fewest to give in a useful way.
+QUALITY_MINIMUM_TICKERS = 3
 
 # Every comparison below is made `lag` periods back. The models were estimated on yearly
 # statements, so with quarterly flows summed over the trailing twelve months the lag is 4: a
@@ -484,3 +490,46 @@ def get_accruals_ratios(
         "Balance Sheet Accruals Ratio": balance_sheet_accruals / average_assets,
         "Cash Flow Accruals Ratio": cash_flow_accruals / average_assets,
     }
+
+
+def get_rank_z_score(frame: pd.DataFrame) -> pd.DataFrame:
+    """
+    The cross-sectional z-score of the ranks of a ticker by period frame: in every period the
+    tickers are ranked (the average rank for ties) and the ranks are standardized to a mean
+    of 0 and a standard deviation of 1 (ddof=1) across the tickers with a value. Ranks make
+    the score robust to outliers, as in Asness, Frazzini and Pedersen (2019).
+    """
+    ranks = frame.rank(axis=0)
+    return (ranks - ranks.mean(axis=0)) / ranks.std(axis=0)
+
+
+def get_quality_minus_junk(
+    components: dict[str, dict[str, pd.DataFrame]],
+) -> dict[str, pd.DataFrame]:
+    """
+    The Quality Minus Junk score of Asness, Frazzini and Pedersen (2019) from its measures,
+    each a ticker by period frame in which a higher value means a higher quality.
+
+    Every measure is turned into the cross-sectional z-score of its ranks, each component is
+    the z-score of the average of its measures, and the Quality Score is the z-score of the
+    sum of the components. A measure that is missing for a ticker is left out of that
+    ticker's average.
+
+    Args:
+        components (dict[str, dict[str, pd.DataFrame]]): The measures per component, e.g.
+            {"Profitability": {"Gross Profits to Assets": ..., ...}, "Safety": {...}}.
+
+    Returns:
+        dict[str, pd.DataFrame]: The z-score of every component and the Quality Score, each a
+        ticker by period frame.
+    """
+    scores: dict[str, pd.DataFrame] = {}
+    for component, measures in components.items():
+        z_scores = [get_rank_z_score(measure) for measure in measures.values()]
+        average = pd.concat(z_scores).groupby(level=0, sort=False).mean()
+        scores[component] = get_rank_z_score(average.reindex(z_scores[0].index))
+
+    # A ticker without every component has no Quality Score, rather than one from fewer components.  # noqa: E501
+    total = reduce(operator.add, scores.values())
+    scores["Quality Score"] = get_rank_z_score(total)
+    return scores

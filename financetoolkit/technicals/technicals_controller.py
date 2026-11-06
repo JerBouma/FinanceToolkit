@@ -8927,25 +8927,25 @@ class Technicals:
 
         |                                               | NVDA       |
         |:----------------------------------------------|:-----------|
-        | Latest                                        | 25.3952    |
+        | Latest                                        | 25.3948    |
         | Latest Date                                   | 2026-11-05 |
         | Percentile                                    | 0.0008     |
         | Rank                                          | 1          |
         | Observations                                  | 1245       |
-        | Mean                                          | 54.5071    |
-        | Minimum                                       | 25.3952    |
+        | Mean                                          | 54.5091    |
+        | Minimum                                       | 25.3948    |
         | Minimum Date                                  | 2026-11-05 |
-        | Maximum                                       | 85.2592    |
+        | Maximum                                       | 85.2808    |
         | Maximum Date                                  | 2024-02-05 |
-        | Average 5-Period Return                       | 0.0097     |
+        | Average 5-Period Return                       | 0.0098     |
         | Average 21-Period Return                      | 0.0442     |
         | Average 63-Period Return                      | 0.153      |
         | Periods Below                                 | 12         |
         | Crossings Below                               | 6          |
         | Last Crossing Below                           | 2026-11-05 |
-        | Average 5-Period Return After Crossing Below  | 0.0627     |
+        | Average 5-Period Return After Crossing Below  | 0.0625     |
         | Average 21-Period Return After Crossing Below | 0.0313     |
-        | Average 63-Period Return After Crossing Below | 0.1965     |
+        | Average 63-Period Return After Crossing Below | 0.1968     |
         """
         names = factor_model.select_metrics(metric, FACTOR_COLLECTIONS)
         if len(names) != 1:

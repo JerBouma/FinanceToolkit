@@ -478,7 +478,7 @@ def setup() -> None:
 
     The setup contains the following optional arguments:
 
-    --client {claude-desktop,claude-code,vscode,cursor,gemini,windsurf}
+    --client {claude-desktop,claude-code,vscode,cursor,gemini,devin,copilot}
         Configure a single client without opening the interactive menu.
     --overwrite
         Silently overwrite an existing configuration.  Without this flag the
@@ -498,12 +498,14 @@ def setup() -> None:
             "vscode",
             "cursor",
             "gemini",
-            "windsurf",
+            "devin",
+            "copilot",
         ],
         metavar="CLIENT",
         help=(
             "Configure a specific client non-interactively. "
-            "Choices: claude-desktop, claude-code, vscode, cursor, gemini, windsurf."
+            "Choices: claude-desktop, claude-code, vscode, cursor, gemini, devin "
+            "(Devin Desktop / Windsurf), copilot (GitHub Copilot, global)."
         ),
     )
     parser.add_argument(
@@ -675,8 +677,8 @@ def _setup_interactive() -> None:
 
     cwd = pathlib.Path.cwd()
 
-    # Option 7 is handled as a distinct removal flow.
-    if "7" in choice_str:
+    # Option 8 is handled as a distinct removal flow.
+    if "8" in choice_str:
         setup_model.remove_all_configs(cwd)
         return
 
@@ -693,7 +695,8 @@ def _setup_interactive() -> None:
             lambda k, fk: setup_model.write_cursor_config(k, cwd, fk),
         ),
         "5": ("Gemini", setup_model.write_gemini_config),
-        "6": ("Windsurf", setup_model.write_windsurf_config),
+        "6": ("Devin Desktop (Windsurf)", setup_model.write_devin_config),
+        "7": ("GitHub Copilot (global)", setup_model.write_copilot_config),
     }
 
     # Filter only valid numeric choices from input
@@ -704,7 +707,7 @@ def _setup_interactive() -> None:
         setup_model.err("No valid options selected.")
         return
 
-    needs_global_env = any(c in to_process for c in ("2", "3", "4", "5", "6"))
+    needs_global_env = any(c in to_process for c in ("2", "3", "4", "5", "6", "7"))
     if (
         api_key
         and needs_global_env

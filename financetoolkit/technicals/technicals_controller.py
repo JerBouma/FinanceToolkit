@@ -910,7 +910,8 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._historical_data[period].loc[self._start_date :]
 
         on_balance_volume = breadth_model.get_on_balance_volume(
             historical_data[close_column],
@@ -1024,7 +1025,10 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._get_historical_data(period, close_column)
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._get_historical_data(period, close_column).loc[
+            self._start_date :
+        ]
 
         accumulation_distribution_line = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1540,7 +1544,8 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._historical_data[period].loc[self._start_date :]
 
         negative_volume_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -1667,7 +1672,8 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._historical_data[period].loc[self._start_date :]
 
         positive_volume_index = pd.DataFrame(
             index=historical_data.loc[self._start_date : self._end_date].index
@@ -7704,7 +7710,10 @@ class Technicals:
                 )
             close_column = "Close"
 
-        historical_data = self._historical_data[period]
+        # The cone describes the volatility between the start and end date.
+        historical_data = self._historical_data[period].loc[
+            self._start_date : self._end_date
+        ]
 
         volatility_cone = {}
 
@@ -8121,7 +8130,8 @@ class Technicals:
         | 2025-12-30 |           9 |          21 |           0 |            -12 |                    954 |                  0.4286 |                -3.642  |                    -745.019 |                               0.7    |                                   0.8 |           0 |          0 |
         | 2025-12-31 |           3 |          27 |           0 |            -24 |                    930 |                  0.1111 |               -46.2902 |                    -791.309 |                               0.5667 |                                   0.8 |           0 |          0 |
         """
-        prices = self._close_prices(period, close_column)
+        # The Advance-Decline Line and McClellan Summation Index start at the start date.
+        prices = self._close_prices(period, close_column).loc[self._start_date :]
         constituents = [
             ticker
             for ticker in prices.columns

@@ -441,6 +441,35 @@ def test_ratios_over_the_whole_period_hold_one_number_per_ticker(performance_mod
         assert ratio.notna().all()
 
 
+def test_the_kelly_criterion_per_period_over_the_history_and_rolling(
+    performance_module,
+):
+    per_period = performance_module.get_kelly_criterion(rounding=8)
+    half_kelly = performance_module.get_kelly_criterion(fraction=0.5, rounding=8)
+
+    assert not per_period.empty
+    pd.testing.assert_frame_equal(half_kelly, per_period / 2, atol=1e-8)
+    assert not performance_module.get_kelly_criterion(within_period=False).empty
+    assert (
+        not performance_module.get_kelly_criterion(
+            period="daily", rolling=20, method="continuous"
+        )
+        .dropna(how="all")
+        .empty
+    )
+
+
+def test_the_return_statistics_over_the_history_and_per_period(performance_module):
+    statistics = performance_module.get_return_statistics()
+
+    assert "Profit Factor" in statistics.index
+    assert statistics.loc["Win Rate"].between(0, 1).all()
+
+    per_period = performance_module.get_return_statistics(within_period=True)
+
+    assert "Payoff Ratio" in per_period.columns.get_level_values(0)
+
+
 @pytest.mark.parametrize(
     "method", ["blume", "vasicek", "dimson", "scholes_williams", "upside", "downside"]
 )

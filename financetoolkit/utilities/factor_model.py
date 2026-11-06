@@ -699,7 +699,9 @@ def get_factor_analysis(
     # A metric most tickers lack (e.g. inventory turnover for companies without inventory)
     # can't be ranked; it is left out of a collection rather than failing the others.
     thin = [name for name, analysis in analyses.items() if analysis is None]
-    analyses = {name: analysis for name, analysis in analyses.items() if analysis is not None}
+    analyses = {
+        name: analysis for name, analysis in analyses.items() if analysis is not None
+    }
 
     if not analyses:
         raise ValueError(

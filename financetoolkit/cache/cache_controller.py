@@ -581,6 +581,10 @@ class Cache:
                 coverage_start = min(coverage_start, bounds[0])
                 coverage_end = max(coverage_end, bounds[1])
 
+            # A bar of a session that has not closed is a snapshot: the day stays uncovered, so the next call asks for it again.  # noqa: E501
+            if policy_model.get_policy(source, dataset).settles_at_close:
+                coverage_end = min(coverage_end, policy_model.get_last_closed_session())
+
             if coverage_start <= coverage_end:
                 coverage = (coverage_start, coverage_end)
 

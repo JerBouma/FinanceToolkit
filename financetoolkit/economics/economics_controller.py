@@ -36,6 +36,7 @@ from financetoolkit.economics import (
     mof_model,
     nber_model,
     ngfs_model,
+    nyfed_model,
     oecd_model,
     ons_model,
     sbj_model,
@@ -9083,6 +9084,94 @@ class Economics:
             axis="rows",
             row_slice=historic,
             apply_slice=historic,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_supply_chain_pressure_index(
+        self,
+        rolling: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the Global Supply Chain Pressure Index (GSCPI) of the Federal Reserve Bank of New
+        York, monthly from 1998: one measure of the pressure on global supply chains,
+        combining 27 series. Shipping costs come from the Baltic Dry Index, the Harpex index
+        of container ship charter rates and the US Bureau of Labor Statistics air freight
+        price indices; the rest are the delivery times, backlogs and purchased stocks of the
+        manufacturing purchasing managers' surveys of the euro area, China, Japan, South
+        Korea, Taiwan, the United Kingdom and the United States. The index peaked in December
+        2021 at more than four standard deviations, when the reopening after COVID-19 met
+        congested ports, and is a common leading indicator of goods inflation.
+
+        Benigno, G., di Giovanni, J., Groen, J. J. J., & Noble, A. I. (2022). The GSCPI: A New
+        Barometer of Global Supply Chain Pressures. Federal Reserve Bank of New York Staff
+        Reports, 1017. https://www.newyorkfed.org/research/staff_reports/sr1017
+
+        The index is the first principal component of the series after removing the part
+        explained by demand, measured in standard deviations from its average: zero is the
+        average pressure and 1 is one standard deviation above it. It is not a rate, so it is
+        not a decimal fraction. No API key is needed. The New York Fed re-estimates the whole
+        history with every release, so past months can change slightly.
+
+        See definition: https://www.newyorkfed.org/research/policy/gscpi
+
+        Also known as: GSCPI, supply chain pressure, supply chain index, shipping and delivery
+        pressure.
+
+        Args:
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The index in standard deviations from its average, indexed by month
+            with a "World" column.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-05-01', end_date='2026-10-31')
+
+        economics.get_supply_chain_pressure_index()
+        ```
+
+        Which returns:
+
+        |         |   World |
+        |:--------|--------:|
+        | 2026-05 |  1.8017 |
+        | 2026-06 |  1.2026 |
+        | 2026-07 |  0.9511 |
+        | 2026-08 |  1.271  |
+        | 2026-09 |  1.3612 |
+        | 2026-10 |  1.2619 |
+        """
+        supply_chain_pressure = nyfed_model.get_supply_chain_pressure_index()
+
+        return finalize_dataset(
+            dataset=supply_chain_pressure,
+            indicator_name="Supply Chain Pressure Index",
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
             dropna=True,
         )
 

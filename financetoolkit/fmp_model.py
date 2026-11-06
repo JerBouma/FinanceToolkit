@@ -2978,6 +2978,315 @@ def get_stock_grades(
     )
 
 
+def get_price_targets(
+    tickers: list[str] | str,
+    api_key: str,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the current analyst price targets of each ticker: the consensus, median,
+    highest and lowest target, and the number and average of the targets published over
+    the last month, quarter, year and all time.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the price targets for.
+        api_key (str): The FinancialModelingPrep API key.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The price targets with a column per ticker, and the
+            tickers for which no data could be found.
+    """
+    consensus_naming: dict = {
+        "targetConsensus": "Target Consensus",
+        "targetMedian": "Target Median",
+        "targetHigh": "Target High",
+        "targetLow": "Target Low",
+    }
+    summary_naming: dict = {
+        "lastMonthCount": "Last Month Count",
+        "lastMonthAvgPriceTarget": "Last Month Average",
+        "lastQuarterCount": "Last Quarter Count",
+        "lastQuarterAvgPriceTarget": "Last Quarter Average",
+        "lastYearCount": "Last Year Count",
+        "lastYearAvgPriceTarget": "Last Year Average",
+        "allTimeCount": "All Time Count",
+        "allTimeAvgPriceTarget": "All Time Average",
+    }
+
+    def worker(ticker):
+        consensus = get_financial_data(
+            url=f"https://financialmodelingprep.com/stable/price-target-consensus?symbol={ticker}&apikey={api_key}",  # noqa: E501
+            user_subscription=user_subscription,
+        )
+
+        if "targetConsensus" not in consensus.columns:
+            return ticker, consensus, False
+
+        summary = get_financial_data(
+            url=f"https://financialmodelingprep.com/stable/price-target-summary?symbol={ticker}&apikey={api_key}",  # noqa: E501
+            user_subscription=user_subscription,
+        )
+
+        targets = (
+            consensus.iloc[0].reindex(list(consensus_naming)).rename(consensus_naming)
+        )
+
+        # The summary is a separate endpoint that can be empty while the consensus is not.
+        if "lastMonthCount" in summary.columns:
+            targets = pd.concat(
+                [
+                    targets,
+                    summary.iloc[0]
+                    .reindex(list(summary_naming))
+                    .rename(summary_naming),
+                ]
+            )
+
+        targets = pd.to_numeric(targets, errors="coerce").rename(ticker)
+
+        # A window without targets has no average; the endpoint reports it as 0.
+        for window in ["Last Month", "Last Quarter", "Last Year", "All Time"]:
+            if targets.get(f"{window} Count") == 0:
+                targets[f"{window} Average"] = np.nan
+
+        return ticker, targets, True
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "price targets", user_subscription, unstack=True
+    )
+
+
+def add_price_target_metrics(targets: pd.DataFrame, prices: pd.Series) -> pd.DataFrame:
+    """
+    Adds the measures analysts' price targets are read with: the share price, the upside
+    to the consensus target, the dispersion of the targets and the revision momentum.
+
+    - Upside: the consensus target divided by the share price, minus one.
+    - Dispersion: the range of the targets (highest minus lowest) relative to the
+      consensus, a measure of how much analysts disagree (Diether, Malloy and Scherbina,
+      2002, use the same idea for earnings forecasts).
+    - Revision Momentum: the average target of the last quarter relative to that of the
+      last year, minus one. Positive when the recent targets are higher, i.e. analysts
+      have been raising them.
+
+    Args:
+        targets (pd.DataFrame): The price targets with a column per ticker, as returned by
+            get_price_targets.
+        prices (pd.Series): The share price per ticker.
+
+    Returns:
+        pd.DataFrame: The price targets with the Price, Upside, Dispersion and Revision
+            Momentum rows added after the targets.
+    """
+    targets = targets.copy()
+    prices = pd.to_numeric(prices.reindex(targets.columns), errors="coerce")
+    consensus = targets.loc["Target Consensus"].where(
+        targets.loc["Target Consensus"] > 0
+    )
+
+    measures = pd.DataFrame(
+        {
+            "Price": prices,
+            "Upside": consensus / prices.where(prices > 0) - 1,
+            "Dispersion": (targets.loc["Target High"] - targets.loc["Target Low"])
+            / consensus,
+        }
+    ).T
+
+    if {"Last Quarter Average", "Last Year Average"} <= set(targets.index):
+        year_average = targets.loc["Last Year Average"]
+        measures.loc["Revision Momentum"] = (
+            targets.loc["Last Quarter Average"] / year_average.where(year_average > 0)
+            - 1
+        )
+
+    target_rows = ["Target Consensus", "Target Median", "Target High", "Target Low"]
+
+    return pd.concat(
+        [targets.loc[target_rows], measures, targets.drop(index=target_rows)]
+    )
+
+
+def get_price_target_history(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+    maximum_pages: int = 50,
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves every published analyst price target of each ticker: per date and analyst
+    company the split-adjusted target and the share price when it was published.
+
+    The endpoint returns the most recent hundred targets per page and ignores the date
+    range, so pages are requested until they reach back before the start date.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the price targets for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date to filter the price targets with.
+        end_date (str | None): The end date to filter the price targets with.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+        maximum_pages (int): The most pages requested per ticker. Defaults to 50.
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The price targets indexed by ticker, date and
+            analyst company, and the tickers for which no data could be found.
+    """
+    page_size = 100
+    start = pd.Timestamp(start_date) if start_date else None
+    end = pd.Timestamp(end_date) if end_date else None
+    date_range = (f"&from={start_date}" if start_date else "") + (
+        f"&to={end_date}" if end_date else ""
+    )
+
+    def worker(ticker):
+        pages = []
+
+        for page in range(maximum_pages):
+            targets = get_financial_data(
+                url=f"https://financialmodelingprep.com/stable/price-target-news?symbol={ticker}"
+                f"{date_range}&page={page}&limit={page_size}&apikey={api_key}",
+                user_subscription=user_subscription,
+            )
+
+            if "adjPriceTarget" not in targets.columns:
+                if page == 0:
+                    return ticker, targets, False
+                break
+
+            pages.append(targets)
+            oldest = pd.to_datetime(targets["publishedDate"]).min().tz_localize(None)
+
+            if len(targets) < page_size or (start is not None and oldest < start):
+                break
+
+        targets = pd.concat(pages, ignore_index=True)
+        # The publication time is in UTC; the day is what the targets are compared on.
+        targets["Date"] = (
+            pd.to_datetime(targets["publishedDate"]).dt.tz_localize(None).dt.normalize()
+        )
+        # A target reported by several news publishers is one target.
+        targets = targets.drop_duplicates(["Date", "analystCompany", "adjPriceTarget"])
+        targets = targets.rename(
+            columns={
+                "analystCompany": "Analyst Company",
+                "adjPriceTarget": "Price Target",
+                "priceWhenPosted": "Price When Posted",
+            }
+        )
+        targets["Implied Upside"] = (
+            targets["Price Target"]
+            / targets["Price When Posted"].where(targets["Price When Posted"] > 0)
+            - 1
+        )
+        targets = targets.set_index(["Date", "Analyst Company"]).sort_index()
+        targets = targets.loc[
+            start
+            or targets.index.get_level_values(0).min() : end
+            or targets.index.get_level_values(0).max()
+        ]  # noqa: E501
+
+        columns = ["Price Target", "Price When Posted", "Implied Upside"]
+
+        return ticker, targets[columns], not targets.empty
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "price target history", user_subscription
+    )
+
+
+def get_analyst_recommendations(
+    tickers: list[str] | str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_subscription: str = "Free",
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Retrieves the number of analysts recommending each ticker as a strong buy, buy,
+    hold, sell or strong sell, per month, together with the number of analysts, the
+    share recommending a buy and the mean recommendation on a 1 (strong buy) to 5
+    (strong sell) scale.
+
+    Args:
+        tickers (list[str] | str): The tickers to retrieve the recommendations for.
+        api_key (str): The FinancialModelingPrep API key.
+        start_date (str | None): The start date to filter the recommendations with.
+        end_date (str | None): The end date to filter the recommendations with.
+        user_subscription (str): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The recommendations indexed by ticker and date, and
+            the tickers for which no data could be found.
+    """
+    # The scale is the conventional one (I/B/E/S, Zacks): 1 is a strong buy, 5 a strong sell.
+    scores: dict = {
+        "analystRatingsStrongBuy": ("Strong Buy", 1),
+        "analystRatingsBuy": ("Buy", 2),
+        "analystRatingsHold": ("Hold", 3),
+        "analystRatingsSell": ("Sell", 4),
+        "analystRatingsStrongSell": ("Strong Sell", 5),
+    }
+    date_range = (f"&from={start_date}" if start_date else "") + (
+        f"&to={end_date}" if end_date else ""
+    )
+
+    def worker(ticker):
+        url = (
+            f"https://financialmodelingprep.com/stable/grades-historical?symbol={ticker}"
+            f"{date_range}&limit=1000&apikey={api_key}"
+        )
+        recommendations = get_financial_data(
+            url=url, user_subscription=user_subscription
+        )
+
+        if "analystRatingsBuy" not in recommendations.columns:
+            return ticker, recommendations, False
+
+        recommendations["Date"] = pd.to_datetime(recommendations["date"])
+        recommendations = recommendations.set_index("Date").sort_index()
+        # The endpoint ignores the date range, so it is applied here.
+        recommendations = recommendations.loc[
+            pd.Timestamp(start_date or recommendations.index.min()) : pd.Timestamp(
+                end_date or recommendations.index.max()
+            )
+        ]
+
+        counts = recommendations[list(scores)].apply(pd.to_numeric, errors="coerce")
+        analysts = counts.sum(axis=1, min_count=1)
+        weights = pd.Series({column: score for column, (_, score) in scores.items()})
+
+        counts = counts.rename(
+            columns={column: name for column, (name, _) in scores.items()}
+        )
+        counts["Analysts"] = analysts
+        counts["Buy Share"] = (counts["Strong Buy"] + counts["Buy"]) / analysts.where(
+            analysts > 0
+        )
+        counts["Mean Recommendation"] = (
+            recommendations[list(scores)].apply(pd.to_numeric, errors="coerce")
+            * weights
+        ).sum(axis=1, min_count=1) / analysts.where(analysts > 0)
+
+        return ticker, counts, not counts.empty
+
+    ticker_list = _to_ticker_list(tickers)
+    _require_fmp_api_key(api_key)
+
+    return _collect_per_ticker_frames(
+        worker, ticker_list, "analyst recommendations", user_subscription
+    )
+
+
 def _get_records(url: str, user_subscription: str = "Free") -> pd.DataFrame:
     """
     Retrieves an endpoint like get_financial_data, but builds the frame from the raw

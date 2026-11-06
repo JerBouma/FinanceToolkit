@@ -80,7 +80,12 @@ SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
     "institutional": ("get_institutional_ownership",),
     "13f": ("get_institutional_ownership",),
     "ownership": ("get_institutional_ownership", "get_insider_trade_statistics"),
-    "target": ("get_analyst_estimates", "get_stock_grades"),
+    "target": (
+        "get_price_targets",
+        "get_price_target_history",
+        "get_analyst_estimates",
+    ),
+    "recommendation": ("get_analyst_recommendations", "get_stock_grades"),
     "forecast": (
         "get_analyst_estimates",
         "get_inflation_expectations",

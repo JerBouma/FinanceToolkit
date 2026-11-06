@@ -3,6 +3,8 @@
 __docformat__ = "google"
 
 from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 DAY = 86400
 
@@ -46,6 +48,7 @@ MACROHISTORY = "Macrohistory"
 DE_NEDERLANDSCHE_BANK = "DeNederlandscheBank"
 EUROPEAN_SYSTEMIC_RISK_BOARD = "ESRB"
 DAMODARAN = "Damodaran"
+FINRA = "FINRA"
 
 # The market risk premium is published per country, so it is one cache entry. The name
 # marks the premiums as decimals, so an entry holding percentages under another name is
@@ -77,10 +80,46 @@ class CachePolicy:
             re-requested once the stored range has gone stale. Zero means the whole
             stale range is requested again, which is the right behaviour for sources
             that cannot be queried by date range anyway.
+        settles_at_close (bool): Whether the data holds a bar per trading day. The bar
+            of a session that is still trading changes until the close, so such a day
+            is only recorded as covered once every session has closed (see
+            `get_last_closed_session`) and is requested again until then.
     """
 
     ttl_seconds: int
     revision_days: int = 0
+    settles_at_close: bool = False
+
+
+# The last major exchanges to close (New York, Toronto) close at 16:00 New York time; the
+# half hour after it leaves time for the end-of-day bar to be published.
+SESSION_CLOSE = time(16, 30)
+SESSION_ZONE = ZoneInfo("America/New_York")
+
+
+def get_last_closed_session(now: datetime | None = None) -> date:
+    """
+    The last day whose trading sessions have all closed, everywhere.
+
+    A daily bar fetched during the session is a snapshot of the latest price, not the
+    close, so a day only counts as final from 16:30 New York time, half an hour after the
+    last major exchanges have closed. Exchanges further east close earlier on the same
+    date.
+
+    Args:
+        now (datetime | None): The moment to judge, with a time zone. Defaults to the
+            current time; mainly useful for testing.
+
+    Returns:
+        date: The last date whose daily bars are final.
+    """
+    local = (now or datetime.now(SESSION_ZONE)).astimezone(SESSION_ZONE)
+
+    return (
+        local.date()
+        if local.time() >= SESSION_CLOSE
+        else local.date() - timedelta(days=1)
+    )
 
 
 # Point-in-time data has no date range, so only the TTL applies.
@@ -89,9 +128,11 @@ DEFAULT_POLICY = CachePolicy(ttl_seconds=DAY)
 POLICIES: dict[str, CachePolicy] = {
     # Splits and dividends restate recent bars, so only the last week is re-requested.
     f"{FINANCIAL_MODELING_PREP}.historical": CachePolicy(
-        ttl_seconds=DAY, revision_days=7
+        ttl_seconds=DAY, revision_days=7, settles_at_close=True
     ),
-    f"{YAHOO_FINANCE}.historical": CachePolicy(ttl_seconds=DAY, revision_days=7),
+    f"{YAHOO_FINANCE}.historical": CachePolicy(
+        ttl_seconds=DAY, revision_days=7, settles_at_close=True
+    ),
     # Intraday bars move continuously; only FinancialModelingPrep publishes them.
     f"{FINANCIAL_MODELING_PREP}.intraday": CachePolicy(
         ttl_seconds=900, revision_days=2
@@ -128,6 +169,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{FINANCIAL_MODELING_PREP}.insider_trade_statistics": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.institutional_ownership": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.stock_grades": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.price_targets": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.price_target_history": CachePolicy(ttl_seconds=DAY),
+    f"{FINANCIAL_MODELING_PREP}.analyst_recommendations": CachePolicy(ttl_seconds=DAY),
     # Fund holdings and allocations are republished daily by most issuers.
     f"{FINANCIAL_MODELING_PREP}.etf_holdings": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.etf_information": CachePolicy(ttl_seconds=DAY),
@@ -154,7 +198,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{YAHOO_FINANCE}.option_chain": CachePolicy(ttl_seconds=900),
     f"{YAHOO_FINANCE}.option_expiries": CachePolicy(ttl_seconds=DAY),
     # A forward curve fetches one contract per delivery month, so cache per contract.
-    f"{YAHOO_FINANCE}.futures": CachePolicy(ttl_seconds=DAY, revision_days=7),
+    f"{YAHOO_FINANCE}.futures": CachePolicy(
+        ttl_seconds=DAY, revision_days=7, settles_at_close=True
+    ),
     # Macro sources revise heavily and publish on a lag, so the tail stays long.
     f"{FRED}.series": CachePolicy(ttl_seconds=DAY, revision_days=365),
     f"{OECD}.query": CachePolicy(ttl_seconds=DAY, revision_days=1095),
@@ -162,6 +208,7 @@ POLICIES: dict[str, CachePolicy] = {
     # Full history per series and no date range accepted, so only a TTL applies.
     f"{EUROPEAN_CENTRAL_BANK}.series": CachePolicy(ttl_seconds=DAY),
     f"{FEDERAL_RESERVE}.rate": CachePolicy(ttl_seconds=DAY),
+    f"{FEDERAL_RESERVE}.series": CachePolicy(ttl_seconds=DAY),
     # Statistical offices and central banks that publish a series whole and revise its
     # recent past; most release daily or monthly, so a day keeps the data current.
     # A rerun only asks for the revision window: a year of monthly releases for Eurostat,
@@ -177,6 +224,11 @@ POLICIES: dict[str, CachePolicy] = {
         ttl_seconds=DAY, revision_days=31
     ),
     f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.commercial_property": CachePolicy(
+        ttl_seconds=7 * DAY, revision_days=731
+    ),
+    # Quarterly credit statistics, published about three months after the quarter and
+    # revised back years when GDP or the credit series are revised.
+    f"{BANK_FOR_INTERNATIONAL_SETTLEMENTS}.credit": CachePolicy(
         ttl_seconds=7 * DAY, revision_days=731
     ),
     f"{BANK_OF_ENGLAND}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
@@ -242,7 +294,12 @@ POLICIES: dict[str, CachePolicy] = {
     f"{EUROPEAN_SYSTEMIC_RISK_BOARD}.listing": CachePolicy(ttl_seconds=7 * DAY),
     # The default spreads of the synthetic rating table are updated once a year.
     f"{DAMODARAN}.synthetic_ratings": CachePolicy(ttl_seconds=30 * DAY),
+    # The industry datasets are updated every January.
+    f"{DAMODARAN}.industry_statistics": CachePolicy(ttl_seconds=30 * DAY),
     f"{FEDERAL_RESERVE_BOARD}.scenario": CachePolicy(ttl_seconds=30 * DAY),
+    # A published day of short sale volume does not change, but FINRA publishes the file of
+    # a day in the evening, so once a day has passed the last week is asked for again.
+    f"{FINRA}.short_volume": CachePolicy(ttl_seconds=DAY, revision_days=7),
     f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365
     ),

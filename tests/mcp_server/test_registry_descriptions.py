@@ -390,3 +390,18 @@ def test_the_slow_egarch_fits_are_not_offered():
 
     assert "get_garch" in indicators
     assert not [name for name in indicators if "egarch" in name]
+
+
+def test_the_last_rows_of_stacked_tickers_are_selected_per_ticker():
+    import pandas as pd
+
+    from financetoolkit.mcp_server.formatting_model import select_rows
+
+    dates = pd.to_datetime(["2025-01-30", "2025-04-30", "2025-07-30"])
+    calendar = pd.DataFrame(
+        {"EPS": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]},
+        index=pd.MultiIndex.from_product([["AAPL", "MSFT"], dates]),
+    )
+
+    assert select_rows(calendar, -2)["EPS"].tolist() == [2.0, 3.0, 5.0, 6.0]
+    assert select_rows(calendar, 1)["EPS"].tolist() == [1.0, 4.0]

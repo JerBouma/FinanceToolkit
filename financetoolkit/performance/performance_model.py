@@ -186,6 +186,66 @@ def get_rolling_beta(
     return rolling_beta
 
 
+def get_beta_implied_return(
+    returns: pd.DataFrame,
+    benchmark_returns: pd.Series,
+    period: str,
+    beta_window: int,
+) -> pd.DataFrame:
+    """
+    Split each period's return into the part the market explains and the asset's own part:
+
+        - Implied Return = Beta × Benchmark Return
+        - Residual = Actual Return − Implied Return
+
+    The beta of a period is the rolling beta of the daily returns over the `beta_window`
+    trading days that end on the day before the period starts, so a period never helps
+    estimate the beta that explains it. The period returns compound the daily returns,
+    as `get_returns` does.
+
+    Args:
+        returns (pd.DataFrame): The daily asset returns, a daily PeriodIndex.
+        benchmark_returns (pd.Series): The daily benchmark returns on the same index.
+        period (str): The period to explain: daily, weekly, monthly, quarterly or yearly.
+        beta_window (int): The number of daily returns the beta is estimated on.
+
+    Returns:
+        pd.DataFrame: The periods as rows and a MultiIndex of (measure, ticker) as columns,
+        with the measures Beta, Benchmark Return, Implied Return, Actual Return and Residual.
+    """
+    # The window ends on the day before: the shift keeps a day out of its own beta.
+    daily_beta = get_rolling_beta(returns, benchmark_returns, beta_window).shift(1)
+
+    if period == "daily":
+        beta, actual_return, benchmark_return = daily_beta, returns, benchmark_returns
+    else:
+        actual_return = get_returns(returns, period)
+        benchmark_return = get_returns(benchmark_returns, period)
+
+        # Each period takes the beta of its first trading day, the one known when it began.
+        labels = to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
+        beta = daily_beta.groupby(labels).nth(0)
+        beta.index = labels[~labels.duplicated()]
+
+    benchmark = pd.DataFrame(
+        np.repeat(benchmark_return.to_numpy()[:, None], returns.shape[1], axis=1),
+        index=actual_return.index,
+        columns=returns.columns,
+    )
+    implied_return = beta.reindex(actual_return.index) * benchmark
+
+    return pd.concat(
+        {
+            "Beta": beta.reindex(actual_return.index),
+            "Benchmark Return": benchmark,
+            "Implied Return": implied_return,
+            "Actual Return": actual_return,
+            "Residual": actual_return - implied_return,
+        },
+        axis=1,
+    )
+
+
 def get_capital_asset_pricing_model(
     risk_free_rate: pd.Series | float,
     beta: pd.Series | pd.DataFrame | float,

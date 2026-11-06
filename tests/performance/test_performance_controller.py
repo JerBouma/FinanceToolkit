@@ -439,3 +439,32 @@ def test_ratios_over_the_whole_period_hold_one_number_per_ticker(performance_mod
     ):
         assert not ratio.empty
         assert ratio.notna().all()
+
+
+def test_get_beta_implied_return(performance_module):
+    daily = performance_module.get_beta_implied_return(beta_window=60, rounding=10)
+    yearly = performance_module.get_beta_implied_return(
+        period="yearly", beta_window=60, rounding=10
+    )
+
+    for result in (daily, yearly):
+        assert list(result.columns.get_level_values(0).unique()) == [
+            "Beta",
+            "Benchmark Return",
+            "Implied Return",
+            "Actual Return",
+            "Residual",
+        ]
+        explained = result.dropna(subset=[("Beta", result["Beta"].columns[0])])
+        assert not explained.empty
+        assert (
+            explained["Residual"]
+            - (explained["Actual Return"] - explained["Implied Return"])
+        ).abs().max().max() == pytest.approx(0.0, abs=1e-8)
+
+    # The actual returns are the Toolkit's own period returns.
+    returns = performance_module.get_returns(period="yearly", rounding=10)
+    common = yearly.index.intersection(returns.index)
+    assert yearly.loc[common, "Actual Return"].to_numpy() == pytest.approx(
+        returns.loc[common, yearly["Actual Return"].columns].to_numpy(), nan_ok=True
+    )

@@ -96,7 +96,7 @@ def _curve_maturity(maturity: Any) -> float | str:
 
 # The indicators that read the returns of the period itself rather than results within each
 # period, so a blocked period (e.g. daily performance) does not apply to them.
-PERIOD_BLOCK_EXEMPT = frozenset({"get_style_analysis"})
+PERIOD_BLOCK_EXEMPT = frozenset({"get_style_analysis", "get_beta_implied_return"})
 # The indicators whose own limit also takes a negative number, for the last rows.
 NEGATIVE_LIMIT_METHODS = frozenset({"get_holdings"})
 

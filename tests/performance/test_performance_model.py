@@ -843,3 +843,54 @@ def test_burke_drawdown_measure_of_a_series_without_returns_is_nan():
 
     assert measure["A"] > 0
     assert np.isnan(measure["B"])
+
+
+def test_beta_implied_return_leaves_no_residual_for_a_leveraged_market():
+    days = pd.period_range("2024-01-01", periods=300, freq="D")
+    rng = np.random.default_rng(1)
+    market = pd.Series(rng.normal(0, 0.01, len(days)), index=days)
+    # The asset is twice the market, the other asset half of it plus its own noise.
+    returns = pd.DataFrame(
+        {
+            "DOUBLE": 2 * market,
+            "OWN": 0.5 * market + rng.normal(0, 0.01, len(days)),
+        }
+    )
+
+    result = performance_model.get_beta_implied_return(
+        returns, market, "daily", beta_window=50
+    )
+
+    explained = result.iloc[50:]
+    assert explained["Beta"]["DOUBLE"].to_numpy() == pytest.approx(2.0)
+    assert explained["Residual"]["DOUBLE"].to_numpy() == pytest.approx(0.0, abs=1e-12)
+    # Without a full window before it a day has no beta and so no implied return.
+    assert result["Implied Return"].iloc[:50].isna().all().all()
+    assert (
+        explained["Residual"]
+        - (explained["Actual Return"] - explained["Implied Return"])
+    ).abs().max().max() == pytest.approx(0.0)
+
+
+def test_beta_implied_return_uses_the_beta_known_before_the_period():
+    days = pd.period_range("2024-01-01", periods=120, freq="D")
+    market = pd.Series(np.tile([0.01, -0.01], 60), index=days)
+    # Beta 1 for the first 60 days, then 3: the shift in beta must not reach back.
+    asset = pd.Series(np.r_[market.iloc[:60], 3 * market.iloc[60:]], index=days)
+    returns = asset.to_frame("A")
+
+    daily = performance_model.get_beta_implied_return(
+        returns, market, "daily", beta_window=20
+    )
+    # The first day of the new regime is explained by the old beta.
+    assert daily["Beta"]["A"].iloc[60] == pytest.approx(1.0)
+
+    monthly = performance_model.get_beta_implied_return(
+        returns, market, "monthly", beta_window=20
+    )
+    # March starts on day 60 (a leap year), so its beta is the one of the window before it.
+    assert monthly.loc["2024-03", ("Beta", "A")] == pytest.approx(1.0)
+    assert monthly.loc["2024-04", ("Beta", "A")] == pytest.approx(3.0)
+    assert monthly["Actual Return"]["A"].to_numpy() == pytest.approx(
+        performance_model.get_returns(returns, "monthly")["A"].to_numpy()
+    )

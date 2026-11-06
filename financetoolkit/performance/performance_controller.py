@@ -682,6 +682,102 @@ class Performance:
             dropna=True,
         )
 
+    @handle_errors
+    def get_beta_implied_return(
+        self,
+        period: str = "daily",
+        beta_window: int = 252,
+        rounding: int | None = None,
+    ):
+        """
+        Calculate the Beta-Implied Return, the part of an asset's return that its Beta to the
+        benchmark explains, and the Residual, the part that is the asset's own.
+
+        When the market falls 4% and a stock with a Beta of 1.8 falls 9%, the Beta accounts for
+        about 7.2% of the fall (1.8 × 4%) and the remaining 1.8% is specific to the stock: news,
+        earnings or sector moves that the market as a whole did not share. This is the market
+        model of Sharpe (1963) without its intercept, the split behind event studies and return
+        attribution, which reads a move against what the market alone would have produced.
+
+        The formula is as follows:
+
+            - Implied Return = Beta × Benchmark Return
+            - Residual = Actual Return — Implied Return
+
+        The Beta of each period is estimated from the daily returns over the `beta_window` trading
+        days that end on the day before the period starts, so the move being explained never helps
+        estimate the Beta that explains it, and the figure is what an investor could have known at
+        the start of the period. With the default daily period every row explains one day's move;
+        a monthly or yearly period explains that month or year with the Beta known when it began.
+
+        See definition: https://en.wikipedia.org/wiki/Single-index_model
+
+        Also known as: beta-adjusted return, market-implied move, idiosyncratic return, abnormal return.
+
+        Args:
+            period (str, optional): The period whose returns are explained: "daily", "weekly", "monthly",
+                "quarterly" or "yearly". Defaults to "daily".
+            beta_window (int, optional): The number of daily returns the Beta is estimated on. Defaults
+                to 252, about one year of trading days, a common length for a market model's
+                estimation window that is long enough for a stable Beta and short enough to follow
+                changes in the business.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: The periods as rows and a MultiIndex of (measure, ticker) as columns, with the
+            measures Beta, Benchmark Return, Implied Return, Actual Return and Residual. All returns are
+            decimals.
+
+        Notes:
+        - Returns are total returns (Adj Close), the asset's and the benchmark's over the same period.
+        - The Implied Return leaves out the risk free rate: the CAPM's expected return, Risk Free Rate +
+          Beta × (Benchmark Return — Risk Free Rate), differs from it by (1 — Beta) × the risk free rate,
+          a few basis points per day, and is available through `get_capital_asset_pricing_model`.
+        - A period whose window has fewer than `beta_window` daily returns before it (the start of the
+          data or a recent listing) has no Beta, so its Implied Return and Residual are empty. Start the
+          Toolkit at least `beta_window` trading days before the first period of interest.
+        - The Beta is the ordinary least squares Beta of `get_beta`, on the daily returns of the window.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "KO", "AMD", "TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-06-01",
+            end_date="2026-11-05",
+        )
+
+        toolkit.performance.get_beta_implied_return().loc["2026-11-05"].unstack()
+        ```
+
+        Which returns:
+
+        |                  |    NVDA |      KO |     AMD |    TSLA |
+        |:-----------------|--------:|--------:|--------:|--------:|
+        | Beta             |  1.8757 | -0.2777 |  3.2846 |  2.1039 |
+        | Benchmark Return | -0.0441 | -0.0441 | -0.0441 | -0.0441 |
+        | Implied Return   | -0.0827 |  0.0122 | -0.1448 | -0.0928 |
+        | Actual Return    | -0.0926 | -0.0007 | -0.1726 | -0.1077 |
+        | Residual         | -0.0099 | -0.0129 | -0.0278 | -0.0149 |
+        """
+        implied_returns = performance_model.get_beta_implied_return(
+            self._get_column("daily", "Return", within_period=False),
+            self._get_column("daily", "Return", within_period=False, benchmark=True),
+            period,
+            beta_window,
+        )
+
+        implied_returns = implied_returns.loc[self._start_date : self._end_date]
+
+        return apply_rounding(
+            implied_returns.dropna(how="all", axis=0),
+            rounding if rounding is not None else self._rounding,
+        )
+
     @handle_portfolio
     @handle_errors
     def get_capital_asset_pricing_model(

@@ -9,6 +9,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     VOLATILITY_WINDOW_TRANSLATION,
+    drop_non_finite,
     to_period_index,
 )
 
@@ -342,7 +343,9 @@ def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
         returns (pd.Series | pd.Dataframe): A single index dataframe or series
 
     Returns:
-        pd.Series | pd.Dataframe: Skewness of the dataset
+        pd.Series | pd.Dataframe: Skewness of the dataset, NaN for a series without
+        variation (e.g. a constant price), whose shape is undefined, or with fewer than
+        three returns.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -361,7 +364,9 @@ def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
             return skewness.T
         return returns.aggregate(get_skewness)
     if isinstance(returns, pd.Series):
-        return returns.skew()
+        # pandas reports 0 for a series that does not vary, which would describe a
+        # constant price (a suspended stock, a cash fund) as perfectly symmetric.
+        return np.nan if returns.max() == returns.min() else returns.skew()
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -381,7 +386,9 @@ def get_kurtosis(
         `get_skewness` also uses. Defaults to True.
 
     Returns:
-        pd.Series | pd.Dataframe: Kurtosis of the dataset
+        pd.Series | pd.Dataframe: Kurtosis of the dataset, NaN for a series without
+        variation (e.g. a constant price), whose shape is undefined, or with fewer than
+        four returns.
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -403,6 +410,11 @@ def get_kurtosis(
         return returns.aggregate(get_kurtosis, fisher=fisher)
     if isinstance(returns, pd.Series):
         # Pearson is Fisher shifted by 3 by definition, so both branches come from the same bias-corrected estimator; the population moment ratio is a different (biased) estimator and would leave the two definitions inconsistent.  # noqa: E501
+        # pandas reports 0 (Fisher) for a series that does not vary, which would describe
+        # a constant price (a suspended stock, a cash fund) as normally distributed.
+        if returns.max() == returns.min():
+            return np.nan
+
         return returns.kurtosis() if fisher else returns.kurtosis() + 3
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -651,7 +663,7 @@ def get_tail_ratio(
     if isinstance(returns, pd.Series):
         return abs(right_tail) / abs(left_tail) if left_tail != 0 else np.nan
 
-    return (right_tail.abs() / left_tail.abs()).replace([np.inf, -np.inf], np.nan)
+    return drop_non_finite(right_tail.abs() / left_tail.abs())
 
 
 def get_rolling_tail_ratio(
@@ -674,7 +686,7 @@ def get_rolling_tail_ratio(
     right_tail = rolling.quantile(1 - alpha, interpolation="linear")
     left_tail = rolling.quantile(alpha, interpolation="linear")
 
-    return (right_tail.abs() / left_tail.abs()).replace([np.inf, -np.inf], np.nan)
+    return drop_non_finite(right_tail.abs() / left_tail.abs())
 
 
 def get_rolling_conditional_drawdown_at_risk(
@@ -1084,9 +1096,12 @@ def get_rolling_skewness(
         window_size (int): The size of the rolling window.
 
     Returns:
-        pd.Series | pd.DataFrame: Rolling Skewness values with time as index.
+        pd.Series | pd.DataFrame: Rolling Skewness values with time as index, NaN for a
+        window without variation, as in `get_skewness`.
     """
-    return returns.rolling(window=window_size).skew()
+    windows = returns.rolling(window=window_size)
+
+    return windows.skew().mask(windows.max() == windows.min())
 
 
 def get_rolling_kurtosis(
@@ -1103,9 +1118,11 @@ def get_rolling_kurtosis(
         distribution). The two differ by exactly 3, as in `get_kurtosis`. Defaults to True.
 
     Returns:
-        pd.Series | pd.DataFrame: Rolling Kurtosis values with time as index.
+        pd.Series | pd.DataFrame: Rolling Kurtosis values with time as index, NaN for a
+        window without variation, as in `get_kurtosis`.
     """
-    rolling_kurtosis = returns.rolling(window=window_size).kurt()
+    windows = returns.rolling(window=window_size)
+    rolling_kurtosis = windows.kurt().mask(windows.max() == windows.min())
 
     return rolling_kurtosis if fisher else rolling_kurtosis + 3
 
@@ -1692,16 +1709,18 @@ def get_move_significance(
         if as_large.size:
             largest_since[position] = labels[as_large[-1]]
 
-    significance = pd.DataFrame(
-        {
-            "Return": values,
-            "Volatility Multiple": values / trailing_volatility.to_numpy(),
-            "VaR Multiple": values / np.abs(trailing_var.to_numpy()),
-            "Percentile": percentile,
-            "Largest Since": largest_since,
-        },
-        index=observed.index,
-    ).replace([np.inf, -np.inf], np.nan)
+    significance = drop_non_finite(
+        pd.DataFrame(
+            {
+                "Return": values,
+                "Volatility Multiple": values / trailing_volatility.to_numpy(),
+                "VaR Multiple": values / np.abs(trailing_var.to_numpy()),
+                "Percentile": percentile,
+                "Largest Since": largest_since,
+            },
+            index=observed.index,
+        )
+    )
 
     # Back on the full index, so a gap in the history stays a NaN row instead of vanishing.
     return significance.reindex(returns.index)

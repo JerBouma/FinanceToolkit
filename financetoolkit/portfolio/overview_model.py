@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.statistics_model import to_period_index
+from financetoolkit.utilities.statistics_model import drop_non_finite, to_period_index
 
 logger = logger_model.get_logger()
 
@@ -36,7 +36,7 @@ def _safe_divide(
     """
     result = numerator / denominator.where(denominator > 0)
 
-    return result.replace([np.inf, -np.inf], np.nan)
+    return drop_non_finite(result)
 
 
 def _per_transaction(values: pd.Series | None, length: int) -> np.ndarray:
@@ -1022,7 +1022,7 @@ def create_positions_overview(
         positions["Current Value"].sum(axis=1), axis=0
     )
 
-    positions_df = pd.concat(positions, axis=1).replace([np.inf, -np.inf], np.nan)
+    positions_df = drop_non_finite(pd.concat(positions, axis=1))
 
     # The return stays NaN before the first purchase, since there is no capital to measure it against, and so do the value and return of units without a price yet.  # noqa: E501
     other_columns = ~positions_df.columns.get_level_values(0).isin(

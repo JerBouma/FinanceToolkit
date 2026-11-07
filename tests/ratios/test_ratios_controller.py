@@ -1,6 +1,8 @@
 """Ratios Controller Tests""" ""
 # pylint: disable=missing-function-docstring
 
+import copy
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -914,3 +916,42 @@ def test_compound_growth_of_a_ratio_is_the_cagr_of_its_values(ratios_module):
         assert collected.loc[
             (ticker, "Revenue per Share"), periods[-1]
         ] == pytest.approx(expected[ticker], nan_ok=True, abs=1e-4)
+
+
+def test_a_zero_denominator_gives_nan_and_keeps_the_z_scores():
+    from financetoolkit import Toolkit
+
+    balance = pd.read_pickle("tests/datasets/balance_dataset.pickle")
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    balance.loc[("AAPL", "Total Equity")] = [63.09e9, 0.0, 50.672e9, 62.146e9]
+    income.loc[("MSFT", "Revenue")] = [0.0, 100.0, np.nan, 200.0]
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        balance=balance,
+        income=income,
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+
+    debt_to_equity = toolkit.ratios.get_debt_to_equity_ratio()
+    standardized = toolkit.ratios.get_debt_to_equity_ratio(standardize=True)
+    gross_margin = toolkit.ratios.get_gross_margin()
+
+    assert debt_to_equity.loc["AAPL"].isna().tolist() == [False, True, False, False]
+    # The undefined year no longer turns every Z-Score of the ticker into NaN.
+    assert standardized.loc["AAPL"].isna().tolist() == [False, True, False, False]
+    assert np.isnan(gross_margin.loc["MSFT"].iloc[0])
+
+
+def test_a_custom_ratio_with_a_zero_denominator_is_nan(ratios_module):
+    custom_ratios = copy.deepcopy(ratios_module).collect_custom_ratios(
+        custom_ratios_dict={"Revenue over Nothing": "Revenue / 0"}
+    )
+
+    values = custom_ratios.xs("Revenue over Nothing", level=1)
+    assert values.isna().all().all()

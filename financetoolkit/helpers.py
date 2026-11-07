@@ -15,7 +15,11 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.statistics_model import apply_rounding, bounded_ffill
+from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
+    bounded_ffill,
+    drop_non_finite,
+)
 
 logger = logger_model.get_logger()
 
@@ -460,10 +464,8 @@ def enrich_historical_data(
 
     # A price of 0, such as a faulty bar or a futures contract settling at 0, has no
     # return from or to it, and an infinite return would carry into every cumulative one.
-    historical_data["Return"] = (
-        bounded_ffill(historical_data[return_column])
-        .pct_change()
-        .replace([np.inf, -np.inf], np.nan)
+    historical_data["Return"] = drop_non_finite(
+        bounded_ffill(historical_data[return_column]).pct_change()
     )
 
     historical_data["Cumulative Return"] = 1

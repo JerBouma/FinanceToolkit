@@ -203,11 +203,11 @@ def finalize_dataset(
 ) -> pd.Series | pd.DataFrame:
     """
     Shared post-processing for every Finance Toolkit metric, used across the Ratios,
-    Risk, Performance, Models, Technicals, Economics and Fixed Income modules: optional
-    rolling-window smoothing, optional trailing-window summation, growth conversion,
-    Z-Score standardization (applied on top of the growth values when growth is also
-    requested), rounding, date range slicing, optional dropping of all-NaN rows and
-    optional country filtering.
+    Risk, Performance, Models, Technicals, Economics and Fixed Income modules: replacing
+    infinities (from a zero denominator) with NaN, optional rolling-window smoothing,
+    optional trailing-window summation, growth conversion, Z-Score standardization
+    (applied on top of the growth values when growth is also requested), rounding, date
+    range slicing, optional dropping of all-NaN rows and optional country filtering.
 
     Growth is computed on the full dataset before the date range is applied, since it
     needs history from before the display window to calculate the correct value for the
@@ -259,6 +259,11 @@ def finalize_dataset(
     """
     # Explicitly compare to None so that rounding=0 is honoured rather than treated as "not supplied", and so that rounding=None disables rounding altogether.  # noqa: E501
     rounding = rounding if rounding is not None else default_rounding
+
+    # A zero denominator (no equity, no drawdown, no losses, a beta of 0) leaves the
+    # metric undefined: NaN like any other missing value, also so that one such period
+    # does not turn the growth or Z-Scores of the whole series into NaN.
+    dataset = drop_non_finite(dataset)
 
     if rolling:
         dataset = dataset.rolling(window=rolling).mean()
@@ -667,12 +672,10 @@ def calculate_growth(
                 new_index, axis=1
             )
 
-        return apply_rounding(
-            drop_infinite_growth(dataset_lag.astype(np.float64)), rounding
-        )
+        return apply_rounding(drop_non_finite(dataset_lag.astype(np.float64)), rounding)
 
     return apply_rounding(
-        drop_infinite_growth(change(dataset, lag, axis)),
+        drop_non_finite(change(dataset, lag, axis)),
         rounding,
     )
 
@@ -770,17 +773,27 @@ def calculate_compound_growth(
     return ratio ** (1 / years) - 1
 
 
-def drop_infinite_growth(growth: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+def drop_non_finite(
+    values: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
     """
-    Growth from a value of 0 is undefined, not infinite, so it is reported as missing.
+    Replace positive and negative infinities with NaN.
+
+    A division by zero (growth from a value of 0, a ratio with a zero denominator) or the
+    logarithm of zero is undefined, not infinite, so it is reported as missing. An infinity
+    would otherwise pass through every later step: one infinite value turns the mean and
+    standard deviation of a Z-Score into NaN for the whole series.
 
     Args:
-        growth (pd.Series | pd.DataFrame): The growth values.
+        values (float | pd.Series | pd.DataFrame): The values to clean.
 
     Returns:
-        pd.Series | pd.DataFrame: The growth values with infinities replaced by NaN.
+        float | pd.Series | pd.DataFrame: The values with any infinity replaced by NaN.
     """
-    return growth.replace([np.inf, -np.inf], np.nan)
+    if isinstance(values, pd.Series | pd.DataFrame):
+        return values.replace([np.inf, -np.inf], np.nan)
+
+    return values if np.isfinite(values) else np.nan
 
 
 def calculate_standardization(

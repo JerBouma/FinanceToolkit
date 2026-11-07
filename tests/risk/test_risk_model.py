@@ -618,3 +618,26 @@ def test_a_ticker_without_returns_has_no_drawdowns():
 
     assert risk_model.get_drawdown_series(returns)["C"].isna().all()
     assert "C" not in risk_model.get_drawdown_table(returns).index.get_level_values(0)
+
+
+def test_skewness_and_kurtosis_of_returns_without_variation_are_nan():
+    returns = pd.DataFrame(
+        {"Constant": [0.0] * 20, "Varying": np.linspace(-1, 1, 20) ** 3}
+    )
+
+    skewness = risk_model.get_skewness(returns)
+    kurtosis = risk_model.get_kurtosis(returns, fisher=False)
+
+    assert np.isnan(skewness["Constant"]) and np.isfinite(skewness["Varying"])
+    assert np.isnan(kurtosis["Constant"]) and np.isfinite(kurtosis["Varying"])
+    assert np.isnan(risk_model.get_skewness(pd.Series([0.01] * 5)))
+
+    rolling_returns = pd.Series([0.0] * 10 + [0.01, -0.02, 0.03, 0.01])
+    rolling_skewness = risk_model.get_rolling_skewness(rolling_returns, 5)
+    rolling_kurtosis = risk_model.get_rolling_kurtosis(rolling_returns, 5)
+
+    # Windows of only zero returns are undefined; once a window varies it has a value.
+    assert rolling_skewness.iloc[:10].isna().all()
+    assert rolling_kurtosis.iloc[:10].isna().all()
+    assert rolling_skewness.iloc[10:].notna().all()
+    assert rolling_kurtosis.iloc[10:].notna().all()

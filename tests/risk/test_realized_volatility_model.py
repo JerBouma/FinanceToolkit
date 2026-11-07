@@ -204,3 +204,54 @@ def test_get_yang_zhang_volatility_needs_a_period_index():
 
     assert len(result) == 3  # noqa: PLR2004
     assert result.notna().all()
+
+
+@pytest.mark.parametrize("price", ["Open", "High", "Low", "Close"])
+def test_range_based_estimators_leave_out_a_bad_bar(price):
+    ohlc = _generate_ohlc()
+    bad_day = ohlc.index[100]
+    bad = ohlc.copy()
+    bad.loc[bad_day, price] = 0.0
+    # The same bar left out by hand: every price of that day missing.
+    without = ohlc.copy()
+    without.loc[bad_day] = np.nan
+
+    for estimator, prices in [
+        (realized_volatility_model.get_parkinson_volatility, ["High", "Low"]),
+        (
+            realized_volatility_model.get_garman_klass_volatility,
+            ["Open", "High", "Low", "Close"],
+        ),
+        (
+            realized_volatility_model.get_rogers_satchell_volatility,
+            ["Open", "High", "Low", "Close"],
+        ),
+    ]:
+        result = estimator(*[bad[column] for column in prices], period="yearly")
+        expected = (
+            estimator(*[without[column] for column in prices], period="yearly")
+            if price in prices
+            else estimator(*[ohlc[column] for column in prices], period="yearly")
+        )
+
+        assert np.isfinite(result).all()
+        pd.testing.assert_series_equal(result, expected)
+
+
+def test_yang_zhang_volatility_leaves_out_a_bad_open():
+    ohlc = _generate_ohlc()
+    bad = ohlc.copy()
+    bad.loc[ohlc.index[100], "Open"] = 0.0
+    negative = ohlc.copy()
+    negative.loc[ohlc.index[100], "Open"] = -1.0
+    without = ohlc.copy()
+    without.loc[ohlc.index[100], "Open"] = np.nan
+
+    def yang_zhang(data):
+        return realized_volatility_model.get_yang_zhang_volatility(
+            data["Open"], data["High"], data["Low"], data["Close"], period="yearly"
+        )
+
+    assert np.isfinite(yang_zhang(bad)).all()
+    pd.testing.assert_series_equal(yang_zhang(bad), yang_zhang(without))
+    pd.testing.assert_series_equal(yang_zhang(negative), yang_zhang(without))

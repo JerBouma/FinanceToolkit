@@ -533,3 +533,253 @@ def get_tax_rate_divergence(
         float | pd.Series: The tax rate divergence value.
     """
     return cash_tax_rate - effective_tax_rate
+
+
+def get_gross_profitability(
+    revenue: pd.Series | pd.DataFrame,
+    cost_of_goods_sold: pd.Series | pd.DataFrame,
+    total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the gross profitability of Novy-Marx (2013): the gross profit a company
+    earns on its assets. Gross profit is the cleanest accounting measure of economic
+    profitability, as everything below it (selling, research and administrative
+    expenses, interest, taxes) is partly investment or financing, and it predicts
+    returns as well as book-to-market does.
+
+    The formula is as follows:
+
+        Gross Profitability = (Revenue - Cost of Goods Sold) / Total Assets
+
+    The paper takes the total assets at the end of the fiscal year, the same date as
+    the gross profit, so the assets are given as a point in time and not averaged.
+
+    Also known as: GP/A, gross profits to assets.
+
+    Args:
+        revenue (float or pd.Series): Total revenue of the company.
+        cost_of_goods_sold (float or pd.Series): Total cost of goods sold of the company.
+        total_assets (float or pd.Series): Total assets at the end of the period.
+
+    Returns:
+        float | pd.Series: The gross profitability value.
+    """
+    return (revenue - cost_of_goods_sold) / total_assets
+
+
+def get_operating_profitability(
+    revenue: pd.Series | pd.DataFrame,
+    cost_of_goods_sold: pd.Series | pd.DataFrame,
+    selling_general_and_administrative_expenses: pd.Series | pd.DataFrame,
+    research_and_development_expenses: pd.Series | pd.DataFrame,
+    interest_expense: pd.Series | pd.DataFrame,
+    total_shareholder_equity: pd.Series | pd.DataFrame,
+    deferred_tax_liabilities: pd.Series | pd.DataFrame,
+    preferred_stock: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the operating profitability of Fama and French (2015), the profitability
+    measure behind the RMW (robust minus weak) factor of the five-factor model: the
+    operating profit after interest that a company earns on its book equity.
+
+    The formula is as follows:
+
+        Operating Profitability = (Revenue - Cost of Goods Sold - Selling, General and
+            Administrative Expenses - Interest Expense) / Book Equity
+
+        Book Equity = Total Shareholder Equity + Deferred Tax Liabilities - Preferred Stock
+
+    The selling, general and administrative expenses of Compustat (XSGA), which Fama
+    and French use, include research and development, while the statements here report
+    research and development separately, so both are deducted. Book equity follows
+    Fama and French: the stockholders' equity (without minority interest) plus the
+    balance sheet deferred taxes, minus the preferred stock, at the end of the fiscal
+    year (a point in time, not averaged). A company with a book equity of zero or less
+    is left out by Fama and French and has no value (NaN).
+
+    Also known as: OP, RMW profitability, Fama-French profitability.
+
+    Args:
+        revenue (float or pd.Series): Total revenue of the company.
+        cost_of_goods_sold (float or pd.Series): Total cost of goods sold of the company.
+        selling_general_and_administrative_expenses (float or pd.Series): Selling,
+            general and administrative expenses, without research and development.
+        research_and_development_expenses (float or pd.Series): Research and development
+            expenses.
+        interest_expense (float or pd.Series): Interest expense of the company.
+        total_shareholder_equity (float or pd.Series): Stockholders' equity without
+            minority interest, at the end of the period.
+        deferred_tax_liabilities (float or pd.Series): Balance sheet deferred tax
+            liabilities, at the end of the period.
+        preferred_stock (float or pd.Series): Preferred stock, at the end of the period.
+
+    Returns:
+        float | pd.Series: The operating profitability value.
+    """
+    book_equity = total_shareholder_equity + deferred_tax_liabilities - preferred_stock
+
+    operating_profit = (
+        revenue
+        - cost_of_goods_sold
+        - selling_general_and_administrative_expenses
+        - research_and_development_expenses
+        - interest_expense
+    )
+
+    return operating_profit / book_equity.where(book_equity > 0)
+
+
+def get_cash_based_operating_profitability(
+    revenue: pd.Series | pd.DataFrame,
+    cost_of_goods_sold: pd.Series | pd.DataFrame,
+    selling_general_and_administrative_expenses: pd.Series | pd.DataFrame,
+    change_in_receivables: pd.Series | pd.DataFrame,
+    change_in_inventory: pd.Series | pd.DataFrame,
+    change_in_prepaids: pd.Series | pd.DataFrame,
+    change_in_deferred_revenue: pd.Series | pd.DataFrame,
+    change_in_accounts_payable: pd.Series | pd.DataFrame,
+    change_in_accrued_expenses: pd.Series | pd.DataFrame,
+    total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and
+    Nikolaev (2016): the operating profitability of Ball et al. (2015) with the
+    working capital accruals taken out, so that it measures the operating profit
+    received in cash. It subsumes accruals in predicting returns and predicts them
+    better than the measures that include accruals.
+
+    The formula is as follows:
+
+        Cash-Based Operating Profitability = (Revenue - Cost of Goods Sold - Selling,
+            General and Administrative Expenses (without research and development)
+            - Δ Receivables - Δ Inventory - Δ Prepaids + Δ Deferred Revenue
+            + Δ Accounts Payable + Δ Accrued Expenses) / Total Assets
+
+    Research and development is not deducted, as the paper adds it back (XSGA - XRD in
+    Compustat): it is an investment rather than an expense of the period. The changes
+    are those of the balances over the window of the flows, and the total assets are
+    those at the end of it (a point in time, as for the gross profitability).
+
+    Also known as: CbOP, cash operating profitability, cash-based profitability.
+
+    Args:
+        revenue (float or pd.Series): Total revenue of the company.
+        cost_of_goods_sold (float or pd.Series): Total cost of goods sold of the company.
+        selling_general_and_administrative_expenses (float or pd.Series): Selling,
+            general and administrative expenses, without research and development.
+        change_in_receivables (float or pd.Series): The change in the total receivables.
+        change_in_inventory (float or pd.Series): The change in the inventory.
+        change_in_prepaids (float or pd.Series): The change in the prepaid expenses.
+        change_in_deferred_revenue (float or pd.Series): The change in the current and
+            non-current deferred revenue.
+        change_in_accounts_payable (float or pd.Series): The change in the accounts payable.
+        change_in_accrued_expenses (float or pd.Series): The change in the accrued expenses.
+        total_assets (float or pd.Series): Total assets at the end of the period.
+
+    Returns:
+        float | pd.Series: The cash-based operating profitability value.
+    """
+    operating_profit = (
+        revenue - cost_of_goods_sold - selling_general_and_administrative_expenses
+    )
+
+    cash_based_operating_profit = (
+        operating_profit
+        - change_in_receivables
+        - change_in_inventory
+        - change_in_prepaids
+        + change_in_deferred_revenue
+        + change_in_accounts_payable
+        + change_in_accrued_expenses
+    )
+
+    return cash_based_operating_profit / total_assets
+
+
+def get_cash_return_on_invested_capital(
+    free_cash_flow: pd.Series | pd.DataFrame,
+    average_total_equity: pd.Series | pd.DataFrame,
+    average_total_debt: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the cash return on invested capital (CROIC), the free cash flow a company
+    generates on the capital invested in it by shareholders and lenders.
+
+    The formula is as follows:
+
+        Cash Return on Invested Capital = Free Cash Flow / (Average Total Equity +
+            Average Total Debt)
+
+    The invested capital is the same as in the return on invested capital, so the two
+    can be compared directly: a CROIC well below the ROIC means the operating profit is
+    not turned into free cash flow.
+
+    Also known as: CROIC, cash ROIC, free cash flow return on invested capital.
+
+    Args:
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+        average_total_equity (float or pd.Series): Average total equity of the company.
+        average_total_debt (float or pd.Series): Average total debt of the company.
+
+    Returns:
+        float | pd.Series: The cash return on invested capital value.
+    """
+    return free_cash_flow / (average_total_equity + average_total_debt)
+
+
+def get_free_cash_flow_conversion(
+    free_cash_flow: pd.Series | pd.DataFrame, net_income: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the free cash flow conversion, the share of net income that turns into
+    free cash flow.
+
+    The formula is as follows:
+
+        Free Cash Flow Conversion = Free Cash Flow / Net Income
+
+    With a loss the ratio has no meaning (it flips sign), so a net income of zero or
+    less gives NaN.
+
+    Also known as: FCF conversion, cash conversion ratio, FCF to net income.
+
+    Args:
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+        net_income (float or pd.Series): Net income of the company.
+
+    Returns:
+        float | pd.Series: The free cash flow conversion value.
+    """
+    return free_cash_flow / net_income.where(net_income > 0)
+
+
+def get_free_cash_flow_to_ebitda_ratio(
+    free_cash_flow: pd.Series | pd.DataFrame,
+    operating_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the free cash flow to EBITDA ratio, the share of EBITDA that remains as
+    free cash flow after interest, taxes, working capital and capital expenditure.
+
+    The formula is as follows:
+
+        Free Cash Flow to EBITDA = Free Cash Flow / (Operating Income + Depreciation
+            and Amortization)
+
+    A non-positive EBITDA gives NaN, as the ratio flips sign.
+
+    Also known as: FCF/EBITDA, EBITDA cash conversion, cash conversion of EBITDA.
+
+    Args:
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+        operating_income (float or pd.Series): Operating income (EBIT) of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and
+            amortization of the company.
+
+    Returns:
+        float | pd.Series: The free cash flow to EBITDA value.
+    """
+    ebitda = operating_income + depreciation_and_amortization
+
+    return free_cash_flow / ebitda.where(ebitda > 0)

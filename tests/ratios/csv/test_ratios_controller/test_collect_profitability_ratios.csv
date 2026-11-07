@@ -20,6 +20,12 @@ AAPL,EBT to EBIT Ratio,0.9589,0.9764,0.976,0.9666
 AAPL,EBIT to Revenue,0.2549,0.3058,0.3095,0.307
 AAPL,Cash Tax Rate,0.1416,0.2324,0.1643,0.1642
 AAPL,Tax Rate Divergence,-0.0027,0.0994,0.0023,0.017
+AAPL,Gross Profitability,0.3241,0.4354,0.4841,0.4797
+AAPL,Operating Profitability,0.9706,1.685,2.2992,1.7759
+AAPL,Cash-Based Operating Profitability,,0.3639,0.4183,0.4011
+AAPL,Cash Return on Invested Capital,,0.4801,0.5823,0.5589
+AAPL,Free Cash Flow Conversion,1.2779,0.9818,1.1166,1.0267
+AAPL,Free Cash Flow to EBITDA,0.9486,0.7731,0.8537,0.7915
 MSFT,Gross Margin,0.6778,0.6893,0.684,0.6892
 MSFT,Operating Margin,0.3703,0.4159,0.4206,0.4177
 MSFT,Net Profit Margin,0.3096,0.3645,0.3669,0.3415
@@ -41,3 +47,9 @@ MSFT,EBT to EBIT Ratio,0.9534,0.9681,0.9759,0.9784
 MSFT,EBIT to Revenue,0.389,0.437,0.4326,0.4307
 MSFT,Cash Tax Rate,0.0,0.0,0.0,0.0
 MSFT,Tax Rate Divergence,-0.1651,-0.1383,-0.1311,-0.1898
+MSFT,Gross Profitability,0.3217,0.3471,0.3717,0.3545
+MSFT,Operating Profitability,0.425,0.4752,0.4876,0.4188
+MSFT,Cash-Based Operating Profitability,,0.274,0.2979,0.2841
+MSFT,Cash Return on Invested Capital,,0.2812,0.2978,0.2408
+MSFT,Free Cash Flow Conversion,1.0215,0.9159,0.8957,0.8219
+MSFT,Free Cash Flow to EBITDA,0.6879,0.6877,0.6659,0.5809

@@ -1097,7 +1097,7 @@ requires-dist = [
     { name = "python-calamine", marker = "python_full_version < '3.15'", specifier = ">=0.3.0" },
     { name = "python-dotenv", marker = "extra == 'mcp'", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.32" },
+    { name = "requests", specifier = ">=2.32.4" },
     { name = "rich", marker = "extra == 'mcp'", specifier = ">=13.0" },
     { name = "scipy", specifier = ">=1.10" },
     { name = "statsmodels", marker = "extra == 'econometrics'", specifier = ">=0.14" },

@@ -14,7 +14,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from financetoolkit.utilities import logger_model
+from financetoolkit.cache.request_model import redact_credentials
+from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.statistics_model import apply_rounding, bounded_ffill
 
 logger = logger_model.get_logger()
@@ -68,9 +69,14 @@ def run_in_parallel(
 
     A bounded pool (rather than one thread per ticker) keeps the number of concurrent
     API calls predictable regardless of how large the ticker universe is, which is
-    kinder to both the data providers' rate limits and the local machine. Exceptions
-    raised inside a worker are re-raised here instead of dying silently inside their
-    thread, so a genuine defect surfaces as an immediate, traceable failure.
+    kinder to both the data providers' rate limits and the local machine.
+
+    A worker that fails on its data, with a KeyError, IndexError, ValueError or
+    ZeroDivisionError (as handle_errors reports them), is logged and left out of the
+    result, so one ticker without usable data does not discard the others' results. Any
+    other exception, such as an AttributeError or TypeError that points to a defect, is
+    re-raised here instead of dying silently inside its thread, as is every exception
+    when FINANCETOOLKIT_STRICT_ERRORS is set.
 
     Args:
         worker (Callable): The function to execute for each tuple of arguments.
@@ -81,8 +87,10 @@ def run_in_parallel(
         variable when set and DEFAULT_MAX_WORKERS otherwise.
 
     Returns:
-        list: The worker results in the same order as worker_args, which is how the
-        collection functions hand per-ticker results back without sharing state.
+        list: The results of the workers that succeeded, in the order of worker_args,
+        which is how the collection functions hand per-ticker results back without
+        sharing state. A failed worker has no entry, so a caller that needs to know which
+        call a result belongs to has the worker return that, e.g. the ticker.
     """
     worker_args = list(worker_args)
 
@@ -100,9 +108,31 @@ def run_in_parallel(
             for args in worker_args
         ]
 
-        # Collecting in submission order keeps the result aligned with worker_args;
+        results = []
+
+        # Collecting in submission order keeps the result in the order of worker_args;
         # the calls themselves still run concurrently.
-        return [future.result() for future in futures]
+        for args, future in zip(worker_args, futures, strict=True):
+            try:
+                results.append(future.result())
+            except error_model.REPORTED_ERRORS as error:
+                if error_model.use_strict_errors():
+                    raise
+
+                # The first argument names the call (a ticker, a year, a series or a
+                # URL); the others can hold an API key, and so can a URL or a message.
+                logger.error(
+                    "No data could be retrieved for %s: %s: %s",
+                    (
+                        redact_credentials(str(args[0]))
+                        if args
+                        else getattr(worker, "__name__", "a request")
+                    ),
+                    type(error).__name__,
+                    redact_credentials(str(error)),
+                )
+
+    return results
 
 
 def convert_period_end_dates_to_calendar_periods(

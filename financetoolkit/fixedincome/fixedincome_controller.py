@@ -4820,20 +4820,21 @@ class FixedIncome:
             return pd.DataFrame()
 
         results = helpers.run_in_parallel(
-            lambda year: esma_model.get_default_rates(
-                agency_code,
-                rating_type,
-                pd.Timestamp(f"{year}-01-01"),
-                pd.Timestamp(f"{year}-12-31"),
-                region,
+            lambda year: (
+                year,
+                esma_model.get_default_rates(
+                    agency_code,
+                    rating_type,
+                    pd.Timestamp(f"{year}-01-01"),
+                    pd.Timestamp(f"{year}-12-31"),
+                    region,
+                ),
             ),
             [(year,) for year in years],
             max_workers=6,
         )
         default_rates = {
-            year: rates["Default Rate"]
-            for year, rates in zip(years, results, strict=True)
-            if not rates.empty
+            year: rates["Default Rate"] for year, rates in results if not rates.empty
         }
 
         if not default_rates:

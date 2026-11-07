@@ -1324,9 +1324,10 @@ class Toolkit:
         This gives access to the Portfolio Construction module, which builds and examines
         portfolios from the assets of this Toolkit: optimal weights (minimum variance,
         maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity,
-        inverse volatility, minimum CVaR and Black-Litterman), the efficient frontier, risk
-        contributions, historical stress tests, look-through exposure of funds and a
-        Brinson-Fachler attribution against the benchmark.
+        inverse volatility, minimum CVaR, Black-Litterman, maximum diversification, minimum
+        tracking error and growth optimal), the efficient frontier, risk contributions,
+        historical stress tests, look-through exposure of funds and a Brinson-Fachler
+        attribution against the benchmark.
 
         When the Toolkit comes from a Portfolio (`Portfolio.toolkit`), the methods that take
         weights use the Portfolio's latest weights by default.

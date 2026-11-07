@@ -4898,6 +4898,18 @@ class FixedIncome:
 
         fixedincome.get_implied_default_probability()
         ```
+
+        Which returns:
+
+        | Rating   |   Spread |   Hazard Rate |   1Y Default Probability |   3Y Default Probability |   5Y Default Probability |   10Y Default Probability |
+        |:---------|---------:|--------------:|-------------------------:|-------------------------:|-------------------------:|--------------------------:|
+        | AAA      |   0.0048 |        0.008  |                   0.008  |                   0.0237 |                   0.0392 |                    0.0769 |
+        | AA       |   0.0069 |        0.0115 |                   0.0114 |                   0.0339 |                   0.0559 |                    0.1086 |
+        | A        |   0.0077 |        0.0128 |                   0.0128 |                   0.0378 |                   0.0622 |                    0.1204 |
+        | BBB      |   0.0116 |        0.0193 |                   0.0191 |                   0.0564 |                   0.0921 |                    0.1758 |
+        | BB       |   0.0213 |        0.0355 |                   0.0349 |                   0.101  |                   0.1626 |                    0.2988 |
+        | B        |   0.0367 |        0.0612 |                   0.0593 |                   0.1676 |                   0.2635 |                    0.4576 |
+        | CCC      |   0.132  |        0.22   |                   0.1975 |                   0.4831 |                   0.6671 |                    0.8892 |
         """
         horizons = [
             float(horizon) for horizon in _split_values(horizons) or [1, 3, 5, 10]

@@ -35,7 +35,6 @@ from financetoolkit.fixedincome import (
     bond_model,
     bundesbank_model,
     curve_model,
-    derivative_model,
     ecb_model,
     eiopa_model,
     esma_model,
@@ -44,6 +43,7 @@ from financetoolkit.fixedincome import (
     fiscaldata_model,
     fmp_model,
     fred_model,
+    helpers as fixedincome_helpers,
     norgesbank_model,
     rba_model,
     riksbank_model,
@@ -157,26 +157,6 @@ def _maturity_in_years(maturity) -> float:
     )
 
 
-def _get_spot_curve(curve: pd.Series | dict | None, default: dict) -> pd.Series:
-    """
-    Returns a yield curve as a Series indexed by maturity in years (floats), sorted by maturity.
-
-    A curve with string keys ('1', '10' or '10Y') would otherwise sort alphabetically, placing
-    10 years before 2 years, and break the linear interpolation between maturities.
-
-    Args:
-        curve (pd.Series | dict | None): The curve by maturity, or None for the default.
-        default (dict): The curve to use when none is given.
-
-    Returns:
-        pd.Series: The curve indexed by maturity in years, in increasing order.
-    """
-    curve_series = pd.Series(default if curve is None else curve, dtype=float)
-    curve_series.index = [_maturity_key(maturity) for maturity in curve_series.index]
-
-    return curve_series.sort_index()
-
-
 def _maturity_key(maturity) -> float | int:
     """
     Converts a maturity into years, kept as an integer when it is a whole number of years.
@@ -195,36 +175,108 @@ def _maturity_key(maturity) -> float | int:
     return int(years) if years.is_integer() else years
 
 
+def _benchmark_treasuries(treasuries: pd.DataFrame) -> pd.DataFrame:
+    """
+    The benchmark Treasuries: per maturity of TREASURY_BENCHMARKS the note (up to ten years)
+    or bond maturing closest to that many years after the price date.
+
+    The latest auction of each maturity sells the issue maturing closest to that date; until
+    its first price is published the issue a few months shorter is the closest one.
+
+    Args:
+        treasuries (pd.DataFrame): The Treasuries, see get_treasury_securities.
+
+    Returns:
+        pd.DataFrame: The benchmark Treasuries, from the shortest to the longest maturity.
+    """
+    maturities = pd.to_datetime(treasuries["Maturity"])
+    price_date = pd.Timestamp(treasuries["Price Date"].iloc[0])
+    benchmarks = []
+    for years in TREASURY_BENCHMARKS:
+        candidates = maturities[
+            treasuries["Security Type"]
+            == ("Note" if years <= 10 else "Bond")  # noqa: PLR2004
+        ]
+        if not candidates.empty:
+            target = price_date + pd.DateOffset(years=years)
+            benchmarks.append((candidates - target).abs().idxmin())
+
+    return treasuries.loc[list(dict.fromkeys(benchmarks))]
+
+
+def _bond_terms(bond: pd.Series) -> dict:
+    """
+    The terms `bond_model` takes for a bond: par of 100, coupons twice a year.
+
+    Args:
+        bond (pd.Series): A bond, see FixedIncome._select_bonds.
+
+    Returns:
+        dict: The par_value, coupon_rate, years_to_maturity and frequency.
+    """
+    return {
+        "par_value": PAR_VALUE,
+        "coupon_rate": float(bond["Coupon"]),
+        "years_to_maturity": float(bond["Years to Maturity"]),
+        "frequency": FREQUENCY,
+    }
+
+
+def _curve_measures(bond: pd.Series, terms: dict, spot_rates: pd.Series) -> dict:
+    """
+    The present value of a bond on a spot curve and its Z-spread over it. TIPS are priced
+    on their inflation-adjusted principal, so they have neither on a nominal curve.
+
+    Args:
+        bond (pd.Series): A bond, see FixedIncome._select_bonds.
+        terms (dict): The bond's terms, see _bond_terms.
+        spot_rates (pd.Series): The spot rates by maturity in years, compounded at the
+            coupon frequency.
+
+    Returns:
+        dict: The Present Value and Z-Spread.
+    """
+    if bond["Security Type"] == "TIPS":
+        return {"Present Value": np.nan, "Z-Spread": np.nan}
+
+    return {
+        "Present Value": bond_model.get_bond_price_from_curve(
+            **terms, spot_rates=spot_rates
+        ),
+        "Z-Spread": bond_model.get_z_spread(
+            **terms, bond_price=float(bond["Price"]), spot_rates=spot_rates
+        ),
+    }
+
+
+def _maturities(
+    maturities: float | str | list | range | None, default: list | range
+) -> list[float | int]:
+    """
+    Maturities in years, from years or labels such as '6M' (a list or a comma-separated string).
+
+    Args:
+        maturities (float | str | list | range | None): The maturities, or None for the default.
+        default (list | range): The maturities to use when none are given.
+
+    Returns:
+        list[float | int]: The maturities in years.
+    """
+    if maturities is None:
+        maturities = default
+    elif isinstance(maturities, str):
+        maturities = _split_values(maturities) or []
+    elif isinstance(maturities, int | float):
+        maturities = [maturities]
+
+    return [_maturity_key(maturity) for maturity in maturities]
+
+
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
 # pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
-
-# A sample nominal spot curve by maturity, the default for the yield-curve methods.
-DEFAULT_SPOT_CURVE: dict[float, float] = {
-    1: 0.03,
-    2: 0.032,
-    3: 0.034,
-    5: 0.038,
-    7: 0.041,
-    10: 0.044,
-    20: 0.048,
-    30: 0.05,
-}
-
-# A sample real spot curve, the default for get_breakeven_inflation_rate.
-DEFAULT_REAL_SPOT_CURVE: dict[float, float] = {
-    1: 0.008,
-    2: 0.009,
-    3: 0.01,
-    5: 0.012,
-    7: 0.014,
-    10: 0.016,
-    20: 0.018,
-    30: 0.02,
-}
-
 
 # The Euro Area and German curves are estimated as zero-coupon curves; the others are par
 # yields of coupon bonds, paying twice a year except in Sweden and Norway.
@@ -257,8 +309,6 @@ SHORT_RATE_SIMULATION_MODELS = ("hull_white", "vasicek", "cir")
 SIMULATION_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
 # The most rates a simulation may hold (paths times steps), which bounds its memory use.
 MAX_SIMULATED_VALUES = 20_000_000
-# The most bond prices one option-adjusted spread call solves for, each a search over a tree.
-MAX_OAS_PRICES = 25
 
 TREASURY_SECURITY_TYPES = (
     "Bill",
@@ -277,11 +327,38 @@ TREASURY_PRICE_TYPES = ("Bill", "Note", "Bond", "TIPS", "FRN")
 # five years) and high yield corporate bonds (USHY).
 BOND_FUNDS = ["LQD", "IGSB", "USHY"]
 
+# The bond calculators price per 100 of par with coupons twice a year, as US Treasuries and
+# corporate bonds pay them.
+PAR_VALUE = 100
+FREQUENCY = bond_data_model.FREQUENCY
+# The maturities of the benchmark Treasuries, those the Treasury auctions notes (up to ten
+# years) and bonds of.
+TREASURY_BENCHMARKS = (2, 3, 5, 7, 10, 20, 30)
+# What the bond calculators show of every bond before its measures.
+BOND_COLUMNS = ["Issuer", "Security Type", "Coupon", "Maturity", "Price", "Price Date"]
+# The measures of a bond at its yield to maturity, by column name.
+YIELD_MEASURES = {
+    "Macaulay's Duration": bond_model.get_macaulays_duration,
+    "Modified Duration": bond_model.get_modified_duration,
+    "Effective Duration": bond_model.get_effective_duration,
+    "Dollar Duration": bond_model.get_dollar_duration,
+    "DV01": bond_model.get_dv01,
+    "Convexity": bond_model.get_convexity,
+}
+DURATION_TYPES = {
+    "macaulay": "Macaulay's Duration",
+    "modified": "Modified Duration",
+    "effective": "Effective Duration",
+    "dollar": "Dollar Duration",
+}
+
 
 class FixedIncome:
     """
-    The Fixed income module contains methods to obtain data related to Central Banks, Option Adjusted Spreads,
-    Valuation Models such as Black Model and Bond Pricing.
+    The Fixed income module contains methods to obtain data related to Central Banks, yield curves, credit
+    spreads and individual bonds, and calculates bond measures from their market prices. The formulas for
+    terms of your own (bond pricing, swaptions with the Black and Bachelier models, the option-adjusted
+    spread of a callable bond) are in bond_model, yieldcurve_model, derivative_model and short_rate_model.
     """
 
     def __init__(
@@ -407,1326 +484,294 @@ class FixedIncome:
                 "api_key argument."
             )
 
-    def collect_bond_statistics(
+    def _select_bonds(
         self,
-        par_value: float = 100,
-        coupon_rate: float = 0.05,
-        years_to_maturity: float = 5,
-        yield_to_maturity: float = 0.08,
-        frequency: int = 1,
-        show_input_info: bool = True,
-    ):
+        bonds: list[str] | str | None,
+        issuer: list[str] | str | None,
+        etfs: list[str] | str | None,
+        maturity_start: str | None,
+        maturity_end: str | None,
+        date: str | None,
+    ) -> pd.DataFrame:
         """
-        Collect the bond statistics for a given bond which includes the following fields:
+        The bonds the bond calculators work on, with their terms and market price.
 
-            - Par Value: The face value of the bond.
-            - Coupon Rate: The annual coupon rate (in decimal).
-            - Years to Maturity: The number of years until the bond matures.
-            - Yield to Maturity: The yield to maturity of the bond (in decimal).
-            - Frequency: The number of coupon payments per year.
-            - Present Value: The present value of the bond.
-            - Current Yield: The annual coupon payment divided by the bond price.
-            - Effective Yield: The annualised yield that accounts for the compounding of the coupon
-                payments made within the year.
-            - Macaulay's Duration: The weighted average time to receive the bond's cash flows.
-            - Modified Duration: The Macaulay's duration divided by 1 plus the per-period yield
-                (yield to maturity divided by the frequency).
-            - Effective Duration: The percentage price change per unit change in yield, obtained by
-                repricing the bond symmetrically 1% above and 1% below the current yield.
-            - Dollar Duration: The modified duration multiplied by the bond price, divided by 100.
-            - DV01: The currency change in the bond's price, per par value of face, for a one basis
-                point (0.01%) change in the yield to maturity.
-            - Convexity: The second derivative of the bond price with respect to the yield to maturity,
-                divided by the price.
-            - Prices between coupon dates: the present value is the clean (quoted) price, while the
-                durations, DV01 and convexity are sensitivities of the full (dirty) price; on a coupon
-                date the two prices coincide.
-
-        The formula is as follows:
-
-        - PV(t) = Cash Flow(t) / (1 + YTM / Frequency)^(Frequency * t), with each coupon equal to Par Value *
-          Coupon Rate / Frequency and the par value repaid with the last coupon
-        - Dirty Price = SUM(PV(t)), over the remaining payment times t in years (fractional between coupon dates)
-        - Present Value = Dirty Price - Accrued Interest, the clean price (see `get_present_value`)
-        - Current Yield = Par Value * Coupon Rate / Present Value
-        - Effective Yield = (1 + Coupon Rate / Frequency)^Frequency - 1
-        - Macaulay's Duration = SUM(t * PV(t)) / Dirty Price
-        - Modified Duration = Macaulay's Duration / (1 + YTM / Frequency)
-        - Effective Duration = (Dirty Price(YTM - 0.01) - Dirty Price(YTM + 0.01)) / (2 * Dirty Price * 0.01)
-        - Dollar Duration = Modified Duration * Dirty Price / 100
-        - DV01 = (Present Value(YTM - 0.0001) - Present Value(YTM + 0.0001)) / 2
-        - Convexity = (Dirty Price(YTM + 0.0001) + Dirty Price(YTM - 0.0001) - 2 * Dirty Price) / (Dirty Price *
-          0.0001^2)
-
-        Where YTM is the yield to maturity, a nominal annual rate compounded `frequency` times a year (0.08 and
-        annual by default). The Effective Yield restates the coupon rate, not the yield to maturity.
-
-        These statistics can be used to evaluate the bond's performance as opposed to other bonds or to estimate the bond's
-        sensitivity to changes in interest rates to be able to apply a hedging strategy.
-
-        Also known as: bond data, fixed income statistics.
+        Treasuries (a CUSIP starting with 912, or its US912 ISIN) come from
+        `get_treasury_securities`, every other bond from `get_bond_universe`, which an issuer
+        or a set of bond ETFs selects as well. Without any of these the benchmark Treasuries
+        are used: per maturity of TREASURY_BENCHMARKS the note (up to ten years) or bond
+        maturing closest to that many years after the price date, the issue the latest
+        auction of that maturity sold or one that matures a few months earlier. With only a
+        maturity range every fixed-coupon Treasury (bills, notes and bonds) maturing within
+        it is used instead.
 
         Args:
-            par_value (float): The face value of the bond. Defaults to 100.
-            coupon_rate (float): The annual coupon rate (in decimal). Defaults to 0.05.
-            years_to_maturity (float): The number of years until the bond matures. Defaults to 5.
-            yield_to_maturity (float): The yield to maturity of the bond (in decimal). Defaults to 0.08.
-            frequency (int): The number of coupon payments per year. Defaults to 1.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
+            bonds (list[str] | str | None): CUSIPs or ISINs.
+            issuer (list[str] | str | None): Part of the issuer names, see get_bond_universe.
+            etfs (list[str] | str | None): The bond ETFs to read bonds from, see get_bond_universe.
+            maturity_start (str | None): The earliest maturity (YYYY-MM-DD).
+            maturity_end (str | None): The latest maturity (YYYY-MM-DD).
+            date (str | None): The day of the Treasury prices, see get_treasury_securities.
 
         Returns:
-            pd.Series: A pandas Series containing the bond statistics.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        # This is one example and below a collection of different bonds is shown with different characteristics
-        fixedincome.collect_bond_statistics(
-            par_value=100,
-            coupon_rate=0.05,
-            years_to_maturity=5,
-            yield_to_maturity=0.08,
-            frequency=1,
-        )
-        ```
-
-        Which returns:
-
-        |                     |    Value |
-        |:--------------------|---------:|
-        | Par Value           | 100      |
-        | Coupon Rate         |   0.05   |
-        | Years to Maturity   |   5      |
-        | Yield to Maturity   |   0.08   |
-        | Frequency           |   1      |
-        | Present Value       |  88.0219 |
-        | Current Yield       |   0.0568 |
-        | Effective Yield     |   0.05   |
-        | Macaulay's Duration |   4.5116 |
-        | Modified Duration   |   4.1774 |
-        | Effective Duration  |   4.1798 |
-        | Dollar Duration     |   3.677  |
-        | DV01                |   0.0368 |
-        | Convexity           |  22.4017 |
-
-        Note how the effective duration sits just above the modified duration: the two
-        measure the same sensitivity, but the symmetric 100 basis point repricing of the
-        effective duration also picks up the third-order term of the price-yield
-        relationship, about -P'''(y) * Δy^2 / (6 * P), which the analytical modified
-        duration leaves out. The convexity (second-order) terms cancel in the symmetric
-        difference.
+            pd.DataFrame: One row per bond, indexed by CUSIP (Treasuries) or ISIN, with the
+            Issuer, Security Type, Coupon, Maturity, Price, Price Date, Years to Maturity
+            and Yield to Maturity, unrounded.
         """
-        bond_statistics = {
-            "Par Value": par_value,
-            "Coupon Rate": coupon_rate,
-            "Years to Maturity": years_to_maturity,
-            "Yield to Maturity": yield_to_maturity,
-            "Frequency": frequency,
-        }
+        identifiers = [value.upper() for value in _split_values(bonds) or []]
+        treasury_ids = [
+            cusip
+            for value in identifiers
+            if (cusip := fixedincome_helpers.treasury_cusip(value))
+        ]
+        other_ids = [
+            value
+            for value in identifiers
+            if fixedincome_helpers.treasury_cusip(value) is None
+        ]
+        use_universe = bool(other_ids) or issuer is not None or etfs is not None
 
-        bond_statistics["Present Value"] = bond_model.get_bond_price(
-            par_value=par_value,
-            coupon_rate=coupon_rate,
-            years_to_maturity=years_to_maturity,
-            yield_to_maturity=yield_to_maturity,
-            frequency=frequency,
-        )
-
-        bond_statistics["Current Yield"] = bond_model.get_current_yield(
-            par_value=par_value,
-            coupon_rate=coupon_rate,
-            bond_price=bond_statistics["Present Value"],
-        )
-
-        bond_statistics["Effective Yield"] = bond_model.get_effective_yield(
-            coupon_rate=coupon_rate, frequency=frequency
-        )
-
-        bond_statistics["Macaulay's Duration"] = bond_model.get_macaulays_duration(
-            par_value=par_value,
-            coupon_rate=coupon_rate,
-            years_to_maturity=years_to_maturity,
-            yield_to_maturity=yield_to_maturity,
-            frequency=frequency,
-        )
-
-        bond_statistics["Modified Duration"] = bond_model.get_modified_duration(
-            par_value=par_value,
-            coupon_rate=coupon_rate,
-            years_to_maturity=years_to_maturity,
-            yield_to_maturity=yield_to_maturity,
-            frequency=frequency,
-        )
-
-        bond_statistics["Effective Duration"] = bond_model.get_effective_duration(
-            par_value=par_value,
-            coupon_rate=coupon_rate,
-            years_to_maturity=years_to_maturity,
-            yield_to_maturity=yield_to_maturity,
-            frequency=frequency,
-        )
-
-        bond_statistics["Dollar Duration"] = bond_model.get_dollar_duration(
-            par_value=par_value,
-            coupon_rate=coupon_rate,
-            years_to_maturity=years_to_maturity,
-            yield_to_maturity=yield_to_maturity,
-            frequency=frequency,
-        )
-
-        bond_statistics["DV01"] = bond_model.get_dv01(
-            par_value=par_value,
-            coupon_rate=coupon_rate,
-            years_to_maturity=years_to_maturity,
-            yield_to_maturity=yield_to_maturity,
-            frequency=frequency,
-        )
-
-        bond_statistics["Convexity"] = bond_model.get_convexity(
-            par_value=par_value,
-            coupon_rate=coupon_rate,
-            years_to_maturity=years_to_maturity,
-            yield_to_maturity=yield_to_maturity,
-            frequency=frequency,
-        )
-
-        if show_input_info:
-            logger.info(
-                "Par Value: %s, Coupon Rate: %s%%, Years to Maturity: %s, Yield to Maturity: %s%%, Frequency: %s",
-                f"{par_value:,}",
-                f"{coupon_rate * 100}",
-                years_to_maturity,
-                f"{yield_to_maturity * 100}",
-                frequency,
+        selections = []
+        if use_universe:
+            universe = self.get_bond_universe(
+                etfs=etfs,
+                issuer=issuer,
+                maturity_start=maturity_start,
+                maturity_end=maturity_end,
+                bonds=other_ids or None,
+                rounding=10,
             )
+            if not isinstance(universe, pd.DataFrame) or universe.empty:
+                raise ValueError(
+                    "No bond in the bond ETF holdings matches the bonds, issuer and "
+                    "maturities given."
+                )
+            selections.append(universe.assign(**{"Security Type": "Corporate"}))
 
-        # Named so that the statistics render under a "Value" header rather than an unnamed "0" column.  # noqa: E501
-        return apply_rounding(pd.Series(bond_statistics, name="Value"), self._rounding)
-
-    def get_present_value(
-        self,
-        par_value: float = 100,
-        coupon_rate: float | range | np.ndarray | list | None = None,
-        years_to_maturity: float | range | list | None = None,
-        yield_to_maturity: float = 0.08,
-        frequency: int = 1,
-        show_input_info: bool = True,
-    ):
-        """
-        Calculates the bond prices for different coupon rates and years to maturity. The bond price is the present value of the bond's
-        future cash flows, which includes the coupon payments and the par value of the bond at maturity.
-
-        The formula is as follows:
-
-        - Dirty Price = SUM(C / (1 + r)^(t_i)) + F / (1 + r)^(t_n), over the remaining coupons i = 1, ..., n
-        - Accrued Interest = C * a
-        - Bond Price = Dirty Price - Accrued Interest, the clean price
-
-        where:
-
-        - C = Coupon payment per period, Par Value * Coupon Rate / Frequency
-        - r = Yield to maturity per period, Yield to Maturity / Frequency (a nominal annual rate compounded
-          `frequency` times a year, 0.08 and annual by default)
-        - a = Elapsed fraction of the current coupon period, in periods of equal length (30/360), 0 on a coupon date
-        - t_i = i - a, the time of the i-th cash flow in coupon periods, so t_n = Years to Maturity * Frequency
-        - F = Face value of the bond
-
-        On a coupon date this is Bond Price = (C / r) * (1 - (1 + r)^-n) + F / (1 + r)^n.
-
-        The bond price is used to determine the fair value of the bond and to compare the bond's price to its market price to determine
-        if the bond is overvalued or undervalued.
-
-        The coupon schedule runs back from maturity, so a maturity that is not a whole number of coupon periods (2.5 years of
-        annual coupons) discounts every cash flow over its fractional number of periods, and the price is the clean (quoted)
-        price: the full price minus the coupon interest accrued since the previous coupon date, matching QuantLib's clean price
-        with a 30/360 count. On a coupon date the two coincide.
-
-        Also known as: PV, bond pricing, discounted cash flows.
-
-        Args:
-            par_value (float): The par value (face value) of the bond. Defaults to 100.
-            coupon_rate (float, optional): The coupon rate of the bond. If not provided, a range of coupon rates will be used.
-            years_to_maturity (float, optional): The years to maturity of the bond in years. If not provided, a range of years to maturity will be used.
-            yield_to_maturity (float, optional): The yield to maturity of the bond. Defaults to 0.08.
-            frequency (int, optional): The frequency of coupon payments per year. Defaults to 1.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
-
-        Returns:
-            pandas.DataFrame: A DataFrame containing the bond prices for different coupon rates and years to maturity.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_present_value(
-            coupon_rate=[0.03, 0.05, 0.07],
-            years_to_maturity=[5, 10, 15],
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Coupon Rate |       5 |      10 |      15 |
-        |--------------:|--------:|--------:|--------:|
-        |          0.03 | 80.0364 | 66.4496 | 57.2026 |
-        |          0.05 | 88.0219 | 79.8698 | 74.3216 |
-        |          0.07 | 96.0073 | 93.2899 | 91.4405 |
-        """
-        coupon_rate = (
-            np.round(
-                np.arange(max(0.05 - 0.005 * 20, 0.005), 0.05 + 0.005 * 20, 0.005), 10
+        if treasury_ids or not use_universe:
+            treasuries = self.get_treasury_securities(
+                date=date, bonds=treasury_ids or None, rounding=10
             )
-            if coupon_rate is None
-            else coupon_rate
-        )
+            if not isinstance(treasuries, pd.DataFrame) or treasuries.empty:
+                raise ValueError(
+                    "No Treasury prices are available for the bonds and date given."
+                )
+            floating = treasuries.index[treasuries["Security Type"] == "FRN"]
+            if treasury_ids and not floating.empty:
+                logger.info(
+                    "Left out %s: floating rate notes reset their coupon every week.",
+                    ", ".join(floating),
+                )
+            treasuries = treasuries.drop(floating)
+            maturities = pd.to_datetime(treasuries["Maturity"])
+            if maturity_start is not None:
+                treasuries = treasuries[maturities >= pd.Timestamp(maturity_start)]
+            if maturity_end is not None:
+                treasuries = treasuries[maturities <= pd.Timestamp(maturity_end)]
+            if not treasury_ids:
+                treasuries = treasuries[
+                    treasuries["Security Type"].isin(["Bill", "Note", "Bond"])
+                ]
+                if maturity_start is None and maturity_end is None:
+                    treasuries = _benchmark_treasuries(treasuries)
+            if treasuries.empty:
+                raise ValueError("No Treasury matches the bonds and maturities given.")
+            selections.append(treasuries.assign(Issuer="United States Treasury"))
 
-        # A list of maturities has to be flattened into the column labels themselves; wrapping it in another list makes pandas read it as a one-level MultiIndex and label every column with a one-element tuple.
-        years_to_maturity_dates = (
+        selection = pd.concat(selections)
+        selection.index.name = "Bond"
+        selection["Coupon"] = selection["Coupon"].fillna(0.0)
+        selection["Years to Maturity"] = [
+            (
+                # A bill pays no coupon and counts its days on a 365-day year, as the
+                # Treasury's bond-equivalent yield does.
+                (pd.Timestamp(maturity) - pd.Timestamp(price_date)).days / 365
+                if security_type == "Bill"
+                else bond_data_model.get_years_to_maturity(
+                    pd.Timestamp(price_date).date(), pd.Timestamp(maturity).date()
+                )
+            )
+            for security_type, maturity, price_date in zip(
+                selection["Security Type"],
+                selection["Maturity"],
+                selection["Price Date"],
+                strict=True,
+            )
+        ]
+
+        return selection[
             [
-                pd.to_datetime(self._end_date) + pd.Timedelta(days=365 * interval)
-                for interval in range(1, 11)
+                "Issuer",
+                "Security Type",
+                "Coupon",
+                "Maturity",
+                "Price",
+                "Price Date",
+                "Years to Maturity",
+                "Yield to Maturity",
             ]
-            if years_to_maturity is None
-            else list(
-                [years_to_maturity]
-                if isinstance(years_to_maturity, int | float)
-                else years_to_maturity
-            )
-        )
-        years_to_maturity = (
-            range(1, 11) if years_to_maturity is None else years_to_maturity
-        )
+        ]
 
-        if isinstance(coupon_rate, int | float):
-            coupon_rate = [coupon_rate]
-        if isinstance(years_to_maturity, int | float):
-            years_to_maturity = [years_to_maturity]
-
-        bond_prices: dict[int, dict[float, dict[float, float]]] = {}
-
-        for coupon in coupon_rate:
-            bond_prices[coupon] = {}
-            for maturity in years_to_maturity:
-                bond_prices[coupon][maturity] = bond_model.get_bond_price(
-                    par_value=par_value,
-                    coupon_rate=float(coupon),
-                    years_to_maturity=maturity,
-                    yield_to_maturity=yield_to_maturity,
-                    frequency=frequency,
-                )
-
-        bond_prices_df = pd.DataFrame.from_dict(bond_prices, orient="index")
-        bond_prices_df.columns = years_to_maturity_dates
-
-        bond_prices_df.index.name = "Coupon Rate"
-        bond_prices_df.columns.name = "Years to Maturity"
-
-        if show_input_info:
-            logger.info(
-                "Par Value: %s, Yield to Maturity: %s%%, Frequency: %s",
-                f"{par_value:,}",
-                f"{yield_to_maturity * 100}",
-                frequency,
-            )
-
-        return apply_rounding(bond_prices_df, self._rounding)
-
-    def get_duration(
-        self,
-        duration_type: str = "modified",
-        par_value: float = 100,
-        coupon_rate: float | np.ndarray | list | None = None,
-        years_to_maturity: float | range | list | None = None,
-        yield_to_maturity: float = 0.08,
-        frequency: int = 1,
-        show_input_info: bool = True,
-    ):
+    def _latest_zero_curve(self, country: str, date: str | None = None) -> pd.Series:
         """
-        Calculates the bond duration for different coupon rates and years to maturity. It has the option to calculate the following
-        type of bond durations:
-
-        - Macaulay's Duration: The weighted average time to receive the bond's cash flows.
-        - Modified Duration: The Macaulay's duration divided by 1 plus the per-period yield (yield to maturity divided by the frequency).
-        - Effective Duration: The percentage change in the bond price for a 1% change in the yield to maturity.
-        - Dollar Duration: The modified duration multiplied by the bond price, divided by 100.
-
-        These duration measures can be used to estimate the sensitivity of a bond's price to changes in interest rates as well as
-        to compare the risk of different bonds. The modified duration is particularly useful for estimating the percentage change
-        in the bond price for a 1% change in the yield to maturity. Note that it is a percentage sensitivity and therefore not the
-        same as the dollar duration, the price value of a basis point (PVBP) or the dollar value of a 0.01% change (DV01), which are
-        all expressed as a currency amount instead. The dollar duration is available through this method via `duration_type='dollar'`
-        and the DV01 is calculated separately, see `collect_bond_statistics`.
-
-        The formula is as follows (the default is the modified duration):
-
-        - PV(t) = Cash Flow(t) / (1 + YTM / Frequency)^(Frequency * t), with each coupon equal to Par Value *
-          Coupon Rate / Frequency and the par value repaid with the last coupon
-        - Dirty Price = SUM(PV(t)), over the remaining payment times t in years (fractional between coupon dates)
-        - Macaulay's Duration = SUM(t * PV(t)) / Dirty Price
-        - Modified Duration = Macaulay's Duration / (1 + YTM / Frequency)
-        - Effective Duration = (Dirty Price(YTM - 0.01) - Dirty Price(YTM + 0.01)) / (2 * Dirty Price * 0.01)
-        - Dollar Duration = Modified Duration * Dirty Price / 100
-
-        Where YTM is the yield to maturity (compounded at the coupon frequency, 0.08 and annual by default).
-
-        Modified duration is the first estimate of interest rate risk: a modified duration of 7 means the price falls by
-        about 7% if the yield rises by one percentage point. The estimate worsens for larger moves, which convexity corrects
-        (see `get_taylor_price_change`), and it assumes the cash flows are fixed. For callable bonds and mortgage-backed
-        securities the relevant measure is an effective duration from a model that values the embedded option, which this
-        method does not include.
-
-        Also known as: Macaulay duration, modified duration, bond price sensitivity.
+        The zero-coupon curve of a country on a day, bootstrapped from its par yield curve
+        as `get_zero_coupon_curve` does.
 
         Args:
-            duration_type (str, optional): The type of duration to calculate. Defaults to 'modified' but can also
-                be 'macaulay', 'effective' or 'dollar'.
-            par_value (float, optional): The par value (face value) of the bond. Defaults to 100.
-            coupon_rate (float, optional): The coupon rate of the bond. If not provided, a range of coupon
-                rates will be used. Defaults to None.
-            years_to_maturity (float, optional): The years to maturity of the bond in years. If not provided, a range of years
-                to maturity will be used. Defaults to None.
-            yield_to_maturity (float, optional): The yield to maturity of the bond. Defaults to 0.08.
-            frequency (int, optional): The frequency of coupon payments per year. Defaults to 1.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
+            country (str): The country, see get_zero_coupon_curve.
+            date (str | None): The day (YYYY-MM-DD), or the last day before it with a curve.
+                Defaults to None, the end date.
 
         Returns:
-            pandas.DataFrame: A DataFrame containing the bond duration for different coupon rates and years to maturity.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_duration(
-            duration_type='modified',
-            coupon_rate=[0.03, 0.05, 0.07],
-            years_to_maturity=[5, 10, 15],
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Coupon Rate |      5 |     10 |      15 |
-        |--------------:|-------:|-------:|--------:|
-        |          0.03 | 4.3312 | 7.8207 | 10.3951 |
-        |          0.05 | 4.1774 | 7.2645 |  9.4072 |
-        |          0.07 | 4.0491 | 6.8683 |  8.7891 |
+            pd.Series: The annually compounded zero-coupon rates by maturity in years.
         """
-        duration_type_lower = duration_type.lower()
-
-        coupon_rate = (
-            np.round(
-                np.arange(max(0.05 - 0.005 * 20, 0.005), 0.05 + 0.005 * 20, 0.005), 10
+        par_curve = self._latest_yield_curve(country, date)
+        zero_curve = self._to_zero_coupon(par_curve.to_frame().T, country)
+        if zero_curve.empty:
+            raise ValueError(
+                f"The {country} yield curve has no maturity of a year or less to bootstrap "
+                "zero-coupon rates from."
             )
-            if coupon_rate is None
-            else coupon_rate
+        zero_curve = zero_curve.iloc[0].dropna()
+
+        return pd.Series(
+            zero_curve.to_numpy(dtype=float),
+            index=[_maturity_key(label) for label in zero_curve.index],
         )
 
-        # A list of maturities has to be flattened into the column labels themselves; wrapping it in another list makes pandas read it as a one-level MultiIndex and label every column with a one-element tuple.
-        years_to_maturity_dates = (
-            [
-                pd.to_datetime(self._end_date) + pd.Timedelta(days=365 * interval)
-                for interval in range(1, 11)
-            ]
-            if years_to_maturity is None
-            else list(
-                [years_to_maturity]
-                if isinstance(years_to_maturity, int | float)
-                else years_to_maturity
-            )
-        )
-        years_to_maturity = (
-            range(1, 11) if years_to_maturity is None else years_to_maturity
-        )
-
-        if isinstance(coupon_rate, int | float):
-            coupon_rate = [coupon_rate]
-        if isinstance(years_to_maturity, int | float):
-            years_to_maturity = [years_to_maturity]
-
-        bond_prices: dict[str, dict[float, dict[float, float]]] = {}
-
-        for coupon in coupon_rate:
-            bond_prices[coupon] = {}
-            for maturity in years_to_maturity:
-                if duration_type_lower == "modified":
-                    bond_prices[coupon][maturity] = bond_model.get_modified_duration(
-                        par_value=par_value,
-                        coupon_rate=coupon,
-                        years_to_maturity=maturity,
-                        yield_to_maturity=yield_to_maturity,
-                        frequency=frequency,
-                    )
-                elif duration_type_lower == "macaulay":
-                    bond_prices[coupon][maturity] = bond_model.get_macaulays_duration(
-                        par_value=par_value,
-                        coupon_rate=coupon,
-                        years_to_maturity=maturity,
-                        yield_to_maturity=yield_to_maturity,
-                        frequency=frequency,
-                    )
-                elif duration_type_lower == "effective":
-                    bond_prices[coupon][maturity] = bond_model.get_effective_duration(
-                        par_value=par_value,
-                        coupon_rate=coupon,
-                        years_to_maturity=maturity,
-                        yield_to_maturity=yield_to_maturity,
-                        frequency=frequency,
-                    )
-                elif duration_type_lower == "dollar":
-                    bond_prices[coupon][maturity] = bond_model.get_dollar_duration(
-                        par_value=par_value,
-                        coupon_rate=coupon,
-                        years_to_maturity=maturity,
-                        yield_to_maturity=yield_to_maturity,
-                        frequency=frequency,
-                    )
-                else:
-                    raise ValueError(
-                        "Please input a valid duration type ('macaulay', 'modified', 'effective' or 'dollar')"
-                    )
-
-        bond_prices_df = pd.DataFrame.from_dict(bond_prices, orient="index")
-        bond_prices_df.columns = years_to_maturity_dates
-
-        bond_prices_df.index.name = "Coupon Rate"
-        bond_prices_df.columns.name = "Years to Maturity"
-
-        if show_input_info:
-            logger.info(
-                "Par Value: %s, Yield to Maturity: %s%%, Frequency: %s, Type: %s Duration",
-                f"{par_value:,}",
-                f"{yield_to_maturity * 100}",
-                frequency,
-                duration_type_lower.title(),
-            )
-
-        return apply_rounding(bond_prices_df, self._rounding)
-
-    def get_yield_to_maturity(
-        self,
-        par_value: float = 100,
-        coupon_rate: float = 0.05,
-        years_to_maturity: float | range | list | None = None,
-        bond_price: float | list | None = None,
-        frequency: int = 1,
-        guess: float = 0.05,
-        tolerance: float = 0.0001,
-        max_iterations: int = 100,
-        show_input_info: bool = True,
-    ):
+    def _bond_spot_curves(self, selection: pd.DataFrame) -> dict[str, pd.Series]:
         """
-        Calculates the yield to maturity for a bond. The yield to maturity is the internal rate of return of the bond, which is the
-        discount rate that equates the present value of the bond's cash flows to its market price. The yield to maturity is used to
-        estimate the bond's return and to compare the bond's return to other investments.
-
-        The formula is as follows, solved for r:
-
-        - Bond Price = SUM(C / (1 + r)^(t_i)) + F / (1 + r)^(t_n) - C * a, over the remaining coupons i = 1, ..., n
-        - Yield to Maturity = r * Frequency
-
-        where:
-
-        - C = Coupon payment per period, Par Value * Coupon Rate / Frequency
-        - r = Yield to maturity per period
-        - a = Elapsed fraction of the current coupon period, in periods of equal length (30/360), 0 on a coupon date
-        - t_i = i - a, the time of the i-th cash flow in coupon periods, so t_n = Years to Maturity * Frequency
-        - F = Face value of the bond
-
-        The Bond Price is the clean price, the dirty price minus the accrued coupon C * a, as in `get_present_value`.
-
-        The goal is to find the yield to maturity that satisfies the equation above. This is done using the secant method
-        which is an iterative method that converges to the root of a function. The bond price is read as a clean (quoted)
-        price, and a maturity between coupon dates discounts each cash flow over its fractional number of periods, in the
-        same way as `get_present_value`, so the yield is a nominal annual rate compounded `frequency` times per year.
-
-        The yield to maturity is the return of a bond bought at this price and held to maturity, if every coupon is reinvested
-        at the same yield and the issuer pays in full. It is the standard way to quote and compare bonds, but it is one average
-        rate for all cash flows: bonds with the same maturity but different coupons have different yields even when both are
-        priced in line with the same spot curve, and for callable bonds the yield to worst is quoted instead.
-
-        Also known as: YTM, bond return to maturity.
+        The Treasury zero-coupon curve of every price date of the bonds, compounded twice
+        a year like the coupons, so that `bond_model` discounts with it directly.
 
         Args:
-            par_value (float): The par value (face value) of the bond, the amount repaid at maturity. Defaults to 100.
-            coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
-            years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
-            bond_price (float, optional): The clean (quoted) price of the bond. Defaults to None, a range of
-                prices around the par value.
-            frequency (int, optional): The number of coupon payments per year. Defaults to 1.
-            guess (float, optional): The initial guess for the yield to maturity. Defaults to 0.05.
-            tolerance (float, optional): The tolerance level for convergence. Defaults to 0.0001.
-            max_iterations (int, optional): The maximum number of iterations for convergence. Defaults to 100.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
+            selection (pd.DataFrame): The bonds, see _select_bonds.
 
         Returns:
-            pandas.DataFrame: A DataFrame containing the yield to maturity for different bond prices and years to maturity.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_yield_to_maturity(
-            coupon_rate=0.05,
-            years_to_maturity=[5, 10, 15],
-            bond_price=[95, 100, 105],
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Bond Price |      5 |     10 |     15 |
-        |-------------:|-------:|-------:|-------:|
-        |           95 | 0.0619 | 0.0567 | 0.055  |
-        |          100 | 0.05   | 0.05   | 0.05   |
-        |          105 | 0.0388 | 0.0437 | 0.0453 |
+            dict[str, pd.Series]: The spot rates by maturity in years, per price date.
         """
-        if bond_price is None:
-            # Determine the step size based on the input number
-            step_size = par_value / 10
+        curves = {}
+        for price_date in selection["Price Date"].unique():
+            zero_curve = self._latest_zero_curve("United States", str(price_date))
+            curves[price_date] = FREQUENCY * ((1 + zero_curve) ** (1 / FREQUENCY) - 1)
 
-            # Generate the list of numbers
-            bond_price = [
-                int(par_value - i * step_size)
-                for i in range(21)
-                if int(par_value - i * step_size) > 0
-            ][::-1]
-            bond_price.extend(
-                int(par_value + i * step_size)
-                for i in range(1, 21)
-                if int(par_value - i * step_size) > 0
-            )
+        return curves
 
-        # A list of maturities has to be flattened into the column labels themselves; wrapping it in another list makes pandas read it as a one-level MultiIndex and label every column with a one-element tuple.
-        years_to_maturity_dates = (
-            [
-                pd.to_datetime(self._end_date) + pd.Timedelta(days=365 * interval)
-                for interval in range(1, 11)
-            ]
-            if years_to_maturity is None
-            else list(
-                [years_to_maturity]
-                if isinstance(years_to_maturity, int | float)
-                else years_to_maturity
-            )
-        )
-        years_to_maturity = (
-            range(1, 11) if years_to_maturity is None else years_to_maturity
-        )
-
-        if isinstance(bond_price, int | float):
-            bond_price = [bond_price]
-        if isinstance(years_to_maturity, int | float):
-            years_to_maturity = [years_to_maturity]
-
-        yield_to_maturities: dict[int, dict[float, dict[float, float]]] = {}
-
-        for price in bond_price:
-            yield_to_maturities[price] = {}
-            for maturity in years_to_maturity:
-                yield_to_maturities[price][maturity] = bond_model.get_yield_to_maturity(
-                    par_value=par_value,
-                    coupon_rate=coupon_rate,
-                    years_to_maturity=maturity,
-                    bond_price=price,
-                    frequency=frequency,
-                    guess=guess,
-                    tolerance=tolerance,
-                    max_iterations=max_iterations,
-                )
-
-        yield_to_maturities_df = pd.DataFrame.from_dict(
-            yield_to_maturities, orient="index"
-        )
-        yield_to_maturities_df.columns = years_to_maturity_dates
-
-        yield_to_maturities_df.index.name = "Bond Price"
-        yield_to_maturities_df.columns.name = "Years to Maturity"
-
-        if show_input_info:
-            logger.info(
-                "Par Value: %s, Coupon Rate: %s%%, Frequency: %s",
-                f"{par_value:,}",
-                f"{coupon_rate * 100}",
-                frequency,
-            )
-
-        return apply_rounding(yield_to_maturities_df, self._rounding)
-
-    def get_forward_rate(
-        self,
-        spot_rates: pd.Series | dict | None = None,
-        near_maturity: float | range | list | None = None,
-        far_maturity: float | range | list | None = None,
-        show_input_info: bool = True,
-    ):
+    @staticmethod
+    def _bond_table(
+        selection: pd.DataFrame, measures: pd.DataFrame, rounding: int | None
+    ) -> pd.DataFrame:
         """
-        Calculates the implied forward rate between pairs of points on a zero-coupon
-        (spot) yield curve. The forward rate is the interest rate, implied by today's
-        yield curve, for a loan that starts at a future date — it is derived purely
-        from no-arbitrage pricing rather than a forecast of future rates.
-
-        The rate for each maturity is obtained by linearly interpolating the supplied
-        spot curve, so `near_maturity` and `far_maturity` do not need to coincide
-        exactly with a maturity present in `spot_rates`.
-
-        The formula is as follows:
-
-        - Forward Rate = ((1 + r2)^t2 / (1 + r1)^t1)^(1 / (t2 - t1)) - 1
-
-        where:
-
-        - r1 = Spot rate at the near maturity, interpolated linearly from the curve
-        - t1 = Near maturity, in years
-        - r2 = Spot rate at the far maturity, interpolated linearly from the curve
-        - t2 = Far maturity, in years
-
-        The spot rates are read as effective annual (annually compounded) rates and the forward rate is
-        annually compounded as well.
-
-        Also known as: implied forward rate, forward-forward rate.
+        The bonds' description followed by the measures calculated for them.
 
         Args:
-            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
-                in decimals, read as effective annual (annually compounded) rates, indexed
-                by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
-            near_maturity (float | list, optional): The nearer maturity (or maturities),
-                in years. If not provided, a range of near maturities will be used.
-            far_maturity (float | list, optional): The further maturity (or maturities),
-                in years. If not provided, a range of far maturities will be used.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
+            selection (pd.DataFrame): The bonds, see _select_bonds.
+            measures (pd.DataFrame): The measures, with the same index.
+            rounding (int | None): The number of decimals to round to.
 
         Returns:
-            pandas.DataFrame: A DataFrame containing the forward rate for each combination
-            of near and far maturity. Combinations where the far maturity is not greater
-            than the near maturity are returned as NaN.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_forward_rate(
-            near_maturity=[1, 2, 3],
-            far_maturity=[5, 10],
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Near Maturity |     5 |     10 |
-        |----------------:|------:|-------:|
-        |               1 | 0.04  | 0.0456 |
-        |               2 | 0.042 | 0.047  |
-        |               3 | 0.044 | 0.0483 |
+            pd.DataFrame: The Issuer, Security Type, Coupon, Maturity, Price and Price Date,
+            then the measures.
         """
-        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
+        table = pd.concat([selection[BOND_COLUMNS], measures], axis=1)
 
-        near_maturity = range(1, 6) if near_maturity is None else near_maturity
-        far_maturity = range(5, 11) if far_maturity is None else far_maturity
-
-        if isinstance(near_maturity, int | float):
-            near_maturity = [near_maturity]
-        if isinstance(far_maturity, int | float):
-            far_maturity = [far_maturity]
-
-        forward_rates: dict[float, dict[float, float]] = {}
-
-        for near in near_maturity:
-            forward_rates[near] = {}
-            near_rate = float(
-                np.interp(near, spot_rates_series.index, spot_rates_series.to_numpy())
-            )
-            for far in far_maturity:
-                if far <= near:
-                    forward_rates[near][far] = np.nan
-                    continue
-
-                far_rate = float(
-                    np.interp(
-                        far, spot_rates_series.index, spot_rates_series.to_numpy()
-                    )
-                )
-
-                forward_rates[near][far] = yieldcurve_model.get_forward_rate(
-                    near_rate=near_rate,
-                    far_rate=far_rate,
-                    near_maturity=near,
-                    far_maturity=far,
-                )
-
-        forward_rates_df = pd.DataFrame.from_dict(forward_rates, orient="index")
-        forward_rates_df.index.name = "Near Maturity"
-        forward_rates_df.columns.name = "Far Maturity"
-
-        if show_input_info:
-            logger.info(
-                "Spot Curve: %s",
-                {k: round(v, 4) for k, v in spot_rates_series.items()},
-            )
-
-        return apply_rounding(forward_rates_df, self._rounding)
-
-    def get_par_yield(
-        self,
-        spot_rates: pd.Series | dict | None = None,
-        years_to_maturity: float | range | list | None = None,
-        frequency: int = 1,
-        par_value: float = 100,
-        show_input_info: bool = True,
-    ):
-        """
-        Calculates the par yield curve implied by a zero-coupon (spot) yield curve. The
-        par yield for a given maturity is the coupon rate that would need to be attached
-        to a newly-issued bond of that maturity so that, once its cash flows are
-        discounted with the spot curve, its price equals its par value exactly.
-
-        This is the curve that is typically quoted for on-the-run government bonds, as
-        opposed to the theoretical spot curve which is usually bootstrapped rather than
-        directly observed.
-
-        The formula is as follows:
-
-        - DF(t) = 1 / (1 + Spot Rate(t / Frequency) / Frequency)^t, the discount factor of a cash flow after t
-          coupon periods
-        - Par Yield = Frequency * (1 - DF(t_n)) / (SUM(DF(t_i)) - a), over the remaining coupons i = 1, ..., n
-
-        where Spot Rate(τ) is the spot curve interpolated linearly at τ years and read as a nominal annual rate
-        compounded `frequency` times a year (annual by default), a is the elapsed fraction of the current coupon
-        period (0 on a coupon date) and t_i = i - a is the time of the i-th coupon in periods, so t_n =
-        Years to Maturity * Frequency. On a coupon date this is the textbook Frequency * (1 - DF(n)) / SUM(DF(k));
-        for a maturity between coupon dates the par yield is the coupon at which the clean price, without accrued
-        interest, equals par (see `yieldcurve_model.get_par_yield`). The par yield is a nominal annual coupon rate
-        paid `frequency` times a year.
-
-        Also known as: par rate, par coupon rate.
-
-        Args:
-            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
-                in decimals, read as nominal annual rates compounded `frequency` times per
-                year, indexed by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
-            years_to_maturity (float | list, optional): The maturity (or maturities), in
-                years, to calculate the par yield for. If not provided, a range of years
-                to maturity will be used.
-            frequency (int, optional): The number of coupon payments per year. Defaults to 1.
-            par_value (float, optional): The face value of the bond. Defaults to 100.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
-
-        Returns:
-            pandas.Series: A Series containing the par yield for each requested maturity,
-            i.e. the par yield curve.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_par_yield(
-            years_to_maturity=[1, 2, 3, 5, 10],
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Years to Maturity |   Par Yield |
-        |--------------------:|------------:|
-        |                   1 |      0.03   |
-        |                   2 |      0.032  |
-        |                   3 |      0.0339 |
-        |                   5 |      0.0377 |
-        |                  10 |      0.0431 |
-        """
-        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
-
-        years_to_maturity = (
-            range(1, 11) if years_to_maturity is None else years_to_maturity
-        )
-
-        if isinstance(years_to_maturity, int | float):
-            years_to_maturity = [years_to_maturity]
-
-        par_yields: dict[float, float] = {}
-
-        for maturity in years_to_maturity:
-            par_yields[maturity] = yieldcurve_model.get_par_yield(
-                spot_rates=spot_rates_series,
-                years_to_maturity=maturity,
-                frequency=frequency,
-                par_value=par_value,
-            )
-
-        par_yields_series = pd.Series(par_yields)
-        par_yields_series.index.name = "Years to Maturity"
-        par_yields_series.name = "Par Yield"
-
-        if show_input_info:
-            logger.info(
-                "Frequency: %s, Par Value: %s, Spot Curve: %s",
-                frequency,
-                f"{par_value:,}",
-                {k: round(v, 4) for k, v in spot_rates_series.items()},
-            )
-
-        return apply_rounding(par_yields_series, self._rounding)
-
-    def get_yield_curve_spread(
-        self,
-        spot_rates: pd.Series | dict | None = None,
-        long_maturity: float | range | list | None = None,
-        short_maturity: float | range | list | None = None,
-        show_input_info: bool = True,
-    ):
-        """
-        Calculates the spread between pairs of points on a yield curve, e.g. the widely
-        followed 10-year minus 2-year Treasury spread. A positive spread indicates a
-        "normal" upward-sloping curve, while a negative spread ("inversion") has
-        historically been used as a leading indicator of an economic slowdown.
-
-        The rate for each maturity is obtained by linearly interpolating the supplied
-        curve, so `long_maturity` and `short_maturity` do not need to coincide exactly
-        with a maturity present in `spot_rates`.
-
-        The formula is as follows:
-
-        - Yield Curve Spread = Long-Term Yield - Short-Term Yield
-
-        Where both yields are interpolated linearly from the curve and subtracted as given, in the
-        compounding of the curve passed.
-
-        Also known as: term spread, yield curve slope.
-
-        Args:
-            spot_rates (pd.Series | dict, optional): The yield curve in decimals, indexed
-                by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
-            long_maturity (float | list, optional): The longer maturity (or maturities),
-                in years. If not provided, a range of long maturities will be used.
-            short_maturity (float | list, optional): The shorter maturity (or
-                maturities), in years. If not provided, a range of short maturities
-                will be used.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
-
-        Returns:
-            pandas.DataFrame: A DataFrame containing the yield curve spread for each
-            combination of long and short maturity.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_yield_curve_spread(
-            long_maturity=[10, 30],
-            short_maturity=[1, 2],
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Long Maturity |     1 |     2 |
-        |----------------:|------:|------:|
-        |              10 | 0.014 | 0.012 |
-        |              30 | 0.02  | 0.018 |
-        """
-        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
-
-        long_maturity = range(5, 11) if long_maturity is None else long_maturity
-        short_maturity = range(1, 5) if short_maturity is None else short_maturity
-
-        if isinstance(long_maturity, int | float):
-            long_maturity = [long_maturity]
-        if isinstance(short_maturity, int | float):
-            short_maturity = [short_maturity]
-
-        yield_curve_spreads: dict[float, dict[float, float]] = {}
-
-        for long in long_maturity:
-            yield_curve_spreads[long] = {}
-            long_yield = float(
-                np.interp(long, spot_rates_series.index, spot_rates_series.to_numpy())
-            )
-            for short in short_maturity:
-                short_yield = float(
-                    np.interp(
-                        short, spot_rates_series.index, spot_rates_series.to_numpy()
-                    )
-                )
-
-                yield_curve_spreads[long][short] = (
-                    yieldcurve_model.get_yield_curve_spread(
-                        long_yield=long_yield, short_yield=short_yield
-                    )
-                )
-
-        yield_curve_spreads_df = pd.DataFrame.from_dict(
-            yield_curve_spreads, orient="index"
-        )
-        yield_curve_spreads_df.index.name = "Long Maturity"
-        yield_curve_spreads_df.columns.name = "Short Maturity"
-
-        if show_input_info:
-            logger.info(
-                "Spot Curve: %s",
-                {k: round(v, 4) for k, v in spot_rates_series.items()},
-            )
-
-        return apply_rounding(yield_curve_spreads_df, self._rounding)
-
-    def get_breakeven_inflation_rate(
-        self,
-        nominal_rates: pd.Series | dict | None = None,
-        real_rates: pd.Series | dict | None = None,
-        maturity: float | list | None = None,
-        show_input_info: bool = True,
-    ):
-        """
-        Calculates the breakeven inflation rate implied by a nominal and a real
-        (inflation-protected) yield curve, e.g. the U.S. Treasury nominal curve versus
-        the TIPS (Treasury Inflation-Protected Securities) curve. It is the rate of
-        inflation that would make an investor indifferent between holding a nominal
-        bond and an inflation-protected bond of the same maturity, and is widely used
-        as a market-implied measure of expected inflation.
-
-        The rate for each maturity is obtained by linearly interpolating the supplied
-        curves, so `maturity` does not need to coincide exactly with a maturity present
-        in `nominal_rates` or `real_rates`.
-
-        The formula is as follows:
-
-        - Breakeven Inflation Rate = Nominal Yield - Real Yield
-
-        Where both yields are interpolated linearly from their curves and subtracted as given, in the
-        compounding of the curves passed (the simple difference, not (1 + Nominal) / (1 + Real) - 1).
-
-        The breakeven rate is often read as the market's expected inflation, but it also
-        contains an inflation risk premium, which raises it, and a liquidity premium on
-        inflation-linked bonds, which lowers it, so it rises and falls in market stress for
-        reasons other than inflation expectations. For the United States the comparison is
-        with CPI-U, the index TIPS pay on. Survey expectations (`get_inflation_expectations`
-        in the Economics module) are the usual cross-check.
-
-        Also known as: TIPS breakeven spread, inflation breakeven.
-
-        Args:
-            nominal_rates (pd.Series | dict, optional): The nominal (non-inflation-protected)
-                yield curve in decimals, indexed by maturity in years (a number, or a label such as '6M' or '10Y').
-                Defaults to a sample curve.
-            real_rates (pd.Series | dict, optional): The real (inflation-protected) yield
-                curve in decimals, indexed by maturity in years (a number, or a label such as '6M' or '10Y').
-                Defaults to a sample curve.
-            maturity (float | list, optional): The maturity (or maturities), in years,
-                to calculate the breakeven inflation rate for. If not provided, a range
-                of maturities will be used.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
-
-        Returns:
-            pandas.Series: A Series containing the breakeven inflation rate for each
-            requested maturity, i.e. the breakeven inflation curve.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_breakeven_inflation_rate(
-            maturity=[1, 5, 10, 30],
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Maturity |   Breakeven Inflation Rate |
-        |-----------:|---------------------------:|
-        |          1 |                      0.022 |
-        |          5 |                      0.026 |
-        |         10 |                      0.028 |
-        |         30 |                      0.03  |
-        """
-        nominal_rates_series = _get_spot_curve(nominal_rates, DEFAULT_SPOT_CURVE)
-        real_rates_series = _get_spot_curve(real_rates, DEFAULT_REAL_SPOT_CURVE)
-
-        maturity = [1, 2, 3, 5, 7, 10, 20, 30] if maturity is None else maturity
-
-        if isinstance(maturity, int | float):
-            maturity = [maturity]
-
-        breakeven_inflation_rates: dict[float, float] = {}
-
-        for single_maturity in maturity:
-            nominal_yield = float(
-                np.interp(
-                    single_maturity,
-                    nominal_rates_series.index,
-                    nominal_rates_series.to_numpy(),
-                )
-            )
-            real_yield = float(
-                np.interp(
-                    single_maturity,
-                    real_rates_series.index,
-                    real_rates_series.to_numpy(),
-                )
-            )
-
-            breakeven_inflation_rates[single_maturity] = (
-                yieldcurve_model.get_breakeven_inflation_rate(
-                    nominal_yield=nominal_yield, real_yield=real_yield
-                )
-            )
-
-        breakeven_inflation_rates_series = pd.Series(breakeven_inflation_rates)
-        breakeven_inflation_rates_series.index.name = "Maturity"
-        breakeven_inflation_rates_series.name = "Breakeven Inflation Rate"
-
-        if show_input_info:
-            logger.info(
-                "Nominal Curve: %s, Real Curve: %s",
-                {k: round(v, 4) for k, v in nominal_rates_series.items()},
-                {k: round(v, 4) for k, v in real_rates_series.items()},
-            )
-
-        return apply_rounding(breakeven_inflation_rates_series, self._rounding)
-
-    def get_z_spread(
-        self,
-        par_value: float = 100,
-        coupon_rate: float = 0.05,
-        years_to_maturity: float | range | list | None = None,
-        bond_price: float | list | None = None,
-        spot_rates: pd.Series | dict | None = None,
-        frequency: int = 1,
-        guess: float = 0.01,
-        tolerance: float = 0.0001,
-        max_iterations: int = 100,
-        show_input_info: bool = True,
-    ):
-        """
-        Calculates the zero-volatility spread (Z-spread) for a bond given a benchmark
-        zero-coupon (spot) yield curve. The Z-spread is the constant spread that, when
-        added uniformly to every point of the benchmark curve, makes the present value
-        of the bond's discounted cash flows equal to its observed market price.
-
-        Unlike a simple yield spread (the bond's yield to maturity minus a benchmark
-        yield of the same maturity), the Z-spread is measured against the entire curve
-        rather than a single point, which makes it a more accurate measure of the
-        compensation an investor receives for a bond's credit and liquidity risk.
-
-        The Z-spread is found iteratively using the secant method, in the same way that
-        `get_yield_to_maturity` solves for the yield to maturity.
-
-        The formula is as follows, solved for the Z-Spread:
-
-        - Clean Price = SUM(Cash Flow(t) / (1 + (Spot Rate(t) + Z-Spread) / Frequency)^(Frequency * t)) - Accrued Interest
-
-        Where each coupon is Par Value * Coupon Rate / Frequency, the par value is repaid with the
-        last coupon, t is each remaining payment time in years and Spot Rate(t) is the benchmark
-        spot rate (compounded at the coupon frequency) interpolated linearly between the curve's
-        maturities and held flat beyond its first and last maturity.
-
-        The Z-spread depends on the benchmark curve: against the government curve it measures
-        credit and liquidity risk together, against the swap curve mostly the credit risk
-        relative to banks. It should be calculated with a zero-coupon (spot) curve; a par
-        yield curve such as the Treasury's is close but not the same. For a bond with an
-        embedded option the Z-spread includes the option's value, which the option-adjusted
-        spread removes.
-
-        Also known as: zero-volatility spread, static spread.
-
-        Args:
-            par_value (float): The par value (face value) of the bond. Defaults to 100.
-            coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
-            years_to_maturity (float, optional): The years to maturity of the bond in years. Defaults to None.
-            bond_price (float, optional): The clean (quoted) price of the bond. Defaults to None, a range of
-                prices around the par value.
-            spot_rates (pd.Series | dict, optional): The benchmark zero-coupon (spot)
-                yield curve in decimals, read as nominal annual rates compounded `frequency`
-                times per year, indexed by maturity in years (a number, or a label such as '6M' or '10Y'). Defaults to a sample curve.
-            frequency (int, optional): The number of coupon payments per year. Defaults to 1.
-            guess (float, optional): The initial guess for the Z-spread. Defaults to 0.01.
-            tolerance (float, optional): The tolerance level for convergence. Defaults to 0.0001.
-            max_iterations (int, optional): The maximum number of iterations for convergence. Defaults to 100.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
-
-        Returns:
-            pandas.DataFrame: A DataFrame containing the Z-spread for different bond prices and years to maturity.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_z_spread(
-            coupon_rate=0.05,
-            years_to_maturity=[5, 10, 15],
-            bond_price=[95, 100, 105],
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Bond Price |      5 |     10 |     15 |
-        |-------------:|-------:|-------:|-------:|
-        |           95 | 0.0243 | 0.0137 | 0.0103 |
-        |          100 | 0.0124 | 0.007  | 0.0053 |
-        |          105 | 0.0012 | 0.0007 | 0.0005 |
-        """
-        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
-
-        if bond_price is None:
-            step_size = par_value / 10
-
-            bond_price = [
-                int(par_value - i * step_size)
-                for i in range(21)
-                if int(par_value - i * step_size) > 0
-            ][::-1]
-            bond_price.extend(
-                int(par_value + i * step_size)
-                for i in range(1, 21)
-                if int(par_value - i * step_size) > 0
-            )
-
-        years_to_maturity = (
-            range(1, 11) if years_to_maturity is None else years_to_maturity
-        )
-
-        if isinstance(bond_price, int | float):
-            bond_price = [bond_price]
-        if isinstance(years_to_maturity, int | float):
-            years_to_maturity = [years_to_maturity]
-
-        z_spreads: dict[float, dict[float, float]] = {}
-
-        for price in bond_price:
-            z_spreads[price] = {}
-            for maturity in years_to_maturity:
-                z_spreads[price][maturity] = bond_model.get_z_spread(
-                    par_value=par_value,
-                    coupon_rate=coupon_rate,
-                    years_to_maturity=maturity,
-                    bond_price=price,
-                    spot_rates=spot_rates_series,
-                    frequency=frequency,
-                    guess=guess,
-                    tolerance=tolerance,
-                    max_iterations=max_iterations,
-                )
-
-        z_spreads_df = pd.DataFrame.from_dict(z_spreads, orient="index")
-        z_spreads_df.columns = list(years_to_maturity)
-
-        z_spreads_df.index.name = "Bond Price"
-        z_spreads_df.columns.name = "Years to Maturity"
-
-        if show_input_info:
-            logger.info(
-                "Par Value: %s, Coupon Rate: %s%%, Frequency: %s, Spot Curve: %s",
-                f"{par_value:,}",
-                f"{coupon_rate * 100}",
-                frequency,
-                {k: round(v, 4) for k, v in spot_rates_series.items()},
-            )
-
-        return apply_rounding(z_spreads_df, self._rounding)
+        return apply_rounding(table, rounding)
 
     @handle_errors
-    def get_option_adjusted_spread(
+    def collect_bond_statistics(
         self,
-        bond_price: float | list[float] = 100.0,
-        coupon_rate: float = 0.05,
-        years_to_maturity: float = 10.0,
-        call_price: float | None = 100.0,
-        years_to_first_call: float = 2.0,
-        volatility: float = 0.01,
-        frequency: int = 2,
-        par_value: float = 100.0,
-        spot_rates: pd.Series | dict | None = None,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
         rounding: int | None = None,
     ):
         """
-        Calculates the option-adjusted spread (OAS) of a callable bond: the spread over the
-        risk-free curve at which the bond's model price, with the issuer calling the bond
-        whenever that is in its interest, equals its market price. A callable bond pays a
-        higher yield because the issuer can redeem it early when rates fall, which caps its
-        price. The Z-spread lumps that option together with the credit and liquidity premium;
-        the OAS takes the value of the option out, so callable and straight bonds can be
-        compared on their credit spread alone.
+        Collects the statistics of individual bonds from their market price: the yield to
+        maturity, current yield, the Macaulay, modified, effective and dollar duration, DV01
+        and convexity, plus the present value on the Treasury zero-coupon curve and the
+        Z-spread over it.
 
-        The interest rate is modeled with a Ho-Lee binomial tree of twenty steps per coupon
-        period, calibrated to the zero-coupon curve (with the short rate's volatility in
-        absolute terms, 0.01 being 100 basis points a year). The bond is valued backwards
-        through the tree, capped at the call price on every coupon date from the first call
-        date, and the spread added to every rate in the tree is solved for. The bond price is
-        the clean price: between coupon dates the interest accrued since the last coupon is
-        added to it, as a buyer pays it on top. At that spread the method also returns:
+        Treasuries come from the Treasury's daily FedInvest prices without an API key (see
+        `get_treasury_securities`), corporate bonds from the holdings of bond ETFs (see
+        `get_bond_universe`). Without bonds or an issuer the statistics are those of the
+        benchmark Treasuries: the note or bond maturing closest to 2, 3, 5, 7, 10, 20 and
+        30 years after the price date, which is the latest issue of that maturity or one
+        that matures a few months earlier. With only a maturity range they are those of
+        every bill, note and bond maturing within it.
 
-        - Straight Bond Price: the price of the same bond without the call.
-        - Option Value: the straight bond price minus the market price, the value of the
-          call to the issuer.
-        - Effective Duration and Effective Convexity: the price change for a 100 basis point
-          shift of the curve up and down at an unchanged OAS, which account for the call (a callable
-          bond's convexity turns negative when the call is near).
+        The fields are:
 
-        For more information, see the following sources:
+            - Years to Maturity: counted on the bond's actual coupon dates (actual/actual).
+            - Accrued Interest: the coupon earned since the previous coupon date.
+            - Yield to Maturity: the rate that discounts the coupons and principal to the
+                price plus the accrued interest, compounded twice a year.
+            - Current Yield: the annual coupon divided by the price.
+            - Macaulay's Duration: the weighted average time to receive the cash flows.
+            - Modified Duration: Macaulay's duration divided by 1 + YTM / 2.
+            - Effective Duration: the price change of a 1% move in the yield up and down.
+            - Dollar Duration: the modified duration times the full price, divided by 100.
+            - DV01: the price change, per 100 of par, of a one basis point move in the yield.
+            - Convexity: the second derivative of the price to the yield, divided by the price.
+            - Present Value: the clean price of the cash flows discounted with the Treasury
+                zero-coupon curve of the price date.
+            - Z-Spread: the spread over that zero-coupon curve that prices the bond at its
+                market price.
 
-        - Ho, T.S.Y. and Lee, S.-B. (1986). "Term Structure Movements and Pricing Interest
-          Rate Contingent Claims." Journal of Finance, 41(5), 1011-1029.
-        - Fabozzi, F.J. (2016). "Bond Markets, Analysis, and Strategies." Pearson, 9th
-          edition, chapter 18.
+        The formula is as follows:
 
-        Also known as: OAS, option-adjusted spread of a callable bond, effective duration,
-        negative convexity.
+        - PV(t) = Cash Flow(t) / (1 + YTM / 2)^(2t), with coupons of Coupon / 2 per 100 of
+          par and the principal repaid with the last coupon
+        - Dirty Price = SUM(PV(t)) = Price + Accrued Interest, over the remaining payment
+          times t in years
+        - Current Yield = Coupon * 100 / Price
+        - Macaulay's Duration = SUM(t * PV(t)) / Dirty Price
+        - Modified Duration = Macaulay's Duration / (1 + YTM / 2)
+        - Effective Duration = (Dirty Price(YTM - 0.01) - Dirty Price(YTM + 0.01)) / (2 * Dirty Price * 0.01)
+        - Dollar Duration = Modified Duration * Dirty Price / 100
+        - DV01 = (Price(YTM - 0.0001) - Price(YTM + 0.0001)) / 2
+        - Convexity = (Dirty Price(YTM + 0.0001) + Dirty Price(YTM - 0.0001) - 2 * Dirty Price) / (Dirty Price * 0.0001^2)
+        - Present Value = SUM(Cash Flow(t) / (1 + Spot Rate(t) / 2)^(2t)) - Accrued Interest
+        - Z-Spread solves Price = SUM(Cash Flow(t) / (1 + (Spot Rate(t) + Z-Spread) / 2)^(2t)) - Accrued Interest
+
+        Where Spot Rate(t) is the Treasury zero-coupon rate of `get_zero_coupon_curve`,
+        restated from annual to semi-annual compounding, interpolated linearly between its
+        maturities. Bills pay no coupon and their yield is the bond-equivalent yield (see
+        `get_bond_equivalent_yield`). TIPS are priced on their inflation-adjusted principal,
+        so their yield is a real yield and they have no present value or Z-spread on the
+        nominal curve. Floating rate notes are left out.
+
+        To calculate these statistics for terms of your own, use the functions of
+        `financetoolkit.fixedincome.bond_model` (get_bond_price, get_yield_to_maturity,
+        get_macaulays_duration, get_modified_duration, get_effective_duration,
+        get_dollar_duration, get_dv01, get_convexity and get_z_spread).
+
+        Also known as: bond data, fixed income statistics, bond analytics.
 
         Args:
-            bond_price (float | list[float], optional): The market (clean) price of the bond,
-                or several prices. Defaults to 100.
-            coupon_rate (float, optional): The annual coupon rate. Defaults to 0.05.
-            years_to_maturity (float, optional): The years to maturity. Defaults to 10.
-            call_price (float | None, optional): The price at which the issuer can call the
-                bond, None for a bond without a call. Defaults to 100.
-            years_to_first_call (float, optional): The years until the bond can first be
-                called. Defaults to 2.
-            volatility (float, optional): The volatility of the short rate in absolute terms.
-                Defaults to 0.01.
-            frequency (int, optional): The coupon payments per year. Defaults to 2.
-            par_value (float, optional): The par value of the bond. Defaults to 100.
-            spot_rates (pd.Series | dict | None, optional): The zero-coupon curve (annually
-                compounded) by maturity in years. Defaults to None, which uses the US
-                Treasury zero-coupon curve of the end date (see `get_zero_coupon_curve`).
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, a list or a
+                comma-separated string. Treasuries (CUSIPs starting with 912) come from
+                FedInvest, other bonds from the bond ETF holdings. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple", to select its bonds from the bond ETF holdings. Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs whose holdings to select
+                bonds from, see `get_bond_universe`. Defaults to None, which reads LQD, IGSB
+                and USHY when bonds other than Treasuries or an issuer are given.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD). The
+                bond ETF holdings are always the latest. Defaults to None, the latest day
+                with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
 
         Returns:
-            pd.DataFrame: The Option-Adjusted Spread, Straight Bond Price, Option Value,
-            Effective Duration and Effective Convexity, with a column per bond price.
+            pd.DataFrame: One row per bond, indexed by CUSIP (Treasuries) or ISIN, with the
+            Issuer, Security Type, Coupon, Maturity, Price, Price Date and the statistics.
 
         As an example:
 
@@ -1735,718 +780,1209 @@ class FixedIncome:
 
         fixedincome = FixedIncome()
 
-        fixedincome.get_option_adjusted_spread(
-            bond_price=[98, 100, 102],
-            coupon_rate=0.05,
-            years_to_maturity=10,
-            years_to_first_call=2,
-            spot_rates={1: 0.036, 2: 0.035, 5: 0.037, 10: 0.041, 20: 0.047, 30: 0.047},
-        )
+        statistics = fixedincome.collect_bond_statistics(date="2026-11-05")
+
+        statistics.iloc[[0, 2, 4, 6]].loc[:, "Maturity":].T
         ```
 
         Which returns:
 
-        |                        |        98 |       100 |       102 |
-        |:-----------------------|----------:|----------:|----------:|
-        | Option-Adjusted Spread |    0.0057 |    0.0012 |   -0.0039 |
-        | Straight Bond Price    |  103.338  |  107.146  |  111.637  |
-        | Option Value           |    5.3382 |    7.1458 |    9.6374 |
-        | Effective Duration     |    4.743  |    4.1973 |    3.6058 |
-        | Effective Convexity    | -102.679  | -106.054  | -100.365  |
+        |                     | 91282CRU7   | 91282CRT0   | 91282CRF0   | 912810UW6   |
+        |:--------------------|:------------|:------------|:------------|:------------|
+        | Maturity            | 2028-10-31  | 2031-10-31  | 2036-08-15  | 2056-08-15  |
+        | Price               | 100.3125    | 100.6875    | 98.4375     | 98.125      |
+        | Price Date          | 2026-11-05  | 2026-11-05  | 2026-11-05  | 2026-11-05  |
+        | Years to Maturity   | 1.9862      | 4.9862      | 9.7772      | 29.7772     |
+        | Accrued Interest    | 0.0639      | 0.0656      | 1.0306      | 1.142       |
+        | Yield to Maturity   | 0.0446      | 0.0459      | 0.0483      | 0.0525      |
+        | Current Yield       | 0.0461      | 0.0472      | 0.047       | 0.0522      |
+        | Macaulay's Duration | 1.9195      | 4.4973      | 7.8771      | 15.2706     |
+        | Modified Duration   | 1.8777      | 4.3963      | 7.6914      | 14.8801     |
+        | Effective Duration  | 1.8779      | 4.3985      | 7.7036      | 15.0246     |
+        | Dollar Duration     | 1.8847      | 4.4294      | 7.6505      | 14.7715     |
+        | DV01                | 0.0188      | 0.0443      | 0.0765      | 0.1477      |
+        | Convexity           | 4.5145      | 22.7527     | 71.6857     | 333.2043    |
+        | Present Value       | 100.3147    | 100.7082    | 98.4008     | 98.028      |
+        | Z-Spread            | 0.0         | 0.0         | 0.0         | -0.0001     |
         """
-        if spot_rates is None:
-            zero_rates = self._to_zero_coupon(
-                self._latest_yield_curve("United States").to_frame().T, "United States"
-            ).iloc[0]
-            spot_rates_series = pd.Series(
-                zero_rates.to_numpy(),
-                index=[
-                    curve_model.maturity_in_years(label) for label in zero_rates.index
-                ],
-            )
-        else:
-            spot_rates_series = pd.Series(spot_rates, dtype=float)
-            spot_rates_series.index = [
-                curve_model.maturity_in_years(label)
-                for label in spot_rates_series.index
-            ]
-        spot_rates_series = spot_rates_series.dropna().sort_index()
-
-        prices = (
-            [bond_price] if isinstance(bond_price, int | float) else list(bond_price)
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
         )
-        if len(prices) > MAX_OAS_PRICES:
-            raise ValueError(
-                f"{len(prices)} bond prices is too many for one call; pass at most "
-                f"{MAX_OAS_PRICES}."
-            )
-        results = {
-            price: short_rate_model.get_option_adjusted_spread(
-                price=price,
-                coupon_rate=coupon_rate,
-                years_to_maturity=years_to_maturity,
-                maturities=spot_rates_series.index.to_numpy(dtype=float),
-                zero_rates=spot_rates_series.to_numpy(),
-                volatility=volatility,
-                call_price=call_price,
-                years_to_first_call=years_to_first_call,
-                frequency=frequency,
-                face_value=par_value,
-            )
-            for price in prices
+        curves = self._bond_spot_curves(selection)
+
+        statistics = {}
+        for bond, row in selection.iterrows():
+            terms = _bond_terms(row)
+            yield_to_maturity = row["Yield to Maturity"]
+            statistics[bond] = {
+                "Years to Maturity": terms["years_to_maturity"],
+                "Accrued Interest": bond_model.get_accrued_interest(**terms),
+                "Yield to Maturity": yield_to_maturity,
+                "Current Yield": bond_model.get_current_yield(
+                    par_value=PAR_VALUE,
+                    coupon_rate=terms["coupon_rate"],
+                    bond_price=row["Price"],
+                ),
+                **{
+                    name: function(**terms, yield_to_maturity=yield_to_maturity)
+                    for name, function in YIELD_MEASURES.items()
+                },
+                **_curve_measures(row, terms, curves[row["Price Date"]]),
+            }
+
+        return self._bond_table(
+            selection,
+            pd.DataFrame.from_dict(statistics, orient="index"),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_present_value(
+        self,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the present value of individual bonds: their coupons and principal
+        discounted with the Treasury zero-coupon curve of the price date, next to the price
+        they trade at. For a Treasury the two differ by how far the issue trades off the
+        curve; for a corporate bond the present value is the price it would have without
+        any credit or liquidity risk, and the gap with its price is what the Z-spread
+        (`get_z_spread`) measures.
+
+        The formula is as follows:
+
+        - Dirty Price = SUM(C / (1 + s(t_i) / 2)^(2 t_i)) + F / (1 + s(t_n) / 2)^(2 t_n), over the
+          remaining coupons i = 1, ..., n
+        - Accrued Interest = C * a
+        - Present Value = Dirty Price - Accrued Interest, the clean price
+
+        where:
+
+        - C = Coupon payment per half year, 100 * Coupon / 2
+        - s(t) = Treasury zero-coupon rate at t years (`get_zero_coupon_curve`), restated from
+          annual to semi-annual compounding and interpolated linearly between its maturities
+        - a = Elapsed fraction of the current coupon period, 0 on a coupon date
+        - t_i = Time of the i-th cash flow in years, on the bond's actual coupon dates
+        - F = Face value of 100
+
+        The bonds are selected as in `collect_bond_statistics`: Treasuries by CUSIP from
+        FedInvest, other bonds from the bond ETF holdings and, without bonds or an issuer,
+        the benchmark Treasuries. TIPS have no present value on the nominal curve. To price
+        terms of your own, use `bond_model.get_bond_price` (at one yield) or
+        `bond_model.get_bond_price_from_curve` (on a curve).
+
+        Also known as: PV, bond pricing, discounted cash flows, theoretical price.
+
+        Args:
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date and Present Value (per 100 of par).
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        present_values = fixedincome.get_present_value(date="2026-11-05")
+
+        present_values[["Coupon", "Maturity", "Price", "Present Value"]]
+        ```
+
+        Which returns:
+
+        |           |   Coupon | Maturity   |    Price |   Present Value |
+        |:----------|---------:|:-----------|---------:|----------------:|
+        | 91282CRU7 |   0.0462 | 2028-10-31 | 100.312  |        100.315  |
+        | 91282CLR0 |   0.0412 | 2029-10-31 |  98.875  |         98.8811 |
+        | 91282CRT0 |   0.0475 | 2031-10-31 | 100.688  |        100.708  |
+        | 91282CRV5 |   0.0488 | 2033-10-31 | 101.062  |        101.039  |
+        | 91282CRF0 |   0.0462 | 2036-08-15 |  98.4375 |         98.4008 |
+        | 912810RU4 |   0.0288 | 2046-11-15 |  70.0312 |         69.9175 |
+        | 912810UW6 |   0.0512 | 2056-08-15 |  98.125  |         98.028  |
+        """
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+        curves = self._bond_spot_curves(selection)
+        present_values = {
+            bond: _curve_measures(row, _bond_terms(row), curves[row["Price Date"]])[
+                "Present Value"
+            ]
+            for bond, row in selection.iterrows()
         }
 
-        result = pd.DataFrame(results)
-        result.columns.name = "Bond Price"
+        return self._bond_table(
+            selection,
+            pd.Series(present_values, name="Present Value", dtype=float),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_duration(
+        self,
+        duration_type: str = "modified",
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the duration of individual bonds at their yield to maturity. It has the
+        option to calculate the following type of bond durations:
+
+        - Macaulay's Duration: The weighted average time to receive the bond's cash flows.
+        - Modified Duration: The Macaulay's duration divided by 1 plus the per-period yield (YTM / 2).
+        - Effective Duration: The percentage change in the bond price for a 1% change in the yield to maturity.
+        - Dollar Duration: The modified duration multiplied by the bond price, divided by 100.
+
+        These duration measures can be used to estimate the sensitivity of a bond's price to changes in interest rates as well as
+        to compare the risk of different bonds. The modified duration is particularly useful for estimating the percentage change
+        in the bond price for a 1% change in the yield to maturity. Note that it is a percentage sensitivity and therefore not the
+        same as the dollar duration, the price value of a basis point (PVBP) or the dollar value of a 0.01% change (DV01), which are
+        all expressed as a currency amount instead. The DV01 is part of `collect_bond_statistics`.
+
+        The formula is as follows (the default is the modified duration):
+
+        - PV(t) = Cash Flow(t) / (1 + YTM / 2)^(2t), with coupons of Coupon / 2 per 100 of par and the
+          principal repaid with the last coupon
+        - Dirty Price = SUM(PV(t)), over the remaining payment times t in years on the actual coupon dates
+        - Macaulay's Duration = SUM(t * PV(t)) / Dirty Price
+        - Modified Duration = Macaulay's Duration / (1 + YTM / 2)
+        - Effective Duration = (Dirty Price(YTM - 0.01) - Dirty Price(YTM + 0.01)) / (2 * Dirty Price * 0.01)
+        - Dollar Duration = Modified Duration * Dirty Price / 100
+
+        Where YTM is the bond's yield to maturity at its market price, compounded twice a year (see
+        `get_yield_to_maturity`). The bonds are selected as in `collect_bond_statistics`.
+
+        Modified duration is the first estimate of interest rate risk: a modified duration of 7 means the price falls
+        by about 7% if the yield rises by one percentage point. The estimate worsens for larger moves, which convexity
+        corrects (see `get_taylor_price_change`), and it assumes the cash flows are fixed. For callable bonds the
+        relevant measure is an effective duration from a model that values the embedded option, which this method does
+        not include. For terms of your own, use the duration functions of `bond_model`.
+
+        Also known as: Macaulay duration, modified duration, bond price sensitivity.
+
+        Args:
+            duration_type (str, optional): The duration: "modified", "macaulay", "effective" or
+                "dollar". Defaults to "modified".
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date and the duration (in years, or per 100 of par for the dollar
+            duration).
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        durations = fixedincome.get_duration(date="2026-11-05")
+
+        durations[["Security Type", "Coupon", "Maturity", "Price", "Modified Duration"]]
+        ```
+
+        Which returns:
+
+        |           | Security Type   |   Coupon | Maturity   |    Price |   Modified Duration |
+        |:----------|:----------------|---------:|:-----------|---------:|--------------------:|
+        | 91282CRU7 | Note            |   0.0462 | 2028-10-31 | 100.312  |              1.8777 |
+        | 91282CLR0 | Note            |   0.0412 | 2029-10-31 |  98.875  |              2.7748 |
+        | 91282CRT0 | Note            |   0.0475 | 2031-10-31 | 100.688  |              4.3963 |
+        | 91282CRV5 | Note            |   0.0488 | 2033-10-31 | 101.062  |              5.8687 |
+        | 91282CRF0 | Note            |   0.0462 | 2036-08-15 |  98.4375 |              7.6914 |
+        | 912810RU4 | Bond            |   0.0288 | 2046-11-15 |  70.0312 |             13.6289 |
+        | 912810UW6 | Bond            |   0.0512 | 2056-08-15 |  98.125  |             14.8801 |
+        """
+        name = DURATION_TYPES.get(duration_type.lower())
+        if name is None:
+            raise ValueError(
+                "Please input a valid duration type ('macaulay', 'modified', 'effective' or 'dollar')"
+            )
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+        durations = {
+            bond: YIELD_MEASURES[name](
+                **_bond_terms(row), yield_to_maturity=row["Yield to Maturity"]
+            )
+            for bond, row in selection.iterrows()
+        }
+
+        return self._bond_table(
+            selection,
+            pd.Series(durations, name=name, dtype=float),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_yield_to_maturity(
+        self,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the yield to maturity of individual bonds from their market price. The yield to maturity is the
+        internal rate of return of the bond, the discount rate that equates the present value of the bond's cash flows
+        to its price.
+
+        The formula is as follows, solved for YTM:
+
+        - Price + C * a = SUM(C / (1 + YTM / 2)^(2 t_i)) + F / (1 + YTM / 2)^(2 t_n), over the remaining coupons
+          i = 1, ..., n
+
+        where:
+
+        - C = Coupon payment per half year, 100 * Coupon / 2
+        - a = Elapsed fraction of the current coupon period, in actual days (actual/actual), 0 on a coupon date
+        - t_i = Time of the i-th cash flow in years, on the bond's actual coupon dates
+        - F = Face value of 100
+
+        The yield is a nominal annual rate compounded twice a year (bond-equivalent), as the Treasury and US corporate
+        bond markets quote it, solved with the secant method. For a bill it is the bond-equivalent yield of its discount
+        price (see `get_bond_equivalent_yield`), for TIPS the real yield. The bonds are selected as in
+        `collect_bond_statistics`. For terms of your own, use `bond_model.get_yield_to_maturity`.
+
+        The yield to maturity is the return of a bond bought at this price and held to maturity, if every coupon is reinvested
+        at the same yield and the issuer pays in full. It is the standard way to quote and compare bonds, but it is one average
+        rate for all cash flows: bonds with the same maturity but different coupons have different yields even when both are
+        priced in line with the same spot curve, which the Z-spread (`get_z_spread`) accounts for. For callable bonds the
+        yield to worst is quoted instead.
+
+        Also known as: YTM, bond return to maturity, redemption yield.
+
+        Args:
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date and Yield to Maturity (decimal).
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        yields = fixedincome.get_yield_to_maturity(date="2026-11-05")
+
+        yields[["Security Type", "Coupon", "Maturity", "Price", "Yield to Maturity"]]
+        ```
+
+        Which returns:
+
+        | Bond      | Security Type   |   Coupon | Maturity   |    Price |   Yield to Maturity |
+        |:----------|:----------------|---------:|:-----------|---------:|--------------------:|
+        | 91282CRU7 | Note            |   0.0462 | 2028-10-31 | 100.312  |              0.0446 |
+        | 91282CLR0 | Note            |   0.0412 | 2029-10-31 |  98.875  |              0.0453 |
+        | 91282CRT0 | Note            |   0.0475 | 2031-10-31 | 100.688  |              0.0459 |
+        | 91282CRV5 | Note            |   0.0488 | 2033-10-31 | 101.062  |              0.0469 |
+        | 91282CRF0 | Note            |   0.0462 | 2036-08-15 |  98.4375 |              0.0483 |
+        | 912810RU4 | Bond            |   0.0288 | 2046-11-15 |  70.0312 |              0.0533 |
+        | 912810UW6 | Bond            |   0.0512 | 2056-08-15 |  98.125  |              0.0525 |
+        """
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+
+        return self._bond_table(
+            selection,
+            selection["Yield to Maturity"],
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_z_spread(
+        self,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the zero-volatility spread (Z-spread) of individual bonds over the Treasury
+        zero-coupon curve. The Z-spread is the constant spread that, when added uniformly to every
+        point of the curve, makes the present value of the bond's cash flows equal to its price.
+
+        Unlike a simple yield spread (the bond's yield to maturity minus a Treasury yield of the
+        same maturity, the G-spread of `get_bond_universe`), the Z-spread is measured against the
+        entire curve rather than a single point, which makes it a more accurate measure of the
+        compensation an investor receives for a bond's credit and liquidity risk. For a Treasury it
+        shows how far the issue trades off the curve, typically a few basis points.
+
+        The formula is as follows, solved for the Z-Spread with the secant method:
+
+        - Price = SUM(Cash Flow(t) / (1 + (Spot Rate(t) + Z-Spread) / 2)^(2t)) - Accrued Interest
+
+        Where each coupon is 100 * Coupon / 2, the principal is repaid with the last coupon, t is
+        each remaining payment time in years on the bond's actual coupon dates and Spot Rate(t) is
+        the Treasury zero-coupon rate of the price date (`get_zero_coupon_curve`), restated from
+        annual to semi-annual compounding, interpolated linearly between its maturities and held
+        flat beyond its first and last maturity.
+
+        The bonds are selected as in `collect_bond_statistics`. TIPS have no Z-spread on the nominal
+        curve. For a bond with an embedded option the Z-spread includes the option's value, which an
+        option-adjusted spread removes: the ICE BofA option-adjusted spreads of bond indices are in
+        `get_ice_bofa_option_adjusted_spread`, and `short_rate_model.get_option_adjusted_spread`
+        calculates one for a call schedule of your own. For terms of your own, use
+        `bond_model.get_z_spread`.
+
+        Also known as: zero-volatility spread, static spread, credit spread.
+
+        Args:
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date and Z-Spread (decimal, compounded twice a year).
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        z_spreads = fixedincome.get_z_spread(
+            issuer="Apple", maturity_start="2030-01-01", maturity_end="2035-12-31"
+        )
+
+        z_spreads[["Issuer", "Coupon", "Maturity", "Price", "Price Date", "Z-Spread"]]
+        ```
+
+        Which returns:
+
+        |              | Issuer    |   Coupon | Maturity   |   Price | Price Date   |   Z-Spread |
+        |:-------------|:----------|---------:|:-----------|--------:|:-------------|-----------:|
+        | US037833EU05 | APPLE INC |   0.0415 | 2030-05-10 |   97.95 | 2026-11-05   |     0.0024 |
+        | US037833DU14 | APPLE INC |   0.0165 | 2030-05-11 |   89.69 | 2026-11-05   |     0.0033 |
+        | US037833EZ91 | APPLE INC |   0.042  | 2030-05-12 |   98.25 | 2026-11-05   |     0.002  |
+        | US037833DY36 | APPLE INC |   0.0125 | 2030-08-20 |   87.72 | 2026-11-05   |     0.0027 |
+        | US037833ED89 | APPLE INC |   0.0165 | 2031-02-08 |   87.78 | 2026-11-05   |     0.0029 |
+        | US037833EJ59 | APPLE INC |   0.017  | 2031-08-05 |   86.74 | 2026-11-05   |     0.0027 |
+        | US037833FG02 | APPLE INC |   0.049  | 2031-11-09 |   99.83 | 2026-11-05   |     0.0035 |
+        | US037833FA32 | APPLE INC |   0.045  | 2032-05-12 |   98.35 | 2026-11-05   |     0.0022 |
+        | US037833EP10 | APPLE INC |   0.0335 | 2032-08-08 |   92.53 | 2026-11-05   |     0.0022 |
+        | US037833EV87 | APPLE INC |   0.043  | 2033-05-10 |   95.84 | 2026-11-05   |     0.0038 |
+        | US037833FH84 | APPLE INC |   0.051  | 2033-11-09 |   99.77 | 2026-11-05   |     0.0044 |
+        | US037833FB15 | APPLE INC |   0.0475 | 2035-05-12 |   97.91 | 2026-11-05   |     0.0028 |
+        """
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+        curves = self._bond_spot_curves(selection)
+        z_spreads = {
+            bond: _curve_measures(row, _bond_terms(row), curves[row["Price Date"]])[
+                "Z-Spread"
+            ]
+            for bond, row in selection.iterrows()
+        }
+
+        return self._bond_table(
+            selection,
+            pd.Series(z_spreads, name="Z-Spread", dtype=float),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_key_rate_duration(
+        self,
+        key_rate_maturity: float | str | list | None = None,
+        yield_change: float = 0.0001,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the key rate durations of individual bonds on the Treasury zero-coupon curve:
+        the price sensitivity to a shock at a single maturity ("key rate") of the curve while every
+        other point is held fixed. Whereas `get_duration` with `duration_type='effective'` assumes the
+        entire curve shifts in parallel, key rate durations show which segment of the curve a bond's
+        price is exposed to. Because cash flows are discounted using linear interpolation between the
+        curve's maturities, a shock at an inner maturity tapers off towards its neighbours and has no
+        effect beyond them. The curve is held flat beyond its first and last maturities, so a shock at
+        the first maturity moves every cash flow paid before it in full (and a shock at the last
+        maturity every cash flow paid after it).
+
+        Summing the key rate durations across every maturity of the curve approximately reproduces the
+        bond's effective (parallel-shift) duration on the curve. A barbell and a bullet with the same
+        duration have very different key rate profiles and react differently when the curve steepens
+        or flattens, which is why key rate durations are hedged with instruments at each key maturity.
+        The profile also depends on which maturities the curve contains: the same bond shows different
+        key rate durations on a curve with more or fewer points.
+
+        The formula is as follows:
+
+        - Dirty Price = SUM(Cash Flow(t) / (1 + Spot Rate(t) / 2)^(2t))
+        - Key Rate Duration = -(Dirty Price(Key Rate + Δy) - Dirty Price(Key Rate - Δy)) / (2 * Dirty Price * Δy)
+
+        Where each coupon is 100 * Coupon / 2, the principal is repaid with the last coupon, t is each
+        remaining payment time in years on the bond's actual coupon dates, Spot Rate(t) is the Treasury
+        zero-coupon rate of the price date (`get_zero_coupon_curve`), restated from annual to
+        semi-annual compounding and interpolated linearly between its maturities, and Δy is the shock
+        applied to the key rate only (1 basis point by default).
+
+        The bonds are selected as in `collect_bond_statistics`; TIPS have no key rate durations on the
+        nominal curve. For terms or a curve of your own, use `bond_model.get_key_rate_duration`.
+
+        Also known as: partial duration, rate-specific duration, curve risk.
+
+        Args:
+            key_rate_maturity (float | str | list | None, optional): The maturities of the Treasury
+                curve to shock, in years or as labels such as '2Y' (one of the curve's maturities:
+                1M, 1.5M, 2M, 3M, 4M, 6M, 1Y, 2Y, 3Y, 5Y, 7Y, 10Y, 20Y and 30Y). Defaults to None,
+                which shocks every maturity of the curve.
+            yield_change (float, optional): The shock to each key rate (decimal). Defaults to 0.0001.
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date and a key rate duration per key rate maturity (in years).
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        key_rates = fixedincome.get_key_rate_duration(
+            key_rate_maturity=["2Y", "5Y", "10Y", "30Y"], date="2026-11-05"
+        )
+
+        key_rates[["Coupon", "Maturity", "2Y", "5Y", "10Y", "30Y"]]
+        ```
+
+        Which returns:
+
+        |           |   Coupon | Maturity   |     2Y |     5Y |    10Y |    30Y |
+        |:----------|---------:|:-----------|-------:|-------:|-------:|-------:|
+        | 91282CRU7 |   0.0462 | 2028-10-31 | 1.8043 | 0      | 0      | 0      |
+        | 91282CLR0 |   0.0412 | 2029-10-31 | 0.1101 | 0      | 0      | 0      |
+        | 91282CRT0 |   0.0475 | 2031-10-31 | 0.0842 | 4.0372 | 0      | 0      |
+        | 91282CRV5 |   0.0488 | 2033-10-31 | 0.0861 | 0.4068 | 0      | 0      |
+        | 91282CRF0 |   0.0462 | 2036-08-15 | 0.083  | 0.3598 | 5.9559 | 0      |
+        | 912810RU4 |   0.0288 | 2046-11-15 | 0.072  | 0.3122 | 1.6649 | 0.0255 |
+        | 912810UW6 |   0.0512 | 2056-08-15 | 0.0922 | 0.3998 | 2.1327 | 7.5183 |
+        """
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+        curves = self._bond_spot_curves(selection)
+
+        # The maturities of the curve to shock, all of them when none are given.
+        key_rates = (
+            None if key_rate_maturity is None else _maturities(key_rate_maturity, [])
+        )
+
+        durations: dict[str, dict] = {}
+        for bond, row in selection.iterrows():
+            curve = curves[row["Price Date"]]
+            durations[bond] = {
+                fixedincome_helpers.maturity_label(key_rate): (
+                    np.nan
+                    if row["Security Type"] == "TIPS"
+                    else bond_model.get_key_rate_duration(
+                        **_bond_terms(row),
+                        spot_rates=curve,
+                        key_rate_maturity=key_rate,
+                        yield_change=yield_change,
+                    )
+                )
+                for key_rate in (curve.index if key_rates is None else key_rates)
+            }
+
+        return self._bond_table(
+            selection,
+            pd.DataFrame.from_dict(durations, orient="index"),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_taylor_price_change(
+        self,
+        yield_change: float = 0.01,
+        bonds: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        etfs: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Estimates the percentage change in the price of individual bonds for a change in their
+        yield, using a second-order Taylor series expansion that combines modified duration and
+        convexity.
+
+        Modified duration alone only captures the first-order (linear) relationship between a
+        bond's price and its yield, which understates the price increase for a yield decrease and
+        overstates the price decrease for a yield increase because the true price-yield
+        relationship is curved (convex), not linear. Adding a convexity term corrects for this and
+        produces a substantially more accurate estimate, especially for larger yield changes.
+
+        The formula is as follows:
+
+        - Modified Duration = SUM(t * PV(t)) / Dirty Price / (1 + YTM / 2), see `get_duration`
+        - Convexity = (Dirty Price(YTM + 0.0001) + Dirty Price(YTM - 0.0001) - 2 * Dirty Price) / (Dirty Price *
+          0.0001^2)
+        - %ΔPrice ≈ -Modified Duration * Δy + 0.5 * Convexity * Δy^2
+
+        Where YTM is the bond's yield to maturity at its market price, compounded twice a year (see
+        `get_yield_to_maturity`), Δy is the yield change (0.01 by default) and %ΔPrice is the change of
+        the full (dirty) price as a decimal. The bonds are selected as in `collect_bond_statistics`. For
+        terms of your own, use `bond_model.get_taylor_price_change`.
+
+        Also known as: duration-convexity approximation, second-order price approximation.
+
+        Args:
+            yield_change (float, optional): The change in the yield to maturity (decimal), negative
+                for a fall. Defaults to 0.01.
+            bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
+                `collect_bond_statistics`. Defaults to None.
+            issuer (list[str] | str | None, optional): Part of an issuer's name, such as
+                "Apple". Defaults to None.
+            etfs (list[str] | str | None, optional): The bond ETFs to select bonds from,
+                see `get_bond_universe`. Defaults to None.
+            maturity_start (str | None, optional): The earliest maturity (YYYY-MM-DD).
+                Defaults to None.
+            maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
+                to None.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
+                Defaults to None, the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
+            Price, Price Date and Price Change (decimal).
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        price_changes = fixedincome.get_taylor_price_change(yield_change=0.01, date="2026-11-05")
+
+        price_changes[["Security Type", "Coupon", "Maturity", "Price", "Price Change"]]
+        ```
+
+        Which returns:
+
+        |           | Security Type   |   Coupon | Maturity   |    Price |   Price Change |
+        |:----------|:----------------|---------:|:-----------|---------:|---------------:|
+        | 91282CRU7 | Note            |   0.0462 | 2028-10-31 | 100.312  |        -0.0186 |
+        | 91282CLR0 | Note            |   0.0412 | 2029-10-31 |  98.875  |        -0.0273 |
+        | 91282CRT0 | Note            |   0.0475 | 2031-10-31 | 100.688  |        -0.0428 |
+        | 91282CRV5 | Note            |   0.0488 | 2033-10-31 | 101.062  |        -0.0567 |
+        | 91282CRF0 | Note            |   0.0462 | 2036-08-15 |  98.4375 |        -0.0733 |
+        | 912810RU4 | Bond            |   0.0288 | 2046-11-15 |  70.0312 |        -0.1242 |
+        | 912810UW6 | Bond            |   0.0512 | 2056-08-15 |  98.125  |        -0.1321 |
+        """
+        selection = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, date
+        )
+        price_changes = {
+            bond: bond_model.get_taylor_price_change(
+                **_bond_terms(row),
+                yield_to_maturity=row["Yield to Maturity"],
+                yield_change=yield_change,
+            )
+            for bond, row in selection.iterrows()
+        }
+
+        return self._bond_table(
+            selection,
+            pd.Series(price_changes, name="Price Change", dtype=float),
+            rounding if rounding is not None else self._rounding,
+        )
+
+    @handle_errors
+    def get_bond_equivalent_yield(
+        self,
+        bonds: list[str] | str | None = None,
+        date: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the bond-equivalent yield (BEY) of every Treasury bill from its price.
+        Bills are quoted on a discount-yield basis, which understates the return an investor
+        earns because it is computed on face value rather than the (lower) purchase price,
+        and uses a 360-day rather than a 365-day year. The bond-equivalent yield restates the
+        discount yield on a basis that is comparable to coupon-bearing notes and bonds.
+
+        The formula is as follows:
+
+        - Discount Yield = (100 - Price) / 100 * 360 / Days to Maturity
+        - BEY = 365 * Discount Yield / (360 - Days to Maturity * Discount Yield), for 182.5 days or less
+        - BEY = (-2t + 2 * SQRT(t^2 - (2t - 1) * (1 - 100 / Price))) / (2t - 1), with t = Days to Maturity / 365,
+          for more than 182.5 days
+
+        A bill with half a year or less remaining takes the simple restatement onto the purchase price and a
+        365-day year. Beyond that an equivalent coupon-bearing note would have paid a coupon at the six month
+        point, so the U.S. Treasury's semi-annually compounded solution (31 CFR 356, Appendix B) is used instead.
+        Applying the simple formula to a 52-week bill instead overstates its yield by roughly seven basis points.
+
+        The prices are the Treasury's daily FedInvest prices, see `get_treasury_securities`. To convert a discount
+        yield of your own, use `bond_model.get_bond_equivalent_yield`.
+
+        Also known as: BEY, coupon-equivalent yield, investment rate, T-bill yield.
+
+        Args:
+            bonds (list[str] | str | None, optional): The CUSIPs (or US ISINs) of the bills,
+                a list or a comma-separated string. Defaults to None, every bill.
+            date (str | None, optional): The day of the prices (YYYY-MM-DD). Defaults to None,
+                the latest day with prices.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per bill, indexed by CUSIP, with the Maturity, Days to
+            Maturity, Price, Discount Yield, Bond-Equivalent Yield and Price Date.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        bills = fixedincome.get_bond_equivalent_yield(date="2026-11-05")
+
+        bills.iloc[::4, :-1]
+        ```
+
+        Which returns:
+
+        | CUSIP     | Maturity   |   Days to Maturity |   Price |   Discount Yield |   Bond-Equivalent Yield |
+        |:----------|:-----------|-------------------:|--------:|-----------------:|------------------------:|
+        | 912797VW4 | 2026-11-10 |                  5 | 99.9576 |           0.0306 |                  0.031  |
+        | 912797VY0 | 2026-11-24 |                 19 | 99.8075 |           0.0365 |                  0.0371 |
+        | 912797WE3 | 2026-12-08 |                 33 | 99.6551 |           0.0376 |                  0.0383 |
+        | 912797WG8 | 2026-12-22 |                 47 | 99.4978 |           0.0385 |                  0.0392 |
+        | 912797WN3 | 2027-01-05 |                 61 | 99.3367 |           0.0391 |                  0.04   |
+        | 912797WQ6 | 2027-01-19 |                 75 | 99.1819 |           0.0393 |                  0.0401 |
+        | 912797WS2 | 2027-02-02 |                 89 | 99.0271 |           0.0394 |                  0.0403 |
+        | 912797WZ6 | 2027-02-16 |                103 | 98.8582 |           0.0399 |                  0.0409 |
+        | 912797XB8 | 2027-03-02 |                117 | 98.6982 |           0.0401 |                  0.0411 |
+        | 912797WL7 | 2027-03-25 |                140 | 98.4401 |           0.0401 |                  0.0413 |
+        | 912797WV5 | 2027-04-22 |                168 | 98.1073 |           0.0406 |                  0.0419 |
+        | 912797VF1 | 2027-06-10 |                217 | 97.57   |           0.0403 |                  0.0418 |
+        | 912797WJ2 | 2027-09-30 |                329 | 96.2827 |           0.0407 |                  0.0424 |
+        """
+        identifiers = _split_values(bonds)
+        bills = self.get_treasury_securities(
+            date=date,
+            security_type="Bill",
+            bonds=identifiers,
+            rounding=10,
+        )
+        if not isinstance(bills, pd.DataFrame) or bills.empty:
+            raise ValueError(
+                "No Treasury bill prices are available for the date given."
+            )
+
+        days = (
+            pd.to_datetime(bills["Maturity"]) - pd.to_datetime(bills["Price Date"])
+        ).dt.days
+        discount_yield = (100 - bills["Price"]) / 100 * 360 / days
+        result = pd.DataFrame(
+            {
+                "Maturity": bills["Maturity"],
+                "Days to Maturity": days,
+                "Price": bills["Price"],
+                "Discount Yield": discount_yield,
+                "Bond-Equivalent Yield": [
+                    bond_model.get_bond_equivalent_yield(value, day)
+                    for value, day in zip(discount_yield, days, strict=True)
+                ],
+                "Price Date": bills["Price Date"],
+            }
+        )
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
         )
 
-    def get_bond_equivalent_yield(
+    @handle_errors
+    def get_forward_rate(
         self,
-        discount_yield: float | list | np.ndarray | None = None,
-        days_to_maturity: float | list | None = None,
-        show_input_info: bool = True,
+        near_maturity: float | str | list | None = None,
+        far_maturity: float | str | list | None = None,
+        country: str = "United States",
+        date: str | None = None,
+        rounding: int | None = None,
     ):
         """
-        Converts a money-market discount yield (e.g. quoted for Treasury bills) into a
-        bond-equivalent yield (BEY). Money-market instruments are often quoted on a
-        discount-yield basis, which understates the actual return an investor earns
-        because it is computed on face value rather than the (lower) purchase price,
-        and uses a 360-day rather than a 365-day year. The bond-equivalent yield
-        restates the discount yield on a basis that is comparable to coupon-bearing
-        bonds and notes.
+        Calculates the implied forward rates between pairs of maturities of a country's
+        zero-coupon (spot) yield curve on a day. The forward rate is the interest rate, implied by
+        that day's curve, for a loan that starts at a future date: it follows from no-arbitrage
+        pricing rather than being a forecast of future rates, and contains a term premium.
 
         The formula is as follows:
 
-        - BEY = 365 * Discount Yield / (360 - Days to Maturity * Discount Yield), for 182.5 days or less
-        - Price = 1 - Discount Yield * Days to Maturity / 360, per unit of face value
-        - BEY = (-2t + 2 * SQRT(t^2 - (2t - 1) * (1 - 1 / Price))) / (2t - 1), with t = Days to Maturity / 365,
-          for more than 182.5 days
+        - Forward Rate = ((1 + r2)^t2 / (1 + r1)^t1)^(1 / (t2 - t1)) - 1
 
-        A bill with half a year or less remaining takes the simple restatement onto the purchase price and a
-        365-day year. Beyond that an equivalent coupon-bearing note would have paid a coupon at the six month
-        point, so the U.S. Treasury's semi-annually compounded solution (31 CFR 356, Appendix B) is used instead,
-        see `bond_model.get_bond_equivalent_yield`. Applying the simple formula to a 52-week bill instead
-        overstates its yield by roughly seven basis points.
+        where:
 
-        Also known as: BEY, coupon-equivalent yield, investment rate.
+        - r1 = Zero-coupon rate at the near maturity, interpolated linearly from the curve
+        - t1 = Near maturity, in years
+        - r2 = Zero-coupon rate at the far maturity, interpolated linearly from the curve
+        - t2 = Far maturity, in years
+
+        The curve is the zero-coupon curve of `get_zero_coupon_curve`, bootstrapped from the
+        country's government bond par yields and annually compounded, so the forward rate is
+        annually compounded as well. For a curve of your own, use
+        `yieldcurve_model.get_forward_rate`.
+
+        Also known as: implied forward rate, forward-forward rate.
 
         Args:
-            discount_yield (float | list, optional): The money-market discount yield of
-                the instrument (in decimal). If not provided, a range of discount yields
-                will be used.
-            days_to_maturity (float | list, optional): The number of days until the
-                instrument matures. If not provided, a range of typical T-bill maturities
-                will be used.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
+            near_maturity (float | str | list | None, optional): The nearer maturity (or
+                maturities), in years or as labels such as '6M'. Defaults to None, 1 to 5 years.
+            far_maturity (float | str | list | None, optional): The further maturity (or
+                maturities), in years or as labels such as '10Y'. Defaults to None, 5 to 10 years.
+            country (str, optional): The country, see `get_zero_coupon_curve`. Defaults to
+                "United States".
+            date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
+                before it with a curve. Defaults to None, the end date.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
 
         Returns:
-            pandas.DataFrame: A DataFrame containing the bond-equivalent yield for
-            different discount yields and days to maturity.
+            pd.DataFrame: The forward rate (decimal, annually compounded) for each combination
+            of near (rows) and far maturity (columns). Combinations where the far maturity is
+            not greater than the near maturity are NaN.
 
         As an example:
 
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome(end_date="2025-12-31")
+        fixedincome = FixedIncome()
 
-        fixedincome.get_bond_equivalent_yield(
-            discount_yield=[0.03, 0.05, 0.07],
-            days_to_maturity=[90, 180, 360],
-            show_input_info=False,
+        fixedincome.get_forward_rate(
+            near_maturity=[1, 2, 5], far_maturity=[5, 10, 30], date="2026-11-05"
         )
         ```
 
         Which returns:
 
-        |   Discount Yield |     90 |    180 |    360 |
-        |-----------------:|-------:|-------:|-------:|
-        |             0.03 | 0.0306 | 0.0309 | 0.0311 |
-        |             0.05 | 0.0513 | 0.052  | 0.0527 |
-        |             0.07 | 0.0722 | 0.0735 | 0.0749 |
-
-        The 360-day column is computed with the Treasury's semi-annually compounded formula
-        rather than the simple one, because a bill of that length would have paid a coupon
-        halfway through if it were a note.
+        |   Near Maturity |        5 |     10 |     30 |
+        |----------------:|---------:|-------:|-------:|
+        |               1 |   0.0473 | 0.0501 | 0.0548 |
+        |               2 |   0.0474 | 0.0505 | 0.0551 |
+        |               5 | nan      | 0.0524 | 0.056  |
         """
-        discount_yield = (
-            np.round(np.arange(0.01, 0.105, 0.005), 10)
-            if discount_yield is None
-            else discount_yield
-        )
-        days_to_maturity = (
-            [30, 60, 90, 180, 270, 360]
-            if days_to_maturity is None
-            else days_to_maturity
-        )
+        zero_curve = self._latest_zero_curve(country, date)
+        near = _maturities(near_maturity, range(1, 6))
+        far = _maturities(far_maturity, range(5, 11))
 
-        if isinstance(discount_yield, int | float):
-            discount_yield = [discount_yield]
-        if isinstance(days_to_maturity, int | float):
-            days_to_maturity = [days_to_maturity]
+        def zero_rate(maturity: float) -> float:
+            return float(np.interp(maturity, zero_curve.index, zero_curve.to_numpy()))
 
-        bond_equivalent_yields: dict[float, dict[float, float]] = {}
-
-        for yield_value in discount_yield:
-            bond_equivalent_yields[yield_value] = {}
-            for days in days_to_maturity:
-                bond_equivalent_yields[yield_value][days] = (
-                    bond_model.get_bond_equivalent_yield(
-                        discount_yield=float(yield_value), days_to_maturity=days
+        forward_rates = pd.DataFrame(
+            {
+                far_years: {
+                    near_years: (
+                        yieldcurve_model.get_forward_rate(
+                            near_rate=zero_rate(near_years),
+                            far_rate=zero_rate(far_years),
+                            near_maturity=near_years,
+                            far_maturity=far_years,
+                        )
+                        if far_years > near_years
+                        else np.nan
                     )
-                )
-
-        bond_equivalent_yields_df = pd.DataFrame.from_dict(
-            bond_equivalent_yields, orient="index"
+                    for near_years in near
+                }
+                for far_years in far
+            }
         )
-        bond_equivalent_yields_df.index.name = "Discount Yield"
-        bond_equivalent_yields_df.columns.name = "Days to Maturity"
+        forward_rates.index.name = "Near Maturity"
+        forward_rates.columns.name = "Far Maturity"
 
-        if show_input_info:
-            logger.info(
-                "Number of Discount Yields: %s, Days to Maturity: %s",
-                len(discount_yield),
-                list(days_to_maturity),
-            )
+        return apply_rounding(
+            forward_rates, rounding if rounding is not None else self._rounding
+        )
 
-        return apply_rounding(bond_equivalent_yields_df, self._rounding)
-
-    def get_key_rate_duration(
+    @handle_errors
+    def get_par_yield(
         self,
-        par_value: float = 100,
-        coupon_rate: float = 0.05,
-        years_to_maturity: float | range | list | None = None,
-        spot_rates: pd.Series | dict | None = None,
-        key_rate_maturity: float | range | list | None = None,
-        frequency: int = 1,
-        yield_change: float = 0.0001,
-        show_input_info: bool = True,
+        years_to_maturity: float | str | list | None = None,
+        country: str = "United States",
+        date: str | None = None,
+        rounding: int | None = None,
     ):
         """
-        Calculates the key rate duration of a bond for one or more individual maturity
-        points ("key rates") on the yield curve. Whereas `get_duration` with
-        `duration_type='effective'` assumes the entire curve shifts in parallel, key
-        rate duration measures the bond's price sensitivity to a shock at a single
-        tenor of the curve while every other point is held fixed. Because cash flows
-        are discounted using linear interpolation between the curve's tenors, a shock
-        at an inner tenor tapers off towards its neighboring tenors and has no effect
-        beyond them. The curve is held flat beyond its first and last tenors, so a shock
-        at the first tenor moves every cash flow paid before it in full (and a shock at
-        the last tenor every cash flow paid after it).
+        Calculates the par yields of any maturity from a country's zero-coupon (spot) yield
+        curve on a day. The par yield for a maturity is the coupon rate a newly issued bond of
+        that maturity needs so that, discounted with the spot curve, its price equals par.
 
-        Summing the key rate durations across every tenor of the curve approximately
-        reproduces the bond's effective (parallel-shift) duration, but key rate
-        duration additionally reveals which segment of the curve the bond's price is
-        most exposed to — information that is essential for constructing curve-neutral
-        hedges or identifying "twist" risk.
-
-        A barbell and a bullet with the same duration have very different key rate
-        profiles and react differently when the curve steepens or flattens, which is why
-        key rate durations are hedged with instruments at each key maturity. Because a
-        shock at one maturity tapers off to its neighbours, the profile also depends on
-        which maturities the curve contains: the same bond shows different key rate
-        durations on a curve with more or fewer points.
+        The government bond yield curve quotes par yields at its own maturities; this gives the
+        par yield of any maturity in between (such as 4 or 15 years) with the interpolation done
+        on the zero-coupon rates, where it belongs, rather than on the par yields.
 
         The formula is as follows:
 
-        - Dirty Price = SUM(Cash Flow(t) / (1 + Spot Rate(t) / Frequency)^(Frequency * t))
-        - Key Rate Duration = -(Dirty Price(Key Rate + Δy) - Dirty Price(Key Rate - Δy)) / (2 * Dirty Price * Δy)
+        - DF(t) = 1 / (1 + Spot Rate(t / Frequency) / Frequency)^t, the discount factor of a cash flow after t
+          coupon periods
+        - Par Yield = Frequency * (1 - DF(t_n)) / (SUM(DF(t_i)) - a), over the remaining coupons i = 1, ..., n
 
-        Where each coupon is Par Value * Coupon Rate / Frequency, the par value is repaid with the
-        last coupon, t is each remaining payment time in years, Spot Rate(t) is the spot rate
-        (compounded at the coupon frequency) interpolated linearly between the curve's maturities
-        and Δy is the shock applied to the key rate only (1 basis point by default).
+        where Spot Rate(τ) is the zero-coupon rate of `get_zero_coupon_curve` at τ years, restated from annual
+        compounding to the country's coupon frequency (twice a year, once for Sweden and Norway) and interpolated
+        linearly, a is the elapsed fraction of the current coupon period (0 on a coupon date) and t_i = i - a is
+        the time of the i-th coupon in periods. The par yield is a nominal annual coupon rate paid at the coupon
+        frequency, like the government bond yield curve. For a curve of your own, use
+        `yieldcurve_model.get_par_yield`.
 
-        Also known as: partial duration, rate-specific duration.
+        Also known as: par rate, par coupon rate.
 
         Args:
-            par_value (float, optional): The par value (face value) of the bond. Defaults to 100.
-            coupon_rate (float, optional): The coupon rate of the bond. Defaults to 0.05.
-            years_to_maturity (float | list, optional): The years to maturity of the
-                bond (or bonds). If not provided, a range of years to maturity will be used.
-            spot_rates (pd.Series | dict, optional): The zero-coupon (spot) yield curve
-                used to discount the bond's cash flows, in decimals, read as nominal annual
-                rates compounded `frequency` times per year and indexed by maturity in years (a number, or a label such as '6M' or '10Y').
-                Defaults to a sample curve.
-            key_rate_maturity (float | list, optional): The maturity (or maturities), in
-                years, of the curve point(s) to shock. Must be present in the index of
-                `spot_rates`. Defaults to every maturity in `spot_rates`.
-            frequency (int, optional): The number of coupon payments per year. Defaults to 1.
-            yield_change (float, optional): The size of the shock applied to each key
-                rate, up and down (in decimal). Defaults to 0.0001 (1 basis point).
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
+            years_to_maturity (float | str | list | None, optional): The maturities, in years
+                or as labels such as '15Y'. Defaults to None, 1 to 30 years.
+            country (str, optional): The country, see `get_zero_coupon_curve`. Defaults to
+                "United States".
+            date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
+                before it with a curve. Defaults to None, the end date.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
 
         Returns:
-            pandas.DataFrame: A DataFrame containing the key rate duration for different
-            bond maturities and key rate maturities.
+            pd.Series: The par yield (decimal) by maturity in years.
 
         As an example:
 
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome(end_date="2025-12-31")
+        fixedincome = FixedIncome()
 
-        fixedincome.get_key_rate_duration(
-            coupon_rate=0.05,
-            years_to_maturity=[5, 10],
-            key_rate_maturity=[2, 5, 10],
-            show_input_info=False,
-        )
+        fixedincome.get_par_yield(years_to_maturity=[1, 4, 8, 15, 25], date="2026-11-05")
         ```
 
         Which returns:
 
-        |   Years to Maturity |      2 |      5 |      10 |
-        |--------------------:|-------:|-------:|--------:|
-        |                   5 | 0.0862 | 4.0561 | -0      |
-        |                  10 | 0.0862 | 0.377  |  6.4666 |
+        |   Years to Maturity |   Par Yield |
+        |--------------------:|------------:|
+        |                   1 |      0.0428 |
+        |                   4 |      0.0456 |
+        |                   8 |      0.0475 |
+        |                  15 |      0.0507 |
+        |                  25 |      0.0527 |
         """
-        spot_rates_series = _get_spot_curve(spot_rates, DEFAULT_SPOT_CURVE)
+        frequency = COUPON_FREQUENCIES.get(country, 2)
+        zero_curve = self._latest_zero_curve(country, date)
+        spot_rates = frequency * ((1 + zero_curve) ** (1 / frequency) - 1)
 
-        years_to_maturity = (
-            range(1, 11) if years_to_maturity is None else years_to_maturity
-        )
-        key_rate_maturity = (
-            list(spot_rates_series.index)
-            if key_rate_maturity is None
-            else key_rate_maturity
-        )
-
-        if isinstance(years_to_maturity, int | float):
-            years_to_maturity = [years_to_maturity]
-        if isinstance(key_rate_maturity, int | float | str):
-            key_rate_maturity = [key_rate_maturity]
-
-        # The same years as the curve's maturities, so '5Y' finds the 5 year point of a labelled curve.
-        key_rate_maturity = [_maturity_key(key_rate) for key_rate in key_rate_maturity]
-
-        key_rate_durations: dict[float, dict[float, float]] = {}
-
-        for maturity in years_to_maturity:
-            key_rate_durations[maturity] = {}
-            for key_rate in key_rate_maturity:
-                key_rate_durations[maturity][key_rate] = (
-                    bond_model.get_key_rate_duration(
-                        par_value=par_value,
-                        coupon_rate=coupon_rate,
-                        years_to_maturity=maturity,
-                        spot_rates=spot_rates_series,
-                        key_rate_maturity=key_rate,
-                        frequency=frequency,
-                        yield_change=yield_change,
-                    )
-                )
-
-        key_rate_durations_df = pd.DataFrame.from_dict(
-            key_rate_durations, orient="index"
-        )
-        key_rate_durations_df.index.name = "Years to Maturity"
-        key_rate_durations_df.columns.name = "Key Rate Maturity"
-
-        if show_input_info:
-            logger.info(
-                "Par Value: %s, Coupon Rate: %s%%, Frequency: %s, Spot Curve: %s",
-                f"{par_value:,}",
-                f"{coupon_rate * 100}",
-                frequency,
-                {k: round(v, 4) for k, v in spot_rates_series.items()},
-            )
-
-        return apply_rounding(key_rate_durations_df, self._rounding)
-
-    def get_taylor_price_change(
-        self,
-        par_value: float = 100,
-        coupon_rate: float | np.ndarray | list | None = None,
-        years_to_maturity: float | range | list | None = None,
-        yield_to_maturity: float = 0.08,
-        frequency: int = 1,
-        yield_change: float = 0.01,
-        show_input_info: bool = True,
-    ):
-        """
-        Estimates the percentage change in a bond's price for a given change in yield,
-        using a second-order Taylor series expansion that combines modified duration
-        and convexity.
-
-        Modified duration alone only captures the first-order (linear) relationship
-        between a bond's price and its yield, which understates the price increase for
-        a yield decrease and overstates the price decrease for a yield increase because
-        the true price-yield relationship is curved (convex), not linear. Adding a
-        convexity term corrects for this and produces a substantially more accurate
-        estimate, especially for larger yield changes.
-
-        This method calls `get_modified_duration` and `get_convexity` from
-        `bond_model.py` directly rather than recomputing them.
-
-        The formula is as follows:
-
-        - Modified Duration = SUM(t * PV(t)) / Dirty Price / (1 + YTM / Frequency), see `get_duration`
-        - Convexity = (Dirty Price(YTM + 0.0001) + Dirty Price(YTM - 0.0001) - 2 * Dirty Price) / (Dirty Price *
-          0.0001^2)
-        - %ΔPrice ≈ -Modified Duration * Δy + 0.5 * Convexity * Δy^2
-
-        Where YTM is the yield to maturity, a nominal annual rate compounded `frequency` times a year (0.08 and
-        annual by default), Δy is the yield change (0.01 by default) and %ΔPrice is the change of the full
-        (dirty) price as a decimal, which on a coupon date equals the clean price `get_present_value` returns.
-
-        Also known as: duration-convexity approximation, second-order price approximation.
-
-        Args:
-            par_value (float, optional): The par value (face value) of the bond. Defaults to 100.
-            coupon_rate (float, optional): The coupon rate of the bond. If not provided,
-                a range of coupon rates will be used.
-            years_to_maturity (float, optional): The years to maturity of the bond in
-                years. If not provided, a range of years to maturity will be used.
-            yield_to_maturity (float, optional): The current yield to maturity of the
-                bond. Defaults to 0.08.
-            frequency (int, optional): The number of coupon payments per year. Defaults to 1.
-            yield_change (float, optional): The hypothetical change in yield to
-                maturity, e.g. 0.01 for a 100 basis point increase. Defaults to 0.01.
-            show_input_info (bool, optional): Whether to display input information. Defaults to True.
-
-        Returns:
-            pandas.DataFrame: A DataFrame containing the estimated percentage price
-            change for different coupon rates and years to maturity.
-
-        As an example:
-
-        ```python
-        from financetoolkit import FixedIncome
-
-        fixedincome = FixedIncome(end_date="2025-12-31")
-
-        fixedincome.get_taylor_price_change(
-            coupon_rate=[0.03, 0.05, 0.07],
-            years_to_maturity=[5, 10, 15],
-            yield_to_maturity=0.08,
-            yield_change=0.01,
-            show_input_info=False,
-        )
-        ```
-
-        Which returns:
-
-        |   Coupon Rate |       5 |      10 |      15 |
-        |--------------:|--------:|--------:|--------:|
-        |          0.03 | -0.0421 | -0.0744 | -0.097  |
-        |          0.05 | -0.0407 | -0.0693 | -0.088  |
-        |          0.07 | -0.0394 | -0.0656 | -0.0824 |
-        """
-        coupon_rate = (
-            np.round(
-                np.arange(max(0.05 - 0.005 * 20, 0.005), 0.05 + 0.005 * 20, 0.005), 10
-            )
-            if coupon_rate is None
-            else coupon_rate
-        )
-
-        years_to_maturity = (
-            range(1, 11) if years_to_maturity is None else years_to_maturity
-        )
-
-        if isinstance(coupon_rate, int | float):
-            coupon_rate = [coupon_rate]
-        if isinstance(years_to_maturity, int | float):
-            years_to_maturity = [years_to_maturity]
-
-        price_changes: dict[float, dict[float, float]] = {}
-
-        for coupon in coupon_rate:
-            price_changes[coupon] = {}
-            for maturity in years_to_maturity:
-                price_changes[coupon][maturity] = bond_model.get_taylor_price_change(
-                    par_value=par_value,
-                    coupon_rate=float(coupon),
-                    years_to_maturity=maturity,
-                    yield_to_maturity=yield_to_maturity,
+        par_yields = pd.Series(
+            {
+                years: yieldcurve_model.get_par_yield(
+                    spot_rates=spot_rates,
+                    years_to_maturity=years,
                     frequency=frequency,
-                    yield_change=yield_change,
                 )
+                for years in _maturities(years_to_maturity, range(1, 31))
+            },
+            name="Par Yield",
+            dtype=float,
+        )
+        par_yields.index.name = "Years to Maturity"
 
-        price_changes_df = pd.DataFrame.from_dict(price_changes, orient="index")
-        price_changes_df.columns = list(years_to_maturity)
+        return apply_rounding(
+            par_yields, rounding if rounding is not None else self._rounding
+        )
 
-        price_changes_df.index.name = "Coupon Rate"
-        price_changes_df.columns.name = "Years to Maturity"
-
-        if show_input_info:
-            logger.info(
-                "Par Value: %s, Yield to Maturity: %s%%, Frequency: %s, Yield Change: %s%%",
-                f"{par_value:,}",
-                f"{yield_to_maturity * 100}",
-                frequency,
-                f"{yield_change * 100}",
-            )
-
-        return apply_rounding(price_changes_df, self._rounding)
-
-    def get_derivative_price(
+    @handle_errors
+    def get_yield_curve_spread(
         self,
-        model: str = "black",
-        forward_rate: float = 0.05,
-        strike_rate: float | list | np.ndarray | None = None,
-        volatility: float = 0.01,
-        years_to_maturity: float | list | range | None = None,
-        risk_free_rate: float | None = None,
-        notional: float = 10_000_000,
-        tenor: float | None = None,
-        payment_frequency: int = 2,
-        is_receiver: bool = True,
-        volatility_type: str | None = None,
-        include_payoff: bool = False,
-        show_input_info: bool = True,
+        long_maturity: float | str | list | None = None,
+        short_maturity: float | str | list | None = None,
+        country: str = "United States",
+        date: str | None = None,
+        rounding: int | None = None,
     ):
         """
-        Calculates the derivative price for a fixed income instrument.
+        Calculates the spreads between pairs of maturities of a country's government bond yield
+        curve on a day, e.g. the widely followed 10-year minus 2-year and 10-year minus 3-month
+        Treasury spreads. A positive spread indicates a "normal" upward-sloping curve, while a
+        negative spread ("inversion") has historically been used as a leading indicator of an
+        economic slowdown.
 
-        It is possible to use two different models to calculate the derivative price:
+        The formula is as follows:
 
-        - Black Model: A mathematical model used for pricing financial derivatives, its primary applications are for
-            pricing options on future contracts, bond options, interest rate caps and floors, and swaptions.
-            For more information, see: https://en.wikipedia.org/wiki/Black_model
-        - Bachelier Model: A deviation of the Black Model that is used for pricing future contracts. It is a simple model
-            that assumes the price of the underlying asset follows a normal distribution with constant volatility. This
-            is in contrast to the Black Model which assumes the price of the underlying asset follows a log-normal distribution.
-            For more information, see: https://en.wikipedia.org/wiki/Bachelier_model
+        - Yield Curve Spread = Long-Term Yield - Short-Term Yield
 
-        Both models are applied to European swaptions here, the right to enter an interest rate swap at the strike
-        rate; caps, floors and bond options are not implemented.
+        Where both yields are the par yields of `get_government_bond_yield_curve`, as the
+        Treasury and FRED (T10Y2Y, T10Y3M) calculate the spreads, interpolated linearly for a
+        maturity the curve does not quote. For the history of these spreads, take the
+        difference of two columns of `get_government_bond_yield_curve`; for yields of your own,
+        use `yieldcurve_model.get_yield_curve_spread`.
 
-        It is possible to alter all parameters within the models, e.g. strike rate, volatility, years to maturity,
-        risk-free rate, notional amount, and whether the holder is the receiver or payer of the derivative. Next to that, you can
-        provide lists of strike rates and years to maturity to calculate the derivative price for several scenarios at once.
-
-        Exercising a swaption is not a single payment at expiration — it is the right to enter a swap that exchanges
-        cash flows at every payment date over the underlying swap's tenor. The price therefore discounts the option
-        payoff by the swap's annuity (present value of a basis point) rather than a single discount factor to
-        expiration, which is why the tenor and payment frequency of the underlying swap matter.
-
-        Note that a swaption's price scales with the tenor of the underlying swap (a right to enter a
-        longer-dated swap is worth more, since it exchanges cash flows over more payment dates) — pass
-        `tenor` explicitly to price a swaption whose underlying swap tenor differs from its years to
-        maturity, e.g. a 1-year option into a 5-year swap: `tenor=5, years_to_maturity=1`.
-
-        The two models do not quote volatility on the same basis, and this matters a great deal.
-        Black's model, being lognormal, reads `volatility` as a fraction of the forward rate, so
-        0.20 is a 20% volatility. The Bachelier model, being normal, reads it as an absolute
-        movement in rate units, so 0.0065 is 65 basis points. On a 3.25% forward those two quotes
-        describe the same market, but swapping one for the other misprices the swaption by a factor
-        of roughly thirty. By default `volatility` is therefore interpreted on whichever basis the
-        chosen model is defined in; set `volatility_type` explicitly to supply a quote on the other
-        basis and have it converted, using the at-the-money approximation
-        sigma_normal ≈ sigma_lognormal * forward_rate.
-
-        Black's model is undefined at a zero or negative forward or strike rate because it takes
-        the logarithm of their ratio, and raises rather than returning a silent NaN in that case.
-        Use the Bachelier model for the negative rates seen in the euro area and Japan.
-
-        The formula is as follows (Black's model and a receiver swaption are the defaults):
-
-        - Annuity = (1 / Payment Frequency) * SUM(e^(-r * t_i)), over the swap's payment times t_i = T + i /
-          Payment Frequency for i = 1, ..., Tenor * Payment Frequency (the tenor defaults to T)
-        - Black d1 = (ln(F / K) + σ² * T / 2) / (σ * √T), d2 = d1 - σ * √T, with σ the lognormal volatility
-        - Black Payer Payoff = F * N(d1) - K * N(d2)
-        - Black Receiver Payoff = K * N(-d2) - F * N(-d1)
-        - Bachelier d = (F - K) / (σ_N * √T), with σ_N the normal volatility
-        - Bachelier Payer Payoff = (F - K) * N(d) + σ_N * √T * n(d)
-        - Bachelier Receiver Payoff = (K - F) * N(-d) + σ_N * √T * n(-d)
-        - Swaption Price = Notional * Annuity * Payoff
-
-        Where F is the forward swap rate, K is the strike rate, T is the years to maturity (expiry)
-        of the option, r is the continuously compounded risk-free rate (the forward rate when not
-        given), N is the cumulative standard normal distribution and n its density. A volatility
-        quoted on the other basis is converted with σ_N = σ * F.
-
-        Also known as: bond derivative pricing, fixed income derivative, swaption pricing.
+        Also known as: term spread, yield curve slope, 10Y-2Y spread.
 
         Args:
-            model (str, optional): The type of model to use for calculating the derivative price. Defaults to "black".
-            forward_rate (float, optional): The forward rate as derived from the swap curve. Defaults to 0.05.
-            strike_rate (float | list, optional): The strike rate for the derivative. Defaults to None which means it calculates the
-                derivative price a range of strike prices. Can also be a list of strike rates (e.g. [0.01, 0.02, 0.03, 0.04, 0.05]).
-            volatility (float, optional): The volatility of the underlying swap rate, quoted on the
-                basis given by `volatility_type`. Defaults to 0.01, read as a 1% lognormal volatility
-                by the Black model and as 100 basis points of normal volatility by the Bachelier model.
-            years_to_maturity (float | list, optional): The years to maturity of the derivative. Defaults to None, which
-                returns the price for 1 to 10 years. Can also be a list of years to maturity (e.g. [1, 2.3, 2.5, 3])
-            risk_free_rate (float, optional): The risk-free interest rate used to discount the swap's payment dates,
-                read as a continuously compounded rate on a flat curve (discount factor exp(-r * t)). Defaults to None,
-                which uses the forward rate; as the forward rate is a swap rate on the swap's own compounding, pass the
-                continuously compounded rate explicitly for an exact annuity.
-            notional (float, optional): The notional amount of the derivative. Defaults to 10_000_000.
-            tenor (float | None, optional): The tenor (length in years) of the underlying swap. Defaults to None,
-                which means it is equal to years_to_maturity for each scenario.
-            payment_frequency (int, optional): Number of fixed-leg payments per year on the underlying swap
-                (e.g. 1 for annual, 2 for semi-annual, 4 for quarterly). Defaults to 2 (semi-annual).
-            is_receiver (bool, optional): True if the holder is the receiver of the derivative, False if the holder is the payer. Defaults to True.
-            volatility_type (str | None, optional): The convention `volatility` is quoted on, either
-                'lognormal' (relative to the forward rate) or 'normal' (absolute, in rate units).
-                Defaults to None, which uses the convention the chosen model is natively defined in:
-                'lognormal' for the Black model and 'normal' for the Bachelier model.
-            include_payoff (bool, optional): True to include the payoff in the output, False otherwise. Defaults to False.
-            show_input_info (bool, optional): True to display input information, False otherwise. Defaults to True.
+            long_maturity (float | str | list | None, optional): The longer maturity (or
+                maturities), in years or as labels such as '10Y'. Defaults to None, 5, 10 and
+                30 years.
+            short_maturity (float | str | list | None, optional): The shorter maturity (or
+                maturities), in years or as labels such as '3M'. Defaults to None, 3 months
+                and 2 years.
+            country (str, optional): The country, see `get_government_bond_yield_curve`.
+                Defaults to "United States".
+            date (str | None, optional): The day of the curve (YYYY-MM-DD), or the last day
+                before it with a curve. Defaults to None, the end date.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
 
         Returns:
-            pandas.DataFrame: The derivative prices rounded to the specified decimal places.
-            pandas.DataFrame (optional): The derivative payoffs rounded to the specified decimal places if include_payoff is True.
-
-        In the example below the result has one column per expiry date and one row per strike.
-        The strikes below the 3.25% forward are worthless because a receiver swaption only
-        pays when the fixed rate it locks in exceeds the prevailing forward, and at a 1%
-        lognormal volatility a 50 basis point gap is far out of reach.
+            pd.DataFrame: The spread (decimal) for each combination of long (rows) and short
+            maturity (columns).
 
         As an example:
 
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome(end_date="2025-12-31")
+        fixedincome = FixedIncome()
 
-        fixedincome.get_derivative_price(
-            model='black',
-            forward_rate=0.0325,
-            strike_rate=[0.0275, 0.0325, 0.0375, 0.0425],
-            years_to_maturity=[1, 2, 5, 10],
-            show_input_info=False,
-        )
+        fixedincome.get_yield_curve_spread(date="2026-11-05")
         ```
 
         Which returns:
 
-        |   Strike Rate |   2026-12-31 |   2027-12-31 |   2030-12-30 |   2035-12-29 |
-        |--------------:|-------------:|-------------:|-------------:|-------------:|
-        |        0.0275 |         0    |         0    |          0   |          0   |
-        |        0.0325 |      1224.91 |      3300.15 |      11280.4 |      25086.1 |
-        |        0.0375 |     47237.2  |     89991.1  |     194547   |     305934   |
-        |        0.0425 |     94474.3  |    179982    |     389094   |     611868   |
+        | Long Maturity   |     3M |     2Y |
+        |:----------------|-------:|-------:|
+        | 5Y              | 0.0042 | 0.0013 |
+        | 10Y             | 0.0067 | 0.0038 |
+        | 30Y             | 0.0108 | 0.0079 |
         """
-        model_lower = model.lower()
+        par_curve = self._latest_yield_curve(country, date)
+        maturities = [_maturity_key(label) for label in par_curve.index]
 
-        strike_rate = (
-            np.round(
-                np.arange(
-                    max(
-                        (
-                            forward_rate - 0.005 * 20
-                            if not is_receiver
-                            else forward_rate - 0.005 * 5
-                        ),
-                        0.005,
-                    ),
-                    (
-                        forward_rate + 0.005 * 20
-                        if is_receiver
-                        else forward_rate + 0.005 * 5
-                    ),
-                    0.005,
-                ),
-                10,
+        def par_yield(maturity: float) -> float:
+            return float(
+                np.interp(maturity, maturities, par_curve.to_numpy(dtype=float))
             )
-            if strike_rate is None
-            else strike_rate
+
+        long = _maturities(long_maturity, [5, 10, 30])
+        short = _maturities(short_maturity, [0.25, 2])
+        spreads = pd.DataFrame(
+            {
+                fixedincome_helpers.maturity_label(short_years): {
+                    fixedincome_helpers.maturity_label(
+                        long_years
+                    ): yieldcurve_model.get_yield_curve_spread(
+                        long_yield=par_yield(long_years),
+                        short_yield=par_yield(short_years),
+                    )
+                    for long_years in long
+                }
+                for short_years in short
+            }
+        )
+        spreads.index.name = "Long Maturity"
+        spreads.columns.name = "Short Maturity"
+
+        return apply_rounding(
+            spreads, rounding if rounding is not None else self._rounding
         )
 
-        years_to_maturity = (
-            range(1, 11) if years_to_maturity is None else years_to_maturity
-        )
+    @handle_errors
+    def get_breakeven_inflation_rate(
+        self,
+        date: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Calculates the breakeven inflation rates of the US Treasury curve on a day: the nominal
+        par yield minus the real (TIPS) par yield of the 5, 7, 10, 20 and 30-year maturities. It
+        is the rate of inflation that would make an investor indifferent between holding a
+        nominal Treasury and a TIPS of the same maturity, and is widely used as a market-implied
+        measure of expected inflation.
 
-        if isinstance(years_to_maturity, int | float):
-            years_to_maturity = [years_to_maturity]
-        if isinstance(strike_rate, int | float):
-            strike_rate = [strike_rate]
+        The formula is as follows:
 
-        years_to_maturity_dates = [
-            (
-                pd.to_datetime(self._end_date) + pd.Timedelta(days=365 * interval)
-            ).strftime("%Y-%m-%d")
-            for interval in years_to_maturity
+        - Breakeven Inflation Rate = Nominal Yield - Real Yield
+
+        Where both yields are the Treasury's par yield curve rates (nominal and real), the simple
+        difference FRED publishes as T5YIE and T10YIE, not (1 + Nominal) / (1 + Real) - 1.
+
+        The breakeven rate is often read as the market's expected inflation, but it also
+        contains an inflation risk premium, which raises it, and a liquidity premium on
+        inflation-linked bonds, which lowers it, so it rises and falls in market stress for
+        reasons other than inflation expectations. The comparison is with CPI-U, the index TIPS
+        pay on. The daily history, with the 5-year, 5-year forward rate, is
+        `get_inflation_expectations` in the Economics module; for yields of your own, use
+        `yieldcurve_model.get_breakeven_inflation_rate`.
+
+        Also known as: TIPS breakeven spread, inflation breakeven.
+
+        Args:
+            date (str | None, optional): The day (YYYY-MM-DD), or the last business day
+                before it. Defaults to None, the end date.
+            rounding (int | None, optional): The number of decimals to round the results
+                to. Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: The Nominal Yield, Real Yield and Breakeven Inflation Rate (decimals)
+            by maturity, with the date of the yields.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        fixedincome.get_breakeven_inflation_rate(date="2026-11-05")
+        ```
+
+        Which returns:
+
+        | Maturity   |   Nominal Yield |   Real Yield |   Breakeven Inflation Rate | Date       |
+        |:-----------|----------------:|-------------:|---------------------------:|:-----------|
+        | 5 Year     |          0.0459 |       0.0233 |                     0.0226 | 2026-11-05 |
+        | 7 Year     |          0.047  |       0.0246 |                     0.0224 | 2026-11-05 |
+        | 10 Year    |          0.0484 |       0.026  |                     0.0224 | 2026-11-05 |
+        | 20 Year    |          0.0527 |       0.029  |                     0.0237 | 2026-11-05 |
+        | 30 Year    |          0.0525 |       0.0305 |                     0.022  | 2026-11-05 |
+        """
+        end_date = date or self._end_date
+        start_date = (
+            datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=21)
+        ).strftime("%Y-%m-%d")
+        # The Treasury serves whole months, so the days after the date are cut off here.
+        nominal = treasury_model.get_yield_curve("nominal", start_date, end_date).loc[
+            : pd.Period(end_date, "D")
         ]
-
-        derivative_prices: dict[str, dict[float, float]] = {}
-        derivative_payoffs: dict[str, dict[float, float]] = {}
-
-        risk_free_rate = risk_free_rate if risk_free_rate is not None else forward_rate
-
-        for strike in strike_rate:
-            derivative_prices[strike], derivative_payoffs[strike] = {}, {}
-            for maturity in years_to_maturity:
-                if model_lower == "black":
-                    (
-                        derivative_prices[strike][maturity],
-                        derivative_payoffs[strike][maturity],
-                    ) = derivative_model.get_black_price(
-                        forward_rate=forward_rate,
-                        strike_rate=float(strike),
-                        volatility=volatility,
-                        years_to_maturity=maturity,
-                        risk_free_rate=risk_free_rate,
-                        notional=notional,
-                        tenor=tenor,
-                        payment_frequency=payment_frequency,
-                        is_receiver=is_receiver,
-                        volatility_type=(
-                            "lognormal" if volatility_type is None else volatility_type
-                        ),
-                    )
-                elif model_lower == "bachelier":
-                    (
-                        derivative_prices[strike][maturity],
-                        derivative_payoffs[strike][maturity],
-                    ) = derivative_model.get_bachelier_price(
-                        forward_rate=forward_rate,
-                        strike_rate=float(strike),
-                        volatility=volatility,
-                        years_to_maturity=maturity,
-                        risk_free_rate=risk_free_rate,
-                        notional=notional,
-                        tenor=tenor,
-                        payment_frequency=payment_frequency,
-                        is_receiver=is_receiver,
-                        volatility_type=(
-                            "normal" if volatility_type is None else volatility_type
-                        ),
-                    )
-                else:
-                    raise ValueError(
-                        "Please input a valid model type ('black' or 'bachelier')"
-                    )
-
-        derivative_prices_df = pd.DataFrame.from_dict(derivative_prices, orient="index")
-        derivative_prices_df.columns = years_to_maturity_dates
-
-        derivative_prices_df.index.name = "Strike Rate"
-
-        if show_input_info:
-            logger.info(
-                "Forward Rate: %s%%, Volatility: %s%%, Risk Free Rate: %s%%, "
-                "Holder: %s, Notional: %s, Payment Frequency: %sx/year, Model: %s Model",
-                f"{forward_rate * 100}",
-                f"{volatility * 100}",
-                f"{risk_free_rate * 100}",
-                "Receiver" if is_receiver else "Payer",
-                f"{notional:,}",
-                payment_frequency,
-                model_lower.title(),
+        real = treasury_model.get_yield_curve("real", start_date, end_date).loc[
+            : pd.Period(end_date, "D")
+        ]
+        if nominal.empty or real.empty:
+            raise ValueError(
+                f"The Treasury has no nominal and real yield curve in the weeks before {end_date}."
             )
+        day = nominal.index.intersection(real.index).max()
 
-        if include_payoff:
-            derivative_payoffs_df = pd.DataFrame.from_dict(
-                derivative_payoffs, orient="index"
+        rates = pd.DataFrame(
+            {
+                "Nominal Yield": {
+                    maturity: nominal.loc[day].get(columns["nominal"], np.nan)
+                    for maturity, columns in treasury_model.MATURITIES.items()
+                },
+                "Real Yield": {
+                    maturity: real.loc[day].get(columns["real"], np.nan)
+                    for maturity, columns in treasury_model.MATURITIES.items()
+                },
+            }
+        )
+        rates["Breakeven Inflation Rate"] = (
+            yieldcurve_model.get_breakeven_inflation_rate(
+                nominal_yield=rates["Nominal Yield"], real_yield=rates["Real Yield"]
             )
-            derivative_payoffs_df.columns = years_to_maturity_dates
+        )
+        rates["Date"] = str(pd.Period(day, "D"))
+        rates.index.name = "Maturity"
 
-            derivative_payoffs_df.index.name = "Strike Rate"
-
-            return derivative_prices_df.round(2), apply_rounding(
-                derivative_payoffs_df, self._rounding
-            )
-
-        return derivative_prices_df.round(2)
+        return apply_rounding(
+            rates, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_government_bond_yield(
@@ -3887,6 +3423,7 @@ class FixedIncome:
         issuer: list[str] | str | None = None,
         maturity_start: str | None = None,
         maturity_end: str | None = None,
+        bonds: list[str] | str | None = None,
         rounding: int | None = None,
     ):
         """
@@ -3933,6 +3470,8 @@ class FixedIncome:
                 date (YYYY-MM-DD). Defaults to None.
             maturity_end (str | None, optional): Keeps the bonds maturing on or before this
                 date (YYYY-MM-DD). Defaults to None.
+            bonds (list[str] | str | None, optional): Keeps the bonds with these ISINs or
+                CUSIPs, as a list or a comma-separated string. Defaults to None, every bond.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
 
@@ -3987,6 +3526,8 @@ class FixedIncome:
         """
         self._require_api_key()
 
+        # The bonds asked for, before the name is reused for the table of bonds.
+        identifiers = {value.upper() for value in _split_values(bonds) or []}
         funds = [fund.upper() for fund in (_split_values(etfs) or BOND_FUNDS)]
         holdings, missing = toolkit_fmp_model.get_etf_holdings(funds, self._api_key)
         if missing:
@@ -4079,6 +3620,11 @@ class FixedIncome:
         bonds = bonds.drop_duplicates("ISIN").set_index("ISIN")
         bonds["Funds"] = funds_held
 
+        if identifiers:
+            bonds = bonds[
+                bonds.index.str.upper().isin(identifiers)
+                | bonds["CUSIP"].astype(str).str.upper().isin(identifiers)
+            ]
         if issuer is not None:
             names = [name.upper() for name in _split_values(issuer) or []]
             bonds = bonds[
@@ -4092,7 +3638,7 @@ class FixedIncome:
             bonds = bonds[bonds["Maturity"] <= pd.Timestamp(maturity_end).date()]
         if bonds.empty:
             raise ValueError(
-                "No bond in the holdings matches the issuer and maturity given."
+                "No bond in the holdings matches the bonds, issuer and maturity given."
             )
 
         bonds["Years"] = [
@@ -4151,6 +3697,7 @@ class FixedIncome:
         self,
         date: str | None = None,
         security_type: list[str] | str | None = None,
+        bonds: list[str] | str | None = None,
         rounding: int | None = None,
     ):
         """
@@ -4191,6 +3738,9 @@ class FixedIncome:
             security_type (list[str] | str | None, optional): The kind of security: "Bill",
                 "Note", "Bond", "TIPS" or "FRN", or several (a list or a comma-separated
                 string). Defaults to None, which returns every kind.
+            bonds (list[str] | str | None, optional): Keeps the securities with these CUSIPs
+                (or their US ISINs), as a list or a comma-separated string. Defaults to None,
+                every security.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
 
@@ -4243,8 +3793,16 @@ class FixedIncome:
         prices, price_date = treasurydirect_model.get_treasury_prices(date)
         if requested_types is not None:
             prices = prices[prices["Security Type"].isin(requested_types)]
+        if bonds is not None:
+            cusips = [
+                fixedincome_helpers.treasury_cusip(value.upper()) or value.upper()
+                for value in _split_values(bonds) or []
+            ]
+            prices = prices[prices["CUSIP"].isin(cusips)]
         if prices.empty:
-            raise ValueError(f"FedInvest lists no {security_type} on {price_date}.")
+            raise ValueError(
+                f"FedInvest lists no security of the type and CUSIPs given on {price_date}."
+            )
 
         def analytics(security: pd.Series) -> tuple[float, float]:
             maturity = security["Maturity"].date()
@@ -5288,7 +4846,7 @@ class FixedIncome:
     @handle_errors
     def get_implied_default_probability(
         self,
-        spreads: str | float | dict | pd.Series | None = None,
+        ratings: list[str] | str | None = None,
         recovery_rate: float = 0.4,
         horizons: list[float] | str | None = None,
         rounding: int | None = None,
@@ -5301,8 +4859,9 @@ class FixedIncome:
 
             λ = s / (1 - R),  P(default within t years) = 1 - e^(-λt)
 
-        By default the spreads are the latest ICE BofA option-adjusted spreads of the US
-        corporate bond indices per rating (AAA to CCC), which need a FRED API key. Spreads
+        The spreads are the latest ICE BofA option-adjusted spreads of the US corporate bond
+        indices per rating (AAA to CCC) up to the end date, which need a FRED API key. For
+        a spread of your own, use `short_rate_model.get_implied_default_probability`. Spreads
         also pay for liquidity and for the uncertainty of the losses, so these risk-neutral
         probabilities are higher than the default rates that are observed historically (see
         `get_default_rates`); the gap is the credit risk premium.
@@ -5316,71 +4875,58 @@ class FixedIncome:
         risk-neutral default probability.
 
         Args:
-            spreads (str | float | dict | pd.Series | None, optional): The credit spread as a
-                decimal (0.01 for 100 basis points), or several by name as a dictionary,
-                Series or string such as "BBB:0.011, B:0.031". Defaults to None, which uses
-                the latest ICE BofA option-adjusted spread per rating.
+            ratings (list[str] | str | None, optional): The ratings: "AAA", "AA", "A", "BBB",
+                "BB", "B" or "CCC", as a list or a comma-separated string. Defaults to None,
+                every rating.
             recovery_rate (float, optional): The share of the face value recovered on
-                default. Defaults to 0.4.
+                default, the scenario the probabilities assume. Defaults to 0.4, about the
+                average recovery of senior unsecured bonds.
             horizons (list[float] | str | None, optional): The horizons in years, as a list or
                 a comma-separated string. Defaults to None, which uses 1, 3, 5 and 10 years.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
             pd.DataFrame: The Spread, the Hazard Rate and the default probability per horizon
-            as decimals, with a row per spread.
+            as decimals, with a row per rating.
 
         As an example:
 
         ```python
         from financetoolkit import FixedIncome
 
-        fixedincome = FixedIncome()
+        fixedincome = FixedIncome(end_date="2026-11-05", fred_api_key="your_fred_api_key")
 
-        fixedincome.get_implied_default_probability(
-            spreads={'BBB': 0.011, 'BB': 0.021, 'B': 0.031, 'CCC': 0.087}
-        )
+        fixedincome.get_implied_default_probability()
         ```
-
-        Which returns:
-
-        | Name   |   Spread |   Hazard Rate |   1Y Default Probability |   3Y Default Probability |   5Y Default Probability |   10Y Default Probability |
-        |:-------|---------:|--------------:|-------------------------:|-------------------------:|-------------------------:|--------------------------:|
-        | BBB    |    0.011 |        0.0183 |                   0.0182 |                   0.0535 |                   0.0876 |                    0.1675 |
-        | BB     |    0.021 |        0.035  |                   0.0344 |                   0.0997 |                   0.1605 |                    0.2953 |
-        | B      |    0.031 |        0.0517 |                   0.0504 |                   0.1436 |                   0.2277 |                    0.4035 |
-        | CCC    |    0.087 |        0.145  |                   0.135  |                   0.3527 |                   0.5157 |                    0.7654 |
         """
         horizons = [
             float(horizon) for horizon in _split_values(horizons) or [1, 3, 5, 10]
         ]
 
-        if spreads is None:
-            self._require_fred_api_key()
-            start_date = (
-                datetime.strptime(self._end_date, "%Y-%m-%d") - timedelta(days=31)
-            ).strftime("%Y-%m-%d")
-            option_adjusted_spread = fred_model.get_rating_option_adjusted_spread(
-                start_date, self._end_date, self._fred_api_key
-            ).dropna(how="all")
-            if option_adjusted_spread.empty:
-                raise ValueError(
-                    f"FRED has no ICE BofA option-adjusted spreads in the month before {self._end_date}."
-                )
-            # The FRED spreads arrive as decimals (0.0077 for 77 basis points), the unit the model takes.
-            spread_series = option_adjusted_spread.iloc[-1].dropna()
-            spread_series.index.name = "Rating"
-        elif isinstance(spreads, int | float) or (
-            isinstance(spreads, str) and ":" not in spreads
-        ):
-            spread_series = pd.Series({"Spread": float(spreads)})
-        elif isinstance(spreads, str):
-            pairs = [pair.split(":", 1) for pair in _split_values(spreads) or []]
-            spread_series = pd.Series(
-                {name.strip(): float(value) for name, value in pairs}
+        self._require_fred_api_key()
+        start_date = (
+            datetime.strptime(self._end_date, "%Y-%m-%d") - timedelta(days=31)
+        ).strftime("%Y-%m-%d")
+        option_adjusted_spread = fred_model.get_rating_option_adjusted_spread(
+            start_date, self._end_date, self._fred_api_key
+        ).dropna(how="all")
+        if option_adjusted_spread.empty:
+            raise ValueError(
+                f"FRED has no ICE BofA option-adjusted spreads in the month before {self._end_date}."
             )
-        else:
-            spread_series = pd.Series(spreads, dtype=float)
+        # The FRED spreads arrive as decimals (0.0077 for 77 basis points), the unit the model takes.
+        spread_series = option_adjusted_spread.iloc[-1].dropna()
+        if ratings is not None:
+            requested = [rating.upper() for rating in _split_values(ratings) or []]
+            if unknown := [
+                rating for rating in requested if rating not in spread_series.index
+            ]:
+                raise ValueError(
+                    f"No spread is available for the rating {', '.join(unknown)}. Choose from "
+                    f"{', '.join(spread_series.index)}."
+                )
+            spread_series = spread_series[requested]
+        spread_series.index.name = "Rating"
 
         result = pd.DataFrame(
             {
@@ -5393,7 +4939,7 @@ class FixedIncome:
                 for name, spread in spread_series.items()
             }
         ).T
-        result.index.name = spread_series.index.name or "Name"
+        result.index.name = "Rating"
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding

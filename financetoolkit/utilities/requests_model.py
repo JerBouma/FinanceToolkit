@@ -87,16 +87,19 @@ def get_request(
     url: str,
     timeout: int = 60,
     extra_headers: dict | None = None,
+    data: dict | None = None,
 ) -> requests.Response:
     """
     Make an HTTP GET request with automatic SSL fallback for corporate proxies
-    and environments with self-signed certificates.
+    and environments with self-signed certificates, or a POST of form fields for a
+    source that only answers a submitted form.
 
     Args:
         url (str): The URL to request.
         timeout (int): Request timeout in seconds.
         extra_headers (dict | None): Additional headers merged on top of the default HEADERS,
             e.g. {"Authorization": "Bearer <token>"}. Defaults to None.
+        data (dict | None): Form fields to POST instead of a GET. Defaults to None.
 
     Returns:
         requests.Response: The HTTP response object.
@@ -111,8 +114,16 @@ def get_request(
         requests.exceptions.RequestException: If the request fails even without SSL verification.
     """
     headers = {**HEADERS, **(extra_headers or {})}
+
+    def send(verify: bool | str) -> requests.Response:
+        if data is None:
+            return SESSION.get(url, headers=headers, timeout=timeout, verify=verify)
+        return SESSION.post(
+            url, data=data, headers=headers, timeout=timeout, verify=verify
+        )
+
     try:
-        response = SESSION.get(url, headers=headers, timeout=timeout, verify=True)
+        response = send(verify=True)
         response.raise_for_status()
         return response
     except requests.exceptions.SSLError:
@@ -122,9 +133,7 @@ def get_request(
         system_certificates = ssl.get_default_verify_paths().cafile
         if system_certificates and os.path.exists(system_certificates):
             try:
-                response = SESSION.get(
-                    url, headers=headers, timeout=timeout, verify=system_certificates
-                )
+                response = send(verify=system_certificates)
                 response.raise_for_status()
                 return response
             except requests.exceptions.SSLError:
@@ -155,9 +164,7 @@ def get_request(
             "This is common in corporate networks with self-signed certificates.",
             redact_credentials(url),
         )
-        response = SESSION.get(
-            url, headers=headers, timeout=timeout, verify=False  # noqa
-        )
+        response = send(verify=False)  # noqa: S501
         response.raise_for_status()
         return response
 

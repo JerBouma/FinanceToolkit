@@ -400,6 +400,36 @@ def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> 
         )
 
 
+def to_us_series(observations: dict, source: str, description: str) -> pd.DataFrame:
+    """
+    Turns the dated observations of a US-only series into the single "United States"
+    column the Economics module returns for it, as FRED shapes its series.
+
+    Args:
+        observations (dict): The value per day (pd.Period with a daily frequency), such as
+            the first day of each month or the day each week ends.
+        source (str): Where the observations came from, used in the error message.
+        description (str): What was retrieved, used in the error message.
+
+    Returns:
+        pd.DataFrame: A single "United States" column indexed by day ("Date").
+
+    Raises:
+        ValueError: When there are no observations, which means the source changed its
+            format.
+    """
+    if not observations:
+        raise ValueError(
+            f"The {source} has no {description}, which means its layout changed."
+        )
+
+    index = pd.PeriodIndex(list(observations), freq="D", name="Date")
+
+    return pd.DataFrame(
+        {"United States": list(observations.values())}, index=index
+    ).sort_index()
+
+
 def check_period_type(period: object) -> None:
     """
     Checks that a period is given as text, so that a wrong type is reported as such

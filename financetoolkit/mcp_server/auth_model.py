@@ -504,8 +504,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <h1>Authorize Access</h1>
             <p class="subtitle">
                 Enter your Financial Modeling Prep API key to grant this client access to financial data tools.
-                Optionally add a FRED API key to also enable US labor market, macroeconomic and interest rate
-                indicators.
+                Optionally add a FRED API key to also enable the ICE BofA and Moody's corporate bond series and
+                the full history of US nonfarm payrolls.
             </p>
         </div>
 

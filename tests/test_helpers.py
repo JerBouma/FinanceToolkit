@@ -442,3 +442,13 @@ def test_availability_of_the_quarter_closing_a_fiscal_year_uses_the_annual_deadl
     assert availability.loc["DECEMBER"].tolist() == list(
         pd.to_datetime(["2023-12-29", "2024-04-29"])
     )
+
+
+def test_round_half_up_rounds_a_half_away_from_zero():
+    from decimal import Decimal
+
+    # round() rounds these to even or misses them on the binary float.
+    assert helpers.round_half_up(2.675, 2) == 2.68
+    assert helpers.round_half_up(0.125, 2) == 0.13
+    assert helpers.round_half_up(Decimal("17015150") / 1000, 1) == 17015.2
+    assert pd.isna(helpers.round_half_up(float("nan"), 2))

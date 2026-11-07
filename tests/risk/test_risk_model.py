@@ -594,6 +594,15 @@ def test_the_drawdown_table_lists_each_drawdown_deepest_first():
     assert second["Peak"] == pd.Period("2024-01-01", freq="D")
     assert second["Recovery"] == pd.Period("2024-01-04", freq="D")
     assert (second["To Trough"], second["To Recovery"], second["Length"]) == (1, 2, 3)
+    # Daily rows on consecutive days: the calendar days equal the periods.
+    assert (
+        second["To Trough (Days)"],
+        second["To Recovery (Days)"],
+        second["Length (Days)"],
+    ) == (1, 2, 3)
+    assert np.isclose(second["Length (Years)"], 3 / 365.25)
+    assert np.isnan(first["Length (Days)"]) and np.isnan(first["To Recovery (Days)"])
+    assert first["To Trough (Days)"] == 1
 
     # The deepest drawdown is the one the maximum drawdown measures.
     measured = returns.iloc[1:]
@@ -618,3 +627,55 @@ def test_a_ticker_without_returns_has_no_drawdowns():
 
     assert risk_model.get_drawdown_series(returns)["C"].isna().all()
     assert "C" not in risk_model.get_drawdown_table(returns).index.get_level_values(0)
+
+
+def test_the_drawdown_table_counts_calendar_days_over_market_holidays():
+    # Trading days only: a peak on Friday, a trough on Monday, back on Wednesday a week later.
+    dates = pd.PeriodIndex(
+        ["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09", "2024-01-17"],
+        freq="D",
+    )
+    returns = pd.DataFrame({"A": [np.nan, 0.1, -0.2, 0.1, 0.2]}, index=dates)
+
+    drawdown = risk_model.get_drawdown_table(returns).loc[("A", 1)]
+
+    assert (drawdown["To Trough"], drawdown["To Recovery"], drawdown["Length"]) == (
+        1,
+        2,
+        3,
+    )
+    assert drawdown["To Trough (Days)"] == 3
+    assert drawdown["To Recovery (Days)"] == 9
+    assert drawdown["Length (Days)"] == 12
+
+
+def test_the_drawdown_table_counts_calendar_days_to_the_end_of_each_month():
+    returns = pd.DataFrame(
+        {"A": [np.nan, -0.1, 0.0, 0.2]},
+        index=pd.period_range("2024-01", periods=4, freq="M"),
+    )
+
+    drawdown = risk_model.get_drawdown_table(returns).loc[("A", 1)]
+
+    # From the end of January to the end of February (29 days, a leap year) and of April.
+    assert drawdown["To Trough (Days)"] == 29
+    assert drawdown["Length (Days)"] == 90
+
+
+def test_deepest_since_is_the_last_date_as_deep_as_today():
+    drawdowns = pd.DataFrame(
+        {"A": [0.0, -0.3, -0.1, 0.0, -0.05, -0.2, -0.25, -0.35, np.nan]},
+        index=pd.period_range("2024-01-01", periods=9, freq="D"),
+    )
+
+    since = risk_model.get_deepest_since(drawdowns)["A"]
+
+    # At a high there is nothing to compare with.
+    assert since.iloc[0] is None and since.iloc[3] is None
+    # -0.1 was last as deep on 2 January (-0.3), -0.05 on 3 January (-0.1).
+    assert since.iloc[2] == "2024-01-02"
+    assert since.iloc[4] == "2024-01-03"
+    # -0.25 skips the shallower -0.2 of 6 January.
+    assert since.iloc[6] == "2024-01-02"
+    # The deepest drawdown so far has no earlier date as deep.
+    assert since.iloc[7] is None

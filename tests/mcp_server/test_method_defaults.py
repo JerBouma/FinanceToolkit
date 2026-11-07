@@ -203,11 +203,11 @@ def test_a_transcript_is_one_full_call_of_one_ticker(monkeypatch):
 def test_missing_required_inputs_are_named(captured):
     text = asyncio.run(
         mcp_controller.mcp.call_tool(
-            "models", {"indicator": "get_intrinsic_valuation", "tickers": "MSFT"}
+            "econometrics", {"indicator": "get_chow_test", "tickers": "MSFT"}
         )
     )[0][0].text
 
-    assert "requires `growth_rate`" in text
+    assert "requires `break_date`" in text
     assert captured == []
 
 

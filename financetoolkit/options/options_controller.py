@@ -3286,7 +3286,7 @@ class Options:
 
     def get_strategy_payoff(
         self,
-        legs: list[dict[str, float | bool | str]],
+        legs: list[dict[str, float | bool | str]] | None = None,
         start_date: str | None = None,
         stock_price_range: float = 0.5,
         stock_price_step_size: int = 1,
@@ -3331,10 +3331,13 @@ class Options:
         Also known as: option strategy payoff diagram, P&L profile.
 
         Args:
-            legs (list[dict]): A list of leg dictionaries as described above. Must
+            legs (list[dict] | None, optional): A list of leg dictionaries as described above. Must
             contain at least one leg. The same legs are applied to every ticker, so
             strike prices should be chosen with the relevant tickers' price levels in
-            mind.
+            mind. Defaults to None, which buys an at-the-money straddle on each ticker: a
+            call and a put with the stock price on the start date as strike and 30 days to
+            expiration, priced with the Black Scholes model on the volatility, risk free rate
+            and dividend yield of that date, as `get_black_scholes_model` does.
             start_date (str | None, optional): The start date which determines the stock price. Defaults to None
             which means it will use the most recent date.
             stock_price_range (float): The percentage range to use for the stock prices at expiration. Defaults
@@ -3360,65 +3363,58 @@ class Options:
             end_date="2025-12-31",
         )
 
-        straddle_legs = [
-            {"strike_price": 450, "put_option": False, "position": "long", "premium": 30},
-            {"strike_price": 450, "put_option": True, "position": "long", "premium": 28},
-        ]
-
-        toolkit.options.get_strategy_payoff(
-            legs=straddle_legs, stock_price_range=0.25, stock_price_step_size=5
-        )
+        toolkit.options.get_strategy_payoff(stock_price_range=0.25, stock_price_step_size=5)
         ```
 
         Which returns:
 
-        |   Stock Price |   TSLA |
-        |--------------:|-------:|
-        |           335 |     57 |
-        |           340 |     52 |
-        |           345 |     47 |
-        |           350 |     42 |
-        |           355 |     37 |
-        |           360 |     32 |
-        |           365 |     27 |
-        |           370 |     22 |
-        |           375 |     17 |
-        |           380 |     12 |
-        |           385 |      7 |
-        |           390 |      2 |
-        |           395 |     -3 |
-        |           400 |     -8 |
-        |           405 |    -13 |
-        |           410 |    -18 |
-        |           415 |    -23 |
-        |           420 |    -28 |
-        |           425 |    -33 |
-        |           430 |    -38 |
-        |           435 |    -43 |
-        |           440 |    -48 |
-        |           445 |    -53 |
-        |           450 |    -58 |
-        |           455 |    -53 |
-        |           460 |    -48 |
-        |           465 |    -43 |
-        |           470 |    -38 |
-        |           475 |    -33 |
-        |           480 |    -28 |
-        |           485 |    -23 |
-        |           490 |    -18 |
-        |           495 |    -13 |
-        |           500 |     -8 |
-        |           505 |     -3 |
-        |           510 |      2 |
-        |           515 |      7 |
-        |           520 |     12 |
-        |           525 |     17 |
-        |           530 |     22 |
-        |           535 |     27 |
-        |           540 |     32 |
-        |           545 |     37 |
-        |           550 |     42 |
-        |           555 |     47 |
+        |   Stock Price |     TSLA |
+        |--------------:|---------:|
+        |           335 |  49.7821 |
+        |           340 |  44.7821 |
+        |           345 |  39.7821 |
+        |           350 |  34.7821 |
+        |           355 |  29.7821 |
+        |           360 |  24.7821 |
+        |           365 |  19.7821 |
+        |           370 |  14.7821 |
+        |           375 |   9.7821 |
+        |           380 |   4.7821 |
+        |           385 |  -0.2179 |
+        |           390 |  -5.2179 |
+        |           395 | -10.2179 |
+        |           400 | -15.2179 |
+        |           405 | -20.2179 |
+        |           410 | -25.2179 |
+        |           415 | -30.2179 |
+        |           420 | -35.2179 |
+        |           425 | -40.2179 |
+        |           430 | -45.2179 |
+        |           435 | -50.2179 |
+        |           440 | -55.2179 |
+        |           445 | -60.2179 |
+        |           450 | -64.6579 |
+        |           455 | -59.6579 |
+        |           460 | -54.6579 |
+        |           465 | -49.6579 |
+        |           470 | -44.6579 |
+        |           475 | -39.6579 |
+        |           480 | -34.6579 |
+        |           485 | -29.6579 |
+        |           490 | -24.6579 |
+        |           495 | -19.6579 |
+        |           500 | -14.6579 |
+        |           505 |  -9.6579 |
+        |           510 |  -4.6579 |
+        |           515 |   0.3421 |
+        |           520 |   5.3421 |
+        |           525 |  10.3421 |
+        |           530 |  15.3421 |
+        |           535 |  20.3421 |
+        |           540 |  25.3421 |
+        |           545 |  30.3421 |
+        |           550 |  35.3421 |
+        |           555 |  40.3421 |
         """
         if start_date is not None and start_date not in self._prices.index:
             raise ValueError(f"The start date {start_date} is not a valid date.")
@@ -3440,7 +3436,11 @@ class Options:
 
             strategy_payoff[ticker] = binomial_trees_model.get_strategy_payoff(
                 stock_price=price_range_series,
-                legs=legs,
+                legs=(
+                    legs
+                    if legs is not None
+                    else self._at_the_money_straddle(ticker, start_date)
+                ),
             )
 
         strategy_payoff_df = pd.DataFrame(strategy_payoff)
@@ -3451,6 +3451,35 @@ class Options:
         )
 
         return strategy_payoff_df
+
+    def _at_the_money_straddle(
+        self, ticker: str, date
+    ) -> list[dict[str, float | bool | str]]:
+        """
+        The legs of a long straddle bought on a date: a call and a put struck at that day's
+        stock price with 30 days to expiration, at their Black Scholes prices.
+        """
+        stock_price = float(self._prices.loc[date, ticker])
+
+        return [
+            {
+                "strike_price": stock_price,
+                "put_option": put_option,
+                "position": "long",
+                "premium": float(
+                    black_scholes_model.get_black_scholes(
+                        stock_price=stock_price,
+                        strike_price=stock_price,
+                        risk_free_rate=float(self._risk_free_rate.loc[date]),
+                        volatility=float(self._volatility.loc[date, ticker]),
+                        time_to_expiration=30 / 365,
+                        dividend_yield=self._dividend_yield_on(ticker, date),
+                        put_option=put_option,
+                    )
+                ),
+            }
+            for put_option in (False, True)
+        ]
 
     def collect_all_greeks(
         self,

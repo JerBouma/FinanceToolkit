@@ -9979,7 +9979,7 @@ class Economics:
     @handle_errors
     def get_commodity_forward_curve(
         self,
-        commodity: str,
+        commodity: str | list[str] | None = None,
         contracts: int = 12,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -10003,9 +10003,10 @@ class Economics:
         Also known as: futures term structure, forward curve.
 
         Args:
-            commodity (str): The commodity to retrieve the curve for. One of "Crude
-                Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn", "Wheat" or
-                "Soybeans".
+            commodity (str | list[str] | None, optional): The commodity, or a list of
+                them, to retrieve the curve for: "Crude Oil", "Natural Gas", "Gold",
+                "Silver", "Copper", "Corn", "Wheat" or "Soybeans". Defaults to None, which
+                retrieves every one of them.
             contracts (int, optional): The number of contracts to return, the nearest
                 listed ones from the current month on. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -10017,7 +10018,8 @@ class Economics:
             pd.DataFrame: A DataFrame indexed by date, with one column per contract
             labeled by its delivery month (e.g. "2026-12"), containing that
             contract's daily closing price over its trading life. Columns are NaN
-            outside the date range the contract actually traded in.
+            outside the date range the contract actually traded in. With a list of
+            commodities (or none given), the columns are the commodity and the contract.
 
         As an example:
 
@@ -10039,9 +10041,24 @@ class Economics:
         | 2026-07-30 |     78.19 |     76.12 |     74.65 |     73.56 |     72.72 |
         | 2026-07-31 |     78.65 |     76.44 |     74.88 |     73.74 |     72.88 |
         """
-        commodity_forward_curve = yfinance_model.get_commodity_forward_curve(
-            commodity, self._start_date, self._end_date, contracts
-        )
+        # A comma-separated string (as the MCP server passes a list) is split.
+        if isinstance(commodity, str) and "," in commodity:
+            commodity = [name.strip() for name in commodity.split(",") if name.strip()]
+
+        if isinstance(commodity, str):
+            commodity_forward_curve = yfinance_model.get_commodity_forward_curve(
+                commodity, self._start_date, self._end_date, contracts
+            )
+        else:
+            commodity_forward_curve = pd.concat(
+                {
+                    name: yfinance_model.get_commodity_forward_curve(
+                        name, self._start_date, self._end_date, contracts
+                    )
+                    for name in commodity or yfinance_model.COMMODITY_TICKERS
+                },
+                axis=1,
+            )
 
         return finalize_dataset(
             dataset=commodity_forward_curve,

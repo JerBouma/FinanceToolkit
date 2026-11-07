@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.performance import performance_model
+from financetoolkit.performance import performance_controller, performance_model
 
 # pylint: disable=missing-function-docstring
 
@@ -259,3 +259,29 @@ def test_a_constant_fund_has_no_r_squared():
             pd.Series(value, index=styles.index), styles
         )
         assert np.isnan(result["R Squared"])
+
+
+def test_style_analysis_retrieves_styles_outside_the_toolkit(performance_module):
+    module = copy.copy(performance_module)
+    weekly = module._historical_data["weekly"]["Return"]
+    requested = []
+
+    def returns_function(tickers, period):
+        requested.append((tickers, period))
+        # Stand-ins for the style indices: the benchmark's returns under their names.
+        return pd.DataFrame(dict.fromkeys(tickers, weekly["Benchmark"]))
+
+    module._returns_function = returns_function
+    result = module.get_style_analysis(period="weekly")
+
+    assert requested == [(performance_controller.STYLE_TICKERS, "weekly")]
+    assert list(result.columns[:6]) == performance_controller.STYLE_TICKERS
+    assert {"AAPL", "MSFT"} <= set(result.index)
+    assert result.loc[
+        "AAPL", performance_controller.STYLE_TICKERS
+    ].sum() == pytest.approx(1, abs=1e-3)
+
+    # Without a way to retrieve them, styles outside the Toolkit are refused (and
+    # @handle_errors returns an empty result).
+    module._returns_function = None
+    assert module.get_style_analysis(period="weekly").empty

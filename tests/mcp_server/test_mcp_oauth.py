@@ -624,7 +624,8 @@ def test_authorization_fields_are_bounded_and_the_challenge_is_s256_shaped() -> 
     assert _authorize(client, "http://localhost/cb").status_code == 303  # noqa
 
 
-def test_a_full_code_store_refuses_new_codes_instead_of_evicting(monkeypatch) -> None:
+def test_a_full_code_store_makes_way_for_new_codes(monkeypatch) -> None:
+    """A full store drops its oldest code, so a flood cannot block every sign-in."""
     from financetoolkit.mcp_server import auth_model
 
     monkeypatch.setattr(auth_model, "_MAX_PENDING_CODES", 1)
@@ -632,17 +633,42 @@ def test_a_full_code_store_refuses_new_codes_instead_of_evicting(monkeypatch) ->
     client = _oauth_client()
 
     first = _authorize(client, "http://localhost/callback")
-    assert first.status_code == 303  # noqa
-    assert _authorize(client, "http://localhost/callback").status_code == 503  # noqa
+    second = _authorize(client, "http://localhost/callback")
+    assert first.status_code == second.status_code == 303  # noqa
 
-    code = parse_qs(urlsplit(first.headers["location"]).query)["code"][0]
-    exchange = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": "http://localhost/callback",
-        "code_verifier": VERIFIER,
-    }
-    assert client.post("/oauth/token", data=exchange).status_code == 200  # noqa
+    def exchange(response) -> int:
+        code = parse_qs(urlsplit(response.headers["location"]).query)["code"][0]
+        return client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "http://localhost/callback",
+                "code_verifier": VERIFIER,
+            },
+        ).status_code
+
+    assert exchange(first) == 400  # noqa
+    assert exchange(second) == 200  # noqa
+
+
+def test_one_client_address_has_a_limited_number_of_pending_codes(monkeypatch) -> None:
+    from financetoolkit.mcp_server import auth_model
+
+    monkeypatch.setattr(auth_model, "_MAX_PENDING_CODES_PER_CLIENT", 2)
+    monkeypatch.setattr(auth_model, "_auth_codes", {})
+
+    assert auth_model.issue_authorization_code({}, "203.0.113.1")
+    assert auth_model.issue_authorization_code({}, "203.0.113.1")
+    assert auth_model.issue_authorization_code({}, "203.0.113.1") is None
+    # Another address still gets a code.
+    assert auth_model.issue_authorization_code({}, "203.0.113.2")
+
+    client = _oauth_client()
+    monkeypatch.setattr(auth_model, "_auth_codes", {})
+    assert _authorize(client, "http://localhost/callback").status_code == 303  # noqa
+    assert _authorize(client, "http://localhost/callback").status_code == 303  # noqa
+    assert _authorize(client, "http://localhost/callback").status_code == 429  # noqa
 
 
 def test_private_use_schemes_without_a_host_are_accepted() -> None:

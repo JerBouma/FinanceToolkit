@@ -700,6 +700,8 @@ Alternatively, if your company's root certificate is already installed in your o
 
 If none of this is possible, you can accept the risk and allow requests with an API key to be sent without verification by setting `FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL=1` in the same way as above. Only do so on a network you trust: the connection is then encrypted to whoever answers it, which may not be the website you think you are talking to, and your API key is readable to them.
 
+To go the other way and never send a request without verification, not even one without an API key, set `FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL=0`. A hosted MCP server (the `sse` or `streamable-http` transport) does this by default, since the data it retrieves reaches every user through its cache.
+
 > **Are you part of FinancialModelingPrep?**
 
 *No, I am not*. I've merely picked them as the primary data provider given that they have a generous free tier and fair pricing compared to other providers. Therefore, any questions related to the data should go through [their contact form](https://site.financialmodelingprep.com/contact). When it comes to any type of ratios, performance metrics, risk metrics, technical indicators or economic indicators, feel free to reach out to me as this is my own work.

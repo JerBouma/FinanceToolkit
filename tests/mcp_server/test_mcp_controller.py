@@ -125,35 +125,88 @@ def test_a_hosted_server_shares_everything_but_financial_modeling_prep(monkeypat
     monkeypatch.delenv("FINANCE_TOOLKIT_CACHE_ENABLED", raising=False)
 
     for transport in ("sse", "streamable-http"):
-        monkeypatch.setenv("MCP_TRANSPORT", transport)
-        assert _resolve_cache_mode("auto") == "shared"
+        assert _resolve_cache_mode("auto", transport) == "shared"
 
-    monkeypatch.setenv("MCP_TRANSPORT", "stdio")
-    assert _resolve_cache_mode("auto") == "full"
-
-    monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-    assert _resolve_cache_mode("auto") == "full"
+    assert _resolve_cache_mode("auto", "stdio") == "full"
 
 
 def test_cache_enabled_env_overrides_transport(monkeypatch):
     """Test that the explicit environment override wins over both defaults."""
     from financetoolkit.mcp_server.mcp_controller import _resolve_cache_mode
 
-    monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
     monkeypatch.setenv("FINANCE_TOOLKIT_CACHE_ENABLED", "true")
 
-    assert _resolve_cache_mode("auto") == "full"
+    assert _resolve_cache_mode("auto", "streamable-http") == "full"
 
-    monkeypatch.setenv("MCP_TRANSPORT", "stdio")
     monkeypatch.setenv("FINANCE_TOOLKIT_CACHE_ENABLED", "false")
 
-    assert _resolve_cache_mode("auto") == "off"
+    assert _resolve_cache_mode("auto", "stdio") == "off"
 
     # An explicit boolean in config.yaml still beats the transport heuristic.
     monkeypatch.delenv("FINANCE_TOOLKIT_CACHE_ENABLED", raising=False)
-    monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
 
-    assert _resolve_cache_mode(True) == "full"
+    assert _resolve_cache_mode(True, "streamable-http") == "full"
+
+
+def test_the_transport_flag_builds_the_server_as_mcp_transport_does(monkeypatch):
+    """--transport decides the cache mode and limits, as MCP_TRANSPORT does.
+
+    The server is built after the arguments are read, for the transport they name, and
+    an HTTP server on its own computer listens on 127.0.0.1 only, accepts only the local
+    host names and allows no web origin.
+    """
+    import sys
+
+    import anyio
+    from mcp.server.fastmcp import FastMCP
+
+    from financetoolkit.mcp_server import mcp_controller
+
+    built = []
+
+    def build(transport="stdio"):
+        built.append(transport)
+        return FastMCP("test")
+
+    configs = []
+    monkeypatch.setattr(mcp_controller, "_servers", {})
+    monkeypatch.setattr(mcp_controller, "_build_mcp_app", build)
+    monkeypatch.setattr(mcp_controller, "register_auth_routes", lambda server: None)
+    monkeypatch.setattr(
+        mcp_controller.uvicorn,
+        "Server",
+        lambda config: configs.append(config) or types.SimpleNamespace(serve=None),
+    )
+    monkeypatch.setattr(anyio, "run", lambda serve: None)
+    for name in (
+        "MCP_TRANSPORT",
+        "MCP_HOST",
+        "FT_MCP_CORS_ORIGINS",
+        "FORWARDED_ALLOW_IPS",
+        "FINANCE_TOOLKIT_CACHE_ENABLED",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        sys, "argv", ["financetoolkit-mcp", "--transport", "streamable-http"]
+    )
+
+    mcp_controller.main()
+
+    assert built == ["streamable-http"]
+    assert mcp_controller._resolve_cache_mode("auto", built[0]) == "shared"
+
+    server = mcp_controller.get_server("streamable-http")
+    assert server.settings.host == "127.0.0.1"
+    assert server.settings.transport_security.enable_dns_rebinding_protection
+    assert configs[0].forwarded_allow_ips == "127.0.0.1"
+    assert mcp_controller.cors_origins(loopback=True) == []
+    assert mcp_controller.cors_origins(loopback=False) == ["*"]
+
+    monkeypatch.setenv("FT_MCP_CORS_ORIGINS", "https://a.example, https://b.example")
+    assert mcp_controller.cors_origins(loopback=True) == [
+        "https://a.example",
+        "https://b.example",
+    ]
 
 
 def test_setup_leaves_a_config_it_cannot_read_unchanged(monkeypatch, tmp_path):

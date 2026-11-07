@@ -38,6 +38,9 @@ _JWT_PART_COUNT = 3
 # workers, a token request could reach a worker that never saw the code.
 AUTH_CODE_LIFETIME = 300
 _MAX_PENDING_CODES = 10_000
+# The most codes one client address may have pending: a sign-in exchanges its code within
+# seconds, so only a flood of authorizations comes near it.
+_MAX_PENDING_CODES_PER_CLIENT = 20
 
 # The longest value each authorization field may have; a form field may otherwise be up to
 # a megabyte, and every pending code keeps its fields in memory.
@@ -50,7 +53,7 @@ FIELD_LIMITS = {
 }
 # A S256 code challenge is the base64url SHA-256 of the verifier, without padding.
 CODE_CHALLENGE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
-_auth_codes: dict[str, tuple[float, dict[str, Any]]] = {}
+_auth_codes: dict[str, tuple[float, str, dict[str, Any]]] = {}
 _auth_codes_lock = threading.Lock()
 
 # The secret signing the access tokens, read once per process.
@@ -1004,27 +1007,37 @@ def build_redirect_url(redirect_uri: str, **params: str) -> str:
     return f"{redirect_uri}{separator}{query}"
 
 
-def issue_authorization_code(payload: dict[str, Any]) -> str | None:
+def issue_authorization_code(payload: dict[str, Any], client: str = "") -> str | None:
     """Store the submitted keys and return a random code that refers to them.
+
+    One client address may hold _MAX_PENDING_CODES_PER_CLIENT codes at a time. When the
+    store is full, the oldest code makes way, so a flood of authorizations cannot keep
+    others from signing in: a code is exchanged within seconds of being issued.
 
     Args:
         payload (dict[str, Any]): The keys and the client binding of the authorization.
+        client (str): The address of the client asking for the code. Defaults to "".
 
     Returns:
-        str | None: The single-use authorization code, or None when the store is full.
+        str | None: The single-use authorization code, or None when the client already
+            has too many pending.
     """
     code = secrets.token_urlsafe(32)
     now = time.time()
     with _auth_codes_lock:
         for expired in [
-            key for key, (expires, _) in _auth_codes.items() if expires < now
+            key for key, (expires, _, _) in _auth_codes.items() if expires < now
         ]:
             del _auth_codes[expired]
-        # A flood of authorizations is refused rather than pushing out the codes of people
-        # who are signing in; the store empties as codes are used or expire.
-        if len(_auth_codes) >= _MAX_PENDING_CODES:
+        if (
+            sum(owner == client for _, owner, _ in _auth_codes.values())
+            >= _MAX_PENDING_CODES_PER_CLIENT
+        ):
             return None
-        _auth_codes[code] = (now + AUTH_CODE_LIFETIME, payload)
+        # The codes are kept in the order they were issued, so the first is the oldest.
+        while len(_auth_codes) >= _MAX_PENDING_CODES:
+            del _auth_codes[next(iter(_auth_codes))]
+        _auth_codes[code] = (now + AUTH_CODE_LIFETIME, client, payload)
     return code
 
 
@@ -1042,7 +1055,7 @@ def redeem_authorization_code(code: str) -> dict[str, Any] | None:
         entry = _auth_codes.pop(code, None)
     if entry is None or entry[0] < time.time():
         return None
-    return entry[1]
+    return entry[2]
 
 
 def _is_browser(request: Request) -> bool:
@@ -1314,11 +1327,13 @@ def register_auth_routes(mcp: Any) -> None:
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
         }
-        auth_code = issue_authorization_code(payload)
+        auth_code = issue_authorization_code(
+            payload, request.client.host if request.client else ""
+        )
         if auth_code is None:
             return HTMLResponse(
                 "Too many authorizations are pending. Please try again in a few minutes.",
-                status_code=503,
+                status_code=429,
             )
 
         return RedirectResponse(

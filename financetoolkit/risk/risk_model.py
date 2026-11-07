@@ -14,6 +14,9 @@ from financetoolkit.utilities.statistics_model import (
 
 ALPHA_CONSTRAINT = 0.5
 
+# Calendar days per year, including leap years, for a length in years.
+DAYS_PER_YEAR = 365.25
+
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
@@ -992,6 +995,51 @@ def get_drawdown_series(returns: pd.DataFrame, recovery: bool = False) -> pd.Dat
     return drawdowns.mask(before_start)
 
 
+def get_deepest_since(drawdowns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Find, for every period below the peak, the last earlier period with a drawdown at
+    least as deep: the "deepest since" date of the drawdown, as `get_move_significance`
+    gives the "largest since" date of a return.
+
+    The formula is as follows:
+
+    - Deepest Since(t) = the last date s < t with Drawdown(s) <= Drawdown(t), for Drawdown(t) < 0
+
+    Args:
+        drawdowns (pd.DataFrame): The drawdowns, one column per asset (see
+            `get_drawdown_series`).
+
+    Returns:
+        pd.DataFrame: The date as text (YYYY-MM-DD for daily data) per period and asset,
+            NaN at a high, before an asset's start and when no earlier period was as deep,
+            which makes the drawdown the deepest since the start of the data.
+    """
+    deepest_since = pd.DataFrame(
+        np.nan, index=drawdowns.index, columns=drawdowns.columns, dtype=object
+    )
+
+    for column in drawdowns.columns:
+        observed = drawdowns[column].dropna()
+        values = observed.to_numpy(dtype=float)
+        labels = observed.index.astype(str)
+        since = np.full(len(values), None, dtype=object)
+        # Earlier positions whose drawdowns rise from the bottom of the stack to the top: a
+        # position is left out once a later one is at least as deep, as that one is then
+        # the later answer for every drawdown it would answer.
+        stack: list[int] = []
+
+        for position, value in enumerate(values):
+            while stack and values[stack[-1]] > value:
+                stack.pop()
+            if value < 0 and stack:
+                since[position] = labels[stack[-1]]
+            stack.append(position)
+
+        deepest_since.loc[observed.index, column] = since
+
+    return deepest_since
+
+
 def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     """
     List the largest drawdowns of every column with their peak, trough and recovery.
@@ -1000,9 +1048,11 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     high (the recovery). Its depth is the lowest drawdown in between (the trough), and its
     lengths count periods (rows), so the deepest drawdown matches `get_max_drawdown`,
     `get_max_drawdown_duration` (To Trough) and `get_max_drawdown_recovery_time`
-    (To Recovery). The dates follow pyfolio's `gen_drawdown_table` (peak, valley and
-    recovery dates); QuantStats' `drawdown_details` and ffn instead start at the first
-    day below the peak and count calendar days.
+    (To Recovery). The same lengths in calendar days are the differences between the
+    dates (the last day of each period), and in years those days divided by 365.25.
+    The dates follow pyfolio's `gen_drawdown_table` (peak, valley and recovery dates);
+    QuantStats' `drawdown_details` and ffn instead start at the first day below the peak
+    and count calendar days.
 
     Args:
         returns (pd.DataFrame): The returns, one column per asset.
@@ -1013,13 +1063,27 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
         pd.DataFrame: One row per drawdown, indexed by column and rank, with the dates of
             the Peak, Trough and Recovery (NaN when not yet recovered), the Drawdown as a
             negative decimal, the gain needed from the trough back to the peak (Recovery
-            Needed = -Drawdown / (1 + Drawdown)) and, in periods, the time from peak to trough (To Trough),
-            from trough to recovery (To Recovery) and from peak to recovery (Length). The
-            Peak is NaN when it is the starting wealth before the first row.
+            Needed = -Drawdown / (1 + Drawdown)), in periods the time from peak to trough (To Trough),
+            from trough to recovery (To Recovery) and from peak to recovery (Length), the same
+            in calendar days (To Trough (Days), To Recovery (Days), Length (Days)) and Length
+            (Years). The Peak, and the lengths from it, are NaN when it is the starting
+            wealth before the first row.
     """
     drawdown_series = get_drawdown_series(returns)
     dates = drawdown_series.index
+    # The last day of each period, so the calendar days between two months run from month end
+    # to month end.
+    days = (
+        dates.end_time.normalize()
+        if isinstance(dates, pd.PeriodIndex)
+        else pd.DatetimeIndex(dates).normalize()
+    )
     rows = []
+
+    def calendar_days(start: int | None, end: int | None) -> float:
+        if start is None or end is None or start < 0:
+            return np.nan
+        return float((days[end] - days[start]).days)
 
     for column in drawdown_series.columns:
         drawdowns = drawdown_series[column].to_numpy()
@@ -1049,6 +1113,10 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
                     "Length": (
                         float(recovery - peak) if recovery is not None else np.nan
                     ),
+                    "To Trough (Days)": calendar_days(peak, trough),
+                    "To Recovery (Days)": calendar_days(trough, recovery),
+                    "Length (Days)": calendar_days(peak, recovery),
+                    "Length (Years)": calendar_days(peak, recovery) / DAYS_PER_YEAR,
                 }
             )
 
@@ -1068,6 +1136,10 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
         "To Trough",
         "To Recovery",
         "Length",
+        "To Trough (Days)",
+        "To Recovery (Days)",
+        "Length (Days)",
+        "Length (Years)",
     ]
 
     return pd.DataFrame(rows, columns=columns).set_index(["Ticker", "Rank"])

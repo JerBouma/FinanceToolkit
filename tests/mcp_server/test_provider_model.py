@@ -226,3 +226,21 @@ def test_calls_on_one_cached_toolkit_run_one_at_a_time(monkeypatch, tmp_path):
 
     assert shared.peak == 1
     assert provider.instance_lock(shared) is provider.instance_lock(shared)
+
+
+def test_the_risk_free_rate_is_part_of_the_toolkit(provider):
+    arguments = {
+        "tickers": ["VOO"],
+        "start_date": "2021-01-01",
+        "end_date": "2025-12-31",
+        "quarterly": False,
+        "benchmark_ticker": "SPY",
+        "api_key": "test-key",
+    }
+    default = provider.get_toolkit_instance(**arguments)
+    bill = provider.get_toolkit_instance(**arguments, risk_free_rate="13w")
+
+    assert default.kwargs["risk_free_rate"] == "10y"
+    assert bill.kwargs["risk_free_rate"] == "13w"
+    # A Toolkit kept for one rate is never handed out for another.
+    assert bill is not default

@@ -134,3 +134,33 @@ def test_no_benchmark_written_as_text_means_no_benchmark(captured, benchmark):
     )
 
     assert captured[-1]["benchmark_ticker"] is None
+
+
+def test_the_tools_with_a_risk_free_rate_take_the_toolkit_setting(schemas):
+    # Performance, risk, models and portfolio use the Toolkit's risk free rate; options has a
+    # risk_free_rate of its own (the rate as a number), so it keeps that one.
+    for tool in ("performance", "risk", "models", "portfolio"):
+        assert schemas[tool]["risk_free_rate"]["default"] == "10y"
+        assert schemas[tool]["risk_free_rate"]["enum"] == ["13w", "5y", "10y", "30y"]
+    assert types_of(schemas["options"]["risk_free_rate"]) == {"number"}
+    assert "risk_free_rate" not in schemas["momentum"]
+
+
+@pytest.mark.parametrize(("given", "expected"), [(None, "10y"), ("13W", "13w")])
+def test_the_risk_free_rate_reaches_the_toolkit(captured, given, expected):
+    arguments = {"indicator": "get_sharpe_ratio", "tickers": "AAPL"}
+    if given:
+        arguments["risk_free_rate"] = given
+    call("performance", arguments)
+
+    assert captured[-1]["risk_free_rate"] == expected
+
+
+def test_an_unknown_risk_free_rate_is_refused(captured):
+    text = call(
+        "performance",
+        {"indicator": "get_sharpe_ratio", "tickers": "AAPL", "risk_free_rate": "1y"},
+    )
+
+    assert "13w, 5y, 10y, 30y" in text
+    assert not captured

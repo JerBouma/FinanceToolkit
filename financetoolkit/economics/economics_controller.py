@@ -32,6 +32,7 @@ from financetoolkit.economics import (
     frb_model,
     fred_model,
     freddie_mac_model,
+    futures_model,
     gmdb_model,
     ibge_model,
     imf_model,
@@ -53,6 +54,7 @@ from financetoolkit.economics.helpers import (
     check_period_type,
     combine_sources,
     extend_with_recent,
+    get_exchange_business_days,
     resample_to_period,
     to_gmdb_country_names,
     validate_period,
@@ -9999,18 +10001,102 @@ class Economics:
             dropna=True,
         )
 
+    def _get_commodity_curves(
+        self,
+        commodity: str | list[str] | None,
+        contracts: int,
+        constant_maturity: bool,
+        start_date: str,
+    ) -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
+        """
+        Collects the forward curve of each commodity with the contract behind every price:
+        the listed contracts as columns, or, with constant_maturity, the positions on the
+        curve of each day (see futures_model.get_constant_maturity_curve).
+
+        Yahoo Finance drops a contract once it expires, so the contracts that expired since
+        are added as contracts without prices from the commodity's listing cycle and last
+        trading day rule: the positions after them stay right and theirs are NaN.
+
+        Returns:
+            dict[str, tuple[pd.DataFrame, pd.DataFrame]]: Per commodity the prices and the
+            delivery month of the contract behind each of them.
+        """
+        names = (
+            [name.strip() for name in commodity.split(",") if name.strip()]
+            if isinstance(commodity, str)
+            else list(commodity or yfinance_model.COMMODITY_TICKERS)
+        )
+        today = pd.Timestamp.today().normalize()
+        curves: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {}
+
+        for name in names:
+            forward_curve = yfinance_model.get_commodity_forward_curve(
+                name, start_date, self._end_date, contracts
+            )
+
+            if forward_curve.empty:
+                continue
+
+            if not constant_maturity:
+                labels = pd.DataFrame(
+                    [forward_curve.columns.to_list()] * len(forward_curve),
+                    index=forward_curve.index,
+                    columns=forward_curve.columns,
+                )
+                curves[name] = (forward_curve, labels)
+                continue
+
+            first_month = pd.Period(start_date, freq="M")
+            last_month = pd.Period(max(forward_curve.columns), freq="M")
+            # Crude oil and natural gas stop trading in the month before delivery.
+            business_days = get_exchange_business_days(
+                (pd.Timestamp(start_date) + pd.DateOffset(months=-2)).strftime(
+                    "%Y-%m-%d"
+                ),
+                (pd.Timestamp(f"{last_month}-01") + pd.DateOffset(months=2)).strftime(
+                    "%Y-%m-%d"
+                ),
+            )
+            rule = futures_model.LAST_TRADING_DAY_RULES[name]
+            last_trading_days = pd.Series(
+                {
+                    str(month): futures_model.get_last_trading_day(
+                        rule, month, business_days
+                    )
+                    for month in pd.period_range(first_month, last_month, freq="M")
+                    if month.month in futures_model.CONTRACT_MONTHS[name]
+                    or str(month) in forward_curve.columns
+                }
+            )
+            expired = [
+                label
+                for label, last_trading_day in last_trading_days.items()
+                if last_trading_day < today and label not in forward_curve.columns
+            ]
+            forward_curve = forward_curve.reindex(
+                columns=sorted([*forward_curve.columns, *expired])
+            )
+            curves[name] = futures_model.get_constant_maturity_curve(
+                forward_curve, last_trading_days, contracts
+            )
+
+        return curves
+
     @handle_errors
     def get_commodity_forward_curve(
         self,
         commodity: str | list[str] | None = None,
         contracts: int = 12,
+        constant_maturity: bool = False,
         rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
     ) -> pd.DataFrame:
         """
         Get the forward/futures curve for a commodity from Yahoo Finance -- the
-        historical daily closing price of each of the nearest `contracts` dated futures
-        contracts from the current month on (e.g. Crude Oil's December 2026, January 2027,
-        ... contracts), rather than a single flat continuous/spot price.
+        historical daily closing (settlement) price of each of the nearest `contracts`
+        dated futures contracts from the current month on (e.g. Crude Oil's December 2026,
+        January 2027, ... contracts), rather than a single flat continuous/spot price.
 
         This is what a Schwartz-Smith (2000) two-factor commodity price model needs
         to back out the convenience-yield term structure under the risk-neutral (Q)
@@ -10023,7 +10109,28 @@ class Economics:
         contract and, late in the month, the next month's). Those months are skipped and
         later months are tried instead, until `contracts` contracts are found.
 
-        Also known as: futures term structure, forward curve.
+        By default the columns are the contracts listed today, so a past date shows how
+        those contracts traded then, not the curve as it stood that day. With
+        constant_maturity=True the columns are the positions on each day's curve instead:
+        the front (the nearest contract that has not expired on that day), +1, +2 and so on,
+        rolling to the next contract the day after the front's last trading day (the
+        generic series, CL1, CL2, ... in Bloomberg notation). The last trading days follow
+        the CME Group contract specifications on the US exchange calendar.
+
+        Yahoo Finance only publishes the contracts that still trade: a contract's history
+        disappears once it expires, and no free source publishes it (FinancialModelingPrep
+        has the continuous front contract only). On a past date the positions of the
+        contracts that have expired since are therefore NaN rather than filled with
+        another contract: for crude oil on 2026-09-15 the front (October 2026) and +1
+        (November 2026) are NaN and +2 is the December 2026 contract. The further back the
+        date, the more positions are NaN, until none is left about `contracts` months back.
+
+        With growth=True the change is that of each column over `lag` trading days: of a
+        contract, or with constant_maturity of a position, which compares two contracts
+        across a roll.
+
+        Also known as: futures term structure, forward curve, generic futures, constant
+        maturity futures.
 
         Args:
             commodity (str | list[str] | None, optional): The commodity, or a list of
@@ -10031,8 +10138,16 @@ class Economics:
                 "Silver", "Copper", "Corn", "Wheat" or "Soybeans". Defaults to None, which
                 retrieves every one of them.
             contracts (int, optional): The number of contracts to return, the nearest
-                listed ones from the current month on. Defaults to 12.
+                listed ones from the current month on, or with constant_maturity the
+                number of positions (the front included). Defaults to 12.
+            constant_maturity (bool, optional): Whether the columns are the positions on
+                each day's curve (Front, +1, +2, ...) instead of the contracts listed
+                today. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the change of each column instead
+                of the price. Defaults to False.
+            lag (int | list[int], optional): The number of trading days to calculate the
+                change over. Defaults to 1.
 
         Raises:
             ValueError: If `commodity` is not one of the supported names.
@@ -10040,7 +10155,8 @@ class Economics:
         Returns:
             pd.DataFrame: A DataFrame indexed by date, with one column per contract
             labeled by its delivery month (e.g. "2026-12"), containing that
-            contract's daily closing price over its trading life. Columns are NaN
+            contract's daily closing price over its trading life, or with
+            constant_maturity one column per position ("Front", "+1", ...). Columns are NaN
             outside the date range the contract actually traded in. With a list of
             commodities (or none given), the columns are the commodity and the contract.
 
@@ -10049,49 +10165,168 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2026-01-01', end_date='2026-08-01')
+        economics = Economics(start_date='2026-10-13', end_date='2026-10-23')
 
-        economics.get_commodity_forward_curve("Crude Oil", contracts=6)
+        economics.get_commodity_forward_curve(
+            "Crude Oil", contracts=4, constant_maturity=True
+        )
         ```
 
         Which returns:
 
-        | Date       |   2026-11 |   2026-12 |   2027-01 |   2027-02 |   2027-03 |
-        |:-----------|----------:|----------:|----------:|----------:|----------:|
-        | 2026-07-27 |     78.17 |     76.53 |     75.31 |     74.34 |     73.56 |
-        | 2026-07-28 |     75.33 |     73.85 |     72.74 |     71.86 |     71.16 |
-        | 2026-07-29 |     79.68 |     77.74 |     76.28 |     75.13 |     74.22 |
-        | 2026-07-30 |     78.19 |     76.12 |     74.65 |     73.56 |     72.72 |
-        | 2026-07-31 |     78.65 |     76.44 |     74.88 |     73.74 |     72.88 |
+        | Date       |   Front |     +1 |    +2 |    +3 |
+        |:-----------|--------:|-------:|------:|------:|
+        | 2026-10-13 |  nan    |  93.17 | 92.23 | 91.15 |
+        | 2026-10-14 |  nan    |  93.9  | 92.83 | 91.53 |
+        | 2026-10-15 |  nan    |  96.5  | 94.89 | 93.02 |
+        | 2026-10-16 |  nan    |  99.02 | 97.44 | 95.48 |
+        | 2026-10-19 |  nan    |  98.54 | 96.67 | 94.69 |
+        | 2026-10-20 |  nan    |  97.82 | 96.02 | 94.05 |
+        | 2026-10-21 |   97.15 |  95.46 | 93.71 | 91.99 |
+        | 2026-10-22 |   99.47 |  97.52 | 95.35 | 93.08 |
+        | 2026-10-23 |  103.27 | 100.94 | 98.36 | 95.68 |
         """
-        # A comma-separated string (as the MCP server passes a list) is split.
-        if isinstance(commodity, str) and "," in commodity:
-            commodity = [name.strip() for name in commodity.split(",") if name.strip()]
-
-        if isinstance(commodity, str):
-            commodity_forward_curve = yfinance_model.get_commodity_forward_curve(
-                commodity, self._start_date, self._end_date, contracts
-            )
-        else:
-            commodity_forward_curve = pd.concat(
-                {
-                    name: yfinance_model.get_commodity_forward_curve(
-                        name, self._start_date, self._end_date, contracts
-                    )
-                    for name in commodity or yfinance_model.COMMODITY_TICKERS
-                },
-                axis=1,
-            )
-
-        return finalize_dataset(
-            dataset=commodity_forward_curve,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            rounding=rounding,
-            axis="rows",
-            row_slice=True,
+        start_date = (
+            buffered_start_date(self._start_date, "daily")
+            if growth
+            else self._start_date
         )
+        curves = self._get_commodity_curves(
+            commodity, contracts, constant_maturity, start_date
+        )
+
+        # Each commodity's changes are taken over its own trading days.
+        commodity_forward_curve = {
+            name: finalize_dataset(
+                dataset=prices,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                growth=growth,
+                lag=lag,
+                rounding=rounding,
+                axis="rows",
+                row_slice=True,
+                dropna=constant_maturity,
+            )
+            for name, (prices, _) in curves.items()
+        }
+
+        if isinstance(commodity, str) and "," not in commodity:
+            return commodity_forward_curve.get(commodity.strip(), pd.DataFrame())
+
+        return pd.concat(commodity_forward_curve, axis=1)
+
+    @handle_errors
+    def get_commodity_term_structure(
+        self,
+        commodity: str | list[str] | None = None,
+        constant_maturity: bool = True,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the term structure of a commodity futures curve per day: the front contract,
+        the 12-month calendar spread between the front and the last contract of the
+        12-month strip that starts with it (in price and in percent), the annualised roll
+        yield and whether the curve is in backwardation or contango.
+
+        The far contract is the furthest one delivering less than 12 months after the
+        front: for a December 2026 front of a monthly listed commodity (crude oil, natural
+        gas, the metals) the November 2027 contract, 11 months later, and for corn's
+        December 2026 front the September 2027 contract, 9 months later.
+
+        The formulas are as follows:
+
+            Spread = Front - Far
+            Slope = Far / Front - 1
+            Roll Yield = ln(Front / Far) x 12 / Months
+
+        The spread follows the exchange quote of a calendar spread, nearby minus deferred,
+        so it is positive in backwardation, and its widest backwardation is its maximum.
+        The slope is the percentage the far contract lies above the front (negative in
+        backwardation). The roll yield is the annualised log basis of Fama and French
+        (1987) and Szymanowska, De Roon, Nijman and Van den Goorbergh (2014): the
+        continuously compounded yearly return a long position earns from the shape of the
+        curve alone, positive in backwardation and negative in contango, with Months the
+        months between both delivery months.
+
+        By default the front of each day is the nearest contract that had not expired on
+        that day (see get_commodity_forward_curve with constant_maturity=True), so the
+        spread is a time series of the curve as it stood each day. Yahoo Finance drops a
+        contract once it expires, so on the days whose front has expired since, Front, the
+        Spread, Slope and Roll Yield are NaN while Front Contract names the contract.
+        constant_maturity=False instead takes today's front and far contract on every day
+        (e.g. December 2026 against November 2027 for crude oil): a fixed calendar spread
+        with its full history.
+
+        Also known as: calendar spread, roll yield, carry, basis, backwardation, contango.
+
+        Args:
+            commodity (str | list[str] | None, optional): The commodity, or a list of
+                them: "Crude Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn",
+                "Wheat" or "Soybeans". Defaults to None, which retrieves every one of them.
+            constant_maturity (bool, optional): Whether the front and far contract are
+                those of each day's curve, instead of today's. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Raises:
+            ValueError: If `commodity` is not one of the supported names.
+
+        Returns:
+            pd.DataFrame: Per date the Front Contract and Far Contract (delivery months),
+            their prices Front and Far, the Months between them, the Spread, Slope and Roll
+            Yield (decimals) and the Structure ("Backwardation" or "Contango"). With a list
+            of commodities (or none given), the columns are the commodity and the field.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-10-26', end_date='2026-11-06')
+
+        economics.get_commodity_term_structure("Crude Oil")
+        ```
+
+        Which returns:
+
+        | Date       | Front Contract   |   Front | Far Contract   |   Far |   Months |   Spread |   Slope |   Roll Yield | Structure     |
+        |:-----------|:-----------------|--------:|:---------------|------:|---------:|---------:|--------:|-------------:|:--------------|
+        | 2026-10-26 | 2026-12          |  101.76 | 2027-11        | 81.98 |       11 |    19.78 | -0.1944 |       0.2358 | Backwardation |
+        | 2026-10-27 | 2026-12          |   99.9  | 2027-11        | 82.07 |       11 |    17.83 | -0.1785 |       0.2145 | Backwardation |
+        | 2026-10-28 | 2026-12          |  102.78 | 2027-11        | 83.15 |       11 |    19.63 | -0.191  |       0.2312 | Backwardation |
+        | 2026-10-29 | 2026-12          |  102    | 2027-11        | 82.54 |       11 |    19.46 | -0.1908 |       0.2309 | Backwardation |
+        | 2026-10-30 | 2026-12          |  104.12 | 2027-11        | 83.01 |       11 |    21.11 | -0.2027 |       0.2472 | Backwardation |
+        | 2026-11-02 | 2026-12          |   96.46 | 2027-11        | 80.05 |       11 |    16.41 | -0.1701 |       0.2034 | Backwardation |
+        | 2026-11-03 | 2026-12          |   96.09 | 2027-11        | 80.31 |       11 |    15.78 | -0.1642 |       0.1957 | Backwardation |
+        | 2026-11-04 | 2026-12          |   88.12 | 2027-11        | 75.32 |       11 |    12.8  | -0.1453 |       0.1712 | Backwardation |
+        | 2026-11-05 | 2026-12          |   90.52 | 2027-11        | 75.11 |       11 |    15.41 | -0.1702 |       0.2036 | Backwardation |
+        | 2026-11-06 | 2026-12          |   90.83 | 2027-11        | 76.42 |       11 |    14.41 | -0.1586 |       0.1884 | Backwardation |
+        """
+        curves = self._get_commodity_curves(
+            commodity, 12, constant_maturity, self._start_date
+        )
+
+        term_structures = {}
+
+        for name, (prices, labels) in curves.items():
+            term_structure = futures_model.get_term_structure(prices, labels)
+            term_structures[name] = finalize_dataset(
+                dataset=term_structure[
+                    term_structure[["Front", "Far"]].notna().any(axis=1)
+                ],
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                rounding=rounding,
+                axis="rows",
+                row_slice=True,
+            )
+
+        if isinstance(commodity, str) and "," not in commodity:
+            return term_structures.get(commodity.strip(), pd.DataFrame())
+
+        return pd.concat(term_structures, axis=1)
 
     @handle_errors
     def get_life_table(

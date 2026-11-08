@@ -124,10 +124,17 @@ def get_commodity_forward_curve(
             fetch_start = fetch_span[0].strftime("%Y-%m-%d")
             fetch_end = fetch_span[1].strftime("%Y-%m-%d")
 
-        contract_data = yf.Ticker(ticker).history(start=fetch_start, end=fetch_end)
+        # Yahoo Finance's end date is exclusive, so the day after includes the end date.
+        contract_data = yf.Ticker(ticker).history(
+            start=fetch_start,
+            end=(pd.Timestamp(fetch_end) + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+        )
 
         if not contract_data.empty:
             contract_data.index = pd.to_datetime(contract_data.index).tz_localize(None)
+            contract_data = frame_model.slice_frame(
+                contract_data, fetch_start, fetch_end
+            )
 
             if cache is not None:
                 cache.store(

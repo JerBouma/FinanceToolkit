@@ -7,6 +7,18 @@ from collections.abc import Callable
 
 import pandas as pd
 import requests
+from pandas.tseries.holiday import (
+    AbstractHolidayCalendar,
+    GoodFriday,
+    Holiday,
+    USLaborDay,
+    USMartinLutherKingJr,
+    USMemorialDay,
+    USPresidentsDay,
+    USThanksgivingDay,
+    nearest_workday,
+    sunday_to_monday,
+)
 
 from financetoolkit.cache import frame_model
 from financetoolkit.cache.cache_controller import get_active_cache
@@ -362,6 +374,52 @@ def collect_ranged_data(
         data = frame_model.slice_frame(data, start_date, end_date)
 
     return data
+
+
+class USExchangeHolidays(AbstractHolidayCalendar):
+    """
+    The full-day holidays of the US futures and stock exchanges (CME Group, NYSE): New
+    Year's Day (moved to Monday from a Sunday, not to Friday from a Saturday), Martin Luther
+    King Jr. Day, Presidents' Day, Good Friday, Memorial Day, Juneteenth (from 2022),
+    Independence Day, Labor Day, Thanksgiving and Christmas, a Saturday holiday moving to
+    the Friday before and a Sunday holiday to the Monday after.
+    """
+
+    rules = [
+        Holiday("New Year's Day", month=1, day=1, observance=sunday_to_monday),
+        USMartinLutherKingJr,
+        USPresidentsDay,
+        GoodFriday,
+        USMemorialDay,
+        Holiday(
+            "Juneteenth",
+            month=6,
+            day=19,
+            start_date="2022-01-01",
+            observance=nearest_workday,
+        ),
+        Holiday("Independence Day", month=7, day=4, observance=nearest_workday),
+        USLaborDay,
+        USThanksgivingDay,
+        Holiday("Christmas Day", month=12, day=25, observance=nearest_workday),
+    ]
+
+
+def get_exchange_business_days(start_date: str, end_date: str) -> pd.DatetimeIndex:
+    """
+    Returns the business days of the US exchanges between two dates: the weekdays that are
+    not a holiday of USExchangeHolidays.
+
+    Args:
+        start_date (str): The first day (YYYY-MM-DD).
+        end_date (str): The last day (YYYY-MM-DD).
+
+    Returns:
+        pd.DatetimeIndex: The business days from start_date up to and including end_date.
+    """
+    holidays = USExchangeHolidays().holidays(start=start_date, end=end_date)
+
+    return pd.bdate_range(start_date, end_date, freq="C", holidays=holidays)
 
 
 def buffered_start_date(start_date: str, period: str) -> str:

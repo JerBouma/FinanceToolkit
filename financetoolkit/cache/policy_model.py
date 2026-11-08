@@ -260,6 +260,10 @@ POLICIES: dict[str, CachePolicy] = {
     # Auctions are added several times a week; a past year's results are final.
     f"{US_TREASURY}.auctions": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.auctions_year": CachePolicy(ttl_seconds=30 * DAY),
+    # The FedInvest prices of a day are completed with the end-of-day price the next
+    # business day; a day that has them is final.
+    f"{US_TREASURY}.fedinvest_prices": CachePolicy(ttl_seconds=3600),
+    f"{US_TREASURY}.fedinvest_prices_final": CachePolicy(ttl_seconds=365 * DAY),
     f"{FREDDIE_MAC}.series": CachePolicy(ttl_seconds=DAY),
     f"{DEPARTMENT_OF_LABOR}.series": CachePolicy(ttl_seconds=DAY),
     f"{CENSUS_BUREAU}.series": CachePolicy(ttl_seconds=DAY),

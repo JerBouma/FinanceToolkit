@@ -6,6 +6,7 @@ from scipy import stats
 
 from financetoolkit.risk import risk_model, var_model
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.statistics_model import by_own_trading_days
 
 logger = get_logger()
 
@@ -55,6 +56,7 @@ def get_cvar_historic(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_rolling_cvar_historic(
     returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
 ) -> pd.Series | pd.DataFrame:

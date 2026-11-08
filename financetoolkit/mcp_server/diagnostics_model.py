@@ -9,7 +9,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.logger_model import add_redaction, get_logger, redact
 
 # The warnings and errors the Finance Toolkit logs while one tool call runs, so that a call
 # that returns no data can say why, such as a missing API key or an unreachable source,
@@ -25,26 +25,18 @@ _CALL_INPUT_INFO: ContextVar[list[str] | None] = ContextVar(
 MAXIMUM_REASONS = 3
 MAXIMUM_REASON_LENGTH = 300
 
-# Credentials that can appear in a logged URL or message, which must never reach the
-# client: the value after any parameter whose name ends in "key" or is "apikey"/"token".
-# A placeholder in angle brackets, as in the hints below, is not a credential.
-CREDENTIAL_PATTERN = re.compile(
-    r"((?:api_?key|apikey|token|key)=)[^&\s'\"<>]+", re.IGNORECASE
-)
-
-
 # How a key is passed to the MCP server, which differs from the Python arguments the
 # library's own messages name.
 FMP_KEY_HINT = (
     "A FinancialModelingPrep API key is required for this tool. Local setup: set "
-    "FINANCIAL_MODELING_PREP_API_KEY in your environment or .env file. Hosted setup: pass "
-    "your key via the `X-FMP-API-Key` header or a `?fmp_api_key=<your key>` URL parameter. Get a "
-    "key with 15% off via https://www.jeroenbouma.com/fmp"
+    "FINANCIAL_MODELING_PREP_API_KEY in your environment or .env file. Hosted setup: sign in "
+    "on the server's authorization page when your client asks, or pass your key in the "
+    "`X-FMP-API-Key` header. Get a key with 15% off via https://www.jeroenbouma.com/fmp"
 )
 FRED_KEY_HINT = (
     "A FRED API key is required for this indicator. Local setup: set FRED_API_KEY in your "
-    "environment or .env file. Hosted setup: pass your key via the `X-FRED-API-Key` header "
-    "or a `?fred_api_key=<your key>` URL parameter. A key is free at "
+    "environment or .env file. Hosted setup: add it on the server's authorization page when "
+    "you sign in, or pass it in the `X-FRED-API-Key` header. A key is free at "
     "https://fred.stlouisfed.org/docs/api/api_key.html"
 )
 
@@ -98,6 +90,8 @@ def _install_handler() -> None:
 
     if _HANDLER not in toolkit_logger.handlers:
         toolkit_logger.addHandler(_HANDLER)
+        # The collected messages reach the client, so they are redacted like the log.
+        add_redaction(toolkit_logger)
 
 
 def current_call_messages() -> list[str] | None:
@@ -109,33 +103,6 @@ def current_call_messages() -> list[str] | None:
         list[str] | None: The collected messages, which may be extended.
     """
     return _CALL_MESSAGES.get()
-
-
-def redact(text: object) -> str:
-    """
-    Removes credentials from a message before it is returned to the client, such as the
-    API key in a URL that an HTTP error repeats.
-
-    Args:
-        text (object): The message, or an exception whose text is the message.
-
-    Returns:
-        str: The message with every credential replaced by "***".
-    """
-    return CREDENTIAL_PATTERN.sub(r"\1***", str(text))
-
-
-class RedactingFilter(logging.Filter):
-    """Removes credentials from log records, such as the API key in a logged request URL."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.args, tuple):
-            record.args = tuple(
-                redact(arg) if isinstance(arg, str) else arg for arg in record.args
-            )
-        elif isinstance(record.msg, str):
-            record.msg = redact(record.msg)
-        return True
 
 
 @contextmanager

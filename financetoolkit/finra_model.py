@@ -140,15 +140,15 @@ def _download_days(
         (index), and the number of days that could not be retrieved.
     """
     results = run_in_parallel(
-        _download_day,
-        [(day, symbols) for day in days],
+        lambda day: (day, _download_day(day, symbols)),
+        [(day,) for day in days],
         max_workers=min(MAX_DOWNLOADS, determine_max_workers()),
     )
 
     rows: dict[str, dict[pd.Period, pd.Series]] = {symbol: {} for symbol in symbols}
-    failures = 0
+    failures = len(days) - len(results)
 
-    for day, volumes in zip(days, results, strict=True):
+    for day, volumes in results:
         if volumes is None:
             failures += 1
             continue

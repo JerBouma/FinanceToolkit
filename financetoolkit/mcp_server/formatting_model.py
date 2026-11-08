@@ -287,6 +287,9 @@ def _no_data(reason: str | None) -> str:
 
 # The number of rows a cut answer keeps at least, before columns are cut as well.
 MINIMUM_ROWS = 5
+# The fewest characters a value takes in the records ("1," or "null,"), which bounds how
+# many values an answer can show.
+MINIMUM_VALUE_CHARACTERS = 4
 
 # Texts (such as an earnings call transcript) are shortened to no fewer characters than
 # this before columns are cut, since a column without its text answers nothing.
@@ -428,18 +431,37 @@ def _fit_to_size(
     Returns:
         tuple[list[dict], str | None]: The records, and a note on what was cut, if anything.
     """
-    records = _df_to_records(dataframe)
-    size = len(json.dumps(records, default=str))
-
-    if size <= max_characters:
-        return records, None
-
     rows, columns = dataframe.shape
-    kept_rows, kept_columns = rows, columns
-    text_characters: int | None = None
     from_end = _is_time_index(dataframe.index)
     # Periods as columns (a ratio per ticker and year) keep their most recent ones.
     latest_columns = has_period_columns(dataframe)
+    # A value takes a few characters at the least, so rows and columns beyond what could
+    # fit are cut before the records are built: for a table of millions of rows the
+    # records alone would take more memory than the server has.
+    kept_columns = min(columns, max(1, max_characters // MINIMUM_VALUE_CHARACTERS))
+    kept_rows = min(
+        rows,
+        max(
+            MINIMUM_ROWS,
+            max_characters // (MINIMUM_VALUE_CHARACTERS * (kept_columns + 1)),
+        ),
+    )
+    text_characters: int | None = None
+
+    def cut(part: pd.DataFrame) -> pd.DataFrame:
+        part = part.iloc[-kept_rows:] if from_end else part.iloc[:kept_rows]
+
+        return (
+            part.iloc[:, -kept_columns:]
+            if latest_columns
+            else part.iloc[:, :kept_columns]
+        )
+
+    records = _df_to_records(cut(dataframe))
+    size = len(json.dumps(records, default=str))
+
+    if size <= max_characters and (kept_rows, kept_columns) == (rows, columns):
+        return records, None
 
     def longest_text(part: pd.DataFrame) -> int:
         texts = part.select_dtypes(include=["object", "string"])
@@ -471,12 +493,7 @@ def _fit_to_size(
         else:
             kept_columns = max(1, kept_columns // 2)
 
-        part = dataframe.iloc[-kept_rows:] if from_end else dataframe.iloc[:kept_rows]
-        part = (
-            part.iloc[:, -kept_columns:]
-            if latest_columns
-            else part.iloc[:, :kept_columns]
-        )
+        part = cut(dataframe)
 
         if text_characters is not None:
             part = part.map(

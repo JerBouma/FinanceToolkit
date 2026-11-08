@@ -64,6 +64,15 @@ _SLOT = threading.local()
 # One limiter per event loop (a limiter belongs to the loop it was first used in).
 _TOOL_LIMITER: RunVar[anyio.CapacityLimiter] = RunVar("financetoolkit_tool_limiter")
 
+# The limits of a hosted server, see limit_calls; a local server has none.
+_call_timeout: float | None = None
+_calls_per_user: int | None = None
+_identify_user: Callable[[], str] = str
+# The calls of each user (a hash of their API key) that have not finished, including
+# those answered with a timeout whose work is still running in its thread.
+_running_calls: dict[str, int] = {}
+_running_calls_lock = threading.Lock()
+
 
 def is_enabled() -> bool:
     """
@@ -484,6 +493,42 @@ def keep_signature(wrapper: Any, function: Callable) -> Any:
     return wrapper
 
 
+def limit_calls(
+    timeout_seconds: float | None,
+    calls_per_user: int | None,
+    identify_user: Callable[[], str],
+) -> None:
+    """
+    Limit the calls of a hosted server, which shares its work slots among everyone: a
+    call is answered with a timeout after timeout_seconds, and a user has at most
+    calls_per_user calls running at a time. A thread cannot be stopped, so the work of a
+    call that timed out runs on, and counts for its user until it ends; a call that had
+    not started yet is dropped.
+
+    Args:
+        timeout_seconds (float | None): The time a call may take, None for no limit.
+        calls_per_user (int | None): The calls a user may have running, None for no limit.
+        identify_user (Callable[[], str]): Returns the API key of the request being
+            handled, which tells the users apart.
+    """
+    global _call_timeout, _calls_per_user, _identify_user  # noqa: PLW0603
+
+    _call_timeout = timeout_seconds or None
+    _calls_per_user = calls_per_user or None
+    _identify_user = identify_user
+
+
+def _finish_call(call: dict[str, Any]) -> None:
+    """Count a call as finished for its user, once (its thread and the caller both may)."""
+    with _running_calls_lock:
+        if not call["counted"]:
+            return
+        call["counted"] = False
+        _running_calls[call["user"]] -= 1
+        if not _running_calls[call["user"]]:
+            del _running_calls[call["user"]]
+
+
 def run_in_thread(function: Callable) -> Any:
     """
     Turn a synchronous tool into one that runs in a worker thread.
@@ -494,6 +539,8 @@ def run_in_thread(function: Callable) -> Any:
     and the notes collected for the answer stay with the call. At most
     MAXIMUM_TOOL_THREADS calls run at once (each holds a work slot), so a burst of heavy
     calls queues instead of running the server out of memory.
+    On a hosted server, limit_calls adds a time limit per call and a limit on the calls
+    each user has running.
 
     Args:
         function (Callable): The synchronous tool.
@@ -502,13 +549,20 @@ def run_in_thread(function: Callable) -> Any:
         Any: An asynchronous tool with the same signature.
     """
 
-    def work(*args, **kwargs):
-        with _WORK_SLOTS:
-            _SLOT.held = True
-            try:
-                return function(*args, **kwargs)
-            finally:
-                _SLOT.held = False
+    def work(call: dict[str, Any], *args, **kwargs):
+        call["started"] = True
+        try:
+            with _WORK_SLOTS:
+                # A call answered with a timeout while it waited for a slot is not run.
+                if call["abandoned"]:
+                    return None
+                _SLOT.held = True
+                try:
+                    return function(*args, **kwargs)
+                finally:
+                    _SLOT.held = False
+        finally:
+            _finish_call(call)
 
     @functools.wraps(function)
     async def threaded(*args, **kwargs):
@@ -517,9 +571,43 @@ def run_in_thread(function: Callable) -> Any:
         except LookupError:
             limiter = anyio.CapacityLimiter(MAXIMUM_WAITING_THREADS)
             _TOOL_LIMITER.set(limiter)
-        return await anyio.to_thread.run_sync(
-            functools.partial(work, *args, **kwargs), limiter=limiter
-        )
+
+        call = {
+            "user": hashlib.sha256(_identify_user().encode()).hexdigest(),
+            "counted": bool(_calls_per_user),
+            "started": False,
+            "abandoned": False,
+        }
+        if _calls_per_user:
+            with _running_calls_lock:
+                if _running_calls.get(call["user"], 0) >= _calls_per_user:
+                    return (
+                        f"You have {_calls_per_user} calls running on this server, the most "
+                        "it runs at a time for one user. Please wait for them to finish "
+                        "before making another call."
+                    )
+                _running_calls[call["user"]] = _running_calls.get(call["user"], 0) + 1
+
+        try:
+            with anyio.fail_after(_call_timeout):
+                return await anyio.to_thread.run_sync(
+                    functools.partial(work, call, *args, **kwargs),
+                    limiter=limiter,
+                    abandon_on_cancel=True,
+                )
+        except TimeoutError:
+            return (
+                f"The call took longer than the {_call_timeout:g} seconds this server allows "
+                "and was stopped. Please narrow it: fewer tickers or countries, a shorter "
+                "date range, or smaller simulation or window sizes."
+            )
+        finally:
+            # A call given up (a timeout, a client that went away) leaves its thread to
+            # finish the work it started, which then counts it as finished; one that never
+            # started is counted as finished here.
+            call["abandoned"] = True
+            if not call["started"]:
+                _finish_call(call)
 
     return keep_signature(threaded, function)
 

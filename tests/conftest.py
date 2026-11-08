@@ -29,6 +29,126 @@ import yfinance
 
 yfinance.set_tz_cache_location(tempfile.mkdtemp(prefix="financetoolkit-yfinance-"))
 
+
+class NetworkBlockedError(RuntimeError):
+    """Raised when an offline test opens a connection to another machine."""
+
+
+# Offline runs (without --live) must work from the pickled datasets and mocks alone. A
+# test that reaches the network anyway passes or fails on whatever the API answers that
+# day, and the package swallows connection errors, so the attempt is both blocked and
+# recorded: the `no_network_calls` fixture fails the test that made it. Local addresses
+# stay open for the MCP HTTP tests, which talk to a server on the loopback interface.
+LOCAL_HOSTS = ("localhost", "127.", "::1", "0.0.0.0")
+NETWORK_ATTEMPTS: list[str] = []
+
+
+def _is_local(host: Any) -> bool:
+    if host is None:
+        return True
+    if isinstance(host, bytes):
+        host = host.decode(errors="replace")
+    return str(host).startswith(LOCAL_HOSTS)
+
+
+def _block_network() -> None:
+    import socket
+
+    original_connect = socket.socket.connect
+    original_connect_ex = socket.socket.connect_ex
+    original_getaddrinfo = socket.getaddrinfo
+
+    def _refuse(target: str) -> None:
+        NETWORK_ATTEMPTS.append(target)
+        raise NetworkBlockedError(
+            f"Offline tests may not reach {target}; mock the request or use --live."
+        )
+
+    def _check_address(sock: socket.socket, address: Any) -> None:
+        # Unix domain sockets carry a path, not a host, and never leave the machine.
+        if sock.family in (socket.AF_INET, socket.AF_INET6) and not _is_local(
+            address[0]
+        ):
+            _refuse(str(address[0]))
+
+    def connect(self, address):
+        _check_address(self, address)
+        return original_connect(self, address)
+
+    def connect_ex(self, address):
+        _check_address(self, address)
+        return original_connect_ex(self, address)
+
+    def getaddrinfo(host, *args, **kwargs):
+        if not _is_local(host):
+            _refuse(str(host))
+        return original_getaddrinfo(host, *args, **kwargs)
+
+    socket.socket.connect = connect  # type: ignore[method-assign]
+    socket.socket.connect_ex = connect_ex  # type: ignore[method-assign]
+    socket.getaddrinfo = getaddrinfo
+
+    # yfinance downloads through curl_cffi, whose libcurl opens its own sockets in C, out
+    # of reach of the socket module, so its requests are refused before they start.
+    try:
+        from curl_cffi.requests import Session as CurlSession
+    except ImportError:  # pragma: no cover
+        return
+
+    original_curl_request = CurlSession.request
+
+    def curl_request(self, method, url, *args, **kwargs):
+        from urllib.parse import urlparse
+
+        host = urlparse(str(url)).hostname
+        if not _is_local(host):
+            _refuse(str(host))
+        return original_curl_request(self, method, url, *args, **kwargs)
+
+    CurlSession.request = curl_request  # type: ignore[method-assign]
+
+
+def pytest_configure(config):
+    # --live runs the suite against the APIs and FINANCETOOLKIT_LIVE_SOURCES=1 runs the
+    # checks of tests/live_sources, both of which need the network.
+    if not config.getoption("--live", default=False) and (
+        os.environ.get("FINANCETOOLKIT_LIVE_SOURCES") != "1"
+    ):
+        _block_network()
+
+
+@pytest.fixture
+def known_fmp_plan(monkeypatch):
+    """Answers the plan probe that Toolkit and Discovery send when given an API key as
+    an unanswered probe does (a valid key on the Free plan), so constructing either one
+    with a placeholder key stays offline and does not depend on what the API answers."""
+    from financetoolkit import fmp_model, toolkit_controller
+
+    def determine_subscription_plan(api_key: str) -> tuple[str, bool]:  # noqa: ARG001
+        return "Free", False
+
+    monkeypatch.setattr(
+        fmp_model, "determine_subscription_plan", determine_subscription_plan
+    )
+    monkeypatch.setattr(
+        toolkit_controller, "_determine_subscription_plan", determine_subscription_plan
+    )
+
+
+@pytest.fixture(autouse=True)
+def no_network_calls():
+    """Fails an offline test that tried to reach the network, even when the package
+    caught the error and the test's assertions still held."""
+    attempts_before = len(NETWORK_ATTEMPTS)
+    yield
+    attempts = NETWORK_ATTEMPTS[attempts_before:]
+    if attempts:
+        pytest.fail(
+            f"This test tried to reach the network ({', '.join(sorted(set(attempts)))}); "
+            "offline tests run on the pickled datasets and mocks only."
+        )
+
+
 """"
 Credits go out to the original author of this code snippet:
 

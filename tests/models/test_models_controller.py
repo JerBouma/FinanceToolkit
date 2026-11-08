@@ -168,6 +168,31 @@ def test_get_fulmer_h_score(recorder, models_module):
     recorder.capture(models_module.get_fulmer_h_score(growth=True))
 
 
+def test_get_altman_z_score_models(recorder, models_module):
+    for model in ("private", "non-manufacturing", "emerging"):
+        recorder.capture(models_module.get_altman_z_score(model=model))
+
+    # The four-variable models leave out sales, and the emerging market score is the
+    # non-manufacturing score plus 3.25.
+    non_manufacturing = models_module.get_altman_z_score(
+        model="non-manufacturing", rounding=10
+    )
+    emerging = models_module.get_altman_z_score(model="emerging", rounding=10)
+    assert "Sales to Total Assets" not in non_manufacturing.index.get_level_values(1)
+    difference = (
+        emerging.xs("Altman Z-Score", level=1)
+        - non_manufacturing.xs("Altman Z-Score", level=1)
+    ).stack()
+    assert ((difference - 3.25).abs() < 1e-8).all()
+
+    assert models_module.get_altman_z_score(model="zeta").empty
+
+
+def test_get_taffler_z_score(recorder, models_module):
+    recorder.capture(models_module.get_taffler_z_score())
+    recorder.capture(models_module.get_taffler_z_score(growth=True))
+
+
 def test_capital_asset_pricing_inputs_cover_the_trailing_span():
     from types import SimpleNamespace
 

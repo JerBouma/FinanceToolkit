@@ -211,3 +211,10 @@ def test_get_net_current_asset_value(recorder):
             total_liabilities=pd.Series([50, 30, 80, 20, 50]),
         )
     )
+
+
+def test_get_reinvestment_ratio_is_what_is_not_paid_out():
+    result = valuation_model.get_reinvestment_ratio(pd.Series([0.25, 0.0, 1.2]))
+
+    # A payout above earnings means a negative reinvestment.
+    pd.testing.assert_series_equal(result, pd.Series([0.75, 1.0, -0.2]))

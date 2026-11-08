@@ -604,3 +604,94 @@ def test_morningstar_measures_need_a_yearly_or_quarterly_period(performance_modu
         performance_module._get_morningstar_risk_adjusted_return(
             2, "monthly", True, None
         )
+
+
+def _daily_returns_in(performance_module, ticker: str, year: str) -> pd.Series:
+    """The daily returns of one ticker within one calendar year."""
+    daily = performance_module._historical_data["daily"]["Return"][ticker]
+    return daily[daily.index.year == int(year)]
+
+
+def _year_return(performance_module, ticker: str, year: str) -> float:
+    return performance_module._historical_data["yearly"]["Return"].loc[year, ticker]
+
+
+def _drawdowns(returns: pd.Series) -> pd.Series:
+    wealth = (1 + returns.fillna(0)).cumprod()
+    return wealth / wealth.cummax().clip(lower=1) - 1
+
+
+def test_get_calmar_ratio_divides_the_year_by_its_maximum_drawdown(
+    performance_module,
+):
+    result = performance_module.get_calmar_ratio(rounding=None)
+    drawdowns = _drawdowns(_daily_returns_in(performance_module, "AAPL", "2021"))
+
+    assert result.loc["2021", "AAPL"] == pytest.approx(
+        _year_return(performance_module, "AAPL", "2021") / abs(drawdowns.min()),
+        abs=5e-5,
+    )
+
+
+def test_get_sterling_ratio_divides_the_year_by_its_adjusted_average_drawdown(
+    performance_module,
+):
+    drawdowns = _drawdowns(_daily_returns_in(performance_module, "MSFT", "2022"))
+    year_return = _year_return(performance_module, "MSFT", "2022")
+
+    for adjustment in (0.1, 0.0):
+        result = performance_module.get_sterling_ratio(
+            adjustment=adjustment, rounding=None
+        )
+        assert result.loc["2022", "MSFT"] == pytest.approx(
+            year_return / (abs(drawdowns[drawdowns < 0].mean()) + adjustment),
+            abs=5e-5,
+        )
+
+
+def test_get_burke_ratio_has_the_sign_of_the_excess_return(performance_module):
+    result = performance_module.get_burke_ratio(rounding=None)
+    excess_return = performance_module.get_excess_return(period="yearly")
+
+    assert not result.empty
+    common = result.index.intersection(excess_return.index)
+    assert (
+        (
+            np.sign(result.loc[common, ["AAPL", "MSFT"]])
+            == np.sign(excess_return.loc[common, ["AAPL", "MSFT"]])
+        )
+        .all()
+        .all()
+    )
+
+
+def test_get_kappa_ratio_scales_the_mean_excess_return_by_the_partial_moment(
+    performance_module,
+):
+    within = performance_module._get_column(
+        "yearly", "Excess Return", within_period=True
+    )
+    excess = within.loc["2021", "AAPL"]
+
+    for order in (2, 3):
+        result = performance_module.get_kappa_ratio(order=order, rounding=None)
+        lower_partial_moment = (excess.clip(upper=0).abs() ** order).mean()
+
+        assert result.loc["2021", "AAPL"] == pytest.approx(
+            excess.mean() / lower_partial_moment ** (1 / order), abs=5e-5
+        )
+
+
+def test_get_covariance_matrix_is_symmetric_with_the_variances_on_the_diagonal(
+    performance_module,
+):
+    result = performance_module.get_covariance_matrix(period="monthly", rounding=10)
+    monthly = performance_module._historical_data["monthly"]["Return"].loc[
+        performance_module._start_date : performance_module._end_date
+    ]
+
+    pd.testing.assert_frame_equal(result, result.T)
+    for ticker in result.columns:
+        assert result.loc[ticker, ticker] == pytest.approx(
+            monthly[ticker].var(), abs=1e-9
+        )

@@ -535,3 +535,88 @@ def test_the_members_before_the_log_starts_are_not_guessed(monkeypatch):
         discovery_model.get_index_constituents(
             api_key="KEY", index="S&P 500", date="2000-01-01"
         )
+
+
+def test_get_sectors_performance_returns_decimals_by_day(monkeypatch):
+    requested: list[str] = []
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        requested.append(url)
+        if "sector=Technology" in url:
+            return pd.DataFrame(
+                {
+                    "date": ["2024-01-03", "2024-01-02"],
+                    "sector": "Technology",
+                    "averageChange": [-1.5, 2.0],
+                }
+            )
+        if "sector=Energy" in url:
+            return pd.DataFrame(
+                {"date": ["2024-01-02"], "sector": "Energy", "averageChange": [0.25]}
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    result = discovery_model.get_sectors_performance(
+        "key", start_date="2024-01-01", end_date="2024-01-31"
+    )
+
+    # One request per sector, each over the requested range (some endpoints answer
+    # with old data without one), and the changes are percentages turned into decimals.
+    assert len(requested) == len(discovery_model.FMP_SECTORS)
+    assert all("&from=2024-01-01&to=2024-01-31" in url for url in requested)
+    assert list(result.columns) == ["Energy", "Technology"]
+    assert [str(day) for day in result.index] == ["2024-01-02", "2024-01-03"]
+    assert result.loc["2024-01-02", "Technology"] == pytest.approx(0.02)
+    assert result.loc["2024-01-03", "Technology"] == pytest.approx(-0.015)
+    assert result.loc["2024-01-02", "Energy"] == pytest.approx(0.0025)
+    assert pd.isna(result.loc["2024-01-03", "Energy"])
+
+
+def test_get_sectors_performance_without_any_data_is_empty(monkeypatch):
+    monkeypatch.setattr(
+        discovery_model,
+        "get_cached_financial_data",
+        lambda url, user_subscription="Free": pd.DataFrame(),  # noqa: ARG005
+    )
+
+    assert discovery_model.get_sectors_performance("key").empty
+
+
+@pytest.mark.parametrize(
+    ("function", "endpoint", "row"),
+    [
+        (
+            "get_crypto_list",
+            "cryptocurrency-list",
+            {"symbol": "BTCUSD", "name": "Bitcoin", "exchange": "CCC"},
+        ),
+        (
+            "get_index_list",
+            "index-list",
+            {
+                "symbol": "^GSPC",
+                "name": "S&P 500",
+                "currency": "USD",
+                "exchange": "SNP",
+            },
+        ),
+    ],
+)
+def test_instrument_lists_are_indexed_by_symbol(monkeypatch, function, endpoint, row):
+    requested: list[str] = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame([row, {**row, "symbol": "AAA", "name": "First"}])
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    result = getattr(discovery_model, function)("key")
+
+    assert f"/stable/{endpoint}?" in requested[0]
+    assert result.index.name == "Symbol"
+    assert list(result.index) == sorted(["AAA", row["symbol"]])
+    assert result.loc[row["symbol"], "Name"] == row["name"]
+    assert result.loc[row["symbol"], "Exchange"] == row["exchange"]

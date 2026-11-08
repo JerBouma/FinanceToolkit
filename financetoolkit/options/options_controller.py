@@ -561,8 +561,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -1558,8 +1559,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             american_option (bool, optional): Whether to value an American option, which can be exercised at every
@@ -1768,8 +1770,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
             one year.
             timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
@@ -1935,8 +1938,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -2128,8 +2132,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -2307,8 +2312,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             option_type (str, optional): Either "cash-or-nothing" or "asset-or-nothing". Defaults to
@@ -2513,8 +2519,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -2709,8 +2716,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -2963,8 +2971,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             barrier_percentage (float, optional): The barrier level as a percentage of the current stock price.
@@ -3183,8 +3192,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -3379,8 +3389,9 @@ class Options:
             expiration, priced with the Black Scholes model on the volatility, risk free rate
             and dividend yield of that date, as `get_black_scholes_model` does.
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             stock_price_range (float): The percentage range to use for the stock prices at expiration. Defaults
             to 0.5 which equals 50% and thus results in stock prices from 50 to 150 if the current stock price is
             100.
@@ -3593,8 +3604,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -3756,8 +3768,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -3969,8 +3982,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4153,8 +4167,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4352,8 +4367,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4545,8 +4561,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4732,8 +4749,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4913,8 +4931,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5097,8 +5116,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5284,8 +5304,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5498,8 +5519,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5671,8 +5693,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5848,8 +5871,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6036,8 +6060,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6226,8 +6251,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6415,8 +6441,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6604,8 +6631,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6781,8 +6809,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6960,8 +6989,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7134,8 +7164,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7308,8 +7339,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7492,8 +7524,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7669,8 +7702,9 @@ class Options:
 
         Args:
             start_date (str | None, optional): The date whose price, volatility and rates the values
-            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
-            trading day before it. Defaults to None, which uses the last date of the historical data.
+            start from; a date without prices (a weekend or a holiday) uses the last trading day before it, and a
+            ticker without a price on that day is left out with a warning. Defaults to None, which uses the
+            last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the

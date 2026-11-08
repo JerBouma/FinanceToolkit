@@ -4595,7 +4595,7 @@ class Ratios:
         | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
         | Gross Profitability                         |  0.4354 |  0.4841 |  0.4797 |   0.495  |   0.5434 |
         | Operating Profitability                     |  1.685  |  2.2992 |  1.7759 |   2.1636 |   1.8045 |
-        | Cash-Based Operating Profitability          |  0.3639 |  0.4183 |  0.4011 |   0.4244 |   0.4818 |
+        | Cash-Based Operating Profitability          |  0.3943 |  0.4204 |  0.4009 |   0.4394 |   0.4742 |
         | Cash Return on Invested Capital             |  0.4801 |  0.5823 |  0.5394 |   0.601  |   0.5455 |
         | Free Cash Flow Conversion                   |  0.9818 |  1.1166 |  1.0267 |   1.1608 |   0.8818 |
         | Free Cash Flow to EBITDA                    |  0.7731 |  0.8537 |  0.7915 |   0.808  |   0.6823 |
@@ -7417,7 +7417,8 @@ class Ratios:
         """
         Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and
         Nikolaev (2016): operating profit with the working capital accruals taken out, so
-        that it measures the operating profit received in cash, scaled by total assets.
+        that it measures the operating profit received in cash, scaled by the total assets
+        at the start of the year.
 
         Ball et al. show that cash-based operating profitability predicts stock returns
         better than the profitability measures that include accruals, and that it subsumes
@@ -7429,14 +7430,19 @@ class Ratios:
 
         - Cash-Based Operating Profitability = (Revenue - Cost of Goods Sold - Selling,
           General and Administrative Expenses - Δ Receivables - Δ Inventory - Δ Prepaids
-          + Δ Deferred Revenue + Δ Accounts Payable + Δ Accrued Expenses) / Total Assets
+          + Δ Deferred Revenue + Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total
+          Assets
 
         The selling, general and administrative expenses are without research and
         development (Compustat XSGA - XRD in the paper), the receivables are the total
         (trade and other) receivables and the deferred revenue the current and non-current
         deferred revenue. Each change is that of the balance over the window of the flows
         (a year with annual data, the year before the quarter with quarterly data), and the
-        total assets are those at the end of the window (a point in time, not averaged).
+        total assets are those at the start of the window: the end of the year before with
+        annual data, the quarter four quarters back with quarterly data. Ball et al. (2016)
+        scale by these lagged total assets, unlike the end-of-year assets of Ball et al.
+        (2015) and Novy-Marx (2013); Chen and Zimmermann note this in their replication and
+        Wang (2020) defines the measure on lagged total assets as well.
         It is an annual measure, so with quarterly data the flows are those of the trailing
         twelve months by default.
 
@@ -7453,8 +7459,8 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the income statement items
-                over, which is also the number of periods the balance changes span; the total
-                assets stay those at the end of the last period. Defaults to None, which uses the
+                over, which is also the number of periods the balance changes span and the
+                number of periods the total assets are taken before. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
 
@@ -7467,8 +7473,11 @@ class Ratios:
         Economics 121(1), 2016, pp. 28-45. Ball, R., J. Gerakos, J. T. Linnainmaa and V.
         Nikolaev, "Deflating Profitability," Journal of Financial Economics 117(2), 2015,
         pp. 225-248.
-        - The first period has no earlier balances to take the changes from and is NaN, so
-        set an earlier start_date to obtain it.
+        - Chen, A. Y. and T. Zimmermann, "Open Source Cross-Sectional Asset Pricing,"
+        Critical Finance Review 11(2), 2022, pp. 207-264 (the CBOperProf signal and its
+        lagged-assets variant). Wang (2020), SSRN working paper 3507251, Table A1.
+        - The first period has no earlier balances to take the changes and the total assets
+        from and is NaN, so set an earlier start_date to obtain it.
         - If `growth` is set to True, the method calculates the growth of the ratio values
         using the specified `lag`.
 
@@ -7491,10 +7500,10 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL | 0.3639 | 0.4183 | 0.4011 | 0.4244 | 0.4818 |
-        | KO   | 0.1319 | 0.2216 | 0.1318 | 0.1964 | 0.0844 |
-        | MSFT | 0.274  | 0.2979 | 0.2841 | 0.2777 | 0.2603 |
-        | XOM  | 0.1514 | 0.2289 | 0.1977 | 0.1491 | 0.1787 |
+        | AAPL | 0.3943 | 0.4204 | 0.4009 | 0.4394 | 0.4742 |
+        | KO   | 0.1425 | 0.2178 | 0.1388 | 0.2021 | 0.0879 |
+        | MSFT | 0.3035 | 0.3256 | 0.3208 | 0.3452 | 0.3146 |
+        | XOM  | 0.1542 | 0.2493 | 0.2015 | 0.1796 | 0.1769 |
         """
         trailing = self._get_valuation_trailing(trailing)
 
@@ -7503,6 +7512,7 @@ class Ratios:
 
         # The balances change over the same window as the flows: a year on annual data and,
         # with the default trailing twelve months, the four quarters before on quarterly data.
+        # The total assets are those at the start of that window, as in Ball et al. (2016).
         def change(balance: pd.DataFrame) -> pd.DataFrame:
             return balance.diff(trailing or 1, axis=1)
 
@@ -7523,7 +7533,7 @@ class Ratios:
                 ),
                 change(balance("Accounts Payable")),
                 change(balance("Accrued Expenses")),
-                balance("Total Assets"),
+                balance("Total Assets").shift(trailing or 1, axis=1),
             )
         )
 

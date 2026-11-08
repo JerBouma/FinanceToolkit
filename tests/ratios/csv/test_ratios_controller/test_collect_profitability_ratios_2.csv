@@ -68,8 +68,8 @@ AAPL,Gross Profitability,Lag 3,,,,0.4801
 AAPL,Operating Profitability,Lag 1,,0.736,0.3645,-0.2276
 AAPL,Operating Profitability,Lag 2,,,1.3688,0.0539
 AAPL,Operating Profitability,Lag 3,,,,0.8297
-AAPL,Cash-Based Operating Profitability,Lag 1,,,0.1495,-0.0411
-AAPL,Cash-Based Operating Profitability,Lag 2,,,,0.1022
+AAPL,Cash-Based Operating Profitability,Lag 1,,,0.0662,-0.0464
+AAPL,Cash-Based Operating Profitability,Lag 2,,,,0.0167
 AAPL,Cash-Based Operating Profitability,Lag 3,,,,
 AAPL,Cash Return on Invested Capital,Lag 1,,,0.2129,-0.0402
 AAPL,Cash Return on Invested Capital,Lag 2,,,,0.1641
@@ -149,8 +149,8 @@ MSFT,Gross Profitability,Lag 3,,,,0.102
 MSFT,Operating Profitability,Lag 1,,0.1181,0.0261,-0.1411
 MSFT,Operating Profitability,Lag 2,,,0.1473,-0.1187
 MSFT,Operating Profitability,Lag 3,,,,-0.0146
-MSFT,Cash-Based Operating Profitability,Lag 1,,,0.0872,-0.0463
-MSFT,Cash-Based Operating Profitability,Lag 2,,,,0.0369
+MSFT,Cash-Based Operating Profitability,Lag 1,,,0.0728,-0.0147
+MSFT,Cash-Based Operating Profitability,Lag 2,,,,0.057
 MSFT,Cash-Based Operating Profitability,Lag 3,,,,
 MSFT,Cash Return on Invested Capital,Lag 1,,,0.059,-0.1914
 MSFT,Cash Return on Invested Capital,Lag 2,,,,-0.1437

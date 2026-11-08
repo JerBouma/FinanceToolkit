@@ -639,7 +639,7 @@ def get_cash_based_operating_profitability(
     change_in_deferred_revenue: pd.Series | pd.DataFrame,
     change_in_accounts_payable: pd.Series | pd.DataFrame,
     change_in_accrued_expenses: pd.Series | pd.DataFrame,
-    total_assets: pd.Series | pd.DataFrame,
+    beginning_total_assets: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and
@@ -653,12 +653,12 @@ def get_cash_based_operating_profitability(
         Cash-Based Operating Profitability = (Revenue - Cost of Goods Sold - Selling,
             General and Administrative Expenses (without research and development)
             - Δ Receivables - Δ Inventory - Δ Prepaids + Δ Deferred Revenue
-            + Δ Accounts Payable + Δ Accrued Expenses) / Total Assets
+            + Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total Assets
 
     Research and development is not deducted, as the paper adds it back (XSGA - XRD in
     Compustat): it is an investment rather than an expense of the period. The changes
     are those of the balances over the window of the flows, and the total assets are
-    those at the end of it (a point in time, as for the gross profitability).
+    those at the start of it (the end of the period before), as in Ball et al. (2016).
 
     Also known as: CbOP, cash operating profitability, cash-based profitability.
 
@@ -674,7 +674,8 @@ def get_cash_based_operating_profitability(
             non-current deferred revenue.
         change_in_accounts_payable (float or pd.Series): The change in the accounts payable.
         change_in_accrued_expenses (float or pd.Series): The change in the accrued expenses.
-        total_assets (float or pd.Series): Total assets at the end of the period.
+        beginning_total_assets (float or pd.Series): Total assets at the start of the
+            window of the flows.
 
     Returns:
         float | pd.Series: The cash-based operating profitability value.
@@ -693,7 +694,7 @@ def get_cash_based_operating_profitability(
         + change_in_accrued_expenses
     )
 
-    return cash_based_operating_profit / total_assets
+    return cash_based_operating_profit / beginning_total_assets
 
 
 def get_cash_return_on_invested_capital(

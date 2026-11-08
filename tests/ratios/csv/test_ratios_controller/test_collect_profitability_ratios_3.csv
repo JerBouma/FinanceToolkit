@@ -22,7 +22,7 @@ AAPL,Cash Tax Rate,0.1979,0.1969,0.1643
 AAPL,Tax Rate Divergence,0.0606,0.0487,0.0095
 AAPL,Gross Profitability,0.7344,0.9174,0.9641
 AAPL,Operating Profitability,2.6901,4.3971,3.6507
-AAPL,Cash-Based Operating Profitability,,0.7803,0.8196
+AAPL,Cash-Based Operating Profitability,,0.8499,0.8233
 AAPL,Cash Return on Invested Capital,0.859,1.068,1.1843
 AAPL,Free Cash Flow Conversion,1.0935,1.051,1.0723
 AAPL,Free Cash Flow to EBITDA,0.8418,0.8151,0.8232
@@ -49,7 +49,7 @@ MSFT,Cash Tax Rate,0.0,0.0,0.0
 MSFT,Tax Rate Divergence,-0.1497,-0.1344,-0.1614
 MSFT,Gross Profitability,0.6375,0.6893,0.6837
 MSFT,Operating Profitability,0.8295,0.8928,0.8123
-MSFT,Cash-Based Operating Profitability,,0.5485,0.5479
+MSFT,Cash-Based Operating Profitability,,0.6642,0.6762
 MSFT,Cash Return on Invested Capital,0.5079,0.5543,0.5046
 MSFT,Free Cash Flow Conversion,0.9602,0.9049,0.8589
 MSFT,Free Cash Flow to EBITDA,0.6878,0.6758,0.6224

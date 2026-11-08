@@ -982,7 +982,9 @@ def test_cash_based_operating_profitability_from_the_statement_lines(ratios_modu
     result = ratios_module.get_cash_based_operating_profitability(rounding=None)
 
     assert result.loc["AAPL"].loc[YEAR] == _approx(
-        (operating_profit - accruals) / _row(balance, "Total Assets").loc[YEAR]
+        # Scaled by the total assets at the start of the year, as in Ball et al. (2016).
+        (operating_profit - accruals)
+        / _row(balance, "Total Assets").loc[previous]
     )
 
 
@@ -1047,14 +1049,15 @@ def test_quarterly_profitability_anomalies_default_to_the_trailing_year():
         )
         / balance.loc[("XYZ", "Total Shareholder Equity")].iloc[-1]
     )
-    # The receivables change over the same four quarters as the flows.
+    # The receivables change over the same four quarters as the flows, and the total
+    # assets are those at the start of them.
     assert ratios.get_cash_based_operating_profitability().iloc[0, -1] == pytest.approx(
         (
             gross_profit
             - trailing_year("Selling, General and Administrative Expenses")
             - (receivables.iloc[-1] - receivables.iloc[-5])
         )
-        / total_assets
+        / balance.loc[("XYZ", "Total Assets")].iloc[-5]
     )
     # The first three quarters have no full trailing year.
     assert ratios.get_gross_profitability().iloc[0, :3].isna().all()

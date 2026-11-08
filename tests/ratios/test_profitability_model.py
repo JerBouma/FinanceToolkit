@@ -223,7 +223,7 @@ def test_cash_based_operating_profitability_removes_working_capital_accruals():
         change_in_deferred_revenue=pd.Series([2.0]),
         change_in_accounts_payable=pd.Series([4.0]),
         change_in_accrued_expenses=pd.Series([1.0]),
-        total_assets=pd.Series([200.0]),
+        beginning_total_assets=pd.Series([200.0]),
     )
 
     assert result.iloc[0] == pytest.approx((40 - 5 - 3 - 1 + 2 + 4 + 1) / 200)

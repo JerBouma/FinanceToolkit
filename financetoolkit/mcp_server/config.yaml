@@ -181,37 +181,17 @@ module_class_map:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Methods to skip during class inspection
-# collect_* methods are aggregate helpers not exposed as individual indicators.
-# it doesn't make much sense to add those given it overloads the LLM with 
-# redundant options it has to filter before being able to answer the question
-# Also excluded get_normalization_files given that it it is purely meant for your own
-# data sources and not relevant for users of the MCP tools.
+# Method discovery only picks up get_* names, so the aggregate collect_* helpers are
+# never exposed as indicators. get_normalization_files is skipped since it is purely
+# meant for your own data sources and not relevant for users of the MCP tools.
 #
-# Discovery's search_* methods are not reachable either, since method discovery
-# only picks up get_* names. That is deliberate: looking up instruments is left to
-# the Finance Database MCP server, so the two servers do not overlap, and the
-# search_*_news methods duplicate the get_*_news ones with a ticker filter the LLM
-# can apply itself.
+# Discovery's search_* methods are not reachable either, for the same reason. That is
+# deliberate: looking up instruments is left to the Finance Database MCP server, so the
+# two servers do not overlap, and the search_*_news methods duplicate the get_*_news
+# ones with a ticker filter the LLM can apply itself.
 # ──────────────────────────────────────────────────────────────────────────────
 skip_methods:
   - "get_normalization_files"
-  - "collect_all_ratios"
-  - "collect_custom_ratios"
-  - "collect_efficiency_ratios"
-  - "collect_liquidity_ratios"
-  - "collect_profitability_ratios"
-  - "collect_solvency_ratios"
-  - "collect_valuation_ratios"
-  - "collect_all_greeks"
-  - "collect_first_order_greeks"
-  - "collect_second_order_greeks"
-  - "collect_third_order_greeks"
-  - "collect_all_indicators"
-  - "collect_breadth_indicators"
-  - "collect_momentum_indicators"
-  - "collect_overlap_indicators"
-  - "collect_volatility_indicators"
-  - "collect_all_metrics"
   # EGARCH fits take around 45 seconds per ticker (a deterministic multi-start search),
   # longer than an assistant waits for a tool; GARCH and GJR-GARCH remain available.
   - "get_egarch"

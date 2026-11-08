@@ -17,13 +17,12 @@ from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     drop_non_finite,
     to_period_index,
+    validate_period,
 )
 
 logger = logger_model.get_logger()
 
 # pylint: disable=too-many-locals,unsubscriptable-object,too-many-lines
-
-TREASURY_LIMIT = 90
 
 INTERVAL_STR = {
     "1min": "min",
@@ -888,11 +887,7 @@ def convert_daily_to_other_period(
         Close, Adj Close, Volume, Return, Cumulative Return and, when present, Dividends)
         as the first level and the ticker symbol(s) as the second level.
     """
-    if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     period_str = PERIOD_TRANSLATION[period]
 
@@ -1001,11 +996,7 @@ def calculate_period_average(
         pd.DataFrame: The average per period, indexed by the periods and with the columns of
         daily_data that were averaged.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     if columns is not None:
         daily_data = daily_data.loc[

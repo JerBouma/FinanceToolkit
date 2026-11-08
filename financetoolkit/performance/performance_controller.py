@@ -6004,8 +6004,8 @@ class Performance:
                 as a DataFrame. "all" holds the returns, excess return, beta, Sharpe, Sortino,
                 Treynor and information ratios, tracking error, Jensen's alpha, Calmar and
                 Omega ratios and the win rate.
-            period (str, optional): The frequency at which the metrics are measured and
-                evaluated: weekly, monthly, quarterly or yearly. Each metric is calculated
+            period (str, optional): The frequency at which the metrics are measured and evaluated
+                (weekly, monthly, quarterly or yearly). Each metric is calculated
                 within each period from that period's daily returns, so use monthly or longer
                 for enough returns per period. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward

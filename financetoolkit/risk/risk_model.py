@@ -12,6 +12,7 @@ from financetoolkit.utilities.statistics_model import (
     by_own_trading_days,
     drop_non_finite,
     to_period_index,
+    validate_period,
 )
 
 ALPHA_CONSTRAINT = 0.5
@@ -452,11 +453,7 @@ def get_variance(
         pd.Series | pd.DataFrame: Variance values with time (or `groups`) as the
         index.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -491,11 +488,7 @@ def get_rolling_variance(
     Returns:
         pd.Series | pd.DataFrame: Rolling Variance values with time as the index.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     return returns.rolling(window=window_size).var()
 
@@ -520,11 +513,7 @@ def get_rolling_volatility(
     Returns:
         pd.Series | pd.DataFrame: Rolling Volatility values with time as the index.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     return returns.rolling(window=window_size).std()
 
@@ -557,11 +546,7 @@ def get_volatility(
         pd.Series | pd.DataFrame: Volatility values with time (or `groups`) as the
         index.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -1383,11 +1368,7 @@ def get_mean_absolute_deviation(
     Returns:
         pd.Series | pd.DataFrame: MAD values with time (or `groups`) as the index.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -1431,11 +1412,7 @@ def get_coefficient_of_variation(
         pd.Series | pd.DataFrame: Coefficient of Variation values with time (or
         `groups`) as the index.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")

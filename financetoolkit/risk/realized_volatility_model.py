@@ -10,6 +10,7 @@ from financetoolkit.utilities.statistics_model import (
     VOLATILITY_WINDOW_TRANSLATION,
     by_own_trading_days,
     to_period_index,
+    validate_period,
 )
 
 # The natural logarithm of 2, used by Parkinson, Garman-Klass and Yang-Zhang.
@@ -17,14 +18,6 @@ LN_2 = np.log(2)
 
 # HAR-RV needs overlap between the monthly window, horizon and observations.
 MINIMUM_HAR_RV_OBSERVATIONS = 10
-
-
-def _validate_period(period: str) -> None:
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
 
 
 def _group_and_scale(
@@ -126,7 +119,7 @@ def get_parkinson_volatility(
     - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
     and is left out; the period is measured over the remaining days.
     """
-    _validate_period(period)
+    validate_period(period)
 
     if not isinstance(high_prices, pd.Series | pd.DataFrame) or not isinstance(
         low_prices, pd.Series | pd.DataFrame
@@ -205,7 +198,7 @@ def get_garman_klass_volatility(
     - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
     and is left out; the period is measured over the remaining days.
     """
-    _validate_period(period)
+    validate_period(period)
 
     if not all(
         isinstance(prices, pd.Series | pd.DataFrame)
@@ -286,7 +279,7 @@ def get_rogers_satchell_volatility(
     - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
     and is left out; the period is measured over the remaining days.
     """
-    _validate_period(period)
+    validate_period(period)
 
     if not all(
         isinstance(prices, pd.Series | pd.DataFrame)
@@ -377,7 +370,7 @@ def get_yang_zhang_volatility(
     - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
     and is left out; the period is measured over the remaining days.
     """
-    _validate_period(period)
+    validate_period(period)
 
     if not all(
         isinstance(prices, pd.Series | pd.DataFrame)

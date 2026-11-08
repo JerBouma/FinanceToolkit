@@ -97,8 +97,6 @@ logger = logger_model.get_logger()
 # pylint: disable=too-many-function-args,too-many-public-methods
 # ruff: noqa: E501
 
-TICKER_LIMIT = 20
-
 # The calendar days of prices before the start date that the technical indicators and daily
 # ratios are calculated from: about 250 trading days, ten times the window of a 25-day Wilder
 # or exponential average (RSI, ATR and ADX use 14), after which the starting value no longer
@@ -3261,8 +3259,7 @@ class Toolkit:
                 self._market_risk_premium = cached_premium
             else:
                 self._market_risk_premium = _get_market_risk_premium(
-                    api_key=self._api_key,
-                    user_subscription=self._fmp_plan,
+                    api_key=self._api_key
                 )
 
                 if not self._market_risk_premium.empty:

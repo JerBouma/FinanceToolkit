@@ -25,6 +25,7 @@ from financetoolkit.utilities.statistics_model import (
     by_own_trading_days,
     drop_non_finite,
     to_period_index,
+    validate_period,
 )
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
@@ -2816,11 +2817,7 @@ def get_returns(
         pd.Series | pd.DataFrame: Return values with time (or `groups`) as the
         index. If cumulative is True, the cumulative return is returned instead.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")

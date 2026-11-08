@@ -6,51 +6,37 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.statistics_model import to_datetime_index
-
-logger = logger_model.get_logger()
-
-# pylint: disable=protected-access
-
-PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
-    "intraday": {
-        "1min": "h",
-        "5min": "h",
-        "15min": "D",
-        "30min": "D",
-        "1hour": "D",
-    },
-    # The intraday bars within each trading day; only available with intraday data.
-    "daily": "D",
-    "weekly": "W",
-    "monthly": "M",
-    "quarterly": "Q",
-    "yearly": "Y",
-}
+from financetoolkit.utilities.statistics_model import (
+    WITHIN_PERIOD_TRANSLATION,
+    to_datetime_index,
+)
 
 
 def determine_within_dataset(
     dataset: pd.DataFrame, period: str, correlation: bool = False
-):
+) -> pd.DataFrame:
     """
-    This function is a specific function solely related to the Ratios controller. It
-    therefore also requires a self instance to exists with specific parameters.
+    Groups a daily dataset, such as the Fama-French factors, by the period each day falls
+    in, the "within period" format the factor models of the Performance controller are
+    estimated on.
 
     Args:
-        period (str): the period to return the data for.
-        within_period (bool): whether to return the data within the period or the
-        entire period.
+        dataset (pd.DataFrame): The daily dataset, with a PeriodIndex.
+        period (str): The period to group by (weekly, monthly, quarterly or yearly).
+        correlation (bool, optional): Whether to return the correlation matrix of the
+            columns per period instead of the daily observations. Defaults to False.
 
     Raises:
-        ValueError: if the period is not daily, monthly, weekly, quarterly, or yearly.
+        KeyError: If the period is not one of the keys of WITHIN_PERIOD_TRANSLATION.
 
     Returns:
-        pd.Series: the returns for the period.
+        pd.DataFrame: The daily observations with the period and the day as the index
+        levels, or with correlation=True the correlation matrix per period with the period
+        and the column as the index levels.
     """
     dataset_new = dataset.copy()
     dataset_new.index = pd.DatetimeIndex(dataset_new.to_timestamp().index)
-    period_symbol = PERIOD_TRANSLATION[period]
+    period_symbol = WITHIN_PERIOD_TRANSLATION[period]
 
     if correlation:
         within_historical_data = dataset_new.groupby(

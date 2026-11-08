@@ -1386,11 +1386,14 @@ def test_each_symbol_is_requested_as_itself(monkeypatch):
         "BRK.B": "Berkshire Hathaway",
         "^N225": "Nikkei 225",
     }
-    assert [url.split("?")[1] for url in requested] == [
-        "symbol=M%26M.NS&apikey=K",
-        "symbol=BRK.B&apikey=K",
-        "symbol=%5EN225&apikey=K",
-    ]
+    # Requests are sent by concurrent workers; completion order is not guaranteed.
+    assert sorted(url.split("?")[1] for url in requested) == sorted(
+        [
+            "symbol=M%26M.NS&apikey=K",
+            "symbol=BRK.B&apikey=K",
+            "symbol=%5EN225&apikey=K",
+        ]
+    )
 
 
 @pytest.mark.parametrize(

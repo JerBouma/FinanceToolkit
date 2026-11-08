@@ -993,11 +993,16 @@ def test_default_wacc_covers_a_year():
     models = synthetic_models(growing_company())
     requested = []
 
-    def weighted_average_cost_of_capital(show_full_results=True, trailing=None):
+    def weighted_average_cost_of_capital(trailing=None, **kwargs):  # noqa: ARG001
         requested.append(trailing)
-        return pd.DataFrame({"2023Q4": [0.09]}, index=["A"])
+        return pd.DataFrame(
+            {"2023Q4": [0.09]},
+            index=pd.MultiIndex.from_tuples(
+                [("A", "Weighted Average Cost of Capital")]
+            ),
+        )
 
-    models.get_weighted_average_cost_of_capital = weighted_average_cost_of_capital
+    models._weighted_average_cost_of_capital = weighted_average_cost_of_capital
 
     models.get_earnings_power_value()
     models.get_reverse_discounted_cash_flow()
@@ -1476,3 +1481,54 @@ def test_historical_intrinsic_valuation_ends_at_the_single_valuation(models_modu
 def test_get_return_decomposition(recorder, models_module):
     recorder.capture(models_module.get_return_decomposition())
     recorder.capture(models_module.get_return_decomposition(logarithmic=True))
+
+
+def _models_without_benchmark():
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle").drop(
+            columns="Benchmark", level=1
+        ),
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        benchmark_ticker=None,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit.models
+
+
+def test_the_wacc_without_a_benchmark_is_reported_like_the_models_using_it(caplog):
+    models = _models_without_benchmark()
+
+    for metric in (
+        models.get_weighted_average_cost_of_capital,
+        models.get_economic_value_added,
+        models.get_present_value_of_growth_opportunities,
+    ):
+        caplog.clear()
+        assert metric().empty
+        assert (
+            f"benchmark_ticker in the Toolkit class to calculate {metric.__name__}"
+            in (caplog.text)
+        )
+
+
+def test_the_wacc_keeps_no_results_between_calls(models_module):
+    plain = models_module.get_weighted_average_cost_of_capital()
+
+    models_module.get_weighted_average_cost_of_capital(growth=True, standardize=True)
+
+    pd.testing.assert_frame_equal(
+        models_module.get_weighted_average_cost_of_capital(), plain
+    )
+    assert not hasattr(models_module, "_weighted_average_cost_of_capital_growth")

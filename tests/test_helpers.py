@@ -442,3 +442,21 @@ def test_availability_of_the_quarter_closing_a_fiscal_year_uses_the_annual_deadl
     assert availability.loc["DECEMBER"].tolist() == list(
         pd.to_datetime(["2023-12-29", "2024-04-29"])
     )
+
+
+def test_importing_the_package_keeps_runtime_warnings_visible():
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    # A fresh interpreter, as the test session itself may already have imported it.
+    code = (
+        "import warnings, financetoolkit.toolkit_controller, "
+        "financetoolkit.ratios.ratios_controller, financetoolkit.risk.risk_controller, "
+        "financetoolkit.performance.performance_controller\n"
+        "assert not [f for f in warnings.filters if f[0] == 'ignore' and f[2] is RuntimeWarning]\n"
+        "print('ok')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.stdout.strip() == "ok", result.stderr

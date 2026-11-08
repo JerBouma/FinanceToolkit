@@ -184,17 +184,6 @@ class Models:
             )
         )
 
-        # Initialization of Model Variables
-        self._dupont_analysis: pd.DataFrame = pd.DataFrame()
-        self._dupont_analysis_growth: pd.DataFrame = pd.DataFrame()
-        self._extended_dupont_analysis: pd.DataFrame = pd.DataFrame()
-        self._extended_dupont_analysis_growth: pd.DataFrame = pd.DataFrame()
-        self._enterprise_value_breakdown: pd.DataFrame = pd.DataFrame()
-        self._enterprise_value_breakdown_growth: pd.DataFrame = pd.DataFrame()
-        self._weighted_average_cost_of_capital: pd.DataFrame = pd.DataFrame()
-        self._weighted_average_cost_of_capital_growth: pd.DataFrame = pd.DataFrame()
-        self._intrinsic_values: pd.DataFrame = pd.DataFrame()
-
     @cached_property
     def _tickers(self) -> list[str]:
         """The tickers, retrieved when first needed."""
@@ -325,7 +314,7 @@ class Models:
         | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
         if trailing:
-            self._dupont_analysis = dupont_model.get_dupont_analysis(
+            dupont_analysis = dupont_model.get_dupont_analysis(
                 self._income_statement.loc[:, "Net Income", :]
                 .T.rolling(trailing)
                 .sum()
@@ -341,7 +330,7 @@ class Models:
                 .T,
             )
         else:
-            self._dupont_analysis = dupont_model.get_dupont_analysis(
+            dupont_analysis = dupont_model.get_dupont_analysis(
                 self._income_statement.loc[:, "Net Income", :],
                 self._income_statement.loc[:, "Revenue", :],
                 self._balance_sheet_statement.loc[:, "Total Assets", :]
@@ -355,49 +344,29 @@ class Models:
             )
 
         if growth:
-            self._dupont_analysis_growth = calculate_growth(
-                dataset=self._dupont_analysis,
+            dupont_analysis = calculate_growth(
+                dataset=dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
-
-        self._dupont_analysis = apply_rounding(
-            self._dupont_analysis, rounding if rounding is not None else self._rounding
-        )
+        else:
+            dupont_analysis = apply_rounding(
+                dupont_analysis, rounding if rounding is not None else self._rounding
+            )
 
         if standardize:
-            standardize_rounding = rounding if rounding is not None else self._rounding
-            if growth:
-                self._dupont_analysis_growth = calculate_standardization(
-                    dataset=self._dupont_analysis_growth.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
-            else:
-                self._dupont_analysis = calculate_standardization(
-                    dataset=self._dupont_analysis.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
+            dupont_analysis = calculate_standardization(
+                dataset=dupont_analysis.loc[:, self._start_date : self._end_date],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
 
         if len(self._tickers) == 1:
-            result = (
-                self._dupont_analysis_growth.droplevel(level=0)
-                if growth
-                else self._dupont_analysis.droplevel(level=0)
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
-            )
+            dupont_analysis = dupont_analysis.droplevel(level=0)
 
-        result = self._dupont_analysis_growth if growth else self._dupont_analysis
         return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
+            dupont_analysis.loc[:, self._start_date : self._end_date], show_columns
         )
 
     @handle_errors
@@ -490,7 +459,7 @@ class Models:
         | Return on Equity        | 0.4708 | 0.4715 | 0.3882 | 0.3713 | 0.3328 |
         """
         if trailing:
-            self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
+            extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
                 operating_income=self._income_statement.loc[:, "Operating Income", :]
                 .T.rolling(trailing)
                 .sum()
@@ -521,7 +490,7 @@ class Models:
                 .T,
             )
         else:
-            self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
+            extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
                 operating_income=self._income_statement.loc[:, "Operating Income", :],
                 income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
                 net_income=self._income_statement.loc[:, "Net Income", :],
@@ -541,54 +510,33 @@ class Models:
             )
 
         if growth:
-            self._extended_dupont_analysis_growth = calculate_growth(
-                dataset=self._extended_dupont_analysis,
+            extended_dupont_analysis = calculate_growth(
+                dataset=extended_dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
-
-        self._extended_dupont_analysis = apply_rounding(
-            self._extended_dupont_analysis,
-            rounding if rounding is not None else self._rounding,
-        )
+        else:
+            extended_dupont_analysis = apply_rounding(
+                extended_dupont_analysis,
+                rounding if rounding is not None else self._rounding,
+            )
 
         if standardize:
-            standardize_rounding = rounding if rounding is not None else self._rounding
-            if growth:
-                self._extended_dupont_analysis_growth = calculate_standardization(
-                    dataset=self._extended_dupont_analysis_growth.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
-            else:
-                self._extended_dupont_analysis = calculate_standardization(
-                    dataset=self._extended_dupont_analysis.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
+            extended_dupont_analysis = calculate_standardization(
+                dataset=extended_dupont_analysis.loc[
+                    :, self._start_date : self._end_date
+                ],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
 
         if len(self._tickers) == 1:
-            result = (
-                self._extended_dupont_analysis_growth.droplevel(level=0)
-                if growth
-                else self._extended_dupont_analysis.droplevel(level=0)
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
-            )
+            extended_dupont_analysis = extended_dupont_analysis.droplevel(level=0)
 
-        result = (
-            self._extended_dupont_analysis_growth
-            if growth
-            else self._extended_dupont_analysis
-        )
         return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
+            extended_dupont_analysis.loc[:, self._start_date : self._end_date],
+            show_columns,
         )
 
     @handle_errors
@@ -700,7 +648,7 @@ class Models:
             .T
         )
 
-        self._enterprise_value_breakdown = enterprise_model.get_enterprise_value_breakdown(
+        enterprise_value_breakdown = enterprise_model.get_enterprise_value_breakdown(
             share_price=share_prices,
             shares_outstanding=average_shares,
             total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
@@ -721,53 +669,32 @@ class Models:
         )
 
         if growth:
-            self._enterprise_value_breakdown_growth = calculate_growth(
-                dataset=self._enterprise_value_breakdown,
+            enterprise_value_breakdown = calculate_growth(
+                dataset=enterprise_value_breakdown,
                 lag=lag,
                 rounding=rounding if rounding is not None else self._rounding,
             )
-
-        self._enterprise_value_breakdown = apply_rounding(
-            self._enterprise_value_breakdown,
-            rounding if rounding is not None else self._rounding,
-        )
+        else:
+            enterprise_value_breakdown = apply_rounding(
+                enterprise_value_breakdown,
+                rounding if rounding is not None else self._rounding,
+            )
 
         if standardize:
-            standardize_rounding = rounding if rounding is not None else self._rounding
-            if growth:
-                self._enterprise_value_breakdown_growth = calculate_standardization(
-                    dataset=self._enterprise_value_breakdown_growth.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
-            else:
-                self._enterprise_value_breakdown = calculate_standardization(
-                    dataset=self._enterprise_value_breakdown.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
+            enterprise_value_breakdown = calculate_standardization(
+                dataset=enterprise_value_breakdown.loc[
+                    :, self._start_date : self._end_date
+                ],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
 
         if len(self._tickers) == 1:
-            result = (
-                self._enterprise_value_breakdown_growth.droplevel(level=0)
-                if growth
-                else self._enterprise_value_breakdown.droplevel(level=0)
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
-            )
+            enterprise_value_breakdown = enterprise_value_breakdown.droplevel(level=0)
 
-        result = (
-            self._enterprise_value_breakdown_growth
-            if growth
-            else self._enterprise_value_breakdown
-        )
         return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
+            enterprise_value_breakdown.loc[:, self._start_date : self._end_date],
+            show_columns,
         )
 
     @handle_errors
@@ -1029,6 +956,105 @@ class Models:
             }
         )
 
+    def _weighted_average_cost_of_capital(
+        self,
+        diluted: bool = True,
+        trailing: int | None = None,
+        market_risk_premium: float | None = None,
+    ) -> pd.DataFrame:
+        """
+        The full results of get_weighted_average_cost_of_capital per ticker and line item,
+        unrounded and for every period of the statements. The valuation models discount with
+        it directly, so that a missing input (such as the benchmark) raises to their own error
+        handling rather than handing them an empty result.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares. Defaults to True.
+            trailing (int | None, optional): The trailing period. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium.
+                Defaults to None, see get_weighted_average_cost_of_capital.
+
+        Returns:
+            pd.DataFrame: The WACC and its components per ticker (rows) and period (columns).
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        years = self._cash_flow_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        share_prices = (
+            self._historical_data["quarterly" if self._quarterly else "yearly"]
+            .loc[begin:end, "Close"][self._tickers]
+            .T
+        )
+
+        risk_free_rate = self._risk_free_rate_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Adj Close"]
+
+        returns_within = self._within_historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._tickers]
+        benchmark_returns_within = self._within_historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._benchmark_name]
+
+        beta = get_beta(returns_within, benchmark_returns_within)
+
+        benchmark_returns = self._historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._benchmark_name]
+        # The Cost of Equity covers the span of the flows: a trailing sum of Interest Expense is the cost of debt over that span.  # noqa: E501
+        risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
+            risk_free_rate, benchmark_returns, market_risk_premium, trailing
+        )
+
+        if trailing:
+            return wacc_model.get_weighted_average_cost_of_capital(
+                share_price=share_prices,
+                total_shares_outstanding=average_shares.T.rolling(trailing).mean().T,
+                interest_expense=self._income_statement.loc[:, "Interest Expense", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                risk_free_rate=risk_free_rate,
+                beta=beta,
+                benchmark_returns=benchmark_returns,
+                income_tax_expense=self._income_statement.loc[
+                    :, "Income Tax Expense", :
+                ]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+            )
+        else:
+            return wacc_model.get_weighted_average_cost_of_capital(
+                share_price=share_prices,
+                total_shares_outstanding=average_shares,
+                interest_expense=self._income_statement.loc[:, "Interest Expense", :],
+                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
+                risk_free_rate=risk_free_rate,
+                beta=beta,
+                benchmark_returns=benchmark_returns,
+                income_tax_expense=self._income_statement.loc[
+                    :, "Income Tax Expense", :
+                ],
+                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
+            )
+
+    @handle_errors
     def get_weighted_average_cost_of_capital(
         self,
         show_full_results: bool = True,
@@ -1157,162 +1183,45 @@ class Models:
         | TMUS | 0.047  | 0.0437 | 0.0447 | 0.0425 |
         | VZ   | 0.0304 | 0.0406 | 0.036  | 0.0358 |
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        weighted_average_cost_of_capital = self._weighted_average_cost_of_capital(
+            diluted=diluted,
+            trailing=trailing,
+            market_risk_premium=market_risk_premium,
         )
-
-        years = self._cash_flow_statement.columns
-        begin, end = str(years[0]), str(years[-1])
-
-        share_prices = (
-            self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Close"][self._tickers]
-            .T
-        )
-
-        risk_free_rate = self._risk_free_rate_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Adj Close"]
-
-        returns_within = self._within_historical_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Return"][self._tickers]
-        benchmark_returns_within = self._within_historical_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Return"][self._benchmark_name]
-
-        beta = get_beta(returns_within, benchmark_returns_within)
-
-        benchmark_returns = self._historical_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Return"][self._benchmark_name]
-        # The Cost of Equity covers the span of the flows: a trailing sum of Interest Expense is the cost of debt over that span.  # noqa: E501
-        risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
-            risk_free_rate, benchmark_returns, market_risk_premium, trailing
-        )
-
-        if trailing:
-            self._weighted_average_cost_of_capital = (
-                wacc_model.get_weighted_average_cost_of_capital(
-                    share_price=share_prices,
-                    total_shares_outstanding=average_shares.T.rolling(trailing)
-                    .mean()
-                    .T,
-                    interest_expense=self._income_statement.loc[
-                        :, "Interest Expense", :
-                    ]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :]
-                    .T.rolling(trailing)
-                    .mean()
-                    .T,
-                    risk_free_rate=risk_free_rate,
-                    beta=beta,
-                    benchmark_returns=benchmark_returns,
-                    income_tax_expense=self._income_statement.loc[
-                        :, "Income Tax Expense", :
-                    ]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    income_before_tax=self._income_statement.loc[
-                        :, "Income Before Tax", :
-                    ]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                )
-            )
-        else:
-            self._weighted_average_cost_of_capital = (
-                wacc_model.get_weighted_average_cost_of_capital(
-                    share_price=share_prices,
-                    total_shares_outstanding=average_shares,
-                    interest_expense=self._income_statement.loc[
-                        :, "Interest Expense", :
-                    ],
-                    total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
-                    risk_free_rate=risk_free_rate,
-                    beta=beta,
-                    benchmark_returns=benchmark_returns,
-                    income_tax_expense=self._income_statement.loc[
-                        :, "Income Tax Expense", :
-                    ],
-                    income_before_tax=self._income_statement.loc[
-                        :, "Income Before Tax", :
-                    ],
-                )
-            )
-
         if growth:
-            self._weighted_average_cost_of_capital_growth = calculate_growth(
-                dataset=self._weighted_average_cost_of_capital,
+            weighted_average_cost_of_capital = calculate_growth(
+                dataset=weighted_average_cost_of_capital,
                 lag=lag,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
-
-        self._weighted_average_cost_of_capital = apply_rounding(
-            self._weighted_average_cost_of_capital,
-            rounding if rounding is not None else self._rounding,
-        )
+        else:
+            weighted_average_cost_of_capital = apply_rounding(
+                weighted_average_cost_of_capital,
+                rounding if rounding is not None else self._rounding,
+            )
 
         if standardize:
-            standardize_rounding = rounding if rounding is not None else self._rounding
-            if growth:
-                self._weighted_average_cost_of_capital_growth = (
-                    calculate_standardization(
-                        dataset=self._weighted_average_cost_of_capital_growth.loc[
-                            :, self._start_date : self._end_date
-                        ],
-                        rounding=standardize_rounding,
-                        axis="columns",
-                    )
-                )
-            else:
-                self._weighted_average_cost_of_capital = calculate_standardization(
-                    dataset=self._weighted_average_cost_of_capital.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
-
-        if len(self._tickers) == 1 and show_full_results:
-            result = (
-                self._weighted_average_cost_of_capital_growth.droplevel(level=0)
-                if growth
-                else self._weighted_average_cost_of_capital.droplevel(level=0)
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
+            weighted_average_cost_of_capital = calculate_standardization(
+                dataset=weighted_average_cost_of_capital.loc[
+                    :, self._start_date : self._end_date
+                ],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
             )
 
-        if show_full_results:
-            result = (
-                self._weighted_average_cost_of_capital_growth
-                if growth
-                else self._weighted_average_cost_of_capital
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
-            )
-
-        result = (
-            self._weighted_average_cost_of_capital_growth.loc[
+        if not show_full_results:
+            weighted_average_cost_of_capital = weighted_average_cost_of_capital.loc[
                 :, "Weighted Average Cost of Capital", :
             ]
-            if growth
-            else self._weighted_average_cost_of_capital.loc[
-                :, "Weighted Average Cost of Capital", :
-            ]
-        )
+        elif len(self._tickers) == 1:
+            weighted_average_cost_of_capital = (
+                weighted_average_cost_of_capital.droplevel(level=0)
+            )
+
         return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
+            weighted_average_cost_of_capital.loc[:, self._start_date : self._end_date],
+            show_columns,
         )
 
     @handle_errors
@@ -1466,12 +1375,9 @@ class Models:
 
         # Full precision, so that the EVA is not charged a WACC rounded to the display rounding.
         eva["Weighted Average Cost of Capital"] = (
-            self.get_weighted_average_cost_of_capital(
-                show_full_results=False,
-                trailing=trailing,
-                market_risk_premium=market_risk_premium,
-                rounding=15,
-            )
+            self._weighted_average_cost_of_capital(
+                trailing=trailing, market_risk_premium=market_risk_premium
+            ).loc[:, "Weighted Average Cost of Capital", :]
         )
 
         eva["Economic Value Added"] = eva_model.get_economic_value_added(
@@ -1960,9 +1866,7 @@ class Models:
                 apply_rounding, rounding if rounding is not None else self._rounding
             )
 
-        self._intrinsic_values = pd.concat(intrinsic_values_dict)
-
-        return self._intrinsic_values.loc[:, self._start_date :]
+        return pd.concat(intrinsic_values_dict).loc[:, self._start_date :]
 
     def _historical_intrinsic_values(
         self,
@@ -5137,18 +5041,9 @@ class Models:
         | 2025   | 230.98  | nan      | 119.94   |
         """
         # Full precision, so that the rounding of the display does not move the no-growth value.
-        wacc_components = self.get_weighted_average_cost_of_capital(
-            show_full_results=True,
-            trailing=trailing,
-            market_risk_premium=market_risk_premium,
-            rounding=15,
-        )
-        # With a single ticker the full results come without the ticker level.
-        cost_of_equity = (
-            wacc_components.loc[["Cost of Equity"]].set_axis(self._tickers)
-            if len(self._tickers) == 1
-            else wacc_components.xs("Cost of Equity", level=1)
-        )
+        cost_of_equity = self._weighted_average_cost_of_capital(
+            trailing=trailing, market_risk_premium=market_risk_premium
+        ).xs("Cost of Equity", level=1)
 
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5816,8 +5711,12 @@ class Models:
             weighted_average_cost_of_capital, "weighted average cost of capital"
         )
         if any(rate is None for rate in rates.values()):
-            calculated = self.get_weighted_average_cost_of_capital(
-                show_full_results=False, trailing=4 if self._quarterly else None
+            # The WACC as get_weighted_average_cost_of_capital reports it, at the Toolkit rounding.
+            calculated = apply_rounding(
+                self._weighted_average_cost_of_capital(
+                    trailing=4 if self._quarterly else None
+                ).loc[:, "Weighted Average Cost of Capital", :],
+                self._rounding,
             )
             for ticker in self._tickers:
                 if rates[ticker] is None:

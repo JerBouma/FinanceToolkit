@@ -485,6 +485,113 @@ def enrich_historical_data(
     return historical_data
 
 
+def prepare_supplied_historical_data(
+    historical_data: pd.DataFrame,
+    start: str | None = None,
+    end: str | None = None,
+) -> pd.DataFrame:
+    """
+    Checks historical data passed to the Toolkit and brings it into the shape the
+    retrieved data has, so that every calculation can rely on it:
+
+        - The columns have two levels: the field (Open, High, Low, Close, Adj Close, Volume,
+          Dividends, Return, Cumulative Return) and the ticker.
+        - The dates become a daily PeriodIndex named Date, sorted from old to new. Dates or
+          date strings are converted, a PeriodIndex is kept as it is.
+        - A date that occurs more than once keeps its last row, with a warning, as a repeated
+          day would otherwise count twice in every average, sum and volatility.
+        - Without a Return or Cumulative Return column, both are calculated per ticker from
+          Adj Close, as for retrieved data (see enrich_historical_data). Supplied returns are
+          used as given.
+
+    The supplied frame itself is not changed.
+
+    Args:
+        historical_data (pd.DataFrame): The historical data passed to the Toolkit.
+        start (str, optional): The start date of the Toolkit, from which the Cumulative
+            Return starts at 1. Defaults to None.
+        end (str, optional): The end date of the Toolkit. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The checked historical data.
+
+    Raises:
+        ValueError: If the columns do not have the field and ticker levels, the index does not
+            hold dates, or the returns cannot be calculated because Adj Close is missing.
+    """
+    if (
+        not isinstance(historical_data.columns, pd.MultiIndex)
+        or historical_data.columns.nlevels != 2  # noqa: PLR2004
+    ):
+        raise ValueError(
+            "The historical data needs two column levels: the field (such as Close and Adj Close) "
+            "and the ticker, e.g. ('Adj Close', 'AAPL'). For one ticker, pd.concat({'AAPL': data}, "
+            "axis=1).swaplevel(axis=1) adds the ticker level."
+        )
+
+    index = historical_data.index
+
+    if not isinstance(index, pd.PeriodIndex):
+        # Integer positions would be read as nanoseconds since 1970 rather than rejected.
+        if pd.api.types.is_numeric_dtype(index):
+            raise ValueError(
+                "The historical data needs dates as its index, found numbers instead. Set the "
+                "date column as the index, e.g. data.set_index('Date')."
+            )
+        try:
+            index = pd.DatetimeIndex(pd.to_datetime(index)).to_period("D")
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"The index of the historical data could not be read as dates: {error}"
+            ) from error
+
+    historical_data = historical_data.set_axis(index.rename("Date"), axis=0)
+
+    if not historical_data.index.is_monotonic_increasing:
+        historical_data = historical_data.sort_index()
+
+    duplicated = historical_data.index.duplicated(keep="last")
+
+    if duplicated.any():
+        logger.warning(
+            "The historical data holds %s dates more than once (first: %s). The last row of each "
+            "is used.",
+            historical_data.index[duplicated].nunique(),
+            historical_data.index[duplicated][0],
+        )
+        historical_data = historical_data[~duplicated]
+
+    fields = historical_data.columns.unique(level=0)
+
+    if "Return" not in fields or "Cumulative Return" not in fields:
+        if "Adj Close" not in fields:
+            raise ValueError(
+                "The historical data needs an Adj Close column to calculate the Return and "
+                "Cumulative Return from, or both of those columns."
+            )
+
+        tickers = historical_data.columns.unique(level=1)
+        enriched = pd.concat(
+            {
+                ticker: enrich_historical_data(
+                    historical_data.xs(ticker, level=1, axis=1).copy(), start, end
+                )
+                for ticker in tickers
+            },
+            axis=1,
+        ).swaplevel(axis=1)
+        historical_data = enriched[
+            [
+                (field, ticker)
+                for field in enriched.columns.unique(level=0)
+                for ticker in tickers
+                if (field, ticker) in enriched.columns
+            ]
+        ]
+
+    return historical_data
+
+
 PERIODS_BY_FREQUENCY = {
     "D": "daily",
     "W": "weekly",

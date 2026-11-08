@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import itertools
-import warnings
 from collections.abc import Callable
 from functools import cached_property
 
@@ -36,9 +35,6 @@ from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = get_logger()
-
-# Division by zero is normal in these calculations, not a bug.
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # pylint: disable=too-many-boolean-expressions

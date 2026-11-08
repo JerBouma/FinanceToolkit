@@ -19,7 +19,8 @@ services:
       # in mcp_stats.json on the volume below. Off by default.
       FT_MCP_ANALYTICS: "${FT_MCP_ANALYTICS:-0}"
     volumes:
-      - ft_cache:/root/.config/financetoolkit
+      # The server runs as the non-root user financetoolkit (uid 10001); see the Dockerfile.
+      - ft_cache:/home/financetoolkit/.config/financetoolkit
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s

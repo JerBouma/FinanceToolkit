@@ -485,11 +485,10 @@ def inspector() -> None:
     ).parse_args()
 
     server_path = str(pathlib.Path(__file__).resolve())
-    sys.exit(
-        subprocess.call(  # noqa
-            ["npx", "@modelcontextprotocol/inspector", "python", server_path]  # noqa
-        )
-    )
+    # A fixed Inspector version: npx would otherwise run whatever npm serves as "latest" at that moment,
+    # and Inspector versions below 0.14.1 allow remote code execution (CVE-2025-49596).
+    command = ["npx", "@modelcontextprotocol/inspector@2.12.0", "python", server_path]
+    sys.exit(subprocess.call(command))  # noqa: S603
 
 
 def setup() -> None:

@@ -26,6 +26,7 @@ AAPL,Cash-Based Operating Profitability,,0.3943,0.4204,0.4009
 AAPL,Cash Return on Invested Capital,,0.4801,0.5823,0.5589
 AAPL,Free Cash Flow Conversion,1.2779,0.9818,1.1166,1.0267
 AAPL,Free Cash Flow to EBITDA,0.9486,0.7731,0.8537,0.7915
+AAPL,Percent Accruals,-0.4052,-0.0988,-0.2239,-0.1397
 MSFT,Gross Margin,0.6778,0.6893,0.684,0.6892
 MSFT,Operating Margin,0.3703,0.4159,0.4206,0.4177
 MSFT,Net Profit Margin,0.3096,0.3645,0.3669,0.3415
@@ -53,3 +54,4 @@ MSFT,Cash-Based Operating Profitability,,0.3035,0.3256,0.3208
 MSFT,Cash Return on Invested Capital,,0.2812,0.2978,0.2408
 MSFT,Free Cash Flow Conversion,1.0215,0.9159,0.8957,0.8219
 MSFT,Free Cash Flow to EBITDA,0.6879,0.6877,0.6659,0.5809
+MSFT,Percent Accruals,-0.3702,-0.2525,-0.2241,-0.2103

@@ -20,6 +20,8 @@ AAPL,Deferred Revenue Ratio,,0.0111,0.0102,0.0103
 AAPL,Working Capital Turnover Ratio,,26.8618,-164.8547,-76.5405
 AAPL,Capex Intensity,,0.0287,0.0287,0.0279
 AAPL,Capex to Depreciation,,0.8234,0.9734,0.9577
+AAPL,Asset Growth,,,0.0891,0.0045
+AAPL,Net Operating Assets,,0.3865,0.3488,0.3166
 AAPL,Current Ratio,,1.2065,0.967,0.9321
 AAPL,Quick Ratio,,0.8489,0.5919,0.5598
 AAPL,Cash Ratio,,0.6652,0.397,0.3671
@@ -55,6 +57,7 @@ AAPL,Cash-Based Operating Profitability,,,0.8499,0.8233
 AAPL,Cash Return on Invested Capital,,0.859,1.068,1.1843
 AAPL,Free Cash Flow Conversion,,1.0935,1.051,1.0723
 AAPL,Free Cash Flow to EBITDA,,0.8418,0.8151,0.8232
+AAPL,Percent Accruals,,-0.2145,-0.163,-0.1824
 AAPL,Debt-to-Assets Ratio,,0.3835,0.3822,0.3453
 AAPL,Asset Coverage Ratio,,1.8292,1.7138,1.8187
 AAPL,Debt-to-Equity Ratio,,2.0151,2.3646,2.1589
@@ -107,6 +110,9 @@ AAPL,SBC-Adjusted Free Cash Flow,,151583000000.0,187452000000.0,191156000000.0
 AAPL,Free Cash Flow Payout Ratio,,0.1716,0.1434,0.1415
 AAPL,EV-to-Invested-Capital,,26.2669,16.2268,
 AAPL,Price-to-Tangible-Book,,46.6359,37.2921,
+AAPL,Net Share Issuance,,,-0.0677,-0.059
+AAPL,Composite Equity Issuance,,,-0.0797,
+AAPL,Net External Financing,,,-0.584,-0.588
 MSFT,Days of Inventory Outstanding,,16.8224,20.264,17.7284
 MSFT,Days of Sales Outstanding,,82.1905,81.9989,82.71
 MSFT,Operating Cycle,,99.0129,102.2629,100.4384
@@ -128,6 +134,8 @@ MSFT,Deferred Revenue Ratio,,0.1246,0.1188,0.1176
 MSFT,Working Capital Turnover Ratio,,3.0299,4.3012,5.3026
 MSFT,Capex Intensity,,0.1159,0.1215,0.1268
 MSFT,Capex to Depreciation,,1.473,1.7023,1.8358
+MSFT,Asset Growth,,,0.2108,0.2343
+MSFT,Net Operating Assets,,0.2319,0.3343,0.3898
 MSFT,Current Ratio,,2.2758,1.9271,1.7765
 MSFT,Quick Ratio,,2.0926,1.727,1.5507
 MSFT,Cash Ratio,,1.6574,1.279,1.0842
@@ -163,6 +171,7 @@ MSFT,Cash-Based Operating Profitability,,,0.6642,0.6762
 MSFT,Cash Return on Invested Capital,,0.5079,0.5543,0.5046
 MSFT,Free Cash Flow Conversion,,0.9602,0.9049,0.8589
 MSFT,Free Cash Flow to EBITDA,,0.6878,0.6758,0.6224
+MSFT,Percent Accruals,,-0.3019,-0.237,-0.2172
 MSFT,Debt-to-Assets Ratio,,0.2185,0.1847,0.1561
 MSFT,Asset Coverage Ratio,,3.3948,3.9258,4.6597
 MSFT,Debt-to-Equity Ratio,,0.5331,0.4183,0.3252
@@ -215,3 +224,6 @@ MSFT,SBC-Adjusted Free Cash Flow,,89945000000.0,107647000000.0,107511000000.0
 MSFT,Free Cash Flow Payout Ratio,,0.3124,0.2858,0.3044
 MSFT,EV-to-Invested-Capital,,37.7412,17.4237,
 MSFT,Price-to-Tangible-Book,,33.5808,21.002,
+MSFT,Net Share Issuance,,,-0.0151,-0.0135
+MSFT,Composite Equity Issuance,,,-0.0328,
+MSFT,Net External Financing,,,-0.3122,-0.2707

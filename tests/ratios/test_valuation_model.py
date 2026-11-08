@@ -1,5 +1,7 @@
 """Valuation Model Tests""" ""
+import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.ratios import valuation_model
 
@@ -192,6 +194,39 @@ def test_get_dividend_payout_ratio(recorder):
             net_income=pd.Series([100, 120, 80, 50, 30]),
         )
     )
+
+
+def test_issuance_measures_are_log_changes():
+    issuance = valuation_model.get_net_share_issuance(
+        shares=pd.Series([110.0, 90.0, 100.0]),
+        beginning_shares=pd.Series([100.0, 100.0, 0.0]),
+    )
+    composite = valuation_model.get_composite_equity_issuance(
+        market_cap=pd.Series([1200.0, 1000.0]),
+        beginning_market_cap=pd.Series([1000.0, 1000.0]),
+        total_return_price=pd.Series([11.0, 11.0]),
+        beginning_total_return_price=pd.Series([10.0, 10.0]),
+    )
+
+    assert issuance.iloc[0] == pytest.approx(np.log(1.1))
+    assert issuance.iloc[1] == pytest.approx(np.log(0.9))
+    assert pd.isna(issuance.iloc[2])
+    # A market cap that grows with the return alone is no issuance; one that lags it is
+    # equity returned (here the whole return paid out).
+    assert composite.iloc[0] == pytest.approx(np.log(1.2) - np.log(1.1))
+    assert composite.iloc[1] == pytest.approx(-np.log(1.1))
+
+
+def test_net_external_financing_takes_the_cash_flow_signs():
+    result = valuation_model.get_net_external_financing(
+        net_stock_issued=pd.Series([-30.0, 10.0]),
+        dividends_paid=pd.Series([-10.0, 0.0]),
+        net_debt_issued=pd.Series([20.0, 5.0]),
+        average_total_assets=pd.Series([200.0, 0.0]),
+    )
+
+    assert result.iloc[0] == pytest.approx(-20 / 200)
+    assert pd.isna(result.iloc[1])
 
 
 def test_get_tangible_asset_value(recorder):

@@ -89,6 +89,15 @@ AAPL,EV-to-Invested-Capital,Lag 3,,,,
 AAPL,Price-to-Tangible-Book,Lag 1,,0.3335,-0.1181,
 AAPL,Price-to-Tangible-Book,Lag 2,,,0.176,
 AAPL,Price-to-Tangible-Book,Lag 3,,,,
+AAPL,Net Share Issuance,Lag 1,,,0.2277,0.0
+AAPL,Net Share Issuance,Lag 2,,,,0.2277
+AAPL,Net Share Issuance,Lag 3,,,,
+AAPL,Composite Equity Issuance,Lag 1,,,,
+AAPL,Composite Equity Issuance,Lag 2,,,,
+AAPL,Composite Equity Issuance,Lag 3,,,,
+AAPL,Net External Financing,Lag 1,,,-0.0735,0.0202
+AAPL,Net External Financing,Lag 2,,,,-0.0518
+AAPL,Net External Financing,Lag 3,,,,
 MSFT,Earnings per Share,Lag 1,,0.3973,0.1979,0.0039
 MSFT,Earnings per Share,Lag 2,,,0.6738,0.2025
 MSFT,Earnings per Share,Lag 3,,,,0.6803
@@ -179,3 +188,12 @@ MSFT,EV-to-Invested-Capital,Lag 3,,,,
 MSFT,Price-to-Tangible-Book,Lag 1,,0.2038,-0.3194,
 MSFT,Price-to-Tangible-Book,Lag 2,,,-0.1807,
 MSFT,Price-to-Tangible-Book,Lag 3,,,,
+MSFT,Net Share Issuance,Lag 1,,,0.1807,0.0147
+MSFT,Net Share Issuance,Lag 2,,,,0.1928
+MSFT,Net Share Issuance,Lag 3,,,,
+MSFT,Composite Equity Issuance,Lag 1,,,,
+MSFT,Composite Equity Issuance,Lag 2,,,,
+MSFT,Composite Equity Issuance,Lag 3,,,,
+MSFT,Net External Financing,Lag 1,,,-0.1479,0.3347
+MSFT,Net External Financing,Lag 2,,,,0.2364
+MSFT,Net External Financing,Lag 3,,,,

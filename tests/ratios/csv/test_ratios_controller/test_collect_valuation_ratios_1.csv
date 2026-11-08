@@ -29,6 +29,9 @@ AAPL,SBC-Adjusted Free Cash Flow,,0.2782,0.2041,-0.1333
 AAPL,Free Cash Flow Payout Ratio,,-0.1892,-0.144,0.1329
 AAPL,EV-to-Invested-Capital,,-0.0812,-0.27,
 AAPL,Price-to-Tangible-Book,,0.3335,-0.1181,
+AAPL,Net Share Issuance,,,0.2277,0.0
+AAPL,Composite Equity Issuance,,,,
+AAPL,Net External Financing,,,-0.0735,0.0202
 MSFT,Earnings per Share,,0.3973,0.1979,0.0039
 MSFT,Revenue per Share,,0.1869,0.1902,0.0785
 MSFT,Price-to-Earnings,,0.0821,-0.4047,
@@ -59,3 +62,6 @@ MSFT,SBC-Adjusted Free Cash Flow,,0.2517,0.1529,-0.135
 MSFT,Free Cash Flow Payout Ratio,,-0.1201,-0.0543,0.1958
 MSFT,EV-to-Invested-Capital,,0.0083,-0.5433,
 MSFT,Price-to-Tangible-Book,,0.2038,-0.3194,
+MSFT,Net Share Issuance,,,0.1807,0.0147
+MSFT,Composite Equity Issuance,,,,
+MSFT,Net External Financing,,,-0.1479,0.3347

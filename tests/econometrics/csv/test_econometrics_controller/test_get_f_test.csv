@@ -1,6 +1,6 @@
 ,0
-F-Statistic,43.4088
+F-Statistic,43.3346
 Df Numerator,1
 Df Denominator,153
-P-Value,0.0
+P-Value,6.954e-10
 Reject Restrictions (5%),True

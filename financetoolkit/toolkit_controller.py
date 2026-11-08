@@ -787,6 +787,8 @@ class Toolkit:
                 enforce_source=self._enforce_source,
                 benchmark_ticker=None,
                 progress_bar=False,
+                # Unrounded, as the comparison is calculated (and rounded) here.
+                rounding=None,
             )
             ratios = others.ratios
             income = others.get_income_statement(growth=True)
@@ -1222,7 +1224,8 @@ class Toolkit:
     def _other_toolkit(self, tickers: list[str], start: str, end: str) -> "Toolkit":
         """
         A Toolkit of other tickers (sector funds, a fund's holdings, earlier crises) that
-        shares this one's key, cache and source.
+        shares this one's key, cache and source. It is unrounded, as its results are used in
+        calculations that are rounded once at the end.
         """
         return Toolkit(
             tickers=tickers,
@@ -1233,6 +1236,7 @@ class Toolkit:
             enforce_source=self._enforce_source,
             benchmark_ticker=None,
             progress_bar=False,
+            rounding=None,
         )
 
     @property
@@ -1324,9 +1328,10 @@ class Toolkit:
         This gives access to the Portfolio Construction module, which builds and examines
         portfolios from the assets of this Toolkit: optimal weights (minimum variance,
         maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity,
-        inverse volatility, minimum CVaR and Black-Litterman), the efficient frontier, risk
-        contributions, historical stress tests, look-through exposure of funds and a
-        Brinson-Fachler attribution against the benchmark.
+        inverse volatility, minimum CVaR, Black-Litterman, maximum diversification, minimum
+        tracking error and growth optimal), the efficient frontier, risk contributions,
+        historical stress tests, look-through exposure of funds and a Brinson-Fachler
+        attribution against the benchmark.
 
         When the Toolkit comes from a Portfolio (`Portfolio.toolkit`), the methods that take
         weights use the Portfolio's latest weights by default.
@@ -2109,7 +2114,8 @@ class Toolkit:
             ),
         )
 
-        historical_data = self.get_historical_data()
+        # The unrounded prices, with a column per ticker even for a single one.
+        historical_data = self._get_module_historical_data("daily")
 
         if earnings.empty or historical_data.empty:
             return pd.DataFrame()
@@ -2630,13 +2636,15 @@ class Toolkit:
         resolved_enforce_source = (
             enforce_source if enforce_source is not None else self._enforce_source
         )
+        # The data is kept unrounded, so every calculation on it is exact; only the returned
+        # frame is rounded. Rounded returns would move results: a downside beta selects the
+        # periods the benchmark fell, and a return rounded to 0 drops out of that selection.
         resolved_rounding = rounding if rounding is not None else self._rounding
         daily_historical_params = (
             resolved_enforce_source,
             return_column,
             include_dividends,
             fill_nan,
-            resolved_rounding,
         )
         # Auto-invalidate only data we fetched ourselves before, on a param change; never touches pre-supplied `historical`.
         params_changed = (
@@ -2659,7 +2667,7 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=include_dividends,
                 fill_nan=fill_nan,
-                rounding=resolved_rounding,
+                rounding=None,
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=show_ticker_seperation,
                 show_errors=True,
@@ -2709,7 +2717,6 @@ class Toolkit:
             settings = (
                 self._start_date,
                 self._end_date,
-                rounding if rounding is not None else self._rounding,
                 return_column,
             )
             converted_from = self._period_historical_data_sources.get(period)
@@ -2729,7 +2736,7 @@ class Toolkit:
                         daily_historical_data=self._daily_historical_data,
                         start=self._start_date,
                         end=self._end_date,
-                        rounding=settings[2],
+                        rounding=None,
                         return_column=return_column,
                     ),
                 )
@@ -2747,6 +2754,8 @@ class Toolkit:
             raise ValueError(
                 "Please choose from daily, weekly, monthly, quarterly or yearly as period."
             )
+
+        historical_data = apply_rounding(historical_data, resolved_rounding)
 
         requested: list[str] = []
 
@@ -4431,6 +4440,10 @@ class Toolkit:
           Diether, Malloy and Scherbina (2002).
         - Revision Momentum: Last Quarter Average / Last Year Average − 1, positive when the
           targets published over the last quarter are higher than those of the last year.
+        - Latest Target Date and Days Since Latest Target: the date of the most recent target
+          and the calendar days since. The consensus is made of every analyst's current
+          target, so when no target was published for a while it can be months old; the
+          Last Month and Last Quarter Count and Average are the recent consensus.
         - Last Month, Last Quarter, Last Year and All Time Count and Average: the number of
           targets published in each window and their average.
 
@@ -4438,7 +4451,8 @@ class Toolkit:
         start_date and end_date. The targets as they were published over time come from
         get_price_target_history.
 
-        Also known as: analyst price target, consensus price target, target upside.
+        Also known as: analyst price target, consensus price target, target upside, stale
+        price targets.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
@@ -4449,7 +4463,8 @@ class Toolkit:
 
         Returns:
             pd.DataFrame: The price targets and their measures with a column per ticker.
-            Upside, Dispersion and Revision Momentum are decimals (0.05 is 5%).
+            Upside, Dispersion and Revision Momentum are decimals (0.05 is 5%), the Latest
+            Target Date is text (YYYY-MM-DD).
 
         Notes:
             A window without published targets has no average (NaN). The targets are those
@@ -4473,24 +4488,26 @@ class Toolkit:
 
         Which returns:
 
-        |                      |     AAPL |     NVDA |     MSFT |
-        |:---------------------|---------:|---------:|---------:|
-        | Target Consensus     | 344.46   | 339.17   | 611.74   |
-        | Target Median        | 355      | 325      | 625      |
-        | Target High          | 400      | 515      | 750      |
-        | Target Low           | 245      | 210      | 440      |
-        | Price                | 344.17   | 181.6    | 535.93   |
-        | Upside               |   0.0008 |   0.8677 |   0.1415 |
-        | Dispersion           |   0.45   |   0.8993 |   0.5068 |
-        | Revision Momentum    |   0.0557 |   0.0891 |   0.0824 |
-        | Last Month Count     |  12      |   0      |  20      |
-        | Last Month Average   | 349.42   | nan      | 643.95   |
-        | Last Quarter Count   |  18      |  25      |  30      |
-        | Last Quarter Average | 348.65   | 332.32   | 629.23   |
-        | Last Year Count      |  61      |  83      |  92      |
-        | Last Year Average    | 330.27   | 305.12   | 581.32   |
-        | All Time Count       | 275      | 343      | 299      |
-        | All Time Average     | 239.2    | 152.9    | 466.96   |
+        |                          | AAPL       | NVDA       | MSFT       |
+        |:-------------------------|:-----------|:-----------|:-----------|
+        | Target Consensus         | 344.46     | 339.17     | 611.74     |
+        | Target Median            | 355.0      | 325.0      | 625.0      |
+        | Target High              | 400.0      | 515.0      | 750.0      |
+        | Target Low               | 245.0      | 210.0      | 440.0      |
+        | Price                    | 342.37     | 186.64     | 530.61     |
+        | Upside                   | 0.0061     | 0.8172     | 0.1529     |
+        | Dispersion               | 0.45       | 0.8993     | 0.5068     |
+        | Revision Momentum        | 0.0557     | 0.0891     | 0.0824     |
+        | Latest Target Date       | 2026-11-04 | 2026-10-05 | 2026-10-29 |
+        | Days Since Latest Target | 3.0        | 33.0       | 9.0        |
+        | Last Month Count         | 12.0       | 0.0        | 20.0       |
+        | Last Month Average       | 349.42     | nan        | 643.95     |
+        | Last Quarter Count       | 18.0       | 25.0       | 30.0       |
+        | Last Quarter Average     | 348.65     | 332.32     | 629.23     |
+        | Last Year Count          | 61.0       | 83.0       | 92.0       |
+        | Last Year Average        | 330.27     | 305.12     | 581.32     |
+        | All Time Count           | 275.0      | 343.0      | 299.0      |
+        | All Time Average         | 239.2      | 152.9      | 466.96     |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -5048,14 +5065,18 @@ class Toolkit:
         risk_free_rate_tickers = list(treasury_names)
         risk_free_rate = risk_free_names[self._risk_free_rate]
 
+        # Kept unrounded, as the risk free rate of every module is taken from it; only the
+        # returned frame is rounded.
         def select(treasury_data: pd.DataFrame) -> pd.DataFrame:
             treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
-            if requested_maturity is None:
-                return treasury_data
-            return treasury_data.loc[
-                :,
-                treasury_data.columns.get_level_values(1) == requested_maturity,
-            ]
+            if requested_maturity is not None:
+                treasury_data = treasury_data.loc[
+                    :,
+                    treasury_data.columns.get_level_values(1) == requested_maturity,
+                ]
+            return apply_rounding(
+                treasury_data, rounding if rounding is not None else self._rounding
+            )
 
         specific_rates = (
             [
@@ -5091,7 +5112,7 @@ class Toolkit:
                 start=self._start_date,
                 end=self._end_date,
                 divide_ohlc_by=divide_ohlc_by,
-                rounding=rounding if rounding is not None else self._rounding,
+                rounding=None,
                 show_errors=show_errors,
                 fill_nan=fill_nan,
                 sleep_timer=self._sleep_timer,
@@ -5122,74 +5143,26 @@ class Toolkit:
 
         if period == "daily":
             return select(self._daily_treasury_data)
-        if period == "weekly":
-            self._weekly_treasury_data = _convert_daily_to_other_period(
+        if period in ("weekly", "monthly", "quarterly", "yearly"):
+            treasury_data = _convert_daily_to_other_period(
                 period=period,
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
+                rounding=None,
+            )
+            setattr(self, f"_{period}_treasury_data", treasury_data)
+            setattr(
+                self,
+                f"_{period}_risk_free_rate",
+                self._average_risk_free_rate(
+                    period=period,
+                    treasury_data=treasury_data,
+                    risk_free_rate=risk_free_rate,
+                ),
             )
 
-            self._weekly_risk_free_rate = self._average_risk_free_rate(
-                period=period,
-                treasury_data=self._weekly_treasury_data,
-                risk_free_rate=risk_free_rate,
-                rounding=rounding,
-            )
-
-            return select(self._weekly_treasury_data)
-        if period == "monthly":
-            self._monthly_treasury_data = _convert_daily_to_other_period(
-                period=period,
-                daily_historical_data=self._daily_treasury_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-            )
-
-            self._monthly_risk_free_rate = self._average_risk_free_rate(
-                period=period,
-                treasury_data=self._monthly_treasury_data,
-                risk_free_rate=risk_free_rate,
-                rounding=rounding,
-            )
-
-            return select(self._monthly_treasury_data)
-        if period == "quarterly":
-            self._quarterly_treasury_data = _convert_daily_to_other_period(
-                period=period,
-                daily_historical_data=self._daily_treasury_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-            )
-
-            self._quarterly_risk_free_rate = self._average_risk_free_rate(
-                period=period,
-                treasury_data=self._quarterly_treasury_data,
-                risk_free_rate=risk_free_rate,
-                rounding=rounding,
-            )
-
-            return select(self._quarterly_treasury_data)
-        if period == "yearly":
-            self._yearly_treasury_data = _convert_daily_to_other_period(
-                period=period,
-                daily_historical_data=self._daily_treasury_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-            )
-
-            self._yearly_risk_free_rate = self._average_risk_free_rate(
-                period=period,
-                treasury_data=self._yearly_treasury_data,
-                risk_free_rate=risk_free_rate,
-                rounding=rounding,
-            )
-
-            return select(self._yearly_treasury_data)
+            return select(treasury_data)
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
@@ -6447,7 +6420,7 @@ class Toolkit:
         if daily_historical_data.empty or settings is None:
             return daily_historical_data
 
-        enforce_source, return_column, include_dividends, fill_nan, rounding = settings
+        enforce_source, return_column, include_dividends, fill_nan = settings
         params = (settings, self._start_date, self._end_date)
 
         if self._lookback_historical_data_params != params:
@@ -6471,7 +6444,7 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=include_dividends,
                 fill_nan=fill_nan,
-                rounding=rounding,
+                rounding=None,
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=True,
                 show_errors=False,
@@ -6498,7 +6471,7 @@ class Toolkit:
                 period=period,
                 daily_historical_data=self._lookback_historical_data["daily"],
                 end=self._end_date,
-                rounding=rounding,
+                rounding=None,
                 return_column=return_column,
             )
 
@@ -6690,7 +6663,6 @@ class Toolkit:
         period: str,
         treasury_data: pd.DataFrame,
         risk_free_rate: str,
-        rounding: int | None = None,
     ) -> pd.DataFrame:
         """
         Builds the risk free rate of each week, month, quarter or year from the average of
@@ -6709,11 +6681,10 @@ class Toolkit:
             treasury_data (pd.DataFrame): The treasury data converted to the period, with the
                 metric as the first column level and the maturity as the second.
             risk_free_rate (str): The maturity used as the risk free rate, e.g. "10 Year".
-            rounding (int | None, optional): The number of decimals to round to, or None to
-                use the Toolkit's rounding. Defaults to None.
 
         Returns:
-            pd.DataFrame: The risk free rate per period, with the metric as the columns.
+            pd.DataFrame: The risk free rate per period, with the metric as the columns,
+            unrounded.
         """
         period_rate = treasury_data.xs(risk_free_rate, level=1, axis=1).copy()
         yield_columns = [
@@ -6726,7 +6697,6 @@ class Toolkit:
             period=period,
             daily_data=self._daily_treasury_data.xs(risk_free_rate, level=1, axis=1),
             columns=yield_columns,
-            rounding=rounding if rounding is not None else self._rounding,
         )
 
         period_rate[yield_columns] = average_yield.reindex(period_rate.index)[

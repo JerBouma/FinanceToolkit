@@ -1233,7 +1233,8 @@ def get_analyst_estimates(
         - Estimated EPS Low
         - Estimated EPS High
         - Estimated EPS Average
-        - Number of Analysts
+        - Number of Analysts Revenue
+        - Number of Analysts EPS
 
     Args:
         tickers (list[str] | str): A single ticker or a list of company tickers.
@@ -1268,14 +1269,14 @@ def get_analyst_estimates(
                 analyst_estimates["date"]
             ) - pd.offsets.Day(1)
 
-            if quarter:
-                analyst_estimates["date"] = pd.to_datetime(
-                    analyst_estimates["date"]
-                ).dt.to_period("Q")
-            else:
-                analyst_estimates["date"] = pd.to_datetime(
-                    analyst_estimates["date"].astype(str)
-                ).dt.to_period("Y")
+            # Labelled like the financial statements (the calendar period holding most of the
+            # fiscal period), so an estimate sits in the same column as the reported figure it
+            # estimates: NVIDIA's fiscal year ending January 2026 is 2025 in both.
+            analyst_estimates["date"] = (
+                helpers.convert_period_end_dates_to_calendar_periods(
+                    period_end_dates=analyst_estimates["date"], quarter=quarter
+                )
+            )
 
             analyst_estimates = analyst_estimates.set_index("date").T
 
@@ -1284,14 +1285,6 @@ def get_analyst_estimates(
                 analyst_estimates = analyst_estimates.loc[
                     :, ~analyst_estimates.columns.duplicated()
                 ]
-
-            analyst_estimates.loc["Number of Analysts", :] = (
-                analyst_estimates.loc["numAnalystsRevenue", :]
-                + analyst_estimates.loc["numAnalystsEps", :]
-            ) // 2
-            analyst_estimates = analyst_estimates.drop(
-                ["numAnalystsRevenue", "numAnalystsEps"], axis=0
-            )
 
             return ticker, analyst_estimates.rename(index=naming), True
         except KeyError:
@@ -1316,6 +1309,10 @@ def get_analyst_estimates(
         "epsLow": "Estimated EPS Low",
         "epsHigh": "Estimated EPS High",
         "epsAvg": "Estimated EPS Average",
+        # Kept apart: far-out years often have a revenue consensus of dozens of analysts and an
+        # EPS consensus of a handful (NVDA 2031: 35 against 10), which an average would hide.
+        "numAnalystsRevenue": "Number of Analysts Revenue",
+        "numAnalystsEps": "Number of Analysts EPS",
     }
 
     if isinstance(tickers, str):
@@ -1348,7 +1345,7 @@ def get_analyst_estimates(
         analyst_estimates_total = pd.concat(analyst_estimates_dict, axis=0)
 
         try:
-            # "Number of Analysts" stays float64 (not int) so an unreported count stays NaN, not 0.
+            # The analyst counts stay float64 (not int) so an unreported count stays NaN, not 0.
             analyst_estimates_total = analyst_estimates_total.astype(np.float64)
         except ValueError as error:
             logger.error(

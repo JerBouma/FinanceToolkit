@@ -138,5 +138,21 @@ def test_analyst_estimates_count_the_analysts_and_stay_unrounded(monkeypatch):
 
     assert no_data == []
     period = pd.Period("2025", freq="Y")
-    assert estimates.loc[("AAPL", "Number of Analysts"), period] == 28
+    assert estimates.loc[("AAPL", "Number of Analysts Revenue"), period] == 30
+    assert estimates.loc[("AAPL", "Number of Analysts EPS"), period] == 26
     assert estimates.loc[("AAPL", "Estimated EPS Average"), period] == 6.987654
+
+
+def test_analyst_estimates_are_labelled_like_the_statements(monkeypatch):
+    estimate = {
+        "symbol": "NVDA",
+        "epsAvg": 9.29,
+        "numAnalystsRevenue": 41,
+        "numAnalystsEps": 33,
+    }
+    _answer(monkeypatch, [{**estimate, "date": "2027-01-31"}])
+
+    estimates, _ = fmp_model.get_analyst_estimates("NVDA", api_key="KEY")
+
+    # A fiscal year ending in January is mostly the previous calendar year, as in the statements.
+    assert list(estimates.columns) == [pd.Period("2026", freq="Y")]

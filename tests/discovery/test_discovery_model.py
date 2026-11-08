@@ -620,3 +620,151 @@ def test_instrument_lists_are_indexed_by_symbol(monkeypatch, function, endpoint,
     assert list(result.index) == sorted(["AAA", row["symbol"]])
     assert result.loc[row["symbol"], "Name"] == row["name"]
     assert result.loc[row["symbol"], "Exchange"] == row["exchange"]
+
+
+def _calendar_responses(monkeypatch, releases_per_range=None):
+    """Answer the earnings calendar, quote, exchange and screener endpoints offline."""
+    requested: list[str] = []
+    releases = pd.DataFrame(
+        {
+            "symbol": ["CSCO", "CIS.DE", "SIE.DE", "SIEGY", "TINY"],
+            "date": [
+                "2026-11-12",
+                "2026-11-12",
+                "2026-11-12",
+                "2026-11-12",
+                "2026-11-11",
+            ],
+            "epsEstimated": [1.32, 1.19, 2.86, 1.43, 0.1],
+            "revenueEstimated": [18.1e9, 16.2e9, 23.2e9, 26.1e9, 1e6],
+        }
+    )
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        requested.append(url)
+
+        if "/earnings-calendar" in url:
+            if releases_per_range is not None:
+                return releases_per_range(url)
+            return releases
+        if "/batch-quote" in url and "EURUSD" in url:
+            return pd.DataFrame({"symbol": ["EURUSD"], "price": [1.1]})
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["CSCO", "CIS.DE", "SIE.DE", "SIEGY", "TINY"],
+                    "name": [
+                        "Cisco Systems, Inc.",
+                        "Cisco Systems, Inc.",
+                        "Siemens Aktiengesellschaft",
+                        "Siemens AG Sponsored ADR",
+                        "Tiny Corp.",
+                    ],
+                    "exchange": ["NASDAQ", "XETRA", "XETRA", "OTC", "NASDAQ"],
+                    # The depositary receipt reports a market cap far off the company's.
+                    "marketCap": [370e9, 340e9, 200e9, 900e9, 50e6],
+                    "price": [93.0, 80.0, 250.0, 125.0, 2.0],
+                    "volume": [20e6, 1e4, 1e6, 1e5, 1e5],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {
+                    "exchange": ["NASDAQ", "XETRA", "OTC"],
+                    "countryCode": ["US", "DE", "US"],
+                }
+            )
+        if "/company-screener" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["SIE.DE", "SIEGY"],
+                    "companyName": "Siemens AG",
+                    "marketCap": [200e9, 220e9],
+                    "exchangeShortName": ["XETRA", "OTC"],
+                    "country": "DE",
+                }
+            )
+
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    return requested
+
+
+def test_the_earnings_calendar_ranks_companies_by_their_primary_listing(monkeypatch):
+    _calendar_responses(monkeypatch)
+
+    calendar = discovery_model.get_earnings_calendar(
+        "KEY", "2026-11-09", "2026-11-13", primary_only=True, sort_by="market_cap"
+    )
+
+    # One row per company, its most traded listing, largest first.
+    assert list(calendar.index) == ["CSCO", "SIE.DE", "TINY"]
+    # The depositary receipt's market cap is not the company's.
+    assert calendar.loc["SIE.DE", "Market Cap (USD)"] == pytest.approx(220e9)
+
+
+def test_every_listing_has_the_market_cap_of_the_primary_listing(monkeypatch):
+    _calendar_responses(monkeypatch)
+
+    calendar = discovery_model.get_earnings_calendar("KEY", "2026-11-09", "2026-11-13")
+
+    assert list(calendar.index) == ["TINY", "CIS.DE", "CSCO", "SIE.DE", "SIEGY"]
+    assert calendar.loc["CIS.DE", "Market Cap (USD)"] == pytest.approx(370e9)
+    assert calendar.loc["SIEGY", "Market Cap (USD)"] == pytest.approx(220e9)
+
+
+def test_the_earnings_calendar_filters_by_size_country_and_exchange(monkeypatch):
+    _calendar_responses(monkeypatch)
+
+    def symbols(**filters):
+        return set(
+            discovery_model.get_earnings_calendar(
+                "KEY", "2026-11-09", "2026-11-13", **filters
+            ).index
+        )
+
+    assert symbols(min_market_cap=1e9) == {"CSCO", "CIS.DE", "SIE.DE", "SIEGY"}
+    # The country of the company, so a German company's listing abroad is kept.
+    assert symbols(country="Germany") == {"SIE.DE", "SIEGY"}
+    assert symbols(exchange="xetra") == {"CIS.DE", "SIE.DE"}
+
+
+def test_the_earnings_calendar_splits_a_range_that_reaches_the_limit(monkeypatch):
+    def releases(url):
+        start = url.split("from=")[1][:10]
+        end = url.split("to=")[1][:10]
+        days = pd.date_range(start, end)
+        if len(days) == 5:
+            # The whole week reaches the limit and keeps only its latest releases.
+            return pd.DataFrame(
+                {
+                    "symbol": [
+                        f"X{i}" for i in range(discovery_model.EARNINGS_CALENDAR_LIMIT)
+                    ],
+                    "date": end,
+                }
+            )
+        return pd.DataFrame(
+            {
+                "symbol": [f"S{day:%d}" for day in days],
+                "date": [f"{day:%Y-%m-%d}" for day in days],
+            }
+        )
+
+    requested = _calendar_responses(monkeypatch, releases)
+
+    calendar = discovery_model.get_earnings_calendar("KEY", "2026-11-09", "2026-11-13")
+
+    ranges = [url for url in requested if "/earnings-calendar" in url]
+    assert len(ranges) == 3
+    assert sorted(calendar.index) == ["S09", "S10", "S11", "S12", "S13"]
+
+
+def test_the_earnings_calendar_always_asks_for_a_range(monkeypatch):
+    requested = _calendar_responses(monkeypatch)
+
+    discovery_model.get_earnings_calendar("KEY", end_date="2026-11-13")
+
+    assert "from=2026-11-06&to=2026-11-13" in requested[0]

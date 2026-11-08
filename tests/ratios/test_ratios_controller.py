@@ -820,6 +820,29 @@ def test_quarterly_forward_ratios_use_a_year_of_estimates():
     )
 
 
+def test_forward_ratios_leave_out_periods_with_too_few_analysts():
+    ratios, _ = _quarterly_ratios()
+    estimate_quarters = pd.period_range("2024Q1", periods=6, freq="Q")
+    estimates = pd.DataFrame(
+        [[1.0, 1.1, 1.2, 1.3, 1.4, 1.5], [12, 12, 12, 12, 3, 12]],
+        index=pd.MultiIndex.from_tuples(
+            [("XYZ", "Estimated EPS Average"), ("XYZ", "Number of Analysts EPS")]
+        ),
+        columns=estimate_quarters,
+    )
+    ratios._analyst_estimates_cache["data"] = estimates
+
+    every_period = ratios.get_forward_price_earnings_ratio(rounding=None).loc["XYZ"]
+    deep_periods = ratios.get_forward_price_earnings_ratio(
+        min_analysts=5, rounding=None
+    ).loc["XYZ"]
+
+    assert every_period[pd.Period("2024Q2", "Q")] == pytest.approx(50 / 5.0)
+    # 2024Q1 covers 2024Q1-Q4; 2024Q2 includes 2025Q1, which three analysts cover.
+    assert deep_periods[pd.Period("2024Q1", "Q")] == pytest.approx(50 / 4.6)
+    assert pd.isna(deep_periods[pd.Period("2024Q2", "Q")])
+
+
 def test_ratios_call_only_the_loaders_a_ratio_needs(ratios_module):
     from financetoolkit.helpers import LazyDict
     from financetoolkit.ratios.ratios_controller import Ratios

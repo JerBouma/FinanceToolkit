@@ -5,7 +5,7 @@ AAPL,EBT to Total Equity,,0.6858,0.3579,-0.2214
 AAPL,Cash Flow to Total Liabilities,,0.1581,0.119,-0.0587
 AAPL,Debt to Total Assets,,0.0302,-0.0344,-0.1611
 AAPL,Current Liabilities to Total Assets,,0.0986,0.221,-0.0559
-AAPL,Log of Tangible Total Assets,,0.003,0.0002,-0.0
+AAPL,Log of Tangible Total Assets,,0.003,0.0002,0.0
 AAPL,Working Capital to Total Liabilities,,-0.7808,-2.8926,0.9025
 AAPL,Log of EBIT to Interest Expense,,0.1847,-0.0029,-0.0912
 AAPL,Fulmer H-Score,,0.0364,0.0041,-0.0225

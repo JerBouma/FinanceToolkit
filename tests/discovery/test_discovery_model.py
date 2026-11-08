@@ -811,7 +811,9 @@ def test_the_international_order_book_trades_in_dollars(monkeypatch):
     # IOB is a London exchange, but its depositary receipts trade in US dollars.
     def fake(url, user_subscription):  # noqa: ARG001
         if "/available-exchanges" in url:
-            return pd.DataFrame({"exchange": ["IOB", "LSE"], "countryCode": ["UK", "UK"]})
+            return pd.DataFrame(
+                {"exchange": ["IOB", "LSE"], "countryCode": ["UK", "UK"]}
+            )
         if "/batch-quote" in url:
             return pd.DataFrame({"symbol": ["GBPUSD"], "price": [1.3]})
         return pd.DataFrame()

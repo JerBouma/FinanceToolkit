@@ -60,12 +60,7 @@ FACTOR_COLLECTIONS = {
     ],
     "overlap": [
         "get_moving_average",
-        "get_exponential_moving_average",
-        "get_double_exponential_moving_average",
         "get_trix",
-        "get_triangular_moving_average",
-        "get_weighted_moving_average",
-        "get_hull_moving_average",
         "get_kaufman_adaptive_moving_average",
         "get_volume_weighted_average_price",
         "get_parabolic_sar",
@@ -93,11 +88,6 @@ FACTOR_COLLECTIONS["all"] = [
 # and a price difference (a range or an oscillator of two averages) as a share of the close.
 FACTOR_PRICE_LINES = (
     "get_moving_average",
-    "get_exponential_moving_average",
-    "get_double_exponential_moving_average",
-    "get_triangular_moving_average",
-    "get_weighted_moving_average",
-    "get_hull_moving_average",
     "get_kaufman_adaptive_moving_average",
     "get_volume_weighted_average_price",
     "get_parabolic_sar",
@@ -4839,14 +4829,20 @@ class Technicals:
         )
 
         overlap_indicators["Exponential Moving Average (EMA)"] = (
-            self.get_exponential_moving_average(
-                period=period, close_column=close_column, window=window
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="exponential",
             )
         )
 
         overlap_indicators["Double Exponential Moving Average (DEMA)"] = (
-            self.get_double_exponential_moving_average(
-                period=period, close_column=close_column, window=window
+            self.get_moving_average(
+                period=period,
+                close_column=close_column,
+                window=window,
+                method="double_exponential",
             )
         )
 
@@ -4854,20 +4850,25 @@ class Technicals:
             period=period, close_column=close_column, window=window
         )
 
-        overlap_indicators["Triangular Moving Average"] = (
-            self.get_triangular_moving_average(
-                period=period, close_column=close_column, window=window
-            )
+        overlap_indicators["Triangular Moving Average"] = self.get_moving_average(
+            period=period,
+            close_column=close_column,
+            window=window,
+            method="triangular",
         )
 
-        overlap_indicators["Weighted Moving Average (WMA)"] = (
-            self.get_weighted_moving_average(
-                period=period, close_column=close_column, window=window
-            )
+        overlap_indicators["Weighted Moving Average (WMA)"] = self.get_moving_average(
+            period=period,
+            close_column=close_column,
+            window=window,
+            method="weighted",
         )
 
-        overlap_indicators["Hull Moving Average (HMA)"] = self.get_hull_moving_average(
-            period=period, close_column=close_column, window=window
+        overlap_indicators["Hull Moving Average (HMA)"] = self.get_moving_average(
+            period=period,
+            close_column=close_column,
+            window=window,
+            method="hull",
         )
 
         overlap_indicators["Kaufman Adaptive Moving Average (KAMA)"] = (
@@ -4957,18 +4958,40 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        method: str = "simple",
     ) -> pd.Series | pd.DataFrame:
         """
-        Calculate the Moving Average (MA) for a given price series.
+        Calculate a Moving Average (MA) of a given price series: the simple, exponential,
+        double exponential, triangular, weighted or Hull moving average.
 
-        The Moving Average (MA) is a commonly used technical indicator that smooths out
-        price data by calculating the average price over a specified number of periods.
+        A Moving Average smooths out price data by averaging the price over a specified
+        number of periods. The variants differ in how they weight the prices within the
+        window: equally (simple), with exponentially decaying weights (exponential and double
+        exponential), with weights that peak in the middle of the window (triangular), with
+        linearly increasing weights (weighted) or with a combination of weighted averages
+        that reduces the lag (Hull).
 
-        The formula is as follows:
+        The formula is as follows, per method:
 
-        - MA = (Sum of Prices) / (Number of Prices)
+        - "simple": SMA = (Sum of Prices) / (Number of Prices)
+        - "exponential": the first EMA is SMA(Close, Window), on the Window-th period, and
+          EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
+        - "double_exponential": DEMA = 2 * EMA(Close, Window) — EMA(EMA(Close, Window), Window)
+        - "triangular": TMA = SMA(SMA(Close, Sub-window Length 1), Sub-window Length 2), with
+          both sub-windows (Window + 1) / 2 for an odd window and Window / 2 and Window / 2 + 1
+          for an even window (TA-Lib's TRIMA convention)
+        - "weighted": WMA = (Sum of (Price * Weight)) / (Sum of Weights), with weights 1 to
+          Window from the oldest to the latest price
+        - "hull": HMA = WMA(2 * WMA(Close, Window / 2) — WMA(Close, Window), sqrt(Window))
 
-        Also known as: SMA, simple moving average, MA.
+        Seeding the EMA with a simple average, as TA-Lib and StockCharts do, leaves the first
+        Window - 1 periods of the price history empty. The DEMA, TRIX, MACD, Percentage Price
+        Oscillator, Force Index, Elder Ray Index, Keltner Channels and Chaikin and McClellan
+        Oscillators use the same EMA and start once their own EMAs are seeded. The Kaufman
+        Adaptive Moving Average, which adapts its smoothing to the efficiency of the price
+        move, is `get_kaufman_adaptive_moving_average`.
+
+        Also known as: MA, SMA, simple moving average, EMA, exponential moving average, DEMA, double exponential moving average, TMA, TRIMA, triangular moving average, WMA, linearly weighted moving average, HMA, Hull moving average.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -4986,6 +5009,8 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            method (str, optional): The moving average: "simple", "exponential",
+                "double_exponential", "triangular", "weighted" or "hull". Defaults to "simple".
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5022,6 +5047,18 @@ class Technicals:
         | 2025-12-30 | 6800.34 |     671.316 |
         | 2025-12-31 | 6802.55 |     671.566 |
         """
+        moving_averages = {
+            "simple": overlap_model.get_moving_average,
+            "exponential": overlap_model.get_exponential_moving_average,
+            "double_exponential": overlap_model.get_double_exponential_moving_average,
+            "triangular": overlap_model.get_triangular_moving_average,
+            "weighted": overlap_model.get_weighted_moving_average,
+            "hull": overlap_model.get_hull_moving_average,
+        }
+        if method not in moving_averages:
+            raise ValueError(
+                f"Method must be one of {', '.join(moving_averages)}, not {method}."
+            )
         if period not in [
             "intraday",
             "daily",
@@ -5042,248 +5079,12 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        moving_average = overlap_model.get_moving_average(
+        moving_average = moving_averages[method](
             historical_data[close_column], window
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_exponential_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Exponential Moving Average (EMA) for a given price series.
-
-        EMA is a technical indicator that gives more weight to recent price data,
-        providing a smoothed moving average that reacts faster to price changes.
-
-        The formula is as follows:
-
-        - First EMA = SMA(Close, Window), on the Window-th period
-        - EMA = (Close — Previous EMA) * (2 / (1 + Window)) + Previous EMA
-
-        Seeding with a simple average, as TA-Lib and StockCharts do, leaves the first Window - 1
-        periods of the price history empty. The DEMA, TRIX, MACD, Percentage Price Oscillator,
-        Force Index, Elder Ray Index, Keltner Channels and Chaikin and McClellan Oscillators
-        use the same EMA and start once their own EMAs are seeded.
-
-        Also known as: EMA.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): Number of periods for EMA calculation.
-                The number of periods (time intervals) over which to calculate the EMA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the EMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame or pd.Series:
-            Exponential Moving Average (EMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates the
-          EMA for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the EMA
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["ETHUSD"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_exponential_moving_average(window=20).tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   ETHUSD |   Benchmark |
-        |:-----------|---------:|------------:|
-        | 2025-12-27 |  2990.19 |     678.205 |
-        | 2025-12-28 |  2986.26 |     678.692 |
-        | 2025-12-29 |  2981.3  |     679.056 |
-        | 2025-12-30 |  2980.26 |     679.306 |
-        | 2025-12-31 |  2978.98 |     679.051 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        exponential_moving_average = overlap_model.get_exponential_moving_average(
-            historical_data[close_column], window
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=exponential_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_double_exponential_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Double Exponential Moving Average (DEMA) for a given price series.
-
-        DEMA is a technical indicator that attempts to reduce the lag from traditional
-        moving averages by using a combination of two exponential moving averages.
-
-        The formula is as follows:
-
-        - EMA1 = EMA(Close, Window)
-        - EMA2 = EMA(EMA1, Window)
-        - DEMA = 2 * EMA1 — EMA2
-
-        Also known as: DEMA, double EMA.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): Number of periods for moving average calculation.
-                The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the DEMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame or pd.Series:
-            Double Exponential Moving Average (DEMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates the
-          DEMA for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the DEMA
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["QQQ"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_double_exponential_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |     QQQ |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 616.194 |     679.471 |
-        | 2025-12-26 | 617.773 |     681.229 |
-        | 2025-12-29 | 618.281 |     682.008 |
-        | 2025-12-30 | 618.315 |     682.395 |
-        | 2025-12-31 | 617.052 |     681.416 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        double_exponential_moving_average = (
-            overlap_model.get_double_exponential_moving_average(
-                historical_data[close_column], window
-            ).loc[self._start_date : self._end_date]
-        )
-
-        return finalize_dataset(
-            dataset=double_exponential_moving_average,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -5545,351 +5346,6 @@ class Technicals:
 
         return finalize_dataset(
             dataset=bollinger_bands,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_triangular_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Triangular Moving Average (TMA) for a given price series.
-
-        The Triangular Moving Average (TMA) is a smoothed version of the Simple Moving Average (SMA)
-        that uses multiple SMAs to reduce noise and provide a smoother trendline.
-
-        The formula is as follows:
-
-        - For an odd window: Sub-window Length = (Window + 1) / 2, applied for both passes.
-        - For an even window: the two passes use different sub-window lengths, Window / 2
-          and Window / 2 + 1 (matching TA-Lib's TRIMA convention).
-        - TMA = SMA(SMA(Close, Sub-window Length 1), Sub-window Length 2)
-
-        Also known as: TMA, triangular MA.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): Number of periods for TMA calculation.
-                The number of periods (time intervals) over which to calculate the TMA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the TMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.Series or pd.DataFrame: Triangular Moving Average values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates the
-          Triangular Moving Average for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the Triangular Moving Average
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["GLD"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_triangular_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |     GLD |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 396.516 |     674.499 |
-        | 2025-12-26 | 398.563 |     674.508 |
-        | 2025-12-29 | 400.429 |     674.964 |
-        | 2025-12-30 | 402.053 |     675.859 |
-        | 2025-12-31 | 403.429 |     676.893 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        triangular_moving_average = overlap_model.get_triangular_moving_average(
-            historical_data[close_column], window
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=triangular_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_weighted_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Weighted Moving Average (WMA) for a given price series.
-
-        The Weighted Moving Average (WMA) is a moving average that assigns a linearly
-        increasing weight to more recent prices, making it more responsive to recent
-        price changes than a Simple Moving Average.
-
-        The formula is as follows:
-
-        - WMA = (Sum of (Price * Weight)) / (Sum of Weights)
-
-        Also known as: WMA, linearly weighted moving average.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): Number of periods to consider for the WMA.
-                The number of periods (time intervals) over which to calculate the WMA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the WMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame or pd.Series:
-            Weighted Moving Average (WMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates the
-          WMA for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the WMA
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["TLT"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_weighted_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |     TLT |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | 84.95   |     676.565 |
-        | 2025-12-26 | 84.9693 |     677.721 |
-        | 2025-12-29 | 85.0322 |     678.489 |
-        | 2025-12-30 | 85.0635 |     679.088 |
-        | 2025-12-31 | 85.0021 |     678.956 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        weighted_moving_average = overlap_model.get_weighted_moving_average(
-            historical_data[close_column], window
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=weighted_moving_average,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            apply_slice=False,
-        )
-
-    @handle_portfolio
-    @handle_errors
-    def get_hull_moving_average(
-        self,
-        period: str = "daily",
-        close_column: str = "Adj Close",
-        window: int = 14,
-        rounding: int | None = None,
-        growth: bool = False,
-        lag: int | list[int] = 1,
-        standardize: bool = False,
-    ) -> pd.Series | pd.DataFrame:
-        """
-        Calculate the Hull Moving Average (HMA) for a given price series.
-
-        The Hull Moving Average (HMA) reduces the lag typically associated with moving
-        averages while improving smoothing, by combining a Weighted Moving Average (WMA)
-        of half the window length, a WMA of the full window length, and a further WMA
-        over the square root of the window length.
-
-        The formula is as follows:
-
-        - Raw HMA = (2 * WMA(Close, Window / 2)) — WMA(Close, Window)
-        - HMA = WMA(Raw HMA, sqrt(Window))
-
-        Also known as: HMA, Hull MA.
-
-        Args:
-            period (str, optional): The time period to consider for historical data.
-                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
-            close_column (str, optional): The column name for closing prices in the historical data.
-                Defaults to "Adj Close".
-            window (int, optional): Number of periods to consider for the HMA.
-                The number of periods (time intervals) over which to calculate the HMA. Defaults to 14.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
-                the rounding of the Toolkit (4 unless set otherwise).
-            growth (bool, optional): Whether to calculate the growth of the HMA.
-                Defaults to False.
-            lag (int | list[int], optional): The lag to use for the growth calculation.
-                Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-
-        Returns:
-            pd.DataFrame or pd.Series:
-            Hull Moving Average (HMA) values.
-
-        Notes:
-        - The method retrieves historical data based on the specified `period` and calculates the
-          HMA for each asset in the Toolkit instance.
-        - If `growth` is set to True, the method calculates the growth of the HMA
-          using the specified `lag`.
-
-        As an example:
-
-        ```python
-        from financetoolkit import Toolkit
-
-        toolkit = Toolkit(
-            tickers=["BTCUSD"],
-            api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2021-01-01",
-            end_date="2025-12-31",
-        )
-
-        toolkit.technicals.get_hull_moving_average().tail(5)
-        ```
-
-        Which returns:
-
-        | Date       |   BTCUSD |   Benchmark |
-        |:-----------|---------:|------------:|
-        | 2025-12-27 |  87664.2 |     687.165 |
-        | 2025-12-28 |  87603.8 |     687.17  |
-        | 2025-12-29 |  87477.7 |     686.493 |
-        | 2025-12-30 |  87572.5 |     685.285 |
-        | 2025-12-31 |  87626   |     682.993 |
-        """
-        if period not in [
-            "intraday",
-            "daily",
-            "weekly",
-            "monthly",
-            "quarterly",
-            "yearly",
-        ]:
-            raise ValueError(
-                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
-            )
-        if period == "intraday":
-            if self._historical_data[period].empty:
-                raise ValueError(
-                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
-                )
-            close_column = "Close"
-
-        historical_data = self._historical_data[period]
-
-        hull_moving_average = overlap_model.get_hull_moving_average(
-            historical_data[close_column], window
-        ).loc[self._start_date : self._end_date]
-
-        return finalize_dataset(
-            dataset=hull_moving_average,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -1093,13 +1093,14 @@ class PortfolioConstruction:
         clusters the weight is split top-down along the dendrogram, each branch getting a
         weight in inverse proportion to its risk, the sum of the variances of its clusters.
         Unlike Hierarchical Risk Parity, which halves the ordered list of assets, the
-        splits follow the tree, so assets that belong together are never split up, and the
-        risk is spread equally over the clusters rather than over the assets.
+        splits follow the tree, so assets that belong together are never split up, and
+        the weight is allocated over the clusters rather than over the assets: riskier
+        clusters get less.
 
         The clustering uses the correlation distance √((1 - ρ) / 2) with Ward linkage, as
         in the paper. Without a number of clusters, it is the one at the sharpest bend of
-        the within-cluster dispersion, the two-order difference of the gap statistic (Yue,
-        Wang and Wei, 2009), as skfolio chooses it.
+        the pooled within-cluster dispersion, the two-order difference of the gap
+        statistic (Yue, Wang and Wei, 2008; Tibshirani, Walther and Hastie, 2001).
 
         For more information, see the following papers:
 
@@ -1284,8 +1285,11 @@ class PortfolioConstruction:
           apply: the weight of an asset is the product of its weight within its cluster
           and the cluster's weight, from two separate problems, so a bound on it is not a
           constraint either problem can hold.
-        - With "maximum_sharpe", every cluster needs an asset with an expected return
-          above the risk free rate.
+        - With "maximum_sharpe", a cluster without an asset whose expected return
+          exceeds the risk free rate holds its minimum variance portfolio. Across the
+          clusters, at least one cluster needs an expected return above it.
+        - The paper clusters with k-means and solves both levels without bounds,
+          allowing short positions. Here the clustering is hierarchical, as in HERC.
 
         As an example:
 
@@ -1308,11 +1312,11 @@ class PortfolioConstruction:
 
         |           |   Weight |   Volatility |   Sharpe Ratio |   Risk Contribution |   Cluster |
         |:----------|---------:|-------------:|---------------:|--------------------:|----------:|
-        | AAPL      |   0.115  |       0.2786 |         0.5725 |              0.1213 |         1 |
-        | MSFT      |   0.1539 |       0.2571 |         0.6534 |              0.1582 |         1 |
-        | JNJ       |   0.5735 |       0.1673 |         0.3884 |              0.5735 |         2 |
-        | XOM       |   0.1576 |       0.2702 |         0.9524 |              0.147  |         1 |
-        | Portfolio |   1      |       0.1367 |         0.8924 |              1      |       nan |
+        | AAPL      |   0.1081 |       0.2786 |         0.5725 |              0.1106 |         1 |
+        | MSFT      |   0.1388 |       0.2571 |         0.6534 |              0.1362 |         1 |
+        | JNJ       |   0.575  |       0.1673 |         0.3884 |              0.575  |         3 |
+        | XOM       |   0.1782 |       0.2702 |         0.9524 |              0.1782 |         2 |
+        | Portfolio |   1      |       0.1366 |         0.9061 |              1      |       nan |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
@@ -1584,7 +1588,8 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio. A net exposure of 0 is refused, as holding nothing
+                has no drawdown. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.

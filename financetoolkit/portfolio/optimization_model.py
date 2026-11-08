@@ -1285,13 +1285,19 @@ def get_hierarchical_clusters(
     clusters.
 
     Without a number of clusters, it is chosen by the two-order difference of the gap
-    statistic of Yue, Wang and Wei (2009), as skfolio does: with W_k the sum over the k
-    clusters of the average distance between their assets, the number of clusters is
-    the k + 1 that maximizes W_(k+2) + W_k - 2 W_(k+1), the sharpest bend in the
-    dispersion, with k up to max(8, √N) clusters for N assets.
+    statistic of Yue, Wang and Wei (2008): with W_k the pooled within-cluster dispersion
+    of the cut into k clusters (Tibshirani, Walther and Hastie, 2001), the sum over the
+    clusters of D_r / (2 n_r), with D_r the sum of the squared distances between the n_r
+    assets of cluster r, the number of clusters is the k + 1 that maximizes
+    W_(k+2) + W_k - 2 W_(k+1), the sharpest bend in the dispersion, with k up to
+    max(8, √N) clusters for N assets. skfolio and Riskfolio-Lib sum the average distance
+    within each cluster instead, which does not fall as clusters split and tends to pick
+    more clusters than the correlation blocks hold.
 
-    See Yue, S., Wang, X. and Wei, M. (2009), "Application of Two-Order Difference to Gap
-    Statistic", Transactions of Tianjin University, 14(3), 217-221.
+    See Yue, S., Wang, X. and Wei, M. (2008), "Application of Two-Order Difference to Gap
+    Statistic", Transactions of Tianjin University, 14(3), 217-221, and Tibshirani, R.,
+    Walther, G. and Hastie, T. (2001), "Estimating the Number of Clusters in a Data Set
+    via the Gap Statistic", Journal of the Royal Statistical Society B, 63(2), 411-423.
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
@@ -1331,11 +1337,14 @@ def get_hierarchical_clusters(
             dispersion = []
             for k in range(1, min(count, max(8, round(np.sqrt(count)))) + 1):
                 level = levels[:, count - k]
+                # Tibshirani, Walther and Hastie's pooled dispersion: per cluster the sum
+                # of the squared distances between its assets over twice its size. The
+                # distance is Euclidean between standardized returns, so this is the
+                # within-cluster sum of squares and falls as clusters split.
                 dispersion.append(
                     sum(
-                        squareform(
-                            distance[np.ix_(members, members)], checks=False
-                        ).mean()
+                        (distance[np.ix_(members, members)] ** 2).sum()
+                        / (2 * len(members))
                         for label in np.unique(level)
                         if len(members := np.flatnonzero(level == label)) > 1
                     )
@@ -1474,8 +1483,11 @@ def get_nested_clustered_optimization_weights(
     With W the N × K matrix whose column k holds the weights within cluster k, the
     clusters have the expected returns W'μ and the covariance matrix W'ΣW, the weights
     across the clusters v are optimal for those, and the weight of every asset is
-    w = W v. A cluster of one asset holds that asset only. Both levels are long only
-    and fully invested, as in Riskfolio-Lib and skfolio by default.
+    w = W v. A cluster of one asset holds that asset only. With "maximum_sharpe", a
+    cluster without an asset above the risk free rate holds its minimum variance
+    portfolio. Both levels are long only and fully invested, as in Riskfolio-Lib and
+    skfolio by default. The paper clusters with k-means and solves both levels without
+    bounds, allowing short positions; here the clustering is hierarchical, as in HERC.
 
     See López de Prado, M. (2019), "A Robust Estimator of the Efficient Frontier", SSRN
     3469961, and López de Prado, M. (2020), Machine Learning for Asset Managers,
@@ -1516,6 +1528,18 @@ def get_nested_clustered_optimization_weights(
     within = pd.DataFrame(0.0, index=covariance.index, columns=np.unique(labels))
     for label in within.columns:
         assets = covariance.index[labels == label]
+        if objective == "maximum_sharpe" and (
+            expected_returns[assets] <= risk_free_rate
+        ).all():
+            # No asset of the cluster beats the risk free rate, so it has no maximum
+            # Sharpe portfolio; it holds its least risky one and the step across the
+            # clusters decides how much it gets.
+            within.loc[assets, label] = (
+                get_minimum_variance_weights(covariance.loc[assets, assets])
+                if len(assets) > 1
+                else 1.0
+            )
+            continue
         within.loc[assets, label] = optimize(
             expected_returns[assets], covariance.loc[assets, assets]
         )
@@ -1834,6 +1858,11 @@ def get_minimum_drawdown_weights(
 
     if not result.success:
         raise ValueError(f"The optimization did not converge: {result.message}")
+    if np.allclose(result.x[:assets], 0, atol=ZERO_WEIGHT):
+        raise ValueError(
+            "Holding nothing has no drawdown, so the minimum is the empty portfolio. This "
+            "happens with a net exposure of 0; use a net exposure other than 0."
+        )
 
     return _as_series(result.x[:assets], returns.columns)
 

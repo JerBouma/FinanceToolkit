@@ -997,13 +997,14 @@ def _block_returns() -> pd.DataFrame:
 def test_hierarchical_clusters_match_skfolio():
     covariance = _block_returns().cov()
 
-    # skfolio's HierarchicalClustering(linkage_method=WARD, max_clusters=k).labels_, with
-    # the two-order difference of the gap statistic choosing six clusters on its own.
+    # skfolio's HierarchicalClustering(linkage_method=WARD, max_clusters=k).labels_. On its
+    # own, the two-order difference of the pooled dispersion finds the three blocks;
+    # skfolio's sum of average distances picks six clusters ([0, 0, 0, 0, 1, 2, 3, 4, 4, 5]).
     _, chosen = optimization_model.get_hierarchical_clusters(covariance)
     _, three = optimization_model.get_hierarchical_clusters(covariance, clusters=3)
 
-    assert chosen.tolist() == [0, 0, 0, 0, 1, 2, 3, 4, 4, 5]
     assert three.tolist() == [0, 0, 0, 0, 1, 1, 1, 2, 2, 2]
+    assert chosen.tolist() == three.tolist()
     with pytest.raises(ValueError, match="linkage"):
         optimization_model.get_hierarchical_clusters(covariance, "centroid")
     with pytest.raises(ValueError, match="clusters"):
@@ -1013,14 +1014,20 @@ def test_hierarchical_clusters_match_skfolio():
 def test_hierarchical_equal_risk_contribution_matches_skfolio_and_riskfolio():
     covariance = _block_returns().cov() * 252
 
+    # Six clusters is what skfolio chooses on its own; the pooled dispersion finds the
+    # three blocks.
     chosen = optimization_model.get_hierarchical_equal_risk_contribution_weights(
-        covariance
+        covariance, clusters=6
     )
     three = optimization_model.get_hierarchical_equal_risk_contribution_weights(
         covariance, clusters=3
     )
     capped = optimization_model.get_hierarchical_equal_risk_contribution_weights(
-        covariance, maximum_weight=0.15
+        covariance, clusters=6, maximum_weight=0.15
+    )
+    pd.testing.assert_series_equal(
+        optimization_model.get_hierarchical_equal_risk_contribution_weights(covariance),
+        three,
     )
 
     # skfolio's HierarchicalEqualRiskContribution(risk_measure=VARIANCE); with three
@@ -1244,3 +1251,29 @@ def test_ratio_optimizers_need_a_return_above_the_threshold_and_take_constraints
         assert weights["E"] <= 0.25 + 1e-7
         assert weights[["A", "B"]].sum() <= 0.4 + 1e-7
         assert (weights >= -0.3 - 1e-7).all()
+
+
+def test_nested_clustered_maximum_sharpe_holds_minimum_variance_in_a_cluster_below_the_risk_free_rate():
+    returns = _block_returns()
+    covariance = returns.cov() * 252
+    expected_returns = returns.mean() * 252
+    # The third block earns less than the risk free rate.
+    expected_returns.iloc[7:] = 0.001
+
+    # The cluster has no maximum Sharpe portfolio of its own; it holds its minimum
+    # variance portfolio and the step across the clusters gives it no weight.
+    weights = optimization_model.get_nested_clustered_optimization_weights(
+        expected_returns, covariance, "maximum_sharpe", 0.01, clusters=3
+    )
+
+    assert weights.sum() == pytest.approx(1)
+    assert (weights >= 0).all()
+    assert weights.iloc[7:].sum() == pytest.approx(0, abs=1e-8)
+
+
+def test_minimum_drawdown_refuses_the_empty_market_neutral_portfolio():
+    returns = _block_returns()
+    with pytest.raises(ValueError, match="Holding nothing"):
+        optimization_model.get_minimum_drawdown_weights(
+            returns, minimum_weight=-1.0, net_exposure=0.0, gross_exposure=1.0
+        )

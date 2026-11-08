@@ -71,6 +71,26 @@ def test_parameters_computed_together_are_limited_with_the_indicator_defaults(ca
     assert not captured
 
 
+def test_the_backtest_lookback_is_limited(captured):
+    assert "`lookback` may be at most 504" in call(
+        "portfolio",
+        indicator="get_optimization_backtest",
+        tickers="AAPL,MSFT",
+        lookback=756,
+    )
+    assert not captured
+
+
+def test_the_resamples_are_limited(captured):
+    assert "`resamples` may be at most 1,000" in call(
+        "portfolio",
+        indicator="get_resampled_efficient_weights",
+        tickers="AAPL,MSFT",
+        resamples=5000,
+    )
+    assert not captured
+
+
 def test_the_short_volume_history_is_limited_and_never_unbounded(captured):
     assert "`history_days` may be at most 366" in call(
         "market_data", indicator="get_short_volume", tickers="AAPL", history_days=6000

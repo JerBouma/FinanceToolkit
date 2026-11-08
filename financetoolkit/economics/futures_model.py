@@ -88,7 +88,7 @@ def get_last_trading_day(
     )
 
 
-def get_constant_maturity_curve(
+def get_generic_curve(
     forward_curve: pd.DataFrame,
     last_trading_days: pd.Series,
     contracts: int = 12,
@@ -96,13 +96,15 @@ def get_constant_maturity_curve(
     """
     Arranges dated futures contracts by their position on the curve of each day: the
     front (the nearest contract that has not expired), the next one (+1) and so on, as
-    the curve was listed on that day. This is the generic or constant-maturity series
-    (CL1, CL2, ... in Bloomberg notation) with the contract that fills each position on
-    each day, rolling to the next contract the day after the front's last trading day.
+    the curve was listed on that day. This is the generic (nearby) series (CL1, CL2, ...
+    in Bloomberg notation) with the contract that fills each position on each day, rolling
+    to the next contract the day after the front's last trading day. A position is a rank
+    on the curve, not a fixed time to maturity: its maturity shortens as the front nears
+    expiry and lengthens again at the roll, as nothing is interpolated.
 
     A contract is on the curve of a day from its first price up to and including its last
-    trading day. A contract without prices (one that expired and is no longer published)
-    is on the curve of every day up to its last trading day, so that the positions after
+    trading day. A contract without prices (one that expired and is no longer published, or
+    one the source misses) is on the curve of every day up to its last trading day, so that the positions after
     it stay right; its own position has no price (NaN).
 
     Args:
@@ -189,18 +191,20 @@ def get_term_structure(
     the continuously compounded yearly return a long position earns from the curve alone as
     the far contract rolls up (backwardation, positive) or down (contango, negative) to the
     front's price, with Months the months between both delivery months. The curve is in
-    Backwardation when the front is above the far contract and in Contango when it is below.
+    Backwardation when the front is above the far contract, in Contango when it is below
+    and Flat when both trade at the same price.
 
     Args:
         position_prices (pd.DataFrame): The price in each position of the curve per date,
-            the front first (see get_constant_maturity_curve).
+            the front first (see get_generic_curve).
         position_labels (pd.DataFrame): The delivery month ("YYYY-MM") of the contract in
             each position per date.
         months (int, optional): The length of the strip in months. Defaults to 12.
 
     Returns:
         pd.DataFrame: Per date the Front Contract, Front, Far Contract, Far, Months,
-            Spread, Slope, Roll Yield (decimals) and Structure.
+            Spread, Slope, Roll Yield (decimals) and Structure ("Backwardation", "Contango"
+            or "Flat").
     """
     delivery = position_labels.map(
         lambda label: (

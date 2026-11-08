@@ -390,7 +390,9 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). At 0 the portfolio with the lowest variance holds
+                nothing, so all weights are 0. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -526,7 +528,8 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -656,7 +659,8 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -779,7 +783,10 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). At 0 the portfolio with the lowest variance holds
+                nothing, so the first portfolio of the frontier has all weights 0 and no
+                Sharpe ratio (NaN). Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -1191,7 +1198,9 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). At 0 the portfolio with the lowest CVaR holds
+                nothing, so all weights are 0. Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -1326,7 +1335,8 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -1469,7 +1479,8 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -1640,7 +1651,8 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
@@ -1830,7 +1842,8 @@ class PortfolioConstruction:
                 code, e.g. {"United States": (0, 0.6)}, with the country of each asset
                 from its company profile. Defaults to None.
             net_exposure (float, optional): The sum of the weights: 1 for a fully
-                invested portfolio, 0 for a market neutral one. Defaults to 1.
+                invested portfolio, 0 for a market neutral one (which needs a negative
+                minimum_weight). Defaults to 1.
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.

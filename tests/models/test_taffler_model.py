@@ -1,8 +1,10 @@
 """Taffler Model Tests"""
 
+import numpy as np
 import pandas as pd
+import pytest
 
-from financetoolkit.models import taffler_model
+from financetoolkit.models import altman_model, taffler_model
 
 # pylint: disable=missing-function-docstring
 
@@ -70,3 +72,22 @@ def test_get_taffler_z_score(recorder):
     assert abs(score.iloc[0] - expected) < 1e-12
     # A loss, thin current assets and a negative no-credit interval put it at risk.
     assert score.iloc[1] < 0
+
+
+def test_a_zero_denominator_gives_nan_rather_than_infinity():
+    zero = pd.Series([0.0, 50.0])
+    profit = pd.Series([10.0, 10.0])
+
+    result = taffler_model.get_profit_before_tax_to_current_liabilities_ratio(
+        profit, zero
+    )
+
+    assert np.isnan(result.iloc[0])
+    assert result.iloc[1] == pytest.approx(0.2)
+    assert np.isnan(
+        altman_model.get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
+            profit, zero
+        ).iloc[
+            0
+        ]
+    )

@@ -201,7 +201,9 @@ def test_get_sharpe_ratio_lo(recorder, performance_module):
 
     recorder.capture(lo())
     recorder.capture(lo(period="quarterly", lags=3))
-    recorder.capture(lo(period="monthly", rolling=12))
+    recorder.capture(lo(period="monthly", rolling=36))
+    # Rolling windows below 30 observations have no ratio.
+    assert lo(period="monthly", rolling=12).isna().all().all()
 
     # Without autocorrelation lags, Lo's factor is SQRT(q) and the ratio the annualized one.
     pd.testing.assert_frame_equal(

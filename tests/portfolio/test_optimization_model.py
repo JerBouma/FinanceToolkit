@@ -972,3 +972,62 @@ def test_a_gross_exposure_adds_absolute_weights_only_with_short_positions():
     # t_i >= |w_i| for each asset and their sum at most the gross exposure.
     assert long_short.inequality.shape == (7, 6)
     assert long_short.upper[-1] == 1.5  # noqa: PLR2004
+
+
+def test_market_neutral_ratio_portfolios_start_away_from_zero():
+    rng = np.random.default_rng(3)
+    volatility = rng.uniform(0.1, 0.4, 6)
+    samples = (
+        rng.normal(size=(500, 6))
+        @ np.linalg.cholesky(np.eye(6) * 0.5 + 0.5).T
+        * volatility
+        / np.sqrt(252)
+    )
+    assets = [f"A{number}" for number in range(6)]
+    covariance = pd.DataFrame(samples, columns=assets).cov() * 252
+    expected_returns = pd.Series(rng.uniform(-0.05, 0.2, 6), index=assets)
+    neutral = {
+        "minimum_weight": -0.5,
+        "maximum_weight": 0.5,
+        "net_exposure": 0.0,
+        "gross_exposure": 1.0,
+    }
+    sigma = covariance.to_numpy()
+
+    sharpe = optimization_model.get_maximum_sharpe_weights(
+        expected_returns, covariance, **neutral
+    )
+    diversification = optimization_model.get_maximum_diversification_weights(
+        covariance, **neutral
+    )
+
+    # An independent SLSQP over the split w = w⁺ − w⁻ with Σ (w⁺ + w⁻) ≤ 1, from several
+    # random starts, reaches the same Sharpe ratio of 1.2915.
+    assert (sharpe @ expected_returns) / np.sqrt(
+        sharpe @ sigma @ sharpe
+    ) == pytest.approx(1.2915407, abs=1e-5)
+    for weights in (sharpe, diversification):
+        assert weights.sum() == pytest.approx(0, abs=1e-8)
+        assert weights.abs().sum() <= 1 + 1e-8
+        assert weights.abs().sum() > 0.5
+
+    # The lowest risk at a net exposure of 0 is holding nothing.
+    assert (
+        optimization_model.get_minimum_variance_weights(covariance, **neutral) == 0
+    ).all()
+    frontier = optimization_model.get_efficient_frontier(
+        expected_returns, covariance, points=4, **neutral
+    )
+    assert (frontier.loc[1, assets] == 0).all()
+    assert np.isnan(frontier.loc[1, "Sharpe Ratio"])
+    assert frontier.loc[2:, "Sharpe Ratio"].notna().all()
+
+
+@pytest.mark.parametrize("net_exposure", [0.0, -0.5])
+def test_a_net_exposure_of_zero_or_below_needs_short_positions(net_exposure):
+    covariance = pd.DataFrame(np.eye(3) * 0.04, index=list("ABC"), columns=list("ABC"))
+
+    with pytest.raises(ValueError, match="needs short positions"):
+        optimization_model.get_minimum_variance_weights(
+            covariance, net_exposure=net_exposure
+        )

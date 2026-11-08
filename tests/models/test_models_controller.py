@@ -649,7 +649,9 @@ def test_piotroski_score_compares_quarters_year_over_year(models_module, monkeyp
             )
 
     _use_quarterly_statements(models_module, monkeypatch)
-    quarterly = models_module.get_piotroski_score()
+    # trailing=1 scores single quarters (the default sums four), so the criteria can be
+    # recomputed from the quarterly statements as they are.
+    quarterly = models_module.get_piotroski_score(trailing=1)
     balance = models_module._balance_sheet_statement
     income = models_module._income_statement
     current_ratio = (
@@ -715,7 +717,7 @@ def test_beneish_m_score_compares_quarters_year_over_year(models_module, monkeyp
     )
 
     _use_quarterly_statements(models_module, monkeypatch)
-    quarterly = models_module.get_beneish_m_score(rounding=10)
+    quarterly = models_module.get_beneish_m_score(rounding=10, trailing=1)
     revenue = models_module._income_statement.loc[:, "Revenue", :]
     expected = (revenue / revenue.shift(4, axis=1)).round(10)
 
@@ -1603,3 +1605,18 @@ def test_the_wacc_keeps_no_results_between_calls(models_module):
         models_module.get_weighted_average_cost_of_capital(), plain
     )
     assert not hasattr(models_module, "_weighted_average_cost_of_capital_growth")
+
+
+def test_distress_scores_sum_a_year_of_quarters_by_default(models_module, monkeypatch):
+    import pandas as pd
+
+    _use_quarterly_statements(models_module, monkeypatch)
+
+    # The scores were estimated on yearly statements, so quarterly data is a trailing year.
+    for method in [
+        models_module.get_altman_z_score,
+        models_module.get_taffler_z_score,
+        models_module.get_ohlson_o_score,
+        models_module.get_springate_score,
+    ]:
+        pd.testing.assert_frame_equal(method(), method(trailing=4))

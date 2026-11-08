@@ -3646,8 +3646,10 @@ class Ratios:
 
         The paper deducts the debt in current liabilities, the long term debt, the minority
         interest, the preferred stock and the common equity from the total assets for the
-        operating liabilities; the total equity here holds the last three. The debt excludes
-        lease liabilities, as Compustat's debt does. The balances are those at the end of
+        operating liabilities; the total equity here holds the last three. The debt is the
+        short and long term debt rows of the statements, without separately reported lease
+        liabilities. The cash is the cash and cash equivalents plus the short term
+        investments. The balances are those at the end of
         the period and the beginning total assets those at the end of the period before
         (the year before with annual data, the quarter before with quarterly data, as in
         the quarterly version of Hou, Xue and Zhang). Beginning total assets of zero or less
@@ -3709,7 +3711,7 @@ class Ratios:
 
         net_operating_assets = efficiency_model.get_net_operating_assets(
             balance("Total Assets"),
-            balance("Cash and Short Term Investments"),
+            self._get_cash_and_short_term_investments(),
             balance("Short Term Debt"),
             balance("Long Term Debt"),
             balance("Total Equity"),
@@ -14856,8 +14858,11 @@ class Ratios:
         # Both yields default to the trailing twelve months on quarterly data.
         trailing = self._get_valuation_trailing(trailing)
 
-        dividend_yield = self.get_dividend_yield(trailing=trailing)
-        buyback_yield = self.get_buyback_yield(diluted=diluted, trailing=trailing)
+        # Unrounded, so that the sum is not off by the rounding of both parts.
+        dividend_yield = self.get_dividend_yield(trailing=trailing, rounding=15)
+        buyback_yield = self.get_buyback_yield(
+            diluted=diluted, trailing=trailing, rounding=15
+        )
 
         dividend_yield_columns = [
             column

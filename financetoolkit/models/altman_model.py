@@ -4,6 +4,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import drop_non_finite
+
 
 def get_working_capital_to_total_assets_ratio(
     working_capital: float | pd.Series | pd.DataFrame,
@@ -30,7 +32,7 @@ def get_working_capital_to_total_assets_ratio(
     - A ratio of less than 1 indicates that a company may have difficulty meeting its short-term obligations.
     """
 
-    return working_capital / total_assets
+    return drop_non_finite(working_capital / total_assets)
 
 
 def get_retained_earnings_to_total_assets_ratio(
@@ -57,7 +59,7 @@ def get_retained_earnings_to_total_assets_ratio(
     - A high ratio indicates that a company has been profitable and has reinvested its earnings into the business.
     """
 
-    return retained_earnings / total_assets
+    return drop_non_finite(retained_earnings / total_assets)
 
 
 def get_earnings_before_interest_and_taxes_to_total_assets_ratio(
@@ -83,7 +85,7 @@ def get_earnings_before_interest_and_taxes_to_total_assets_ratio(
     - A high ratio indicates that a company is generating a high return on its assets.
     """
 
-    return ebit / total_assets
+    return drop_non_finite(ebit / total_assets)
 
 
 def get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
@@ -109,7 +111,7 @@ def get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
     - A ratio of less than 1 indicates that a company may have difficulty meeting its long-term obligations.
     """
 
-    return market_value_of_equity / total_liabilities
+    return drop_non_finite(market_value_of_equity / total_liabilities)
 
 
 def get_sales_to_total_assets_ratio(
@@ -135,7 +137,7 @@ def get_sales_to_total_assets_ratio(
     - A low ratio can indicate that a company is not efficiently using its assets to generate sales.
     """
 
-    return sales / total_assets
+    return drop_non_finite(sales / total_assets)
 
 
 def get_book_value_of_equity_to_book_value_of_total_liabilities_ratio(
@@ -163,7 +165,7 @@ def get_book_value_of_equity_to_book_value_of_total_liabilities_ratio(
     - A negative ratio means the liabilities exceed the assets (a shareholders' deficit).
     """
 
-    return book_value_of_equity / total_liabilities
+    return drop_non_finite(book_value_of_equity / total_liabilities)
 
 
 # The coefficients of X1 (working capital), X2 (retained earnings), X3 (EBIT), X4 (equity, at market value

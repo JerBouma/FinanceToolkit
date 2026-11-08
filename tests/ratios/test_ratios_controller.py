@@ -1178,16 +1178,17 @@ def test_buyback_yield_is_net_repurchases_over_market_cap(ratios_module):
 
 
 def test_shareholder_yield_adds_dividend_and_buyback_yield(ratios_module):
-    result = ratios_module.get_shareholder_yield(rounding=None)
-    dividend_yield = ratios_module.get_dividend_yield(rounding=None)
-    buyback_yield = ratios_module.get_buyback_yield(rounding=None)
+    # The two parts are added unrounded, so the sum matches to the last digit.
+    result = ratios_module.get_shareholder_yield(rounding=12)
+    dividend_yield = ratios_module.get_dividend_yield(rounding=15)
+    buyback_yield = ratios_module.get_buyback_yield(rounding=15)
 
     expected = (
         dividend_yield.loc[result.index, result.columns]
         + buyback_yield.loc[result.index, result.columns]
-    )
+    ).round(12)
 
-    assert_rounded_equal(result, expected)
+    pd.testing.assert_frame_equal(result, expected, check_names=False)
 
 
 def test_ev_to_free_cash_flow_divides_enterprise_value_by_free_cash_flow(
@@ -1390,7 +1391,7 @@ def test_quarterly_investment_and_issuance_anomalies_are_year_over_year():
     balance = statement(
         {
             "Total Assets": 1000 * growth,
-            "Cash and Short Term Investments": 100 * growth,
+            "Cash and Cash Equivalents": 100 * growth,
             "Short Term Debt": 50 * growth,
             "Long Term Debt": 200 * growth,
             "Total Equity": 400 * growth,

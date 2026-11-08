@@ -1241,15 +1241,57 @@ def test_rolling_lo_sharpe_ratio_matches_every_window():
     excess_returns = pd.DataFrame(
         {"A": rng.normal(0.01, 0.05, 60), "B": rng.normal(0.0, 0.05, 60)}
     )
-    rolling = performance_model.get_rolling_lo_sharpe_ratio(excess_returns, 24, 12)
+    rolling = performance_model.get_rolling_lo_sharpe_ratio(excess_returns, 36, 12)
 
-    assert rolling.iloc[:23].isna().all().all()
-    for end in (23, 40, 59):
+    assert rolling.iloc[:35].isna().all().all()
+    for end in (35, 47, 59):
         assert rolling["A"].iloc[end] == pytest.approx(
             performance_model.get_lo_sharpe_ratio(
-                excess_returns["A"].iloc[end - 23 : end + 1], 12
+                excess_returns["A"].iloc[end - 35 : end + 1], 12
             )
         )
+    # Windows below the 30-observation minimum have no ratio.
+    assert (
+        performance_model.get_rolling_lo_sharpe_ratio(excess_returns, 24, 12)
+        .isna()
+        .all()
+        .all()
+    )
+
+
+def test_lo_sharpe_ratio_bias_correction_by_hand():
+    rng = np.random.default_rng(3)
+    excess_returns = pd.Series(rng.normal(0.001, 0.01, 40))
+    values = excess_returns.to_numpy()
+    n, q, lags = len(values), 252, 3
+    deviation = values - values.mean()
+    # Moran (1948): the Box-Jenkins autocorrelation plus (n - k) / (n (n - 1)).
+    rho = [
+        np.sum(deviation[:-k] * deviation[k:]) / np.sum(deviation**2)
+        + (n - k) / (n * (n - 1))
+        for k in range(1, lags + 1)
+    ]
+    eta = q / np.sqrt(q + 2 * sum((q - k) * rho[k - 1] for k in range(1, lags + 1)))
+
+    assert performance_model.get_lo_sharpe_ratio(
+        excess_returns, q, lags
+    ) == pytest.approx(values.mean() / values.std(ddof=1) * eta)
+    # Fewer than 30 observations give no ratio.
+    assert np.isnan(performance_model.get_lo_sharpe_ratio(excess_returns.iloc[:29], q))
+
+
+def test_lo_sharpe_ratio_is_unbiased_for_independent_short_samples():
+    # Without the bias correction the median η(q) / SQRT(q) of a quarter of independent
+    # daily returns is about 1.07; with it, it is close to 1.
+    rng = np.random.default_rng(4)
+    samples = rng.normal(0.001, 0.01, (63, 1000))
+    ratios = [
+        performance_model.get_lo_sharpe_ratio(pd.Series(sample), 252)
+        / (np.sqrt(252) * sample.mean() / sample.std(ddof=1))
+        for sample in samples.T
+    ]
+
+    assert np.nanmedian(ratios) == pytest.approx(1, abs=0.03)
 
 
 def test_sharpe_ratio_standard_error_methods():

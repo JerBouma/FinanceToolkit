@@ -1785,7 +1785,18 @@ class Toolkit:
     ):
         """
         Obtain analyst estimates regarding revenues, EBITDA, EBIT, Net Income
-        SGA Expenses and EPS. The number of analysts are also reported.
+        SGA Expenses and EPS, with the number of analysts behind the revenue
+        ("Number of Analysts Revenue") and the EPS ("Number of Analysts EPS") consensus.
+
+        The estimates are the current consensus for each fiscal period, labelled like the
+        financial statements with the calendar year (or quarter) holding most of the fiscal
+        period: NVIDIA's fiscal year ending in January 2029 is 2028. The source has no
+        date on which each estimate was made.
+        The analyst counts show how much an estimate rests on: far-out years are often
+        covered by a few analysts for EPS while many more still give a revenue estimate,
+        and a consensus of one or two analysts is an opinion rather than a consensus. The
+        forward ratios (e.g. `get_forward_price_earnings_ratio`) take `min_analysts` to
+        leave such periods out.
 
         Note that this information requires a Premium FMP subscription.
 
@@ -1817,16 +1828,19 @@ class Toolkit:
             end_date="2028-12-31",
         )
 
-        toolkit.get_analyst_estimates(show_columns=["Estimated Revenue Average"])
+        toolkit.get_analyst_estimates(show_columns=["Estimated EPS Average", "Number of Analysts EPS"])
         ```
 
         Which returns:
 
-        |      |        2026 |        2027 |        2028 |        2029 |        2030 |          2031 |
-        |:-----|------------:|------------:|------------:|------------:|------------:|--------------:|
-        | NVDA | 2.13656e+11 | 4.09929e+11 | 6.95178e+11 | 9.25214e+11 | 1.10649e+12 |   1.21149e+12 |
-        | AMD  | 5.13395e+10 | 9.04101e+10 | 1.25666e+11 | 1.6376e+11  | 2.32364e+11 | nan           |
-        | AVGO | 1.06009e+11 | 1.74279e+11 | 2.81861e+11 | 4.16476e+11 | 5.52387e+11 | nan           |
+        |                                    |    2026 |    2027 |    2028 |   2029 |   2030 |
+        |:-----------------------------------|--------:|--------:|--------:|-------:|-------:|
+        | ('NVDA', 'Estimated EPS Average')  |  9.2906 | 15.8077 | 21.3755 | 25.6   | 33.19  |
+        | ('NVDA', 'Number of Analysts EPS') | 33      | 32      | 20      |  9     | 10     |
+        | ('AMD', 'Estimated EPS Average')   |  7.9762 | 17.4457 | 25.6269 | 34.46  | 44.395 |
+        | ('AMD', 'Number of Analysts EPS')  | 28      | 31      | 22      | 10     | 10     |
+        | ('AVGO', 'Estimated EPS Average')  | 11.6843 | 19.3182 | 30.6326 | 47.325 | 64.01  |
+        | ('AVGO', 'Number of Analysts EPS') | 27      | 28      | 17      |  3     |  1     |
         """
         if not self._api_key:
             logger.error(

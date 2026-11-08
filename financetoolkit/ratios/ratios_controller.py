@@ -11479,6 +11479,46 @@ class Ratios:
 
         return self._analyst_estimates_cache.get("data", pd.DataFrame())
 
+    def _get_consensus_eps(
+        self, analyst_estimates: pd.DataFrame, min_analysts: int | None
+    ) -> pd.DataFrame:
+        """
+        Return the consensus (average) EPS estimate per ticker and period, leaving out the
+        periods whose EPS consensus rests on fewer than `min_analysts` analysts.
+
+        Far-out years are often covered by a handful of analysts (or one), which makes their
+        consensus, and every forward ratio built on it, a single opinion rather than a
+        consensus. On quarterly data a thin quarter also leaves out the year-long windows it is
+        part of, since the forward ratios sum four quarters.
+
+        Args:
+            analyst_estimates (pd.DataFrame): The analyst estimates, with the "Estimated EPS
+                Average" and "Number of Analysts EPS" rows per ticker.
+            min_analysts (int | None): The minimum number of analysts behind the EPS
+                consensus, or None to keep every period.
+
+        Returns:
+            pd.DataFrame: The consensus EPS estimate per ticker and period, NaN where too few
+                analysts cover it.
+        """
+        estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
+
+        if min_analysts is None:
+            return estimated_eps
+
+        # A period without a reported count is left out too: its depth is unknown.
+        analyst_count = (
+            analyst_estimates.loc[:, "Number of Analysts EPS", :]
+            if "Number of Analysts EPS" in analyst_estimates.index.get_level_values(1)
+            else pd.DataFrame(
+                np.nan, index=estimated_eps.index, columns=estimated_eps.columns
+            )
+        )
+
+        return estimated_eps.where(
+            analyst_count.reindex_like(estimated_eps) >= min_analysts
+        )
+
     def _get_next_twelve_months_eps(self, estimated_eps: pd.DataFrame) -> pd.DataFrame:
         """
         Return the estimated EPS of a year from each estimate period onwards.
@@ -11516,6 +11556,7 @@ class Ratios:
     @handle_errors
     def get_forward_price_earnings_ratio(
         self,
+        min_analysts: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -11551,6 +11592,10 @@ class Ratios:
         Also known as: forward P/E, projected P/E.
 
         Args:
+            min_analysts (int | None, optional): The minimum number of analysts behind the EPS
+                consensus of a period; periods covered by fewer are NaN. The number per period is
+                the "Number of Analysts EPS" of `Toolkit.get_analyst_estimates`. Defaults to None,
+                which keeps every period.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -11573,22 +11618,22 @@ class Ratios:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["LLY", "JNJ", "ABBV"],
+            ["NVDA", "AMD", "AVGO"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.ratios.get_forward_price_earnings_ratio().loc[:, "2026":"2030"]
+        toolkit.ratios.get_forward_price_earnings_ratio(min_analysts=5).loc[:, "2026":"2030"]
         ```
 
         Which returns:
 
-        |      |    2026 |    2027 |    2028 |    2029 |    2030 |
-        |:-----|--------:|--------:|--------:|--------:|--------:|
-        | ABBV | 16.4205 | 13.9217 | 12.7775 | 11.5443 | 10.899  |
-        | JNJ  | 18.6267 | 17.8462 | 14.8139 | 13.1689 | 11.6937 |
-        | LLY  | 31.5628 | 22.7146 | 19.8242 | 17.462  | 15.9104 |
+        |      |    2026 |    2027 |    2028 |     2029 |     2030 |
+        |:-----|--------:|--------:|--------:|---------:|---------:|
+        | AMD  | 26.8499 | 12.2758 |  8.3568 |   6.2147 |   4.824  |
+        | AVGO | 29.6209 | 17.9157 | 11.2984 | nan      | nan      |
+        | NVDA | 20.0741 | 11.798  |  8.7249 |   7.2852 |   5.6192 |
         """
         analyst_estimates = self._get_or_fetch_analyst_estimates()
 
@@ -11601,7 +11646,7 @@ class Ratios:
 
         # A year of estimated earnings from each period onwards (four quarters on quarterly data).
         estimated_eps = self._get_next_twelve_months_eps(
-            analyst_estimates.loc[:, "Estimated EPS Average", :]
+            self._get_consensus_eps(analyst_estimates, min_analysts)
         )
 
         stock_price = (
@@ -11635,6 +11680,7 @@ class Ratios:
     @handle_errors
     def get_forward_price_earnings_growth_ratio(
         self,
+        min_analysts: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -11672,6 +11718,10 @@ class Ratios:
         Also known as: forward PEG, PEG on forward growth.
 
         Args:
+            min_analysts (int | None, optional): The minimum number of analysts behind the EPS
+                consensus of a period; periods covered by fewer are NaN. The number per period is
+                the "Number of Analysts EPS" of `Toolkit.get_analyst_estimates`. Defaults to None,
+                which keeps every period.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -11717,7 +11767,7 @@ class Ratios:
             )
             return None
 
-        raw_estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
+        raw_estimated_eps = self._get_consensus_eps(analyst_estimates, min_analysts)
 
         # Both EPS figures cover a year: on quarterly data the estimate of the period and
         # the next three quarters against the last four reported quarters.

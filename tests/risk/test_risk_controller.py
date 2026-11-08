@@ -667,3 +667,25 @@ def test_pairwise_measures_default_to_the_benchmark(risk_module):
     )
     # One side given pairs it with the benchmark.
     assert list(risk_module.get_tail_dependence_coefficient("MSFT").index) == ["MSFT"]
+
+
+def test_pairwise_measures_keep_the_role_of_a_given_ticker(risk_module):
+    # A given system is measured against every other ticker, the benchmark included.
+    exposure = risk_module.get_covar(ticker="AAPL")
+    assert list(exposure.index) == ["MSFT", "Benchmark"]
+    pd.testing.assert_series_equal(
+        exposure.loc["MSFT"], risk_module.get_covar("AAPL", "MSFT"), check_names=False
+    )
+
+    # A given conditioning ticker is paired with the benchmark as the system.
+    contribution = risk_module.get_covar(conditioning_ticker="AAPL")
+    assert list(contribution.index) == ["AAPL"]
+    pd.testing.assert_series_equal(
+        contribution.loc["AAPL"],
+        risk_module.get_covar("Benchmark", "AAPL"),
+        check_names=False,
+    )
+
+    # The same for tail dependence: a given ticker_b is paired with every other ticker.
+    tail_dependence = risk_module.get_tail_dependence_coefficient(ticker_b="AAPL")
+    assert list(tail_dependence.index) == ["MSFT", "Benchmark"]

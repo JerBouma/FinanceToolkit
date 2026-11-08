@@ -3208,33 +3208,28 @@ class Risk:
 
         return [(ticker_a, ticker_b)]
 
-    def _resolve_benchmark_pairs(
-        self, first: str | None, second: str | None, benchmark_first: bool
+    def _benchmark_pairs(
+        self, varying: str | None, counterpart: str | None
     ) -> list[tuple[str, str]]:
-        # A pairwise measure without both tickers pairs every company with the benchmark: the benchmark takes the side that is not given, and every ticker the other when neither is given.  # noqa: E501
-        if first is not None and second is not None:
-            return [(first, second)]
+        # The (varying, counterpart) pairs of a pairwise measure: the counterpart defaults to the benchmark and the varying side to every other ticker, so a given ticker keeps the role of its own parameter.  # noqa: E501
+        if counterpart is None:
+            if "Benchmark" not in self._tickers:
+                raise ValueError(
+                    "Without a benchmark (benchmark_ticker=None) both tickers of the pair are required."
+                )
+            counterpart = "Benchmark"
 
-        if "Benchmark" not in self._tickers:
-            raise ValueError(
-                "Without a benchmark (benchmark_ticker=None) both tickers of the pair are required."
-            )
-
-        given = first if first is not None else second
         others = (
-            [given]
-            if given is not None
+            [varying]
+            if varying is not None
             else [
                 ticker
                 for ticker in self._tickers
-                if ticker not in ("Portfolio", "Benchmark")
+                if ticker not in ("Portfolio", counterpart)
             ]
         )
 
-        return [
-            ("Benchmark", ticker) if benchmark_first else (ticker, "Benchmark")
-            for ticker in others
-        ]
+        return [(ticker, counterpart) for ticker in others]
 
     @handle_errors
     def get_tail_dependence_coefficient(
@@ -3286,8 +3281,8 @@ class Risk:
         Also known as: tail dependence, extremal dependence coefficient.
 
         Args:
-            ticker_a (str | None, optional): The first asset. Defaults to None, which uses every ticker in the
-            Toolkit instance.
+            ticker_a (str | None, optional): The first asset. Defaults to None, which pairs every other ticker
+            in the Toolkit instance (the benchmark included when `ticker_b` is given) with `ticker_b`.
             ticker_b (str | None, optional): The second asset. Defaults to None, which uses the benchmark.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily", since a dependence estimate needs far more observations than a
@@ -3342,7 +3337,7 @@ class Risk:
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
-        pairs = self._resolve_benchmark_pairs(ticker_a, ticker_b, benchmark_first=False)
+        pairs = self._benchmark_pairs(ticker_a, ticker_b)
 
         result = pd.DataFrame(
             {
@@ -3919,10 +3914,11 @@ class Risk:
         Also known as: Conditional Value at Risk (systemic risk sense), Delta-CoVaR.
 
         Args:
-            ticker (str | None, optional): The asset whose conditional VaR is being measured. Defaults to None,
-            which uses the benchmark as the system.
+            ticker (str | None, optional): The asset whose conditional VaR is being measured (the system).
+            Defaults to None, which uses the benchmark.
             conditioning_ticker (str | None, optional): The asset whose distress `ticker` is conditioned on.
-            Defaults to None, which uses every ticker in the Toolkit instance.
+            Defaults to None, which conditions `ticker` on every other ticker in the Toolkit instance in turn
+            (the benchmark included when `ticker` is given), a row each.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
@@ -3969,16 +3965,15 @@ class Risk:
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
-        pairs = self._resolve_benchmark_pairs(
-            ticker, conditioning_ticker, benchmark_first=True
-        )
+        # The conditioning ticker varies and the system (`ticker`) defaults to the benchmark.
+        pairs = self._benchmark_pairs(conditioning_ticker, ticker)
 
         result = pd.DataFrame(
             {
                 conditioning: covar_model.get_covar(
                     returns[system], returns[conditioning], alpha=alpha
                 )
-                for system, conditioning in pairs
+                for conditioning, system in pairs
             }
         ).T
 

@@ -503,58 +503,36 @@ def test_an_empty_answer_over_a_weekend_says_why(monkeypatch):
     assert "no trading days" in text
 
 
-def test_a_curve_is_passed_by_maturity_and_its_absence_is_named(captured):
-    def call(**arguments):
-        return asyncio.run(
-            mcp_controller.mcp.call_tool(
-                "fixed_income",
-                {
-                    "indicator": "get_yield_curve_spread",
-                    "short_maturity": 2,
-                    "long_maturity": 10,
-                    **arguments,
-                },
-            )
-        )[0][0].text
-
-    assert "sample curve" in call()
-    assert "sample curve" not in call(spot_rates={"2": 0.048, "10": 0.0524})
-    assert captured[-1]["spot_rates"] == {2.0: 0.048, 10.0: 0.0524}
-
-
 def test_a_number_parameter_also_takes_a_list(captured):
     asyncio.run(
         mcp_controller.mcp.call_tool(
             "fixed_income",
             {
-                "indicator": "get_duration",
-                "par_value": 1000,
-                "coupon_rate": [0.03, 0.05],
-                "years_to_maturity": [5, 10],
+                "indicator": "get_forward_rate",
+                "near_maturity": [1, 2],
+                "far_maturity": 10,
             },
         )
     )
 
-    assert captured[-1]["coupon_rate"] == [0.03, 0.05]
+    assert captured[-1]["near_maturity"] == [1, 2]
+    assert captured[-1]["far_maturity"] == 10
 
 
-def test_an_assumed_bond_input_is_named(captured):
-    def call(**arguments):
-        return asyncio.run(
-            mcp_controller.mcp.call_tool(
-                "fixed_income",
-                {
-                    "indicator": "get_present_value",
-                    "par_value": 1000,
-                    "coupon_rate": 0.04,
-                    "years_to_maturity": 5,
-                    **arguments,
-                },
-            )
-        )[0][0].text
+def test_bond_calculations_select_bonds(captured):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "fixed_income",
+            {
+                "indicator": "collect_bond_statistics",
+                "bonds": "912810FT0,91282CPZ8",
+                "date": "2026-11-05",
+            },
+        )
+    )
 
-    assert "Assumed yield_to_maturity=0.08 (the default)" in call()
-    assert "Assumed" not in call(yield_to_maturity=0.045)
+    assert captured[-1]["bonds"] == ["912810FT0", "91282CPZ8"]
+    assert captured[-1]["date"] == "2026-11-05"
 
 
 def test_daily_style_analysis_is_not_blocked(captured):

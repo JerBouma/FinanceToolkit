@@ -10,6 +10,7 @@ Receivables,Net Receivables
 AccountsReceivable,Accounts Receivable
 OtherReceivables,Other Receivables
 Inventory,Inventory
+PrepaidAssets,Prepaids
 OtherCurrentAssets,Other Current Assets
 TotalNonCurrentAssets,Fixed Assets
 GoodwillAndOtherIntangibleAssets,Goodwill and Intangible Assets

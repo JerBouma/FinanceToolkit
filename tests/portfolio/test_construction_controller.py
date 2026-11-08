@@ -84,6 +84,63 @@ def test_get_inverse_volatility_weights(recorder, portfolio_module):
     recorder.capture(portfolio_module.get_inverse_volatility_weights())
 
 
+def test_get_maximum_diversification_weights(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_maximum_diversification_weights())
+    recorder.capture(
+        portfolio_module.get_maximum_diversification_weights(
+            include_benchmark=True, covariance="denoised"
+        )
+    )
+
+
+def test_get_minimum_tracking_error_weights(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_minimum_tracking_error_weights())
+    recorder.capture(
+        portfolio_module.get_minimum_tracking_error_weights(
+            objective="information_ratio", period="weekly"
+        )
+    )
+
+
+def test_get_growth_optimal_weights(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_growth_optimal_weights())
+    recorder.capture(
+        portfolio_module.get_growth_optimal_weights(
+            method="approximate", fraction=0.5, include_benchmark=True
+        )
+    )
+
+
+def test_the_tracking_error_of_the_portfolio_is_that_of_its_active_returns(
+    portfolio_module,
+):
+    table = portfolio_module.get_minimum_tracking_error_weights(rounding=12)
+    returns = portfolio_module._get_returns("daily", True)
+    weights = table["Weight"].drop("Portfolio")
+    active = returns[weights.index] @ weights - returns["Benchmark"]
+
+    assert table.loc["Portfolio", "Tracking Error"] == pytest.approx(
+        active.std() * np.sqrt(252)
+    )
+    assert table.loc["Portfolio", "Active Return"] == pytest.approx(active.mean() * 252)
+
+
+def test_fractional_kelly_holds_the_rest_in_cash(portfolio_module):
+    full = portfolio_module.get_growth_optimal_weights(rounding=12)
+    half = portfolio_module.get_growth_optimal_weights(fraction=0.5, rounding=12)
+
+    assert half.loc["Cash", "Weight"] == pytest.approx(0.5)
+    assert half.loc["Portfolio", "Weight"] == pytest.approx(1)
+    np.testing.assert_allclose(
+        half["Weight"].drop(["Cash", "Portfolio"]),
+        full["Weight"].drop("Portfolio") / 2,
+    )
+    assert half.loc["Portfolio", "Volatility"] == pytest.approx(
+        full.loc["Portfolio", "Volatility"] / 2
+    )
+    assert "Cash" not in full.index
+
+
 def test_get_minimum_cvar_weights(recorder, portfolio_module):
     recorder.capture(portfolio_module.get_minimum_cvar_weights(include_benchmark=True))
     recorder.capture(
@@ -286,10 +343,13 @@ def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit
         "get_hierarchical_risk_parity_weights",
         "get_inverse_volatility_weights",
         "get_black_litterman_weights",
+        "get_maximum_diversification_weights",
+        "get_minimum_tracking_error_weights",
+        "get_growth_optimal_weights",
     ],
 )
 @pytest.mark.parametrize(
-    "covariance", ["ledoit_wolf", "oas", "semicovariance", "exponential"]
+    "covariance", ["ledoit_wolf", "oas", "semicovariance", "exponential", "denoised"]
 )
 def test_the_optimizers_take_a_covariance_estimator(
     portfolio_module, method, covariance

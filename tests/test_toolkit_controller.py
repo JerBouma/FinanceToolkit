@@ -233,9 +233,9 @@ def test_toolkit_converts_each_period_once(monkeypatch):
     toolkit.get_historical_data(period="monthly")
     assert len(conversions) == conversions_after_first
 
-    # A different rounding is a different conversion.
+    # The data is kept unrounded, so another rounding rounds the same conversion.
     rounded = toolkit.get_historical_data(period="monthly", rounding=0)
-    assert len(conversions) == conversions_after_first + 1
+    assert len(conversions) == conversions_after_first
     assert not rounded.equals(first)
 
 
@@ -316,8 +316,8 @@ def test_toolkit_period_risk_free_rate_is_the_average_daily_yield():
 
     treasury = toolkit.get_treasury_data(period="quarterly", rounding=None)
     daily_yield = treasury_data.xs("10 Year", level=1, axis=1)["Adj Close"]
-    # Rounded like every other Toolkit output (4 decimals by default).
-    expected = daily_yield.groupby(daily_yield.index.asfreq("Q")).mean().round(4)
+    # Unrounded, as the modules calculate with it.
+    expected = daily_yield.groupby(daily_yield.index.asfreq("Q")).mean()
 
     period_rate = toolkit._quarterly_risk_free_rate["Adj Close"]
     pd.testing.assert_series_equal(
@@ -902,3 +902,41 @@ def test_daily_ratios_use_periods_that_ended_before_the_start_date(monkeypatch):
     # The daily dividend yield has its full year of dividends on the start date.
     dividend_yield = toolkit.ratios.get_dividend_yield(show_daily=True)
     assert dividend_yield.loc["2022-06-01", ["AAPL", "MSFT"]].notna().all()
+
+
+def test_rounding_applies_to_the_results_not_to_the_data():
+    # The Toolkit's rounding used to be applied to the prices, returns and Treasury yields it
+    # kept, so every calculation ran on rounded data: a downside beta, which selects the
+    # periods the benchmark fell, changed with the rounding. Only the results are rounded.
+    toolkits = {}
+    for rounding in (1, None):
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            historical=historical_dataset,
+            start_date="2019-12-31",
+            end_date="2023-01-01",
+            sleep_timer=False,
+            rounding=rounding,
+        )
+        toolkit._daily_risk_free_rate = risk_free_rate
+        toolkit._daily_treasury_data = treasury_data
+        toolkits[rounding] = toolkit
+
+    pd.testing.assert_frame_equal(
+        toolkits[1]._get_module_historical_data("weekly"),
+        toolkits[None]._get_module_historical_data("weekly"),
+    )
+    pd.testing.assert_frame_equal(
+        toolkits[1]._get_module_risk_free_rate("weekly"),
+        toolkits[None]._get_module_risk_free_rate("weekly"),
+    )
+
+    weekly = toolkits[1].get_historical_data(period="weekly")["Return"]
+    pd.testing.assert_frame_equal(weekly, weekly.round(1))
+
+    pd.testing.assert_frame_equal(
+        toolkits[1].performance.get_beta(method="downside", period="weekly"),
+        toolkits[None]
+        .performance.get_beta(method="downside", period="weekly")
+        .round(1),
+    )

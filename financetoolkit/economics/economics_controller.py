@@ -514,13 +514,13 @@ class Economics:
         Database (GMDB), so they always come from it. For more information see:
         https://www.globalmacrodata.com/documentation.html
 
-        Also known as: GDP, national income, economic growth.
+        Also known as: GDP, national income, economic growth, real GDP, real GDP in USD, cross-country comparable GDP.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
             gmdb_source (bool | None, optional): Whether to retrieve the data from the GMDB. Defaults to None, which falls back to the gmdb_source set on the Economics class (True by default).
-            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. With inflation_adjusted=True, real GDP in US dollars. Always from the GMDB. Defaults to False.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. With inflation_adjusted=True, real GDP in millions of US dollars at constant 2015 prices, converted at the 2015 market exchange rate (not at purchasing power parities), so its growth equals the growth of real GDP in the national currency. Always from the GMDB. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -821,104 +821,6 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Gross Domestic Product Deflator",
-            countries=countries,
-            rolling=rolling,
-            trailing=trailing,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-        )
-
-    @handle_errors
-    def get_real_gross_domestic_product_usd(
-        self,
-        countries: list[str] | str | None = None,
-        rolling: int | None = None,
-        trailing: int | None = None,
-        growth: bool = False,
-        lag: int = 1,
-        standardize: bool = False,
-        rounding: int | None = None,
-        gmdb_forecasts: bool = False,
-    ):
-        """
-        Get the Real Gross Domestic Product expressed in cross-country comparable US Dollars
-        for a variety of countries over time from the Global Macro Database (GMDB). This is the
-        inflation-adjusted GDP of a country converted into US Dollars, which makes it possible to
-        directly compare the economic output of countries that use different currencies without
-        having to perform the currency conversion or inflation adjustment yourself.
-
-        The values are in millions of US dollars at constant 2015 prices, so the 18295020 for
-        the United States in 2015 is a real GDP of 18.3 trillion dollars. The real GDP in the
-        national currency is converted at the 2015 market exchange rate against the dollar,
-        not at purchasing power parities, so a country's level reflects its 2015 exchange
-        rate and its growth equals the growth of its real GDP in its own currency.
-
-        Data comes from the Global Macro Database (GMDB), further information about the
-        variable can be found within https://www.globalmacrodata.com/documentation.html
-
-        Also known as: real GDP in USD, cross-country comparable GDP.
-
-        Args:
-            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
-            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
-            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
-                Database projects, from the IMF's World Economic Outlook, up to five years
-                ahead. Only applies to data from the Global Macro Database. Defaults to
-                False, which ends a series with its last observation.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Real Gross Domestic Product in US Dollars
-
-        As an example:
-
-        ```python
-        from financetoolkit import Economics
-
-        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
-
-        economics.get_real_gross_domestic_product_usd(countries=['United States', 'Japan', 'Germany'])
-        ```
-
-        Which returns:
-
-        |      |   United States |       Japan |     Germany |
-        |:-----|----------------:|------------:|------------:|
-        | 2015 |     1.8295e+07  | 4.53311e+06 | 3.41986e+06 |
-        | 2016 |     1.86279e+07 | 4.56506e+06 | 3.49293e+06 |
-        | 2017 |     1.90857e+07 | 4.63917e+06 | 3.60121e+06 |
-        | 2018 |     1.96519e+07 | 4.67787e+06 | 3.64259e+06 |
-        | 2019 |     2.01596e+07 | 4.66344e+06 | 3.67938e+06 |
-        | 2020 |     1.974e+07   | 4.46369e+06 | 3.51432e+06 |
-        | 2021 |     2.09545e+07 | 4.62279e+06 | 3.65016e+06 |
-        | 2022 |     2.14834e+07 | 4.68435e+06 | 3.719e+06   |
-        | 2023 |     2.21138e+07 | 4.71811e+06 | 3.69391e+06 |
-        | 2024 |     2.27315e+07 | 4.71016e+06 | 3.67648e+06 |
-        | 2025 |     2.32103e+07 | 4.75982e+06 | 3.68916e+06 |
-        """
-
-        real_gross_domestic_product_usd = (
-            gmdb_model.get_real_gross_domestic_product_usd(
-                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
-            )
-        )
-
-        return finalize_dataset(
-            dataset=real_gross_domestic_product_usd,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            indicator_name="Real Gross Domestic Product (USD)",
             countries=countries,
             rolling=rolling,
             trailing=trailing,

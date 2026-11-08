@@ -12,7 +12,10 @@ from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.economics.helpers import COUNTRY_CODES
-from financetoolkit.fmp_model import get_financial_data
+from financetoolkit.fmp_model import (
+    get_financial_data,
+    to_financial_modeling_prep_symbols,
+)
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.statistics_model import normalize_country_name
 
@@ -61,7 +64,9 @@ def get_cached_financial_data(
         pd.DataFrame: The endpoint's response, either freshly retrieved or cached.
     """
     cache = get_active_cache()
-    entity = redact_credentials(url)
+    # Identified by the URL as it is requested, with its symbols encoded, so a symbol such as
+    # M&M.NS is never served an answer stored under the unencoded URL, which asks for M.
+    entity = redact_credentials(to_financial_modeling_prep_symbols(url))
 
     if cache is not None:
         cached_response = cache.get(

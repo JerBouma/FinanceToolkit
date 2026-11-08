@@ -305,10 +305,9 @@ def get_index_history(
         windows.append((start.strftime("%Y-%m-%d"), window_end.strftime("%Y-%m-%d")))
         start = window_end + pd.DateOffset(days=1)
 
-    symbol_parameter = symbol.replace("^", "%5E")
     urls = [
         "https://financialmodelingprep.com/stable/historical-price-eod/light"
-        f"?symbol={symbol_parameter}&from={window_start}&to={window_end}&apikey={api_key}"
+        f"?symbol={symbol}&from={window_start}&to={window_end}&apikey={api_key}"
         for window_start, window_end in windows
     ]
     frames = helpers.run_in_parallel(

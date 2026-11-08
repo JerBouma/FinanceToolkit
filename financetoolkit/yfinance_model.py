@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import warnings
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -473,7 +474,7 @@ def get_historical_statistics(ticker: str) -> pd.Series:
     try:
         response = get_request(
             "https://query1.finance.yahoo.com/v8/finance/chart/"
-            f"{to_yahoo_finance_symbol(ticker)}?interval=1d&range=None",
+            f"{quote(to_yahoo_finance_symbol(ticker), safe='')}?interval=1d&range=None",
             timeout=60,
         )
     except requests.exceptions.RequestException:

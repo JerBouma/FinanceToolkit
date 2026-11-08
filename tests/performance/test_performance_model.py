@@ -849,17 +849,20 @@ def test_rolling_omega_ratio_matches_every_window_and_is_infinite_without_losses
         returns.rolling(20).apply(window_omega, raw=True),
         rtol=1e-12,
     )
-    assert performance_model.get_rolling_omega_ratio(
-        pd.Series([0.01, 0.02, 0.0, 0.0]), 2
-    ).tolist()[1:] == [np.inf, np.inf, pytest.approx(np.nan, nan_ok=True)]
+    assert (
+        performance_model.get_rolling_omega_ratio(pd.Series([0.01, 0.02, 0.0, 0.0]), 2)
+        .iloc[1:]
+        .isna()
+        .all()
+    )
 
 
-def test_omega_ratio_without_losses_is_infinite():
+def test_omega_ratio_without_losses_is_nan():
     gains_only = pd.Series([0.01, 0.02, 0.005])
 
-    assert performance_model.get_omega_ratio(gains_only) == np.inf
+    assert np.isnan(performance_model.get_omega_ratio(gains_only))
     assert np.isnan(performance_model.get_omega_ratio(pd.Series([0.0, 0.0])))
-    assert performance_model.get_rolling_omega_ratio(gains_only, 2).iloc[-1] == np.inf
+    assert np.isnan(performance_model.get_rolling_omega_ratio(gains_only, 2).iloc[-1])
 
 
 def test_burke_drawdown_measure_of_a_series_without_returns_is_nan():
@@ -946,10 +949,10 @@ def test_return_statistics_match_a_hand_calculation():
     )
 
 
-def test_a_history_without_losses_has_an_infinite_profit_factor():
+def test_a_history_without_losses_has_no_profit_factor():
     statistics = performance_model.get_return_statistics(pd.Series([0.01, 0.02, 0.0]))
 
-    assert statistics["Profit Factor"] == np.inf
+    assert np.isnan(statistics["Profit Factor"])
     assert np.isnan(statistics["Payoff Ratio"])
     assert np.isnan(statistics["Recovery Factor"])
     assert statistics["Max Consecutive Losses"] == 0

@@ -22,6 +22,7 @@ from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     by_own_trading_days,
+    drop_non_finite,
     to_period_index,
 )
 
@@ -141,9 +142,9 @@ def get_beta(
     ).groupby(groups).sum(min_count=2)
 
     if within_period:
-        return beta.replace([np.inf, -np.inf], np.nan)
+        return drop_non_finite(beta)
 
-    beta = beta.iloc[0].replace([np.inf, -np.inf], np.nan)
+    beta = drop_non_finite(beta.iloc[0])
 
     return beta if isinstance(returns, pd.DataFrame) else float(beta.iloc[0])
 
@@ -1614,7 +1615,7 @@ def get_ulcer_performance_index(
     Returns:
         pd.Series: A Series of Ulcer Performance Index values with time as index and assets as columns.
     """
-    return (excess_returns / ulcer_index).dropna()
+    return (excess_returns / ulcer_index).dropna(how="all")
 
 
 def get_m2_ratio(
@@ -1886,7 +1887,7 @@ def get_calmar_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Calmar ratios with time as index
         and assets as columns.
     """
-    return (returns / maximum_drawdown.abs()).dropna()
+    return (returns / maximum_drawdown.abs()).dropna(how="all")
 
 
 @by_own_trading_days
@@ -1962,7 +1963,7 @@ def get_sterling_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Sterling ratios with time as index
         and assets as columns.
     """
-    return (returns / (average_drawdown.abs() + adjustment)).dropna()
+    return (returns / (average_drawdown.abs() + adjustment)).dropna(how="all")
 
 
 @by_own_trading_days
@@ -2045,7 +2046,7 @@ def get_burke_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Burke ratios with time as index
         and assets as columns.
     """
-    return (excess_returns / burke_drawdown_measure).dropna()
+    return (excess_returns / burke_drawdown_measure).dropna(how="all")
 
 
 def _geometric_mean_return(returns: pd.Series | pd.DataFrame) -> pd.Series | float:
@@ -2299,8 +2300,8 @@ def get_omega_ratio(
     Returns:
         pd.Series | pd.DataFrame: Omega Ratio values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index. Without any return below
-        the minimum acceptable return the ratio is infinite, and without any return away
-        from it NaN.
+        the minimum acceptable return there are no losses to divide by and the ratio is
+        undefined (NaN).
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -2336,14 +2337,10 @@ def get_omega_ratio(
 
 def _divide_gains_by_losses(gains: float, losses: float) -> float:
     """
-    The Omega ratio from the summed gains and losses: infinite when there are gains and no
-    losses (the sum of no losses is -0.0, which would give minus infinity) and NaN when
-    there are neither.
+    The Omega ratio from the summed gains and losses, NaN without losses (the sum of no
+    losses is -0.0, which would otherwise give minus infinity).
     """
-    if losses > 0:
-        return gains / losses
-
-    return np.inf if gains > 0 else np.nan
+    return gains / losses if losses > 0 else np.nan
 
 
 def get_rolling_omega_ratio(
@@ -2354,9 +2351,8 @@ def get_rolling_omega_ratio(
     """
     Calculate the rolling Omega Ratio of returns.
 
-    A window with gains but no losses has an infinite ratio (inf), like get_omega_ratio
-    over the whole period; a window without gains or losses (all returns equal to the
-    minimum acceptable return) has none (NaN).
+    A window without losses (no return below the minimum acceptable return) has no ratio
+    (NaN), like get_omega_ratio over the whole period.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -2373,11 +2369,9 @@ def get_rolling_omega_ratio(
         gains = excess_returns.clip(min=0).sum(axis=1)
         losses = (-excess_returns).clip(min=0).sum(axis=1)
 
-        # A window without losses has an infinite ratio, one without gains or losses none.
+        # A window without losses has no ratio.
         with np.errstate(divide="ignore", invalid="ignore"):
-            return np.where(
-                losses > 0, gains / losses, np.where(gains > 0, np.inf, np.nan)
-            )
+            return np.where(losses > 0, gains / losses, np.nan)
 
     return apply_to_stacked_windows(returns, window_size, _omega)
 
@@ -2470,9 +2464,9 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
         returns (pd.Series): A Series of returns; missing returns are left out.
 
     Returns:
-        pd.Series: The statistics, indexed by their name. A Profit Factor with gains but
-        no losses is infinite (inf), as for the Omega Ratio; a statistic without the
-        returns it needs (e.g. the Payoff Ratio without losses) is NaN.
+        pd.Series: The statistics, indexed by their name. A statistic without the returns
+        it needs (e.g. the Profit Factor or the Payoff Ratio without losses) is NaN, as
+        for the Omega Ratio.
     """
     returns = returns.dropna()
     wins = returns[returns > 0]
@@ -2483,9 +2477,8 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
     average_win = wins.mean() if len(wins) else np.nan
     average_loss = losses.mean() if len(losses) else np.nan
 
-    # Gains without losses give an infinite ratio, as for the Omega Ratio.
-    no_losses = np.inf if len(wins) else np.nan
-    profit_factor = wins.sum() / abs(losses.sum()) if len(losses) else no_losses
+    # Without losses there is nothing to divide by, as for the Omega Ratio.
+    profit_factor = wins.sum() / abs(losses.sum()) if len(losses) else np.nan
 
     # Streaks: every change of sign (a zero return included) starts a new run.
     signs = np.sign(returns)
@@ -3329,7 +3322,7 @@ def get_starr_ratio(
     starr_ratio = excess_returns / abs(conditional_value_at_risk)
 
     if isinstance(starr_ratio, pd.Series | pd.DataFrame):
-        return starr_ratio.dropna()
+        return starr_ratio.dropna(how="all")
 
     return starr_ratio
 
@@ -3383,7 +3376,7 @@ def get_rachev_ratio(
     rachev_ratio = right_tail_expected_shortfall / left_tail_expected_shortfall
 
     if isinstance(rachev_ratio, pd.Series | pd.DataFrame):
-        return rachev_ratio.dropna()
+        return rachev_ratio.dropna(how="all")
 
     return rachev_ratio
 

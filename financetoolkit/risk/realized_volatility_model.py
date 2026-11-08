@@ -121,6 +121,10 @@ def get_parkinson_volatility(
     Returns:
         pd.Series | pd.DataFrame: Parkinson Volatility values with time (or `groups`)
         as the index.
+
+    Notes:
+    - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
+    and is left out; the period is measured over the remaining days.
     """
     _validate_period(period)
 
@@ -130,6 +134,12 @@ def get_parkinson_volatility(
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
     volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+
+    # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
+    # logarithm: that day is left out instead of turning the period's mean into inf.
+    high_prices, low_prices = (
+        prices.where(prices > 0) for prices in (high_prices, low_prices)
+    )
 
     log_high_low_squared = np.log(high_prices / low_prices) ** 2
 
@@ -190,6 +200,10 @@ def get_garman_klass_volatility(
     Returns:
         pd.Series | pd.DataFrame: Garman-Klass Volatility values with time (or
         `groups`) as the index.
+
+    Notes:
+    - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
+    and is left out; the period is measured over the remaining days.
     """
     _validate_period(period)
 
@@ -200,6 +214,13 @@ def get_garman_klass_volatility(
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
     volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+
+    # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
+    # logarithm: that day is left out instead of turning the period's mean into inf or NaN.
+    open_prices, high_prices, low_prices, close_prices = (
+        prices.where(prices > 0)
+        for prices in (open_prices, high_prices, low_prices, close_prices)
+    )
 
     log_high_low = np.log(high_prices / low_prices)
     log_close_open = np.log(close_prices / open_prices)
@@ -260,6 +281,10 @@ def get_rogers_satchell_volatility(
     Returns:
         pd.Series | pd.DataFrame: Rogers-Satchell Volatility values with time (or
         `groups`) as the index.
+
+    Notes:
+    - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
+    and is left out; the period is measured over the remaining days.
     """
     _validate_period(period)
 
@@ -270,6 +295,13 @@ def get_rogers_satchell_volatility(
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
     volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+
+    # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
+    # logarithm: that day is left out instead of turning the period's mean into inf or NaN.
+    open_prices, high_prices, low_prices, close_prices = (
+        prices.where(prices > 0)
+        for prices in (open_prices, high_prices, low_prices, close_prices)
+    )
 
     daily_term = np.log(high_prices / close_prices) * np.log(
         high_prices / open_prices
@@ -340,6 +372,10 @@ def get_yang_zhang_volatility(
     Returns:
         pd.Series | pd.DataFrame: Yang-Zhang Volatility values with time (or `groups`)
         as the index.
+
+    Notes:
+    - A day on which a price the estimator uses is 0 or below (a bad bar) has no logarithm
+    and is left out; the period is measured over the remaining days.
     """
     _validate_period(period)
 
@@ -350,6 +386,13 @@ def get_yang_zhang_volatility(
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
     volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+
+    # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
+    # logarithm: that day is left out instead of turning the period's mean into inf or NaN.
+    open_prices, high_prices, low_prices, close_prices = (
+        prices.where(prices > 0)
+        for prices in (open_prices, high_prices, low_prices, close_prices)
+    )
 
     # Computed before grouping so a period transition lands in the next period.
     previous_close = close_prices.shift(1)

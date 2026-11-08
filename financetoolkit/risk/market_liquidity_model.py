@@ -6,7 +6,10 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.utilities.statistics_model import by_own_trading_days
+from financetoolkit.utilities.statistics_model import (
+    by_own_trading_days,
+    drop_non_finite,
+)
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
@@ -98,9 +101,7 @@ def get_amihud_illiquidity(
             }
         )
     if isinstance(returns, pd.Series):
-        daily_illiquidity = (returns.abs() / dollar_volume).replace(
-            [np.inf, -np.inf], np.nan
-        )
+        daily_illiquidity = drop_non_finite(returns.abs() / dollar_volume)
 
         return daily_illiquidity.mean() * scale
 

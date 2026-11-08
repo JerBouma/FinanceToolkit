@@ -4626,8 +4626,8 @@ class Performance:
         Notes:
         - A zero return is neither a win nor a loss: it is left out of the Win Rate and ends a
         streak. Each ticker is measured over its own returns.
-        - A Profit Factor with gains but no losses is infinite (inf), as for the Omega Ratio; a
-        statistic without the returns it needs, such as the Payoff Ratio without losses, is NaN.
+        - A statistic without the returns it needs, such as the Profit Factor or the Payoff Ratio
+        without losses, is NaN, as for the Omega Ratio.
         - There is no Portfolio column: a weighted average of streak lengths or payoff ratios is
         not the statistic of the portfolio.
 

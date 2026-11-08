@@ -777,3 +777,26 @@ def test_deepest_since_is_the_last_date_as_deep_as_today():
     assert since.iloc[6] == "2024-01-02"
     # The deepest drawdown so far has no earlier date as deep.
     assert since.iloc[7] is None
+
+
+def test_skewness_and_kurtosis_of_returns_without_variation_are_nan():
+    returns = pd.DataFrame(
+        {"Constant": [0.0] * 20, "Varying": np.linspace(-1, 1, 20) ** 3}
+    )
+
+    skewness = risk_model.get_skewness(returns)
+    kurtosis = risk_model.get_kurtosis(returns, fisher=False)
+
+    assert np.isnan(skewness["Constant"]) and np.isfinite(skewness["Varying"])
+    assert np.isnan(kurtosis["Constant"]) and np.isfinite(kurtosis["Varying"])
+    assert np.isnan(risk_model.get_skewness(pd.Series([0.01] * 5)))
+
+    rolling_returns = pd.Series([0.0] * 10 + [0.01, -0.02, 0.03, 0.01])
+    rolling_skewness = risk_model.get_rolling_skewness(rolling_returns, 5)
+    rolling_kurtosis = risk_model.get_rolling_kurtosis(rolling_returns, 5)
+
+    # Windows of only zero returns are undefined; once a window varies it has a value.
+    assert rolling_skewness.iloc[:10].isna().all()
+    assert rolling_kurtosis.iloc[:10].isna().all()
+    assert rolling_skewness.iloc[10:].notna().all()
+    assert rolling_kurtosis.iloc[10:].notna().all()

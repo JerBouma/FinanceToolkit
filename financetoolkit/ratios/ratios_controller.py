@@ -28,6 +28,7 @@ from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
     calculate_standardization,
+    drop_non_finite,
     finalize_dataset,
 )
 
@@ -831,8 +832,9 @@ class Ratios:
             if formula_adjusted:
                 calculation = eval(formula_adjusted)  # noqa
 
-                total_financials.loc[:, name, :] = calculation.astype(
-                    np.float64
+                # A zero denominator is undefined (NaN), as in every other ratio.
+                total_financials.loc[:, name, :] = drop_non_finite(
+                    calculation.astype(np.float64)
                 ).to_numpy()
 
                 self._custom_ratios = total_financials.loc[

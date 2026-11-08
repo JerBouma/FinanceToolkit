@@ -553,6 +553,94 @@ def test_morningstar_measures_need_a_yearly_or_quarterly_period(performance_modu
         )
 
 
+def _toolkit_with_historical(historical):
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    return toolkit
+
+
+DRAWDOWN_AND_TAIL_RATIOS = [
+    "get_ulcer_performance_index",
+    "get_calmar_ratio",
+    "get_sterling_ratio",
+    "get_burke_ratio",
+    "get_starr_ratio",
+    "get_rachev_ratio",
+]
+
+
+def test_a_later_listed_ticker_keeps_the_periods_of_the_others(performance_module):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    before_listing = historical.index < pd.Period("2021-06-01", "D")
+    msft_columns = [column for column in historical.columns if column[1] == "MSFT"]
+    historical.loc[before_listing, msft_columns] = np.nan
+    later_listed = _toolkit_with_historical(historical).performance
+
+    for method in DRAWDOWN_AND_TAIL_RATIOS:
+        result = getattr(later_listed, method)()
+        reference = getattr(performance_module, method)()
+
+        # AAPL's data is unchanged, so neither are its ratios, also before MSFT lists.
+        pd.testing.assert_series_equal(result["AAPL"], reference["AAPL"], obj=method)
+        assert result.loc[:"2020", "MSFT"].isna().all(), method
+
+
+def test_a_constant_price_gives_nan_instead_of_dropping_other_tickers(
+    performance_module,
+):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    for column in ["Open", "High", "Low", "Close", "Adj Close"]:
+        historical[(column, "MSFT")] = 100.0
+    historical[("Return", "MSFT")] = 0.0
+    historical[("Cumulative Return", "MSFT")] = 1.0
+    constant = _toolkit_with_historical(historical).performance
+
+    calmar = constant.get_calmar_ratio()
+    pd.testing.assert_series_equal(
+        calmar["AAPL"], performance_module.get_calmar_ratio()["AAPL"]
+    )
+    # No drawdown and no return: 0 / 0 is undefined.
+    assert calmar["MSFT"].isna().all()
+    # A beta of 0 leaves the Treynor ratio undefined, not minus infinity.
+    assert constant.get_treynor_ratio()["MSFT"].isna().all()
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_calmar_ratio",
+        "get_burke_ratio",
+        "get_ulcer_performance_index",
+        "get_sortino_ratio",
+        "get_omega_ratio",
+        "get_gain_to_pain_ratio",
+    ],
+)
+def test_weeks_without_a_drawdown_or_a_loss_are_nan_not_infinite(
+    performance_module, method
+):
+    result = getattr(performance_module, method)(period="weekly")
+
+    assert not np.isinf(result.to_numpy(dtype=float)).any()
+    assert result.notna().any().all()
+
+
 def _daily_returns_in(performance_module, ticker: str, year: str) -> pd.Series:
     """The daily returns of one ticker within one calendar year."""
     daily = performance_module._historical_data["daily"]["Return"][ticker]

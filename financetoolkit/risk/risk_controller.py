@@ -4561,6 +4561,7 @@ class Risk:
         - The method retrieves historical return data based on the specified `period` and calculates Skew for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of Skewness values using the specified `lag`.
+        - Returns that do not vary (a constant price, such as a suspended stock) have no Skewness and give NaN.
 
         As an example:
 
@@ -4707,6 +4708,7 @@ class Risk:
         - The method retrieves historical return data based on the specified `period` and calculates Kurtosis for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of Kurtosis values using the specified `lag`.
+        - Returns that do not vary (a constant price, such as a suspended stock) have no Kurtosis and give NaN.
 
         As an example:
 
@@ -5100,6 +5102,9 @@ class Risk:
         the specified `period` for each asset in the Toolkit instance. The close-to-close estimator
         only needs the daily returns, Parkinson needs the High and Low, and the remaining
         estimators need the Open, High, Low and Close.
+        - A range-based estimator leaves out each day on which a price it uses is 0 or below (a bad bar, as some
+        feeds report for illiquid days), since its logarithm is undefined; the period is measured over the
+        remaining days. The Yang-Zhang overnight return also needs the previous Close.
         - If `growth` is set to True, the method calculates the growth of Volatility values using the specified `lag`.
 
         Passing `method="parkinson"` (or another range-based estimator) uses the daily trading range instead of
@@ -5317,10 +5322,15 @@ class Risk:
                 self._historical_data["daily"]["Return"].dropna(how="all") ** 2
             )
         else:
-            open_prices = self._get_prices("Open")
-            high_prices = self._get_prices("High")
-            low_prices = self._get_prices("Low")
-            close_prices = self._get_prices("Close")
+            # A bad bar (a price of 0 or below) has no logarithm and is left out, as in
+            # get_volatility, instead of putting an infinite variance into the regression.
+            open_prices, high_prices, low_prices, close_prices = (
+                prices.where(prices > 0)
+                for prices in (
+                    self._get_prices(column)
+                    for column in ("Open", "High", "Low", "Close")
+                )
+            )
 
             if estimator == "parkinson":
                 realized_variance = np.log(high_prices / low_prices) ** 2 / (

@@ -287,6 +287,10 @@ COUNTRY_CURRENCIES = {
     "NZ": "NZD",
 }
 
+# Exchanges that trade in another currency than their country's: the London International
+# Order Book (IOB) lists depositary receipts in US dollars.
+EXCHANGE_CURRENCIES = {"IOB": "USD"}
+
 
 def _to_country_code(country: str | None) -> str | None:
     """
@@ -652,7 +656,11 @@ def _add_market_cap_in_dollars(
             exchanges["exchange"], exchanges["countryCode"], strict=False
         )
     }
-    listings["Currency"] = listings["Exchange Code"].map(exchange_currencies)
+    listings["Currency"] = (
+        listings["Exchange Code"]
+        .map(EXCHANGE_CURRENCIES)
+        .fillna(listings["Exchange Code"].map(exchange_currencies))
+    )
     # Whether a listing trades in the company's own country, which marks its home listing.
     exchange_countries = dict(
         zip(exchanges["exchange"], exchanges["countryCode"], strict=False)

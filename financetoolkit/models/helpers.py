@@ -204,7 +204,8 @@ def exceeds_growth_per_period(
             rate_name,
         )
 
-    narrow = (rates - growth < NARROW_SPREAD) & (rates > growth)
+    # The tolerance keeps a spread of exactly 2 points (0.06 - 0.04) from warning on rounding.
+    narrow = (rates - growth < NARROW_SPREAD - 1e-12) & (rates > growth)
 
     for ticker in narrow.index[narrow.any(axis=1)]:
         flagged = narrow.columns[narrow.loc[ticker]]
@@ -274,7 +275,7 @@ def exceeds_growth(
         return True
 
     if rate > growth:
-        if rate - growth < NARROW_SPREAD:
+        if rate - growth < NARROW_SPREAD - 1e-12:
             logger.warning(
                 "%s's %s (%.4f) lies less than %.0f percentage points above the growth rate "
                 "it keeps forever (%.4f), so its value is very sensitive to both rates: a "

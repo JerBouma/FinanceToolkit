@@ -4037,8 +4037,9 @@ class Models:
         - Ohlson, James A. "Financial Ratios and the Probabilistic Prediction of Bankruptcy." Journal of
         Accounting Research, Vol. 18, No. 1, 1980, pp. 109-131.
 
-        Note that the first period is NaN because the Change in Net Income and Negative Income
-        Indicator components require a prior period to compare against.
+        Note that the first year is NaN because the Change in Net Income and Negative Income
+        Indicator components require a prior year to compare against. On quarterly data both
+        compare with the same quarter a year earlier.
 
         As an example:
 
@@ -4166,15 +4167,21 @@ class Models:
             )
         )
 
+        # Ohlson defines both terms on the last two years, so quarterly data is compared with the
+        # same quarter a year earlier, as Piotroski and Beneish do.
+        comparison_lag = 4 if self._quarterly else 1
+
         ohlson_o_score["Negative Income Indicator"] = (
             ohlson_model.get_negative_income_indicator(
                 net_income=net_income,
+                lag=comparison_lag,
             )
         )
 
         ohlson_o_score["Change in Net Income"] = (
             ohlson_model.get_change_in_net_income_ratio(
                 net_income=net_income,
+                lag=comparison_lag,
             )
         )
 

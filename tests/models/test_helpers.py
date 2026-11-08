@@ -78,3 +78,13 @@ def test_a_narrow_spread_between_rate_and_growth_is_valued_with_a_warning(caplog
     with caplog.at_level("WARNING"):
         assert helpers.exceeds_growth("C", 0.08, 0.025)
     assert caplog.text == ""
+
+
+def test_a_spread_of_exactly_two_points_is_not_flagged(caplog):
+    # 0.06 - 0.04 is 0.019999999999999997 in floating point.
+    with caplog.at_level("WARNING"):
+        assert helpers.exceeds_growth("A", 0.06, 0.04)
+        helpers.exceeds_growth_per_period(
+            pd.DataFrame([[0.06]], index=["A"]), pd.DataFrame([[0.04]], index=["A"])
+        )
+    assert caplog.text == ""

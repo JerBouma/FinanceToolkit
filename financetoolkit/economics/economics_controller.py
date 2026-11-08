@@ -10014,11 +10014,12 @@ class Economics:
         each day (see futures_model.get_generic_curve).
 
         Yahoo Finance drops a contract once it expires, so every expired month of the
-        commodity's listing cycle that it does not return is added as a contract without
+        commodity's listing cycle (for gold and silver the active cycle, which the generic
+        series rolls through) that it does not return is added as a contract without
         prices, with its last trading day from the contract specification: the positions
         after it stay right and its own is NaN. A month that has not expired and is not
-        returned is left out, as it is not listed yet (gold and silver list most months only
-        shortly before delivery).
+        returned is left out: Yahoo Finance carries the other gold and silver months only
+        shortly before delivery.
 
         Returns:
             dict[str, tuple[pd.DataFrame, pd.DataFrame]]: Per commodity the prices and the
@@ -10071,10 +10072,18 @@ class Economics:
                 }
             )
             today = pd.Timestamp.today().normalize()
+            # Only the months of the active cycle are added back: a placeholder has no first
+            # price, so it counts as listed on every date and an off-cycle month would take a
+            # position on dates before it traded.
+            active_months = futures_model.ACTIVE_MONTHS.get(
+                name, futures_model.CONTRACT_MONTHS[name]
+            )
             expired = [
                 label
                 for label, last_trading_day in last_trading_days.items()
-                if last_trading_day < today and label not in forward_curve.columns
+                if last_trading_day < today
+                and label not in forward_curve.columns
+                and pd.Period(label, freq="M").month in active_months
             ]
             forward_curve = forward_curve.reindex(
                 columns=sorted([*forward_curve.columns, *expired])

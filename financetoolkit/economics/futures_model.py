@@ -12,12 +12,20 @@ import pandas as pd
 CONTRACT_MONTHS: dict[str, tuple[int, ...]] = {
     "Crude Oil": tuple(range(1, 13)),
     "Natural Gas": tuple(range(1, 13)),
-    "Gold": tuple(range(1, 13)),
+    "Gold": (2, 4, 6, 8, 10, 12),
     "Silver": tuple(range(1, 13)),
     "Copper": tuple(range(1, 13)),
     "Corn": (3, 5, 7, 9, 12),
     "Wheat": (3, 5, 7, 9, 12),
     "Soybeans": (1, 3, 5, 7, 8, 9, 11),
+}
+
+# The months of the active cycle that the generic (nearby) series of gold and silver roll
+# through, which are the months Yahoo Finance carries. COMEX lists every month, but the
+# other months trade little and only come with prices shortly before delivery.
+ACTIVE_MONTHS: dict[str, tuple[int, ...]] = {
+    "Gold": (2, 4, 6, 8, 10, 12),
+    "Silver": (3, 5, 7, 9, 12),
 }
 
 # The last trading day rule of each commodity's contracts (CME Group contract specifications).

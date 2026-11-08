@@ -805,3 +805,24 @@ def test_the_earnings_calendar_takes_prices_in_pence_in_pounds(monkeypatch):
 
     assert list(calendar.index) == ["BHP.AX"]
     assert calendar.loc["BHP.AX", "Market Cap (USD)"] == pytest.approx(293e9 * 0.65)
+
+
+def test_the_international_order_book_trades_in_dollars(monkeypatch):
+    # IOB is a London exchange, but its depositary receipts trade in US dollars.
+    def fake(url, user_subscription):  # noqa: ARG001
+        if "/available-exchanges" in url:
+            return pd.DataFrame({"exchange": ["IOB", "LSE"], "countryCode": ["UK", "UK"]})
+        if "/batch-quote" in url:
+            return pd.DataFrame({"symbol": ["GBPUSD"], "price": [1.3]})
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+    listings = pd.DataFrame(
+        {"Exchange Code": ["IOB", "LSE"], "Market Cap": [300e9, 10e9]},
+        index=["SMSN.IL", "VOD.L"],
+    )
+
+    listings = discovery_model._add_market_cap_in_dollars(listings, "KEY", "Premium")
+
+    assert listings["Currency"].tolist() == ["USD", "GBP"]
+    assert listings["Market Cap (USD)"].tolist() == pytest.approx([300e9, 13e9])

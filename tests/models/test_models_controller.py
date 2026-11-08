@@ -732,6 +732,25 @@ def test_beneish_m_score_compares_quarters_year_over_year(models_module, monkeyp
     assert m_score.loc[:, revenue.columns[4] :].notna().all().all()
 
 
+def test_ohlson_o_score_compares_quarters_year_over_year(models_module, monkeypatch):
+    import pandas as pd
+
+    _use_quarterly_statements(models_module, monkeypatch)
+    quarterly = models_module.get_ohlson_o_score(rounding=10, trailing=1)
+    net_income = models_module._income_statement.loc[:, "Net Income", :]
+    prior = net_income.shift(4, axis=1)
+    expected = ((net_income - prior) / (net_income.abs() + prior.abs())).round(10)
+
+    pd.testing.assert_frame_equal(
+        quarterly.xs("Change in Net Income", level=1),
+        expected.loc[:, quarterly.columns],
+        check_names=False,
+    )
+    # Without a prior year the loss indicator is unknown, not 0.
+    indicator = quarterly.xs("Negative Income Indicator", level=1)
+    assert indicator.loc[:, : net_income.columns[3]].isna().all().all()
+
+
 def test_get_reverse_discounted_cash_flow(recorder, models_module):
     recorder.capture(
         models_module.get_reverse_discounted_cash_flow(

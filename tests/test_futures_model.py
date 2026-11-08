@@ -301,8 +301,9 @@ def test_gold_in_contango_has_a_positive_slope():
 
 
 def test_a_month_that_is_not_listed_yet_is_not_a_position(monkeypatch):
-    # A month that has not expired and is not returned is not listed yet (gold and silver
-    # list most months only shortly before delivery), so the next contract takes its place.
+    # A month that has not expired and is not returned is not listed yet (Yahoo Finance
+    # carries most gold and silver months only shortly before delivery), so the next
+    # contract takes its place.
     clear_active_cache()
     monkeypatch.setattr(
         yfinance_model,
@@ -319,6 +320,30 @@ def test_a_month_that_is_not_listed_yet_is_not_a_position(monkeypatch):
 
     assert november["+2"] == pytest.approx(88.0)
     assert november["+3"] == pytest.approx(84.73)
+
+
+def test_only_expired_gold_months_of_the_active_cycle_hold_a_position(monkeypatch):
+    # June, August and October 2026 gold expired before 2026-11-08 and come back as
+    # placeholders. July and September are off the active cycle and never traded as a
+    # position of the generic series, so December 2026 is the fourth contract in June.
+    clear_active_cache()
+    monkeypatch.setattr(
+        yfinance_model,
+        "get_commodity_forward_curve",
+        lambda commodity, start_date, end_date, contracts: pd.DataFrame(
+            [[3400.0, 3420.0], [4074.9, 4090.0]],
+            index=pd.PeriodIndex(["2026-06-01", "2026-11-06"], freq="D"),
+            columns=["2026-12", "2027-02"],
+        ),
+    )
+    economics = Economics(start_date="2026-06-01", end_date="2026-11-06")
+
+    curve = economics.get_commodity_forward_curve("Gold", generic=True, contracts=6)
+    clear_active_cache()
+    june = curve.loc[pd.Period("2026-06-01", freq="D")]
+
+    assert june["+3"] == pytest.approx(3400.0)
+    assert june["+4"] == pytest.approx(3420.0)
 
 
 def test_a_curve_whose_front_and_far_contract_trade_at_one_price_is_flat():

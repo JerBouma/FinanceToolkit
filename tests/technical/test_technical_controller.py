@@ -210,22 +210,26 @@ def test_get_moving_average(recorder, technical_module):
     recorder.capture(technical_module.get_moving_average(growth=True, lag=[1, 2, 3]))
 
 
-def test_get_exponential_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_exponential_moving_average())
-    recorder.capture(technical_module.get_exponential_moving_average(growth=True))
+def test_get_moving_average_exponential(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="exponential"))
     recorder.capture(
-        technical_module.get_exponential_moving_average(growth=True, lag=[1, 2, 3])
+        technical_module.get_moving_average(method="exponential", growth=True)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(
+            method="exponential", growth=True, lag=[1, 2, 3]
+        )
     )
 
 
-def test_get_double_exponential_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_double_exponential_moving_average())
+def test_get_moving_average_double_exponential(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="double_exponential"))
     recorder.capture(
-        technical_module.get_double_exponential_moving_average(growth=True)
+        technical_module.get_moving_average(method="double_exponential", growth=True)
     )
     recorder.capture(
-        technical_module.get_double_exponential_moving_average(
-            growth=True, lag=[1, 2, 3]
+        technical_module.get_moving_average(
+            method="double_exponential", growth=True, lag=[1, 2, 3]
         )
     )
 
@@ -242,11 +246,15 @@ def test_get_bollinger_bands(recorder, technical_module):
     recorder.capture(technical_module.get_bollinger_bands(growth=True, lag=[1, 2, 3]))
 
 
-def test_get_triangular_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_triangular_moving_average())
-    recorder.capture(technical_module.get_triangular_moving_average(growth=True))
+def test_get_moving_average_triangular(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="triangular"))
     recorder.capture(
-        technical_module.get_triangular_moving_average(growth=True, lag=[1, 2, 3])
+        technical_module.get_moving_average(method="triangular", growth=True)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(
+            method="triangular", growth=True, lag=[1, 2, 3]
+        )
     )
 
 
@@ -322,19 +330,23 @@ def test_get_new_highs_new_lows(recorder, technical_module):
     )
 
 
-def test_get_weighted_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_weighted_moving_average())
-    recorder.capture(technical_module.get_weighted_moving_average(growth=True))
+def test_get_moving_average_weighted(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="weighted"))
     recorder.capture(
-        technical_module.get_weighted_moving_average(growth=True, lag=[1, 2, 3])
+        technical_module.get_moving_average(method="weighted", growth=True)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(
+            method="weighted", growth=True, lag=[1, 2, 3]
+        )
     )
 
 
-def test_get_hull_moving_average(recorder, technical_module):
-    recorder.capture(technical_module.get_hull_moving_average())
-    recorder.capture(technical_module.get_hull_moving_average(growth=True))
+def test_get_moving_average_hull(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="hull"))
+    recorder.capture(technical_module.get_moving_average(method="hull", growth=True))
     recorder.capture(
-        technical_module.get_hull_moving_average(growth=True, lag=[1, 2, 3])
+        technical_module.get_moving_average(method="hull", growth=True, lag=[1, 2, 3])
     )
 
 
@@ -657,3 +669,7 @@ def test_signals_only_keeps_the_periods_with_a_signal(technical_module):
         pd.testing.assert_frame_equal(active, expected)
         assert 0 < len(active) < len(everything)
         assert active.abs().gt(0).any(axis=1).all()
+
+
+def test_get_moving_average_rejects_an_unknown_method(technical_module):
+    assert technical_module.get_moving_average(method="cubic").empty

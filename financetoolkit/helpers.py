@@ -811,14 +811,16 @@ def handle_portfolio(func):
     return wrapper
 
 
-def split_values(values: Iterable | str | None) -> list:
+def split_values(values: Iterable | str | float | None) -> list:
     """
-    Splits values given as one comma-separated string (as the MCP server passes a list) or
-    as a list into a list. Text is stripped of surrounding spaces and empty text is left
-    out; other values, such as numbers, are kept as they are.
+    Splits values given as one comma-separated string (as the MCP server passes a list),
+    as a list or as a single number into a list. Text is stripped of surrounding spaces,
+    and empty text and None are left out; other values, such as numbers, are kept as they
+    are.
 
     Args:
-        values (Iterable | str | None): The values, a comma-separated string or None.
+        values (Iterable | str | float | None): The values, a comma-separated string, a
+            single value or None.
 
     Returns:
         list: The values, empty when none are given.
@@ -827,11 +829,13 @@ def split_values(values: Iterable | str | None) -> list:
         return []
     if isinstance(values, str):
         values = values.split(",")
+    elif not isinstance(values, Iterable):
+        values = [values]
 
     return [
         value.strip() if isinstance(value, str) else value
         for value in values
-        if not isinstance(value, str) or value.strip()
+        if value is not None and (not isinstance(value, str) or value.strip())
     ]
 
 

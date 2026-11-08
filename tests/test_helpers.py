@@ -499,3 +499,21 @@ def test_round_half_up_rounds_a_half_away_from_zero():
     assert helpers.round_half_up(0.125, 2) == 0.13
     assert helpers.round_half_up(Decimal("17015150") / 1000, 1) == 17015.2
     assert pd.isna(helpers.round_half_up(float("nan"), 2))
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (None, []),
+        ("", []),
+        (" a ,, b ,", ["a", "b"]),
+        ([" a", "b ", "", None], ["a", "b"]),
+        (("a",), ["a"]),
+        ([1, 5, 10], [1, 5, 10]),
+        (5, [5]),
+        (0.5, [0.5]),
+        (pd.Index(["a", "b"]), ["a", "b"]),
+    ],
+)
+def test_split_values_returns_a_list_of_the_given_values(values, expected):
+    assert helpers.split_values(values) == expected

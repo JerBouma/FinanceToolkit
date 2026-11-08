@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 import fastmcp.server.dependencies as deps
+from cryptography.fernet import Fernet, InvalidToken
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -47,7 +48,8 @@ _MAX_PENDING_CODES_PER_CLIENT = 20
 FIELD_LIMITS = {
     "fmp_api_key": 128,
     "fred_api_key": 128,
-    "client_id": 256,
+    # A registered client_id carries its redirect URIs (see register_client).
+    "client_id": 4096,
     "redirect_uri": 2048,
     "state": 1024,
 }
@@ -60,11 +62,34 @@ _auth_codes_lock = threading.Lock()
 _secret_key: bytes | None = None
 MINIMUM_SECRET_BYTES = 32
 
-# Headers that keep the pages (one of which asks for API keys) from being framed by another
-# site, so a visitor can't be tricked into typing a key into an invisible overlay.
-FRAME_HEADERS = {
+# Access and refresh tokens hold the user's API keys encrypted (Fernet: AES-128-CBC with an
+# HMAC-SHA256) under a key derived from the server secret, so a token that shows up in a log,
+# a proxy or another client doesn't reveal the keys. Nothing is stored per user: each request
+# decrypts its token. An access token lasts a day and a refresh token, renewed with every
+# refresh, 90 days, so a client in use stays signed in while a leaked access token soon stops
+# working. Rotating FT_MCP_SECRET_KEY ends every token at once.
+TOKEN_PREFIX = "ftk_"
+ACCESS_TOKEN_LIFETIME = 24 * 60 * 60
+REFRESH_TOKEN_LIFETIME = 90 * 24 * 60 * 60
+
+# A registered client_id is "ftc_" with its name and redirect URIs, signed with a key derived
+# from the server secret, so registration stores nothing and the redirect URIs can't be
+# swapped: an authorization for a registered client only goes back to one of its own URIs.
+REGISTERED_CLIENT_PREFIX = "ftc_"
+MAXIMUM_REDIRECT_URIS = 10
+MAXIMUM_CLIENT_NAME_LENGTH = 100
+
+# Headers for every page: no framing by another site (so a visitor can't be tricked into
+# typing a key into an invisible overlay), no MIME sniffing, and no Referer, which would
+# carry the authorization request's address to the sites the page links to.
+PAGE_HEADERS = {
     "X-Frame-Options": "DENY",
-    "Content-Security-Policy": "frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": (
+        "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
 }
 
 # Checked in order. FastMCP forwards `x-*`; `authorization` must be opted in.
@@ -73,7 +98,10 @@ _HEADER_NAMES: tuple[str, ...] = (
     "x-financial-modeling-prep-api-key",
 )
 
-# Query-string parameter names checked in order.
+# Query-string parameter names checked in order. A key in the URL also lands in proxy and
+# access logs, browser history and client configs, so the authorization page and the
+# headers are the recommended ways; the query string is accepted for clients that can't
+# set either.
 _QUERY_NAMES: tuple[str, ...] = (
     "fmp_api_key",
     "api_key",
@@ -151,9 +179,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Finance Toolkit &middot; Authorize</title>
     <link rel="icon" type="image/png" href="/oauth/icon">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after {{
             box-sizing: border-box;
@@ -177,7 +202,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
 
         body {{
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
             background-attachment: fixed;
             color: var(--text-primary);
@@ -318,6 +343,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-size: 13.5px;
             color: var(--text-secondary);
             line-height: 1.55;
+        }}
+
+        .redirect-note {{
+            margin-top: 10px;
+            font-size: 12.5px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }}
+
+        .redirect-note strong {{
+            color: var(--text-primary);
+            word-break: break-all;
         }}
 
         .divider {{
@@ -510,6 +547,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 Optionally add a FRED API key to also enable US labor market, macroeconomic and interest rate
                 indicators.
             </p>
+            <p class="redirect-note">
+                After you authorize, your browser returns to <strong>{redirect_host}</strong> with
+                access for this client. Only continue if you started connecting from there yourself.
+            </p>
         </div>
 
         <div class="divider"></div>
@@ -596,7 +637,7 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                 </svg>
-                Your keys are embedded in a signed session token and are never stored on the server.
+                Your keys are encrypted into the access token your client keeps; the server doesn't store them.
             </div>
 
             <button type="submit" class="btn-authorize">Authorize Access</button>
@@ -640,24 +681,31 @@ a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
     </p>
     </div>
 
-    <script>
-        (function () {{
-            function wireToggle(buttonId, inputId) {{
-                var btn = document.getElementById(buttonId);
-                var inp = document.getElementById(inputId);
-                btn.addEventListener('click', function () {{
-                    var isHidden = inp.type === 'password';
-                    inp.type = isHidden ? 'text' : 'password';
-                    btn.classList.toggle('revealed', isHidden);
-                }});
-            }}
-            wireToggle('toggleBtn', 'fmp_api_key');
-            wireToggle('toggleBtnFred', 'fred_api_key');
-        }})();
-    </script>
+    <script>{script}</script>
 </body>
 </html>
 """
+
+# The authorization page's only script (showing and hiding the typed keys), allowed by its
+# hash in the page's Content-Security-Policy so that no other script can run there.
+AUTHORIZE_SCRIPT = """
+(function () {
+    function wireToggle(buttonId, inputId) {
+        var btn = document.getElementById(buttonId);
+        var inp = document.getElementById(inputId);
+        btn.addEventListener('click', function () {
+            var isHidden = inp.type === 'password';
+            inp.type = isHidden ? 'text' : 'password';
+            btn.classList.toggle('revealed', isHidden);
+        });
+    }
+    wireToggle('toggleBtn', 'fmp_api_key');
+    wireToggle('toggleBtnFred', 'fred_api_key');
+})();
+"""
+AUTHORIZE_SCRIPT_HASH = base64.b64encode(
+    hashlib.sha256(AUTHORIZE_SCRIPT.encode()).digest()
+).decode()
 
 
 def _restrict_to_owner(secret_file: pathlib.Path) -> None:
@@ -746,26 +794,71 @@ def _base64url_decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + padding)
 
 
-def sign_jwt(payload: dict[str, Any], expires_in: int = 2592000) -> str:
-    """Create a signed JWT token containing payload, expiring in expires_in seconds."""
-    header = {"alg": "HS256", "typ": "JWT"}
+def _derived_key(purpose: bytes) -> bytes:
+    """
+    Derive a key for one purpose from the server secret, so the token encryption and the
+    client registrations never share a key.
 
-    payload_copy = payload.copy()
-    payload_copy["exp"] = int(time.time()) + expires_in
+    Args:
+        purpose (bytes): What the key is for.
 
-    header_b64 = _base64url_encode(json.dumps(header).encode("utf-8"))
-    payload_b64 = _base64url_encode(json.dumps(payload_copy).encode("utf-8"))
-
-    message = f"{header_b64}.{payload_b64}".encode()
-    secret = get_secret_key()
-    signature = hmac.new(secret, message, hashlib.sha256).digest()
-    signature_b64 = _base64url_encode(signature)
-
-    return f"{header_b64}.{payload_b64}.{signature_b64}"
+    Returns:
+        bytes: A 32-byte key.
+    """
+    return hmac.new(get_secret_key(), purpose, hashlib.sha256).digest()
 
 
-def verify_jwt(token: str) -> dict[str, Any] | None:
-    """Verify a JWT signature and expiration. Returns payload if valid, else None."""
+def _token_cipher() -> Fernet:
+    """The cipher that encrypts the access and refresh tokens."""
+    return Fernet(base64.urlsafe_b64encode(_derived_key(b"financetoolkit-token")))
+
+
+def issue_token(keys: dict[str, Any], kind: str, lifetime: int) -> str:
+    """
+    Create an encrypted access or refresh token that holds the user's API keys.
+
+    Args:
+        keys (dict[str, Any]): The FMP and FRED keys and the client they were given to.
+        kind (str): "access" or "refresh"; a token only works as its own kind.
+        lifetime (int): Seconds until the token expires.
+
+    Returns:
+        str: The token.
+    """
+    content = {**keys, "typ": kind, "exp": int(time.time()) + lifetime}
+
+    return TOKEN_PREFIX + _token_cipher().encrypt(json.dumps(content).encode()).decode()
+
+
+def read_token(token: str, kind: str = "access") -> dict[str, Any] | None:
+    """
+    Read the keys from a token this server issued, when it is valid and of the kind asked.
+
+    A signed JWT (the unencrypted access token format) is read too until it expires, so
+    connections made with one keep working.
+
+    Args:
+        token (str): The token.
+        kind (str): "access" or "refresh". Defaults to "access".
+
+    Returns:
+        dict[str, Any] | None: The token's content, or None when it is not a valid token of
+            this kind (expired, forged, issued under another secret or another kind).
+    """
+    if token.startswith(TOKEN_PREFIX):
+        try:
+            content = json.loads(_token_cipher().decrypt(token[len(TOKEN_PREFIX) :]))
+        except (InvalidToken, ValueError):
+            return None
+        if content.get("typ") != kind or int(content.get("exp", 0)) < time.time():
+            return None
+        return content
+
+    return _read_signed_jwt(token) if kind == "access" else None
+
+
+def _read_signed_jwt(token: str) -> dict[str, Any] | None:
+    """Verify a signed (HS256) JWT access token and its expiry. Returns its payload or None."""
     try:
         parts = token.split(".")
         if len(parts) != _JWT_PART_COUNT:
@@ -789,6 +882,59 @@ def verify_jwt(token: str) -> dict[str, Any] | None:
         return payload
     except Exception:
         return None
+
+
+def register_client(client_name: str, redirect_uris: list[str]) -> str:
+    """
+    Create the client_id of a registration: its name and redirect URIs, signed.
+
+    Args:
+        client_name (str): The name the client registered with.
+        redirect_uris (list[str]): The redirect URIs it registered.
+
+    Returns:
+        str: The client_id.
+    """
+    body = _base64url_encode(
+        json.dumps(
+            {"name": client_name, "redirect_uris": redirect_uris},
+            separators=(",", ":"),
+        ).encode()
+    )
+    signature = hmac.new(
+        _derived_key(b"financetoolkit-client"), body.encode(), hashlib.sha256
+    ).digest()
+
+    return f"{REGISTERED_CLIENT_PREFIX}{body}.{_base64url_encode(signature)}"
+
+
+def read_client_registration(client_id: str) -> dict[str, Any] | None:
+    """
+    Read the name and redirect URIs from a client_id that register_client created.
+
+    Args:
+        client_id (str): The client_id.
+
+    Returns:
+        dict[str, Any] | None: The registration, or None for any other client_id, including
+            one whose signature doesn't verify.
+    """
+    if not client_id.startswith(REGISTERED_CLIENT_PREFIX):
+        return None
+
+    body, _, signature = client_id[len(REGISTERED_CLIENT_PREFIX) :].partition(".")
+    expected = hmac.new(
+        _derived_key(b"financetoolkit-client"), body.encode(), hashlib.sha256
+    ).digest()
+    if not hmac.compare_digest(signature, _base64url_encode(expected)):
+        return None
+
+    try:
+        registration = json.loads(_base64url_decode(body))
+    except ValueError:
+        return None
+
+    return registration if isinstance(registration, dict) else None
 
 
 def get_api_key_from_headers(headers: Any) -> str:
@@ -820,7 +966,7 @@ def key_from_credential(credential: str, field: str) -> str:
         str: The key; "" for an access token that doesn't verify or doesn't hold it.
     """
     credential = credential.strip()
-    payload = verify_jwt(credential)
+    payload = read_token(credential)
     if payload is not None:
         return str(payload.get(field) or "")
     # An access token that no longer verifies (expired, or signed with another secret) is
@@ -832,18 +978,22 @@ def key_from_credential(credential: str, field: str) -> str:
 
 
 def is_invalid_access_token(token: str) -> bool:
-    """Whether a bearer token has the shape of an access token but does not verify.
+    """Whether a bearer token has the shape of an access token but is not a valid one.
 
-    API keys are plain strings without dots, so a three-part token is one this server (or an
-    earlier secret) issued, and one that fails verification is expired or forged.
+    API keys are plain strings without dots or the token prefix, so a token with either is
+    one this server (or an earlier secret) issued, and one that isn't valid is expired,
+    forged or a refresh token.
 
     Args:
         token (str): The bearer token.
 
     Returns:
-        bool: True for a three-part token that fails verification.
+        bool: True for a token of this server that is not a valid access token.
     """
-    return len(token.split(".")) == _JWT_PART_COUNT and verify_jwt(token) is None
+    issued_here = (
+        token.startswith(TOKEN_PREFIX) or len(token.split(".")) == _JWT_PART_COUNT
+    )
+    return issued_here and read_token(token) is None
 
 
 def get_api_key_from_request(request: Request) -> str:
@@ -902,7 +1052,7 @@ def get_fred_api_key_from_headers(headers: Any) -> str:
     if auth_header.lower().startswith("bearer "):
         token = auth_header[7:].strip()
         if token:
-            payload = verify_jwt(token)
+            payload = read_token(token)
             if payload and "fred_api_key" in payload:
                 return str(payload["fred_api_key"])
 
@@ -980,16 +1130,105 @@ def validate_redirect_uri(redirect_uri: str) -> str:
         return ""
     if not parts.hostname:
         return "redirect_uri must be an absolute URL without a fragment."
-    if parts.scheme == "https":
+    if parts.scheme == "https" or _is_loopback(redirect_uri):
         return ""
-    if parts.scheme == "http":
-        host = parts.hostname
+    return "redirect_uri must use https (http is only allowed for localhost)."
+
+
+def _is_loopback(redirect_uri: str) -> bool:
+    """Whether a redirect URI is http on the user's own machine (localhost or loopback)."""
+    parts = urlsplit(redirect_uri)
+    if parts.scheme != "http":
+        return False
+    try:
+        return (
+            parts.hostname == "localhost"
+            or ipaddress.ip_address(parts.hostname or "").is_loopback
+        )
+    except ValueError:
+        return False
+
+
+def is_registered_redirect(redirect_uri: str, registered: list[str]) -> bool:
+    """
+    Whether a redirect URI is one the client registered.
+
+    The match is exact, except for the port of a loopback redirect: a native app listens
+    on a port it picks when the sign-in starts (RFC 8252, section 7.3).
+
+    Args:
+        redirect_uri (str): The redirect URI of the authorization request.
+        registered (list[str]): The redirect URIs of the client's registration.
+
+    Returns:
+        bool: True when the redirect URI is registered.
+    """
+    if redirect_uri in registered:
+        return True
+    if not _is_loopback(redirect_uri):
+        return False
+
+    def without_port(uri: str) -> tuple:
+        parts = urlsplit(uri)
+        return parts.scheme, parts.hostname, parts.path, parts.query
+
+    return any(
+        _is_loopback(uri) and without_port(uri) == without_port(redirect_uri)
+        for uri in registered
+    )
+
+
+def describe_redirect(redirect_uri: str) -> str:
+    """
+    Name where an authorization returns to, as shown on the authorization page: the host
+    of a web address, or the scheme and host of an app's private-use scheme.
+
+    Args:
+        redirect_uri (str): The redirect URI.
+
+    Returns:
+        str: The host, e.g. "claude.ai" or "cursor://anysphere.cursor-retrieval".
+    """
+    parts = urlsplit(redirect_uri)
+    if parts.scheme in {"http", "https"}:
+        return parts.hostname or redirect_uri
+    return (
+        f"{parts.scheme}://{parts.hostname}" if parts.hostname else f"{parts.scheme}:"
+    )
+
+
+def authorize_page_headers(redirect_uri: str) -> dict[str, str]:
+    """
+    The headers of the authorization page: those of every page, with a policy that runs
+    only the page's own script and submits the form only to this server, which then sends
+    the browser on to the redirect URI (browsers check that step against form-action too).
+
+    Args:
+        redirect_uri (str): The validated redirect URI of the authorization request.
+
+    Returns:
+        dict[str, str]: The response headers.
+    """
+    parts = urlsplit(redirect_uri)
+    destination = f"{parts.scheme}:"
+    # Only a plain host name or IPv4 address is named; anything else allows the scheme.
+    if parts.scheme in {"http", "https"} and re.fullmatch(
+        r"[A-Za-z0-9.-]+", parts.hostname or ""
+    ):
         try:
-            if host == "localhost" or ipaddress.ip_address(host).is_loopback:
-                return ""
+            port = f":{parts.port}" if parts.port else ""
+            destination = f"{parts.scheme}://{parts.hostname}{port}"
         except ValueError:
             pass
-    return "redirect_uri must use https (http is only allowed for localhost)."
+
+    return {
+        **PAGE_HEADERS,
+        "Content-Security-Policy": (
+            "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; "
+            f"script-src 'sha256-{AUTHORIZE_SCRIPT_HASH}'; "
+            f"form-action 'self' {destination}; base-uri 'none'; frame-ancestors 'none'"
+        ),
+    }
 
 
 def build_redirect_url(redirect_uri: str, **params: str) -> str:
@@ -1085,7 +1324,7 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
         # Someone who opens the server's URL in a browser gets the setup page instead of a 401.
         # MCP clients never ask for HTML: they send JSON (POST) or ask for an event stream (GET).
         if path == "/mcp" and request.method == "GET" and _is_browser(request):
-            return HTMLResponse(ROOT_PAGE, headers=FRAME_HEADERS)
+            return HTMLResponse(ROOT_PAGE, headers=PAGE_HEADERS)
 
         # Protect the MCP endpoints: SSE (/sse, /messages) and streamable-HTTP (/mcp).
         if path == "/sse" or path.startswith("/messages") or path == "/mcp":
@@ -1135,15 +1374,34 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
 
 
 def _authorization_problem(
-    redirect_uri: str, code_challenge: str, code_challenge_method: str, **fields: str
+    redirect_uri: str,
+    code_challenge: str,
+    code_challenge_method: str,
+    client_id: str,
+    **fields: str,
 ) -> str:
     """Explain what makes an authorization request unacceptable, or return ""."""
-    for name, value in {"redirect_uri": redirect_uri, **fields}.items():
+    for name, value in {
+        "redirect_uri": redirect_uri,
+        "client_id": client_id,
+        **fields,
+    }.items():
         if len(value) > FIELD_LIMITS[name]:
             return f"{name} is longer than {FIELD_LIMITS[name]} characters."
     problem = validate_redirect_uri(redirect_uri)
     if problem:
         return problem
+    # A client that registered here only gets authorizations sent to its own redirect URIs.
+    # Other client_ids (clients that don't register) are accepted, and the page names
+    # where the browser returns to.
+    if client_id.startswith(REGISTERED_CLIENT_PREFIX):
+        registration = read_client_registration(client_id)
+        if registration is None:
+            return "client_id is not a registration of this server."
+        if not is_registered_redirect(
+            redirect_uri, list(registration.get("redirect_uris", []))
+        ):
+            return "redirect_uri is not registered for this client."
     if code_challenge_method != "S256" or not CODE_CHALLENGE_PATTERN.match(
         code_challenge
     ):
@@ -1152,6 +1410,42 @@ def _authorization_problem(
             "code_challenge_method=S256."
         )
     return ""
+
+
+def _registration_error(description: str) -> JSONResponse:
+    """The answer to a client registration with unusable redirect URIs (RFC 7591)."""
+    return JSONResponse(
+        {"error": "invalid_redirect_uri", "error_description": description},
+        status_code=400,
+    )
+
+
+def _token_response(grant: dict[str, Any]) -> JSONResponse:
+    """
+    Answer a token request with a new access token and refresh token for the keys of an
+    authorization or of the refresh token presented.
+
+    Args:
+        grant (dict[str, Any]): The authorization's or refresh token's content.
+
+    Returns:
+        JSONResponse: The token response.
+    """
+    keys = {
+        "fmp_api_key": grant.get("fmp_api_key"),
+        "fred_api_key": grant.get("fred_api_key"),
+        "client_id": grant.get("client_id"),
+    }
+
+    return JSONResponse(
+        {
+            "access_token": issue_token(keys, "access", ACCESS_TOKEN_LIFETIME),
+            "token_type": "Bearer",
+            "expires_in": ACCESS_TOKEN_LIFETIME,
+            "refresh_token": issue_token(keys, "refresh", REFRESH_TOKEN_LIFETIME),
+            "scope": "financetoolkit",
+        }
+    )
 
 
 def register_auth_routes(mcp: Any) -> None:
@@ -1197,7 +1491,7 @@ def register_auth_routes(mcp: Any) -> None:
 
     @mcp.custom_route("/", methods=["GET"])
     async def root(request: Request) -> HTMLResponse:
-        return HTMLResponse(ROOT_PAGE, headers=FRAME_HEADERS)
+        return HTMLResponse(ROOT_PAGE, headers=PAGE_HEADERS)
 
     @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
     async def oauth_protected_resource(request: Request) -> JSONResponse:
@@ -1223,7 +1517,7 @@ def register_auth_routes(mcp: Any) -> None:
                 "registration_endpoint": f"{base_url}/oauth/register",
                 "logo_uri": f"{base_url}/oauth/icon",
                 "response_types_supported": ["code"],
-                "grant_types_supported": ["authorization_code"],
+                "grant_types_supported": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_methods_supported": ["none"],
                 "scopes_supported": ["financetoolkit"],
                 "code_challenge_methods_supported": ["S256"],
@@ -1235,12 +1529,32 @@ def register_auth_routes(mcp: Any) -> None:
         try:
             body = await request.json()
         except Exception:
-            body = {}
+            body = None
 
-        client_name = body.get("client_name", "MCP Client")
-        redirect_uris = body.get("redirect_uris", [])
+        redirect_uris = body.get("redirect_uris") if isinstance(body, dict) else None
+        if not (
+            isinstance(redirect_uris, list)
+            and 0 < len(redirect_uris) <= MAXIMUM_REDIRECT_URIS
+            and all(isinstance(uri, str) for uri in redirect_uris)
+        ):
+            return _registration_error(
+                f"redirect_uris must be a list of 1 to {MAXIMUM_REDIRECT_URIS} URLs."
+            )
+        for uri in redirect_uris:
+            problem = (
+                "A redirect URI is too long."
+                if len(uri) > FIELD_LIMITS["redirect_uri"]
+                else validate_redirect_uri(uri)
+            )
+            if problem:
+                return _registration_error(problem)
 
-        client_id = f"client_{secrets.token_hex(8)}"
+        client_name = str(body.get("client_name") or "MCP Client")[
+            :MAXIMUM_CLIENT_NAME_LENGTH
+        ]
+        client_id = register_client(client_name, redirect_uris)
+        if len(client_id) > FIELD_LIMITS["client_id"]:
+            return _registration_error("The redirect URIs are too long together.")
 
         base_url = str(request.base_url).rstrip("/")
         return JSONResponse(
@@ -1250,7 +1564,7 @@ def register_auth_routes(mcp: Any) -> None:
                 "redirect_uris": redirect_uris,
                 "logo_uri": f"{base_url}/oauth/icon",
                 "token_endpoint_auth_method": "none",
-                "grant_types": ["authorization_code"],
+                "grant_types": ["authorization_code", "refresh_token"],
                 "response_types": ["code"],
             },
             status_code=201,
@@ -1275,22 +1589,27 @@ def register_auth_routes(mcp: Any) -> None:
         )
         if problem:
             return HTMLResponse(
-                html.escape(problem), status_code=400, headers=FRAME_HEADERS
+                html.escape(problem), status_code=400, headers=PAGE_HEADERS
             )
 
         # Every value comes from the URL, so it is escaped: a crafted link must not be able
         # to add markup or scripts to the page where users enter their API keys. The badge
-        # names the site the keys are sent back to, so a link from elsewhere stands out.
-        redirect_host = urlsplit(redirect_uri).hostname or redirect_uri
+        # and the note name the site the browser returns to, so a link from elsewhere
+        # stands out.
+        registration = read_client_registration(client_id)
+        name = registration.get("name") if registration else client_id
+        redirect_host = describe_redirect(redirect_uri)
         page = HTML_TEMPLATE.format(
             client_id=html.escape(client_id, quote=True),
-            client_name=html.escape(f"{client_id or 'MCP Client'} · {redirect_host}"),
+            client_name=html.escape(f"{name or 'MCP Client'} · {redirect_host}"),
+            redirect_host=html.escape(redirect_host),
+            script=AUTHORIZE_SCRIPT,
             redirect_uri=html.escape(redirect_uri, quote=True),
             code_challenge=html.escape(code_challenge, quote=True),
             code_challenge_method=html.escape(code_challenge_method, quote=True),
             state=html.escape(state, quote=True),
         )
-        return HTMLResponse(content=page, headers=FRAME_HEADERS)
+        return HTMLResponse(content=page, headers=authorize_page_headers(redirect_uri))
 
     @mcp.custom_route("/oauth/authorize", methods=["POST"])
     async def authorize_post(request: Request) -> HTMLResponse | RedirectResponse:
@@ -1304,7 +1623,9 @@ def register_auth_routes(mcp: Any) -> None:
         state = str(form.get("state", ""))
 
         if not fmp_api_key:
-            return HTMLResponse("FMP API Key is required", status_code=400)
+            return HTMLResponse(
+                "FMP API Key is required", status_code=400, headers=PAGE_HEADERS
+            )
 
         problem = _authorization_problem(
             redirect_uri,
@@ -1316,7 +1637,9 @@ def register_auth_routes(mcp: Any) -> None:
             fred_api_key=fred_api_key,
         )
         if problem:
-            return HTMLResponse(html.escape(problem), status_code=400)
+            return HTMLResponse(
+                html.escape(problem), status_code=400, headers=PAGE_HEADERS
+            )
 
         # fred_api_key only unlocks the FRED subset.
         payload = {
@@ -1334,6 +1657,7 @@ def register_auth_routes(mcp: Any) -> None:
             return HTMLResponse(
                 "Too many authorizations are pending. Please try again in a few minutes.",
                 status_code=429,
+                headers=PAGE_HEADERS,
             )
 
         return RedirectResponse(
@@ -1355,11 +1679,31 @@ def register_auth_routes(mcp: Any) -> None:
                 form = {}
 
         grant_type = form.get("grant_type")
+        if grant_type == "refresh_token":
+            refreshed = read_token(str(form.get("refresh_token") or ""), "refresh")
+            if refreshed is None:
+                return JSONResponse(
+                    {
+                        "error": "invalid_grant",
+                        "error_description": "The refresh token is invalid or expired",
+                    },
+                    status_code=400,
+                )
+            client_id = form.get("client_id")
+            if client_id and refreshed.get("client_id") != client_id:
+                return JSONResponse(
+                    {
+                        "error": "invalid_grant",
+                        "error_description": "Client ID mismatch",
+                    },
+                    status_code=400,
+                )
+            return _token_response(refreshed)
         if grant_type != "authorization_code":
             return JSONResponse(
                 {
                     "error": "unsupported_grant_type",
-                    "error_description": "Only authorization_code is supported",
+                    "error_description": "Only authorization_code and refresh_token are supported",
                 },
                 status_code=400,
             )
@@ -1422,20 +1766,4 @@ def register_auth_routes(mcp: Any) -> None:
                 status_code=400,
             )
 
-        # Issue JWT Access Token
-        token_payload = {
-            "fmp_api_key": payload.get("fmp_api_key"),
-            "fred_api_key": payload.get("fred_api_key"),
-            "client_id": client_id,
-        }
-        # Access token lasts 1 year
-        access_token = sign_jwt(token_payload, expires_in=31536000)
-
-        return JSONResponse(
-            {
-                "access_token": access_token,
-                "token_type": "Bearer",
-                "expires_in": 31536000,
-                "scope": "financetoolkit",
-            }
-        )
+        return _token_response(payload)

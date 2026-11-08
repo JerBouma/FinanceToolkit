@@ -11,6 +11,7 @@ import json
 import os
 import pathlib
 import platform
+import tempfile
 from contextlib import suppress
 
 from dotenv import dotenv_values
@@ -235,6 +236,81 @@ _CLIENT_CONFIG: dict[str, tuple] = {
 }
 
 
+def mask_key(value: str) -> str:
+    """
+    Shorten an API key to its first and last four characters for display.
+
+    Args:
+        value (str): The key.
+
+    Returns:
+        str: The masked key, e.g. "abcd...wxyz", or "****" for a short key.
+    """
+    return f"{value[:4]}...{value[-4:]}" if len(value) > 8 else "****"  # noqa: PLR2004
+
+
+def mask_entry(entry: object) -> object:
+    """
+    Copy a client config entry with the API keys in its ``env`` block masked, for display.
+
+    Args:
+        entry (object): The server entry from a client config.
+
+    Returns:
+        object: The entry with every ``*KEY*`` variable masked.
+    """
+    if not isinstance(entry, dict) or not isinstance(entry.get("env"), dict):
+        return entry
+    return {
+        **entry,
+        "env": {
+            name: mask_key(str(value)) if "KEY" in name.upper() and value else value
+            for name, value in entry["env"].items()
+        },
+    }
+
+
+def _replace_file(path: pathlib.Path, content: bytes) -> None:
+    """
+    Replace a file in one step with a new one only its owner can read and write.
+
+    The content goes to a temporary file in the same folder (created private) that then
+    takes the file's place, so an interrupted write or a full disk leaves the old file
+    as it was instead of truncated.
+
+    Args:
+        path (pathlib.Path): The file to replace or create.
+        content (bytes): Its new content.
+    """
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        with suppress(OSError):
+            os.unlink(temporary)
+        raise
+
+
+def write_private_file(path: pathlib.Path, text: str) -> None:
+    """
+    Write a file that holds API keys (the .env file or a client config): private to its
+    owner, replaced in one step, with the previous version kept beside it as
+    ``<name>.bak`` (private as well).
+
+    Args:
+        path (pathlib.Path): The file to write.
+        text (str): Its new content.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        _replace_file(path.with_name(f"{path.name}.bak"), path.read_bytes())
+    _replace_file(path, text.encode("utf-8"))
+
+
 def get_global_env_path() -> pathlib.Path:
     """
     Return the platform-specific path to the global Finance Toolkit .env file.
@@ -344,7 +420,7 @@ def _write_global_env_value(env_key: str, value: str, label: str) -> bool:
         else:
             existing_lines[existing_index] = env_line
 
-        env_path.write_text("".join(existing_lines), encoding="utf-8")
+        write_private_file(env_path, "".join(existing_lines))
         ok(f"{label} saved to [dim cyan]{env_path}[/]")
         return True
 
@@ -535,7 +611,7 @@ def _remove_entry_from_config(
         return
 
     del existing[outer_key][entry_key]
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    write_private_file(config_path, json.dumps(existing, indent=2) + "\n")
     ok(f"Removed [bold]'{entry_key}'[/] from [dim cyan]{config_path}[/]")
 
 
@@ -682,7 +758,7 @@ def _write_global_client_config(
         warn(
             f"Existing [bold]'finance-toolkit'[/] entry found in [dim cyan]{config_path}[/]"
         )
-        console.print(f"  [dim]{json.dumps(current_entry, indent=4)}[/]")
+        console.print(f"  [dim]{json.dumps(mask_entry(current_entry), indent=4)}[/]")
         console.print()
         if not Confirm.ask("  Overwrite this entry?", default=False):
             info(f"Skipped — existing {display_name} config left unchanged.")
@@ -693,7 +769,7 @@ def _write_global_client_config(
         api_key or None, fred_api_key or None
     )
 
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    write_private_file(config_path, json.dumps(existing, indent=2) + "\n")
     ok(f"{display_name} config written to [dim cyan]{config_path}[/]")
 
 
@@ -814,9 +890,10 @@ def write_client_config_uvx(
                 "Printing the block to paste manually:"
             )
             console.print()
-            block = {"mcpServers": {"finance-toolkit": entry}}
+            block = {"mcpServers": {"finance-toolkit": mask_entry(entry)}}
             console.print(json.dumps(block, indent=2))
             console.print()
+            info("API keys are masked: put your own keys in their place.")
             return
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -834,7 +911,7 @@ def write_client_config_uvx(
 
     existing.setdefault(outer_key, {})
     existing[outer_key]["finance-toolkit"] = entry
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    write_private_file(config_path, json.dumps(existing, indent=2) + "\n")
     display = _CLIENT_CONFIG.get(client, (None, None, client))[2]
     ok(f"{display} config written to [dim cyan]{config_path}[/]")
 
@@ -875,7 +952,7 @@ def write_claude_code_config(api_key: str, fred_api_key: str = "") -> None:
         warn(
             f"Existing [bold]'finance-toolkit'[/] entry found in [dim cyan]{config_path}[/]"
         )
-        console.print(f"  [dim]{json.dumps(current_entry, indent=4)}[/]")
+        console.print(f"  [dim]{json.dumps(mask_entry(current_entry), indent=4)}[/]")
         console.print()
         if not Confirm.ask("  Overwrite this entry?", default=False):
             info("Skipped — existing Claude Code config left unchanged.")
@@ -886,7 +963,7 @@ def write_claude_code_config(api_key: str, fred_api_key: str = "") -> None:
         api_key or None, fred_api_key or None
     )
 
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    write_private_file(config_path, json.dumps(existing, indent=2) + "\n")
     ok(f"Claude Code config written to [dim cyan]{config_path}[/]")
 
 
@@ -936,7 +1013,7 @@ def write_vscode_config(
         warn(
             f"Existing [bold]'finance-toolkit'[/] entry found in [dim cyan]{config_path}[/]"
         )
-        console.print(f"  [dim]{json.dumps(current_entry, indent=4)}[/]")
+        console.print(f"  [dim]{json.dumps(mask_entry(current_entry), indent=4)}[/]")
         console.print()
         if not Confirm.ask("  Overwrite this entry?", default=False):
             info("Skipped — existing VS Code config left unchanged.")
@@ -949,7 +1026,7 @@ def write_vscode_config(
         **_uvx_server_entry(api_key or None, fred_api_key or None),
     }
 
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    write_private_file(config_path, json.dumps(existing, indent=2) + "\n")
     ok(f"VS Code config written to [dim cyan]{config_path}[/]")
 
 
@@ -991,7 +1068,7 @@ def write_cursor_config(
         warn(
             f"Existing [bold]'finance-toolkit'[/] entry found in [dim cyan]{config_path}[/]"
         )
-        console.print(f"  [dim]{json.dumps(current_entry, indent=4)}[/]")
+        console.print(f"  [dim]{json.dumps(mask_entry(current_entry), indent=4)}[/]")
         console.print()
         if not Confirm.ask("  Overwrite this entry?", default=False):
             info("Skipped — existing Cursor config left unchanged.")
@@ -1002,7 +1079,7 @@ def write_cursor_config(
         api_key or None, fred_api_key or None
     )
 
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    write_private_file(config_path, json.dumps(existing, indent=2) + "\n")
     ok(f"Cursor config written to [dim cyan]{config_path}[/]")
 
 
@@ -1040,7 +1117,7 @@ def write_claude_config(api_key: str, fred_api_key: str = "") -> None:
         warn(
             f"Existing [bold]'finance-toolkit'[/] entry found in [dim cyan]{config_path}[/]"
         )
-        console.print(f"  [dim]{json.dumps(current_entry, indent=4)}[/]")
+        console.print(f"  [dim]{json.dumps(mask_entry(current_entry), indent=4)}[/]")
         console.print()
         if not Confirm.ask("  Overwrite this entry?", default=False):
             info("Skipped — existing Claude Desktop config left unchanged.")
@@ -1051,5 +1128,5 @@ def write_claude_config(api_key: str, fred_api_key: str = "") -> None:
         api_key, fred_api_key or None
     )
 
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    write_private_file(config_path, json.dumps(existing, indent=2) + "\n")
     ok(f"Claude Desktop config written to [dim cyan]{config_path}[/]")

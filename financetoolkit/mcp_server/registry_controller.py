@@ -46,7 +46,6 @@ from financetoolkit.mcp_server.diagnostics_model import (
     call_input_info,
     capture_call_messages,
     missing_data_notes,
-    redact,
     summarize_reasons,
 )
 from financetoolkit.mcp_server.formatting_model import (
@@ -62,7 +61,7 @@ from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.logger_model import get_logger, redact
 from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
@@ -78,23 +77,6 @@ _OPAQUE_TYPES = {
     "Series",
     "DataFrame",
 }
-
-
-# Injected into each tool's Args docstring so FastMCP can surface them.
-def _curve_maturity(maturity: Any) -> float | str:
-    """A curve maturity as a number of years, or the label itself ("10Y", "6M")."""
-    try:
-        return float(maturity)
-    except (TypeError, ValueError):
-        label = str(maturity).strip().upper()
-        if label[:-1].replace(".", "", 1).isdigit() and label[-1:] in (
-            "D",
-            "W",
-            "M",
-            "Y",
-        ):
-            return label
-        raise
 
 
 # The indicators that read the returns of the period itself rather than results within each
@@ -396,23 +378,6 @@ def _annotate_with_description(
 # The length of an indicator's summary in the search results.
 MAXIMUM_SUMMARY_CHARACTERS = 200
 
-
-# The inputs of a bond or derivative calculation whose defaults are assumptions about the
-# instrument, named in the answer when the caller leaves them out.
-ASSUMED_INPUTS = (
-    "par_value",
-    "coupon_rate",
-    "yield_to_maturity",
-    "bond_price",
-    "volatility",
-    "strike_rate",
-    "notional",
-)
-
-# The yield curves the fixed income calculations take, which default to a sample curve,
-# except for the calculations that default to the current market curve.
-CURVE_PARAMETERS = ("spot_rates", "nominal_rates", "real_rates")
-MARKET_CURVE_METHODS = ("get_option_adjusted_spread",)
 
 # A window of at most this many days can be empty for lack of trading days alone.
 SHORT_WINDOW_DAYS = 3
@@ -1875,49 +1840,6 @@ class ToolRegistry:
                     f"Invalid input for `{tool_name}` (`{method_name}`): {size_problem}"
                 )
 
-            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number; a
-            # label such as "10Y" or "6M" is passed on for the indicator to read.
-            curve_note = None
-            for curve in CURVE_PARAMETERS:
-                given = method_kwargs.get(curve)
-                if isinstance(given, dict):
-                    try:
-                        method_kwargs[curve] = {
-                            _curve_maturity(maturity): float(rate)
-                            for maturity, rate in given.items()
-                        }
-                    except (TypeError, ValueError):
-                        return (
-                            f"Invalid `{curve}` for `{tool_name}` (`{method_name}`): give the "
-                            "rate per maturity in years, e.g. {'1': 0.042, '10': 0.043}."
-                        )
-            if missing_curves := [
-                curve
-                for curve in CURVE_PARAMETERS
-                if curve in accepted_params
-                and method_kwargs.get(curve) in (None, "", {})
-                and method_name not in MARKET_CURVE_METHODS
-            ]:
-                curve_note = (
-                    f"{', '.join(f'`{curve}`' for curve in missing_curves)} "
-                    f"{'was' if len(missing_curves) == 1 else 'were'} not given, so a fixed "
-                    "sample curve was used for illustration, not market data. Pass a "
-                    "current zero-coupon (spot) curve from the rates tool, e.g. "
-                    "get_bank_of_england_yield_curve or get_hqm_corporate_bond_yield_curve "
-                    "with rate='spot'; get_treasury_rates is a par curve."
-                )
-
-            # The economic inputs of a calculation that the caller left to their defaults
-            # (a bond priced at an 8% yield) are named, as they decide the answer.
-            assumed_inputs = [
-                f"{pname}={parameter_defaults[pname][method_name]}"
-                for pname in ASSUMED_INPUTS
-                if pname in accepted_params
-                and pname not in given_params
-                and parameter_defaults.get(pname, {}).get(method_name)
-                not in (None, inspect.Parameter.empty, "")
-            ]
-
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
             signature_order = method_param_order.get(method_name, [])
@@ -2304,14 +2226,6 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
-                if curve_note:
-                    notes.append(curve_note)
-                if assumed_inputs:
-                    notes.append(
-                        f"Assumed {', '.join(assumed_inputs)} (the "
-                        f"{'default' if len(assumed_inputs) == 1 else 'defaults'}); pass "
-                        "your own values for the bond in question."
-                    )
                 # The inputs an option model used, which it only logs.
                 if method_kwargs.get("show_input_info"):
                     notes.extend(input_info)

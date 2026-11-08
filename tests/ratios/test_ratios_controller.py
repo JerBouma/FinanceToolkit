@@ -914,3 +914,150 @@ def test_compound_growth_of_a_ratio_is_the_cagr_of_its_values(ratios_module):
         assert collected.loc[
             (ticker, "Revenue per Share"), periods[-1]
         ] == pytest.approx(expected[ticker], nan_ok=True, abs=1e-4)
+
+
+def test_get_gross_profitability(recorder, ratios_module):
+    recorder.capture(ratios_module.get_gross_profitability())
+    recorder.capture(ratios_module.get_gross_profitability(trailing=2))
+
+
+def test_get_operating_profitability(recorder, ratios_module):
+    recorder.capture(ratios_module.get_operating_profitability())
+    recorder.capture(ratios_module.get_operating_profitability(growth=True))
+
+
+def test_get_cash_based_operating_profitability(recorder, ratios_module):
+    recorder.capture(ratios_module.get_cash_based_operating_profitability())
+    recorder.capture(ratios_module.get_cash_based_operating_profitability(trailing=2))
+
+
+def test_get_cash_return_on_invested_capital(recorder, ratios_module):
+    recorder.capture(ratios_module.get_cash_return_on_invested_capital())
+    recorder.capture(ratios_module.get_cash_return_on_invested_capital(trailing=2))
+
+
+def test_get_free_cash_flow_conversion(recorder, ratios_module):
+    recorder.capture(ratios_module.get_free_cash_flow_conversion())
+    recorder.capture(ratios_module.get_free_cash_flow_conversion(trailing=2))
+
+
+def test_get_free_cash_flow_to_ebitda_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_free_cash_flow_to_ebitda_ratio())
+    recorder.capture(ratios_module.get_free_cash_flow_to_ebitda_ratio(trailing=2))
+
+
+def test_get_capex_intensity(recorder, ratios_module):
+    recorder.capture(ratios_module.get_capex_intensity())
+    recorder.capture(ratios_module.get_capex_intensity(trailing=2))
+
+
+def test_get_capex_to_depreciation_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_capex_to_depreciation_ratio())
+    recorder.capture(ratios_module.get_capex_to_depreciation_ratio(trailing=2))
+
+
+def test_cash_based_operating_profitability_from_the_statement_lines(ratios_module):
+    balance = ratios_module._balance_sheet_statement
+    income = ratios_module._income_statement
+    previous = str(int(YEAR) - 1)
+
+    def change(item):
+        return _row(balance, item).loc[YEAR] - _row(balance, item).loc[previous]
+
+    operating_profit = (
+        _row(income, "Revenue").loc[YEAR]
+        - _row(income, "Cost of Goods Sold").loc[YEAR]
+        - _row(income, "Selling, General and Administrative Expenses").loc[YEAR]
+    )
+    accruals = (
+        change("Net Receivables")
+        + change("Inventory")
+        + change("Prepaids")
+        - change("Deferred Revenue")
+        - change("Deferred Revenue Non Current")
+        - change("Accounts Payable")
+        - change("Accrued Expenses")
+    )
+
+    result = ratios_module.get_cash_based_operating_profitability(rounding=None)
+
+    assert result.loc["AAPL"].loc[YEAR] == _approx(
+        # Scaled by the total assets at the start of the year, as in Ball et al. (2016).
+        (operating_profit - accruals)
+        / _row(balance, "Total Assets").loc[previous]
+    )
+
+
+def test_quarterly_profitability_anomalies_default_to_the_trailing_year():
+    from financetoolkit.ratios.ratios_controller import Ratios
+
+    quarters = pd.period_range("2021Q1", periods=8, freq="Q")
+    growth = 1.05 ** np.arange(8)
+
+    def statement(items):
+        return pd.DataFrame(
+            list(items.values()),
+            index=pd.MultiIndex.from_tuples([("XYZ", item) for item in items]),
+            columns=quarters,
+        )
+
+    zeros = np.zeros(8)
+    income = statement(
+        {
+            "Revenue": 100 * growth,
+            "Cost of Goods Sold": 40 * growth,
+            "Selling, General and Administrative Expenses": 20 * growth,
+            "Research and Development Expenses": 5 * growth,
+            "Interest Expense": np.full(8, 1.0),
+        }
+    )
+    balance = statement(
+        {
+            "Total Assets": 1000 * growth,
+            "Total Shareholder Equity": 400 * growth,
+            "Deferred Tax Liabilities": zeros,
+            "Preferred Stock": zeros,
+            "Net Receivables": 30 * growth,
+            "Inventory": zeros,
+            "Prepaids": zeros,
+            "Deferred Revenue": zeros,
+            "Deferred Revenue Non Current": zeros,
+            "Accounts Payable": zeros,
+            "Accrued Expenses": zeros,
+        }
+    )
+    ratios = Ratios(
+        ["XYZ"], {}, balance, income, pd.DataFrame(), quarterly=True, rounding=None
+    )
+
+    def trailing_year(item):
+        return income.loc[("XYZ", item)].iloc[-4:].sum()
+
+    total_assets = balance.loc[("XYZ", "Total Assets")].iloc[-1]
+    gross_profit = trailing_year("Revenue") - trailing_year("Cost of Goods Sold")
+    receivables = balance.loc[("XYZ", "Net Receivables")]
+
+    assert ratios.get_gross_profitability().iloc[0, -1] == pytest.approx(
+        gross_profit / total_assets
+    )
+    assert ratios.get_operating_profitability().iloc[0, -1] == pytest.approx(
+        (
+            gross_profit
+            - trailing_year("Selling, General and Administrative Expenses")
+            - trailing_year("Research and Development Expenses")
+            - trailing_year("Interest Expense")
+        )
+        / balance.loc[("XYZ", "Total Shareholder Equity")].iloc[-1]
+    )
+    # The receivables change over the same four quarters as the flows, and the total
+    # assets are those at the start of them.
+    assert ratios.get_cash_based_operating_profitability().iloc[0, -1] == pytest.approx(
+        (
+            gross_profit
+            - trailing_year("Selling, General and Administrative Expenses")
+            - (receivables.iloc[-1] - receivables.iloc[-5])
+        )
+        / balance.loc[("XYZ", "Total Assets")].iloc[-5]
+    )
+    # The first three quarters have no full trailing year.
+    assert ratios.get_gross_profitability().iloc[0, :3].isna().all()

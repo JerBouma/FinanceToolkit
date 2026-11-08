@@ -56,6 +56,12 @@ AAPL,Deferred Revenue Ratio,Lag 3,,,,-0.1322
 AAPL,Working Capital Turnover Ratio,Lag 1,,,-6.5727,0.5588
 AAPL,Working Capital Turnover Ratio,Lag 2,,,,-3.4584
 AAPL,Working Capital Turnover Ratio,Lag 3,,,,
+AAPL,Capex Intensity,Lag 1,,0.1391,-0.1023,0.0515
+AAPL,Capex Intensity,Lag 2,,,0.0226,-0.0561
+AAPL,Capex Intensity,Lag 3,,,,0.0752
+AAPL,Capex to Depreciation,Lag 1,,0.486,-0.0184,-0.0134
+AAPL,Capex to Depreciation,Lag 2,,,0.4586,-0.0316
+AAPL,Capex to Depreciation,Lag 3,,,,0.4391
 AAPL,Current Ratio,Lag 1,,-0.2119,-0.1816,0.1235
 AAPL,Current Ratio,Lag 2,,,-0.3551,-0.0806
 AAPL,Current Ratio,Lag 3,,,,-0.2754
@@ -143,6 +149,24 @@ AAPL,Cash Tax Rate,Lag 3,,,,0.1596
 AAPL,Tax Rate Divergence,Lag 1,,37.8148,-0.9769,6.3913
 AAPL,Tax Rate Divergence,Lag 2,,,1.8519,-0.829
 AAPL,Tax Rate Divergence,Lag 3,,,,7.2963
+AAPL,Gross Profitability,Lag 1,,0.3434,0.1119,-0.0091
+AAPL,Gross Profitability,Lag 2,,,0.4937,0.1017
+AAPL,Gross Profitability,Lag 3,,,,0.4801
+AAPL,Operating Profitability,Lag 1,,0.736,0.3645,-0.2276
+AAPL,Operating Profitability,Lag 2,,,1.3688,0.0539
+AAPL,Operating Profitability,Lag 3,,,,0.8297
+AAPL,Cash-Based Operating Profitability,Lag 1,,,0.0662,-0.0464
+AAPL,Cash-Based Operating Profitability,Lag 2,,,,0.0167
+AAPL,Cash-Based Operating Profitability,Lag 3,,,,
+AAPL,Cash Return on Invested Capital,Lag 1,,,0.2129,-0.0402
+AAPL,Cash Return on Invested Capital,Lag 2,,,,0.1641
+AAPL,Cash Return on Invested Capital,Lag 3,,,,
+AAPL,Free Cash Flow Conversion,Lag 1,,-0.2317,0.1373,-0.0805
+AAPL,Free Cash Flow Conversion,Lag 2,,,-0.1262,0.0457
+AAPL,Free Cash Flow Conversion,Lag 3,,,,-0.1966
+AAPL,Free Cash Flow to EBITDA,Lag 1,,-0.185,0.1043,-0.0729
+AAPL,Free Cash Flow to EBITDA,Lag 2,,,-0.1,0.0238
+AAPL,Free Cash Flow to EBITDA,Lag 3,,,,-0.1656
 AAPL,Debt-to-Assets Ratio,Lag 1,,0.0302,-0.0342,-0.1611
 AAPL,Debt-to-Assets Ratio,Lag 2,,,-0.005,-0.1898
 AAPL,Debt-to-Assets Ratio,Lag 3,,,,-0.1653
@@ -323,6 +347,12 @@ MSFT,Deferred Revenue Ratio,Lag 3,,,,-0.0457
 MSFT,Working Capital Turnover Ratio,Lag 1,,,0.4219,0.1769
 MSFT,Working Capital Turnover Ratio,Lag 2,,,,0.6734
 MSFT,Working Capital Turnover Ratio,Lag 3,,,,
+MSFT,Capex Intensity,Lag 1,,0.1361,-0.0179,0.1004
+MSFT,Capex Intensity,Lag 2,,,0.1157,0.0807
+MSFT,Capex Intensity,Lag 3,,,,0.2278
+MSFT,Capex to Depreciation,Lag 1,,0.4624,-0.0639,0.2276
+MSFT,Capex to Depreciation,Lag 2,,,0.3689,0.1491
+MSFT,Capex to Depreciation,Lag 3,,,,0.6805
 MSFT,Current Ratio,Lag 1,,-0.1732,-0.142,-0.0086
 MSFT,Current Ratio,Lag 2,,,-0.2906,-0.1494
 MSFT,Current Ratio,Lag 3,,,,-0.2968
@@ -410,6 +440,24 @@ MSFT,Cash Tax Rate,Lag 3,,,,
 MSFT,Tax Rate Divergence,Lag 1,,0.1623,0.0521,-0.4477
 MSFT,Tax Rate Divergence,Lag 2,,,0.2059,-0.3724
 MSFT,Tax Rate Divergence,Lag 3,,,,-0.1496
+MSFT,Gross Profitability,Lag 1,,0.079,0.0709,-0.0463
+MSFT,Gross Profitability,Lag 2,,,0.1554,0.0213
+MSFT,Gross Profitability,Lag 3,,,,0.102
+MSFT,Operating Profitability,Lag 1,,0.1181,0.0261,-0.1411
+MSFT,Operating Profitability,Lag 2,,,0.1473,-0.1187
+MSFT,Operating Profitability,Lag 3,,,,-0.0146
+MSFT,Cash-Based Operating Profitability,Lag 1,,,0.0728,-0.0147
+MSFT,Cash-Based Operating Profitability,Lag 2,,,,0.057
+MSFT,Cash-Based Operating Profitability,Lag 3,,,,
+MSFT,Cash Return on Invested Capital,Lag 1,,,0.059,-0.1914
+MSFT,Cash Return on Invested Capital,Lag 2,,,,-0.1437
+MSFT,Cash Return on Invested Capital,Lag 3,,,,
+MSFT,Free Cash Flow Conversion,Lag 1,,-0.1034,-0.0221,-0.0824
+MSFT,Free Cash Flow Conversion,Lag 2,,,-0.1232,-0.1026
+MSFT,Free Cash Flow Conversion,Lag 3,,,,-0.1954
+MSFT,Free Cash Flow to EBITDA,Lag 1,,-0.0003,-0.0317,-0.1276
+MSFT,Free Cash Flow to EBITDA,Lag 2,,,-0.032,-0.1553
+MSFT,Free Cash Flow to EBITDA,Lag 3,,,,-0.1555
 MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1379,-0.1733,-0.1328
 MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2874,-0.2831
 MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.382

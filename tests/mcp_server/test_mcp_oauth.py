@@ -3,7 +3,10 @@
 import base64
 import contextlib
 import hashlib
+import hmac
+import json
 import os
+import time
 from collections.abc import Generator
 from urllib.parse import parse_qs, urlsplit
 
@@ -15,12 +18,10 @@ from starlette.testclient import TestClient
 from financetoolkit.mcp_server.auth_model import (
     MCPAuthMiddleware,
     get_api_key_from_request,
+    issue_token,
+    read_token,
     register_auth_routes,
-    sign_jwt,
-    verify_jwt,
 )
-
-_JWT_PART_COUNT = 3
 
 # PKCE S256 pair used by the flows below.
 VERIFIER = "challenge123-verifier-that-is-long-enough-for-pkce-0123456789"
@@ -42,28 +43,44 @@ def setup_env() -> Generator[None, None, None]:
         os.environ["FINANCIAL_MODELING_PREP_API_KEY"] = old_key
 
 
-def test_jwt_signing_and_verification() -> None:
-    """Test that JWT encoding and decoding works with signatures and expirations."""
-    payload = {"fmp_api_key": "test_fmp_key", "user_id": 42}
+def _signed_jwt(payload: dict, expires_in: int) -> str:
+    """A signed, unencrypted HS256 JWT access token, as clients may still hold."""
+    from financetoolkit.mcp_server.auth_model import get_secret_key  # noqa: PLC0415
 
-    # Test basic sign & verify
-    token = sign_jwt(payload, expires_in=60)
-    assert token is not None
-    assert len(token.split(".")) == _JWT_PART_COUNT
+    def encode(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
-    decoded = verify_jwt(token)
-    assert decoded is not None
-    assert decoded["fmp_api_key"] == "test_fmp_key"
-    assert decoded["user_id"] == 42  # noqa
+    header = encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    body = encode(
+        json.dumps({**payload, "exp": int(time.time()) + expires_in}).encode()
+    )
+    signature = hmac.new(
+        get_secret_key(), f"{header}.{body}".encode(), hashlib.sha256
+    ).digest()
+    return f"{header}.{body}.{encode(signature)}"
 
-    # Test expiration
-    expired_token = sign_jwt(payload, expires_in=-10)
-    assert verify_jwt(expired_token) is None
 
-    # Test invalid token format
-    assert verify_jwt("invalid.token") is None
-    assert verify_jwt("not_even_dots") is None
-    assert verify_jwt("three.dots.but_bad_sig") is None
+def test_tokens_are_encrypted_typed_and_expire() -> None:
+    """The keys can't be read from a token, and a token only works as its own kind."""
+    keys = {"fmp_api_key": "SECRETFMPKEY123", "fred_api_key": "SECRETFRED"}
+
+    token = issue_token(keys, "access", 60)
+    assert "SECRET" not in token
+    for part in token.split("_"):
+        with contextlib.suppress(Exception):
+            assert b"SECRET" not in base64.urlsafe_b64decode(part + "==")
+
+    assert read_token(token)["fmp_api_key"] == "SECRETFMPKEY123"
+    assert read_token(token, "refresh") is None
+    assert read_token(issue_token(keys, "refresh", 60)) is None
+    assert read_token(issue_token(keys, "access", -10)) is None
+    assert read_token(token[:-4] + "AAAA") is None
+    assert read_token("not_a_token") is None
+
+    # A signed JWT access token keeps working until it expires.
+    assert read_token(_signed_jwt(keys, 60))["fmp_api_key"] == "SECRETFMPKEY123"
+    assert read_token(_signed_jwt(keys, -10)) is None
+    assert read_token("three.dots.but_bad_sig") is None
 
 
 def test_get_api_key_from_request() -> None:
@@ -92,7 +109,7 @@ def test_get_api_key_from_request() -> None:
     assert get_api_key_from_request(req) == "my-bearer-key"
 
     # 3. Authorization Bearer (JWT)
-    jwt_token = sign_jwt({"fmp_api_key": "my-jwt-key"})
+    jwt_token = issue_token({"fmp_api_key": "my-jwt-key"}, "access", 60)
     req = make_req(headers={"Authorization": f"Bearer {jwt_token}"})
     assert get_api_key_from_request(req) == "my-jwt-key"
 
@@ -190,7 +207,7 @@ def test_oauth_routes_and_flow() -> None:
     assert token_data["token_type"] == "Bearer"
 
     # Verify access token yields the original FMP key
-    payload = verify_jwt(access_token)
+    payload = read_token(access_token)
     assert payload is not None
     assert payload["fmp_api_key"] == "my_fmp_api_key"
 
@@ -231,7 +248,7 @@ def test_oauth_routes_and_flow() -> None:
     )
     assert token_resp_s256.status_code == 200  # noqa
     access_token_s256 = token_resp_s256.json()["access_token"]
-    payload_s256 = verify_jwt(access_token_s256)
+    payload_s256 = read_token(access_token_s256)
     assert payload_s256 is not None
     assert payload_s256["fmp_api_key"] == "my_s256_fmp_api_key"
 
@@ -285,7 +302,7 @@ def test_oauth_flow_with_fred_key() -> None:
     assert token_resp.status_code == 200  # noqa
     access_token = token_resp.json()["access_token"]
 
-    payload = verify_jwt(access_token)
+    payload = read_token(access_token)
     assert payload is not None
     assert payload["fmp_api_key"] == "my_fmp_api_key"
     assert payload["fred_api_key"] == "my_fred_api_key"
@@ -329,7 +346,7 @@ def test_oauth_flow_without_fred_key_defaults_empty() -> None:
         },
     )
     assert token_resp.status_code == 200  # noqa
-    payload = verify_jwt(token_resp.json()["access_token"])
+    payload = read_token(token_resp.json()["access_token"])
     assert payload is not None
     assert payload["fmp_api_key"] == "my_fmp_api_key"
     assert payload["fred_api_key"] == ""
@@ -358,7 +375,7 @@ def test_auth_middleware_protection() -> None:
     assert "resource_metadata=" in sse_resp.headers["WWW-Authenticate"]
 
     # POST /messages/ rather than GET /sse, which would hang on the stream.
-    jwt_token = sign_jwt({"fmp_api_key": "my-fmp-key"})
+    jwt_token = issue_token({"fmp_api_key": "my-fmp-key"}, "access", 60)
 
     # The X-FMP-API-KEY header should bypass the middleware and reach FastMCP.
     resp = client.post("/messages/", headers={"X-FMP-API-KEY": "my-key"})
@@ -490,7 +507,7 @@ def test_an_authorization_code_is_exchanged_once() -> None:
     second = client.post("/oauth/token", data=exchange)
 
     assert first.status_code == 200  # noqa
-    assert verify_jwt(first.json()["access_token"])["fred_api_key"] == "SECRETFRED"
+    assert read_token(first.json()["access_token"])["fred_api_key"] == "SECRETFRED"
     assert second.status_code == 400  # noqa
     assert second.json()["error"] == "invalid_grant"
 
@@ -574,7 +591,7 @@ def test_state_and_an_existing_query_are_encoded_into_the_redirect() -> None:
 
 def test_an_expired_or_foreign_access_token_gets_invalid_token() -> None:
     client = _oauth_client()
-    expired = sign_jwt({"fmp_api_key": "OLDKEY"}, expires_in=-10)
+    expired = issue_token({"fmp_api_key": "OLDKEY"}, "access", -10)
 
     for token in (expired, "a.b.c"):
         response = client.post(
@@ -712,3 +729,181 @@ def test_an_existing_secret_is_kept_and_a_short_one_is_replaced(monkeypatch, tmp
     key = auth_model.get_secret_key()
     assert len(key) == 32 and secret_file.read_bytes() == key  # noqa: PLR2004
     assert secret_file.stat().st_mode & 0o777 == 0o600
+
+
+def _authorize_page(client: TestClient, client_id: str, redirect_uri: str):
+    return client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_challenge": CHALLENGE,
+            "code_challenge_method": "S256",
+        },
+    )
+
+
+def test_a_registered_client_only_gets_its_own_redirect_uris() -> None:
+    client = _oauth_client()
+    registration = client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Claude",
+            "redirect_uris": [
+                "https://claude.ai/api/mcp/auth_callback",
+                "http://127.0.0.1:33418/callback",
+            ],
+        },
+    )
+    assert registration.status_code == 201  # noqa
+    assert "refresh_token" in registration.json()["grant_types"]
+    client_id = registration.json()["client_id"]
+
+    page = _authorize_page(client, client_id, "https://claude.ai/api/mcp/auth_callback")
+    assert page.status_code == 200  # noqa
+    assert "Claude · claude.ai" in page.text
+
+    # A native app picks its loopback port when it signs in.
+    assert (
+        _authorize_page(
+            client, client_id, "http://127.0.0.1:50123/callback"
+        ).status_code
+        == 200  # noqa
+    )
+
+    for redirect_uri in (
+        "https://evil.example/cb",
+        "https://claude.ai/api/mcp/other",
+        "http://127.0.0.1:50123/elsewhere",
+    ):
+        assert (
+            _authorize_page(client, client_id, redirect_uri).status_code == 400
+        )  # noqa
+        assert (
+            _authorize(client, redirect_uri, client_id=client_id).status_code == 400
+        )  # noqa
+
+    # The registration is signed, so its redirect URIs can't be changed.
+    forged = (
+        "ftc_"
+        + base64.urlsafe_b64encode(
+            json.dumps(
+                {"name": "Claude", "redirect_uris": ["https://evil.example/cb"]}
+            ).encode()
+        )
+        .decode()
+        .rstrip("=")
+        + "."
+        + client_id.rsplit(".", 1)[1]
+    )
+    assert (
+        _authorize_page(client, forged, "https://evil.example/cb").status_code == 400
+    )  # noqa
+
+
+def test_a_registration_needs_usable_redirect_uris() -> None:
+    client = _oauth_client()
+
+    for body in (
+        [],
+        {"client_name": "x"},
+        {"redirect_uris": []},
+        {"redirect_uris": "https://a.example/cb"},
+        {"redirect_uris": ["javascript:alert(1)"]},
+        {"redirect_uris": ["http://evil.example/cb"]},
+        {"redirect_uris": [f"https://a.example/{index}" for index in range(11)]},
+    ):
+        response = client.post("/oauth/register", json=body)
+        assert response.status_code == 400  # noqa
+        assert response.json()["error"] == "invalid_redirect_uri"
+
+    assert (
+        client.post("/oauth/register", content=b"not json").status_code == 400
+    )  # noqa
+
+
+def test_a_refresh_token_renews_the_access_token() -> None:
+    client = _oauth_client()
+    location = _authorize(client, "http://localhost/callback").headers["location"]
+    tokens = client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": parse_qs(urlsplit(location).query)["code"][0],
+            "client_id": "client_x",
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": VERIFIER,
+        },
+    ).json()
+
+    assert tokens["expires_in"] == 24 * 60 * 60  # noqa
+    assert "SECRET" not in tokens["refresh_token"]
+
+    refreshed = client.post(
+        "/oauth/token",
+        data={"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"]},
+    )
+    assert refreshed.status_code == 200  # noqa
+    assert read_token(refreshed.json()["access_token"])["fmp_api_key"] == (
+        "SECRETFMPKEY123"
+    )
+    assert read_token(refreshed.json()["refresh_token"], "refresh") is not None
+
+    # Each kind of token only works as itself.
+    assert (
+        client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": tokens["access_token"],
+            },
+        ).status_code
+        == 400  # noqa
+    )
+    assert (
+        client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": tokens["refresh_token"],
+                "client_id": "another_client",
+            },
+        ).status_code
+        == 400  # noqa
+    )
+    response = client.post(
+        "/messages/", headers={"Authorization": f"Bearer {tokens['refresh_token']}"}
+    )
+    assert response.status_code == 401  # noqa
+    assert 'error="invalid_token"' in response.headers["WWW-Authenticate"]
+
+
+def test_the_pages_send_security_headers_and_only_run_their_own_script() -> None:
+    from financetoolkit.mcp_server.auth_model import AUTHORIZE_SCRIPT_HASH
+
+    client = _oauth_client()
+    page = _authorize_page(
+        client, "client_x", "https://claude.ai/api/mcp/auth_callback"
+    )
+    policy = page.headers["Content-Security-Policy"]
+
+    assert page.headers["X-Content-Type-Options"] == "nosniff"
+    assert page.headers["Referrer-Policy"] == "no-referrer"
+    assert "default-src 'none'" in policy
+    assert "form-action 'self' https://claude.ai;" in policy
+    assert "fonts.googleapis.com" not in page.text
+
+    # The policy allows exactly the script the page holds.
+    script = page.text.split("<script>")[1].split("</script>")[0]
+    digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
+    assert digest == AUTHORIZE_SCRIPT_HASH
+    assert f"script-src 'sha256-{digest}'" in policy
+    assert page.text.count("<script") == 1
+
+    custom = _authorize_page(client, "client_x", "cursor://anysphere.cursor/cb")
+    assert "form-action 'self' cursor:;" in custom.headers["Content-Security-Policy"]
+    assert "cursor://anysphere.cursor" in custom.text
+
+    root = client.get("/")
+    assert root.headers["X-Content-Type-Options"] == "nosniff"
+    assert "script-src" not in root.headers["Content-Security-Policy"]

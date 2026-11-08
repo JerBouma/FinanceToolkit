@@ -47,7 +47,7 @@ jobs:
     steps:
       # The commit on main once merged; for an open PR, its test merge with main.
       - name: Checkout the merge commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.merged && github.event.pull_request.merge_commit_sha || github.sha }}
           fetch-depth: 0
@@ -60,7 +60,10 @@ jobs:
 
       - name: Install uv
         if: steps.release.outputs.release == 'true'
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          # A release is built without a cache that other workflow runs can write to.
+          enable-cache: false
 
       - name: Build the package
         if: steps.release.outputs.release == 'true'
@@ -68,7 +71,7 @@ jobs:
 
       - name: Set up Node.js
         if: steps.release.outputs.release == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -82,7 +85,7 @@ jobs:
 
       - name: Upload the release files
         if: steps.release.outputs.release == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release
           path: |
@@ -103,6 +106,7 @@ jobs:
       url: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare.outputs.version }}
     permissions:
       contents: write
+      id-token: write # PyPI Trusted Publishing: PyPI accepts this workflow's OIDC token, no API token is stored
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       SHA: ${{ needs.prepare.outputs.sha }}
@@ -110,18 +114,20 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Download the release files
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: false
 
-      # --check-url skips files PyPI already has, so a re-run doesn't fail on them.
+      # Trusted Publishing: PyPI trusts this workflow (JerBouma/FinanceToolkit, release.yml, environment
+      # "release") and exchanges its OIDC token for a short-lived upload token. --check-url skips files
+      # PyPI already has, so a re-run doesn't fail on them.
       - name: Publish to PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
-        run: uv publish --check-url https://pypi.org/simple/ dist/*
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*
 
       # The bundle and the MCP Registry point people at this version, so wait until PyPI serves it.
       - name: Wait for the version on PyPI

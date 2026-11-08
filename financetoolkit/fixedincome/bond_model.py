@@ -713,7 +713,7 @@ def get_convexity(
     return convexity
 
 
-def _get_bond_price_from_curve(
+def get_bond_price_from_curve(
     par_value: float,
     coupon_rate: float,
     years_to_maturity: float,
@@ -838,7 +838,7 @@ def get_z_spread(
     def price_difference(spread):
         shifted_curve = spot_rates + spread
         return (
-            _get_bond_price_from_curve(
+            get_bond_price_from_curve(
                 par_value, coupon_rate, years_to_maturity, shifted_curve, frequency
             )
             - bond_price
@@ -963,7 +963,7 @@ def get_key_rate_duration(
     where only the rate at the key_rate_maturity tenor (rate_k) is bumped up or down by
     Δy = yield_change, all other tenors of the curve are held fixed, and Price(...) is
     calculated by discounting each cash flow with the (possibly interpolated) curve rate
-    for that cash flow's maturity — see `_get_bond_price_from_curve`. The prices are full
+    for that cash flow's maturity — see `get_bond_price_from_curve`. The prices are full
     (dirty) prices, as for `get_modified_duration`, and the spot rates are read as
     nominal annual rates compounded `frequency` times per year.
 
@@ -1000,19 +1000,19 @@ def get_key_rate_duration(
         )
 
     # Dirty prices, so that the key rate durations add up to a duration of the full price between coupon dates too.  # noqa: E501
-    base_price = _get_bond_price_from_curve(
+    base_price = get_bond_price_from_curve(
         par_value, coupon_rate, years_to_maturity, spot_rates, frequency, clean=False
     )
 
     spot_rates_up = spot_rates.copy()
     spot_rates_up.loc[key_rate_maturity] += yield_change
-    price_up = _get_bond_price_from_curve(
+    price_up = get_bond_price_from_curve(
         par_value, coupon_rate, years_to_maturity, spot_rates_up, frequency, clean=False
     )
 
     spot_rates_down = spot_rates.copy()
     spot_rates_down.loc[key_rate_maturity] -= yield_change
-    price_down = _get_bond_price_from_curve(
+    price_down = get_bond_price_from_curve(
         par_value,
         coupon_rate,
         years_to_maturity,

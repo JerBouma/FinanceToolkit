@@ -47,9 +47,12 @@ def toolkit(asset: pd.DataFrame, benchmark: pd.DataFrame) -> Toolkit:
         start_date="2021-01-01",
         end_date="2023-12-31",
     )
-    # A constant risk free rate, so it does not depend on the dates either.
+    # A constant risk free rate, so it does not depend on the dates either. It is set before
+    # the historical data is first read, which would otherwise download the Treasury rates:
+    # a network request in an offline test, whose parallel yfinance downloads can lock
+    # yfinance's SQLite cache ("database is locked") when the whole suite runs.
     treasury = pd.read_pickle("tests/datasets/treasury_data.pickle")
-    index = instance.get_historical_data().index
+    index = historical.index
     instance._daily_treasury_data = pd.DataFrame(
         [treasury.iloc[-1].to_numpy()] * len(index),
         index=index,

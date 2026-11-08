@@ -263,8 +263,11 @@ class Toolkit:
             yearly and quarterly statements stay consistent with each other: NVIDIA's fiscal 2024 is
             labelled 2023 and its four quarters are labelled 2023Q1 through 2023Q4. Companies reporting
             on calendar quarter ends (March, June, September and December) are never relabelled, and
-            neither are fiscal years ending in June through December. Which tickers were relabelled is
-            reported in the log and available on the Toolkit as _fiscal_year_adjustments.
+            neither are fiscal years ending in June through December. A period ending in the first five
+            days of a month, as the periods of a 52/53-week fiscal year can, counts as ending in the month
+            before: Home Depot's quarter ending 3 August 2025 is 2025Q2, from FinancialModelingPrep
+            and Yahoo Finance alike. Which tickers were relabelled is reported in the log and available
+            on the Toolkit as _fiscal_year_adjustments.
 
             The last day of each fiscal period is kept as well: daily ratios apply a period's figures
             from that day on (not from the end of its calendar label), and currency translation uses

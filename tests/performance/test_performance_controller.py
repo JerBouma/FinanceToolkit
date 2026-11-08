@@ -196,6 +196,59 @@ def test_get_sharpe_ratio_deflated(recorder, performance_module):
     assert (more_trials.fillna(0) <= fewer_trials.fillna(0) + 1e-9).all().all()
 
 
+def test_get_sharpe_ratio_lo(recorder, performance_module):
+    lo = partial(performance_module.get_sharpe_ratio, method="lo")
+
+    recorder.capture(lo())
+    recorder.capture(lo(period="quarterly", lags=3))
+    recorder.capture(lo(period="monthly", rolling=12))
+
+    # Without autocorrelation lags, Lo's factor is SQRT(q) and the ratio the annualized one.
+    pd.testing.assert_frame_equal(
+        lo(lags=0, rounding=8),
+        performance_module.get_sharpe_ratio(annualize=True, rounding=8),
+    )
+
+
+def test_get_sharpe_ratio_standard_error(recorder, performance_module):
+    recorder.capture(performance_module.get_sharpe_ratio_standard_error())
+    recorder.capture(
+        performance_module.get_sharpe_ratio_standard_error(method="non_normal")
+    )
+    recorder.capture(
+        performance_module.get_sharpe_ratio_standard_error(
+            period="quarterly", method="gmm"
+        )
+    )
+    assert performance_module.get_sharpe_ratio_standard_error(method="other").empty
+
+
+def test_get_minimum_track_record_length(recorder, performance_module):
+    recorder.capture(performance_module.get_minimum_track_record_length())
+    recorder.capture(
+        performance_module.get_minimum_track_record_length(
+            period="quarterly", confidence_level=0.9
+        )
+    )
+    recorder.capture(
+        performance_module.get_minimum_track_record_length(
+            period="monthly", rolling=12, benchmark_sharpe_ratio=-0.1
+        )
+    )
+
+
+def test_get_coskewness(recorder, performance_module):
+    recorder.capture(performance_module.get_coskewness())
+    recorder.capture(performance_module.get_coskewness(method="residual"))
+    recorder.capture(performance_module.get_coskewness(period="quarterly"))
+
+
+def test_get_cokurtosis(recorder, performance_module):
+    recorder.capture(performance_module.get_cokurtosis())
+    recorder.capture(performance_module.get_cokurtosis(method="residual"))
+    recorder.capture(performance_module.get_cokurtosis(period="quarterly"))
+
+
 def test_get_sortino_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_sortino_ratio())
     recorder.capture(performance_module.get_sortino_ratio(period="quarterly"))

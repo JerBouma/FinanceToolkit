@@ -10,7 +10,10 @@ import numpy as np
 import pandas as pd
 import requests
 
-from financetoolkit import helpers
+from financetoolkit import (
+    fmp_model as toolkit_fmp_model,
+    helpers,
+)
 from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
 from financetoolkit.economics import (
     boe_model,
@@ -28,6 +31,7 @@ from financetoolkit.economics.helpers import (
 )
 from financetoolkit.fixedincome import (
     boc_model,
+    bond_data_model,
     bond_model,
     bundesbank_model,
     curve_model,
@@ -44,6 +48,7 @@ from financetoolkit.fixedincome import (
     rba_model,
     riksbank_model,
     short_rate_model,
+    treasurydirect_model,
     yieldcurve_model,
 )
 from financetoolkit.utilities import logger_model, validation_model
@@ -263,6 +268,14 @@ TREASURY_SECURITY_TYPES = (
     "TIPS",
     "FRN",
 )
+# The kinds of marketable Treasury FedInvest prices.
+TREASURY_PRICE_TYPES = ("Bill", "Note", "Bond", "TIPS", "FRN")
+
+# Bond ETFs whose holdings make up the bond universe by default: iShares funds publish their
+# holdings daily with each bond's coupon, maturity and par amount. Together they hold
+# investment grade corporate bonds of every maturity (LQD, from three years; IGSB, up to
+# five years) and high yield corporate bonds (USHY).
+BOND_FUNDS = ["LQD", "IGSB", "USHY"]
 
 
 class FixedIncome:
@@ -2944,19 +2957,22 @@ class FixedIncome:
             row_slice=True,
         )
 
-    def _latest_yield_curve(self, country: str) -> pd.Series:
+    def _latest_yield_curve(self, country: str, date: str | None = None) -> pd.Series:
         """
         The most recent yield curve of a country up to the end date, retrieving only the last
         weeks rather than the full history.
 
         Args:
             country (str): The country, see get_government_bond_yield_curve.
+            date (str | None): The day to take the curve of (YYYY-MM-DD), or the last day
+                before it with a curve. Defaults to None, the end date.
 
         Returns:
             pd.Series: The yields as decimals by maturity label, sorted by maturity.
         """
+        end_date = date or self._end_date
         start_date = (
-            datetime.strptime(self._end_date, "%Y-%m-%d") - timedelta(days=21)
+            datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=21)
         ).strftime("%Y-%m-%d")
         sources = self._get_country_yield_curves(start_date)
         if country not in sources:
@@ -2964,10 +2980,10 @@ class FixedIncome:
                 f"No daily yield curve is available for {country}. Choose from {', '.join(sources)}."
             )
         curve = sources[country]()
-        curve = curve.loc[: pd.Period(self._end_date, "D")].dropna(how="all")
+        curve = curve.loc[: pd.Period(end_date, "D")].dropna(how="all")
         if curve.empty:
             raise ValueError(
-                f"The {country} yield curve has no observations in the weeks before {self._end_date}."
+                f"The {country} yield curve has no observations in the weeks before {end_date}."
             )
         latest = curve.iloc[-1].dropna()
         return latest[sorted(latest.index, key=_maturity_in_months)]
@@ -3863,6 +3879,411 @@ class FixedIncome:
         ]
 
         return apply_rounding(auctions, rounding)
+
+    @handle_errors
+    def get_bond_universe(
+        self,
+        etfs: list[str] | str | None = None,
+        issuer: list[str] | str | None = None,
+        maturity_start: str | None = None,
+        maturity_end: str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Retrieves thousands of individual US dollar bonds with their price, yield to maturity,
+        modified duration and spread over Treasuries, read from the holdings of bond ETFs.
+
+        Individual bond prices are not published for free, but bond ETFs publish their
+        holdings every day: each bond's coupon and maturity (in its name), its par amount and
+        its market value, from which the price follows. By default this reads the iShares
+        iBoxx $ Investment Grade Corporate Bond ETF (LQD), the iShares 0-5 Year Investment
+        Grade Corporate Bond ETF (IGSB) and the iShares Broad USD High Yield Corporate Bond
+        ETF (USHY): together about 8,000 investment grade and high yield corporate bonds. A
+        bond held by several funds is listed once, with the funds that hold it.
+
+        The formula is as follows:
+
+        - Price = Market Value / Par Amount × 100 (a clean price per 100 of par)
+        - Yield to Maturity: the rate y at which the coupons and principal, discounted at
+          (1 + y / 2) per half year, are worth the clean price plus accrued interest
+          (see `get_yield_to_maturity`)
+        - Modified Duration = Macaulay Duration / (1 + y / 2) (see `get_duration`)
+        - G-Spread = Yield to Maturity - Treasury Par Yield at the bond's maturity
+
+        Coupons are semi-annual, the US convention for corporate bonds, and the yield is a
+        nominal annual rate compounded twice a year (bond-equivalent), like the Treasury par
+        yields it is compared with. The coupon periods fall on the bond's actual coupon dates,
+        counted back from maturity, and the time in the current period is counted in actual
+        days. The Treasury par yield at a maturity is interpolated linearly between the
+        maturities of the US Treasury par yield curve on the price date (held at the 1-month
+        and 30-year yield beyond them).
+
+        Also known as: corporate bond prices, bond yields, bond screener, credit spreads per
+        bond, G-spread.
+
+        Args:
+            etfs (list[str] | str | None, optional): The bond ETFs to read the holdings of, as
+                a list or a comma-separated string. The holdings must name each bond as
+                "ISSUER COUPON% MM/DD/YYYY" with a par amount, as iShares funds do. Defaults
+                to None, which uses LQD, IGSB and USHY.
+            issuer (list[str] | str | None, optional): Keeps the bonds whose issuer contains
+                this text (case-insensitive), e.g. "APPLE" or "JPMORGAN", or any of several.
+                Defaults to None, every issuer.
+            maturity_start (str | None, optional): Keeps the bonds maturing on or after this
+                date (YYYY-MM-DD). Defaults to None.
+            maturity_end (str | None, optional): Keeps the bonds maturing on or before this
+                date (YYYY-MM-DD). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per bond, indexed by ISIN, with the Issuer, CUSIP, Coupon
+            (decimal), Maturity, whether it is a Rule 144A bond, the Price per 100 of par, the
+            Yield to Maturity and G-Spread (decimals), the Modified Duration (years), the
+            Price Date and the Funds that hold it, sorted by issuer and maturity.
+
+        Notes:
+        - The prices are the funds' own end-of-day valuations (iShares uses evaluated bid
+          prices), not trades. iShares publish the holdings valued at the previous business
+          day's close, which is the Price Date; FinancialModelingPrep serves only the latest
+          holdings, so there is no history. For the Treasuries the funds hold, the yields are
+          within about a basis point of the FedInvest prices of the same day (see
+          `get_treasury_securities`).
+        - The yield is to maturity. A callable bond that trades above its call price
+          yields less to its call date (the yield to worst), which is common among high
+          yield bonds; call schedules are not in the holdings.
+        - The fund prints the coupon to two decimals (2.125% shows as 2.13%), which moves the
+          yield by well under a basis point a year of maturity.
+        - Left out, with a count in the log: lines that are not fixed-coupon bonds (cash,
+          futures, swaps), floating rate notes, bank notes marked fixed-to-floating
+          ("FXD-FRN", which switch to a floating coupon before maturity), inflation-linked
+          bonds, mortgage pools, perpetual bonds, bonds without a US ISIN (the funds of
+          other currencies) and prices outside 1 to 300. A fixed-to-floating note the fund
+          does not mark as such is kept, and its yield assumes the fixed coupon to maturity.
+        - Requires a FinancialModelingPrep API key for the holdings; the Treasury curve needs
+          none.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        bonds = fixedincome.get_bond_universe(issuer="APPLE INC")
+
+        bonds[["Coupon", "Maturity", "Price", "Yield to Maturity", "Modified Duration", "G-Spread"]].head()
+        ```
+
+        Which returns:
+
+        | ISIN         |   Coupon | Maturity   |   Price |   Yield to Maturity |   Modified Duration |   G-Spread |
+        |:-------------|---------:|:-----------|--------:|--------------------:|--------------------:|-----------:|
+        | US037833EC07 |   0.012  | 2028-02-08 |   95.96 |              0.0454 |              1.2213 |     0.0021 |
+        | US037833ET32 |   0.04   | 2028-05-10 |   99.12 |              0.0461 |              1.4224 |     0.0024 |
+        | US037833EY27 |   0.04   | 2028-05-12 |   99.09 |              0.0463 |              1.4275 |     0.0025 |
+        | US037833EH93 |   0.014  | 2028-08-05 |   94.67 |              0.046  |              1.6896 |     0.0019 |
+        | US037833FD70 |   0.0465 | 2028-11-09 |   99.95 |              0.0468 |              1.8564 |     0.0022 |
+        """
+        self._require_api_key()
+
+        funds = [fund.upper() for fund in (_split_values(etfs) or BOND_FUNDS)]
+        holdings, missing = toolkit_fmp_model.get_etf_holdings(funds, self._api_key)
+        if missing:
+            logger.warning("No holdings were found for %s.", ", ".join(missing))
+        if holdings.empty:
+            raise ValueError(
+                f"None of {', '.join(funds)} has holdings to read bonds from."
+            )
+
+        # Fund families count the par amount differently: iShares and Vanguard in hundreds
+        # (market value / amount is the price per 100), Schwab in dollars (the price per 1).
+        ratios = pd.to_numeric(
+            holdings["Market Value"], errors="coerce"
+        ) / pd.to_numeric(holdings["Shares"], errors="coerce").where(
+            lambda values: values > 0
+        )
+        parsed_names = holdings["Name"].map(bond_data_model.parse_bond_name).notna()
+        scale = (
+            ratios[parsed_names]
+            .groupby(level=0)
+            .median()
+            .map(lambda median: 100 if median < 2 else 1)  # noqa: PLR2004
+        )
+
+        skipped: dict[str, int] = {}
+        records = []
+        # iShares publish the holdings valued at the previous business day's close.
+        price_dates = (
+            pd.to_datetime(holdings["Updated At"].astype(str).str[:10])
+            - pd.offsets.BDay(1)
+        ).dt.date
+        for position, (fund, holding) in enumerate(
+            zip(
+                holdings.index.get_level_values(0),
+                holdings.to_dict("records"),
+                strict=True,
+            )
+        ):
+            parsed = bond_data_model.parse_bond_name(holding["Name"])
+            reason = (
+                "not a fixed-coupon bond"
+                if parsed is None
+                else bond_data_model.exclusion_reason(
+                    holding["Name"], parsed["Maturity"]
+                )
+            )
+            isin = str(holding["ISIN"] or "") or bond_data_model.cusip_to_isin(
+                holding["CUSIP"]
+            )
+            # A bond without a US ISIN is a foreign security, such as the euro bonds of a
+            # European fund, whose coupons and currency differ.
+            if reason is None and isin and not isin.startswith("US"):
+                reason = "not a US security"
+            price = ratios.iloc[position] * scale.get(fund, 1)
+            low, high = bond_data_model.PRICE_RANGE
+            if reason is None and not low < price < high:
+                reason = "no usable price"
+            if reason is not None:
+                skipped[reason] = skipped.get(reason, 0) + 1
+                continue
+
+            records.append(
+                {
+                    # A fund that names its bonds without identifiers keeps them apart by name.
+                    "ISIN": isin or holding["Name"],
+                    "CUSIP": holding["CUSIP"],
+                    **parsed,
+                    "Price": price,
+                    "Price Date": price_dates.iloc[position],
+                    "Fund": fund,
+                }
+            )
+
+        if skipped:
+            logger.info(
+                "Left out of the bond universe: %s.",
+                ", ".join(
+                    f"{count} {reason}" for reason, count in sorted(skipped.items())
+                ),
+            )
+        if not records:
+            raise ValueError(
+                f"The holdings of {', '.join(funds)} hold no US fixed-coupon bonds."
+            )
+
+        bonds = pd.DataFrame(records)
+        funds_held = bonds.groupby("ISIN", sort=False)["Fund"].agg(
+            lambda values: ", ".join(dict.fromkeys(values))
+        )
+        bonds = bonds.drop_duplicates("ISIN").set_index("ISIN")
+        bonds["Funds"] = funds_held
+
+        if issuer is not None:
+            names = [name.upper() for name in _split_values(issuer) or []]
+            bonds = bonds[
+                bonds["Issuer"]
+                .str.upper()
+                .apply(lambda value: any(name in value for name in names))
+            ]
+        if maturity_start is not None:
+            bonds = bonds[bonds["Maturity"] >= pd.Timestamp(maturity_start).date()]
+        if maturity_end is not None:
+            bonds = bonds[bonds["Maturity"] <= pd.Timestamp(maturity_end).date()]
+        if bonds.empty:
+            raise ValueError(
+                "No bond in the holdings matches the issuer and maturity given."
+            )
+
+        bonds["Years"] = [
+            bond_data_model.get_years_to_maturity(settlement, maturity)
+            for settlement, maturity in zip(
+                bonds["Price Date"], bonds["Maturity"], strict=True
+            )
+        ]
+        bonds = bonds[bonds["Years"].notna()]
+        analytics = [
+            bond_data_model.get_bond_analytics(coupon, years, price)
+            for coupon, years, price in zip(
+                bonds["Coupon"], bonds["Years"], bonds["Price"], strict=True
+            )
+        ]
+        bonds["Yield to Maturity"] = [values[0] for values in analytics]
+        bonds["Modified Duration"] = [values[1] for values in analytics]
+
+        try:
+            curve = self._latest_yield_curve(
+                "United States", date=str(max(bonds["Price Date"]))
+            )
+            bonds["G-Spread"] = bonds[
+                "Yield to Maturity"
+            ] - bond_data_model.interpolate_curve(curve, bonds["Years"])
+        except (ValueError, requests.exceptions.RequestException) as error:
+            logger.warning("The G-Spread is left empty: no Treasury curve (%s).", error)
+            bonds["G-Spread"] = np.nan
+
+        bonds = bonds.sort_values(["Issuer", "Maturity"], kind="stable")
+        for column in ["Maturity", "Price Date"]:
+            bonds[column] = bonds[column].astype(str)
+
+        bonds = bonds[
+            [
+                "Issuer",
+                "CUSIP",
+                "Coupon",
+                "Maturity",
+                "Rule 144A",
+                "Price",
+                "Yield to Maturity",
+                "Modified Duration",
+                "G-Spread",
+                "Price Date",
+                "Funds",
+            ]
+        ]
+
+        return apply_rounding(
+            bonds, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_treasury_securities(
+        self,
+        date: str | None = None,
+        security_type: list[str] | str | None = None,
+        rounding: int | None = None,
+    ):
+        """
+        Retrieves every marketable US Treasury (bills, notes, bonds, TIPS and floating rate
+        notes) with its price, yield to maturity and modified duration on a day, without an
+        API key.
+
+        Where the Treasury par yield curve gives one yield per constant maturity, this lists
+        the roughly 460 securities themselves, from the Bureau of the Fiscal Service's daily
+        FedInvest prices: the prices the Treasury values its own accounts at. That shows
+        where individual issues trade off the curve (old and new issues of the same maturity,
+        the cheapest notes to deliver into futures) and gives the yield of any maturity date.
+
+        The formula is as follows:
+
+        - Notes and bonds: Yield to Maturity is the rate y at which the coupons and principal,
+          discounted at (1 + y / 2) per half year, are worth the clean price plus accrued
+          interest (see `get_yield_to_maturity`)
+        - Bills: Discount Yield = (100 - Price) / 100 × 360 / Days, restated as the
+          bond-equivalent yield (see `get_bond_equivalent_yield`)
+        - Modified Duration = Macaulay Duration / (1 + y / 2) (see `get_duration`)
+
+        Coupons are semi-annual and fall on the actual coupon dates, counted back from
+        maturity; the time in the current period is counted in actual days (actual/actual,
+        the Treasury convention). Yields are nominal annual rates compounded twice a year
+        (bond-equivalent), as the Treasury quotes them. For TIPS the price is per 100 of
+        inflation-adjusted principal, so the yield is the real yield. Floating rate notes
+        reset their coupon every week, so they have a price but no yield or duration.
+
+        See definition: https://www.treasurydirect.gov/GA-FI/FedInvest/selectSecurityPriceDate
+
+        Also known as: Treasury bond prices, Treasury yields per security, CUSIP yields,
+        off-the-run Treasuries, FedInvest prices.
+
+        Args:
+            date (str | None, optional): The day (YYYY-MM-DD); a weekend or holiday uses the
+                business day before it. Defaults to None, the latest day with prices.
+            security_type (list[str] | str | None, optional): The kind of security: "Bill",
+                "Note", "Bond", "TIPS" or "FRN", or several (a list or a comma-separated
+                string). Defaults to None, which returns every kind.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: One row per security, indexed by CUSIP, with the Security Type,
+            Coupon (decimal), Maturity, Price per 100 of par, Yield to Maturity (decimal),
+            Modified Duration (years) and Price Date, sorted by maturity.
+
+        Notes:
+        - The price is the end-of-day price. It is published the next business day, so the
+          latest day uses the bid (FedInvest's Sell price) until then.
+        - One request per day; a day with end-of-day prices is cached for good.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        treasuries = fixedincome.get_treasury_securities(date="2026-11-05", security_type="Note,Bond")
+
+        treasuries.loc[treasuries["Maturity"].between("2035-01-01", "2036-12-31")]
+        ```
+
+        Which returns:
+
+        | CUSIP     | Security Type   |   Coupon | Maturity   |   Price |   Yield to Maturity |   Modified Duration | Price Date   |
+        |:----------|:----------------|---------:|:-----------|--------:|--------------------:|--------------------:|:-------------|
+        | 91282CMM0 | Note            |   0.0462 | 2035-02-15 | 99.0312 |              0.0477 |              6.7323 | 2026-11-05   |
+        | 91282CNC1 | Note            |   0.0425 | 2035-05-15 | 96.3125 |              0.0478 |              6.8997 | 2026-11-05   |
+        | 91282CNT4 | Note            |   0.0425 | 2035-08-15 | 96.125  |              0.048  |              7.1425 | 2026-11-05   |
+        | 91282CPJ4 | Note            |   0.04   | 2035-11-15 | 94.1562 |              0.0481 |              7.2897 | 2026-11-05   |
+        | 912810FT0 | Bond            |   0.045  | 2036-02-15 | 98.875  |              0.0465 |              7.4268 | 2026-11-05   |
+        | 91282CPZ8 | Note            |   0.0412 | 2036-02-15 | 94.9062 |              0.0481 |              7.5011 | 2026-11-05   |
+        | 91282CQQ7 | Note            |   0.0438 | 2036-05-15 | 96.625  |              0.0482 |              7.5126 | 2026-11-05   |
+        | 91282CRF0 | Note            |   0.0462 | 2036-08-15 | 98.4375 |              0.0483 |              7.6914 | 2026-11-05   |
+        """
+        requested_types = None
+        if security_type is not None:
+            types = {kind.lower(): kind for kind in TREASURY_PRICE_TYPES}
+            requested = _split_values(security_type) or []
+            if unknown := [kind for kind in requested if kind.lower() not in types]:
+                raise ValueError(
+                    f"The security type {', '.join(unknown)} does not exist. Choose from "
+                    f"{', '.join(TREASURY_PRICE_TYPES)}."
+                )
+            requested_types = [types[kind.lower()] for kind in requested]
+
+        prices, price_date = treasurydirect_model.get_treasury_prices(date)
+        if requested_types is not None:
+            prices = prices[prices["Security Type"].isin(requested_types)]
+        if prices.empty:
+            raise ValueError(f"FedInvest lists no {security_type} on {price_date}.")
+
+        def analytics(security: pd.Series) -> tuple[float, float]:
+            maturity = security["Maturity"].date()
+            if security["Security Type"] == "FRN":
+                return np.nan, np.nan
+            if security["Security Type"] == "Bill":
+                return bond_data_model.get_bill_analytics(
+                    (maturity - price_date).days, security["Price"]
+                )
+            return bond_data_model.get_bond_analytics(
+                security["Coupon"],
+                bond_data_model.get_years_to_maturity(price_date, maturity),
+                security["Price"],
+            )
+
+        prices = prices[prices["Maturity"].dt.date > price_date].copy()
+        values = prices.apply(analytics, axis=1, result_type="expand")
+        prices["Yield to Maturity"] = values[0]
+        prices["Modified Duration"] = values[1]
+        prices["Price Date"] = str(price_date)
+        prices["Maturity"] = prices["Maturity"].dt.strftime("%Y-%m-%d")
+
+        prices = prices.sort_values(
+            ["Maturity", "Security Type"], kind="stable"
+        ).set_index("CUSIP")[
+            [
+                "Security Type",
+                "Coupon",
+                "Maturity",
+                "Price",
+                "Yield to Maturity",
+                "Modified Duration",
+                "Price Date",
+            ]
+        ]
+
+        return apply_rounding(
+            prices, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_ice_bofa_option_adjusted_spread(

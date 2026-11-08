@@ -61,6 +61,7 @@ mcp = [
     "fastmcp>=3.4.2",
     "mcp[cli]>=1.27.0,<2",
     "python-dotenv>=1.0",
+    "cryptography>=42",
     "rich>=13.0",
 ]
 

@@ -238,7 +238,7 @@ def test_the_risk_free_rate_is_part_of_the_toolkit(provider):
         "api_key": "test-key",
     }
     default = provider.get_toolkit_instance(**arguments)
-    bill = provider.get_toolkit_instance(**arguments, risk_free_rate="13w")
+    bill = provider.get_toolkit_instance(**arguments, toolkit_risk_free_rate="13w")
 
     assert default.kwargs["risk_free_rate"] == "10y"
     assert bill.kwargs["risk_free_rate"] == "13w"

@@ -1702,17 +1702,22 @@ class ToolRegistry:
             ):
                 benchmark_ticker = None
 
-            # The Toolkit's own setting, so it is taken off before the method's arguments; the
-            # other tools have no such parameter and pass a risk_free_rate on to the method.
-            risk_free_rate = "10y"
+            # The Toolkit's own setting, taken off before the method's arguments and passed under
+            # its own name, so it never meets a method's own risk_free_rate (options takes the
+            # rate as a number).
+            toolkit_risk_free_rate = "10y"
             if spec.risk_free_rate:
-                risk_free_rate = (
+                toolkit_risk_free_rate = (
                     str(kwargs.pop("risk_free_rate", None) or "10y").strip().lower()
                 )
-                if risk_free_rate not in validation_model.RISK_FREE_RATE_OPTIONS:
+                if (
+                    toolkit_risk_free_rate
+                    not in validation_model.RISK_FREE_RATE_OPTIONS
+                ):
                     return (
                         f"Invalid `risk_free_rate` for `{tool_name}` (`{method_name}`): "
-                        f"'{risk_free_rate}'. Please use one of {', '.join(validation_model.RISK_FREE_RATE_OPTIONS)}."
+                        f"'{toolkit_risk_free_rate}'. Please use one of "
+                        f"{', '.join(validation_model.RISK_FREE_RATE_OPTIONS)}."
                     )
 
             # show_columns is handled entirely here — never forwarded to methods
@@ -2008,7 +2013,7 @@ class ToolRegistry:
                         result = provider.call_method(
                             **call_arguments,
                             benchmark_ticker=benchmark_ticker,
-                            risk_free_rate=risk_free_rate,
+                            toolkit_risk_free_rate=toolkit_risk_free_rate,
                             **method_kwargs,
                         )
                         upper_tickers = {ticker.upper() for ticker in tickers or []}
@@ -2024,7 +2029,7 @@ class ToolRegistry:
                             result = provider.call_method(
                                 **call_arguments,
                                 benchmark_ticker=None,
-                                risk_free_rate=risk_free_rate,
+                                toolkit_risk_free_rate=toolkit_risk_free_rate,
                                 **method_kwargs,
                             )
                     input_info = call_input_info()
@@ -2078,7 +2083,7 @@ class ToolRegistry:
                         benchmark_ticker=benchmark_ticker,
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
-                        risk_free_rate=risk_free_rate,
+                        toolkit_risk_free_rate=toolkit_risk_free_rate,
                     )
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.

@@ -153,7 +153,39 @@ def test_the_risk_free_rate_reaches_the_toolkit(captured, given, expected):
         arguments["risk_free_rate"] = given
     call("performance", arguments)
 
-    assert captured[-1]["risk_free_rate"] == expected
+    assert captured[-1]["toolkit_risk_free_rate"] == expected
+
+
+@pytest.mark.parametrize(
+    ("tool", "indicator"),
+    [
+        ("performance", "get_sharpe_ratio"),
+        ("risk", "get_value_at_risk"),
+        ("models", "get_weighted_average_cost_of_capital"),
+        ("portfolio", "get_minimum_variance_weights"),
+    ],
+)
+def test_every_tool_with_a_risk_free_rate_passes_it_on(captured, tool, indicator):
+    text = call(
+        tool, {"indicator": indicator, "tickers": "AAPL,MSFT", "risk_free_rate": "30y"}
+    )
+
+    assert "error" not in text.lower()
+    assert captured[-1]["toolkit_risk_free_rate"] == "30y"
+    assert "risk_free_rate" not in captured[-1]
+
+
+@pytest.mark.parametrize("rate", [None, 0.04])
+def test_options_keeps_its_own_risk_free_rate(captured, rate):
+    # The options methods take the rate as a number; it must not meet the Toolkit setting.
+    arguments = {"indicator": "get_black_scholes_model", "tickers": "AAPL"}
+    if rate is not None:
+        arguments["risk_free_rate"] = rate
+    text = call("options", arguments)
+
+    assert "error" not in text.lower()
+    assert captured[-1]["risk_free_rate"] == rate
+    assert captured[-1]["toolkit_risk_free_rate"] == "10y"
 
 
 def test_an_unknown_risk_free_rate_is_refused(captured):

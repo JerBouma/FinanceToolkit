@@ -4954,11 +4954,11 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
-        method: str = "simple",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        method: str = "simple",
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate a Moving Average (MA) of a given price series: the simple, exponential,
@@ -5000,8 +5000,6 @@ class Technicals:
                 Defaults to "Adj Close".
             window (int, optional): Number of periods to consider for the moving average.
                 The number of periods (time intervals) over which to calculate the MA. Defaults to 14.
-            method (str, optional): The moving average: "simple", "exponential",
-                "double_exponential", "triangular", "weighted" or "hull". Defaults to "simple".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the MA.
@@ -5011,6 +5009,8 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            method (str, optional): The moving average: "simple", "exponential",
+                "double_exponential", "triangular", "weighted" or "hull". Defaults to "simple".
 
         Returns:
             pd.DataFrame or pd.Series:

@@ -312,6 +312,7 @@ class Portfolio:
 
     def _price_toolkit(self, tickers: list[str], start_date: str) -> Toolkit:
         """A Toolkit for the tickers, reused later for the historical data."""
+        # Unrounded, as the portfolio is calculated from the prices this Toolkit returns.
         self._toolkit = Toolkit(
             api_key=self._api_key,
             tickers=tickers,
@@ -319,6 +320,7 @@ class Portfolio:
             start_date=start_date,
             use_cached_data=self._use_cached_data,
             progress_bar=False,
+            rounding=None,
         )
         return self._toolkit
 
@@ -376,6 +378,8 @@ class Portfolio:
                 start_date=start_date,
                 use_cached_data=self._use_cached_data,
                 progress_bar=False,
+                # Unrounded: a rate such as JPY to EUR (0.0061) loses digits at four decimals.
+                rounding=None,
             ).get_historical_data(period="daily")
             # A single ticker comes back without the ticker level.
             if self._daily_currency_data.columns.nlevels == 1 and len(collect) == 1:
@@ -1291,6 +1295,7 @@ class Portfolio:
                 benchmark_ticker=None,
                 start_date=self._start_date,
                 use_cached_data=self._use_cached_data,
+                rounding=None,
             )
 
         benchmark_name = self._benchmark_tickers[self._original_tickers[0]]
@@ -1635,6 +1640,7 @@ class Portfolio:
                 start_date=self._start_date,
                 use_cached_data=self._use_cached_data,
                 historical=self._daily_historical_data,
+                rounding=None,
             )
 
         # Matches the data of each ticker (an ISIN's converted ticker) to its holding.

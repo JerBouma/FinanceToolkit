@@ -1269,6 +1269,11 @@ def test_nested_clustered_maximum_sharpe_holds_minimum_variance_in_a_cluster_bel
     assert weights.sum() == pytest.approx(1)
     assert (weights >= 0).all()
     assert weights.iloc[7:].sum() == pytest.approx(0, abs=1e-8)
+    for clusters in (1, 3):
+        with pytest.raises(ValueError, match="No asset has an expected return"):
+            optimization_model.get_nested_clustered_optimization_weights(
+                expected_returns * 0, covariance, "maximum_sharpe", 0.01, clusters=clusters
+            )
 
 
 def test_minimum_drawdown_refuses_the_empty_market_neutral_portfolio():

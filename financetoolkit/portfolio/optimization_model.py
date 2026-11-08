@@ -1524,6 +1524,11 @@ def get_nested_clustered_optimization_weights(
             return get_maximum_sharpe_weights(mu, sigma, risk_free_rate)
         return get_risk_parity_weights(sigma)
 
+    if objective == "maximum_sharpe" and (expected_returns <= risk_free_rate).all():
+        raise ValueError(
+            "No asset has an expected return above the risk free rate, so there is no "
+            "maximum Sharpe ratio portfolio."
+        )
     _, labels = get_hierarchical_clusters(covariance, linkage_method, clusters)
     within = pd.DataFrame(0.0, index=covariance.index, columns=np.unique(labels))
     for label in within.columns:

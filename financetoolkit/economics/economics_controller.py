@@ -15,12 +15,15 @@ from financetoolkit import fmp_model, helpers, historical_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
 from financetoolkit.economics import (
+    bea_model,
     bis_model,
     bls_model,
     boe_model,
     boj_model,
     cboe_model,
+    census_model,
     dnb_model,
+    dol_model,
     ecb_model,
     eex_model,
     esrb_model,
@@ -113,9 +116,10 @@ class Economics:
                 indicator is published at: daily, then weekly, monthly, quarterly and yearly. Methods
                 without a period argument return the frequency their source publishes. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
-            fred_api_key (str, optional): A FRED API key used to retrieve US-specific labor market and
-                real-activity indicators (e.g. Nonfarm Payrolls, Initial Jobless Claims, Retail Sales).
-                Obtain a free key at https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set
+            fred_api_key (str, optional): A FRED API key. The US labor market and real-activity
+                indicators (e.g. Nonfarm Payrolls, Initial Jobless Claims, Retail Sales) come from their
+                publishers without it and from FRED with it, which gives Nonfarm Payrolls the history
+                from 1939 instead of the last three years. Obtain a free key at https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set
                 via the FRED_API_KEY environment variable. Defaults to the value of FRED_API_KEY if set,
                 otherwise an empty string.
             allow_stale_oecd_cache (bool, optional): the OECD API enforces a hard rate limit (60
@@ -297,22 +301,6 @@ class Economics:
             )
 
         return f"{prefixes[level]}{variable}"
-
-    def _require_fred_api_key(self) -> None:
-        if not self._fred_api_key:
-            logger.warning(
-                "No FRED API key found. This indicator is sourced from FRED (Federal "
-                "Reserve Economic Data) and requires a key to access — registration is "
-                "entirely free and takes about a minute at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html. Once you have one, "
-                "pass it via the fred_api_key argument or set the FRED_API_KEY "
-                "environment variable."
-            )
-            raise ValueError(
-                "A FRED API key is required to retrieve this indicator. Obtain a free key at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
-                "fred_api_key argument or set the FRED_API_KEY environment variable."
-            )
 
     @staticmethod
     def _combine_sources_for(
@@ -7065,7 +7053,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get Total Nonfarm Payroll Employment for the United States from the Bureau of
-        Labor Statistics (via FRED).
+        Labor Statistics.
 
         Nonfarm Payrolls is the headline monthly employment report and one of the most
         closely watched real-activity indicators in macroeconomics: it counts the
@@ -7080,8 +7068,10 @@ class Economics:
         adjusted, so 156857 means 156.857 million jobs -- not the monthly change that the
         headline "jobs added" number refers to. Use growth=True for that change.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        Without a FRED API key the data comes from the Bureau of Labor Statistics' keyless
+        API, which gives the same figures but only for about the last three years. The
+        full history, from 1939, comes from FRED when a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class).
 
         See definition: https://fred.stlouisfed.org/series/PAYEMS
 
@@ -7127,11 +7117,28 @@ class Economics:
         | 2025-11-01 |          158449 |
         | 2025-12-01 |          158432 |
         """
-        self._require_fred_api_key()
-
-        nonfarm_payrolls = fred_model.get_nonfarm_payrolls(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        nonfarm_payrolls = (
+            fred_model.get_nonfarm_payrolls(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else bls_model.get_nonfarm_payrolls()
         )
+
+        if (
+            not self._fred_api_key
+            and not nonfarm_payrolls.empty
+            and nonfarm_payrolls.index.min().to_timestamp()
+            > pd.Timestamp(self._start_date)
+        ):
+            logger.warning(
+                "Without a FRED API key, nonfarm payrolls start in %s: the keyless BLS API "
+                "only returns about the last three years. Set a FRED API key for the "
+                "history from 1939.",
+                nonfarm_payrolls.index.min().strftime("%Y-%m"),
+            )
 
         return finalize_dataset(
             dataset=nonfarm_payrolls,
@@ -7160,7 +7167,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get weekly Initial Claims for Unemployment Insurance for the United States
-        from the Department of Labor (via FRED).
+        from the Department of Labor.
 
         Initial Jobless Claims counts the number of individuals filing for
         unemployment insurance for the first time in a given week. Because it is
@@ -7169,8 +7176,9 @@ class Economics:
         one of the most timely leading indicators of labor-market deterioration and a
         core component of the Conference Board's Leading Economic Index.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from the Department of Labor's weekly claims report
+        directly, which gives the same figures, although FRED adds the latest weeks before the report includes them. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/ICSA
 
@@ -7199,7 +7207,6 @@ class Economics:
 
         economics = Economics(
             start_date='2020-01-01',
-            fred_api_key='FRED_API_KEY',
             end_date="2025-12-31",
         )
 
@@ -7216,10 +7223,14 @@ class Economics:
         | 2025-12-20 |          215000 |
         | 2025-12-27 |          203000 |
         """
-        self._require_fred_api_key()
-
-        initial_jobless_claims = fred_model.get_initial_jobless_claims(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        initial_jobless_claims = (
+            fred_model.get_initial_jobless_claims(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else dol_model.get_initial_jobless_claims()
         )
 
         return finalize_dataset(
@@ -7249,7 +7260,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get Advance Retail Sales (Retail and Food Services) for the United States from
-        the Census Bureau (via FRED).
+        the Census Bureau.
 
         Retail Sales measures nominal spending at retail and food-service
         establishments. Since Personal Consumption Expenditures make up roughly
@@ -7261,8 +7272,9 @@ class Economics:
         retail trade and food services. It is nominal, so growth=True mixes volume and price
         changes together; compare against the Consumer Price Index to separate the two.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from the Census Bureau
+        directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/RSAFS
 
@@ -7291,7 +7303,6 @@ class Economics:
 
         economics = Economics(
             start_date='2020-01-01',
-            fred_api_key='FRED_API_KEY',
             end_date="2025-12-31",
         )
 
@@ -7302,16 +7313,20 @@ class Economics:
 
         | Date       |   United States |
         |:-----------|----------------:|
-        | 2025-08-01 |          700218 |
-        | 2025-09-01 |          701453 |
+        | 2025-08-01 |          700407 |
+        | 2025-09-01 |          700948 |
         | 2025-10-01 |          700790 |
         | 2025-11-01 |          705453 |
         | 2025-12-01 |          706264 |
         """
-        self._require_fred_api_key()
-
-        retail_sales = fred_model.get_retail_sales(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        retail_sales = (
+            fred_model.get_retail_sales(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else census_model.get_retail_sales()
         )
 
         return finalize_dataset(
@@ -7432,7 +7447,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get Housing Starts (Total New Privately-Owned Housing Units Started) for the
-        United States from the Census Bureau (via FRED).
+        United States from the Census Bureau.
 
         Housing Starts counts the number of new residential construction projects
         that have begun in a given month. Residential investment is one of the most
@@ -7441,8 +7456,9 @@ class Economics:
         turns up before a recovery), making Housing Starts one of the ten components
         of the Conference Board's Leading Economic Index.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from the Census Bureau
+        directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/HOUST
 
@@ -7471,7 +7487,6 @@ class Economics:
 
         economics = Economics(
             start_date='2020-01-01',
-            fred_api_key='FRED_API_KEY',
             end_date="2025-12-31",
         )
 
@@ -7488,10 +7503,14 @@ class Economics:
         | 2025-11-01 |            1319 |
         | 2025-12-01 |            1378 |
         """
-        self._require_fred_api_key()
-
-        housing_starts = fred_model.get_housing_starts(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        housing_starts = (
+            fred_model.get_housing_starts(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else census_model.get_housing_starts()
         )
 
         return finalize_dataset(
@@ -7521,7 +7540,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get Real Personal Income Excluding Current Transfer Receipts for the United
-        States from the Bureau of Economic Analysis (via FRED).
+        States from the Bureau of Economic Analysis.
 
         This is the exact series (not a proxy) the NBER's Business Cycle Dating
         Committee uses as one of its four primary coincident indicators for dating
@@ -7534,8 +7553,9 @@ class Economics:
         activity rather than the fiscal cushioning that automatically increases
         during a downturn.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from the Bureau of Economic Analysis
+        directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/W875RX1
 
@@ -7565,7 +7585,6 @@ class Economics:
 
         economics = Economics(
             start_date='2020-01-01',
-            fred_api_key='FRED_API_KEY',
             end_date="2025-12-31",
         )
 
@@ -7582,10 +7601,14 @@ class Economics:
         | 2025-11-01 |         16960.6 |
         | 2025-12-01 |         16943.8 |
         """
-        self._require_fred_api_key()
-
-        real_personal_income = fred_model.get_real_personal_income(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        real_personal_income = (
+            fred_model.get_real_personal_income(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else bea_model.get_real_personal_income()
         )
 
         return finalize_dataset(
@@ -9979,7 +10002,7 @@ class Economics:
     @handle_errors
     def get_commodity_forward_curve(
         self,
-        commodity: str,
+        commodity: str | list[str] | None = None,
         contracts: int = 12,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -10003,9 +10026,10 @@ class Economics:
         Also known as: futures term structure, forward curve.
 
         Args:
-            commodity (str): The commodity to retrieve the curve for. One of "Crude
-                Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn", "Wheat" or
-                "Soybeans".
+            commodity (str | list[str] | None, optional): The commodity, or a list of
+                them, to retrieve the curve for: "Crude Oil", "Natural Gas", "Gold",
+                "Silver", "Copper", "Corn", "Wheat" or "Soybeans". Defaults to None, which
+                retrieves every one of them.
             contracts (int, optional): The number of contracts to return, the nearest
                 listed ones from the current month on. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -10017,7 +10041,8 @@ class Economics:
             pd.DataFrame: A DataFrame indexed by date, with one column per contract
             labeled by its delivery month (e.g. "2026-12"), containing that
             contract's daily closing price over its trading life. Columns are NaN
-            outside the date range the contract actually traded in.
+            outside the date range the contract actually traded in. With a list of
+            commodities (or none given), the columns are the commodity and the contract.
 
         As an example:
 
@@ -10039,9 +10064,24 @@ class Economics:
         | 2026-07-30 |     78.19 |     76.12 |     74.65 |     73.56 |     72.72 |
         | 2026-07-31 |     78.65 |     76.44 |     74.88 |     73.74 |     72.88 |
         """
-        commodity_forward_curve = yfinance_model.get_commodity_forward_curve(
-            commodity, self._start_date, self._end_date, contracts
-        )
+        # A comma-separated string (as the MCP server passes a list) is split.
+        if isinstance(commodity, str) and "," in commodity:
+            commodity = [name.strip() for name in commodity.split(",") if name.strip()]
+
+        if isinstance(commodity, str):
+            commodity_forward_curve = yfinance_model.get_commodity_forward_curve(
+                commodity, self._start_date, self._end_date, contracts
+            )
+        else:
+            commodity_forward_curve = pd.concat(
+                {
+                    name: yfinance_model.get_commodity_forward_curve(
+                        name, self._start_date, self._end_date, contracts
+                    )
+                    for name in commodity or yfinance_model.COMMODITY_TICKERS
+                },
+                axis=1,
+            )
 
         return finalize_dataset(
             dataset=commodity_forward_curve,

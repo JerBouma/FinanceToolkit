@@ -594,3 +594,25 @@ def test_statement_exchange_rates_follow_the_fiscal_period():
     assert currencies_model.get_statement_exchange_rates(
         daily_weekdays, weekend, currencies, quarter=False
     )["MSFT"].iloc[0] == pytest.approx(reference["2020-06-26"])
+
+
+def test_minor_currency_units_convert_by_their_factor():
+    # A rate from pounds to pence is 100 times the rate to pounds, and the other way round.
+    assert currencies_model.get_minor_unit_factor("GBP", "GBp") == 100
+    assert currencies_model.get_minor_unit_factor("GBp", "GBP") == pytest.approx(0.01)
+    assert currencies_model.get_minor_unit_factor("EUR", "USD") == 1
+    # The native USD/ZAc quote is in cents already.
+    assert currencies_model.get_minor_unit_factor("USD", "ZAc") == 1
+
+    assert currencies_model.get_major_currency("GBp") == "GBP"
+    assert currencies_model.get_major_currency("ILA") == "ILS"
+    assert currencies_model.get_major_currency("USD") == "USD"
+
+    assert currencies_model.is_same_currency("EUR", "EUR")
+    assert not currencies_model.is_same_currency("GBP", "GBp")
+
+
+def test_get_fx_ticker_uses_the_native_symbol_where_one_exists():
+    assert currencies_model.get_fx_ticker("EUR", "USD") == "EURUSD=X"
+    assert currencies_model.get_fx_ticker("USD", "GBp") == "USDGBp=X"
+    assert currencies_model.get_fx_ticker("USD", "ZAc") == "USDZAC"

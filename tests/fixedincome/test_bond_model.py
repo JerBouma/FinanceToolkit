@@ -324,3 +324,31 @@ def test_yield_to_maturity_is_nan_when_no_yield_gives_the_price():
 
     with pytest.raises(ValueError, match="frequency"):
         bond_model.get_bond_price(100, 0.05, 10, 0.05, 0)
+
+
+def test_get_current_yield_is_the_coupon_over_the_price():
+    assert bond_model.get_current_yield(
+        par_value=1000, coupon_rate=0.05, bond_price=950
+    ) == pytest.approx(50 / 950)
+
+
+def test_get_effective_yield_compounds_the_coupon_payments():
+    assert bond_model.get_effective_yield(0.06, 2) == pytest.approx(1.03**2 - 1)
+    assert bond_model.get_effective_yield(0.06, 1) == pytest.approx(0.06)
+
+    with pytest.raises(ValueError, match="positive"):
+        bond_model.get_effective_yield(0.06, 0)
+
+
+def test_dollar_duration_and_dv01_of_a_zero_coupon_bond():
+    # A two-year zero at 5%: price 100 / 1.05^2, Macaulay duration 2, modified 2 / 1.05.
+    price = 100 / 1.05**2
+    modified_duration = 2 / 1.05
+
+    dollar_duration = bond_model.get_dollar_duration(100, 0.0, 2, 0.05, 1)
+    assert dollar_duration == pytest.approx(modified_duration * price / 100)
+
+    # DV01 is the price change of one basis point: the dollar duration over 100.
+    dv01 = bond_model.get_dv01(100, 0.0, 2, 0.05, 1)
+    assert dv01 == pytest.approx(modified_duration * price * 0.0001, rel=1e-6)
+    assert dv01 == pytest.approx(dollar_duration / 100, rel=1e-6)

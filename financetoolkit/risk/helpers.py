@@ -4,25 +4,10 @@ __docformat__ = "google"
 
 from collections.abc import Mapping
 
+import numpy as np
 import pandas as pd
 
-# pylint: disable=protected-access
-
-PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
-    "intraday": {
-        "1min": "h",
-        "5min": "h",
-        "15min": "D",
-        "30min": "D",
-        "1hour": "D",
-    },
-    # The daily period nests the intraday observations of a single day, so it is only available when intraday data was fetched -- exactly the condition the Risk controller guards its period="daily" branches with, and the Econometrics controller its period="daily" branches that ask for within_period=True.  # noqa: E501
-    "daily": "D",
-    "weekly": "W",
-    "monthly": "M",
-    "quarterly": "Q",
-    "yearly": "Y",
-}
+from financetoolkit.utilities.statistics_model import WITHIN_PERIOD_TRANSLATION
 
 
 def determine_within_historical_data(
@@ -38,7 +23,7 @@ def determine_within_historical_data(
     LazyDict (financetoolkit.helpers) retrieves nothing else.
 
     Args:
-        period (str): The period, one of the keys of PERIOD_TRANSLATION.
+        period (str): The period, one of the keys of WITHIN_PERIOD_TRANSLATION.
         historical_data (Mapping[str, pd.DataFrame]): The historical data with a PeriodIndex
             under the "daily" and "intraday" keys.
         intraday_period (str | None): The intraday frequency (e.g. "1min", "1hour") used to
@@ -51,7 +36,7 @@ def determine_within_historical_data(
     Returns:
         pd.DataFrame: The historical data with a (period, observation) multi-index.
     """
-    if period not in PERIOD_TRANSLATION or (
+    if period not in WITHIN_PERIOD_TRANSLATION or (
         period == "intraday" and not intraday_period
     ):
         raise KeyError(period)
@@ -68,7 +53,7 @@ def determine_within_historical_data(
 
     # The intraday entry maps each intraday_period to a symbol; every other entry is the
     # symbol itself.
-    symbol = PERIOD_TRANSLATION[period]
+    symbol = WITHIN_PERIOD_TRANSLATION[period]
     period_symbol = (
         symbol[intraday_period]
         if isinstance(symbol, dict) and intraday_period is not None
@@ -92,3 +77,18 @@ def determine_within_historical_data(
     )
 
     return period_data
+
+
+def as_float(value: float | np.ndarray | pd.Series | pd.DataFrame) -> float:
+    """
+    Reduces a single-value estimate to a float. The Student-t and Extreme Value Theory
+    Value at Risk and Conditional Value at Risk return a length one array or Series when
+    given a Series, which a rolling apply does not accept as its return value.
+
+    Args:
+        value (float | np.ndarray | pd.Series | pd.DataFrame): The estimate to reduce.
+
+    Returns:
+        float: The estimate as a float.
+    """
+    return float(np.asarray(value, dtype=float).reshape(-1)[0])

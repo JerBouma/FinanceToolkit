@@ -754,3 +754,108 @@ def get_sbc_adjusted_free_cash_flow(
         float | pd.Series: The SBC-adjusted free cash flow value.
     """
     return free_cash_flow - stock_based_compensation
+
+
+def get_free_cash_flow_payout_ratio(
+    dividends: pd.Series | pd.DataFrame, free_cash_flow: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the free cash flow payout ratio, the share of free cash flow paid out as
+    dividends.
+
+    The formula is as follows:
+
+        Free Cash Flow Payout Ratio = |Dividends Paid| / Free Cash Flow
+
+    Dividends are reported as a negative cash outflow, so their magnitude is used. With
+    a free cash flow of zero or less the ratio has no meaning, so those periods are NaN.
+
+    Also known as: FCF payout ratio, dividends to free cash flow, cash dividend payout ratio.
+
+    Args:
+        dividends (float or pd.Series): Dividends paid by the company.
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+
+    Returns:
+        float | pd.Series: The free cash flow payout ratio, NaN where the free cash flow is
+            zero or negative.
+    """
+    return abs(dividends) / free_cash_flow.where(free_cash_flow > 0)
+
+
+def get_ev_to_invested_capital_ratio(
+    enterprise_value: pd.Series | pd.DataFrame,
+    total_equity: pd.Series | pd.DataFrame,
+    total_debt: pd.Series | pd.DataFrame,
+    cash_and_short_term_investments: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the enterprise value to invested capital ratio, the market value of the
+    operations against the capital invested in them.
+
+    The formula is as follows (Koller, Goedhart and Wessels):
+
+        Invested Capital = Total Equity + Total Debt - Cash and Short Term Investments
+
+        EV to Invested Capital = Enterprise Value / Invested Capital
+
+    The invested capital is taken from the financing side, with the same items as the
+    enterprise value: the equity includes minority interest and preferred stock, and the
+    cash and short-term investments are deducted from both. An invested capital of zero
+    or less gives NaN.
+
+    Also known as: EV/IC, enterprise value to invested capital, market-to-book of the firm.
+
+    Args:
+        enterprise_value (float or pd.Series): Enterprise value of the company.
+        total_equity (float or pd.Series): Total equity, including minority interest.
+        total_debt (float or pd.Series): Total debt of the company.
+        cash_and_short_term_investments (float or pd.Series): Cash, cash equivalents and
+            short-term investments.
+
+    Returns:
+        float | pd.Series: The EV to invested capital value, NaN where the invested capital
+            is zero or negative.
+    """
+    invested_capital = total_equity + total_debt - cash_and_short_term_investments
+
+    return enterprise_value / invested_capital.where(invested_capital > 0)
+
+
+def get_price_to_tangible_book_ratio(
+    market_cap: pd.Series | pd.DataFrame,
+    total_shareholder_equity: pd.Series | pd.DataFrame,
+    preferred_stock: pd.Series | pd.DataFrame,
+    goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the price to tangible book ratio, the market value of the common equity
+    against its book value without goodwill and other intangible assets.
+
+    The formula is as follows (CFA Institute):
+
+        Tangible Book Value = Total Shareholder Equity - Preferred Stock - Goodwill and
+            Intangible Assets
+
+        Price to Tangible Book = Market Capitalization / Tangible Book Value
+
+    A tangible book value of zero or less gives NaN, as the ratio has no meaning then.
+
+    Also known as: P/TBV, price to tangible book value, price to tangible equity.
+
+    Args:
+        market_cap (float or pd.Series): Market capitalization of the company.
+        total_shareholder_equity (float or pd.Series): Shareholders' equity, without
+            minority interest.
+        preferred_stock (float or pd.Series): Preferred stock of the company.
+        goodwill_and_intangible_assets (float or pd.Series): Goodwill and intangible assets.
+
+    Returns:
+        float | pd.Series: The price to tangible book value, NaN where the tangible book
+            value is zero or negative.
+    """
+    tangible_book_value = (
+        total_shareholder_equity - preferred_stock - goodwill_and_intangible_assets
+    )
+
+    return market_cap / tangible_book_value.where(tangible_book_value > 0)

@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import itertools
-import warnings
 from collections.abc import Callable
 from functools import cached_property
 
@@ -23,7 +22,7 @@ from financetoolkit.risk import (
     risk_model,
     var_model,
 )
-from financetoolkit.risk.helpers import determine_within_historical_data
+from financetoolkit.risk.helpers import as_float, determine_within_historical_data
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -35,9 +34,6 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 logger = get_logger()
-
-# Division by zero is normal in these calculations, not a bug.
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 
@@ -67,23 +63,6 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["anomalies"] + [
 # pylint: disable=too-many-boolean-expressions
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
-
-
-def _as_scalar(value: float | np.ndarray | pd.Series | pd.DataFrame) -> float:
-    """
-    Reduces a Value at Risk or Conditional Value at Risk estimate to a single float.
-
-    A rolling apply only accepts a scalar return value, but the Student-t and Extreme
-    Value Theory variants return a length one array or Series when given a Series, which
-    would otherwise raise a TypeError before it reaches the backtest.
-
-    Args:
-        value (float | np.ndarray | pd.Series | pd.DataFrame): the estimate to reduce.
-
-    Returns:
-        float: the estimate as a single float.
-    """
-    return float(np.asarray(value).reshape(-1)[0])
 
 
 def _get_out_of_sample_estimates(
@@ -146,9 +125,7 @@ def _get_out_of_sample_estimates(
             # seconds per thousand windows.
             estimator = parametric_estimators[(measure, distribution)]
             estimate = column_returns.rolling(window=window_size).apply(
-                lambda window, estimator=estimator: _as_scalar(
-                    estimator(window, alpha)
-                ),
+                lambda window, estimator=estimator: as_float(estimator(window, alpha)),
                 raw=False,
             )
 
@@ -3263,11 +3240,34 @@ class Risk:
 
         return [(ticker_a, ticker_b)]
 
+    def _benchmark_pairs(
+        self, varying: str | None, counterpart: str | None
+    ) -> list[tuple[str, str]]:
+        # The (varying, counterpart) pairs of a pairwise measure: the counterpart defaults to the benchmark and the varying side to every other ticker, so a given ticker keeps the role of its own parameter.  # noqa: E501
+        if counterpart is None:
+            if "Benchmark" not in self._tickers:
+                raise ValueError(
+                    "Without a benchmark (benchmark_ticker=None) both tickers of the pair are required."
+                )
+            counterpart = "Benchmark"
+
+        others = (
+            [varying]
+            if varying is not None
+            else [
+                ticker
+                for ticker in self._tickers
+                if ticker not in ("Portfolio", counterpart)
+            ]
+        )
+
+        return [(ticker, counterpart) for ticker in others]
+
     @handle_errors
     def get_tail_dependence_coefficient(
         self,
-        ticker_a: str,
-        ticker_b: str,
+        ticker_a: str | None = None,
+        ticker_b: str | None = None,
         period: str | None = None,
         column: str = "Return",
         q: float = 0.95,
@@ -3277,7 +3277,8 @@ class Risk:
     ) -> pd.Series:
         """
         Calculate the Upper and Lower Tail Dependence Coefficients between `ticker_a`
-        and `ticker_b`.
+        and `ticker_b`. Without a pair, every ticker is paired with the benchmark, which
+        tells how likely each company is to be in distress when the market is.
 
         Correlation only captures the *average* co-movement between two assets -- it
         says nothing about whether they are more likely to crash together than an
@@ -3312,8 +3313,9 @@ class Risk:
         Also known as: tail dependence, extremal dependence coefficient.
 
         Args:
-            ticker_a (str): The first asset.
-            ticker_b (str): The second asset.
+            ticker_a (str | None, optional): The first asset. Defaults to None, which pairs every other ticker
+            in the Toolkit instance (the benchmark included when `ticker_b` is given) with `ticker_b`.
+            ticker_b (str | None, optional): The second asset. Defaults to None, which uses the benchmark.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
@@ -3329,12 +3331,16 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
+        Raises:
+            ValueError: If one of the two tickers is missing while the Toolkit has no benchmark.
+
         Returns:
-            pd.Series: The Lower and Upper Tail Dependence Coefficients, the linear (Pearson)
-            correlation between the two assets, and the number of observations used.
+            pd.Series | pd.DataFrame: The Lower and Upper Tail Dependence Coefficients, the linear (Pearson)
+            correlation between the two assets, and the number of observations used -- a Series for a given
+            pair, or a DataFrame with a row per ticker paired with `ticker_b` (or the benchmark) otherwise.
 
         Notes:
-        - The method retrieves historical data based on the specified `period` for the two given
+        - The method retrieves historical data based on the specified `period` for each pair of
         assets and estimates the tail dependence coefficient between them.
 
         As an example:
@@ -3343,30 +3349,39 @@ class Risk:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["^GSPC", "^STOXX50E"],
+            ["AAPL", "JPM", "XOM", "^STOXX50E"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_tail_dependence_coefficient("^GSPC", "^STOXX50E")
+        toolkit.risk.get_tail_dependence_coefficient()
         ```
 
         Which returns:
 
-        |                       |     Value |
-        |:----------------------|----------:|
-        | Lower Tail Dependence |    0.3231 |
-        | Upper Tail Dependence |    0.3387 |
-        | Correlation           |    0.4545 |
-        | Observations          | 1289      |
+        |           |   Lower Tail Dependence |   Upper Tail Dependence |   Correlation |   Observations |
+        |:----------|------------------------:|------------------------:|--------------:|---------------:|
+        | AAPL      |                  0.4545 |                  0.4769 |        0.7593 |           1290 |
+        | JPM       |                  0.4    |                  0.3846 |        0.622  |           1290 |
+        | XOM       |                  0.2424 |                  0.2154 |        0.3408 |           1290 |
+        | ^STOXX50E |                  0.3231 |                  0.3438 |        0.4449 |           1289 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
+        pairs = self._benchmark_pairs(ticker_a, ticker_b)
 
-        result = copula_model.get_tail_dependence_coefficient(
-            returns[ticker_a], returns[ticker_b], q=q, method=method, dof=dof
-        )
+        result = pd.DataFrame(
+            {
+                ticker: copula_model.get_tail_dependence_coefficient(
+                    returns[ticker], returns[other], q=q, method=method, dof=dof
+                )
+                for ticker, other in pairs
+            }
+        ).T
+
+        if ticker_a is not None and ticker_b is not None:
+            result = result.iloc[0].rename(None)
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
@@ -3884,8 +3899,8 @@ class Risk:
     @handle_errors
     def get_covar(
         self,
-        ticker: str,
-        conditioning_ticker: str,
+        ticker: str | None = None,
+        conditioning_ticker: str | None = None,
         period: str | None = None,
         column: str = "Return",
         alpha: float = 0.05,
@@ -3893,7 +3908,9 @@ class Risk:
     ) -> pd.Series:
         """
         Calculate the (Delta-)CoVaR of `ticker` conditional on `conditioning_ticker`
-        being in its own distress state.
+        being in its own distress state. Without a pair, it measures how much each
+        ticker's distress adds to the tail risk of the benchmark (the market as the
+        "system"), as in Adrian & Brunnermeier (2016).
 
         Ordinary Value at Risk treats each asset in isolation, which misses systemic
         risk -- the fact that one asset's distress can spill over and worsen
@@ -3929,9 +3946,11 @@ class Risk:
         Also known as: Conditional Value at Risk (systemic risk sense), Delta-CoVaR.
 
         Args:
-            ticker (str): The asset whose conditional VaR is being measured.
-            conditioning_ticker (str): The asset (or e.g. a benchmark/index) whose distress
-            `ticker` is conditioned on.
+            ticker (str | None, optional): The asset whose conditional VaR is being measured (the system).
+            Defaults to None, which uses the benchmark.
+            conditioning_ticker (str | None, optional): The asset whose distress `ticker` is conditioned on.
+            Defaults to None, which conditions `ticker` on every other ticker in the Toolkit instance in turn
+            (the benchmark included when `ticker` is given), a row each.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
@@ -3942,12 +3961,16 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
 
+        Raises:
+            ValueError: If one of the two tickers is missing while the Toolkit has no benchmark.
+
         Returns:
-            pd.Series: The CoVaR, the Delta-CoVaR, the tail (alpha-quantile) Quantile Regression
-            slope and intercept, and the number of observations used.
+            pd.Series | pd.DataFrame: The CoVaR, the Delta-CoVaR, the tail (alpha-quantile) Quantile Regression
+            slope and intercept, and the number of observations used -- a Series for a given pair, or a
+            DataFrame with a row per conditioning ticker otherwise.
 
         Notes:
-        - The method retrieves historical data based on the specified `period` for the two given
+        - The method retrieves historical data based on the specified `period` for each pair of
         assets and estimates the CoVaR of `ticker` conditional on `conditioning_ticker`.
 
         As an example:
@@ -3962,22 +3985,32 @@ class Risk:
             end_date="2025-12-31",
         )
 
-        toolkit.risk.get_covar("GS", "JPM").loc[["CoVaR", "Delta-CoVaR"]]
+        toolkit.risk.get_covar()[["CoVaR", "Delta-CoVaR"]]
         ```
 
         Which returns:
 
-        |             |   Value |
-        |:------------|--------:|
-        | CoVaR       | -0.0353 |
-        | Delta-CoVaR | -0.0206 |
+        |     |   CoVaR |   Delta-CoVaR |
+        |:----|--------:|--------------:|
+        | GS  | -0.0232 |       -0.0104 |
+        | JPM | -0.0247 |       -0.012  |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
+        # The conditioning ticker varies and the system (`ticker`) defaults to the benchmark.
+        pairs = self._benchmark_pairs(conditioning_ticker, ticker)
 
-        result = covar_model.get_covar(
-            returns[ticker], returns[conditioning_ticker], alpha=alpha
-        )
+        result = pd.DataFrame(
+            {
+                conditioning: covar_model.get_covar(
+                    returns[system], returns[conditioning], alpha=alpha
+                )
+                for conditioning, system in pairs
+            }
+        ).T
+
+        if ticker is not None and conditioning_ticker is not None:
+            result = result.iloc[0].rename(None)
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
@@ -4561,6 +4594,7 @@ class Risk:
         - The method retrieves historical return data based on the specified `period` and calculates Skew for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of Skewness values using the specified `lag`.
+        - Returns that do not vary (a constant price, such as a suspended stock) have no Skewness and give NaN.
 
         As an example:
 
@@ -4707,6 +4741,7 @@ class Risk:
         - The method retrieves historical return data based on the specified `period` and calculates Kurtosis for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of Kurtosis values using the specified `lag`.
+        - Returns that do not vary (a constant price, such as a suspended stock) have no Kurtosis and give NaN.
 
         As an example:
 
@@ -5100,6 +5135,9 @@ class Risk:
         the specified `period` for each asset in the Toolkit instance. The close-to-close estimator
         only needs the daily returns, Parkinson needs the High and Low, and the remaining
         estimators need the Open, High, Low and Close.
+        - A range-based estimator leaves out each day on which a price it uses is 0 or below (a bad bar, as some
+        feeds report for illiquid days), since its logarithm is undefined; the period is measured over the
+        remaining days. The Yang-Zhang overnight return also needs the previous Close.
         - If `growth` is set to True, the method calculates the growth of Volatility values using the specified `lag`.
 
         Passing `method="parkinson"` (or another range-based estimator) uses the daily trading range instead of
@@ -5317,10 +5355,15 @@ class Risk:
                 self._historical_data["daily"]["Return"].dropna(how="all") ** 2
             )
         else:
-            open_prices = self._get_prices("Open")
-            high_prices = self._get_prices("High")
-            low_prices = self._get_prices("Low")
-            close_prices = self._get_prices("Close")
+            # A bad bar (a price of 0 or below) has no logarithm and is left out, as in
+            # get_volatility, instead of putting an infinite variance into the regression.
+            open_prices, high_prices, low_prices, close_prices = (
+                prices.where(prices > 0)
+                for prices in (
+                    self._get_prices(column)
+                    for column in ("Open", "High", "Low", "Close")
+                )
+            )
 
             if estimator == "parkinson":
                 realized_variance = np.log(high_prices / low_prices) ** 2 / (
@@ -6506,8 +6549,8 @@ class Risk:
                 Defaults to "anomalies", the volatility, maximum drawdown, skewness and Amihud
                 illiquidity. "all" adds the downside deviation, kurtosis, value at risk,
                 conditional value at risk, tail ratio and Roll spread.
-            period (str, optional): The frequency at which the metrics are measured and
-                evaluated: weekly, monthly, quarterly or yearly. Each metric is calculated
+            period (str, optional): The frequency at which the metrics are measured and evaluated
+                (weekly, monthly, quarterly or yearly). Each metric is calculated
                 within each period from that period's daily returns, so use monthly or longer
                 for enough returns per period. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward

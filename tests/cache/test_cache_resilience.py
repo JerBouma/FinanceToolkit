@@ -247,3 +247,51 @@ def test_a_stored_frame_with_a_missing_or_unordered_date_is_repaired_on_read(tmp
     assert cached is not None
     assert cached.index.is_monotonic_increasing
     assert cached.loc["2019-12-31":"2020-01-03", "Close"].tolist() == [1.0, 2.0, 3.0]
+
+
+def test_symbols_that_were_requested_unencoded_are_removed_once(tmp_path):
+    """Test that FMP data for a symbol with "&", "+" or "%" is removed once.
+
+    Unencoded, M&M.NS is requested as M, so what a cache holds for it can belong to
+    another company. Other symbols, other sources and later entries stay.
+    """
+    location = tmp_path / "cache.db"
+    cache = cache_controller.Cache(location=location)
+
+    for source, entity in [
+        ("FinancialModelingPrep", "M&M.NS"),
+        ("FinancialModelingPrep", "AAPL"),
+        ("YahooFinance", "M&M.NS"),
+    ]:
+        cache.set(source=source, dataset="profile", entity=entity, data=create_frame())
+
+    # A database filled before the removal has no record of it.
+    with sqlite3.connect(location) as connection:
+        connection.execute("DELETE FROM meta WHERE name = 'encoded_symbols'")
+
+    cache = cache_controller.Cache(location=location)
+
+    assert (
+        cache.get(source="FinancialModelingPrep", dataset="profile", entity="M&M.NS")
+        is None
+    )
+    assert (
+        cache.get(source="FinancialModelingPrep", dataset="profile", entity="AAPL")
+        is not None
+    )
+    assert (
+        cache.get(source="YahooFinance", dataset="profile", entity="M&M.NS") is not None
+    )
+
+    cache.set(
+        source="FinancialModelingPrep",
+        dataset="profile",
+        entity="M&M.NS",
+        data=create_frame(),
+    )
+    cache = cache_controller.Cache(location=location)
+
+    assert (
+        cache.get(source="FinancialModelingPrep", dataset="profile", entity="M&M.NS")
+        is not None
+    )

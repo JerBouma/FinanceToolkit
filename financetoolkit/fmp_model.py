@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from http.client import RemoteDisconnected
 from io import StringIO
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote, unquote
 
 import numpy as np
 import pandas as pd
@@ -68,24 +69,33 @@ def determine_retry_delay(attempt: int) -> float:
     return delay * (1 + random.uniform(0, 0.5))  # noqa: S311
 
 
-SYMBOL_PARAMETER = re.compile(r"([?&]symbols?=)([^&]*)")
+# The symbol or symbols parameter runs up to the next parameter (an "&" followed by a name
+# and "="), not up to the next "&": a symbol such as M&M.NS contains one, and cut off there
+# it would be requested as M, a different company, and its data returned under M&M.NS.
+SYMBOL_PARAMETER = re.compile(r"([?&]symbols?=)(.*?)(?=&\w+=|$)")
 
 
 def to_financial_modeling_prep_symbols(url: str) -> str:
     """
     Writes the symbols of a request as FinancialModelingPrep writes them, so a Yahoo
-    Finance currency or crypto symbol (EURUSD=X, BTC-USD) returns data as well.
+    Finance currency or crypto symbol (EURUSD=X, BTC-USD) returns data as well, and
+    percent-encodes each of them, so a symbol with a character that has a meaning in a
+    URL (M&M.NS, ^N225, a "#" or "+") reaches the server as the symbol itself. A symbol
+    that is already encoded (%5EGSPC) is decoded first, so it is not encoded twice.
 
     Args:
-        url (str): The request URL.
+        url (str): The request URL, with its symbols written as they are or encoded.
 
     Returns:
-        str: The URL with its symbol or symbols parameter rewritten.
+        str: The URL with its symbol or symbols parameter rewritten and encoded.
     """
     return SYMBOL_PARAMETER.sub(
         lambda match: match.group(1)
         + ",".join(
-            currencies_model.to_financial_modeling_prep_symbol(symbol)
+            quote(
+                currencies_model.to_financial_modeling_prep_symbol(unquote(symbol)),
+                safe="",
+            )
             for symbol in match.group(2).split(",")
         ),
         url,
@@ -123,6 +133,16 @@ def get_financial_data(
         try:
             response = get_request(url, timeout=60)
             response.raise_for_status()
+
+            # FinancialModelingPrep also answers an invalid key, a rate limit or a plan
+            # restriction with status 200 and {"Error Message": ...}, which is classified
+            # below like the same message sent with an error status, so it is retried or
+            # reported rather than read as data, and never cached.
+            if (
+                response.text.lstrip().startswith("{")
+                and "Error Message" in response.text
+            ):
+                raise requests.exceptions.HTTPError(response=response)
 
             if raw:
                 return response.json()
@@ -182,6 +202,15 @@ def get_financial_data(
                 and e.response is not None
                 else None
             )
+
+            # A symbol or page the source does not know is no data for this request, which
+            # check_for_error_messages reports per ticker, rather than an unrecognised error.
+            if (
+                status_code == requests.codes.not_found
+                or "not found" in error_message.lower()
+            ):
+                error_model.report_request_failure()
+                return pd.DataFrame(columns=["NO DATA"])
 
             if (
                 status_code in TRANSIENT_STATUS_CODES
@@ -330,8 +359,13 @@ def determine_subscription_plan(api_key: str) -> tuple[str, bool]:
                 ", ".join(map(str, determine_plan.columns)) or "no response",
             )
 
-    # A rate limited or failed probe says nothing about the plan, so it is not stored.
-    if cache is not None and determined and "LIMIT REACH" not in determine_plan:
+    # A rate limited, failed or unanswered probe says nothing about the plan, so it is not stored.
+    if (
+        cache is not None
+        and determined
+        and "LIMIT REACH" not in determine_plan
+        and "NO DATA" not in determine_plan
+    ):
         cache.set(
             source=policy_model.FINANCIAL_MODELING_PREP,
             dataset="subscription_plan",
@@ -1970,10 +2004,7 @@ def get_esg_scores(
     return pd.DataFrame(), no_data
 
 
-def get_market_risk_premium(
-    api_key: str,
-    user_subscription: str = "Free",
-) -> pd.DataFrame:
+def get_market_risk_premium(api_key: str) -> pd.DataFrame:
     """
     Obtains the equity market risk premium by country -- the country default spread plus the
     equity risk premium, following the approach popularized by Aswath Damodaran -- which is
@@ -1985,7 +2016,6 @@ def get_market_risk_premium(
     Args:
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
-        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: the market risk premium by country, indexed by country and including

@@ -5,6 +5,7 @@
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from financetoolkit import helpers
 
@@ -283,17 +284,45 @@ def test_run_in_parallel_collects_into_shared_dict():
     assert collected == {"AAPL": 4, "MSFT": 4, "GOOGL": 5}
 
 
-def test_run_in_parallel_propagates_worker_exceptions():
-    """Test that an exception inside a worker surfaces instead of dying in its thread."""
+def test_run_in_parallel_propagates_worker_defects():
+    """Test that a defect inside a worker surfaces instead of dying in its thread."""
+
+    def worker(ticker):
+        raise TypeError(f"unsupported type for {ticker}")
+
+    with pytest.raises(TypeError):
+        helpers.run_in_parallel(worker, [("AAPL",), ("MSFT",)])
+
+
+@pytest.mark.parametrize("error", [KeyError, ValueError, IndexError, ZeroDivisionError])
+def test_run_in_parallel_keeps_the_others_when_one_worker_fails(error, caplog):
+    """Test that a worker failing on its data is logged and the other results are kept."""
+
+    def worker(ticker, api_key):  # noqa: ARG001
+        if ticker == "MSFT":
+            raise error(f"https://example.com/quote?symbol={ticker}&apikey={api_key}")
+
+        return ticker, len(ticker)
+
+    with caplog.at_level("ERROR"):
+        result = helpers.run_in_parallel(
+            worker, [(ticker, "SECRET") for ticker in ["AAPL", "MSFT", "GOOGL"]]
+        )
+
+    assert result == [("AAPL", 4), ("GOOGL", 5)]
+    assert "No data could be retrieved for MSFT" in caplog.text
+    assert "SECRET" not in caplog.text
+
+
+def test_run_in_parallel_raises_every_error_in_strict_mode(monkeypatch):
+    """Test that strict error handling raises a worker's data error as well."""
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
 
     def worker(ticker):
         raise KeyError(f"no data for {ticker}")
 
-    try:
+    with pytest.raises(KeyError):
         helpers.run_in_parallel(worker, [("AAPL",)])
-        raise AssertionError("Expected KeyError to propagate")
-    except KeyError:
-        pass
 
 
 def test_determine_max_workers_default():
@@ -442,3 +471,31 @@ def test_availability_of_the_quarter_closing_a_fiscal_year_uses_the_annual_deadl
     assert availability.loc["DECEMBER"].tolist() == list(
         pd.to_datetime(["2023-12-29", "2024-04-29"])
     )
+
+
+def test_importing_the_package_keeps_runtime_warnings_visible():
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    # A fresh interpreter, as the test session itself may already have imported it.
+    code = (
+        "import warnings, financetoolkit.toolkit_controller, "
+        "financetoolkit.ratios.ratios_controller, financetoolkit.risk.risk_controller, "
+        "financetoolkit.performance.performance_controller\n"
+        "assert not [f for f in warnings.filters if f[0] == 'ignore' and f[2] is RuntimeWarning]\n"
+        "print('ok')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.stdout.strip() == "ok", result.stderr
+
+
+def test_round_half_up_rounds_a_half_away_from_zero():
+    from decimal import Decimal
+
+    # round() rounds these to even or misses them on the binary float.
+    assert helpers.round_half_up(2.675, 2) == 2.68
+    assert helpers.round_half_up(0.125, 2) == 0.13
+    assert helpers.round_half_up(Decimal("17015150") / 1000, 1) == 17015.2
+    assert pd.isna(helpers.round_half_up(float("nan"), 2))

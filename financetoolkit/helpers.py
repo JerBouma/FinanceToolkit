@@ -8,14 +8,20 @@ import inspect
 import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from decimal import ROUND_HALF_UP, Decimal
 from functools import wraps
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from financetoolkit.utilities import logger_model
-from financetoolkit.utilities.statistics_model import apply_rounding, bounded_ffill
+from financetoolkit.cache.request_model import redact_credentials
+from financetoolkit.utilities import error_model, logger_model
+from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
+    bounded_ffill,
+    drop_non_finite,
+)
 
 logger = logger_model.get_logger()
 
@@ -68,9 +74,14 @@ def run_in_parallel(
 
     A bounded pool (rather than one thread per ticker) keeps the number of concurrent
     API calls predictable regardless of how large the ticker universe is, which is
-    kinder to both the data providers' rate limits and the local machine. Exceptions
-    raised inside a worker are re-raised here instead of dying silently inside their
-    thread, so a genuine defect surfaces as an immediate, traceable failure.
+    kinder to both the data providers' rate limits and the local machine.
+
+    A worker that fails on its data, with a KeyError, IndexError, ValueError or
+    ZeroDivisionError (as handle_errors reports them), is logged and left out of the
+    result, so one ticker without usable data does not discard the others' results. Any
+    other exception, such as an AttributeError or TypeError that points to a defect, is
+    re-raised here instead of dying silently inside its thread, as is every exception
+    when FINANCETOOLKIT_STRICT_ERRORS is set.
 
     Args:
         worker (Callable): The function to execute for each tuple of arguments.
@@ -81,8 +92,10 @@ def run_in_parallel(
         variable when set and DEFAULT_MAX_WORKERS otherwise.
 
     Returns:
-        list: The worker results in the same order as worker_args, which is how the
-        collection functions hand per-ticker results back without sharing state.
+        list: The results of the workers that succeeded, in the order of worker_args,
+        which is how the collection functions hand per-ticker results back without
+        sharing state. A failed worker has no entry, so a caller that needs to know which
+        call a result belongs to has the worker return that, e.g. the ticker.
     """
     worker_args = list(worker_args)
 
@@ -100,9 +113,31 @@ def run_in_parallel(
             for args in worker_args
         ]
 
-        # Collecting in submission order keeps the result aligned with worker_args;
+        results = []
+
+        # Collecting in submission order keeps the result in the order of worker_args;
         # the calls themselves still run concurrently.
-        return [future.result() for future in futures]
+        for args, future in zip(worker_args, futures, strict=True):
+            try:
+                results.append(future.result())
+            except error_model.REPORTED_ERRORS as error:
+                if error_model.use_strict_errors():
+                    raise
+
+                # The first argument names the call (a ticker, a year, a series or a
+                # URL); the others can hold an API key, and so can a URL or a message.
+                logger.error(
+                    "No data could be retrieved for %s: %s: %s",
+                    (
+                        redact_credentials(str(args[0]))
+                        if args
+                        else getattr(worker, "__name__", "a request")
+                    ),
+                    type(error).__name__,
+                    redact_credentials(str(error)),
+                )
+
+    return results
 
 
 def convert_period_end_dates_to_calendar_periods(
@@ -460,10 +495,8 @@ def enrich_historical_data(
 
     # A price of 0, such as a faulty bar or a futures contract settling at 0, has no
     # return from or to it, and an infinite return would carry into every cumulative one.
-    historical_data["Return"] = (
-        bounded_ffill(historical_data[return_column])
-        .pct_change()
-        .replace([np.inf, -np.inf], np.nan)
+    historical_data["Return"] = drop_non_finite(
+        bounded_ffill(historical_data[return_column]).pct_change()
     )
 
     historical_data["Cumulative Return"] = 1
@@ -481,6 +514,113 @@ def enrich_historical_data(
     historical_data.loc[start:end, "Cumulative Return"] = (
         1.0 + adjusted_return.fillna(0)
     ).cumprod()
+
+    return historical_data
+
+
+def prepare_supplied_historical_data(
+    historical_data: pd.DataFrame,
+    start: str | None = None,
+    end: str | None = None,
+) -> pd.DataFrame:
+    """
+    Checks historical data passed to the Toolkit and brings it into the shape the
+    retrieved data has, so that every calculation can rely on it:
+
+        - The columns have two levels: the field (Open, High, Low, Close, Adj Close, Volume,
+          Dividends, Return, Cumulative Return) and the ticker.
+        - The dates become a daily PeriodIndex named Date, sorted from old to new. Dates or
+          date strings are converted, a PeriodIndex is kept as it is.
+        - A date that occurs more than once keeps its last row, with a warning, as a repeated
+          day would otherwise count twice in every average, sum and volatility.
+        - Without a Return or Cumulative Return column, both are calculated per ticker from
+          Adj Close, as for retrieved data (see enrich_historical_data). Supplied returns are
+          used as given.
+
+    The supplied frame itself is not changed.
+
+    Args:
+        historical_data (pd.DataFrame): The historical data passed to the Toolkit.
+        start (str, optional): The start date of the Toolkit, from which the Cumulative
+            Return starts at 1. Defaults to None.
+        end (str, optional): The end date of the Toolkit. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The checked historical data.
+
+    Raises:
+        ValueError: If the columns do not have the field and ticker levels, the index does not
+            hold dates, or the returns cannot be calculated because Adj Close is missing.
+    """
+    if (
+        not isinstance(historical_data.columns, pd.MultiIndex)
+        or historical_data.columns.nlevels != 2  # noqa: PLR2004
+    ):
+        raise ValueError(
+            "The historical data needs two column levels: the field (such as Close and Adj Close) "
+            "and the ticker, e.g. ('Adj Close', 'AAPL'). For one ticker, pd.concat({'AAPL': data}, "
+            "axis=1).swaplevel(axis=1) adds the ticker level."
+        )
+
+    index = historical_data.index
+
+    if not isinstance(index, pd.PeriodIndex):
+        # Integer positions would be read as nanoseconds since 1970 rather than rejected.
+        if pd.api.types.is_numeric_dtype(index):
+            raise ValueError(
+                "The historical data needs dates as its index, found numbers instead. Set the "
+                "date column as the index, e.g. data.set_index('Date')."
+            )
+        try:
+            index = pd.DatetimeIndex(pd.to_datetime(index)).to_period("D")
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"The index of the historical data could not be read as dates: {error}"
+            ) from error
+
+    historical_data = historical_data.set_axis(index.rename("Date"), axis=0)
+
+    if not historical_data.index.is_monotonic_increasing:
+        historical_data = historical_data.sort_index()
+
+    duplicated = historical_data.index.duplicated(keep="last")
+
+    if duplicated.any():
+        logger.warning(
+            "The historical data holds %s dates more than once (first: %s). The last row of each "
+            "is used.",
+            historical_data.index[duplicated].nunique(),
+            historical_data.index[duplicated][0],
+        )
+        historical_data = historical_data[~duplicated]
+
+    fields = historical_data.columns.unique(level=0)
+
+    if "Return" not in fields or "Cumulative Return" not in fields:
+        if "Adj Close" not in fields:
+            raise ValueError(
+                "The historical data needs an Adj Close column to calculate the Return and "
+                "Cumulative Return from, or both of those columns."
+            )
+
+        tickers = historical_data.columns.unique(level=1)
+        enriched = pd.concat(
+            {
+                ticker: enrich_historical_data(
+                    historical_data.xs(ticker, level=1, axis=1).copy(), start, end
+                )
+                for ticker in tickers
+            },
+            axis=1,
+        ).swaplevel(axis=1)
+        historical_data = enriched[
+            [
+                (field, ticker)
+                for field in enriched.columns.unique(level=0)
+                for ticker in tickers
+                if (field, ticker) in enriched.columns
+            ]
+        ]
 
     return historical_data
 
@@ -539,6 +679,28 @@ class LazyDict(dict):
             return self[key]
         except KeyError:
             return default
+
+
+def round_half_up(value: float | str | Decimal, decimals: int) -> float:
+    """
+    Rounds a number to a number of decimals with a half rounded up (away from zero), as
+    statistical agencies round their published figures. Python's round() rounds a half to
+    even and works on the binary float, so 0.125 and 2.675 would not round up.
+
+    Args:
+        value (float | str | Decimal): The number, a missing value is returned as is.
+        decimals (int): The number of decimals to round to.
+
+    Returns:
+        float: The rounded number.
+    """
+    if not isinstance(value, str | Decimal) and pd.isna(value):
+        return value
+
+    # str gives the shortest decimal that is the float, so 2.675 rounds as 2.675.
+    number = value if isinstance(value, Decimal) else Decimal(str(value))
+
+    return float(number.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
 
 
 def handle_portfolio(func):

@@ -51,6 +51,7 @@ ERROR_RESPONSE_COLUMNS = frozenset(
         "YFINANCE RATE LIMIT REACHED",
         "US STOCKS ONLY",
         "INVALID API KEY",
+        "NO DATA",
         "REQUEST FAILED",
         "NO ERRORS",
     }
@@ -179,9 +180,11 @@ def handle_errors(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except (KeyError, ValueError, AttributeError) as error:
-            # Metrics relative to a benchmark fail on its absence, which is a setting
-            # rather than missing data or a defect, so the fix is reported instead.
+        except (KeyError, ValueError) as error:
+            # Metrics relative to a benchmark fail on its absence (a KeyError on the
+            # Benchmark column or a ValueError naming it), which is a setting rather than
+            # missing data or a defect, so the fix is reported instead. An AttributeError
+            # is a defect even when it mentions the benchmark, so it is raised below.
             if "Benchmark" not in str(error) or use_strict_errors():
                 return _report_failure(func, args, error)
 

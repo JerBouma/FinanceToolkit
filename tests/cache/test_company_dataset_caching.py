@@ -8,7 +8,7 @@ from financetoolkit.cache import cache_controller
 
 
 @pytest.fixture(name="cache_location")
-def fixture_cache_location(tmp_path):
+def fixture_cache_location(tmp_path, known_fmp_plan):  # noqa: ARG001
     """Point every Toolkit created in a test at an isolated cache database."""
     cache_controller.reset_cache_registry()
 
@@ -19,7 +19,7 @@ def fixture_cache_location(tmp_path):
 
 
 def create_toolkit(tickers, cache_location):
-    """Build a Toolkit that caches but never contacts the plan-detection endpoint."""
+    """Build a Toolkit that caches; the plan probe is answered by `known_fmp_plan`."""
     return toolkit_controller.Toolkit(
         tickers,
         api_key="test-key",
@@ -132,7 +132,7 @@ def test_partially_cached_result_matches_a_single_fetch(cache_location, monkeypa
     pd.testing.assert_frame_equal(partially_cached, single_fetch)
 
 
-def test_caching_disabled_requests_every_time(tmp_path, monkeypatch):
+def test_caching_disabled_requests_every_time(tmp_path, monkeypatch, known_fmp_plan):
     """Test that behaviour is unchanged when the Toolkit caches nothing."""
     cache_controller.reset_cache_registry()
     calls: list[list[str]] = []

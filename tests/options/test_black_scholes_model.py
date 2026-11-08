@@ -2,6 +2,9 @@
 
 # pylint: disable=missing-function-docstring
 
+import numpy as np
+import pandas as pd
+import pytest
 
 from financetoolkit.options import black_scholes_model
 
@@ -135,3 +138,29 @@ def test_options_without_volatility_or_time_are_worth_their_discounted_intrinsic
         black_scholes_model.get_bjerksund_stensland(
             100, 100, 0.05, 0, 1, put_option=True
         )
+
+
+def test_get_d1_and_d2_by_hand():
+    # ln(S/K) = 0, (r + sigma^2 / 2) T = 0.07 over sigma sqrt(T) = 0.2.
+    d1 = black_scholes_model.get_d1(100, 100, 0.05, 0.2, 1)
+    assert d1 == pytest.approx(0.35)
+    assert black_scholes_model.get_d2(d1, 0.2, 1) == pytest.approx(0.15)
+
+    # A dividend yield lowers the forward: (0.05 - 0.05 + 0.02) / 0.2.
+    assert black_scholes_model.get_d1(100, 100, 0.05, 0.2, 1, 0.05) == pytest.approx(
+        0.1
+    )
+    # Four months: sigma sqrt(T) = 0.2 / sqrt(3).
+    assert black_scholes_model.get_d2(0.5, 0.2, 1 / 3) == pytest.approx(
+        0.5 - 0.2 / np.sqrt(3)
+    )
+
+
+def test_get_d1_without_uncertainty_is_the_limit_on_either_side_of_the_strike():
+    stock_prices = pd.Series([110.0, 90.0, 100.0])
+
+    d1 = black_scholes_model.get_d1(stock_prices, 100, 0.0, 0.0, 1)
+
+    assert isinstance(d1, pd.Series)
+    assert d1.tolist() == [np.inf, -np.inf, 0.0]
+    assert black_scholes_model.get_d1(100, 100, 0.05, 0.2, 0) == 0.0

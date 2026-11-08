@@ -562,7 +562,7 @@ def get_h_model(
 
 def get_justified_price_to_earnings(
     payout_ratio: pd.Series | pd.DataFrame,
-    rate_of_return: float,
+    rate_of_return: float | pd.DataFrame,
     growth_rate: pd.Series | pd.DataFrame,
     leading: bool = False,
 ) -> pd.Series | pd.DataFrame:
@@ -578,7 +578,8 @@ def get_justified_price_to_earnings(
 
     Args:
         payout_ratio (pd.Series | pd.DataFrame): The dividends as a share of the earnings.
-        rate_of_return (float): The required rate of return.
+        rate_of_return (float | pd.DataFrame): The required rate of return, one number or one
+        per company and period.
         growth_rate (pd.Series | pd.DataFrame): The constant growth rate of the earnings and
         dividends.
         leading (bool, optional): Whether to return the leading P/E (on next year's earnings)
@@ -596,7 +597,7 @@ def get_justified_price_to_earnings(
 
 def get_justified_price_to_book(
     return_on_equity: pd.Series | pd.DataFrame,
-    rate_of_return: float,
+    rate_of_return: float | pd.DataFrame,
     growth_rate: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:
     """
@@ -610,7 +611,8 @@ def get_justified_price_to_book(
     Args:
         return_on_equity (pd.Series | pd.DataFrame): The Return on Equity, on the equity at the
         beginning of the period.
-        rate_of_return (float): The required rate of return.
+        rate_of_return (float | pd.DataFrame): The required rate of return, one number or one
+        per company and period.
         growth_rate (pd.Series | pd.DataFrame): The constant growth rate of the book value.
 
     Returns:

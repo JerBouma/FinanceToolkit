@@ -313,16 +313,12 @@ def get_risk_free_rate_term_structures(
         return pd.DataFrame()
 
     curves = helpers.run_in_parallel(
-        _get_release,
-        [(month, link, curve) for month, link in selected["Link"].items()],
+        lambda month, link: (month, _get_release(month, link, curve)),
+        list(selected["Link"].items()),
         max_workers=4,
     )
 
-    frames = {
-        month: frame.stack()
-        for month, frame in zip(selected.index, curves, strict=True)
-        if not frame.empty
-    }
+    frames = {month: frame.stack() for month, frame in curves if not frame.empty}
 
     if not frames:
         return pd.DataFrame()

@@ -80,6 +80,15 @@ AAPL,Shareholder Yield,Lag 3,,,,
 AAPL,SBC-Adjusted Free Cash Flow,Lag 1,,0.2782,0.2041,-0.1333
 AAPL,SBC-Adjusted Free Cash Flow,Lag 2,,,0.5391,0.0436
 AAPL,SBC-Adjusted Free Cash Flow,Lag 3,,,,0.3339
+AAPL,Free Cash Flow Payout Ratio,Lag 1,,-0.1892,-0.144,0.1329
+AAPL,Free Cash Flow Payout Ratio,Lag 2,,,-0.3059,-0.0302
+AAPL,Free Cash Flow Payout Ratio,Lag 3,,,,-0.2137
+AAPL,EV-to-Invested-Capital,Lag 1,,-0.0812,-0.27,
+AAPL,EV-to-Invested-Capital,Lag 2,,,-0.3292,
+AAPL,EV-to-Invested-Capital,Lag 3,,,,
+AAPL,Price-to-Tangible-Book,Lag 1,,0.3335,-0.1181,
+AAPL,Price-to-Tangible-Book,Lag 2,,,0.176,
+AAPL,Price-to-Tangible-Book,Lag 3,,,,
 AAPL,Net Share Issuance,Lag 1,,,0.2277,0.0
 AAPL,Net Share Issuance,Lag 2,,,,0.2277
 AAPL,Net Share Issuance,Lag 3,,,,
@@ -170,6 +179,15 @@ MSFT,Shareholder Yield,Lag 3,,,,
 MSFT,SBC-Adjusted Free Cash Flow,Lag 1,,0.2517,0.1529,-0.135
 MSFT,SBC-Adjusted Free Cash Flow,Lag 2,,,0.4432,-0.0027
 MSFT,SBC-Adjusted Free Cash Flow,Lag 3,,,,0.2483
+MSFT,Free Cash Flow Payout Ratio,Lag 1,,-0.1201,-0.0543,0.1958
+MSFT,Free Cash Flow Payout Ratio,Lag 2,,,-0.168,0.1308
+MSFT,Free Cash Flow Payout Ratio,Lag 3,,,,-0.0051
+MSFT,EV-to-Invested-Capital,Lag 1,,0.0083,-0.5433,
+MSFT,EV-to-Invested-Capital,Lag 2,,,-0.5395,
+MSFT,EV-to-Invested-Capital,Lag 3,,,,
+MSFT,Price-to-Tangible-Book,Lag 1,,0.2038,-0.3194,
+MSFT,Price-to-Tangible-Book,Lag 2,,,-0.1807,
+MSFT,Price-to-Tangible-Book,Lag 3,,,,
 MSFT,Net Share Issuance,Lag 1,,,0.1807,0.0147
 MSFT,Net Share Issuance,Lag 2,,,,0.1928
 MSFT,Net Share Issuance,Lag 3,,,,

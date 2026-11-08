@@ -111,16 +111,6 @@ def nelson_siegel_svensson_yield(
     return design @ np.array([beta_0, beta_1, beta_2, beta_3])
 
 
-def _level_floor(maturities: np.ndarray, yields: np.ndarray) -> float:
-    """
-    The lowest level β0 a fit may have. The level is the yield at an infinite maturity, so it
-    is kept at or above the lower of zero and the longest yield (as Gürkaynak, Sack and
-    Wright keep it at or above zero); unbounded, the level and the second curvature offset
-    each other into a level far below any yield.
-    """
-    return min(0.0, float(yields[np.argmax(maturities)]))
-
-
 def _solve(design: np.ndarray, yields: np.ndarray) -> np.ndarray:
     """
     The least squares betas for a stack of designs (fits by maturities by factors) and the
@@ -141,9 +131,11 @@ def _zoom(
     """
     The best fits around the grid points of several curves at once: per curve a grid of
     decays spanning one and a half grid steps on either side (in logarithms), which zooms in
-    on its best point threefold each round. The level is kept at or above its floor (see
-    _level_floor): with one bound on a linear least squares problem the best fit either
-    meets the bound or lies on it.
+    on its best point threefold each round. The level β0 is the yield at an infinite
+    maturity, so it is kept at or above the lower of zero and the longest yield (as
+    Gürkaynak, Sack and Wright keep it at or above zero); unbounded, the level and the second
+    curvature offset each other into a level far below any yield. With one bound on a linear
+    least squares problem the best fit either meets the bound or lies on it.
 
     Args:
         maturities (np.ndarray): The maturities in years.

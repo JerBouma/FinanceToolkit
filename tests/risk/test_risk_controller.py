@@ -176,7 +176,12 @@ def test_get_gjr_garch(recorder, risk_module):
 
 def test_get_gjr_garch_forecast(recorder, risk_module):
     recorder.capture(risk_module.get_gjr_garch_forecast())
-    recorder.capture(risk_module.get_gjr_garch_forecast(period="monthly"))
+
+    # A fit on three years of months lands differently per platform's libraries (in the third
+    # digit), so the monthly forecast is checked rather than recorded.
+    monthly = risk_module.get_gjr_garch_forecast(period="monthly")
+    assert monthly.shape == (10, 3)
+    assert (monthly > 0).all().all()
 
 
 def test_get_gjr_garch_parameters(recorder, risk_module):
@@ -645,3 +650,185 @@ def test_a_single_return_over_the_whole_range_is_reported(risk_module, caplog):
     module._get_returns("yearly", False)
 
     assert "Fewer than two yearly returns" in caplog.text
+
+
+def test_pairwise_measures_default_to_the_benchmark(risk_module):
+    tail_dependence = risk_module.get_tail_dependence_coefficient()
+    covar = risk_module.get_covar()
+
+    # Every ticker is paired with the benchmark, which is not paired with itself.
+    assert list(tail_dependence.index) == ["AAPL", "MSFT"]
+    assert list(covar.index) == ["AAPL", "MSFT"]
+    pd.testing.assert_series_equal(
+        tail_dependence.loc["AAPL"],
+        risk_module.get_tail_dependence_coefficient("AAPL", "Benchmark"),
+        check_names=False,
+    )
+    # CoVaR conditions the benchmark (the system) on each ticker's distress.
+    pd.testing.assert_series_equal(
+        covar.loc["MSFT"],
+        risk_module.get_covar("Benchmark", "MSFT"),
+        check_names=False,
+    )
+    # One side given pairs it with the benchmark.
+    assert list(risk_module.get_tail_dependence_coefficient("MSFT").index) == ["MSFT"]
+
+
+def test_pairwise_measures_keep_the_role_of_a_given_ticker(risk_module):
+    # A given system is measured against every other ticker, the benchmark included.
+    exposure = risk_module.get_covar(ticker="AAPL")
+    assert list(exposure.index) == ["MSFT", "Benchmark"]
+    pd.testing.assert_series_equal(
+        exposure.loc["MSFT"], risk_module.get_covar("AAPL", "MSFT"), check_names=False
+    )
+
+    # A given conditioning ticker is paired with the benchmark as the system.
+    contribution = risk_module.get_covar(conditioning_ticker="AAPL")
+    assert list(contribution.index) == ["AAPL"]
+    pd.testing.assert_series_equal(
+        contribution.loc["AAPL"],
+        risk_module.get_covar("Benchmark", "AAPL"),
+        check_names=False,
+    )
+
+    # The same for tail dependence: a given ticker_b is paired with every other ticker.
+    tail_dependence = risk_module.get_tail_dependence_coefficient(ticker_b="AAPL")
+    assert list(tail_dependence.index) == ["MSFT", "Benchmark"]
+
+
+def _toolkit_with_historical(historical):
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+
+    return toolkit
+
+
+def test_a_constant_price_has_no_skewness_or_kurtosis(risk_module):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    for column in ["Open", "High", "Low", "Close", "Adj Close"]:
+        historical[(column, "MSFT")] = 100.0
+    historical[("Return", "MSFT")] = 0.0
+    constant = _toolkit_with_historical(historical).risk
+
+    skewness = constant.get_skewness()
+    kurtosis = constant.get_kurtosis()
+
+    assert np.isnan(skewness["MSFT"]) and np.isnan(kurtosis["MSFT"])
+    assert skewness["AAPL"] == risk_module.get_skewness()["AAPL"]
+
+
+@pytest.mark.parametrize(
+    "method", ["parkinson", "garman_klass", "rogers_satchell", "yang_zhang"]
+)
+def test_a_bad_bar_only_leaves_out_that_day(risk_module, method):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical.loc["2021-03-01":"2021-03-04", ("Open", "AAPL")] = 0.0
+    historical.loc["2021-03-01":"2021-03-04", ("Low", "AAPL")] = 0.0
+    bad_bars = _toolkit_with_historical(historical).risk
+
+    volatility = bad_bars.get_volatility(method=method)
+    reference = risk_module.get_volatility(method=method)
+
+    assert np.isfinite(volatility.loc["2021", "AAPL"])
+    # Four of 252 days left out move the yearly estimate by little.
+    assert volatility.loc["2021", "AAPL"] == pytest.approx(
+        reference.loc["2021", "AAPL"], rel=0.05
+    )
+    pd.testing.assert_series_equal(volatility["MSFT"], reference["MSFT"])
+
+    if method != "yang_zhang":
+        forecast = bad_bars.get_har_rv_forecast(estimator=method)["AAPL"]
+        assert forecast.notna().any() and np.isfinite(forecast.dropna()).all()
+
+
+def test_get_mean_absolute_deviation_per_month(risk_module):
+    result = risk_module.get_mean_absolute_deviation(period="monthly", rounding=None)
+    daily = risk_module._historical_data["daily"]["Return"]["AAPL"]
+    june = daily[(daily.index.year == 2021) & (daily.index.month == 6)]
+
+    assert result.loc["2021-06", "AAPL"] == pytest.approx(
+        (june - june.mean()).abs().mean(), abs=5e-5
+    )
+
+
+def test_get_mean_absolute_deviation_refuses_a_daily_period(risk_module):
+    assert risk_module.get_mean_absolute_deviation(period="daily").empty
+
+
+def test_get_coefficient_of_variation_per_year(risk_module):
+    result = risk_module.get_coefficient_of_variation(period="yearly", rounding=None)
+    daily = risk_module._historical_data["daily"]["Return"]["MSFT"]
+    year = daily[daily.index.year == 2021]
+
+    assert result.loc["2021", "MSFT"] == pytest.approx(
+        year.std() / year.mean(), rel=1e-3
+    )
+
+
+def test_get_autocorrelation_per_lag(risk_module):
+    result = risk_module.get_autocorrelation(lags=3, rounding=None)
+    values = risk_module._historical_data["daily"]["Return"]["AAPL"].dropna()
+    deviations = (values - values.mean()).to_numpy()
+
+    assert list(result.index) == [1, 2, 3]
+    assert result.index.name == "Lag"
+    assert result.loc[1, "AAPL"] == pytest.approx(
+        np.sum(deviations[:-1] * deviations[1:]) / np.sum(deviations**2), abs=5e-5
+    )
+    # Daily stock returns are close to uncorrelated over time.
+    assert (result.abs() < 0.3).all().all()
+
+
+def test_get_copula_parameters_of_one_pair(risk_module):
+    result = risk_module.get_copula_parameters(
+        ticker_a="AAPL", ticker_b="MSFT", rounding=None
+    )
+
+    # Apple and Microsoft move together: a clearly positive Gaussian correlation.
+    assert 0.5 < result["Rho"] < 1
+    assert result["AIC"] < 0
+
+    clayton = risk_module.get_copula_parameters(
+        ticker_a="AAPL", ticker_b="MSFT", copula="clayton", rounding=None
+    )
+    assert clayton["Theta"] > 0
+
+
+def test_get_copula_parameters_refuses_an_unknown_family(risk_module):
+    assert risk_module.get_copula_parameters(
+        ticker_a="AAPL", ticker_b="MSFT", copula="normal"
+    ).empty
+
+
+def test_get_best_fitting_copula_ranks_the_families_by_aic(risk_module):
+    result = risk_module.get_best_fitting_copula(
+        ticker_a="AAPL", ticker_b="MSFT", rounding=None
+    )
+
+    assert sorted(result.index) == [
+        "Clayton",
+        "Frank",
+        "Gaussian",
+        "Gumbel",
+        "Student-T",
+    ]
+    assert result["AIC"].is_monotonic_increasing
+
+    gaussian = risk_module.get_copula_parameters(
+        ticker_a="AAPL", ticker_b="MSFT", rounding=None
+    )
+    assert result.loc["Gaussian", "AIC"] == pytest.approx(gaussian["AIC"])

@@ -93,7 +93,26 @@ def initialize_statements_and_normalization(
         if statement_df.empty:
             return pd.DataFrame()
 
-        if tickers is not None and isinstance(statement_df.index, pd.MultiIndex):
+        # Without the ticker level the statement cannot be told apart per company, and a
+        # repeated line item or period would be counted as a separate ticker or period.
+        if statement_df.index.nlevels != 2:  # noqa: PLR2004
+            raise ValueError(
+                f"The {statement_name} statement needs two index levels: the ticker and the line "
+                "item, e.g. ('AAPL', 'Total Assets'). For one ticker, pd.concat({'AAPL': "
+                "statement}) adds the ticker level."
+            )
+
+        for axis, labels in (
+            ("line items", statement_df.index),
+            ("periods", statement_df.columns),
+        ):
+            if labels.has_duplicates:
+                raise ValueError(
+                    f"The {statement_name} statement holds {axis} more than once: "
+                    f"{', '.join(map(str, labels[labels.duplicated()].unique()[:5]))}."
+                )
+
+        if tickers is not None:
             available = statement_df.index.unique(level=0)
             missing = [ticker for ticker in tickers if ticker not in available]
 
@@ -133,13 +152,11 @@ def initialize_statements_and_normalization(
                 end_date=end_date,
                 quarter=quarterly,
             )
-        except Exception as e:
-            logger.error(
-                "Error processing %s statement: %s. Returning empty DataFrame.",
-                statement_name,
-                e,
-            )
-            return pd.DataFrame()
+        except (KeyError, IndexError, TypeError, ValueError) as error:
+            raise ValueError(
+                f"The {statement_name} statement could not be read: {error}. Its columns need "
+                "to be periods or dates, such as 2023 or 2023-09-30."
+            ) from error
 
         # Supplied statements are never replaced by downloaded ones, so a window that holds
         # none of their periods says where the data does run.

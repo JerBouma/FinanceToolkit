@@ -1351,7 +1351,7 @@ class ETF:
     @handle_errors
     def get_return_excluding(
         self,
-        exclude: str | list[str],
+        exclude: str | list[str] | None = None,
         holdings: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -1376,8 +1376,10 @@ class ETF:
         holdings, ex-sector return.
 
         Args:
-            exclude (str | list[str]): The holdings (tickers, e.g. "NVDA") and sectors (e.g.
-                "Technology", as the companies' profiles name them) to leave out.
+            exclude (str | list[str] | None, optional): The holdings (tickers, e.g. "NVDA") and
+                sectors (e.g. "Technology", as the companies' profiles name them) to leave out.
+                Defaults to None, which leaves out the largest holding of each fund (by its
+                weight at the start of the period), the single stock that moves the fund most.
             holdings (int | None, optional): The number of largest holdings (by weight) to
                 price, one request each; the rest counts towards the rest of the fund.
                 Defaults to None, which prices every holding with a symbol.
@@ -1415,36 +1417,44 @@ class ETF:
         | Excluded Contribution  | -0.0077 | -0.0077 |
         | Return Excluding       | -0.002  | -0.0685 |
         """
-        names = [exclude] if isinstance(exclude, str) else list(exclude)
-        wanted = {name.strip().upper() for name in names if name and name.strip()}
-        if not wanted:
-            raise ValueError("Name at least one holding or sector to exclude.")
+        wanted: set[str] | None = None
+        if exclude is not None:
+            names = [exclude] if isinstance(exclude, str) else list(exclude)
+            wanted = {name.strip().upper() for name in names if name and name.strip()}
+            if not wanted:
+                raise ValueError("Name at least one holding or sector to exclude.")
 
         contributions = self._contributions(holdings, index=None)
         priced = sorted(
             {asset for table, _, _ in contributions.values() for asset in table.index}
         )
         sectors = pd.Series(dtype=object)
-        if wanted - {asset.upper() for asset in priced}:
+        if wanted is not None and wanted - {asset.upper() for asset in priced}:
             # Not every name is a holding, so the others are matched against the sectors.
             if self._sector_function is None:
                 raise ValueError(
                     "The sectors of the holdings are not available for this Toolkit."
                 )
             sectors = self._sector_function(priced)
-        known = {asset.upper() for asset in priced} | set(
-            sectors.dropna().astype(str).str.upper()
-        )
-        if wanted - known:
-            logger.warning(
-                "%s is not a priced holding or a sector of these funds and is not excluded.",
-                ", ".join(sorted(wanted - known)),
+            known = {asset.upper() for asset in priced} | set(
+                sectors.dropna().astype(str).str.upper()
             )
+            if wanted - known:
+                logger.warning(
+                    "%s is not a priced holding or a sector of these funds and is not excluded.",
+                    ", ".join(sorted(wanted - known)),
+                )
 
         result = {}
         for fund, (table, fund_return, _) in contributions.items():
             sector = sectors.reindex(table.index).fillna("").astype(str).str.upper()
-            excluded = table.index.str.upper().isin(wanted) | sector.isin(wanted)
+            # Without names, each fund leaves out its own largest holding.
+            names_out = (
+                wanted
+                if wanted is not None
+                else {str(table["Start Weight"].idxmax()).upper()}
+            )
+            excluded = table.index.str.upper().isin(names_out) | sector.isin(names_out)
             rest = table.loc[~excluded]
             result[fund] = {
                 "Return": fund_return,

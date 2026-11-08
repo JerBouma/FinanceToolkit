@@ -1,6 +1,6 @@
 ,AAPL,MSFT
-CUSUM Statistic,0.8236,1.1035
-P-Value,0.5062,0.175
+CUSUM Statistic,0.8236,1.1034
+P-Value,0.5063,0.1751
 Observations,12,12
 Critical Value 1%,1.63,1.63
 Critical Value 5%,1.36,1.36

@@ -14,6 +14,7 @@ from financetoolkit.cache.coverage_model import (
     merge_intervals,
     normalize_date,
 )
+from financetoolkit.cache.policy_model import FINANCIAL_MODELING_PREP
 
 SCHEMA_VERSION = 1
 
@@ -191,6 +192,42 @@ class SQLiteBackend:
                 ("schema_version", str(SCHEMA_VERSION)),
             )
 
+            self._remove_unencoded_symbol_entries(connection)
+
+    @staticmethod
+    def _remove_unencoded_symbol_entries(connection: sqlite3.Connection) -> None:
+        """
+        Remove, once per database, the FinancialModelingPrep data stored for a symbol with
+        "&", "+" or "%" in it that may not have been requested percent-encoded: unencoded,
+        M&M.NS is requested as M, so such an entry can hold another company's data. The
+        discovery entries are identified by the encoded URL, so an entry stored under the
+        unencoded one is never served.
+
+        Args:
+            connection (sqlite3.Connection): The open write connection.
+        """
+        schema_version = connection.execute(
+            "SELECT value FROM meta WHERE name = 'schema_version'"
+        ).fetchone()
+        removed = connection.execute(
+            "SELECT 1 FROM meta WHERE name = 'encoded_symbols'"
+        ).fetchone()
+
+        # A database of another schema version is left exactly as it is.
+        if removed is not None or schema_version != (str(SCHEMA_VERSION),):
+            return
+
+        for table in ALL_TABLES:
+            connection.execute(
+                f"DELETE FROM {table} WHERE source = ? AND dataset != 'discovery' "  # noqa: S608
+                "AND (instr(entity, '&') OR instr(entity, '+') OR instr(entity, '%'))",
+                (FINANCIAL_MODELING_PREP,),
+            )
+
+        connection.execute(
+            "INSERT INTO meta (name, value) VALUES ('encoded_symbols', '1')"
+        )
+
     def get_schema_version(self) -> int | None:
         """
         Return the schema version recorded in the database.
@@ -210,50 +247,6 @@ class SQLiteBackend:
             return int(row[0])
         except (TypeError, ValueError):
             return None
-
-    def read_series(self, key: str, entity: str) -> bytes | None:
-        """
-        Read the stored payload for a single entity of a dataset.
-
-        Args:
-            key (str): The dataset key.
-            entity (str): The entity within the dataset, e.g. a ticker.
-
-        Returns:
-            bytes | None: The stored payload, or None when nothing is cached.
-        """
-        with self._connect() as connection:
-            row = connection.execute(
-                "SELECT payload FROM series WHERE key = ? AND entity = ?",
-                (key, entity),
-            ).fetchone()
-
-        return row[0] if row else None
-
-    def read_coverage(
-        self, key: str, entity: str, minimum_fetched_at: float = 0.0
-    ) -> list[Interval]:
-        """
-        Read the date ranges already fetched for an entity.
-
-        Args:
-            key (str): The dataset key.
-            entity (str): The entity within the dataset.
-            minimum_fetched_at (float): Only return ranges fetched at or after this
-                Unix timestamp. Ranges fetched earlier are considered expired and
-                are therefore omitted, which makes them show up as missing again.
-
-        Returns:
-            list[Interval]: The stored intervals, unmerged and in insertion order.
-        """
-        with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT start_date, end_date FROM coverage "
-                "WHERE key = ? AND entity = ? AND fetched_at >= ?",
-                (key, entity, minimum_fetched_at),
-            ).fetchall()
-
-        return [(normalize_date(start), normalize_date(end)) for start, end in rows]
 
     def get_oldest_coverage_timestamp(self, key: str, entity: str) -> float | None:
         """

@@ -1,6 +1,8 @@
 """Ratios Controller Tests""" ""
 # pylint: disable=missing-function-docstring
 
+import copy
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -409,6 +411,30 @@ def test_get_net_current_asset_value(recorder, ratios_module):
 def test_get_ev_to_ebit(recorder, ratios_module):
     recorder.capture(ratios_module.get_ev_to_ebit())
     recorder.capture(ratios_module.get_ev_to_ebit(show_daily=True))
+
+
+def test_get_credit_ratios(recorder, ratios_module):
+    recorder.capture(ratios_module.get_ebitda_interest_coverage_ratio())
+    recorder.capture(ratios_module.get_ebitda_minus_capex_interest_coverage_ratio())
+    recorder.capture(ratios_module.get_cash_interest_coverage_ratio(trailing=2))
+    recorder.capture(ratios_module.get_funds_from_operations_to_debt_ratio())
+    recorder.capture(
+        ratios_module.get_discretionary_cash_flow_to_debt_ratio(trailing=2)
+    )
+
+
+def test_get_degrees_of_leverage(recorder, ratios_module):
+    recorder.capture(ratios_module.get_degree_of_operating_leverage())
+    recorder.capture(ratios_module.get_degree_of_financial_leverage())
+    recorder.capture(ratios_module.get_degree_of_total_leverage(trailing=2))
+
+
+def test_get_payout_and_book_multiples(recorder, ratios_module):
+    recorder.capture(ratios_module.get_free_cash_flow_payout_ratio())
+    recorder.capture(ratios_module.get_ev_to_invested_capital_ratio())
+    recorder.capture(ratios_module.get_ev_to_invested_capital_ratio(show_daily=True))
+    recorder.capture(ratios_module.get_price_to_tangible_book_ratio())
+    recorder.capture(ratios_module.get_price_to_tangible_book_ratio(show_daily=True))
 
 
 # The tests below check the definitions behind the ratios against values calculated by hand.
@@ -916,6 +942,256 @@ def test_compound_growth_of_a_ratio_is_the_cagr_of_its_values(ratios_module):
         ] == pytest.approx(expected[ticker], nan_ok=True, abs=1e-4)
 
 
+def test_credit_ratios_from_the_statement_lines(ratios_module):
+    balance = ratios_module._balance_sheet_statement
+    income = ratios_module._income_statement
+    cash = ratios_module._cash_flow_statement
+
+    def flow(statement, item):
+        return _row(statement, item).loc[YEAR]
+
+    ebitda = flow(income, "Operating Income") + flow(
+        cash, "Depreciation and Amortization"
+    )
+    interest_paid = flow(cash, "Interest Paid")
+    taxes_paid = flow(cash, "Income Taxes Paid")
+    total_debt = flow(balance, "Total Debt")
+    funds_from_operations = (
+        ebitda + flow(cash, "Stock Based Compensation") - interest_paid - taxes_paid
+    )
+    discretionary_cash_flow = (
+        flow(cash, "Cash Flow from Operations")
+        - abs(flow(cash, "Capital Expenditure"))
+        - abs(flow(cash, "Dividends Paid"))
+        - abs(flow(cash, "Common Stock Purchased"))
+    )
+
+    expected = {
+        "get_ebitda_interest_coverage_ratio": ebitda / flow(income, "Interest Expense"),
+        "get_ebitda_minus_capex_interest_coverage_ratio": (
+            ebitda - abs(flow(cash, "Capital Expenditure"))
+        )
+        / flow(income, "Interest Expense"),
+        "get_cash_interest_coverage_ratio": (
+            flow(cash, "Cash Flow from Operations") + interest_paid + taxes_paid
+        )
+        / interest_paid,
+        "get_funds_from_operations_to_debt_ratio": funds_from_operations / total_debt,
+        "get_discretionary_cash_flow_to_debt_ratio": discretionary_cash_flow
+        / total_debt,
+        "get_free_cash_flow_payout_ratio": abs(flow(cash, "Dividends Paid"))
+        / flow(cash, "Free Cash Flow"),
+    }
+
+    for method, value in expected.items():
+        result = getattr(ratios_module, method)(rounding=None)
+        assert result.loc["AAPL"].loc[YEAR] == _approx(value), method
+
+
+def test_degrees_of_leverage_compare_period_over_period_changes(ratios_module):
+    income = ratios_module._income_statement
+    previous = str(int(YEAR) - 1)
+
+    def change(item):
+        return (_row(income, item).loc[YEAR] - _row(income, item).loc[previous]) / abs(
+            _row(income, item).loc[previous]
+        )
+
+    operating = change("Operating Income") / change("Revenue")
+    financial = change("Net Income") / change("Operating Income")
+
+    assert ratios_module.get_degree_of_operating_leverage(rounding=None).loc[
+        "AAPL"
+    ].loc[YEAR] == _approx(operating)
+    assert ratios_module.get_degree_of_financial_leverage(rounding=None).loc[
+        "AAPL"
+    ].loc[YEAR] == _approx(financial)
+    # The degree of total leverage is the product of the other two.
+    assert ratios_module.get_degree_of_total_leverage(rounding=None).loc["AAPL"].loc[
+        YEAR
+    ] == _approx(operating * financial)
+
+
+def test_book_multiples_from_the_statement_lines(ratios_module):
+    balance = ratios_module._balance_sheet_statement
+    market_cap = ratios_module.get_market_cap(rounding=None).loc["AAPL"].loc[YEAR]
+    enterprise_value = (
+        ratios_module.get_enterprise_value(rounding=None).loc["AAPL"].loc[YEAR]
+    )
+
+    def item(name):
+        return _row(balance, name).loc[YEAR]
+
+    invested_capital = (
+        item("Total Equity")
+        + item("Total Debt")
+        - item("Cash and Cash Equivalents")
+        - item("Short Term Investments")
+    )
+    tangible_book_value = (
+        item("Total Shareholder Equity")
+        - item("Preferred Stock")
+        - item("Goodwill and Intangible Assets")
+    )
+
+    assert ratios_module.get_ev_to_invested_capital_ratio(rounding=None).loc[
+        "AAPL"
+    ].loc[YEAR] == _approx(enterprise_value / invested_capital)
+    assert ratios_module.get_price_to_tangible_book_ratio(rounding=None).loc[
+        "AAPL"
+    ].loc[YEAR] == _approx(market_cap / tangible_book_value)
+
+
+def assert_rounded_equal(result, expected, **kwargs):
+    """The Toolkit rounds to four decimals, so a value is within half a unit of the fourth."""
+    kwargs.pop("check_names", None)
+    assertion = (
+        pd.testing.assert_series_equal
+        if isinstance(result, pd.Series)
+        else pd.testing.assert_frame_equal
+    )
+    assertion(result, expected, check_names=False, check_exact=False, rtol=0, atol=5e-5)
+
+
+def _item(statement: pd.DataFrame, item: str, columns) -> pd.DataFrame:
+    """A statement row per ticker over the columns of a ratio, unrounded."""
+    return statement.loc[:, item, :].loc[:, columns].astype(float)
+
+
+@pytest.mark.parametrize(
+    ("method", "numerator", "numerator_statement"),
+    [
+        (
+            "get_research_and_development_ratio",
+            "Research and Development Expenses",
+            "_income_statement",
+        ),
+        (
+            "get_selling_and_marketing_ratio",
+            "Selling and Marketing Expenses",
+            "_income_statement",
+        ),
+        (
+            "get_general_and_administrative_ratio",
+            "General and Administrative Expenses",
+            "_income_statement",
+        ),
+        (
+            "get_stock_based_compensation_ratio",
+            "Stock Based Compensation",
+            "_cash_flow_statement",
+        ),
+        ("get_deferred_revenue_ratio", "Deferred Revenue", "_balance_sheet_statement"),
+    ],
+)
+def test_expense_ratios_divide_the_item_by_revenue(
+    ratios_module, method, numerator, numerator_statement
+):
+    result = getattr(ratios_module, method)(rounding=None)
+    columns = result.columns
+
+    expected = _item(
+        getattr(ratios_module, numerator_statement), numerator, columns
+    ) / _item(ratios_module._income_statement, "Revenue", columns)
+
+    assert not result.empty
+    assert_rounded_equal(result, expected, check_names=False)
+
+
+def test_expense_ratios_sum_flows_over_the_trailing_window(ratios_module):
+    result = ratios_module.get_research_and_development_ratio(trailing=2, rounding=None)
+    income = ratios_module._income_statement
+    research = income.loc[:, "Research and Development Expenses", :]
+    revenue = income.loc[:, "Revenue", :]
+
+    last, previous = result.columns[-1], result.columns[-2]
+    expected = (research[last] + research[previous]) / (
+        revenue[last] + revenue[previous]
+    )
+
+    assert_rounded_equal(result[last], expected.astype(float), check_names=False)
+
+
+def test_debt_to_capital_is_debt_over_debt_plus_equity(ratios_module):
+    result = ratios_module.get_debt_to_capital_ratio(rounding=None)
+    balance = ratios_module._balance_sheet_statement
+    debt = _item(balance, "Total Debt", result.columns)
+    equity = _item(balance, "Total Equity", result.columns)
+
+    assert_rounded_equal(result, debt / (debt + equity), check_names=False)
+    # Debt over all capital stays a share as long as the equity is positive.
+    assert ((result > 0) & (result < 1))[equity > 0].fillna(True).all().all()
+
+
+def test_interest_paid_to_expense_compares_cash_with_accrual(ratios_module):
+    result = ratios_module.get_interest_paid_to_expense_ratio(rounding=None)
+    expected = _item(
+        ratios_module._cash_flow_statement, "Interest Paid", result.columns
+    ) / _item(ratios_module._income_statement, "Interest Expense", result.columns)
+
+    assert_rounded_equal(result, expected, check_names=False)
+
+
+def test_tax_rate_divergence_is_cash_minus_effective_tax_rate(ratios_module):
+    result = ratios_module.get_tax_rate_divergence(rounding=None)
+    expected = ratios_module.get_cash_tax_rate(
+        rounding=None
+    ) - ratios_module.get_effective_tax_rate(rounding=None)
+
+    assert_rounded_equal(result, expected.loc[:, result.columns])
+
+
+def test_buyback_yield_is_net_repurchases_over_market_cap(ratios_module):
+    result = ratios_module.get_buyback_yield(rounding=None)
+    cash_flow = ratios_module._cash_flow_statement
+    purchased = _item(cash_flow, "Common Stock Purchased", result.columns)
+    issued = _item(cash_flow, "Common Stock Issued", result.columns)
+    market_cap = ratios_module.get_market_cap().loc[:, result.columns]
+
+    assert_rounded_equal(result, -(purchased + issued) / market_cap, check_names=False)
+    # Apple and Microsoft bought back far more stock than they issued in every year with
+    # a market capitalisation (the last period lies past the end date of the prices).
+    assert (result.dropna(axis=1, how="all") > 0).all().all()
+
+
+def test_shareholder_yield_adds_dividend_and_buyback_yield(ratios_module):
+    result = ratios_module.get_shareholder_yield(rounding=None)
+    dividend_yield = ratios_module.get_dividend_yield(rounding=None)
+    buyback_yield = ratios_module.get_buyback_yield(rounding=None)
+
+    expected = (
+        dividend_yield.loc[result.index, result.columns]
+        + buyback_yield.loc[result.index, result.columns]
+    )
+
+    assert_rounded_equal(result, expected)
+
+
+def test_ev_to_free_cash_flow_divides_enterprise_value_by_free_cash_flow(
+    ratios_module,
+):
+    result = ratios_module.get_ev_to_free_cash_flow_ratio(rounding=None)
+    enterprise_value = ratios_module.get_enterprise_value().loc[:, result.columns]
+    free_cash_flow = _item(
+        ratios_module._cash_flow_statement, "Free Cash Flow", result.columns
+    )
+
+    assert_rounded_equal(result, enterprise_value / free_cash_flow, check_names=False)
+
+
+def test_sbc_adjusted_free_cash_flow_deducts_stock_based_compensation(
+    ratios_module,
+):
+    result = ratios_module.get_sbc_adjusted_free_cash_flow(rounding=None)
+    cash_flow = ratios_module._cash_flow_statement
+    expected = _item(cash_flow, "Free Cash Flow", result.columns) - _item(
+        cash_flow, "Stock Based Compensation", result.columns
+    )
+
+    assert_rounded_equal(result, expected, check_names=False)
+    assert (result < _item(cash_flow, "Free Cash Flow", result.columns)).all().all()
+
+
 def test_get_gross_profitability(recorder, ratios_module):
     recorder.capture(ratios_module.get_gross_profitability())
     recorder.capture(ratios_module.get_gross_profitability(trailing=2))
@@ -1245,3 +1521,42 @@ def test_quarterly_profitability_anomalies_default_to_the_trailing_year():
     )
     # The first three quarters have no full trailing year.
     assert ratios.get_gross_profitability().iloc[0, :3].isna().all()
+
+
+def test_a_zero_denominator_gives_nan_and_keeps_the_z_scores():
+    from financetoolkit import Toolkit
+
+    balance = pd.read_pickle("tests/datasets/balance_dataset.pickle")
+    income = pd.read_pickle("tests/datasets/income_dataset.pickle")
+    balance.loc[("AAPL", "Total Equity")] = [63.09e9, 0.0, 50.672e9, 62.146e9]
+    income.loc[("MSFT", "Revenue")] = [0.0, 100.0, np.nan, 200.0]
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        balance=balance,
+        income=income,
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+
+    debt_to_equity = toolkit.ratios.get_debt_to_equity_ratio()
+    standardized = toolkit.ratios.get_debt_to_equity_ratio(standardize=True)
+    gross_margin = toolkit.ratios.get_gross_margin()
+
+    assert debt_to_equity.loc["AAPL"].isna().tolist() == [False, True, False, False]
+    # The undefined year no longer turns every Z-Score of the ticker into NaN.
+    assert standardized.loc["AAPL"].isna().tolist() == [False, True, False, False]
+    assert np.isnan(gross_margin.loc["MSFT"].iloc[0])
+
+
+def test_a_custom_ratio_with_a_zero_denominator_is_nan(ratios_module):
+    custom_ratios = copy.deepcopy(ratios_module).collect_custom_ratios(
+        custom_ratios_dict={"Revenue over Nothing": "Revenue / 0"}
+    )
+
+    values = custom_ratios.xs("Revenue over Nothing", level=1)
+    assert values.isna().all().all()

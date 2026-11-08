@@ -138,26 +138,75 @@ def get_sales_to_total_assets_ratio(
     return sales / total_assets
 
 
+def get_book_value_of_equity_to_book_value_of_total_liabilities_ratio(
+    book_value_of_equity: float | pd.Series | pd.DataFrame,
+    total_liabilities: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    The Book Value of Equity to Book Value of Total Liabilities Ratio measures how much of a company's
+    liabilities its shareholders' equity on the balance sheet covers. It replaces the market value of equity
+    in the Z'-Score (private firms), the Z''-Score (non-manufacturers) and the Z''-EM score (emerging markets),
+    which do not rely on a share price.
+
+    The formula is as follows:
+
+        - Book Value of Equity to Book Value of Total Liabilities Ratio = Book Value of Equity / Total Liabilities
+
+    Args:
+        book_value_of_equity (float | pd.Series | pd.DataFrame): The shareholders' equity on the balance sheet.
+        total_liabilities (float | pd.Series | pd.DataFrame): The sum of a company's current and non-current liabilities.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The Book Value of Equity to Book Value of Total Liabilities Ratio.
+
+    Notes:
+    - A negative ratio means the liabilities exceed the assets (a shareholders' deficit).
+    """
+
+    return book_value_of_equity / total_liabilities
+
+
+# The coefficients of X1 (working capital), X2 (retained earnings), X3 (EBIT), X4 (equity, at market value
+# for "original" and book value otherwise) and X5 (sales), all divided by total assets except X4, which is
+# divided by total liabilities, and the constant. Altman (1968) for "original", Altman (1983) for "private",
+# Altman, Hartzell and Peck (1995) for "non-manufacturing" and Altman (2005) for "emerging".
+ALTMAN_COEFFICIENTS = {
+    "original": (1.2, 1.4, 3.3, 0.6, 1.0, 0.0),
+    "private": (0.717, 0.847, 3.107, 0.420, 0.998, 0.0),
+    "non-manufacturing": (6.56, 3.26, 6.72, 1.05, 0.0, 0.0),
+    "emerging": (6.56, 3.26, 6.72, 1.05, 0.0, 3.25),
+}
+
+
 def get_altman_z_score(
     working_capital_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
     retained_earnings_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
     earnings_before_interest_and_taxes_to_total_assets_ratio: (
         float | pd.Series | pd.DataFrame
     ),
-    market_value_of_equity_to_book_value_of_total_liabilities_ratio: (
-        float | pd.Series | pd.DataFrame
-    ),
-    sales_to_total_assets_ratio: float | pd.Series | pd.DataFrame,
-):
+    equity_to_total_liabilities_ratio: float | pd.Series | pd.DataFrame,
+    sales_to_total_assets_ratio: float | pd.Series | pd.DataFrame | None = None,
+    model: str = "original",
+) -> float | pd.Series | pd.DataFrame:
     """
     The Altman Z-Score is a financial metric used to measure a company's solvency and the likelihood that it will
-    go bankrupt. It is calculated using a combination of five weighted business ratios.
+    go bankrupt. It is calculated using a combination of four or five weighted business ratios, with the
+    coefficients of one of Altman's four models.
 
-    The formula is as follows:
+    The formulas are as follows:
 
-    Altman Z-Score = 1.2 * Working Capital to Total Assets Ratio + 1.4 * Retained Earnings to Total Assets Ratio
-    + 3.3 * Earnings Before Interest and Taxes to Total Assets Ratio
-    + 0.6 * Market Value of Equity to Book Value of Total Liabilities Ratio + 1.0 * Sales to Total Assets Ratio
+        - Original (public manufacturers, Altman 1968): Z = 1.2 X1 + 1.4 X2 + 3.3 X3 + 0.6 X4 + 1.0 X5,
+        with X4 the market value of equity to total liabilities. Distress below 1.81, safe above 2.99.
+        - Private (private manufacturers, Altman 1983): Z' = 0.717 X1 + 0.847 X2 + 3.107 X3 + 0.420 X4 +
+        0.998 X5, with X4 the book value of equity to total liabilities. Distress below 1.23, safe above 2.90.
+        - Non-manufacturing (non-manufacturers, Altman, Hartzell and Peck 1995): Z'' = 6.56 X1 + 3.26 X2 +
+        6.72 X3 + 1.05 X4, with X4 the book value of equity to total liabilities and no sales term.
+        Distress below 1.10, safe above 2.60.
+        - Emerging (emerging market companies, Altman 2005): Z''-EM = 3.25 + Z''. Distress below 4.35, safe
+        above 5.85.
+
+    Here X1 is Working Capital, X2 Retained Earnings, X3 Earnings Before Interest and Taxes and X5 Sales, each
+    divided by Total Assets.
 
     Args:
         working_capital_to_total_assets_ratio (float | pd.Series | pd.DataFrame): The Working Capital to Total
@@ -166,18 +215,24 @@ def get_altman_z_score(
         Total Assets Ratio.
         earnings_before_interest_and_taxes_to_total_assets_ratio (float | pd.Series | pd.DataFrame): The Earnings
         Before Interest and Taxes to Total Assets Ratio.
-        market_value_of_equity_to_book_value_of_total_liabilities_ratio (float | pd.Series | pd.DataFrame): The Market
-        Value of Equity to Book Value of Total Liabilities Ratio.
-        sales_to_total_assets_ratio (float | pd.Series | pd.DataFrame): The Sales to Total Assets Ratio.
+        equity_to_total_liabilities_ratio (float | pd.Series | pd.DataFrame): The Equity to Total Liabilities
+        Ratio, with equity at market value for the "original" model and at book value for
+        the others.
+        sales_to_total_assets_ratio (float | pd.Series | pd.DataFrame | None, optional): The Sales to Total Assets
+        Ratio, which the "original" and "private" models need. Defaults to None.
+        model (str, optional): The model: "original", "private", "non-manufacturing" or "emerging". Defaults to
+        "original".
 
     Returns:
-        float | pd.Series | pd.DataFrame: The Altman Z-Score.
+        float | pd.Series | pd.DataFrame: The Altman Z-Score of the chosen model.
+
+    Raises:
+        ValueError: When the model is unknown or a model with a sales term has no Sales to Total Assets Ratio.
 
     Notes:
-    - This is the original 1968 Z-Score, calibrated on publicly listed manufacturing companies and
-    using the Market Value of Equity (rather than Book Value of Equity, as used in the private-firm
-    Z'-Score variant). A Z-Score below 1.81 indicates a high likelihood of bankruptcy, a score above
-    2.99 indicates a low likelihood, and scores in between fall into a "gray area".
+    - The original 1968 Z-Score is calibrated on publicly listed manufacturing companies and uses the
+    Market Value of Equity. Below the lower cut-off of each model a company is in the distress zone, above
+    the upper one in the safe zone, and in between in the grey zone.
     - Altman's 1968 paper prints the discriminant function as 0.012 X1 + 0.014 X2 + 0.033 X3 +
     0.006 X4 + 0.999 X5, where X1 through X4 are entered as *percentages* and X5 as a plain
     multiple. The 1.2 / 1.4 / 3.3 / 0.6 / 1.0 restatement used here — the form Altman himself
@@ -186,11 +241,11 @@ def get_altman_z_score(
     the 0.012-style coefficients, or percentages against these) is the classic way this model is
     mis-implemented and would understate or overstate the score by a factor of roughly 100 on the
     first four terms.
-    - The Z'-Score (private firms: 0.717 X1 + 0.847 X2 + 3.107 X3 + 0.420 X4 + 0.998 X5, with X4
-    using the *book* value of equity) and the Z''-Score (non-manufacturers / emerging markets:
-    6.56 X1 + 3.26 X2 + 6.72 X3 + 1.05 X4, dropping X5 entirely) use different coefficients and
-    different variable definitions. Neither variant is implemented here — this function is the
-    original public-manufacturer Z-Score only.
+    - The Z'-Score re-estimates the original coefficients with the book value of equity in X4, so it applies
+    to companies without a share price. The Z''-Score drops X5, as asset turnover differs most between
+    industries, and is meant for non-manufacturers; it is the base of the Z''-EM score, whose constant of 3.25
+    was set so that a score of zero or below matches a bond rated D. None of the models is meant for banks
+    or insurers.
     - As with the Beneish M-Score, Piotroski F-Score, Ohlson O-Score and other models in this module,
     this is a probabilistic, not a definitive, indicator and should be combined with further
     fundamental analysis.
@@ -198,11 +253,35 @@ def get_altman_z_score(
     References:
     - Altman, Edward I. "Financial Ratios, Discriminant Analysis and the Prediction of Corporate
     Bankruptcy." The Journal of Finance, Vol. 23, No. 4, 1968, pp. 589-609.
+    - Altman, Edward I. "Corporate Financial Distress: A Complete Guide to Predicting, Avoiding, and
+    Dealing with Bankruptcy." John Wiley & Sons, 1983.
+    - Altman, Edward I. "Predicting Financial Distress of Companies: Revisiting the Z-Score and ZETA
+    Models." Working paper, New York University, 2000.
+    - Altman, Edward I., John Hartzell and Matthew Peck. "Emerging Markets Corporate Bonds: A Scoring
+    System." Salomon Brothers, 1995.
+    - Altman, Edward I. "An Emerging Market Credit Scoring System for Corporate Bonds." Emerging Markets
+    Review, Vol. 6, No. 4, 2005, pp. 311-323.
     """
-    return (
-        1.2 * working_capital_to_total_assets_ratio
-        + 1.4 * retained_earnings_to_total_assets_ratio
-        + 3.3 * earnings_before_interest_and_taxes_to_total_assets_ratio
-        + 0.6 * market_value_of_equity_to_book_value_of_total_liabilities_ratio
-        + 1.0 * sales_to_total_assets_ratio
+    if model not in ALTMAN_COEFFICIENTS:
+        raise ValueError(
+            f"Invalid model {model!r}. Please choose from: {', '.join(ALTMAN_COEFFICIENTS)}."
+        )
+
+    x1, x2, x3, x4, x5, constant = ALTMAN_COEFFICIENTS[model]
+
+    score = (
+        constant
+        + x1 * working_capital_to_total_assets_ratio
+        + x2 * retained_earnings_to_total_assets_ratio
+        + x3 * earnings_before_interest_and_taxes_to_total_assets_ratio
+        + x4 * equity_to_total_liabilities_ratio
     )
+
+    if x5:
+        if sales_to_total_assets_ratio is None:
+            raise ValueError(
+                f"The {model} Altman Z-Score needs the Sales to Total Assets Ratio."
+            )
+        score = score + x5 * sales_to_total_assets_ratio
+
+    return score

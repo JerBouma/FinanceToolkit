@@ -638,6 +638,95 @@ def test_a_ticker_without_returns_has_no_drawdowns():
     assert "C" not in risk_model.get_drawdown_table(returns).index.get_level_values(0)
 
 
+def test_get_mean_absolute_deviation_per_period():
+    returns = pd.Series(
+        [1.0, 2.0, 3.0, 4.0, 10.0, 10.0],
+        index=pd.to_datetime(
+            [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-02-01",
+                "2024-02-02",
+            ]
+        ).to_period("D"),
+    )
+
+    result = risk_model.get_mean_absolute_deviation(returns, "monthly")
+
+    # January: mean 2.5, absolute deviations 1.5, 0.5, 0.5, 1.5. February is constant.
+    assert result.tolist() == pytest.approx([1.0, 0.0])
+    assert [str(period) for period in result.index] == ["2024-01", "2024-02"]
+
+    with pytest.raises(ValueError, match="not valid"):
+        risk_model.get_mean_absolute_deviation(returns, "daily")
+    with pytest.raises(TypeError):
+        risk_model.get_mean_absolute_deviation(returns.tolist(), "monthly")
+
+
+def test_get_coefficient_of_variation_per_group():
+    returns = pd.DataFrame({"A": [1.0, 2.0, 3.0, 2.0, 2.0, 2.0]})
+    groups = np.array(["first"] * 3 + ["second"] * 3)
+
+    result = risk_model.get_coefficient_of_variation(returns, "monthly", groups=groups)
+
+    # The sample standard deviation (ddof=1) of 1, 2, 3 is 1, its mean 2.
+    assert result.loc["first", "A"] == pytest.approx(0.5)
+    assert result.loc["second", "A"] == pytest.approx(0.0)
+
+    with pytest.raises(ValueError, match="not valid"):
+        risk_model.get_coefficient_of_variation(returns, "hourly", groups=groups)
+
+
+def test_get_autocorrelation_uses_the_full_sample_variance():
+    # Returns are indexed by date: a result indexed by lag is then never read as dates.
+    result = risk_model.get_autocorrelation(
+        pd.Series(
+            [1.0, 2.0, np.nan, 3.0, 4.0],
+            index=pd.period_range("2024-01-01", periods=5, freq="D"),
+        ),
+        lags=3,
+    )
+
+    # Mean 2.5 and a sum of squared deviations of 5 (the missing value is dropped);
+    # the lagged cross products sum to 1.25, -1.5 and -2.25.
+    pd.testing.assert_series_equal(
+        result,
+        pd.Series({1: 0.25, 2: -0.3, 3: -0.45}, name="Autocorrelation"),
+    )
+
+    with pytest.raises(TypeError):
+        risk_model.get_autocorrelation(pd.DataFrame({"A": [1.0, 2.0]}))
+
+
+def test_get_quantile_per_type():
+    returns = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+
+    assert risk_model.get_quantile(returns, 0.25) == 2.0
+
+    frame = pd.DataFrame({"A": returns, "B": returns * 10})
+    pd.testing.assert_series_equal(
+        risk_model.get_quantile(frame, 0.5), pd.Series({"A": 3.0, "B": 30.0})
+    )
+
+    index = pd.MultiIndex.from_tuples([("2020", 1), ("2020", 2), ("2021", 1)])
+    stacked = pd.DataFrame({"A": [1.0, 3.0, 5.0]}, index=index)
+    assert risk_model.get_quantile(stacked, 0.5)["A"].tolist() == [2.0, 5.0]
+
+    with pytest.raises(TypeError):
+        risk_model.get_quantile([1.0, 2.0], 0.5)
+
+
+def test_get_wealth_and_peak_starts_from_an_initial_wealth_of_one():
+    wealth, peak = risk_model.get_wealth_and_peak(pd.Series([-0.1, 0.5, np.nan, -0.5]))
+
+    # A missing return keeps the wealth unchanged; a loss on the first day is measured
+    # against the starting wealth of 1, not against the lower first value.
+    assert wealth.tolist() == pytest.approx([0.9, 1.35, 1.35, 0.675])
+    assert peak.tolist() == pytest.approx([1.0, 1.35, 1.35, 1.35])
+
+
 def test_the_drawdown_table_counts_calendar_days_over_market_holidays():
     # Trading days only: a peak on Friday, a trough on Monday, back on Wednesday a week later.
     dates = pd.PeriodIndex(
@@ -688,3 +777,26 @@ def test_deepest_since_is_the_last_date_as_deep_as_today():
     assert since.iloc[6] == "2024-01-02"
     # The deepest drawdown so far has no earlier date as deep.
     assert since.iloc[7] is None
+
+
+def test_skewness_and_kurtosis_of_returns_without_variation_are_nan():
+    returns = pd.DataFrame(
+        {"Constant": [0.0] * 20, "Varying": np.linspace(-1, 1, 20) ** 3}
+    )
+
+    skewness = risk_model.get_skewness(returns)
+    kurtosis = risk_model.get_kurtosis(returns, fisher=False)
+
+    assert np.isnan(skewness["Constant"]) and np.isfinite(skewness["Varying"])
+    assert np.isnan(kurtosis["Constant"]) and np.isfinite(kurtosis["Varying"])
+    assert np.isnan(risk_model.get_skewness(pd.Series([0.01] * 5)))
+
+    rolling_returns = pd.Series([0.0] * 10 + [0.01, -0.02, 0.03, 0.01])
+    rolling_skewness = risk_model.get_rolling_skewness(rolling_returns, 5)
+    rolling_kurtosis = risk_model.get_rolling_kurtosis(rolling_returns, 5)
+
+    # Windows of only zero returns are undefined; once a window varies it has a value.
+    assert rolling_skewness.iloc[:10].isna().all()
+    assert rolling_kurtosis.iloc[:10].isna().all()
+    assert rolling_skewness.iloc[10:].notna().all()
+    assert rolling_kurtosis.iloc[10:].notna().all()

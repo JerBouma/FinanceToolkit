@@ -534,9 +534,10 @@ def test_get_strategy_payoff(recorder, options_module):
     )
 
 
-def test_get_strategy_payoff_invalid_legs(options_module):
-    with pytest.raises(ValueError):
-        options_module.get_strategy_payoff(legs=[])
+def test_get_strategy_payoff_invalid_legs(options_module, caplog):
+    # Unusable legs are reported and give an empty result, as for every other metric.
+    assert options_module.get_strategy_payoff(legs=[]).empty
+    assert "get_strategy_payoff could not be calculated" in caplog.text
 
     with pytest.raises(TypeError):
         options_module.get_strategy_payoff(legs=[{"put_option": False}])
@@ -630,19 +631,19 @@ def test_trailing_dividend_yield_is_the_dividends_of_the_year_over_the_close():
     )
 
 
-def test_get_barrier_option_refuses_a_breached_barrier(options_module):
+def test_get_barrier_option_refuses_a_breached_barrier(options_module, caplog):
     # An up barrier at or below the spot and a down barrier at or above it are breached
-    # before the option starts.
-    with pytest.raises(ValueError, match="above the current stock price"):
-        options_module.get_barrier_option(
-            barrier_direction="up", barrier_percentage=0.9
-        )
-    with pytest.raises(ValueError, match="above the current stock price"):
-        options_module.get_barrier_option(barrier_direction="up", barrier_percentage=1)
-    with pytest.raises(ValueError, match="below the current stock price"):
-        options_module.get_barrier_option(
-            barrier_direction="down", barrier_percentage=1.1
-        )
+    # before the option starts, which is reported with an empty result.
+    for direction, percentage, message in (
+        ("up", 0.9, "above the current stock price"),
+        ("up", 1, "above the current stock price"),
+        ("down", 1.1, "below the current stock price"),
+    ):
+        caplog.clear()
+        assert options_module.get_barrier_option(
+            barrier_direction=direction, barrier_percentage=percentage
+        ).empty
+        assert message in caplog.text
 
 
 def test_the_treasury_yield_is_converted_to_continuous_compounding(
@@ -972,8 +973,7 @@ def test_the_model_free_volatility_beyond_the_longest_expiry_raises(option_marke
 
     with pytest.raises(ValueError, match=f"longest usable expiry of {ticker}"):
         module._model_free_volatility(ticker, days=365)
-    with pytest.raises(ValueError, match="longest usable expiry"):
-        module.get_model_free_implied_volatility(days=365)
+    assert module.get_model_free_implied_volatility(days=365).empty
 
 
 def test_the_model_free_volatility_extrapolates_a_short_target(option_market):
@@ -1037,3 +1037,86 @@ def test_monte_carlo_paths_in_chunks_give_the_same_price_and_large_runs_are_refu
         options_model.get_monte_carlo_option_price(
             **{**kwargs, "simulations": 1_000_000, "time_steps": 1_000}
         )
+
+
+def test_get_strategy_payoff_defaults_to_an_at_the_money_straddle(options_module):
+    payoff = options_module.get_strategy_payoff()
+    date = options_module._daily_historical.index[-1]
+
+    for ticker in payoff.columns:
+        legs = options_module._at_the_money_straddle(ticker, date)
+        premiums = sum(leg["premium"] for leg in legs)
+        strike = legs[0]["strike_price"]
+        ticker_payoff = payoff[ticker].dropna()
+
+        # The loss is largest, both premiums, at the strike and shrinks one for one away from it.
+        assert legs[0]["put_option"] is False and legs[1]["put_option"] is True
+        assert premiums > 0
+        assert ticker_payoff.min() >= -premiums - 1e-9
+        nearest = ticker_payoff.index[abs(ticker_payoff.index - strike).argmin()]
+        assert ticker_payoff[nearest] == pytest.approx(
+            abs(nearest - strike) - premiums, abs=1e-3
+        )
+
+
+def _options_without_msft_prices_after(date):
+    import numpy as np
+
+    from financetoolkit import Toolkit
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical.loc[historical.index > pd.Period(date, "D"), (slice(None), "MSFT")] = (
+        np.nan
+    )
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit.options
+
+
+def test_a_ticker_without_a_price_leaves_the_others_their_option_values(
+    options_module, caplog
+):
+    options = _options_without_msft_prices_after("2022-06-01")
+
+    black_scholes = options.get_black_scholes_model(start_date="2022-12-30")
+    delta = options.get_delta(start_date="2022-12-30")
+
+    assert black_scholes.index.unique(level=0).tolist() == ["AAPL"]
+    assert delta.index.unique(level=0).tolist() == ["AAPL"]
+    assert "MSFT has no price on 2022-12-30" in caplog.text
+    pd.testing.assert_frame_equal(
+        black_scholes,
+        options_module.get_black_scholes_model(start_date="2022-12-30").loc[["AAPL"]],
+    )
+
+
+def test_a_start_date_without_prices_uses_the_last_trading_day_before_it(
+    options_module,
+):
+    # 2022-12-31 is a Saturday and 2020-02-29 a Saturday as well (leap day).
+    for weekend, trading_day in (
+        ("2022-12-31", "2022-12-30"),
+        ("2020-02-29", "2020-02-28"),
+    ):
+        pd.testing.assert_frame_equal(
+            options_module.get_black_scholes_model(start_date=weekend),
+            options_module.get_black_scholes_model(start_date=trading_day),
+        )
+
+
+def test_a_start_date_before_the_data_or_not_a_date_is_refused(options_module, caplog):
+    assert options_module.get_black_scholes_model(start_date="2019-01-01").empty
+    assert "lies before the historical data" in caplog.text
+    caplog.clear()
+    assert options_module.get_delta(start_date="not a date").empty
+    assert "is not a valid date" in caplog.text

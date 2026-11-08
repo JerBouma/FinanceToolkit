@@ -5,25 +5,9 @@ __docformat__ = "google"
 import numpy as np
 from scipy.stats import norm
 
+from financetoolkit.options.helpers import validate_numeric_inputs
+
 # pylint: disable=too-many-arguments,too-many-locals,invalid-name
-
-
-def _validate_numeric_inputs(**kwargs) -> None:
-    """
-    Validate that the provided keyword arguments are numeric (float or int) and raise
-    a TypeError otherwise.
-
-    Args:
-        **kwargs: the arguments to validate, keyed by argument name.
-
-    Raises:
-        TypeError: if any of the provided values is not a float or int.
-    """
-    for name, value in kwargs.items():
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise TypeError(
-                f"{name} must be a float or int, received {type(value).__name__}."
-            )
 
 
 def _barrier_term(
@@ -105,7 +89,7 @@ def _barrier_term(
             eta * y1 - eta * volatility_time
         )
 
-    # term == "D"
+    # The remaining term is D.
     y2 = np.log(barrier / stock_price) / volatility_time + (1 + mu) * volatility_time
     return phi * stock_price * np.exp(
         (cost_of_carry - risk_free_rate) * time_to_expiration
@@ -195,7 +179,7 @@ def get_barrier_option(
         Reference: Reiner, E., & Rubinstein, M. (1991). "Breaking Down the Barriers."
         Risk Magazine, 4(8), 28-35.
     """
-    _validate_numeric_inputs(
+    validate_numeric_inputs(
         stock_price=stock_price,
         strike_price=strike_price,
         barrier=barrier,
@@ -375,7 +359,7 @@ def get_asian_option(
         Options Based on Average Asset Values." Journal of Banking & Finance, 14(1),
         113-129.
     """
-    _validate_numeric_inputs(
+    validate_numeric_inputs(
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,

@@ -44,6 +44,7 @@ from financetoolkit.fixedincome import (
     fmp_model,
     fred_model,
     helpers as fixedincome_helpers,
+    hqm_model,
     norgesbank_model,
     rba_model,
     riksbank_model,
@@ -4225,8 +4226,11 @@ class FixedIncome:
         years, comparable to the Treasury par yield curve (see `get_treasury_rates`). Every
         value is the average over the month.
 
-        The data comes from FRED, which republishes the Treasury's curve, so a free FRED API
-        key is required. The rates are returned as decimal fractions (0.0558 for 5.58%).
+        No API key is needed: without a FRED API key the curve comes from the Treasury's own
+        HQM files, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `FixedIncome` class), it comes from FRED, which
+        republishes the Treasury's curve. The rates are returned as decimal fractions (0.0558
+        for 5.58%), semi-annual bond-equivalent as the Treasury publishes them.
 
         See definition: https://home.treasury.gov/data/treasury-coupon-issues-and-corporate-bond-yield-curves
 
@@ -4267,13 +4271,19 @@ class FixedIncome:
         | 2026-07 | 0.0433 | 0.0488 | 0.0545 | 0.0643 | 0.0677 |
         | 2026-08 | 0.0431 | 0.0497 | 0.0558 | 0.0665 | 0.0702 |
         """
-        self._require_fred_api_key()
         if rate not in ("spot", "par"):
             raise ValueError(f"The rate must be 'spot' or 'par', not {rate!r}.")
 
-        hqm_curve = fred_model.get_hqm_corporate_bond_yield_curve(
-            rate, self._start_date, self._end_date, self._fred_api_key
-        )
+        # FRED republishes the Treasury's curve, so it is used when a key is set and the
+        # Treasury's files otherwise.
+        if self._fred_api_key:
+            hqm_curve = fred_model.get_hqm_corporate_bond_yield_curve(
+                rate, self._start_date, self._end_date, self._fred_api_key
+            )
+        elif rate == "spot":
+            hqm_curve = hqm_model.get_hqm_spot_rates(self._start_date, self._end_date)
+        else:
+            hqm_curve = hqm_model.get_hqm_par_yields()
 
         return finalize_dataset(
             dataset=hqm_curve,
@@ -4299,14 +4309,14 @@ class FixedIncome:
         """
         Computes the credit spread of high quality US corporate bonds per maturity: the
         Treasury's High Quality Market (HQM) corporate par yield minus the Treasury constant
-        maturity yield, at 2, 5, 10 and 30 years, monthly from 1984. Both legs are par
+        maturity yield, at 2, 5, 10 and 30 years, monthly. Both legs are par
         yields averaged over the month, so they are directly comparable. The spread is what
         investors demand for the default and liquidity risk of investment grade companies,
         and its shape across maturities, usually wider for longer maturities, shows how that
         compensation grows with time.
 
         Unlike the ICE BofA option-adjusted spreads (see `get_ice_bofa_option_adjusted_spread`),
-        of which FRED only carries the last three years, this spread covers four decades, long
+        of which FRED only carries the last three years, this spread covers decades, long
         enough to calibrate how credit spreads behave through several business cycles.
 
         The formula is as follows:
@@ -4314,8 +4324,14 @@ class FixedIncome:
         - HQM Spread (maturity) = HQM Corporate Par Yield (maturity) - Treasury Constant Maturity Yield (maturity),
           both monthly averages, for 2, 5, 10 and 30 years
 
-        The data comes from FRED, so a free FRED API key is required. The spreads are returned
-        as decimal fractions (0.0079 for 0.79 percentage points).
+        No API key is needed: without a FRED API key both legs come from the Treasury, the HQM
+        par yields from its HQM files and the Treasury yields as the monthly averages of its
+        daily par yield curve, rounded to two decimals in percent as the Federal Reserve's H.15
+        release publishes them. That curve starts in 1990 and has no 30-year yield from
+        February 2002 to February 2006, so the keyless spread starts in 1990 and leaves those
+        30-year months empty. When a FRED API key is set (see the `fred_api_key` parameter of
+        the `FixedIncome` class), the Treasury yields are FRED's constant maturity series, from
+        1984. The spreads are returned as decimal fractions (0.0079 for 0.79 percentage points).
 
         Also known as: corporate credit spread curve, credit spread term structure,
         investment grade spread.
@@ -4352,10 +4368,15 @@ class FixedIncome:
         | 2026-07 | 0.0035 | 0.0053 | 0.0075 | 0.0092 |
         | 2026-08 | 0.0036 | 0.0056 | 0.0079 | 0.0095 |
         """
-        self._require_fred_api_key()
-
-        hqm_spread = fred_model.get_hqm_corporate_bond_spread(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED carries both legs, so it is used when a key is set and the Treasury otherwise.
+        hqm_spread = (
+            fred_model.get_hqm_corporate_bond_spread(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else hqm_model.get_hqm_corporate_bond_spread(
+                self._start_date, self._end_date
+            )
         )
 
         return finalize_dataset(
@@ -4799,20 +4820,21 @@ class FixedIncome:
             return pd.DataFrame()
 
         results = helpers.run_in_parallel(
-            lambda year: esma_model.get_default_rates(
-                agency_code,
-                rating_type,
-                pd.Timestamp(f"{year}-01-01"),
-                pd.Timestamp(f"{year}-12-31"),
-                region,
+            lambda year: (
+                year,
+                esma_model.get_default_rates(
+                    agency_code,
+                    rating_type,
+                    pd.Timestamp(f"{year}-01-01"),
+                    pd.Timestamp(f"{year}-12-31"),
+                    region,
+                ),
             ),
             [(year,) for year in years],
             max_workers=6,
         )
         default_rates = {
-            year: rates["Default Rate"]
-            for year, rates in zip(years, results, strict=True)
-            if not rates.empty
+            year: rates["Default Rate"] for year, rates in results if not rates.empty
         }
 
         if not default_rates:

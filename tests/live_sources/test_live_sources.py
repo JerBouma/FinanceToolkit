@@ -858,7 +858,9 @@ def test_yahoo_finance_statistics(name):
     statistics = yfinance_model.get_historical_statistics(YAHOO_TICKER)
 
     assert statistics.get("Currency") == "USD", f"{name} has no USD trading currency"
-    assert yfinance_model.get_reported_currency(YAHOO_TICKER) == "USD"
+    information = yfinance_model.get_company_information(YAHOO_TICKER)
+    assert information["financialCurrency"] == "USD"
+    assert pd.Timestamp(information["lastFiscalYearEnd"]) <= pd.Timestamp(TODAY)
 
     periods = pd.PeriodIndex([str(TODAY.year - 1)], freq="Y")
     statement = yfinance_model.get_statistics_statement(YAHOO_TICKER, periods)

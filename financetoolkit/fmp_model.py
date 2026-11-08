@@ -468,15 +468,10 @@ def get_financial_statement(
         # period it ends.
         financial_statement["periodEndDate"] = period_end_dates.dt.strftime("%Y-%m-%d")
 
-        # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
-        financial_statement["date"] = pd.to_datetime(
-            financial_statement["date"]
-        ) - pd.offsets.Day(1)
-
-        # A fiscal period is labelled with the calendar period holding most of it, at both frequencies, so yearly and quarterly output stay consistent.  # noqa: E501
+        # A fiscal period is labelled with the calendar period holding most of it, at both frequencies, so yearly and quarterly output stay consistent, and identically to the Yahoo Finance path.  # noqa: E501
         financial_statement["date"] = (
             helpers.convert_period_end_dates_to_calendar_periods(
-                period_end_dates=financial_statement["date"],
+                period_end_dates=period_end_dates,
                 quarter=quarter,
                 ticker=ticker,
                 fiscal_year_adjustments=fiscal_year_adjustments,
@@ -1263,16 +1258,10 @@ def get_analyst_estimates(
             analyst_estimates = analyst_estimates.drop("symbol", axis=1)
 
             # An estimate carries the fiscal period end date of the statement it estimates
-            # (Western Digital's fiscal 2022 ends 2022-07-01 in both), so it is shifted back
-            # one day exactly as the financial statements are: a period reported as 2023-07-01
-            # is really 2023Q2, and both then land in the same calendar period.
-            analyst_estimates["date"] = pd.to_datetime(
-                analyst_estimates["date"]
-            ) - pd.offsets.Day(1)
-
-            # Labelled like the financial statements (the calendar period holding most of the
-            # fiscal period), so an estimate sits in the same column as the reported figure it
-            # estimates: NVIDIA's fiscal year ending January 2026 is 2025 in both.
+            # (Western Digital's fiscal 2022 ends 2022-07-01 in both) and is labelled like the
+            # financial statements (the calendar period holding most of the fiscal period), so
+            # it sits in the same column as the reported figure it estimates: NVIDIA's fiscal
+            # year ending January 2026 is 2025 in both.
             analyst_estimates["date"] = (
                 helpers.convert_period_end_dates_to_calendar_periods(
                     period_end_dates=analyst_estimates["date"], quarter=quarter

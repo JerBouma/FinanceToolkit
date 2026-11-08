@@ -24,8 +24,11 @@ logger = logger_model.get_logger()
 # The raw name of the row holding each fiscal period's last day, mapped to Period End Date by statistics_yf.csv as FinancialModelingPrep's periodEndDate is by statistics.csv.  # noqa: E501
 PERIOD_END_DATE_ITEM = "periodEndDate"
 
-# The reporting currency of a company changes almost never, so it is resolved once per ticker per process rather than on every statement request.  # noqa: E501
-REPORTED_CURRENCY_CACHE: dict[str, str] = {}
+# The fiscal quarter of each period (Q1 to Q4, FY for a year), mapped to Period by statistics_yf.csv as FinancialModelingPrep's period is by statistics.csv.  # noqa: E501
+FISCAL_PERIOD_ITEM = "period"
+
+# The reporting currency and fiscal year end of a company change almost never, so they are resolved once per ticker per process rather than on every statement request.  # noqa: E501
+COMPANY_INFORMATION_CACHE: dict[str, dict[str, str]] = {}
 
 
 def get_financial_statement(
@@ -148,7 +151,7 @@ def get_statistics_statement(
     Builds the statistics statement for a Yahoo Finance sourced ticker, mirroring the
     statistics that FinancialModelingPrep returns alongside its financial statements.
 
-    Two statistics Yahoo Finance publishes are needed by the Toolkit:
+    Three statistics Yahoo Finance publishes are needed by the Toolkit:
 
         - The currency the financial statements are reported in, exposed as
           ``financialCurrency`` on the quote summary. It is what the currency conversion
@@ -165,6 +168,15 @@ def get_statistics_statement(
           ``periodEndDate`` row get_financial_statement adds to the statement; when the
           statement does not hold it (such as a statement cached without it), the row is
           left out and the Toolkit falls back to the latest date the period can end on.
+          Yahoo Finance reports the end of the month a period stands for, so a 52/53-week
+          period ending a few days into the next month (Home Depot's quarter ending 3 August
+          2025) carries the month end before it (31 July 2025).
+        - The fiscal quarter of each quarterly period (``period``, Q1 to Q4, and FY for a
+          year), as FinancialModelingPrep reports it. It is derived from the last fiscal year
+          end on the quote summary (``lastFiscalYearEnd``): the quarter ending in the month
+          the fiscal year ends is Q4, which is published with the annual report and so gets
+          the annual reporting deadline when no filing date is known. Left out when Yahoo
+          Finance does not report a fiscal year end.
 
     Args:
         ticker (str): the ticker to retrieve the statistics for.
@@ -176,15 +188,16 @@ def get_statistics_statement(
 
     Returns:
         pd.DataFrame: A DataFrame with the Yahoo Finance statistics names as index and
-        the given periods as columns. Empty when Yahoo Finance reports neither a
-        reporting currency nor period end dates for the ticker.
+        the given periods as columns. Empty when Yahoo Finance reports none of these
+        statistics for the ticker.
     """
     if len(periods) == 0:
         return pd.DataFrame()
 
     statistics = {}
 
-    reported_currency = get_reported_currency(ticker)
+    information = get_company_information(ticker)
+    reported_currency = information["financialCurrency"]
 
     if reported_currency:
         statistics["financialCurrency"] = pd.Series(
@@ -201,44 +214,73 @@ def get_statistics_statement(
             .astype(object)
         )
 
+        if information["lastFiscalYearEnd"] and isinstance(periods, pd.PeriodIndex):
+            if periods.freqstr.startswith("Q"):
+                # Months after the fiscal year end month, counted as the labels count them (a period ending in the first five days of a month ends in the month before), so Home Depot's quarter ending 3 August 2025 (fiscal year ending 1 February) is Q2.  # noqa: E501
+                end_months = helpers.determine_period_end_months(
+                    pd.to_datetime(statistics[PERIOD_END_DATE_ITEM])
+                )
+                year_end_month = helpers.determine_period_end_months(
+                    pd.Series(pd.Timestamp(information["lastFiscalYearEnd"]))
+                )[0]
+                fiscal_quarters = [
+                    (
+                        None
+                        if pd.isna(end_month)
+                        else f"Q{(end_month.month - year_end_month.month - 1) % 12 // 3 + 1}"
+                    )
+                    for end_month in end_months
+                ]
+            else:
+                fiscal_quarters = ["FY"] * len(periods)
+
+            statistics[FISCAL_PERIOD_ITEM] = pd.Series(
+                fiscal_quarters, index=periods, dtype=object
+            )
+
     if not statistics:
         return pd.DataFrame()
 
     return pd.DataFrame(statistics).T.reindex(columns=periods)
 
 
-def get_reported_currency(ticker: str) -> str:
+def get_company_information(ticker: str) -> dict[str, str]:
     """
-    Retrieves the currency a company reports its financial statements in from Yahoo
-    Finance. This is not necessarily the currency the instrument trades in: Shell
-    reports in USD while its London listing trades in GBp, and comparing a statement to
-    a price without accounting for that compares two different currencies.
+    Retrieves the company information from Yahoo Finance that the statistics statement
+    needs, with one request to the quote summary:
 
-    The reporting currency only changes when a company changes its reporting currency,
-    so it is cached per ticker both in memory and in the incremental cache.
+        - ``financialCurrency``: the currency a company reports its financial statements
+          in. This is not necessarily the currency the instrument trades in: Shell reports
+          in USD while its London listing trades in GBp, and comparing a statement to a
+          price without accounting for that compares two different currencies.
+        - ``lastFiscalYearEnd``: the last day of the latest fiscal year (YYYY-MM-DD), which
+          says which quarter closes the fiscal year.
+
+    Both only change when the company changes its reporting currency or fiscal year, so
+    they are cached per ticker both in memory and in the incremental cache.
 
     Args:
-        ticker (str): the ticker to retrieve the reporting currency for.
+        ticker (str): the ticker to retrieve the information for.
 
     Returns:
-        str: The ISO currency code the statements are reported in, or an empty string
-        when Yahoo Finance does not report one.
+        dict[str, str]: The ISO currency code the statements are reported in and the last
+        fiscal year end, each an empty string when Yahoo Finance does not report it.
     """
-    if ticker in REPORTED_CURRENCY_CACHE:
-        return REPORTED_CURRENCY_CACHE[ticker]
+    if ticker in COMPANY_INFORMATION_CACHE:
+        return COMPANY_INFORMATION_CACHE[ticker]
 
     cache = get_active_cache()
 
     if cache is not None:
-        cached_currency = cache.get(
+        cached_information = cache.get(
             source=policy_model.YAHOO_FINANCE,
-            dataset="reported_currency",
+            dataset="company_information",
             entity=ticker,
         )
 
-        if cached_currency is not None:
-            REPORTED_CURRENCY_CACHE[ticker] = cached_currency
-            return cached_currency
+        if cached_information is not None:
+            COMPANY_INFORMATION_CACHE[ticker] = cached_information
+            return cached_information
 
     try:
         information = yf.Ticker(to_yahoo_finance_symbol(ticker)).get_info() or {}
@@ -252,24 +294,34 @@ def get_reported_currency(ticker: str) -> str:
         yf.exceptions.YFException,
     ):
         error_model.report_request_failure()
-        return ""
+        return {"financialCurrency": "", "lastFiscalYearEnd": ""}
 
-    # financialCurrency is the statement currency. currency is the trading currency and is only a fallback, since for most listings the two are in fact the same.  # noqa: E501
-    reported_currency = str(
-        information.get("financialCurrency") or information.get("currency") or ""
-    )
+    fiscal_year_end = information.get("lastFiscalYearEnd")
 
-    REPORTED_CURRENCY_CACHE[ticker] = reported_currency
+    company_information = {
+        # financialCurrency is the statement currency. currency is the trading currency and is only a fallback, since for most listings the two are in fact the same.  # noqa: E501
+        "financialCurrency": str(
+            information.get("financialCurrency") or information.get("currency") or ""
+        ),
+        # Reported as a Unix timestamp at midnight UTC of the fiscal year end.
+        "lastFiscalYearEnd": (
+            pd.Timestamp(fiscal_year_end, unit="s").strftime("%Y-%m-%d")
+            if isinstance(fiscal_year_end, int | float)
+            else ""
+        ),
+    }
 
-    if cache is not None and reported_currency:
+    COMPANY_INFORMATION_CACHE[ticker] = company_information
+
+    if cache is not None and any(company_information.values()):
         cache.set(
             source=policy_model.YAHOO_FINANCE,
-            dataset="reported_currency",
+            dataset="company_information",
             entity=ticker,
-            data=reported_currency,
+            data=company_information,
         )
 
-    return reported_currency
+    return company_information
 
 
 def get_historical_data(

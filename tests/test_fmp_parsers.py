@@ -154,3 +154,28 @@ def test_analyst_estimates_are_labelled_like_the_statements(monkeypatch):
 
     # A fiscal year ending in January is mostly the previous calendar year, as in the statements.
     assert list(estimates.columns) == [pd.Period("2026", freq="Y")]
+
+
+def test_statements_of_a_52_53_week_year_keep_every_quarter(monkeypatch):
+    # Home Depot's quarters end a few days into the month after the one they stand for.
+    dates = ["2020-11-01", "2020-08-02", "2020-05-03", "2020-02-02"]
+    _answer(
+        monkeypatch,
+        [
+            {"symbol": "HD", "date": date, "revenue": 1.0 + index}
+            for index, date in enumerate(dates)
+        ],
+    )
+
+    statement = fmp_model.get_financial_statement(
+        "HD", statement="income", api_key="KEY", quarter=True
+    )
+
+    assert [str(period) for period in statement.columns] == [
+        "2020Q3",
+        "2020Q2",
+        "2020Q1",
+        "2019Q4",
+    ]
+    # The Period End Date keeps the day the period actually ended.
+    assert statement.loc["periodEndDate"].tolist() == dates

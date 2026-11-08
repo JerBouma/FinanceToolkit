@@ -140,6 +140,34 @@ def run_in_parallel(
     return results
 
 
+# A 52/53-week fiscal period ends on a fixed weekday, at most five days past the month end it stands for (Home Depot's quarter ending 5 May 2019 is its February to April quarter), so a period ending in the first five days of a month belongs to the month before. Periods ending later in a month are left in it: Costco's 12-week quarter ending 7 May 2023 follows one ending 12 February 2023.  # noqa: E501
+MONTH_END_OVERRUN_DAYS = 5
+
+
+def determine_period_end_months(
+    period_end_dates: pd.DatetimeIndex | pd.Series,
+) -> pd.PeriodIndex:
+    """
+    Determines the month each fiscal period ends in. A period ending in the first five days
+    of a month counts as ending in the month before: a 52/53-week fiscal period ends on a fixed
+    weekday a few days past the month end it stands for (Home Depot's quarter ending 3
+    August 2025 is its May to July quarter), and Yahoo Finance reports such a period at the
+    end of that month (31 July 2025).
+
+    Args:
+        period_end_dates (pd.DatetimeIndex | pd.Series): the final day of each fiscal
+            reporting period, as reported by the data provider.
+
+    Returns:
+        pd.PeriodIndex: the month each period ends in, at monthly frequency.
+    """
+    end_dates = pd.DatetimeIndex(pd.to_datetime(pd.Series(period_end_dates).to_numpy()))
+
+    return end_dates.to_period("M") - (end_dates.day <= MONTH_END_OVERRUN_DAYS).astype(
+        int
+    )
+
+
 def convert_period_end_dates_to_calendar_periods(
     period_end_dates: pd.DatetimeIndex | pd.Series,
     quarter: bool,
@@ -170,6 +198,15 @@ def convert_period_end_dates_to_calendar_periods(
     quarterly outputs of the same company consistent with one another: NVIDIA's fiscal
     2024 is labelled 2023 and its four quarters are labelled 2023Q1 through 2023Q4.
 
+    A period ending in the first five days of a month is treated as ending in the month
+    before (see determine_period_end_months). Companies with a 52/53-week fiscal year end
+    their periods on a fixed weekday, up to a few days past a month end: Home Depot's
+    quarter ending 3 August 2025 covers May to July and Western Digital's fiscal year
+    ending 1 July 2022 covers July 2021 to June 2022. Yahoo Finance reports such periods at
+    the end of the month before (31 July 2025 and 30 June 2022), FinancialModelingPrep at
+    their actual last day, and both are labelled alike. Without this, two consecutive
+    quarters (ending 2 August and 1 November) would share one calendar quarter.
+
     Args:
         period_end_dates (pd.DatetimeIndex | pd.Series): the final day of each fiscal
             reporting period, as reported by the data provider.
@@ -184,18 +221,18 @@ def convert_period_end_dates_to_calendar_periods(
         pd.PeriodIndex: the calendar periods to label the reporting periods with, at
         yearly frequency when quarter is False and quarterly frequency when True.
     """
-    end_dates = pd.DatetimeIndex(pd.to_datetime(pd.Series(period_end_dates).to_numpy()))
+    end_months = determine_period_end_months(period_end_dates)
 
     if quarter:
-        fiscal_periods = end_dates.to_period("Q")
+        fiscal_periods = end_months.asfreq("Q")
         # The calendar quarter holding the middle month of the fiscal quarter.
-        calendar_periods = (end_dates.to_period("M") - 1).asfreq("Q")
+        calendar_periods = (end_months - 1).asfreq("Q")
     else:
-        fiscal_periods = end_dates.to_period("Y")
+        fiscal_periods = end_months.asfreq("Y")
         # A fiscal year ending before June is labelled with the previous calendar
         # year; shifting back five months lands January to May in that year and
         # leaves June to December where they are.
-        calendar_periods = (end_dates.to_period("M") - 5).asfreq("Y")
+        calendar_periods = (end_months - 5).asfreq("Y")
 
     shifted_mask = calendar_periods != fiscal_periods
 
@@ -244,10 +281,12 @@ def determine_period_end_dates(
     period apply from its end) and what currency translation needs (the closing rate on the
     period end and the average rate over the fiscal period, IAS 21.39-40).
 
-    The date is taken from the Period End Date statistic, which FinancialModelingPrep
-    statements carry. When it is not available (another source, an older cache or a dataset
-    supplied to the Toolkit), the latest date the period can end on given its label is used,
-    so that figures are never applied before the period ended:
+    The date is taken from the Period End Date statistic, which FinancialModelingPrep and
+    Yahoo Finance statements carry. When it is not available (an older cache or a dataset
+    supplied to the Toolkit), the end of the last month the period can end in given its label
+    is used, so that figures are not applied before the period ended (a 52/53-week period
+    ending in the first five days of the next month counts as ending in that month, see
+    convert_period_end_dates_to_calendar_periods):
 
         - A label that was not moved from its fiscal period ends at the end of the labelled
           period (31 December for a year, the last day of the quarter for a quarter).

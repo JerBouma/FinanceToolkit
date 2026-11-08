@@ -1678,7 +1678,7 @@ class Models:
         several years into one base cash flow, which logs a warning.
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
         and the valuation is not calculated. Within 2 percentage points of it the valuation is calculated
-        with a warning, as a tenth of a percentage point on either rate then moves it by 5% or more.
+        with a warning, as a tenth of a percentage point on either rate then moves it by about 5%.
         - The Total Debt, Cash and Cash Equivalents and Short Term Investments are those of the most
         recent period. Short Term Investments are added back with the cash, the same cash and marketable
         securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
@@ -2342,7 +2342,7 @@ class Models:
 
         The Rate of Return must exceed the growth rate; periods where it doesn't are left out with a
         warning. Within 2 percentage points of it the value is calculated with a warning, as a tenth of a
-        percentage point on either rate then moves it by 5% or more.
+        percentage point on either rate then moves it by about 5%.
 
         Also known as: Gordon Growth Model, DDM, dividend discount model, GGM.
 
@@ -2551,7 +2551,7 @@ class Models:
         - The Rate of Return must be greater than the Stable Growth Rate, otherwise the
         Terminal Value formula divides by a non-positive number. Within 2 percentage points of
         it the value is calculated with a warning, as a tenth of a percentage point on either
-        rate then moves it by 5% or more.
+        rate then moves it by about 5%.
         - The base dividend used for the projection is the annual Dividends Per Share of the last complete
         period for each ticker: the last complete year, or with quarterly data the sum of the last four
         complete quarters, since the rates are annual and each projection period is a year. The current,
@@ -2694,7 +2694,7 @@ class Models:
         - The results depend heavily on the inputs, in particular the high growth rate and
         how long it lasts. A rate of return within 2 percentage points of the stable growth
         rate is valued with a warning, as a tenth of a percentage point on either rate then
-        moves the value by 5% or more.
+        moves the value by about 5%.
         - The H-Model is close to the exact value of a linearly declining growth rate when
         the high-growth period is short or the gap between the growth rates is small, and
         overstates it as either grows.

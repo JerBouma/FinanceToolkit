@@ -4,6 +4,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import drop_non_finite
+
 
 def get_working_capital_to_total_assets_ratio(
     working_capital: float | pd.Series | pd.DataFrame,
@@ -30,7 +32,7 @@ def get_working_capital_to_total_assets_ratio(
     - A ratio of less than 1 indicates that a company may have difficulty meeting its short-term obligations.
     """
 
-    return working_capital / total_assets
+    return drop_non_finite(working_capital / total_assets)
 
 
 def get_ebit_to_total_assets_ratio(
@@ -56,7 +58,7 @@ def get_ebit_to_total_assets_ratio(
     - A high ratio indicates that a company is generating a high return on its assets.
     """
 
-    return ebit / total_assets
+    return drop_non_finite(ebit / total_assets)
 
 
 def get_return_on_assets_ratio(
@@ -86,7 +88,7 @@ def get_return_on_assets_ratio(
     elsewhere in this module.
     """
 
-    return net_income / total_assets
+    return drop_non_finite(net_income / total_assets)
 
 
 def get_grover_score(

@@ -10013,11 +10013,12 @@ class Economics:
         the listed contracts as columns, or, with generic, the positions on the curve of
         each day (see futures_model.get_generic_curve).
 
-        Yahoo Finance drops a contract once it expires and can miss one that still trades,
-        so every month of the commodity's listing cycle up to the last listed contract that
-        Yahoo Finance does not return is added as a contract without prices, with its last
-        trading day from the contract specification: the positions after it stay right and
-        its own is NaN.
+        Yahoo Finance drops a contract once it expires, so every expired month of the
+        commodity's listing cycle that it does not return is added as a contract without
+        prices, with its last trading day from the contract specification: the positions
+        after it stay right and its own is NaN. A month that has not expired and is not
+        returned is left out, as it is not listed yet (gold and silver list most months only
+        shortly before delivery).
 
         Returns:
             dict[str, tuple[pd.DataFrame, pd.DataFrame]]: Per commodity the prices and the
@@ -10069,10 +10070,14 @@ class Economics:
                     or str(month) in forward_curve.columns
                 }
             )
-            # Every month of the cycle without a column is kept, whether it expired since
-            # or still trades: skipping one would shift every later contract a position.
+            today = pd.Timestamp.today().normalize()
+            expired = [
+                label
+                for label, last_trading_day in last_trading_days.items()
+                if last_trading_day < today and label not in forward_curve.columns
+            ]
             forward_curve = forward_curve.reindex(
-                columns=sorted({*forward_curve.columns, *last_trading_days.index})
+                columns=sorted([*forward_curve.columns, *expired])
             )
             curves[name] = futures_model.get_generic_curve(
                 forward_curve, last_trading_days, contracts

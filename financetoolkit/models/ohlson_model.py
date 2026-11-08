@@ -5,6 +5,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import drop_non_finite
+
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
 
@@ -73,7 +75,7 @@ def get_total_liabilities_to_total_assets_ratio(
     Notes:
     - A higher TLTA indicates higher leverage and, all else equal, a higher probability of bankruptcy.
     """
-    return total_liabilities / total_assets
+    return drop_non_finite(total_liabilities / total_assets)
 
 
 def get_working_capital_to_total_assets_ratio(
@@ -100,7 +102,7 @@ def get_working_capital_to_total_assets_ratio(
     Notes:
     - A lower (or negative) WCTA indicates weaker short-term liquidity, which raises the O-Score.
     """
-    return working_capital / total_assets
+    return drop_non_finite(working_capital / total_assets)
 
 
 def get_current_liabilities_to_current_assets_ratio(
@@ -128,7 +130,7 @@ def get_current_liabilities_to_current_assets_ratio(
     Notes:
     - A higher CLCA indicates weaker short-term liquidity, which raises the O-Score.
     """
-    return current_liabilities / current_assets
+    return drop_non_finite(current_liabilities / current_assets)
 
 
 def get_negative_equity_indicator(
@@ -193,7 +195,7 @@ def get_net_income_to_total_assets_ratio(
       total assets — it uses the point-in-time Total Assets balance, matching Ohlson's (1980) original
       specification.
     """
-    return net_income / total_assets
+    return drop_non_finite(net_income / total_assets)
 
 
 def get_funds_from_operations_to_total_liabilities_ratio(
@@ -225,7 +227,7 @@ def get_funds_from_operations_to_total_liabilities_ratio(
       typically close to, but not identical to, the original FFO measure (it additionally reflects
       changes in working capital), so treat FUTL as an approximation rather than an exact reproduction.
     """
-    return funds_from_operations / total_liabilities
+    return drop_non_finite(funds_from_operations / total_liabilities)
 
 
 def get_negative_income_indicator(

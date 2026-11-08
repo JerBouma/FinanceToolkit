@@ -32,7 +32,7 @@ def get_retained_earnings_to_total_assets_ratio(
         float | pd.Series | pd.DataFrame: The Retained Earnings to Total Assets Ratio.
     """
 
-    return retained_earnings / total_assets
+    return drop_non_finite(retained_earnings / total_assets)
 
 
 def get_sales_to_total_assets_ratio(
@@ -56,7 +56,7 @@ def get_sales_to_total_assets_ratio(
         float | pd.Series | pd.DataFrame: The Sales to Total Assets Ratio.
     """
 
-    return sales / total_assets
+    return drop_non_finite(sales / total_assets)
 
 
 def get_ebt_to_equity_ratio(
@@ -79,7 +79,7 @@ def get_ebt_to_equity_ratio(
         float | pd.Series | pd.DataFrame: The EBT to Equity Ratio.
     """
 
-    return ebt / total_equity
+    return drop_non_finite(ebt / total_equity)
 
 
 def get_cash_flow_to_total_liabilities_ratio(
@@ -104,7 +104,7 @@ def get_cash_flow_to_total_liabilities_ratio(
         float | pd.Series | pd.DataFrame: The Cash Flow to Total Liabilities Ratio.
     """
 
-    return cash_flow / total_liabilities
+    return drop_non_finite(cash_flow / total_liabilities)
 
 
 def get_debt_to_total_assets_ratio(
@@ -132,7 +132,7 @@ def get_debt_to_total_assets_ratio(
     lowers the H-Score.
     """
 
-    return total_debt / total_assets
+    return drop_non_finite(total_debt / total_assets)
 
 
 def get_current_liabilities_to_total_assets_ratio(
@@ -156,7 +156,7 @@ def get_current_liabilities_to_total_assets_ratio(
         float | pd.Series | pd.DataFrame: The Current Liabilities to Total Assets Ratio.
     """
 
-    return current_liabilities / total_assets
+    return drop_non_finite(current_liabilities / total_assets)
 
 
 def get_tangible_total_assets(
@@ -246,7 +246,7 @@ def get_working_capital_to_total_liabilities_ratio(
         float | pd.Series | pd.DataFrame: The Working Capital to Total Liabilities Ratio.
     """
 
-    return working_capital / total_liabilities
+    return drop_non_finite(working_capital / total_liabilities)
 
 
 def get_log_of_ebit_to_interest_expense_ratio(

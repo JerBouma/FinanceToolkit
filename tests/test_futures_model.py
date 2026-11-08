@@ -300,9 +300,9 @@ def test_gold_in_contango_has_a_positive_slope():
     assert gold["Structure"] == "Contango"
 
 
-def test_a_live_contract_the_source_misses_keeps_the_later_positions(monkeypatch):
-    # Yahoo Finance returns no March 2027 contract although it still trades: it stays an
-    # empty position instead of the April contract moving up into it.
+def test_a_month_that_is_not_listed_yet_is_not_a_position(monkeypatch):
+    # A month that has not expired and is not returned is not listed yet (gold and silver
+    # list most months only shortly before delivery), so the next contract takes its place.
     clear_active_cache()
     monkeypatch.setattr(
         yfinance_model,
@@ -318,8 +318,7 @@ def test_a_live_contract_the_source_misses_keeps_the_later_positions(monkeypatch
     november = curve.loc[pd.Period("2026-11-06", freq="D")]
 
     assert november["+2"] == pytest.approx(88.0)
-    assert np.isnan(november["+3"])
-    assert november["+4"] == pytest.approx(84.73)
+    assert november["+3"] == pytest.approx(84.73)
 
 
 def test_a_curve_whose_front_and_far_contract_trade_at_one_price_is_flat():

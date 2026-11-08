@@ -13,7 +13,7 @@ logger = get_logger()
 
 # Below this spread between the discount rate and the growth rate kept forever, the terminal
 # value 1 / (r - g) is so sensitive that a change of either rate by a tenth of a percentage
-# point moves the value by 5% or more: (1 / (r - g - 0.001)) / (1 / (r - g)) - 1 >= 5% for
+# point moves the value by about 5%: (1 / (r - g - 0.001)) / (1 / (r - g)) - 1 >= 5% for
 # r - g <= 2%. Such values are kept but flagged.
 NARROW_SPREAD = 0.02
 
@@ -211,7 +211,7 @@ def exceeds_growth_per_period(
         logger.warning(
             "%s's %s lies less than %.0f percentage points above the growth rate it keeps "
             "forever in %d period(s) (%s), so its value is very sensitive to both rates: a "
-            "tenth of a percentage point moves it by 5%% or more.",
+            "tenth of a percentage point moves it by about 5%%.",
             ticker,
             rate_name,
             NARROW_SPREAD * 100,
@@ -278,7 +278,7 @@ def exceeds_growth(
             logger.warning(
                 "%s's %s (%.4f) lies less than %.0f percentage points above the growth rate "
                 "it keeps forever (%.4f), so its value is very sensitive to both rates: a "
-                "tenth of a percentage point moves it by 5%% or more.",
+                "tenth of a percentage point moves it by about 5%%.",
                 ticker,
                 rate_name,
                 rate,

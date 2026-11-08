@@ -3964,7 +3964,7 @@ def get_lo_sharpe_ratio(
     The sample autocorrelation is biased towards a negative value: for independent returns
     its expectation is −(n − k) / (n · (n − 1)) (Moran, 1948), since the deviations from the
     sample mean sum to zero. Weighted by (q − k) these small biases add up and would raise
-    η(q) above SQRT(q) on short samples (by about 10% for a month of daily returns), so each
+    η(q) above SQRT(q) on short samples (by about 7% for a quarter of daily returns), so each
     ρ_k is bias corrected with ρ_k + (n − k) / (n · (n − 1)) first. Below 30 observations the
     standard error of each ρ_k (about 1 / SQRT(n)) is too large for a meaningful η(q), since
     the (q − k) weights magnify it, and NaN is returned.

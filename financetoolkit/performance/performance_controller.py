@@ -2440,8 +2440,9 @@ class Performance:
         to the sample size rest on a handful of pairs, so the sum runs over `lags` lags and takes
         the autocorrelations beyond them as 0. Each ρ_k is corrected for its small-sample bias
         −(n − k) / (n · (n − 1)) (Moran, 1948), which the (q − k) weights would otherwise turn
-        into an overstated ratio on short samples, and fewer than 30 observations (e.g. a
-        rolling window below 30) give NaN. The result is always annualized.
+        into an overstated ratio on short samples, and fewer than 30 observations give NaN: a
+        week or a month of daily returns, or a rolling window below 30, so use quarterly or
+        yearly periods or a longer window. The result is always annualized.
 
         - `"adjusted"` — the Adjusted Sharpe Ratio (ASR, Pezier & White, 2006) penalizes (or
         rewards) the Sharpe ratio for negative skewness and excess kurtosis using a

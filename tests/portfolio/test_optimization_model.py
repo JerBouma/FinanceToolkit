@@ -662,3 +662,313 @@ def test_fractional_kelly_scales_the_weights():
         optimization_model.get_growth_optimal_weights(
             returns, returns.mean(), returns.cov(), fraction=0
         )
+
+
+SECTORS = pd.DataFrame(
+    {"Sector": {"A": "Tech", "B": "Tech", "C": "Energy", "D": "Health", "E": "Health"}}
+)
+
+
+def _long_short_returns() -> pd.DataFrame:
+    """
+    The reference returns with a sixth asset F, a noisy 1.5 times A, which the minimum
+    variance and minimum CVaR portfolios short heavily (to -0.62 and -0.60) to hedge A
+    when nothing limits the gross exposure.
+    """
+    returns, _ = _reference_returns()
+    returns["F"] = 1.5 * returns["A"] + np.random.default_rng(7).normal(0, 0.004, 500)
+    return returns
+
+
+def test_per_asset_and_sector_bounds_match_pyportfolioopt_and_skfolio():
+    returns, _ = _reference_returns()
+    annual_returns, annual_covariance = returns.mean() * 252, returns.cov() * 252
+
+    minimum_variance = optimization_model.get_minimum_variance_weights(
+        returns.cov(),
+        minimum_weight={"E": 0.25},
+        maximum_weight={"A": 0.1},
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.25), "Health": (0.3, 0.5)}},
+    )
+    maximum_sharpe = optimization_model.get_maximum_sharpe_weights(
+        annual_returns,
+        annual_covariance,
+        maximum_weight=0.35,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.3)}},
+    )
+    target = optimization_model.get_mean_variance_weights(
+        annual_returns,
+        annual_covariance,
+        target_return=0.13,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Energy": (0, 0.2)}},
+    )
+
+    # PyPortfolioOpt 1.6.0: EfficientFrontier(weight_bounds=...) with
+    # add_sector_constraints and min_volatility / max_sharpe / efficient_return(0.13);
+    # skfolio 1.12.7's MeanRisk with groups and linear constraints agrees to 1e-5.
+    np.testing.assert_allclose(
+        minimum_variance,
+        [0.1, 0.15, 0.25, 0.0448636906, 0.4551363094],
+        atol=1e-8,
+    )
+    np.testing.assert_allclose(
+        maximum_sharpe,
+        [0.1674405078, 0.1325594922, 0.2564393052, 0.0935606948, 0.35],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        target, [0.0076735036, 0.1560877896, 0.2, 0.0104458498, 0.625792857], atol=1e-6
+    )
+
+
+def test_sector_bounds_match_skfolio_for_diversification_cvar_and_tracking_error():
+    returns, benchmark = _reference_returns()
+    with_benchmark = returns.assign(BM=benchmark)
+
+    diversification = optimization_model.get_maximum_diversification_weights(
+        returns.cov(),
+        maximum_weight=0.3,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.3)}},
+    )
+    cvar = optimization_model.get_minimum_cvar_weights(
+        returns,
+        minimum_weight=-0.2,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.5)}},
+        gross_exposure=1.4,
+    )
+    tracking = optimization_model.get_minimum_tracking_error_weights(
+        with_benchmark.mean() * 252,
+        with_benchmark.cov() * 252,
+        "BM",
+        minimum_weight={"E": 0.25},
+        maximum_weight=0.3,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.3)}},
+    )
+
+    # skfolio 1.12.7's MaximumDiversification and MeanRisk(risk_measure=CVAR) with
+    # groups and linear constraints; its interior point solver stops a little earlier for
+    # the diversification ratio (1.4914861269 against 1.4914861812 here). The tracking
+    # error is the same problem solved with cvxpy.
+    np.testing.assert_allclose(
+        diversification,
+        [0.1749702229, 0.1250296936, 0.2048636223, 0.1951365259, 0.3],
+        atol=1e-4,
+    )
+    assert optimization_model.get_diversification_ratio(
+        diversification, returns.cov()
+    ) == pytest.approx(1.4914861812, abs=1e-9)
+    np.testing.assert_allclose(
+        cvar,
+        [0.1827515508, 0.1679373687, 0.1443273254, 0.0412642027, 0.4637195524],
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        tracking,
+        [0.1497636622, 0.1502363378, 0.2233589641, 0.2266410359, 0.25],
+        atol=1e-7,
+    )
+
+
+def test_gross_exposure_limits_long_short_portfolios_as_skfolio_and_cvxpy_do():
+    returns = _long_short_returns()
+    annual_returns, annual_covariance = returns.mean() * 252, returns.cov() * 252
+
+    unlimited = optimization_model.get_minimum_variance_weights(
+        annual_covariance, minimum_weight=-1
+    )
+    minimum_variance = optimization_model.get_minimum_variance_weights(
+        annual_covariance, minimum_weight=-1, gross_exposure=1.3
+    )
+    cvar = optimization_model.get_minimum_cvar_weights(
+        returns, minimum_weight=-1, gross_exposure=1.3
+    )
+    sharpe = optimization_model.get_maximum_sharpe_weights(
+        annual_returns, annual_covariance, minimum_weight=-0.5, gross_exposure=1.3
+    )
+    neutral = optimization_model.get_mean_variance_weights(
+        annual_returns,
+        annual_covariance,
+        minimum_weight=-1,
+        net_exposure=0,
+        gross_exposure=1,
+    )
+
+    # skfolio 1.12.7's MeanRisk with max_short=0.15 (a gross exposure of 1.3 at a net
+    # exposure of 1) for the variance and CVaR; cvxpy with norm1(w) <= 1.3 (and the
+    # Charnes-Cooper form of the Sharpe ratio) for the others.
+    assert unlimited.abs().sum() == pytest.approx(2.2343162, abs=1e-6)
+    np.testing.assert_allclose(
+        minimum_variance,
+        [0.439570321, 0.1226283763, 0.0838146256, 0.078221562, 0.4257651151, -0.15],
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        cvar,
+        [0.3975681407, 0.1223904634, 0.1081521135, 0.0645047478, 0.4573845342, -0.15],
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        sharpe,
+        [0.3619640418, 0.118044775, 0.1571807769, 0.0410120287, 0.4717983776, -0.15],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        neutral, [0.411418575, 0, 0.088581425, 0, 0, -0.5], atol=1e-7
+    )
+    for weights, net in ((minimum_variance, 1), (cvar, 1), (sharpe, 1), (neutral, 0)):
+        assert weights.sum() == pytest.approx(net, abs=1e-8)
+        assert weights.abs().sum() <= (1 if net == 0 else 1.3) + 1e-8
+
+
+def test_the_efficient_frontier_keeps_the_constraints_at_every_point():
+    returns = _long_short_returns()
+    frontier = optimization_model.get_efficient_frontier(
+        returns.mean() * 252,
+        returns.cov() * 252,
+        points=5,
+        minimum_weight=-0.3,
+        gross_exposure=1.4,
+    )
+    sectors = optimization_model.get_efficient_frontier(
+        returns.mean() * 252,
+        returns.cov() * 252,
+        points=5,
+        maximum_weight=0.4,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Health": (0.3, 0.5)}},
+    )
+    weights = frontier[list("ABCDEF")]
+
+    assert np.allclose(weights.sum(axis=1), 1)
+    assert (weights.abs().sum(axis=1) <= 1.4 + 1e-8).all()
+    assert weights.abs().sum(axis=1).iloc[-1] == pytest.approx(1.4)
+    assert frontier["Expected Return"].is_monotonic_increasing
+    health = sectors[["D", "E"]].sum(axis=1)
+    assert health.between(0.3 - 1e-8, 0.5 + 1e-8).all()
+
+
+def test_risk_parity_bounds_match_skfolio_risk_budgeting():
+    returns, _ = _reference_returns()
+    covariance = returns.cov()
+    capped = optimization_model.get_risk_parity_weights(
+        covariance,
+        maximum_weight=0.22,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Health": (0, 0.4)}},
+    )
+    floored = optimization_model.get_risk_parity_weights(
+        covariance, minimum_weight={"D": 0.25}
+    )
+    loose = optimization_model.get_risk_parity_weights(covariance, maximum_weight=0.9)
+
+    # skfolio 1.12.7's RiskBudgeting(risk_measure=VARIANCE) with the same bounds and
+    # groups. Its interior point solver stops earlier: with the floor on D, its weights
+    # give -b'ln(w) + ln(w'Σw) / 2, the objective at the optimal scale, of -2.9605365172
+    # against -2.9605365614 here.
+    np.testing.assert_allclose(
+        capped,
+        [0.2199997309, 0.1964004269, 0.1836015084, 0.179998356, 0.2199999778],
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        floored,
+        [0.1862257787, 0.1622669699, 0.1517504428, 0.2500000607, 0.2497567478],
+        atol=5e-5,
+    )
+    objective = -0.2 * np.log(floored).sum() + 0.5 * np.log(
+        floored @ covariance @ floored
+    )
+    assert objective == pytest.approx(-2.9605365614, abs=1e-9)
+    # Bounds that don't bind leave the equal risk contributions.
+    np.testing.assert_allclose(
+        loose, optimization_model.get_risk_parity_weights(covariance), atol=1e-6
+    )
+    with pytest.raises(ValueError, match="long positions only"):
+        optimization_model.get_risk_parity_weights(covariance, minimum_weight=-0.1)
+
+
+def test_hierarchical_risk_parity_bounds_move_the_splits_as_skfolio_does():
+    returns, _ = _reference_returns()
+    covariance = returns.cov()
+    bounded = optimization_model.get_hierarchical_risk_parity_weights(
+        covariance, minimum_weight=0.15, maximum_weight=0.3
+    )
+    unbounded = optimization_model.get_hierarchical_risk_parity_weights(covariance)
+    capped = optimization_model.get_hierarchical_risk_parity_weights(
+        covariance, maximum_weight={"E": 0.2}
+    )
+
+    # skfolio 1.12.7's HierarchicalRiskParity(min_weights=0.15, max_weights=0.3) with
+    # single linkage. It clusters on the correlation distance itself, which orders B, C
+    # and D differently, so with E capped only A (which takes E's excess in both) and E
+    # are compared.
+    np.testing.assert_allclose(bounded, [0.25, 0.15, 0.15, 0.15, 0.3], atol=1e-10)
+    assert capped["E"] == pytest.approx(0.2)
+    assert capped["A"] == pytest.approx(0.4207855551, abs=1e-9)
+    np.testing.assert_allclose(capped[["B", "C", "D"]], unbounded[["B", "C", "D"]])
+    with pytest.raises(ValueError, match="long positions only"):
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, minimum_weight=-0.1
+        )
+
+
+@pytest.mark.parametrize(
+    ("constraints", "message"),
+    [
+        ({"minimum_weight": 0.3}, "cannot sum to one"),
+        (
+            {"minimum_weight": {"A": 0.5}, "maximum_weight": {"A": 0.4}},
+            "above the maximum",
+        ),
+        ({"minimum_weight": {"Z": 0.1}}, "not in the portfolio: Z"),
+        (
+            {
+                "maximum_weight": 0.3,
+                "groups": SECTORS,
+                "group_bounds": {"Sector": {"Tech": (0.7, 1)}},
+            },
+            "No weights meet all the constraints together",
+        ),
+        (
+            {"groups": SECTORS, "group_bounds": {"Sector": {"Retail": (0, 1)}}},
+            "No asset has the Sector 'Retail'; the assets have Energy, Health, Tech",
+        ),
+        (
+            {"groups": SECTORS, "group_bounds": {"Country": {"US": (0, 1)}}},
+            "no Country",
+        ),
+        (
+            {"groups": SECTORS, "group_bounds": {"Sector": {"Tech": (0.5, 0.4)}}},
+            "above its maximum",
+        ),
+        (
+            {"groups": SECTORS, "group_bounds": {"Sector": {"Tech": 0.4}}},
+            "pair",
+        ),
+        ({"minimum_weight": -1, "gross_exposure": 0.5}, "cannot hold a net exposure"),
+    ],
+)
+def test_constraints_no_portfolio_can_meet_are_refused_clearly(constraints, message):
+    returns, _ = _reference_returns()
+    with pytest.raises(ValueError, match=message):
+        optimization_model.get_minimum_variance_weights(returns.cov(), **constraints)
+
+
+def test_a_gross_exposure_adds_absolute_weights_only_with_short_positions():
+    assets = pd.Index(list("ABC"))
+    long_only = optimization_model.get_weight_constraints(assets, gross_exposure=1.5)
+    long_short = optimization_model.get_weight_constraints(
+        assets, minimum_weight=-0.5, gross_exposure=1.5
+    )
+
+    assert len(long_only.bounds) == 3  # noqa: PLR2004
+    assert len(long_short.bounds) == 6  # noqa: PLR2004
+    # t_i >= |w_i| for each asset and their sum at most the gross exposure.
+    assert long_short.inequality.shape == (7, 6)
+    assert long_short.upper[-1] == 1.5  # noqa: PLR2004

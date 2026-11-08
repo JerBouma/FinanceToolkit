@@ -787,6 +787,8 @@ class Toolkit:
                 enforce_source=self._enforce_source,
                 benchmark_ticker=None,
                 progress_bar=False,
+                # Unrounded, as the comparison is calculated (and rounded) here.
+                rounding=None,
             )
             ratios = others.ratios
             income = others.get_income_statement(growth=True)
@@ -1223,7 +1225,8 @@ class Toolkit:
     def _other_toolkit(self, tickers: list[str], start: str, end: str) -> "Toolkit":
         """
         A Toolkit of other tickers (sector funds, a fund's holdings, earlier crises) that
-        shares this one's key, cache and source.
+        shares this one's key, cache and source. It is unrounded, as its results are used in
+        calculations that are rounded once at the end.
         """
         return Toolkit(
             tickers=tickers,
@@ -1234,6 +1237,7 @@ class Toolkit:
             enforce_source=self._enforce_source,
             benchmark_ticker=None,
             progress_bar=False,
+            rounding=None,
         )
 
     def _other_returns(self, tickers: list[str], period: str) -> pd.DataFrame:
@@ -2125,7 +2129,8 @@ class Toolkit:
             ),
         )
 
-        historical_data = self.get_historical_data()
+        # The unrounded prices, with a column per ticker even for a single one.
+        historical_data = self._get_module_historical_data("daily")
 
         if earnings.empty or historical_data.empty:
             return pd.DataFrame()
@@ -2646,13 +2651,15 @@ class Toolkit:
         resolved_enforce_source = (
             enforce_source if enforce_source is not None else self._enforce_source
         )
+        # The data is kept unrounded, so every calculation on it is exact; only the returned
+        # frame is rounded. Rounded returns would move results: a downside beta selects the
+        # periods the benchmark fell, and a return rounded to 0 drops out of that selection.
         resolved_rounding = rounding if rounding is not None else self._rounding
         daily_historical_params = (
             resolved_enforce_source,
             return_column,
             include_dividends,
             fill_nan,
-            resolved_rounding,
         )
         # Auto-invalidate only data we fetched ourselves before, on a param change; never touches pre-supplied `historical`.
         params_changed = (
@@ -2675,7 +2682,7 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=include_dividends,
                 fill_nan=fill_nan,
-                rounding=resolved_rounding,
+                rounding=None,
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=show_ticker_seperation,
                 show_errors=True,
@@ -2725,7 +2732,6 @@ class Toolkit:
             settings = (
                 self._start_date,
                 self._end_date,
-                rounding if rounding is not None else self._rounding,
                 return_column,
             )
             converted_from = self._period_historical_data_sources.get(period)
@@ -2745,7 +2751,7 @@ class Toolkit:
                         daily_historical_data=self._daily_historical_data,
                         start=self._start_date,
                         end=self._end_date,
-                        rounding=settings[2],
+                        rounding=None,
                         return_column=return_column,
                     ),
                 )
@@ -2763,6 +2769,8 @@ class Toolkit:
             raise ValueError(
                 "Please choose from daily, weekly, monthly, quarterly or yearly as period."
             )
+
+        historical_data = apply_rounding(historical_data, resolved_rounding)
 
         requested: list[str] = []
 
@@ -5072,14 +5080,18 @@ class Toolkit:
         risk_free_rate_tickers = list(treasury_names)
         risk_free_rate = risk_free_names[self._risk_free_rate]
 
+        # Kept unrounded, as the risk free rate of every module is taken from it; only the
+        # returned frame is rounded.
         def select(treasury_data: pd.DataFrame) -> pd.DataFrame:
             treasury_data = treasury_data.loc[self._start_date : self._end_date, :]
-            if requested_maturity is None:
-                return treasury_data
-            return treasury_data.loc[
-                :,
-                treasury_data.columns.get_level_values(1) == requested_maturity,
-            ]
+            if requested_maturity is not None:
+                treasury_data = treasury_data.loc[
+                    :,
+                    treasury_data.columns.get_level_values(1) == requested_maturity,
+                ]
+            return apply_rounding(
+                treasury_data, rounding if rounding is not None else self._rounding
+            )
 
         specific_rates = (
             [
@@ -5115,7 +5127,7 @@ class Toolkit:
                 start=self._start_date,
                 end=self._end_date,
                 divide_ohlc_by=divide_ohlc_by,
-                rounding=rounding if rounding is not None else self._rounding,
+                rounding=None,
                 show_errors=show_errors,
                 fill_nan=fill_nan,
                 sleep_timer=self._sleep_timer,
@@ -5146,74 +5158,26 @@ class Toolkit:
 
         if period == "daily":
             return select(self._daily_treasury_data)
-        if period == "weekly":
-            self._weekly_treasury_data = _convert_daily_to_other_period(
+        if period in ("weekly", "monthly", "quarterly", "yearly"):
+            treasury_data = _convert_daily_to_other_period(
                 period=period,
                 daily_historical_data=self._daily_treasury_data,
                 start=self._start_date,
                 end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
+                rounding=None,
+            )
+            setattr(self, f"_{period}_treasury_data", treasury_data)
+            setattr(
+                self,
+                f"_{period}_risk_free_rate",
+                self._average_risk_free_rate(
+                    period=period,
+                    treasury_data=treasury_data,
+                    risk_free_rate=risk_free_rate,
+                ),
             )
 
-            self._weekly_risk_free_rate = self._average_risk_free_rate(
-                period=period,
-                treasury_data=self._weekly_treasury_data,
-                risk_free_rate=risk_free_rate,
-                rounding=rounding,
-            )
-
-            return select(self._weekly_treasury_data)
-        if period == "monthly":
-            self._monthly_treasury_data = _convert_daily_to_other_period(
-                period=period,
-                daily_historical_data=self._daily_treasury_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-            )
-
-            self._monthly_risk_free_rate = self._average_risk_free_rate(
-                period=period,
-                treasury_data=self._monthly_treasury_data,
-                risk_free_rate=risk_free_rate,
-                rounding=rounding,
-            )
-
-            return select(self._monthly_treasury_data)
-        if period == "quarterly":
-            self._quarterly_treasury_data = _convert_daily_to_other_period(
-                period=period,
-                daily_historical_data=self._daily_treasury_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-            )
-
-            self._quarterly_risk_free_rate = self._average_risk_free_rate(
-                period=period,
-                treasury_data=self._quarterly_treasury_data,
-                risk_free_rate=risk_free_rate,
-                rounding=rounding,
-            )
-
-            return select(self._quarterly_treasury_data)
-        if period == "yearly":
-            self._yearly_treasury_data = _convert_daily_to_other_period(
-                period=period,
-                daily_historical_data=self._daily_treasury_data,
-                start=self._start_date,
-                end=self._end_date,
-                rounding=rounding if rounding is not None else self._rounding,
-            )
-
-            self._yearly_risk_free_rate = self._average_risk_free_rate(
-                period=period,
-                treasury_data=self._yearly_treasury_data,
-                risk_free_rate=risk_free_rate,
-                rounding=rounding,
-            )
-
-            return select(self._yearly_treasury_data)
+            return select(treasury_data)
 
         raise ValueError(
             "Please choose from daily, weekly, monthly, quarterly or yearly as period."
@@ -6471,7 +6435,7 @@ class Toolkit:
         if daily_historical_data.empty or settings is None:
             return daily_historical_data
 
-        enforce_source, return_column, include_dividends, fill_nan, rounding = settings
+        enforce_source, return_column, include_dividends, fill_nan = settings
         params = (settings, self._start_date, self._end_date)
 
         if self._lookback_historical_data_params != params:
@@ -6495,7 +6459,7 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=include_dividends,
                 fill_nan=fill_nan,
-                rounding=rounding,
+                rounding=None,
                 sleep_timer=self._sleep_timer,
                 show_ticker_seperation=True,
                 show_errors=False,
@@ -6522,7 +6486,7 @@ class Toolkit:
                 period=period,
                 daily_historical_data=self._lookback_historical_data["daily"],
                 end=self._end_date,
-                rounding=rounding,
+                rounding=None,
                 return_column=return_column,
             )
 
@@ -6714,7 +6678,6 @@ class Toolkit:
         period: str,
         treasury_data: pd.DataFrame,
         risk_free_rate: str,
-        rounding: int | None = None,
     ) -> pd.DataFrame:
         """
         Builds the risk free rate of each week, month, quarter or year from the average of
@@ -6733,11 +6696,10 @@ class Toolkit:
             treasury_data (pd.DataFrame): The treasury data converted to the period, with the
                 metric as the first column level and the maturity as the second.
             risk_free_rate (str): The maturity used as the risk free rate, e.g. "10 Year".
-            rounding (int | None, optional): The number of decimals to round to, or None to
-                use the Toolkit's rounding. Defaults to None.
 
         Returns:
-            pd.DataFrame: The risk free rate per period, with the metric as the columns.
+            pd.DataFrame: The risk free rate per period, with the metric as the columns,
+            unrounded.
         """
         period_rate = treasury_data.xs(risk_free_rate, level=1, axis=1).copy()
         yield_columns = [
@@ -6750,7 +6712,6 @@ class Toolkit:
             period=period,
             daily_data=self._daily_treasury_data.xs(risk_free_rate, level=1, axis=1),
             columns=yield_columns,
-            rounding=rounding if rounding is not None else self._rounding,
         )
 
         period_rate[yield_columns] = average_yield.reindex(period_rate.index)[

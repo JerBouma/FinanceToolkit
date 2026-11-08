@@ -381,3 +381,95 @@ def test_a_covariance_estimator_changes_the_weights_and_their_risk(portfolio_mod
         exponential.loc["Portfolio", "Volatility"],
     )
     assert contributions.loc["Total", "Percentage Contribution"] == pytest.approx(1)
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_minimum_variance_weights",
+        "get_maximum_sharpe_weights",
+        "get_mean_variance_weights",
+        "get_minimum_cvar_weights",
+        "get_maximum_diversification_weights",
+        "get_growth_optimal_weights",
+        "get_risk_parity_weights",
+    ],
+)
+def test_sector_and_country_bounds_come_from_the_profiles(test_toolkit, method):
+    construction = _offline_construction(test_toolkit)
+    by_sector = getattr(construction, method)(
+        include_benchmark=True, sector_bounds={"Technology": (0, 0.6)}, rounding=10
+    )
+    # The country is named by its code in the profile; both the code and the name work.
+    by_country = getattr(construction, method)(
+        include_benchmark=True, country_bounds={"US": [0.2, 0.5]}, rounding=10
+    )
+    by_name = getattr(construction, method)(
+        include_benchmark=True,
+        country_bounds={"United States": [0.2, 0.5]},
+        rounding=10,
+    )
+
+    assert by_sector.loc[["AAPL", "MSFT"], "Weight"].sum() <= 0.6 + 1e-8
+    assert 0.2 - 1e-8 <= by_country.loc[["AAPL", "MSFT"], "Weight"].sum() <= 0.5 + 1e-8
+    pd.testing.assert_frame_equal(by_country, by_name)
+    assert by_sector.loc["Portfolio", "Weight"] == pytest.approx(1)
+
+
+def test_per_asset_bounds_and_long_short_exposures(test_toolkit):
+    construction = _offline_construction(test_toolkit)
+    capped = construction.get_maximum_sharpe_weights(
+        include_benchmark=True, maximum_weight={"AAPL": 0.2}, rounding=10
+    )
+    long_short = construction.get_minimum_variance_weights(
+        include_benchmark=True, minimum_weight=-0.5, gross_exposure=1.2, rounding=10
+    )
+    frontier = construction.get_efficient_frontier(
+        points=3,
+        include_benchmark=True,
+        minimum_weight=-0.5,
+        net_exposure=0.5,
+        gross_exposure=1.5,
+        rounding=10,
+    )
+    hierarchical = construction.get_hierarchical_risk_parity_weights(
+        include_benchmark=True, maximum_weight={"AAPL": 0.2}, rounding=10
+    )
+
+    assert capped.loc["AAPL", "Weight"] == pytest.approx(0.2)
+    weights = long_short["Weight"].drop("Portfolio")
+    assert weights.sum() == pytest.approx(1)
+    assert weights.abs().sum() <= 1.2 + 1e-8
+    assets = frontier[["AAPL", "MSFT", "Benchmark"]]
+    assert np.allclose(assets.sum(axis=1), 0.5)
+    assert (assets.abs().sum(axis=1) <= 1.5 + 1e-8).all()
+    assert hierarchical.loc["AAPL", "Weight"] <= 0.2 + 1e-10
+
+
+def test_unsupported_or_impossible_constraints_are_refused(test_toolkit):
+    construction = _offline_construction(test_toolkit)
+
+    # handle_errors turns the ValueError into an empty result and logs the reason.
+    assert construction.get_minimum_variance_weights(
+        sector_bounds={"Energy": (0, 0.5)}
+    ).empty
+    assert construction.get_minimum_variance_weights(
+        maximum_weight={"AAPL": 0.3, "MSFT": 0.3}
+    ).empty
+    assert construction.get_risk_parity_weights(minimum_weight=-0.1).empty
+    with pytest.raises(TypeError, match="gross_exposure"):
+        construction.get_hierarchical_risk_parity_weights(gross_exposure=1.5)
+    with pytest.raises(TypeError, match="sector_bounds"):
+        construction.get_hierarchical_risk_parity_weights(
+            sector_bounds={"Technology": (0, 0.5)}
+        )
+
+
+def test_fractional_kelly_with_a_net_exposure_holds_the_rest_in_cash(test_toolkit):
+    construction = _offline_construction(test_toolkit)
+    table = construction.get_growth_optimal_weights(
+        fraction=0.5, net_exposure=0.8, rounding=10
+    )
+
+    assert table.loc[["AAPL", "MSFT"], "Weight"].sum() == pytest.approx(0.4)
+    assert table.loc["Cash", "Weight"] == pytest.approx(0.6)

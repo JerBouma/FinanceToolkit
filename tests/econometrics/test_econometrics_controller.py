@@ -560,7 +560,11 @@ def test_get_synthetic_control_too_few_donors(econometrics_module):
 
 
 def test_get_arima_forecast(recorder, econometrics_module):
-    recorder.capture(econometrics_module.get_arima_forecast(period="quarterly"))
+    # A fit on a dozen quarters lands slightly differently per platform's libraries (in the
+    # fourth digit), so the price forecast is compared in whole units.
+    recorder.capture(
+        econometrics_module.get_arima_forecast(period="quarterly").round(0)
+    )
 
 
 def test_get_arima_forecast_no_constant(recorder, econometrics_module):

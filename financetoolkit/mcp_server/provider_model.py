@@ -241,6 +241,7 @@ class ToolkitProvider:
         end_date: str = "",
         quarterly: bool = False,
         benchmark_ticker: str = "SPY",
+        toolkit_risk_free_rate: str = "10y",
         portfolio: dict[str, Any] | None = None,
         **method_kwargs: Any,
     ) -> Any:
@@ -270,6 +271,8 @@ class ToolkitProvider:
                 to ``False`` (annual).
             benchmark_ticker (str): Benchmark symbol used by ticker-category
                 modules. Defaults to ``"SPY"``.
+            toolkit_risk_free_rate (str): The Treasury yield the Toolkit uses as the risk-free
+                rate ("13w", "5y", "10y" or "30y"). Defaults to ``"10y"``.
             portfolio (dict[str, Any] | None): The portfolio of a ``"portfolio"`` category
                 call: transactions, holdings, weights or a preset, with optional
                 start_date, initial_value, rebalancing and currency (see
@@ -309,6 +312,7 @@ class ToolkitProvider:
             "end": end_date,
             "quarterly": quarterly,
             "benchmark_ticker": benchmark_ticker,
+            "risk_free_rate": toolkit_risk_free_rate,
             "portfolio": portfolio or {},
             # Every keyword argument, whatever its type: filtering to scalars here dropped list-valued arguments from the key entirely, so `lag=[1, 4]` and `lag=[5, 10]` hashed the same and the second call was answered with the first one's frame. The key derivation canonicalises nested structures itself, so nothing has to be excluded to keep it stable.  # noqa: E501
             **method_kwargs,
@@ -376,6 +380,7 @@ class ToolkitProvider:
                 end_date=end_date,
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
+                toolkit_risk_free_rate=toolkit_risk_free_rate,
                 api_key=effective_key,
                 fred_api_key=effective_fred_key,
                 **method_kwargs,
@@ -394,6 +399,7 @@ class ToolkitProvider:
                 end_date=end_date,
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
+                toolkit_risk_free_rate=toolkit_risk_free_rate,
                 api_key=effective_key,
                 fred_api_key=effective_fred_key,
                 **method_kwargs,
@@ -508,6 +514,7 @@ class ToolkitProvider:
         benchmark_ticker: str,
         api_key: str = "",
         fred_api_key: str = "",
+        toolkit_risk_free_rate: str = "10y",
     ) -> list[str]:
         """Return human-readable notes describing data transformations applied to
         the most recent result for the given Toolkit instance (benchmark handling,
@@ -535,6 +542,7 @@ class ToolkitProvider:
                 end_date=end_date,
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
+                toolkit_risk_free_rate=toolkit_risk_free_rate,
                 api_key=effective_key,
                 fred_api_key=effective_fred_key,
             )
@@ -627,6 +635,7 @@ class ToolkitProvider:
         benchmark_ticker: str | None,
         api_key: str = "",
         fred_api_key: str = "",
+        toolkit_risk_free_rate: str = "10y",
     ) -> Toolkit:
         """
         Return a (potentially cached) Toolkit instance for the requested tickers and date range.
@@ -650,6 +659,8 @@ class ToolkitProvider:
             api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
             fred_api_key (str, optional): FRED API key, used by the Toolkit's
                 `.economics`/`.fixedincome` properties. Optional. Defaults to "".
+            toolkit_risk_free_rate (str, optional): The Treasury yield used as the risk-free rate
+                ("13w", "5y", "10y" or "30y"). Defaults to "10y".
 
         Returns:
             Toolkit: A Toolkit instance configured for the requested tickers and parameters.
@@ -672,7 +683,7 @@ class ToolkitProvider:
         cache_key = (
             f"{','.join(sorted(upper_tickers))}"
             f"|{start_date}|{end_date}|{quarterly}"
-            f"|{benchmark_ticker or 'none'}|{key_hash}"
+            f"|{benchmark_ticker or 'none'}|{toolkit_risk_free_rate}|{key_hash}"
         )
 
         # Locked across check-create-store to stop two threads building duplicates.
@@ -692,6 +703,7 @@ class ToolkitProvider:
                 end_date=end_date,
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
+                risk_free_rate=toolkit_risk_free_rate,
                 # The same database the provider opened, or False when running uncached.
                 use_cached_data=self._use_cached_data,
                 # Unrounded, as the answer is rounded to significant digits when formatted,
@@ -715,6 +727,7 @@ class ToolkitProvider:
         benchmark_ticker: str,
         api_key: str = "",
         fred_api_key: str = "",
+        toolkit_risk_free_rate: str = "10y",
         **kwargs: Any,
     ) -> pd.DataFrame | pd.Series | dict | float | int | str:
         """
@@ -733,6 +746,8 @@ class ToolkitProvider:
             api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
             fred_api_key (str, optional): FRED API key, used by the Toolkit's
                 `.economics`/`.fixedincome` sub-modules. Optional. Defaults to "".
+            toolkit_risk_free_rate (str, optional): The Treasury yield used as the risk-free rate
+                ("13w", "5y", "10y" or "30y"). Defaults to "10y".
             **kwargs: Arbitrary keyword arguments forwarded to the resolved sub-module method.
 
         Returns:
@@ -747,6 +762,7 @@ class ToolkitProvider:
             benchmark_ticker=benchmark_ticker,
             api_key=api_key,
             fred_api_key=fred_api_key,
+            toolkit_risk_free_rate=toolkit_risk_free_rate,
         )
         with hold_lock(self.instance_lock(toolkit_instance)):
             module = getattr(toolkit_instance, module_name)
@@ -762,6 +778,7 @@ class ToolkitProvider:
         benchmark_ticker: str,
         api_key: str = "",
         fred_api_key: str = "",
+        toolkit_risk_free_rate: str = "10y",
         **kwargs: Any,
     ) -> pd.DataFrame | pd.Series | dict | float | int | str:
         """
@@ -780,6 +797,8 @@ class ToolkitProvider:
             benchmark_ticker (str): Benchmark ticker symbol used for comparative analyses (e.g., "SPY").
             api_key (str, optional): FinancialModelingPrep API key. Defaults to "".
             fred_api_key (str, optional): FRED API key. Optional. Defaults to "".
+            toolkit_risk_free_rate (str, optional): The Treasury yield used as the risk-free rate
+                ("13w", "5y", "10y" or "30y"). Defaults to "10y".
             **kwargs (Any): Additional keyword arguments forwarded to the invoked Toolkit method.
 
         Returns:
@@ -794,6 +813,7 @@ class ToolkitProvider:
             benchmark_ticker=benchmark_ticker,
             api_key=api_key,
             fred_api_key=fred_api_key,
+            toolkit_risk_free_rate=toolkit_risk_free_rate,
         )
         with hold_lock(self.instance_lock(toolkit_instance)):
             return getattr(toolkit_instance, method_name)(**kwargs)

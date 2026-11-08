@@ -26,6 +26,7 @@ from financetoolkit.models import (
     piotroski_model,
     quality_model,
     springate_model,
+    taffler_model,
     wacc_model,
     zmijewski_model,
 )
@@ -70,6 +71,7 @@ FACTOR_COLLECTIONS = {
         "get_springate_score",
         "get_grover_score",
         "get_fulmer_h_score",
+        "get_taffler_z_score",
         "get_dechow_f_score",
         "get_montier_c_score",
         "get_mohanram_g_score",
@@ -3190,6 +3192,7 @@ class Models:
     def get_altman_z_score(
         self,
         diluted: bool = True,
+        model: str = "original",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3200,35 +3203,49 @@ class Models:
         """
         Calculates the Altman Z-Score, a financial metric used to predict the likelihood of a company going bankrupt.
         The Altman Z-Score is calculated using several financial ratios, including working capital to total assets,
-        retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, market value
-        of equity to book value of total liabilities, and sales to total assets.
+        retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, equity to
+        book value of total liabilities, and (for manufacturers) sales to total assets. Altman estimated four
+        versions, chosen with `model`: the original Z-Score for listed manufacturers, the Z'-Score for private
+        manufacturers, the Z''-Score for non-manufacturers and the Z''-EM score for emerging market companies.
 
         The formula is as follows:
 
-            - Working Capital to Total Assets = Working Capital / Total Assets
-            - Retained Earnings to Total Assets = Retained Earnings / Total Assets
-            - EBIT to Total Assets = EBIT / Total Assets
-            - Market Value to Total Liabilities = Market Value of Equity / Total Liabilities
-            - Sales to Total Assets = Sales / Total Assets
-            - Altman Z-Score = 1.2 * Working Capital to Total Assets + 1.4 * Retained Earnings to Total Assets +
-            3.3 * EBIT to Total Assets + 0.6 * Market Value to Total Liabilities + 1.0 * Sales to Total Assets
+            - Working Capital to Total Assets (X1) = Working Capital / Total Assets
+            - Retained Earnings to Total Assets (X2) = Retained Earnings / Total Assets
+            - EBIT to Total Assets (X3) = EBIT / Total Assets
+            - Market Value to Total Liabilities (X4, "original") = Market Value of Equity / Total Liabilities
+            - Book Value to Total Liabilities (X4, the other models) = Total Shareholder Equity / Total Liabilities
+            - Sales to Total Assets (X5, "original" and "private") = Sales / Total Assets
+            - Original (Altman 1968): Z = 1.2 X1 + 1.4 X2 + 3.3 X3 + 0.6 X4 + 1.0 X5
+            - Private (Altman 1983): Z' = 0.717 X1 + 0.847 X2 + 3.107 X3 + 0.420 X4 + 0.998 X5
+            - Non-manufacturing (Altman, Hartzell and Peck 1995): Z'' = 6.56 X1 + 3.26 X2 + 6.72 X3 + 1.05 X4
+            - Emerging (Altman 2005): Z''-EM = 3.25 + 6.56 X1 + 3.26 X2 + 6.72 X3 + 1.05 X4
 
-        The Altman Z-Score can be interpreted as follows:
+        The Altman Z-Score can be interpreted with the zones of each model (distress below the lower cut-off,
+        grey zone in between, safe above the upper one):
 
-            - A Z-Score of less than 1.81 indicates a high likelihood of bankruptcy.
-            - A Z-Score between 1.81 and 2.99 indicates a gray area.
-            - A Z-Score of greater than 2.99 indicates a low likelihood of bankruptcy.
+            - Original: distress below 1.81, safe above 2.99.
+            - Private: distress below 1.23, safe above 2.90.
+            - Non-manufacturing: distress below 1.10, safe above 2.60.
+            - Emerging: distress below 4.35, safe above 5.85 (the Z'' zones plus the constant of 3.25, which
+            Altman set so that a score of zero or below matches a bond rated D).
 
         The original Z-Score was estimated on US listed manufacturers, and its thresholds are not meant for
-        banks, insurers or most service companies; Altman's later Z'' variant drops the sales term for
-        non-manufacturers. Share buybacks charged to retained earnings and accumulated losses both lower the
-        retained earnings term, so a company that returns most of its earnings scores lower without being
-        closer to distress, which is why the score is best read as a trend and next to the market-based term.
+        banks, insurers or most service companies; the Z''-Score drops the sales term, as asset turnover
+        differs most between industries, so that it fits non-manufacturers, and none of the models is meant
+        for banks or insurers. Share buybacks charged to retained earnings and accumulated losses both lower
+        the retained earnings term, so a company that returns most of its earnings scores lower without being
+        closer to distress, which is why the score is best read as a trend and next to the equity term.
 
-        Also known as: Altman Z-score, bankruptcy prediction, financial distress score.
+        Also known as: Altman Z-score, Z'-Score, Z''-Score, Z''-EM, emerging market score, bankruptcy
+        prediction, financial distress score.
 
         Args:
-            diluted (bool, optional): Whether to use diluted shares outstanding in the calculation. Defaults to True.
+            diluted (bool, optional): Whether to use diluted shares outstanding in the market value of equity of
+                the "original" model. Defaults to True.
+            model (str, optional): The model to use: "original" (listed manufacturers, market value of
+                equity), "private" (Z', book value of equity), "non-manufacturing" (Z'', book value of equity,
+                no sales term) or "emerging" (Z''-EM, Z'' plus 3.25). Defaults to "original".
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -3240,18 +3257,27 @@ class Models:
                 which shows all columns.
 
         Returns:
-            pd.DataFrame: DataFrame containing the Altman Z-Score and its components.
+            pd.DataFrame: DataFrame containing the Altman Z-Score of the chosen model and its components.
 
         Notes:
             - The Altman Z-Score is a financial metric used to predict the likelihood of a company going bankrupt.
-            - The Z-Score is calculated using several financial ratios, including working capital to total assets,
-            retained earnings to total assets, earnings before interest and taxes (EBIT) to total assets, market value
-            of equity to book value of total liabilities, and sales to total assets.
-            - A Z-Score of less than 1.81 indicates a high likelihood of bankruptcy, while a Z-Score of greater than 2.99
-            indicates a low likelihood of bankruptcy.
-            - The Z-Score is most effective when used to analyze manufacturing companies with assets of
-            $1 million or more.
+            - The original Z-Score is most effective when used to analyze listed manufacturing companies with
+            assets of $1 million or more. The Z'-Score uses the book value of equity, so it needs no share
+            price, and the Z''-Score and Z''-EM score leave out sales to total assets.
+            - The book value of equity is the Total Shareholder Equity, which excludes minority interests.
             - EBIT is the reported Operating Income, as in the EBIT based ratios of the Ratios module.
+
+        References:
+            - Altman, E. I. (1968). Financial Ratios, Discriminant Analysis and the Prediction of Corporate
+            Bankruptcy. The Journal of Finance, 23(4), 589-609.
+            - Altman, E. I. (1983). Corporate Financial Distress: A Complete Guide to Predicting, Avoiding, and
+            Dealing with Bankruptcy. John Wiley & Sons.
+            - Altman, E. I. (2000). Predicting Financial Distress of Companies: Revisiting the Z-Score and ZETA
+            Models. Working paper, New York University.
+            - Altman, E. I., Hartzell, J. and Peck, M. (1995). Emerging Markets Corporate Bonds: A Scoring System.
+            Salomon Brothers.
+            - Altman, E. I. (2005). An Emerging Market Credit Scoring System for Corporate Bonds. Emerging
+            Markets Review, 6(4), 311-323.
 
         As an example:
 
@@ -3259,74 +3285,42 @@ class Models:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["BA", "LMT", "GD"],
+            ["MCD", "NFLX", "UBER"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_altman_z_score().xs("Altman Z-Score", level=1)
+        toolkit.models.get_altman_z_score(model="non-manufacturing").xs("Altman Z-Score", level=1)
         ```
 
         Which returns:
 
-        |     |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:----|-------:|-------:|-------:|-------:|-------:|
-        | BA  | 1.4229 | 1.3175 | 1.5588 | 1.0004 | 1.5145 |
-        | GD  | 3.2646 | 3.4357 | 3.4691 | 3.6147 | 4.2102 |
-        | LMT | 4.1234 | 4.104  | 3.8137 | 3.5273 | 3.3165 |
+        |      |    2021 |    2022 |    2023 |    2024 |   2025 |
+        |:-----|--------:|--------:|--------:|--------:|-------:|
+        | MCD  |  5.0735 |  5.1966 |  5.1302 |  5.3948 | 5.1966 |
+        | NFLX |  2.379  |  2.8961 |  3.3806 |  4.3943 | 5.2949 |
+        | UBER | -2.0375 | -3.3028 | -1.6181 | -0.0662 | 1.0641 |
         """
+        if model not in altman_model.ALTMAN_COEFFICIENTS:
+            raise ValueError(
+                f"Invalid model {model!r}. Please choose from: "
+                f"{', '.join(altman_model.ALTMAN_COEFFICIENTS)}."
+            )
+
         altman_z_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-        )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-        )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
-        )
-        retained_earnings = (
-            self._balance_sheet_statement.loc[:, "Retained Earnings", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Retained Earnings", :]
-        )
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-        )
-        revenue = (
-            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Revenue", :]
-        )
+        def balance_item(item: str) -> pd.DataFrame:
+            """A balance sheet item, averaged over the trailing periods when given."""
+            values = self._balance_sheet_statement.loc[:, item, :]
+            return values.T.rolling(trailing).mean().T if trailing else values
+
+        total_assets = balance_item("Total Assets")
+        total_liabilities = balance_item("Total Liabilities")
 
         working_capital = liquidity_model.get_working_capital(
-            current_assets,
-            current_liabilities,
+            balance_item("Total Current Assets"),
+            balance_item("Total Current Liabilities"),
         )
 
         altman_z_score["Working Capital to Total Assets"] = (
@@ -3338,7 +3332,7 @@ class Models:
 
         altman_z_score["Retained Earnings to Total Assets"] = (
             altman_model.get_retained_earnings_to_total_assets_ratio(
-                retained_earnings=retained_earnings,
+                retained_earnings=balance_item("Retained Earnings"),
                 total_assets=total_assets,
             )
         )
@@ -3350,50 +3344,70 @@ class Models:
             )
         )
 
-        years = self._balance_sheet_statement.columns
-        begin, end = str(years[0]), str(years[-1])
+        if model == "original":
+            years = self._balance_sheet_statement.columns
+            begin, end = str(years[0]), str(years[-1])
 
-        share_prices = (
-            self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Close"][self._tickers]
-            .T
-        )
-
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
-
-        market_cap = valuation_model.get_market_cap(
-            share_price=share_prices,
-            total_shares_outstanding=(
-                average_shares.T.rolling(trailing).mean().T
-                if trailing
-                else average_shares
-            ),
-        )
-
-        altman_z_score["Market Value to Total Liabilities"] = (
-            altman_model.get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
-                market_value_of_equity=market_cap,
-                total_liabilities=total_liabilities,
+            share_prices = (
+                self._historical_data["quarterly" if self._quarterly else "yearly"]
+                .loc[begin:end, "Close"][self._tickers]
+                .T
             )
-        )
 
-        altman_z_score["Sales to Total Assets"] = (
-            altman_model.get_sales_to_total_assets_ratio(
-                sales=revenue,
-                total_assets=total_assets,
+            average_shares = (
+                self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+                if diluted
+                else self._income_statement.loc[:, "Weighted Average Shares", :]
             )
-        )
+
+            market_cap = valuation_model.get_market_cap(
+                share_price=share_prices,
+                total_shares_outstanding=(
+                    average_shares.T.rolling(trailing).mean().T
+                    if trailing
+                    else average_shares
+                ),
+            )
+
+            equity_ratio_name = "Market Value to Total Liabilities"
+            altman_z_score[equity_ratio_name] = (
+                altman_model.get_market_value_of_equity_to_book_value_of_total_liabilities_ratio(
+                    market_value_of_equity=market_cap,
+                    total_liabilities=total_liabilities,
+                )
+            )
+        else:
+            equity_ratio_name = "Book Value to Total Liabilities"
+            altman_z_score[equity_ratio_name] = (
+                altman_model.get_book_value_of_equity_to_book_value_of_total_liabilities_ratio(
+                    book_value_of_equity=balance_item("Total Shareholder Equity"),
+                    total_liabilities=total_liabilities,
+                )
+            )
+
+        # The Z''-Score and Z''-EM score have no sales term.
+        if model in ("original", "private"):
+            revenue = self._income_statement.loc[:, "Revenue", :]
+            altman_z_score["Sales to Total Assets"] = (
+                altman_model.get_sales_to_total_assets_ratio(
+                    sales=revenue.T.rolling(trailing).sum().T if trailing else revenue,
+                    total_assets=total_assets,
+                )
+            )
 
         altman_z_score["Altman Z-Score"] = altman_model.get_altman_z_score(
-            altman_z_score["Working Capital to Total Assets"],
-            altman_z_score["Retained Earnings to Total Assets"],
-            altman_z_score["EBIT to Total Assets"],
-            altman_z_score["Market Value to Total Liabilities"],
-            altman_z_score["Sales to Total Assets"],
+            working_capital_to_total_assets_ratio=altman_z_score[
+                "Working Capital to Total Assets"
+            ],
+            retained_earnings_to_total_assets_ratio=altman_z_score[
+                "Retained Earnings to Total Assets"
+            ],
+            earnings_before_interest_and_taxes_to_total_assets_ratio=altman_z_score[
+                "EBIT to Total Assets"
+            ],
+            equity_to_total_liabilities_ratio=altman_z_score[equity_ratio_name],
+            sales_to_total_assets_ratio=altman_z_score.get("Sales to Total Assets"),
+            model=model,
         )
 
         altman_results = (
@@ -3403,9 +3417,9 @@ class Models:
             .reindex(self._tickers, level=0)
         )
 
-        # The model was estimated on manufacturing firms. A company without any cost of
-        # goods sold, such as a bank or an insurer, has no working capital or sales in its
-        # sense, so its score (e.g. "distress") says nothing; the result says so.
+        # The models were estimated on non-financial companies. A company without any cost
+        # of goods sold, such as a bank or an insurer, has no working capital or sales in
+        # their sense, so its score (e.g. "distress") says nothing; the result says so.
         cost_of_goods_sold = self._income_statement.loc[:, "Cost of Goods Sold", :]
 
         if not_applicable := [
@@ -3417,8 +3431,8 @@ class Models:
         ]:
             logger.warning(
                 "The Altman Z-Score does not apply to companies that report no cost of "
-                "goods sold, as banks and insurers do: the model was estimated on "
-                "manufacturing firms, so it is no measure of financial distress for %s.",
+                "goods sold, as banks and insurers do: the models were estimated on "
+                "non-financial companies, so it is no measure of financial distress for %s.",
                 ", ".join(not_applicable),
             )
 
@@ -5122,6 +5136,176 @@ class Models:
         )
 
         return filter_columns(fulmer_results, show_columns)
+
+    @handle_errors
+    def get_taffler_z_score(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculates the Taffler z-score, a discriminant model of financial distress estimated on UK listed
+        industrial companies (Taffler, 1983). It combines profitability, working capital, financial risk and
+        liquidity, and Agarwal and Taffler (2007) showed that it kept its predictive ability over 25 years of
+        UK data. A negative score places a company in the at-risk region.
+
+        The formula is as follows:
+
+            - Profit Before Tax to Current Liabilities (X1) = Income Before Tax / Total Current Liabilities
+            - Current Assets to Total Liabilities (X2) = Total Current Assets / Total Liabilities
+            - Current Liabilities to Total Assets (X3) = Total Current Liabilities / Total Assets
+            - Daily Operating Expenses = (Revenue - Income Before Tax - Depreciation and Amortization) / Days
+            - No-Credit Interval (X4) = (Total Current Assets - Inventory - Total Current Liabilities) /
+            Daily Operating Expenses
+            - Taffler z-score = 3.20 + 12.18 X1 + 2.50 X2 - 10.68 X3 + 0.029 X4
+
+        The Taffler z-score can be interpreted as follows:
+
+            - A score below zero indicates a financial profile like that of companies that failed (at risk).
+            - A score above zero indicates a solvent profile; the higher, the safer.
+
+        Also known as: Taffler Z-Score, UK z-score, bankruptcy prediction, financial distress score.
+
+        Args:
+            rounding (int, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The trailing period to use for the calculation: flows are
+                summed and balances averaged over it. Defaults to None.
+            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
+                columns will be shown. Defaults to None.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Taffler z-score and its components.
+
+        Notes:
+        - The No-Credit Interval is in days. The days are those the flows cover: 365 a year, a quarter of
+        that for a quarter, times the number of trailing periods.
+        - Quick assets are the Total Current Assets less Inventory, and the Depreciation and Amortization
+        stands in for the depreciation of the paper's daily operating expenses.
+        - Agarwal and Taffler (2007, Table 1) attribute 53% of the discriminating power to X1, 13% to X2, 18%
+        to X3 and 16% to X4. The coefficients were estimated on UK industrial companies, so the model is not
+        meant for financial companies and is best read as a trend for companies elsewhere.
+        - As with the Altman Z-Score and the other scores in this module, this is a probabilistic, not a
+        definitive, indicator and should be combined with further fundamental analysis.
+
+        References:
+        - Taffler, R. J. (1983). The Assessment of Company Solvency and Performance Using a Statistical
+        Model. Accounting and Business Research, 13(52), 295-308.
+        - Agarwal, V. and Taffler, R. J. (2007). Twenty-Five Years of the Taffler z-Score Model: Does It
+        Really Have Predictive Ability? Accounting and Business Research, 37(4), 285-300.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["M", "KSS", "GAP"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2020-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_taffler_z_score().xs("Taffler Z-Score", level=1)
+        ```
+
+        Which returns:
+
+        |     |     2020 |   2021 |    2022 |   2023 |   2024 |
+        |:----|---------:|-------:|--------:|-------:|-------:|
+        | GAP |  -2.1624 | 0.7496 |  0.1718 | 3.1604 | 5.9418 |
+        | KSS |   0.4845 | 5.7852 | -0.0302 | 2.4432 | 0.1935 |
+        | M   | -11.3244 | 3.8969 |  3.4676 | 0.2883 | 2.4301 |
+        """
+        taffler_score = {}
+
+        def balance_item(item: str) -> pd.DataFrame:
+            """A balance sheet item, averaged over the trailing periods when given."""
+            values = self._balance_sheet_statement.loc[:, item, :]
+            return values.T.rolling(trailing).mean().T if trailing else values
+
+        def income_item(item: str) -> pd.DataFrame:
+            """An income statement item, summed over the trailing periods when given."""
+            values = self._income_statement.loc[:, item, :]
+            return values.T.rolling(trailing).sum().T if trailing else values
+
+        current_assets = balance_item("Total Current Assets")
+        current_liabilities = balance_item("Total Current Liabilities")
+        income_before_tax = income_item("Income Before Tax")
+
+        taffler_score["Profit Before Tax to Current Liabilities"] = (
+            taffler_model.get_profit_before_tax_to_current_liabilities_ratio(
+                profit_before_tax=income_before_tax,
+                current_liabilities=current_liabilities,
+            )
+        )
+
+        taffler_score["Current Assets to Total Liabilities"] = (
+            taffler_model.get_current_assets_to_total_liabilities_ratio(
+                current_assets=current_assets,
+                total_liabilities=balance_item("Total Liabilities"),
+            )
+        )
+
+        taffler_score["Current Liabilities to Total Assets"] = (
+            taffler_model.get_current_liabilities_to_total_assets_ratio(
+                current_liabilities=current_liabilities,
+                total_assets=balance_item("Total Assets"),
+            )
+        )
+
+        # The paper spreads a year of operating expenses over 365 days, so the days follow the
+        # length of the flows: a quarter of a year per quarter, times the trailing periods.
+        taffler_score["No-Credit Interval"] = taffler_model.get_no_credit_interval(
+            quick_assets=current_assets - balance_item("Inventory"),
+            current_liabilities=current_liabilities,
+            sales=income_item("Revenue"),
+            profit_before_tax=income_before_tax,
+            depreciation=income_item("Depreciation and Amortization"),
+            days=(365 / 4 if self._quarterly else 365) * (trailing or 1),
+        )
+
+        taffler_score["Taffler Z-Score"] = taffler_model.get_taffler_z_score(
+            profit_before_tax_to_current_liabilities_ratio=taffler_score[
+                "Profit Before Tax to Current Liabilities"
+            ],
+            current_assets_to_total_liabilities_ratio=taffler_score[
+                "Current Assets to Total Liabilities"
+            ],
+            current_liabilities_to_total_assets_ratio=taffler_score[
+                "Current Liabilities to Total Assets"
+            ],
+            no_credit_interval=taffler_score["No-Credit Interval"],
+        )
+
+        taffler_results = (
+            concat_frames(taffler_score)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
+        )
+
+        taffler_results = finalize_dataset(
+            dataset=taffler_results,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+        return filter_columns(taffler_results, show_columns)
 
     @handle_errors
     def get_present_value_of_growth_opportunities(
@@ -7915,8 +8099,8 @@ class Models:
             metrics (str | list[str], optional): A model method name with one value per
                 ticker and period, e.g. "get_piotroski_score", a list of them, or a
                 collection: "scores" or "all". Defaults to "scores", the Piotroski, Altman Z,
-                Beneish M, Ohlson O, Zmijewski, Springate, Grover, Fulmer H, Dechow F,
-                Montier C and Mohanram G scores. "all" adds the accruals ratio, Tobin's Q, the
+                Beneish M, Ohlson O, Zmijewski, Springate, Grover, Fulmer H, Taffler z,
+                Dechow F, Montier C and Mohanram G scores. "all" adds the accruals ratio, Tobin's Q, the
                 sustainable and internal growth rates, the magic formula and the Merton
                 distance to default. The valuation models and the analyses with several
                 components and no score are not in the collections.

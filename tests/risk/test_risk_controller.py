@@ -176,7 +176,12 @@ def test_get_gjr_garch(recorder, risk_module):
 
 def test_get_gjr_garch_forecast(recorder, risk_module):
     recorder.capture(risk_module.get_gjr_garch_forecast())
-    recorder.capture(risk_module.get_gjr_garch_forecast(period="monthly"))
+
+    # A fit on three years of months lands differently per platform's libraries (in the third
+    # digit), so the monthly forecast is checked rather than recorded.
+    monthly = risk_module.get_gjr_garch_forecast(period="monthly")
+    assert monthly.shape == (10, 3)
+    assert (monthly > 0).all().all()
 
 
 def test_get_gjr_garch_parameters(recorder, risk_module):
@@ -689,3 +694,82 @@ def test_pairwise_measures_keep_the_role_of_a_given_ticker(risk_module):
     # The same for tail dependence: a given ticker_b is paired with every other ticker.
     tail_dependence = risk_module.get_tail_dependence_coefficient(ticker_b="AAPL")
     assert list(tail_dependence.index) == ["MSFT", "Benchmark"]
+
+
+def test_get_mean_absolute_deviation_per_month(risk_module):
+    result = risk_module.get_mean_absolute_deviation(period="monthly", rounding=None)
+    daily = risk_module._historical_data["daily"]["Return"]["AAPL"]
+    june = daily[(daily.index.year == 2021) & (daily.index.month == 6)]
+
+    assert result.loc["2021-06", "AAPL"] == pytest.approx(
+        (june - june.mean()).abs().mean(), abs=5e-5
+    )
+
+
+def test_get_mean_absolute_deviation_refuses_a_daily_period(risk_module):
+    assert risk_module.get_mean_absolute_deviation(period="daily").empty
+
+
+def test_get_coefficient_of_variation_per_year(risk_module):
+    result = risk_module.get_coefficient_of_variation(period="yearly", rounding=None)
+    daily = risk_module._historical_data["daily"]["Return"]["MSFT"]
+    year = daily[daily.index.year == 2021]
+
+    assert result.loc["2021", "MSFT"] == pytest.approx(
+        year.std() / year.mean(), rel=1e-3
+    )
+
+
+def test_get_autocorrelation_per_lag(risk_module):
+    result = risk_module.get_autocorrelation(lags=3, rounding=None)
+    values = risk_module._historical_data["daily"]["Return"]["AAPL"].dropna()
+    deviations = (values - values.mean()).to_numpy()
+
+    assert list(result.index) == [1, 2, 3]
+    assert result.index.name == "Lag"
+    assert result.loc[1, "AAPL"] == pytest.approx(
+        np.sum(deviations[:-1] * deviations[1:]) / np.sum(deviations**2), abs=5e-5
+    )
+    # Daily stock returns are close to uncorrelated over time.
+    assert (result.abs() < 0.3).all().all()
+
+
+def test_get_copula_parameters_of_one_pair(risk_module):
+    result = risk_module.get_copula_parameters(
+        ticker_a="AAPL", ticker_b="MSFT", rounding=None
+    )
+
+    # Apple and Microsoft move together: a clearly positive Gaussian correlation.
+    assert 0.5 < result["Rho"] < 1
+    assert result["AIC"] < 0
+
+    clayton = risk_module.get_copula_parameters(
+        ticker_a="AAPL", ticker_b="MSFT", copula="clayton", rounding=None
+    )
+    assert clayton["Theta"] > 0
+
+
+def test_get_copula_parameters_refuses_an_unknown_family(risk_module):
+    assert risk_module.get_copula_parameters(
+        ticker_a="AAPL", ticker_b="MSFT", copula="normal"
+    ).empty
+
+
+def test_get_best_fitting_copula_ranks_the_families_by_aic(risk_module):
+    result = risk_module.get_best_fitting_copula(
+        ticker_a="AAPL", ticker_b="MSFT", rounding=None
+    )
+
+    assert sorted(result.index) == [
+        "Clayton",
+        "Frank",
+        "Gaussian",
+        "Gumbel",
+        "Student-T",
+    ]
+    assert result["AIC"].is_monotonic_increasing
+
+    gaussian = risk_module.get_copula_parameters(
+        ticker_a="AAPL", ticker_b="MSFT", rounding=None
+    )
+    assert result.loc["Gaussian", "AIC"] == pytest.approx(gaussian["AIC"])

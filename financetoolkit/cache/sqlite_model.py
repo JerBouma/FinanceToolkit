@@ -14,6 +14,7 @@ from financetoolkit.cache.coverage_model import (
     merge_intervals,
     normalize_date,
 )
+from financetoolkit.cache.policy_model import FINANCIAL_MODELING_PREP
 
 SCHEMA_VERSION = 1
 
@@ -190,6 +191,42 @@ class SQLiteBackend:
                 "INSERT OR IGNORE INTO meta (name, value) VALUES (?, ?)",
                 ("schema_version", str(SCHEMA_VERSION)),
             )
+
+            self._remove_unencoded_symbol_entries(connection)
+
+    @staticmethod
+    def _remove_unencoded_symbol_entries(connection: sqlite3.Connection) -> None:
+        """
+        Remove, once per database, the FinancialModelingPrep data stored for a symbol with
+        "&", "+" or "%" in it that may not have been requested percent-encoded: unencoded,
+        M&M.NS is requested as M, so such an entry can hold another company's data. The
+        discovery entries are identified by the encoded URL, so an entry stored under the
+        unencoded one is never served.
+
+        Args:
+            connection (sqlite3.Connection): The open write connection.
+        """
+        schema_version = connection.execute(
+            "SELECT value FROM meta WHERE name = 'schema_version'"
+        ).fetchone()
+        removed = connection.execute(
+            "SELECT 1 FROM meta WHERE name = 'encoded_symbols'"
+        ).fetchone()
+
+        # A database of another schema version is left exactly as it is.
+        if removed is not None or schema_version != (str(SCHEMA_VERSION),):
+            return
+
+        for table in ALL_TABLES:
+            connection.execute(
+                f"DELETE FROM {table} WHERE source = ? AND dataset != 'discovery' "  # noqa: S608
+                "AND (instr(entity, '&') OR instr(entity, '+') OR instr(entity, '%'))",
+                (FINANCIAL_MODELING_PREP,),
+            )
+
+        connection.execute(
+            "INSERT INTO meta (name, value) VALUES ('encoded_symbols', '1')"
+        )
 
     def get_schema_version(self) -> int | None:
         """

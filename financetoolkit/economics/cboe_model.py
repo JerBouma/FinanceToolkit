@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 import io
+from urllib.parse import quote
 
 import pandas as pd
 
@@ -95,7 +96,9 @@ def get_option_chain(ticker: str) -> pd.DataFrame:
     description = f"Cboe option chain of {ticker}"
 
     def fetch() -> pd.DataFrame:
-        response = get_request(OPTION_CHAIN_URL.format(symbol=symbol), timeout=120)
+        response = get_request(
+            OPTION_CHAIN_URL.format(symbol=quote(symbol, safe="")), timeout=120
+        )
         data = response.json().get("data") or {}
         options = pd.DataFrame(data.get("options") or [])
 

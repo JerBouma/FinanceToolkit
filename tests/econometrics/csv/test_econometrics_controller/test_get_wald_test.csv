@@ -1,7 +1,7 @@
 ,0
-Wald Statistic (Chi2),312.2328
-Chi2 P-Value,0.0
-F-Statistic,156.1164
-F P-Value,0.0
+Wald Statistic (Chi2),312.0711
+Chi2 P-Value,1.716e-68
+F-Statistic,156.0355
+F P-Value,1.158e-37
 Restrictions (q),2
 Reject Restrictions (5%),True

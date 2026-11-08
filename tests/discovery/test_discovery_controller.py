@@ -3,8 +3,12 @@
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from financetoolkit.discovery import discovery_controller
+
+# Every Discovery is built with a placeholder key, whose plan probe is answered offline.
+pytestmark = pytest.mark.usefixtures("known_fmp_plan")
 
 # pylint: disable=missing-function-docstring
 

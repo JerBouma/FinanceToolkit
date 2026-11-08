@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
+from financetoolkit.economics import ecb_model as economics_ecb_model
 from financetoolkit.fixedincome import curve_model, fiscaldata_model
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 
@@ -43,6 +44,13 @@ def fixedincome(monkeypatch):
             ],
             "Australia": lambda: curves[["2Y", "3Y", "5Y", "10Y"]],
         },
+    )
+    # A monthly curve request adds the ECB's convergence yields of the other EU members,
+    # which the simulated history leaves out.
+    monkeypatch.setattr(
+        economics_ecb_model,
+        "get_long_term_convergence_yields",
+        lambda start_date, end_date: pd.DataFrame(),
     )
     yield FixedIncome(start_date="2015-01-01", end_date="2024-12-31", rounding=None)
     clear_active_cache()

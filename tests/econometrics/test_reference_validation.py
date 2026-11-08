@@ -11,8 +11,6 @@ Every dataset used here ships inside statsmodels or linearmodels, so nothing her
 touches the network.
 """
 
-# pylint: disable=missing-function-docstring,redefined-outer-name
-
 import warnings
 
 import numpy as np

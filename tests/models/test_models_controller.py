@@ -1,5 +1,4 @@
 """Models Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 import pandas as pd
 
 
@@ -52,12 +51,12 @@ def test_get_intrinsic_valuation(recorder, models_module):
     )
 
 
-def test_get_gorden_growth_model(recorder, models_module):
+def test_get_gordon_growth_model(recorder, models_module):
     recorder.capture(
-        models_module.get_gorden_growth_model(rate_of_return=0.1, growth_rate=0.09)
+        models_module.get_gordon_growth_model(rate_of_return=0.1, growth_rate=0.09)
     )
     recorder.capture(
-        models_module.get_gorden_growth_model(
+        models_module.get_gordon_growth_model(
             rate_of_return=0.2, growth_rate=0.1, project_periods=10
         )
     )
@@ -514,7 +513,7 @@ def test_quarterly_dividend_discount_models_use_an_annual_dividend(
     annual_dividend = quarterly_dividends.rolling(4).sum().iloc[-1]
     last_quarter = quarterly_dividends.index[-1]
 
-    gordon = models_module.get_gorden_growth_model(
+    gordon = models_module.get_gordon_growth_model(
         rate_of_return=0.08, growth_rate=0.03, project_periods=2, rounding=10
     )
     # The last complete quarter is valued off the trailing four quarters of dividends.

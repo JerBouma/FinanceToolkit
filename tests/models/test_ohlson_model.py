@@ -3,8 +3,6 @@ import pandas as pd
 
 from financetoolkit.models import ohlson_model
 
-# pylint: disable=missing-function-docstring
-
 COLUMNS = ["2020", "2021", "2022", "2023", "2024"]
 
 

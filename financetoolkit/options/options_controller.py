@@ -29,8 +29,6 @@ from financetoolkit.utilities.statistics_model import (
     to_period_index,
 )
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals,cell-var-from-loop
-# pylint: disable=line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 logger = logger_model.get_logger()
@@ -1861,7 +1859,7 @@ class Options:
             stock_price_statistics["Down Movement"][ticker] = down_movement
 
         stock_price_simulation_df = helpers.create_stock_simulation_dataframe(
-            stock_simulation_dictonary=stock_price_simulation,
+            stock_simulation_dictionary=stock_price_simulation,
             start_date=start_date,
             time_to_expiration=time_to_expiration,
         )

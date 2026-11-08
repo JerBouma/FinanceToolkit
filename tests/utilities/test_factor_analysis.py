@@ -1,7 +1,5 @@
 """Factor Analysis Tests: get_factor_analysis of the ratios, technicals, models and performance"""
 
-# pylint: disable=missing-function-docstring,too-few-public-methods
-
 import numpy as np
 import pandas as pd
 import pytest

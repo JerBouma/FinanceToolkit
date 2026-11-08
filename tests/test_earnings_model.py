@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit import Toolkit, earnings_model, toolkit_controller
 
-# pylint: disable=missing-function-docstring
-
 
 def announcements(dates, eps, estimates):
     return pd.DataFrame(

@@ -59,8 +59,6 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["anomalies"] + [
     "get_roll_spread",
 ]
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
-# pylint: disable=too-many-boolean-expressions
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
 

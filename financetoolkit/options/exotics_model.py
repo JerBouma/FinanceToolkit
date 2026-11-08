@@ -7,8 +7,6 @@ from scipy.stats import norm
 
 from financetoolkit.options.helpers import validate_numeric_inputs
 
-# pylint: disable=too-many-arguments,too-many-locals,invalid-name
-
 
 def _barrier_term(
     phi: int,

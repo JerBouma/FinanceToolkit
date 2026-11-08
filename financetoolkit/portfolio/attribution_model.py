@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
 
-# pylint: disable=too-many-arguments
-
 # Peak-to-trough dates of the S&P 500 in well-known market stress episodes, used as the
 # default historical scenarios of a stress test.
 HISTORICAL_SCENARIOS: dict[str, tuple[str, str]] = {

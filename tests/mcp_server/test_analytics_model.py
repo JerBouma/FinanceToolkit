@@ -1,7 +1,5 @@
 """Usage Analytics Tests"""
 
-# pylint: disable=missing-function-docstring
-
 import asyncio
 import hashlib
 import json

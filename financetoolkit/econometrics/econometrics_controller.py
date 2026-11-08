@@ -36,8 +36,6 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = get_logger()
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
-# pylint: disable=too-many-boolean-expressions
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
 

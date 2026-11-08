@@ -4,8 +4,6 @@ import pandas as pd
 
 from financetoolkit.mcp_server.formatting_model import _df_to_records
 
-# pylint: disable=missing-function-docstring
-
 
 def test_levels_with_the_same_names_say_which_level_a_key_is():
     responses = pd.concat(

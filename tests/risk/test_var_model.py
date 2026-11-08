@@ -7,8 +7,6 @@ from scipy import stats
 
 from financetoolkit.risk import var_model
 
-# pylint: disable=missing-function-docstring
-
 # How close Cornish-Fisher VaR must sit to gaussian VaR on near-normal data.
 CLOSE_TO_GAUSSIAN_TOLERANCE = 0.001
 

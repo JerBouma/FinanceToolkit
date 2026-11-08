@@ -1,7 +1,5 @@
 """Binomial Trees Model Tests"""
 
-# pylint: disable=missing-function-docstring
-
 import pytest
 
 from financetoolkit.options import binomial_trees_model

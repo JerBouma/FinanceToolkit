@@ -13,8 +13,6 @@ from financetoolkit.utilities import logger_model
 logger = logger_model.get_logger()
 
 
-# pylint: disable=comparison-with-itself,too-many-locals,protected-access
-
 # Set FINANCETOOLKIT_STRICT_ERRORS to 1 (or true/yes/on) to make every failure inside a metric raise instead of being reported and returned as an empty Series; this is what a test suite or a scheduled job should run with, since it turns a quietly missing number into an immediate, traceable failure.  # noqa: E501
 STRICT_ERRORS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_STRICT_ERRORS"
 

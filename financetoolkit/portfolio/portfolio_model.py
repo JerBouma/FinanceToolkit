@@ -11,7 +11,6 @@ from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-locals
 
 # Matches currency codes (EUR, USD) in Yahoo Finance notation, e.g. EURUSD=X.
 CURRENCY_CODE_LENGTH = 3

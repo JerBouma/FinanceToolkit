@@ -24,8 +24,6 @@ from financetoolkit.technicals import (
     volatility_model as volatility,
 )
 
-# pylint: disable=missing-function-docstring
-
 WINDOW = 14
 
 # Bars to truncate at. Spread across the series so warm-up transients are long past.

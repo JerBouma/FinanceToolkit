@@ -7,8 +7,6 @@ import pytest
 
 from financetoolkit.fixedincome import fixedincome_controller
 
-# pylint: disable=missing-function-docstring
-
 
 def test_fixedincome_controller_initialization(recorder):
     fixedincome = fixedincome_controller.FixedIncome(

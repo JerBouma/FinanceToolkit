@@ -3,8 +3,6 @@ import pandas as pd
 
 from financetoolkit.models import dupont_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_dupont_analysis(recorder):
     recorder.capture(

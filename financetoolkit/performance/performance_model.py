@@ -37,8 +37,6 @@ MIN_SORTINO_OBSERVATIONS = 2
 # The Euler-Mascheroni constant, used by the Deflated Sharpe Ratio.
 EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 
-# pylint: disable=isinstance-second-argument-not-valid-type
-
 
 @by_own_trading_days(compound=True)
 def get_covariance(

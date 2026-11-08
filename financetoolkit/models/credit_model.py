@@ -7,8 +7,6 @@ import pandas as pd
 from scipy.optimize import fsolve
 from scipy.stats import norm
 
-# pylint: disable=too-many-arguments
-
 # Damodaran treats a company with a market capitalization above five billion US dollars as a
 # large firm in his synthetic rating tables.
 LARGE_FIRM_MARKET_CAP = 5e9

@@ -87,23 +87,6 @@ MATURITY_UNITS: dict[str, tuple[int, int]] = {
 }
 
 
-def _split_values(values: list | tuple | str | None) -> list | None:
-    """
-    Splits a comma-separated string, as the MCP server passes a list, into its values.
-
-    Args:
-        values (list | tuple | str | None): The values or a comma-separated string.
-
-    Returns:
-        list | None: The values, or None when none are given.
-    """
-    if values is None:
-        return None
-    if isinstance(values, str):
-        return [value.strip() for value in values.split(",") if value.strip()]
-    return list(values)
-
-
 def _maturity_in_months(label: str) -> float:
     """
     Converts a maturity label such as "3M" or "10Y" into months, for sorting a curve.
@@ -266,15 +249,13 @@ def _maturities(
     if maturities is None:
         maturities = default
     elif isinstance(maturities, str):
-        maturities = _split_values(maturities) or []
+        maturities = helpers.split_values(maturities)
     elif isinstance(maturities, int | float):
         maturities = [maturities]
 
     return [_maturity_key(maturity) for maturity in maturities]
 
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
-# pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
@@ -456,35 +437,6 @@ class FixedIncome:
         # Published once here so the FRED, ECB and Fed free functions read it back.
         set_active_cache(self._cache)
 
-    def _require_fred_api_key(self) -> None:
-        if not self._fred_api_key:
-            logger.warning(
-                "No FRED API key found. ICE BofA bond index data is sourced from FRED "
-                "(Federal Reserve Economic Data) and requires a key to access — "
-                "registration is entirely free and takes about a minute at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html. Once you have one, "
-                "pass it via the fred_api_key argument or set the FRED_API_KEY "
-                "environment variable."
-            )
-            raise ValueError(
-                "A FRED API key is required to retrieve ICE BofA data. Obtain a free key at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
-                "fred_api_key argument or set the FRED_API_KEY environment variable."
-            )
-
-    def _require_api_key(self) -> None:
-        if not self._api_key:
-            logger.warning(
-                "No FinancialModelingPrep API key found. Treasury par yield curve rates "
-                "require a key to access, obtain one (with 15% off) at "
-                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
-            )
-            raise ValueError(
-                "A FinancialModelingPrep API key is required to retrieve Treasury rates. "
-                "Obtain one at https://www.jeroenbouma.com/fmp and pass it via the "
-                "api_key argument."
-            )
-
     def _select_bonds(
         self,
         bonds: list[str] | str | None,
@@ -519,7 +471,7 @@ class FixedIncome:
             Issuer, Security Type, Coupon, Maturity, Price, Price Date, Years to Maturity
             and Yield to Maturity, unrounded.
         """
-        identifiers = [value.upper() for value in _split_values(bonds) or []]
+        identifiers = [value.upper() for value in helpers.split_values(bonds)]
         treasury_ids = [
             cusip
             for value in identifiers
@@ -1566,11 +1518,10 @@ class FixedIncome:
         | 912797VF1 | 2027-06-10 |                217 | 97.57   |           0.0403 |                  0.0418 |
         | 912797WJ2 | 2027-09-30 |                329 | 96.2827 |           0.0407 |                  0.0424 |
         """
-        identifiers = _split_values(bonds)
         bills = self.get_treasury_securities(
             date=date,
             security_type="Bill",
-            bonds=identifiers,
+            bonds=bonds,
             rounding=10,
         )
         if not isinstance(bills, pd.DataFrame) or bills.empty:
@@ -2791,7 +2742,7 @@ class FixedIncome:
                 if not isinstance(label, str) or label.replace(".", "", 1).isdigit()
                 else label
             )
-            for label in _split_values(maturities) or []
+            for label in helpers.split_values(maturities)
         ] or None
 
         fits = {}
@@ -3357,7 +3308,7 @@ class FixedIncome:
         )
 
         if security_type is not None:
-            requested = _split_values(security_type) or []
+            requested = helpers.split_values(security_type)
             types = {kind.lower(): kind for kind in TREASURY_SECURITY_TYPES}
             if unknown := [kind for kind in requested if kind.lower() not in types]:
                 raise ValueError(
@@ -3525,11 +3476,11 @@ class FixedIncome:
         | US037833EH93 |   0.014  | 2028-08-05 |   94.67 |              0.046  |              1.6896 |     0.0019 |
         | US037833FD70 |   0.0465 | 2028-11-09 |   99.95 |              0.0468 |              1.8564 |     0.0022 |
         """
-        self._require_api_key()
+        helpers.require_api_key(self._api_key, "the bond universe")
 
         # The bonds asked for, before the name is reused for the table of bonds.
-        identifiers = {value.upper() for value in _split_values(bonds) or []}
-        funds = [fund.upper() for fund in (_split_values(etfs) or BOND_FUNDS)]
+        identifiers = {value.upper() for value in helpers.split_values(bonds)}
+        funds = [fund.upper() for fund in (helpers.split_values(etfs) or BOND_FUNDS)]
         holdings, missing = toolkit_fmp_model.get_etf_holdings(funds, self._api_key)
         if missing:
             logger.warning("No holdings were found for %s.", ", ".join(missing))
@@ -3627,7 +3578,7 @@ class FixedIncome:
                 | bonds["CUSIP"].astype(str).str.upper().isin(identifiers)
             ]
         if issuer is not None:
-            names = [name.upper() for name in _split_values(issuer) or []]
+            names = [name.upper() for name in helpers.split_values(issuer)]
             bonds = bonds[
                 bonds["Issuer"]
                 .str.upper()
@@ -3783,7 +3734,7 @@ class FixedIncome:
         requested_types = None
         if security_type is not None:
             types = {kind.lower(): kind for kind in TREASURY_PRICE_TYPES}
-            requested = _split_values(security_type) or []
+            requested = helpers.split_values(security_type)
             if unknown := [kind for kind in requested if kind.lower() not in types]:
                 raise ValueError(
                     f"The security type {', '.join(unknown)} does not exist. Choose from "
@@ -3797,7 +3748,7 @@ class FixedIncome:
         if bonds is not None:
             cusips = [
                 fixedincome_helpers.treasury_cusip(value.upper()) or value.upper()
-                for value in _split_values(bonds) or []
+                for value in helpers.split_values(bonds)
             ]
             prices = prices[prices["CUSIP"].isin(cusips)]
         if prices.empty:
@@ -3912,7 +3863,7 @@ class FixedIncome:
         | 2024-01-12 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0126 |      0.0112 |
         | 2024-01-15 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0125 |      0.0111 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         option_adjusted_spread = (
             fred_model.get_maturity_option_adjusted_spread(
@@ -4005,7 +3956,7 @@ class FixedIncome:
         | 2024-01-12 |   0.0451 |   0.0467 |   0.0502 |   0.0534 |   0.0613 |   0.0753 |   0.1338 |
         | 2024-01-15 |   0.0451 |   0.0467 |   0.0501 |   0.0533 |   0.0611 |   0.0751 |   0.1328 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         effective_yield = (
             fred_model.get_maturity_effective_yield(
@@ -4092,7 +4043,7 @@ class FixedIncome:
         | 2024-01-12 |     1922.1  |     2498.89 |      812.41 |       585.2  |       4213.47 |     4338.43 |
         | 2024-01-15 |     1922.67 |     2499.76 |      812.67 |       585.41 |       4215.34 |     4340.24 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         total_return = (
             fred_model.get_maturity_total_return(
@@ -4180,7 +4131,7 @@ class FixedIncome:
         | 2024-01-12 |   0.0453 |   0.0468 |   0.0499 |   0.0537 |   0.0642 |   0.0786 |   0.1335 |
         | 2024-01-15 |   0.0452 |   0.0468 |   0.0498 |   0.0537 |   0.064  |   0.0784 |   0.1325 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         yield_to_worst = (
             fred_model.get_maturity_yield_to_worst(
@@ -4543,7 +4494,7 @@ class FixedIncome:
         )
 
         if "United States" in requested and not self._fred_api_key:
-            self._require_fred_api_key()
+            helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         if unavailable := [country for country in requested if country not in sources]:
             logger.warning(
@@ -4934,10 +4885,11 @@ class FixedIncome:
         | CCC      |   0.132  |        0.22   |                   0.1975 |                   0.4831 |                   0.6671 |                    0.8892 |
         """
         horizons = [
-            float(horizon) for horizon in _split_values(horizons) or [1, 3, 5, 10]
+            float(horizon)
+            for horizon in helpers.split_values(horizons) or [1, 3, 5, 10]
         ]
 
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
         start_date = (
             datetime.strptime(self._end_date, "%Y-%m-%d") - timedelta(days=31)
         ).strftime("%Y-%m-%d")
@@ -4951,7 +4903,7 @@ class FixedIncome:
         # The FRED spreads arrive as decimals (0.0077 for 77 basis points), the unit the model takes.
         spread_series = option_adjusted_spread.iloc[-1].dropna()
         if ratings is not None:
-            requested = [rating.upper() for rating in _split_values(ratings) or []]
+            requested = [rating.upper() for rating in helpers.split_values(ratings)]
             if unknown := [
                 rating for rating in requested if rating not in spread_series.index
             ]:
@@ -5053,7 +5005,7 @@ class FixedIncome:
         | 2026-07 | 0.0116 | 0.0159 |      0.0043 |
         | 2026-08 | 0.012  | 0.0164 |      0.0044 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "Moody's corporate bond yield"
         )

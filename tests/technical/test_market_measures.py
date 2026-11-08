@@ -8,8 +8,6 @@ import pytest
 
 from financetoolkit.technicals import breadth_model, seasonality_model
 
-# pylint: disable=missing-function-docstring
-
 
 @pytest.fixture(name="prices")
 def fixture_prices():

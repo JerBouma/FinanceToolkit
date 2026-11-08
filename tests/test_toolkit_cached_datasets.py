@@ -4,8 +4,6 @@ import pandas as pd
 
 from financetoolkit import Toolkit, toolkit_controller
 
-# pylint: disable=missing-function-docstring,protected-access
-
 
 def _toolkit() -> Toolkit:
     toolkit = Toolkit(

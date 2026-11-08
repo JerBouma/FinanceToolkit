@@ -119,8 +119,6 @@ FACTOR_PRICE_DIFFERENCES = (
     "get_force_index",
 )
 
-# pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
-# pylint: disable=too-many-boolean-expressions
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
 
@@ -7451,14 +7449,14 @@ class Technicals:
                 atr_multiplier,
             ).loc[self._start_date : self._end_date]
 
-        kelter_channels = (
+        keltner_channels = (
             pd.concat(keltner_channels_dict, axis=1)
             .swaplevel(1, 0, axis=1)
             .sort_index(axis=1)
         )
 
         return finalize_dataset(
-            dataset=kelter_channels,
+            dataset=keltner_channels,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -4,8 +4,6 @@ import pytest
 
 from financetoolkit.models import enterprise_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_enterprise_value_breakdown(recorder):
     recorder.capture(

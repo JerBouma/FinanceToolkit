@@ -8,7 +8,6 @@ from financetoolkit.utilities.statistics_model import drop_non_finite, to_period
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-locals
 
 # Trading days used to annualize, matching the Risk module's convention.
 TRADING_DAYS_PER_YEAR = 252

@@ -11,7 +11,6 @@ from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
 
-# pylint: disable=protected-access
 
 PERIOD_TRANSLATION: dict[str, str] = {
     "weekly": "W",

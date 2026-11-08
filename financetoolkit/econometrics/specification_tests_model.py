@@ -466,12 +466,8 @@ def get_chow_test(
         ValueError: If `break_index` does not leave at least one observation on each side,
         or either sub-sample has too few observations to estimate its `k` parameters.
     """
-    x_values, _ = (
-        regression_model._to_design_matrix(  # pylint: disable=protected-access
-            x, add_constant=False
-        )
-    )
-    y_values = regression_model._to_target_vector(y)  # pylint: disable=protected-access
+    x_values, _ = regression_model._to_design_matrix(x, add_constant=False)
+    y_values = regression_model._to_target_vector(y)
 
     n_observations = x_values.shape[0]
 

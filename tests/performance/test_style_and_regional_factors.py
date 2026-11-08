@@ -11,8 +11,6 @@ import pytest
 
 from financetoolkit.performance import performance_controller, performance_model
 
-# pylint: disable=missing-function-docstring
-
 
 def zipped(text: str) -> bytes:
     buffer = io.BytesIO()

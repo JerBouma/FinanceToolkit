@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.risk import risk_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_max_drawdown(recorder):
     recorder.capture(

@@ -1,0 +1,5 @@
+,Weight,Expected Return,Volatility,Sharpe Ratio,Risk Contribution,CVaR,CVaR Ratio
+AAPL,1.0,0.2651,0.3691,0.6708,1.0,0.0509,0.0193
+MSFT,0.0,0.2088,0.3473,0.5507,0.0,0.0493,0.0154
+Benchmark,0.0,0.1046,0.2498,0.3482,0.0,0.0387,0.0089
+Portfolio,1.0,0.2651,0.3691,0.6708,1.0,0.0509,0.0193

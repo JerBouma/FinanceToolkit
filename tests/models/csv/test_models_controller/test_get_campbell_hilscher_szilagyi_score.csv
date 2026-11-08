@@ -1,0 +1,21 @@
+,,2020,2021,2022
+AAPL,Net Income to Market Assets (NIMTAAVG),0.0056,0.0072,0.0103
+AAPL,Liabilities to Market Assets (TLMTA),0.1,0.0877,0.1247
+AAPL,Excess Return (EXRETAVG),0.0296,0.0233,-0.0264
+AAPL,Volatility (SIGMA),0.3465,0.2459,0.4043
+AAPL,Relative Size (RSIZE),-6.773,-6.773,-6.773
+AAPL,Cash to Market Assets (CASHMTA),0.0352,0.0191,0.0199
+AAPL,Market to Book (MB),6.471,6.471,6.471
+AAPL,Log Price (PRICE),2.708,2.708,2.708
+AAPL,CHS Score,-8.2987,-8.4126,-7.8472
+AAPL,Failure Probability,0.0002,0.0002,0.0004
+MSFT,Net Income to Market Assets (NIMTAAVG),0.0059,0.0056,0.0091
+MSFT,Liabilities to Market Assets (TLMTA),0.0967,0.0697,0.0988
+MSFT,Excess Return (EXRETAVG),-0.0043,0.0131,-0.0092
+MSFT,Volatility (SIGMA),0.2635,0.2323,0.409
+MSFT,Relative Size (RSIZE),-6.773,-6.773,-6.773
+MSFT,Cash to Market Assets (CASHMTA),0.0722,0.0474,0.0522
+MSFT,Market to Book (MB),6.1571,6.471,5.4643
+MSFT,Log Price (PRICE),2.708,2.708,2.708
+MSFT,CHS Score,-8.2874,-8.4116,-8.1189
+MSFT,Failure Probability,0.0003,0.0002,0.0003

@@ -1,5 +1,6 @@
 """Models Helpers Tests"""
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -88,3 +89,24 @@ def test_a_spread_of_exactly_two_points_is_not_flagged(caplog):
             pd.DataFrame([[0.06]], index=["A"]), pd.DataFrame([[0.04]], index=["A"])
         )
     assert caplog.text == ""
+
+
+def test_values_on_or_before():
+    days = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-05"])
+    daily = pd.DataFrame(
+        {"AAA": [1.0, 2.0, 3.0], "BBB": [5.0, np.nan, 7.0]}, index=days
+    )
+    dates = pd.DataFrame(
+        {
+            "first": pd.to_datetime(["2024-01-04", "2024-01-04"]),
+            "second": pd.to_datetime(["2024-01-01", "2024-02-01"]),
+        },
+        index=["AAA", "BBB"],
+    )
+    values = helpers.values_on_or_before(daily, dates)
+    # The last value on or before the date from each ticker's own history; none before the
+    # first day, and none more than ten days old.
+    assert values.loc["AAA", "first"] == 2.0
+    assert values.loc["BBB", "first"] == 5.0
+    assert np.isnan(values.loc["AAA", "second"])
+    assert np.isnan(values.loc["BBB", "second"])

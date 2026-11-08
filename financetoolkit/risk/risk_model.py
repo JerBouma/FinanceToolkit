@@ -9,6 +9,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     VOLATILITY_WINDOW_TRANSLATION,
+    by_own_trading_days,
     to_period_index,
 )
 
@@ -200,6 +201,7 @@ def get_max_drawdown(
     return mask_without_observations((wealth / peak - 1).min(), returns)
 
 
+@by_own_trading_days
 def get_ui(
     returns: pd.Series | pd.DataFrame,
     rolling: int | None = 14,
@@ -457,6 +459,7 @@ def get_variance(
     return returns.groupby(dates).var() * volatility_window
 
 
+@by_own_trading_days
 def get_rolling_variance(
     returns: pd.Series | pd.DataFrame, period: str, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -485,6 +488,7 @@ def get_rolling_variance(
     return returns.rolling(window=window_size).var()
 
 
+@by_own_trading_days
 def get_rolling_volatility(
     returns: pd.Series | pd.DataFrame, period: str, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -560,6 +564,7 @@ def get_volatility(
     return returns.groupby(dates).std() * np.sqrt(volatility_window)
 
 
+@by_own_trading_days
 def get_conditional_drawdown_at_risk(
     returns: pd.Series | pd.DataFrame, alpha: float, method: str = "return"
 ) -> pd.Series | pd.DataFrame:
@@ -657,6 +662,7 @@ def get_tail_ratio(
     return (right_tail.abs() / left_tail.abs()).replace([np.inf, -np.inf], np.nan)
 
 
+@by_own_trading_days
 def get_rolling_tail_ratio(
     returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -680,6 +686,7 @@ def get_rolling_tail_ratio(
     return (right_tail.abs() / left_tail.abs()).replace([np.inf, -np.inf], np.nan)
 
 
+@by_own_trading_days
 def get_rolling_conditional_drawdown_at_risk(
     returns: pd.Series | pd.DataFrame,
     alpha: float,
@@ -766,6 +773,7 @@ def _drawdown_trough(
     return computed, running_max, trough_position, all_nan
 
 
+@by_own_trading_days
 def get_max_drawdown_duration(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -858,6 +866,7 @@ def get_max_drawdown_duration(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_max_drawdown_recovery_time(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -954,6 +963,7 @@ def get_max_drawdown_recovery_time(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_drawdown_series(returns: pd.DataFrame, recovery: bool = False) -> pd.DataFrame:
     """
     Calculate the drawdown of every period: the decline of the wealth path from its
@@ -1040,6 +1050,7 @@ def get_deepest_since(drawdowns: pd.DataFrame) -> pd.DataFrame:
     return deepest_since
 
 
+@by_own_trading_days
 def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     """
     List the largest drawdowns of every column with their peak, trough and recovery.
@@ -1145,6 +1156,7 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns).set_index(["Ticker", "Rank"])
 
 
+@by_own_trading_days
 def get_rolling_skewness(
     returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -1161,6 +1173,7 @@ def get_rolling_skewness(
     return returns.rolling(window=window_size).skew()
 
 
+@by_own_trading_days
 def get_rolling_kurtosis(
     returns: pd.Series | pd.DataFrame, window_size: int, fisher: bool = True
 ) -> pd.Series | pd.DataFrame:
@@ -1244,6 +1257,7 @@ def get_downside_deviation(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_rolling_downside_deviation(
     returns: pd.Series | pd.DataFrame,
     window_size: int,
@@ -1300,6 +1314,7 @@ def get_excess_volatility(
     return get_volatility(excess_returns, period)
 
 
+@by_own_trading_days
 def get_rolling_excess_volatility(
     returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series,
@@ -1419,6 +1434,7 @@ def get_coefficient_of_variation(
     return grouped.std() / grouped.mean()
 
 
+@by_own_trading_days
 def get_ewma_volatility(
     returns: pd.Series | pd.DataFrame, lambda_: float = 0.94
 ) -> pd.Series | pd.DataFrame:
@@ -1466,6 +1482,7 @@ def get_ewma_volatility(
     return np.sqrt(ewma_variance)
 
 
+@by_own_trading_days
 def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
     """
     Calculate the Autocorrelation Function (ACF) of a series for a range of lags.
@@ -1630,6 +1647,7 @@ def get_hill_estimator(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     """
     Calculate the Hurst Exponent of a series, a measure of long-term memory that
@@ -1691,6 +1709,7 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     return poly[0]
 
 
+@by_own_trading_days
 def get_move_significance(
     returns: pd.Series, window: int = 252, alpha: float = 0.05
 ) -> pd.DataFrame:

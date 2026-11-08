@@ -419,9 +419,18 @@ def test_rolling_cdar_matches_the_cdar_of_every_window(method):
     returns.iloc[100, 1] = np.nan
     data = returns if method == "return" else (1 + returns.fillna(0)).cumprod()
 
+    # The missing return is a day B didn't trade: its windows skip it, as for B on its own.
+    expected = pd.concat(
+        [
+            _rolling_cdar_per_window(data[[column]].dropna(), 0.05, 20, method)
+            for column in data.columns
+        ],
+        axis=1,
+    ).reindex(data.index)
+
     pd.testing.assert_frame_equal(
         risk_model.get_rolling_conditional_drawdown_at_risk(data, 0.05, 20, method),
-        _rolling_cdar_per_window(data, 0.05, 20, method),
+        expected,
         rtol=1e-12,
         atol=1e-15,
     )

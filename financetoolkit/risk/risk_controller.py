@@ -297,6 +297,28 @@ class Risk:
 
         return returns
 
+    def _get_prices(
+        self, column: str, period: str = "daily", within_period: bool = False
+    ) -> pd.DataFrame:
+        """
+        The `column` prices on the dates each ticker traded.
+
+        On a date only another ticker or the benchmark traded, a ticker's last price is
+        carried forward as a flat bar without a Return (see
+        `historical_model.fill_non_trading_days`). A measure on the prices themselves (a
+        daily range, a price change) would count it as a day without a move, so the price
+        is NaN there, as its Return is.
+        """
+        frame = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        )
+        has_return = frame["Return"].notna()
+        inside = has_return.cummax() & has_return[::-1].cummax()[::-1]
+
+        return frame[column].mask(~has_return & inside)
+
     @handle_errors
     def collect_all_metrics(
         self,
@@ -5141,8 +5163,8 @@ class Risk:
                 volatility = risk_model.get_volatility(returns, period)
         elif method == "parkinson":
             volatility = realized_volatility_model.get_parkinson_volatility(
-                self._historical_data["daily"]["High"],
-                self._historical_data["daily"]["Low"],
+                self._get_prices("High"),
+                self._get_prices("Low"),
                 period,
             )
         else:
@@ -5153,10 +5175,10 @@ class Risk:
             }
 
             volatility = estimators[method](
-                self._historical_data["daily"]["Open"],
-                self._historical_data["daily"]["High"],
-                self._historical_data["daily"]["Low"],
-                self._historical_data["daily"]["Close"],
+                self._get_prices("Open"),
+                self._get_prices("High"),
+                self._get_prices("Low"),
+                self._get_prices("Close"),
                 period,
             )
 
@@ -5295,10 +5317,10 @@ class Risk:
                 self._historical_data["daily"]["Return"].dropna(how="all") ** 2
             )
         else:
-            open_prices = self._historical_data["daily"]["Open"]
-            high_prices = self._historical_data["daily"]["High"]
-            low_prices = self._historical_data["daily"]["Low"]
-            close_prices = self._historical_data["daily"]["Close"]
+            open_prices = self._get_prices("Open")
+            high_prices = self._get_prices("High")
+            low_prices = self._get_prices("Low")
+            close_prices = self._get_prices("Close")
 
             if estimator == "parkinson":
                 realized_variance = np.log(high_prices / low_prices) ** 2 / (
@@ -5577,11 +5599,7 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        close_prices = (
-            self._within_historical_data[period]["Close"]
-            if within_period
-            else self._historical_data[period]["Close"]
-        )
+        close_prices = self._get_prices("Close", period, within_period)
 
         result = market_liquidity_model.get_roll_spread(close_prices)
 
@@ -6435,7 +6453,7 @@ class Risk:
         """
         # The estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series. Feeding it returns, which are already differenced, collapses the exponent towards zero.  # noqa: E501
         # Log prices, as in Di Matteo et al. (2005): their lagged differences are log returns over the lag, whose dispersion does not depend on the price level, whereas price differences grow with the price and tilt the slope on a series that trends over the sample.  # noqa: E501
-        log_prices = np.log(self._historical_data["daily"]["Adj Close"])
+        log_prices = np.log(self._get_prices("Adj Close"))
 
         hurst_exponent = log_prices.apply(
             lambda column: risk_model.get_hurst_exponent(column, max_lag=max_lag)

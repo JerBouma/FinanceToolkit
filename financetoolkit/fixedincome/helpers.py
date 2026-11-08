@@ -72,3 +72,38 @@ def collect_ecb_data(
         )
 
     return ecb_data
+
+
+def treasury_cusip(identifier: str) -> str | None:
+    """
+    The CUSIP of a Treasury security, from its CUSIP or ISIN.
+
+    Args:
+        identifier (str): A CUSIP or ISIN, in capitals.
+
+    Returns:
+        str | None: The CUSIP when the security is a Treasury (CUSIPs starting with 912),
+        otherwise None.
+    """
+    if len(identifier) == 12 and identifier.startswith("US912"):  # noqa: PLR2004
+        return identifier[2:11]
+    if len(identifier) == 9 and identifier.startswith("912"):  # noqa: PLR2004
+        return identifier
+    return None
+
+
+def maturity_label(years: float) -> str:
+    """
+    The label of a maturity in years, such as '3M' or '10Y'.
+
+    Args:
+        years (float): The maturity in years.
+
+    Returns:
+        str: The label, in months below a year and in years otherwise.
+    """
+    if years < 1 or not float(years).is_integer():
+        months = round(years * 12, 1)
+        return f"{int(months) if float(months).is_integer() else months}M"
+
+    return f"{int(years)}Y"

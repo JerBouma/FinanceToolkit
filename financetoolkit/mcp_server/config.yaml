@@ -122,7 +122,6 @@ module_class_map:
 # ──────────────────────────────────────────────────────────────────────────────
 skip_methods:
   - "get_normalization_files"
-  - "collect_bond_statistics"
   - "collect_all_ratios"
   - "collect_custom_ratios"
   - "collect_efficiency_ratios"
@@ -299,7 +298,7 @@ category_descriptions:
   environment:             "Environmental and ESG data. Carbon footprint and renewable energy use countries= (supports rolling=/trailing=); ESG scores use tickers=."
   jobs:                    "Labour and social metrics by country (unemployment, population, poverty, income inequality). Use countries= param. Supports rolling= (moving-average) and trailing= (trailing-period sum)."
   rates:                   "Interest rate data — central bank rates, government/corporate bond yields, EURIBOR, short/long-term rates, U.S. Treasury par yield curve, real (TIPS) yield curve, breakeven inflation, zero-coupon curves, Nelson-Siegel-Svensson fits, yield curve principal components, Vasicek/CIR/Hull-White short-rate models, U.S. Treasury auction results. Use countries= param. Economics-sourced rates support rolling=/trailing=."
-  fixed_income:            "Bond and derivative valuation calculations (a bond's price is present value; duration, yield to maturity, derivative pricing, par yield, forward rate, key rate duration, yield curve spread, Z-spread, option-adjusted spread of callable bonds, default probabilities implied by credit spreads, bond-equivalent yield)."
+  fixed_income:            "Bond calculations on real bonds, from market prices (statistics, present value on the Treasury zero curve, duration, yield to maturity, Z-spread, key rate duration, Taylor price change, Treasury bill bond-equivalent yields), rates from the market curves (forward rates, par yields, yield curve spreads, breakeven inflation), default probabilities implied by credit spreads, and prices of every Treasury and thousands of corporate bonds."
   discovery:               "Market discovery (lists of stocks, ETFs, indices, currencies and cryptocurrencies, stock screener, gainers and losers, sector and industry performance, Damodaran industry averages, earnings, IPO and split calendars, 8-K filings, insider trades, news, index constituents past and present). No tickers needed."
   market_data:             "Raw data (historical prices, financial statements, company profile, quotes, analyst estimates, price targets and recommendations, earnings calendar and call transcripts, insider statistics, institutional (13F) ownership, market risk premium, Commitment of Traders). Use ratios/performance/risk tools for computed metrics."
 
@@ -873,30 +872,29 @@ tool_groups:
         module:   "fixedincome"
         category: "standalone"
 
-  # ── Fixed Income: Bond & Derivative Valuations ───────────────────────────
-  # Computational valuation tools: bond duration, present value,
-  # yield-to-maturity, and derivative pricing models.
+  # ── Fixed Income: Bond Calculations ──────────────────────────────────────
+  # Bond measures on real bonds (FedInvest Treasuries, bond ETF holdings) and
+  # rates from the market curves.
   - tool_name:       "fixed_income"
-    display_name:    "Bond & Derivative Valuations"
-    description:     "Bond and derivative valuation calculations (bond duration, present value, yield to maturity, derivative pricing, par yield, forward rate, breakeven inflation rate, key rate duration, yield curve spread, Z-spread, bond-equivalent yield, Taylor-series price change estimate). No tickers or countries needed — pass the bond's terms directly, e.g. par_value=1000, coupon_rate=0.05, years_to_maturity=10 with bond_price or yield_to_maturity. A bond's price is get_present_value. The curve-based calculations (par yield, forward rate, yield curve spread, Z-spread, key rate duration, breakeven inflation) take the curve as spot_rates (nominal_rates and real_rates for breakeven inflation), the decimal rate per maturity in years as a number (a curve column '10Y' becomes '10', '6M' becomes '0.5'), e.g. {'1': 0.042, '2': 0.040, '5': 0.041, '10': 0.043}; without it they use a fixed sample curve for illustration. Pass a zero-coupon (spot) curve, not a par curve: from the rates tool get_zero_coupon_curve (annually compounded), get_bank_of_england_yield_curve (UK, continuously compounded), the Euro Area and Germany curves of get_government_bond_yield_curve (continuously compounded zero curves; its other countries are par curves), get_hqm_corporate_bond_yield_curve with rate='spot' (US corporate, semi-annual bond-equivalent) or get_eiopa_risk_free_rate (annually compounded); get_treasury_rates is a par curve (semi-annual bond-equivalent) and only approximates one. Compounding assumed: par yield, Z-spread and key rate duration read the curve as nominal rates compounded `frequency` times a year, forward rate as annually compounded rates, and yield curve spread and breakeven inflation subtract the rates as given. Bond prices are clean prices; a maturity between coupon dates (2.5 years) discounts each cash flow over its fractional period. get_option_adjusted_spread values a callable bond on a Ho-Lee tree (bond_price, coupon_rate, years_to_maturity, call_price, years_to_first_call, volatility=0.01) and returns the OAS, the straight bond price, the option value and the effective duration and convexity; without spot_rates it uses the current US Treasury zero-coupon curve. get_implied_default_probability turns credit spreads (spreads=0.012 or 'BBB:0.011, B:0.031', recovery_rate=0.4, horizons='1,5,10') into hazard rates and default probabilities; without spreads it uses the latest ICE BofA spread per rating, which needs a FRED API key. Market data for individual bonds, with the price, yield to maturity and modified duration computed (yields are semi-annual bond-equivalent decimals, prices clean per 100 of par): get_treasury_securities lists every marketable US Treasury (about 460 bills, notes, bonds, TIPS (real yield) and FRNs, by CUSIP) from the Treasury's FedInvest prices, without an API key (date='YYYY-MM-DD' for a past day, the latest by default; security_type='Bill'|'Note'|'Bond'|'TIPS'|'FRN'). get_bond_universe lists about 9,000 US corporate bonds (investment grade and high yield, by ISIN) read from the daily holdings of bond ETFs, with the G-Spread over the Treasury par curve and the funds that hold each bond; it needs a FinancialModelingPrep API key and has only the latest prices. Narrow it with issuer= (text in the issuer name, e.g. 'APPLE INC' or 'ORACLE,MICROSOFT'), maturity_start=/maturity_end= (YYYY-MM-DD) and show_columns; etfs= picks other iShares bond funds (default 'LQD,IGSB,USHY', e.g. 'HYG' or 'MUB' for municipal bonds). Yields are to maturity, so a callable bond above its call price yields less to its call date."
+    display_name:    "Bond Calculations"
+    description:     "Bond calculations on real bonds and market curves; nothing needs to be typed in. The bond calculations (collect_bond_statistics for all measures at once, get_present_value, get_duration, get_yield_to_maturity, get_z_spread, get_key_rate_duration, get_taylor_price_change) return one row per bond with its issuer, coupon, maturity and market price. Without arguments they use the benchmark US Treasuries (the note or bond maturing closest to 2, 3, 5, 7, 10, 20 and 30 years out) from the Treasury's FedInvest prices, without an API key. Select bonds with bonds= (CUSIPs or ISINs; Treasury CUSIPs start with 912), issuer= (text in the issuer name, e.g. 'APPLE INC', read from bond ETF holdings, which needs a FinancialModelingPrep API key and has only the latest prices), maturity_start=/maturity_end= (YYYY-MM-DD; alone they select every Treasury bill, note and bond maturing in between), etfs= and date= (the day of the Treasury prices). The present value, Z-spread and key rate durations use the US Treasury zero-coupon curve of the price date; yields are semi-annual bond-equivalent decimals and prices clean per 100 of par. TIPS yields are real yields and have no present value or Z-spread on the nominal curve; floating rate notes are left out. get_bond_equivalent_yield lists every Treasury bill with its discount yield and bond-equivalent yield. The rate calculations read the government bond curves of a country (country=, default United States) on a day (date=): get_forward_rate (near_maturity=, far_maturity=, on the zero-coupon curve, annually compounded), get_par_yield (years_to_maturity=, any maturity from the zero-coupon curve), get_yield_curve_spread (long_maturity=, short_maturity=, on the par curve, e.g. 10Y-2Y) and get_breakeven_inflation_rate (US nominal minus TIPS par yields). get_implied_default_probability turns the latest ICE BofA spread per rating (ratings='BBB,B') into hazard rates and default probabilities (recovery_rate=0.4, horizons='1,5,10'); it needs a FRED API key. get_treasury_securities lists every marketable US Treasury (about 460 bills, notes, bonds, TIPS and FRNs, by CUSIP) with price, yield and duration (date=, security_type='Bill'|'Note'|'Bond'|'TIPS'|'FRN', bonds=). get_bond_universe lists about 9,000 US corporate bonds (investment grade and high yield, by ISIN) from the daily holdings of bond ETFs, with the G-Spread over the Treasury par curve; narrow it with issuer=, bonds=, maturity_start=/maturity_end= and show_columns; etfs= picks other iShares bond funds (default 'LQD,IGSB,USHY', e.g. 'HYG' or 'MUB'). Yields are to maturity, so a callable bond above its call price yields less to its call date."
     module_name:     "fixedincome"
     category:        "standalone"
     index_category:  "fixed_income"
     method_override:
-      - "get_derivative_price"
-      - "get_duration"
+      - "collect_bond_statistics"
       - "get_present_value"
+      - "get_duration"
       - "get_yield_to_maturity"
+      - "get_z_spread"
+      - "get_key_rate_duration"
+      - "get_taylor_price_change"
+      - "get_bond_equivalent_yield"
       - "get_par_yield"
       - "get_forward_rate"
-      - "get_breakeven_inflation_rate"
-      - "get_key_rate_duration"
       - "get_yield_curve_spread"
-      - "get_z_spread"
-      - "get_option_adjusted_spread"
+      - "get_breakeven_inflation_rate"
       - "get_implied_default_probability"
-      - "get_bond_equivalent_yield"
-      - "get_taylor_price_change"
       - "get_treasury_securities"
       - "get_bond_universe"
 

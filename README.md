@@ -448,7 +448,7 @@ The three US funds and SMH largely hold the same companies, with SOXX and SMH sh
 
 ## Building a Diversified Portfolio
 
-A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, minimum CVaR, Black-Litterman, maximum diversification, minimum tracking error and growth optimal (Kelly) weights, the efficient frontier, risk contributions, stress tests and attribution. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
+A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, Hierarchical Equal Risk Contribution, Nested Clustered Optimization, minimum CVaR, minimum drawdown, maximum Omega and CVaR ratio, Black-Litterman, maximum diversification, minimum tracking error and growth optimal (Kelly) weights, the efficient frontier, risk contributions, stress tests and attribution. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
 
 ```python
 # Initialize the Toolkit for funds across sectors and asset classes from 2021 to 2025

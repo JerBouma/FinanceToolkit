@@ -109,19 +109,30 @@ def test_reaches_further_back_compares_across_index_types():
     assert historical_model._reaches_further_back(yahoo, truncated_fmp)
 
 
-def test_fill_non_trading_days_keeps_returns_consistent_with_prices():
-    """A holiday on one exchange gets a price, no volume and no invented return."""
-    import numpy as np
-
+def test_fill_non_trading_days_keeps_each_tickers_own_trading_days():
+    """A holiday on one exchange gets the last price as a flat bar, no volume and no return."""
     index = pd.period_range("2024-01-01", periods=5, freq="D")
+    a_close = [100.0, 101.0, 103.0, 104.0]
     frames = {
         # A has no row for 3 January, B traded that day.
         "A": pd.DataFrame(
-            {"Adj Close": [100.0, 101.0, 103.0, 104.0], "Volume": 10.0},
+            {
+                "Open": [99.0, 100.5, 102.0, 103.5],
+                "High": [101.0, 102.0, 104.0, 105.0],
+                "Low": [98.0, 100.0, 101.0, 103.0],
+                "Close": a_close,
+                "Adj Close": a_close,
+                "Volume": 10.0,
+            },
             index=index.delete(2),
         ),
         "B": pd.DataFrame(
-            {"Adj Close": [50.0, 51, 52, 53, 54], "Volume": 5.0}, index=index
+            {
+                column: [50.0, 51, 52, 53, 54]
+                for column in ("Open", "High", "Low", "Close", "Adj Close")
+            }
+            | {"Volume": 5.0},
+            index=index,
         ),
     }
 
@@ -132,10 +143,18 @@ def test_fill_non_trading_days_keeps_returns_consistent_with_prices():
 
     filled = historical_model.fill_non_trading_days(historical_data)
 
-    assert filled.loc[index[2], ("Adj Close", "A")] == 102.0
-    assert filled.loc[index[2], ("Volume", "A")] == 0
-    # The returns compound to the actual move, 100 to 104, and B is untouched.
-    assert np.isclose((1 + filled[("Return", "A")].fillna(0)).prod(), 1.04)
+    # The last price, not one interpolated from the next trading day (look-ahead).
+    holiday = filled.loc[index[2]].xs("A", level=1)
+    assert holiday[["Open", "High", "Low", "Close", "Adj Close"]].eq(101.0).all()
+    assert holiday["Volume"] == 0
+    assert pd.isna(holiday["Return"])
+    # The next trading day keeps the move since A's previous trading day, 101 to 103, so A
+    # has the same returns as without B, and B is untouched.
+    pd.testing.assert_series_equal(
+        filled[("Return", "A")].dropna(),
+        frames["A"]["Return"].dropna(),
+        check_names=False,
+    )
     pd.testing.assert_series_equal(
         filled[("Return", "B")], historical_data[("Return", "B")]
     )

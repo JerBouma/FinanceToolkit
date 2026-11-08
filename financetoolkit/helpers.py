@@ -103,7 +103,10 @@ def run_in_parallel(
     with ThreadPoolExecutor(max_workers=min(max_workers, len(worker_args))) as executor:
         # Every worker runs in a copy of the caller's context, so context-bound state,
         # such as the messages an MCP tool call collects, also covers the workers.
-        futures = [executor.submit(contextvars.copy_context().run, worker, *args) for args in worker_args]
+        futures = [
+            executor.submit(contextvars.copy_context().run, worker, *args)
+            for args in worker_args
+        ]
 
         results = []
 
@@ -120,7 +123,11 @@ def run_in_parallel(
                 # URL); the others can hold an API key, and so can a URL or a message.
                 logger.error(
                     "No data could be retrieved for %s: %s: %s",
-                    (redact_credentials(str(args[0])) if args else getattr(worker, "__name__", "a request")),
+                    (
+                        redact_credentials(str(args[0]))
+                        if args
+                        else getattr(worker, "__name__", "a request")
+                    ),
                     type(error).__name__,
                     redact_credentials(str(error)),
                 )
@@ -187,19 +194,27 @@ def convert_period_end_dates_to_calendar_periods(
 
     shifted_mask = calendar_periods != fiscal_periods
 
-    if shifted_mask.any() and fiscal_year_adjustments is not None and ticker is not None:
+    if (
+        shifted_mask.any()
+        and fiscal_year_adjustments is not None
+        and ticker is not None
+    ):
         # Reported as plain integers for years so the value stays readable, and as period labels for quarters where a bare integer would lose the quarter.  # noqa: E501
         adjustments = [
             {
                 "fiscal_year": str(fiscal) if quarter else fiscal.year,
                 "calendar_year": str(calendar) if quarter else calendar.year,
             }
-            for fiscal, calendar in zip(fiscal_periods[shifted_mask], calendar_periods[shifted_mask])
+            for fiscal, calendar in zip(
+                fiscal_periods[shifted_mask], calendar_periods[shifted_mask]
+            )
         ]
 
         # Called once per statement type (income, balance, cash, statistics), so the entries are merged rather than assigned -- assigning would let the last statement fetched silently discard the periods the earlier ones relabelled.  # noqa: E501
         existing = fiscal_year_adjustments.setdefault(ticker, [])
-        existing.extend(adjustment for adjustment in adjustments if adjustment not in existing)
+        existing.extend(
+            adjustment for adjustment in adjustments if adjustment not in existing
+        )
 
     return calendar_periods
 
@@ -281,14 +296,17 @@ def determine_period_end_dates(
         and isinstance(statistics_statement.index, pd.MultiIndex)
         and PERIOD_END_DATE in statistics_statement.index.get_level_values(1)
     ):
-        reported = statistics_statement.xs(PERIOD_END_DATE, level=1).apply(pd.to_datetime, errors="coerce")
+        reported = statistics_statement.xs(PERIOD_END_DATE, level=1).apply(
+            pd.to_datetime, errors="coerce"
+        )
         reported.columns = pd.PeriodIndex(reported.columns)
 
     period_end_dates = {}
 
     for ticker in tickers:
         shifted_labels = {
-            str(adjustment["calendar_year"]) for adjustment in (fiscal_year_adjustments or {}).get(ticker, [])
+            str(adjustment["calendar_year"])
+            for adjustment in (fiscal_year_adjustments or {}).get(ticker, [])
         }
         fallback = label_ends.where(
             ~pd.Index([str(period) for period in periods]).isin(shifted_labels),
@@ -296,7 +314,9 @@ def determine_period_end_dates(
         )
 
         if ticker in reported.index:
-            ticker_dates = reported.loc[ticker].reindex(periods).astype("datetime64[ns]")
+            ticker_dates = (
+                reported.loc[ticker].reindex(periods).astype("datetime64[ns]")
+            )
             period_end_dates[ticker] = ticker_dates.fillna(fallback)
         else:
             period_end_dates[ticker] = fallback
@@ -361,7 +381,9 @@ def determine_availability_dates(
         periods as columns.
     """
     period_ends = period_end_dates.apply(pd.to_datetime).astype("datetime64[ns]")
-    deadline = pd.Timedelta(days=FALLBACK_FILING_DAYS["interim" if quarter else "annual"])
+    deadline = pd.Timedelta(
+        days=FALLBACK_FILING_DAYS["interim" if quarter else "annual"]
+    )
     availability = period_ends + deadline
     has_statistics = (
         statistics_statement is not None
@@ -372,12 +394,21 @@ def determine_availability_dates(
     if quarter:
         # The quarter that closes a fiscal year is published with the annual report, so it
         # gets the annual deadline: the quarter the source labels Q4, or December without one.
-        fiscal_period = pd.DataFrame(index=period_ends.index, columns=period_ends.columns)
+        fiscal_period = pd.DataFrame(
+            index=period_ends.index, columns=period_ends.columns
+        )
 
-        if has_statistics and FISCAL_PERIOD in statistics_statement.index.get_level_values(1):
+        if (
+            has_statistics
+            and FISCAL_PERIOD in statistics_statement.index.get_level_values(1)
+        ):
             fiscal_period = statistics_statement.xs(FISCAL_PERIOD, level=1)
-            fiscal_period.columns = pd.PeriodIndex(fiscal_period.columns, freq=period_ends.columns.freq)
-            fiscal_period = fiscal_period.reindex(index=period_ends.index, columns=period_ends.columns)
+            fiscal_period.columns = pd.PeriodIndex(
+                fiscal_period.columns, freq=period_ends.columns.freq
+            )
+            fiscal_period = fiscal_period.reindex(
+                index=period_ends.index, columns=period_ends.columns
+            )
 
         december = period_ends.apply(lambda dates: dates.dt.month == DECEMBER)
         fiscal_year_end = (fiscal_period == "Q4") | (fiscal_period.isna() & december)
@@ -395,7 +426,9 @@ def determine_availability_dates(
         if item not in items:
             return pd.DataFrame(index=period_ends.index, columns=period_ends.columns)
 
-        dates = statistics_statement.xs(item, level=1).apply(pd.to_datetime, errors="coerce", format="mixed")
+        dates = statistics_statement.xs(item, level=1).apply(
+            pd.to_datetime, errors="coerce", format="mixed"
+        )
         dates.columns = pd.PeriodIndex(dates.columns, freq=period_ends.columns.freq)
 
         return dates.reindex(index=period_ends.index, columns=period_ends.columns)
@@ -406,9 +439,9 @@ def determine_availability_dates(
         ~after_close,
         accepted.apply(lambda column: column.dt.normalize()) + pd.Timedelta(days=1),
     )
-    filed_day = reported(FILING_DATE).astype("datetime64[ns]").apply(lambda column: column.dt.normalize()) + pd.Timedelta(
-        days=1
-    )
+    filed_day = reported(FILING_DATE).astype("datetime64[ns]").apply(
+        lambda column: column.dt.normalize()
+    ) + pd.Timedelta(days=1)
 
     # Only dates well after the period end are filings; the rest falls back to the deadline.
     earliest_filing = period_ends + pd.Timedelta(days=MINIMUM_FILING_DAYS)
@@ -458,7 +491,9 @@ def enrich_historical_data(
     # A price of 0, such as a faulty bar or a futures contract settling at 0, has no
     # return from or to it, and an infinite return would carry into every cumulative one.
     historical_data["Return"] = (
-        bounded_ffill(historical_data[return_column]).pct_change().replace([np.inf, -np.inf], np.nan)
+        bounded_ffill(historical_data[return_column])
+        .pct_change()
+        .replace([np.inf, -np.inf], np.nan)
     )
 
     historical_data["Cumulative Return"] = 1
@@ -473,7 +508,9 @@ def enrich_historical_data(
     # that was then cached and merged into the dates.
     historical_data["Cumulative Return"] = np.nan
 
-    historical_data.loc[start:end, "Cumulative Return"] = (1.0 + adjusted_return.fillna(0)).cumprod()
+    historical_data.loc[start:end, "Cumulative Return"] = (
+        1.0 + adjusted_return.fillna(0)
+    ).cumprod()
 
     return historical_data
 
@@ -525,7 +562,9 @@ class LazyDict(dict):
         self[key] = self._loader(key)
         return self[key]
 
-    def get(self, key: str, default: Any = None) -> Any:  # ty: ignore[invalid-method-override]
+    def get(
+        self, key: str, default: Any = None
+    ) -> Any:  # ty: ignore[invalid-method-override]
         try:
             return self[key]
         except KeyError:
@@ -557,7 +596,11 @@ def handle_portfolio(func):
 
         # Check if "Portfolio" is in self._tickers, only for a result to add it to: a module
         # retrieves its tickers when first needed, which a failed calculation must not do.
-        if isinstance(result, pd.DataFrame) and isinstance(self._tickers, list | str) and "Portfolio" in self._tickers:
+        if (
+            isinstance(result, pd.DataFrame)
+            and isinstance(self._tickers, list | str)
+            and "Portfolio" in self._tickers
+        ):
             sig = inspect.signature(func)
             bound_args = sig.bind(self, *args, **kwargs)
             bound_args.apply_defaults()
@@ -588,10 +631,16 @@ def handle_portfolio(func):
             weights = self._portfolio_weights.get(period, pd.DataFrame())
 
             # Exclude "Benchmark" from the weighted average calculation
-            result_without_benchmark = result.drop(columns=["Benchmark"]) if "Benchmark" in result.columns else result
+            result_without_benchmark = (
+                result.drop(columns=["Benchmark"])
+                if "Benchmark" in result.columns
+                else result
+            )
 
             # Calculate the weighted average for each column
-            if isinstance(result.columns, pd.PeriodIndex) and not isinstance(result.columns, pd.MultiIndex):
+            if isinstance(result.columns, pd.PeriodIndex) and not isinstance(
+                result.columns, pd.MultiIndex
+            ):
                 # reindex fills periods missing from weights with NaN rather than raising.
                 weights = weights.reindex(result_without_benchmark.columns).T
 
@@ -605,7 +654,9 @@ def handle_portfolio(func):
 
                 # Append the weighted averages as a new row
                 result.loc["Portfolio"] = weighted_averages
-            elif isinstance(result.index, pd.PeriodIndex) and not isinstance(result.columns, pd.MultiIndex):
+            elif isinstance(result.index, pd.PeriodIndex) and not isinstance(
+                result.columns, pd.MultiIndex
+            ):
                 weights = weights.reindex(result.index)
 
                 weighted_averages = apply_rounding(

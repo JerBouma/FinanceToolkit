@@ -5,7 +5,8 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.fixedincome import curve_model, fiscaldata_model
+from financetoolkit.economics import ecb_model as economics_ecb_model
+from financetoolkit.fixedincome import curve_model, fiscaldata_model, fred_model
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 
 # pylint: disable=missing-function-docstring,protected-access
@@ -43,6 +44,13 @@ def fixedincome(monkeypatch):
             ],
             "Australia": lambda: curves[["2Y", "3Y", "5Y", "10Y"]],
         },
+    )
+    # A monthly curve request adds the ECB's convergence yields of the other EU members,
+    # which the simulated history leaves out.
+    monkeypatch.setattr(
+        economics_ecb_model,
+        "get_long_term_convergence_yields",
+        lambda start_date, end_date: pd.DataFrame(),
     )
     yield FixedIncome(start_date="2015-01-01", end_date="2024-12-31", rounding=None)
     clear_active_cache()
@@ -150,43 +158,39 @@ def test_short_rate_simulation_is_bounded(fixedincome, monkeypatch):
         fixedincome.get_short_rate_simulation(paths=10_000_000, years=10)
 
 
-def test_option_adjusted_spread(fixedincome):
-    spot_rates = {1: 0.036, 2: 0.035, 5: 0.037, 10: 0.041, 20: 0.047, 30: 0.047}
-    result = fixedincome.get_option_adjusted_spread(
-        bond_price=[98, 102], spot_rates=spot_rates
+def test_implied_default_probability(fixedincome, monkeypatch):
+    spreads = pd.DataFrame(
+        [[0.008, 0.012, 0.03], [0.007, 0.012, 0.03]],
+        index=pd.period_range("2024-12-30", periods=2, freq="D"),
+        columns=["A", "BBB", "B"],
     )
-
-    assert list(result.columns) == [98, 102]
-    assert (
-        result.loc["Option-Adjusted Spread", 98]
-        > result.loc["Option-Adjusted Spread", 102]
+    monkeypatch.setattr(
+        fred_model,
+        "get_rating_option_adjusted_spread",
+        lambda start_date, end_date, api_key: spreads,
     )
-    assert (result.loc["Option Value"] > 0).all()
+    fixedincome._fred_api_key = "test"
 
-    # Without a curve, the US zero-coupon curve of the end date is used.
-    latest = fixedincome.get_option_adjusted_spread(call_price=None)
-    assert latest.loc["Option Value", 100.0] == pytest.approx(0, abs=1e-8)
+    result = fixedincome.get_implied_default_probability(horizons=[1, 5])
 
-
-def test_implied_default_probability(fixedincome):
-    result = fixedincome.get_implied_default_probability(
-        {"BBB": 0.012, "B": 0.03}, horizons=[1, 5]
-    )
-
+    assert result.index.tolist() == ["A", "BBB", "B"]
     assert list(result.columns) == [
         "Spread",
         "Hazard Rate",
         "1Y Default Probability",
         "5Y Default Probability",
     ]
+    # The latest spread, divided by one minus the recovery rate.
+    assert result.loc["A", "Hazard Rate"] == pytest.approx(0.007 / 0.6)
     assert result.loc["BBB", "Hazard Rate"] == pytest.approx(0.02)
-    assert fixedincome.get_implied_default_probability(0.006).loc[
-        "Spread", "Hazard Rate"
-    ] == (pytest.approx(0.01))
-    from_string = fixedincome.get_implied_default_probability(
-        "BBB:0.012, B:0.03", horizons="1,5"
+
+    selected = fixedincome.get_implied_default_probability(
+        ratings="bbb, B", horizons="1,5"
     )
-    pd.testing.assert_frame_equal(result, from_string)
+    pd.testing.assert_frame_equal(selected, result.loc[["BBB", "B"]])
+
+    # An unknown rating is logged and gives an empty result.
+    assert fixedincome.get_implied_default_probability(ratings="ZZ").empty
 
 
 def test_treasury_auctions(fixedincome, monkeypatch):

@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -40,10 +40,14 @@ jobs:
               sys.exit(f"server.json has {sorted(versions)}, pyproject.toml has {sys.argv[1]}")
           PY
 
+      # The SHA-256 is the one in the release's registry_1.8.1_checksums.txt; update both together.
       - name: Install mcp-publisher
         run: |
-          curl -sSL https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz \
-            | tar xz mcp-publisher
+          curl -sSfL -o mcp-publisher_linux_amd64.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher_linux_amd64.tar.gz" \
+            | sha256sum -c -
+          tar xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
 
       - name: Publish
         run: |

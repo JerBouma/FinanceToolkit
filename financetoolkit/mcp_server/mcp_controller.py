@@ -15,12 +15,13 @@ from typing import Literal
 import anyio
 import uvicorn
 import yaml
-from dotenv import dotenv_values, load_dotenv
+from dotenv import dotenv_values
 from fastmcp.server.dependencies import (  # noqa: PLC0415
     get_http_headers,
     get_http_request,
 )
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import Icon
 from starlette.middleware.cors import CORSMiddleware
 
@@ -33,12 +34,17 @@ from financetoolkit.mcp_server.auth_model import (
     resolve_api_key,
     resolve_fred_api_key,
 )
-from financetoolkit.mcp_server.diagnostics_model import RedactingFilter, redact
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.mcp_server.registry_controller import ToolRegistry
 from financetoolkit.mcp_server.tools_model import UtilityToolRegistry
-from financetoolkit.utilities.logger_model import get_logger, setup_logger
+from financetoolkit.utilities import requests_model
+from financetoolkit.utilities.logger_model import (
+    add_redaction,
+    get_logger,
+    redact,
+    setup_logger,
+)
 
 # The transports FastMCP serves on, keyed by the name used on the command line and
 # in MCP_TRANSPORT; the values carry the literal type FastMCP's `run` is typed with.
@@ -52,49 +58,69 @@ TRANSPORTS: dict[str, Literal["stdio", "sse", "streamable-http"]] = {
 setup_logger()
 
 
+# The only variables the server reads from a .env file. Everything else (proxies, CA
+# bundles, the cache location, the server's own settings) comes from the environment alone.
+ENV_FILE_KEYS = ("FINANCIAL_MODELING_PREP_API_KEY", "FRED_API_KEY")
+
+
 def _load_dotenv_configuration() -> None:
-    """Load dotenv configuration unless both API keys are already present.
+    """Fill in the API keys the environment doesn't set from .env files.
 
-    MCP clients can inject ``FINANCIAL_MODELING_PREP_API_KEY`` and/or the
-    optional ``FRED_API_KEY`` directly into the server process environment
-    (the ``env`` block in their config).  When a key is present the server
-    uses it immediately without reading any file. Otherwise the server falls
-    back to ``FINANCETOOLKIT_ENV_FILE`` (a path to a ``.env`` file) and then
-    to the global Finance Toolkit ``.env`` location. Both keys are checked
-    (rather than short-circuiting on FMP alone) so that a client which embeds
-    the FMP key directly but leaves FRED to the env file still picks up FRED.
+    MCP clients pass ``FINANCIAL_MODELING_PREP_API_KEY`` and the optional ``FRED_API_KEY``
+    in the ``env`` block of their config; a key set in the environment is always used as
+    it is. A key the environment lacks is taken from the first of these files that has it:
+
+    1. The file ``FINANCETOOLKIT_ENV_FILE`` points to.
+    2. The global Finance Toolkit ``.env`` (see ``setup_model.get_global_env_path``).
+    3. A ``.env`` file in the working directory.
+
+    Only these two keys are read from a file. An MCP client starts the server in the
+    project that is open, so a ``.env`` there may come from anyone: reading other
+    variables from it (a proxy, a CA bundle, the cache database) would let that project
+    redirect the requests that carry the keys, and overriding the environment would let it
+    replace a key the user set.
     """
-    if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY") and os.environ.get(
-        "FRED_API_KEY"
-    ):
-        return
+    env_files = [
+        os.environ.get("FINANCETOOLKIT_ENV_FILE", ""),
+        setup_model.get_global_env_path(),
+        pathlib.Path.cwd() / ".env",
+    ]
 
-    # Order: cwd .env, then FINANCETOOLKIT_ENV_FILE, then the global config dir.
-    local_env = pathlib.Path.cwd() / ".env"
-    if local_env.exists():
-        load_dotenv(local_env, override=True)
-    env_file = os.environ.get("FINANCETOOLKIT_ENV_FILE")
-    if env_file and pathlib.Path(env_file).exists():
-        load_dotenv(env_file, override=False)
-    else:
-        load_dotenv(override=False)
+    for env_file in env_files:
+        missing = [name for name in ENV_FILE_KEYS if not os.environ.get(name)]
+        if not missing:
+            return
+        if not env_file or not pathlib.Path(env_file).is_file():
+            continue
+
+        values = dotenv_values(env_file)
+        for name in missing:
+            if values.get(name):
+                os.environ[name] = str(values[name])
 
 
 _load_dotenv_configuration()
 
 
 CACHE_MODES = ("full", "shared", "off")
+# The interfaces that serve this computer only.
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
-def _resolve_cache_mode(configured: object) -> str:
+def is_hosted(transport: str) -> bool:
+    """Whether a transport serves over HTTP, where one process serves every user."""
+    return transport in ("sse", "streamable-http")
+
+
+def _resolve_cache_mode(configured: object, transport: str) -> str:
     """
     Decide what this server caches.
 
     - "full": everything, the source data as well as the tool responses. The default
       for a local server (stdio transport), which is one user on their own machine.
     - "shared": the source data of every source except FinancialModelingPrep, and no
-      tool responses. The default for a hosted server (MCP_TRANSPORT=sse or
-      streamable-http), which serves every user from one process and one database:
+      tool responses. The default for a hosted server (the sse or streamable-http
+      transport), which serves every user from one process and one database:
       FinancialModelingPrep data belongs to each subscriber, so it is always retrieved
       with the user's own key, while official statistics, Yahoo Finance and the other
       public sources are shared. A tool response is not cached because it may be
@@ -107,6 +133,7 @@ def _resolve_cache_mode(configured: object) -> str:
 
     Args:
         configured (object): The ``cache.enabled`` value from config.yaml.
+        transport (str): The transport the server runs on.
 
     Returns:
         str: "full", "shared" or "off".
@@ -124,9 +151,27 @@ def _resolve_cache_mode(configured: object) -> str:
     if configured in CACHE_MODES:
         return str(configured)
 
-    hosted = os.environ.get("MCP_TRANSPORT", "stdio") in ("sse", "streamable-http")
+    return "shared" if is_hosted(transport) else "full"
 
-    return "shared" if hosted else "full"
+
+def cors_origins(loopback: bool) -> list[str]:
+    """
+    The web origins that may call the server from a browser: FT_MCP_CORS_ORIGINS
+    (comma-separated) when set, otherwise every origin for a server on a public interface,
+    which authenticates each call with a bearer token, and none for one on this computer
+    only, so a web page cannot use a local server and the API key it holds.
+
+    Args:
+        loopback (bool): Whether the server listens on this computer only.
+
+    Returns:
+        list[str]: The allowed origins.
+    """
+    configured = os.environ.get("FT_MCP_CORS_ORIGINS", "")
+    if configured.strip():
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+
+    return [] if loopback else ["*"]
 
 
 def _resolve_max_response_characters(configured: object) -> int | None:
@@ -151,7 +196,7 @@ def _resolve_max_response_characters(configured: object) -> int | None:
     return characters if characters > 0 else None
 
 
-def _build_mcp_app() -> FastMCP:
+def _build_mcp_app(transport: str = "stdio") -> FastMCP:
     """
     Bootstrap the MCP application and return the configured FastMCP instance.
 
@@ -160,6 +205,14 @@ def _build_mcp_app() -> FastMCP:
     registers all tools, and returns the ready-to-run FastMCP instance. The
     FINANCIAL_MODELING_PREP_API_KEY environment variable (or .env file via
     python-dotenv) is loaded before any component is initialized.
+
+    The transport decides what is cached and which limits apply: a hosted server (sse or
+    streamable-http) serves every user from one process, so it shares only the public
+    sources, limits the time and the number of calls of each user, and never retries a
+    request without verifying the certificate (that data would reach every user).
+
+    Args:
+        transport (str): The transport the server runs on. Defaults to "stdio".
 
     Returns:
         FastMCP: A fully configured FastMCP instance with all toolkit and utility
@@ -175,7 +228,21 @@ def _build_mcp_app() -> FastMCP:
 
     _cache_db_env = os.environ.get("FINANCE_TOOLKIT_CACHE_DB", "")
     _cache_ttl_env = os.environ.get("FINANCE_TOOLKIT_CACHE_TTL", "")
-    _cache_mode = _resolve_cache_mode(configuration["cache"].get("enabled", True))
+    _cache_mode = _resolve_cache_mode(
+        configuration["cache"].get("enabled", True), transport
+    )
+
+    if is_hosted(transport):
+        hosted_limits = configuration.get("hosted_limits", {})
+        analytics_model.limit_calls(
+            timeout_seconds=hosted_limits.get("call_timeout_seconds"),
+            calls_per_user=hosted_limits.get("calls_per_user"),
+            identify_user=resolve_api_key,
+        )
+        # Data fetched over a connection that was not verified could have been altered
+        # by whoever intercepted it, and on a hosted server it reaches every user through
+        # the shared cache. An explicit setting of the operator still wins.
+        os.environ.setdefault(requests_model.UNVERIFIED_SSL_ENVIRONMENT_VARIABLE, "0")
 
     logger.info(
         "Caching is %s for this server.",
@@ -222,6 +289,8 @@ def _build_mcp_app() -> FastMCP:
             )
         ],
         log_level="CRITICAL",
+        # The interface is set by main(). A loopback host here would switch on the
+        # SDK's DNS rebinding protection, which refuses a public server's own host name.
         host="0.0.0.0",  # noqa: S104
     )
 
@@ -261,6 +330,7 @@ def _build_mcp_app() -> FastMCP:
         ),
         full_text_methods=configuration.get("full_text_methods", []),
         tickers_optional=configuration.get("tickers_optional", []),
+        parameter_limits=configuration.get("parameter_limits", {}),
     )
 
     utility_registry = UtilityToolRegistry(
@@ -323,8 +393,41 @@ def _build_mcp_app() -> FastMCP:
     return mcp
 
 
-mcp = _build_mcp_app()
-register_auth_routes(mcp)
+# The server built per transport. It is built when first used rather than on import, so
+# the transport chosen on the command line decides the cache mode and the limits as much
+# as MCP_TRANSPORT does.
+_servers: dict[str, FastMCP] = {}
+
+
+def get_server(transport: str | None = None) -> FastMCP:
+    """
+    The MCP server for a transport, built on first use.
+
+    Args:
+        transport (str | None): The transport; defaults to MCP_TRANSPORT, then stdio.
+
+    Returns:
+        FastMCP: The configured server.
+    """
+    transport = transport or os.environ.get("MCP_TRANSPORT", "stdio")
+    if transport not in _servers:
+        server = _build_mcp_app(transport)
+        register_auth_routes(server)
+        _servers[transport] = server
+
+    return _servers[transport]
+
+
+def __getattr__(name: str) -> FastMCP:
+    """``mcp`` is the server for MCP_TRANSPORT, so ``mcp_controller.mcp`` keeps working."""
+    if name == "mcp":
+        return get_server()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# The handlers FastMCP and the MCP SDK log through, which can repeat a failed request.
+for _logger_name in ("", "fastmcp", "mcp"):
+    add_redaction(logging.getLogger(_logger_name))
 
 
 def main() -> None:
@@ -342,10 +445,16 @@ def main() -> None:
         The transport to serve on. Defaults to MCP_TRANSPORT, then stdio.
     --host HOST
         The interface to bind to, for the sse and streamable-http transports
-        only. Defaults to MCP_HOST, then 0.0.0.0.
+        only. Defaults to MCP_HOST, then 127.0.0.1 (this computer only).
     --port PORT
         The port to bind to, for the sse and streamable-http transports only.
         Defaults to MCP_PORT, then 8000.
+
+    Behind a reverse proxy, FORWARDED_ALLOW_IPS names the proxy addresses whose
+    X-Forwarded-For and X-Forwarded-Proto headers are trusted (127.0.0.1 by default).
+    FT_MCP_CORS_ORIGINS lists the web origins that may call the server from a browser,
+    comma-separated; it defaults to every origin when the server listens on a public
+    interface and to none on 127.0.0.1.
     """
     parser = argparse.ArgumentParser(
         prog="financetoolkit-mcp",
@@ -354,8 +463,11 @@ def main() -> None:
             "Every option falls back to its environment variable, so an MCP client "
             "that can only set the environment (MCP_TRANSPORT, MCP_HOST, MCP_PORT) "
             "keeps working unchanged. API keys are read from FINANCIAL_MODELING_PREP_API_KEY "
-            "and FRED_API_KEY, or from a .env file in the working directory. Caching is "
-            "controlled with FINANCE_TOOLKIT_CACHE_ENABLED and defaults to off when hosted."
+            "and FRED_API_KEY; a key the environment lacks is read from FINANCETOOLKIT_ENV_FILE, "
+            "the global Finance Toolkit .env file or a .env file in the working directory, in "
+            "that order (only these two keys are read from a file). Caching is "
+            "controlled with FINANCE_TOOLKIT_CACHE_ENABLED; a server on the sse or "
+            "streamable-http transport shares only the public sources between its users."
         ),
     )
     parser.add_argument(
@@ -367,7 +479,7 @@ def main() -> None:
         "--host",
         help=(
             "The interface to bind to, for the sse and streamable-http transports "
-            "only. Defaults to MCP_HOST, then 0.0.0.0."
+            "only. Defaults to MCP_HOST, then 127.0.0.1."
         ),
     )
     parser.add_argument(
@@ -391,9 +503,12 @@ def main() -> None:
         )
     get_logger().info(f"Starting MCP server on transport {transport}")
 
-    if transport in ("sse", "streamable-http"):
+    # Built for the transport chosen here, which decides the cache mode and the limits.
+    server = get_server(transport)
+
+    if is_hosted(transport):
         # Apply command line, then environment variable overrides for host/port
-        host = arguments.host or os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104
+        host = arguments.host or os.environ.get("MCP_HOST", "127.0.0.1")
         port_env = os.environ.get("MCP_PORT", "8000")
         # Compared against None rather than truth-tested: --port 0 is a valid request for an ephemeral port and must not fall through to the default.  # noqa: E501
         port = (
@@ -402,13 +517,27 @@ def main() -> None:
             else (int(port_env) if port_env.isdigit() else 8000)
         )
 
-        mcp.settings.host = host
-        mcp.settings.port = port
+        server.settings.host = host
+        server.settings.port = port
+        loopback = host in LOOPBACK_HOSTS
+        # On this computer only, a web page could still reach the server through a
+        # domain name that resolves to 127.0.0.1, so only the local host names are
+        # accepted (the MCP SDK's DNS rebinding protection).
+        if loopback:
+            server.settings.transport_security = TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
+                allowed_origins=[
+                    "http://127.0.0.1:*",
+                    "http://localhost:*",
+                    "http://[::1]:*",
+                ],
+            )
 
         starlette_app = (
-            mcp.streamable_http_app()
+            server.streamable_http_app()
             if transport == "streamable-http"
-            else mcp.sse_app()
+            else server.sse_app()
         )
 
         # MCPAuthMiddleware is innermost (runs after CORS)
@@ -416,29 +545,33 @@ def main() -> None:
         # CORSMiddleware is outermost — handles OPTIONS before auth check
         starlette_app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=cors_origins(loopback),
             allow_methods=["*"],
             allow_headers=["*"],
             expose_headers=["WWW-Authenticate"],
         )
 
+        # The client address and scheme are taken from X-Forwarded-For and
+        # X-Forwarded-Proto only when the request comes from a trusted proxy, which
+        # uvicorn reads from FORWARDED_ALLOW_IPS (127.0.0.1 by default); from anyone
+        # else they could be made up.
         config = uvicorn.Config(
             starlette_app,
-            host=mcp.settings.host,
-            port=mcp.settings.port,
+            host=server.settings.host,
+            port=server.settings.port,
             log_level="info",
             access_log=True,
             proxy_headers=True,
-            forwarded_allow_ips="*",
         )
         # The access log prints each request's path with its query string, which can hold
-        # the caller's FMP or FRED key (?fmp_api_key=...). Added after the Config, which
-        # sets up uvicorn's loggers.
-        logging.getLogger("uvicorn.access").addFilter(RedactingFilter())
-        server = uvicorn.Server(config)
-        anyio.run(server.serve)
+        # the caller's FMP or FRED key (?fmp_api_key=...), and the error log the
+        # tracebacks of failed requests. Added after the Config, which sets up uvicorn's
+        # handlers.
+        for logger_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+            add_redaction(logging.getLogger(logger_name))
+        anyio.run(uvicorn.Server(config).serve)
     else:
-        mcp.run(transport=TRANSPORTS[transport])
+        server.run(transport=TRANSPORTS[transport])
 
 
 def inspector() -> None:
@@ -460,11 +593,10 @@ def inspector() -> None:
     ).parse_args()
 
     server_path = str(pathlib.Path(__file__).resolve())
-    sys.exit(
-        subprocess.call(  # noqa
-            ["npx", "@modelcontextprotocol/inspector", "python", server_path]  # noqa
-        )
-    )
+    # A fixed Inspector version: npx would otherwise run whatever npm serves as "latest" at that moment,
+    # and Inspector versions below 0.14.1 allow remote code execution (CVE-2025-49596).
+    command = ["npx", "@modelcontextprotocol/inspector@2.12.0", "python", server_path]
+    sys.exit(subprocess.call(command))  # noqa: S603
 
 
 def setup() -> None:
@@ -531,9 +663,7 @@ def _setup_cli(client: str, overwrite: bool) -> None:
     global_env = setup_model.get_global_env_path()
 
     if api_key:
-        masked = (
-            f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"  # noqa
-        )
+        masked = setup_model.mask_key(api_key)
         setup_model.ok(
             f"API key found  [dim]·[/]  [dim]{key_source}[/]  [dim]·[/]  [dim cyan]{masked}[/]"
         )
@@ -556,11 +686,7 @@ def _setup_cli(client: str, overwrite: bool) -> None:
         )
 
     if fred_api_key:
-        masked_fred = (
-            f"{fred_api_key[:4]}...{fred_api_key[-4:]}"
-            if len(fred_api_key) > 8  # noqa
-            else "****"
-        )
+        masked_fred = setup_model.mask_key(fred_api_key)
         setup_model.ok(
             f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
             f"  [dim]·[/]  [dim cyan]{masked_fred}[/]"
@@ -611,9 +737,7 @@ def _setup_interactive() -> None:
     global_env = setup_model.get_global_env_path()
 
     if api_key:
-        masked_key = (
-            f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"  # noqa
-        )
+        masked_key = setup_model.mask_key(api_key)
         setup_model.ok(
             f"API key found  [dim]·[/]  [dim]{key_source}[/]  [dim]·[/]  [dim cyan]{masked_key}[/]"
         )
@@ -624,7 +748,7 @@ def _setup_interactive() -> None:
         setup_model.info("Press [bold]Enter[/] to skip and configure via .env later.")
         setup_model.console.print()
         api_key = setup_model.console.input(
-            "  [bold]API Key[/]  [dim cyan]›[/] "
+            "  [bold]API Key[/]  [dim cyan]›[/] ", password=True
         ).strip()
 
         if api_key and not setup_model.write_global_env_key(api_key):
@@ -636,11 +760,7 @@ def _setup_interactive() -> None:
     setup_model.console.print()
 
     if fred_api_key:
-        masked_fred_key = (
-            f"{fred_api_key[:4]}...{fred_api_key[-4:]}"
-            if len(fred_api_key) > 8  # noqa
-            else "****"
-        )
+        masked_fred_key = setup_model.mask_key(fred_api_key)
         setup_model.ok(
             f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
             f"  [dim]·[/]  [dim cyan]{masked_fred_key}[/]"
@@ -655,7 +775,7 @@ def _setup_interactive() -> None:
         setup_model.info("Press [bold]Enter[/] to skip — everything else still works.")
         setup_model.console.print()
         fred_api_key = setup_model.console.input(
-            "  [bold]FRED API Key (optional)[/]  [dim cyan]›[/] "
+            "  [bold]FRED API Key (optional)[/]  [dim cyan]›[/] ", password=True
         ).strip()
 
         if fred_api_key and not setup_model.write_global_env_fred_key(fred_api_key):

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from http.client import RemoteDisconnected
 from io import StringIO
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote, unquote
 
 import numpy as np
 import pandas as pd
@@ -68,24 +69,33 @@ def determine_retry_delay(attempt: int) -> float:
     return delay * (1 + random.uniform(0, 0.5))  # noqa: S311
 
 
-SYMBOL_PARAMETER = re.compile(r"([?&]symbols?=)([^&]*)")
+# The symbol or symbols parameter runs up to the next parameter (an "&" followed by a name
+# and "="), not up to the next "&": a symbol such as M&M.NS contains one, and cut off there
+# it would be requested as M, a different company, and its data returned under M&M.NS.
+SYMBOL_PARAMETER = re.compile(r"([?&]symbols?=)(.*?)(?=&\w+=|$)")
 
 
 def to_financial_modeling_prep_symbols(url: str) -> str:
     """
     Writes the symbols of a request as FinancialModelingPrep writes them, so a Yahoo
-    Finance currency or crypto symbol (EURUSD=X, BTC-USD) returns data as well.
+    Finance currency or crypto symbol (EURUSD=X, BTC-USD) returns data as well, and
+    percent-encodes each of them, so a symbol with a character that has a meaning in a
+    URL (M&M.NS, ^N225, a "#" or "+") reaches the server as the symbol itself. A symbol
+    that is already encoded (%5EGSPC) is decoded first, so it is not encoded twice.
 
     Args:
-        url (str): The request URL.
+        url (str): The request URL, with its symbols written as they are or encoded.
 
     Returns:
-        str: The URL with its symbol or symbols parameter rewritten.
+        str: The URL with its symbol or symbols parameter rewritten and encoded.
     """
     return SYMBOL_PARAMETER.sub(
         lambda match: match.group(1)
         + ",".join(
-            currencies_model.to_financial_modeling_prep_symbol(symbol)
+            quote(
+                currencies_model.to_financial_modeling_prep_symbol(unquote(symbol)),
+                safe="",
+            )
             for symbol in match.group(2).split(",")
         ),
         url,
@@ -123,6 +133,16 @@ def get_financial_data(
         try:
             response = get_request(url, timeout=60)
             response.raise_for_status()
+
+            # FinancialModelingPrep also answers an invalid key, a rate limit or a plan
+            # restriction with status 200 and {"Error Message": ...}, which is classified
+            # below like the same message sent with an error status, so it is retried or
+            # reported rather than read as data, and never cached.
+            if (
+                response.text.lstrip().startswith("{")
+                and "Error Message" in response.text
+            ):
+                raise requests.exceptions.HTTPError(response=response)
 
             if raw:
                 return response.json()
@@ -182,6 +202,15 @@ def get_financial_data(
                 and e.response is not None
                 else None
             )
+
+            # A symbol or page the source does not know is no data for this request, which
+            # check_for_error_messages reports per ticker, rather than an unrecognised error.
+            if (
+                status_code == requests.codes.not_found
+                or "not found" in error_message.lower()
+            ):
+                error_model.report_request_failure()
+                return pd.DataFrame(columns=["NO DATA"])
 
             if (
                 status_code in TRANSIENT_STATUS_CODES
@@ -330,8 +359,13 @@ def determine_subscription_plan(api_key: str) -> tuple[str, bool]:
                 ", ".join(map(str, determine_plan.columns)) or "no response",
             )
 
-    # A rate limited or failed probe says nothing about the plan, so it is not stored.
-    if cache is not None and determined and "LIMIT REACH" not in determine_plan:
+    # A rate limited, failed or unanswered probe says nothing about the plan, so it is not stored.
+    if (
+        cache is not None
+        and determined
+        and "LIMIT REACH" not in determine_plan
+        and "NO DATA" not in determine_plan
+    ):
         cache.set(
             source=policy_model.FINANCIAL_MODELING_PREP,
             dataset="subscription_plan",
@@ -2981,8 +3015,11 @@ def get_price_targets(
 ) -> tuple[pd.DataFrame, list[str]]:
     """
     Retrieves the current analyst price targets of each ticker: the consensus, median,
-    highest and lowest target, and the number and average of the targets published over
-    the last month, quarter, year and all time.
+    highest and lowest target, the date of the most recent target, and the number and
+    average of the targets published over the last month, quarter, year and all time.
+
+    The consensus endpoints carry no date, so the most recent target comes from the
+    newest article reporting a target (the first row of the price target news).
 
     Args:
         tickers (list[str] | str): The tickers to retrieve the price targets for.
@@ -3046,6 +3083,26 @@ def get_price_targets(
             if targets.get(f"{window} Count") == 0:
                 targets[f"{window} Average"] = np.nan
 
+        # The newest target, to tell how current the consensus is: the windows above only
+        # say that no target was published in the last month, not when the last one was.
+        today = datetime.now()
+        newest = get_financial_data(
+            url=f"https://financialmodelingprep.com/stable/price-target-news?symbol={ticker}"
+            f"&from={(today - timedelta(days=10 * 365)).strftime('%Y-%m-%d')}"
+            f"&to={today.strftime('%Y-%m-%d')}&page=0&limit=1&apikey={api_key}",
+            user_subscription=user_subscription,
+        )
+        latest_date = (
+            pd.to_datetime(newest["publishedDate"])
+            .dt.tz_localize(None)
+            .max()
+            .strftime("%Y-%m-%d")
+            if "publishedDate" in newest.columns and not newest.empty
+            else np.nan
+        )
+        targets = targets.astype(object)
+        targets["Latest Target Date"] = latest_date
+
         return ticker, targets, True
 
     ticker_list = _to_ticker_list(tickers)
@@ -3056,10 +3113,13 @@ def get_price_targets(
     )
 
 
-def add_price_target_metrics(targets: pd.DataFrame, prices: pd.Series) -> pd.DataFrame:
+def add_price_target_metrics(
+    targets: pd.DataFrame, prices: pd.Series, today: pd.Timestamp | None = None
+) -> pd.DataFrame:
     """
     Adds the measures analysts' price targets are read with: the share price, the upside
-    to the consensus target, the dispersion of the targets and the revision momentum.
+    to the consensus target, the dispersion of the targets, the revision momentum and the
+    days since the most recent target.
 
     - Upside: the consensus target divided by the share price, minus one.
     - Dispersion: the range of the targets (highest minus lowest) relative to the
@@ -3068,17 +3128,29 @@ def add_price_target_metrics(targets: pd.DataFrame, prices: pd.Series) -> pd.Dat
     - Revision Momentum: the average target of the last quarter relative to that of the
       last year, minus one. Positive when the recent targets are higher, i.e. analysts
       have been raising them.
+    - Days Since Latest Target: the calendar days from the most recent target to today,
+      large when the consensus is made of old targets.
 
     Args:
         targets (pd.DataFrame): The price targets with a column per ticker, as returned by
             get_price_targets.
         prices (pd.Series): The share price per ticker.
+        today (pd.Timestamp | None): The date the days since the latest target are counted
+            to. Defaults to None, which is today.
 
     Returns:
         pd.DataFrame: The price targets with the Price, Upside, Dispersion and Revision
-            Momentum rows added after the targets.
+            Momentum rows added after the targets, followed by the Latest Target Date and
+            the Days Since Latest Target.
     """
-    targets = targets.copy()
+    latest_date = (
+        targets.loc["Latest Target Date"]
+        if "Latest Target Date" in targets.index
+        else None
+    )
+    targets = targets.drop(index="Latest Target Date", errors="ignore").apply(
+        pd.to_numeric, errors="coerce"
+    )
     prices = pd.to_numeric(prices.reindex(targets.columns), errors="coerce")
     consensus = targets.loc["Target Consensus"].where(
         targets.loc["Target Consensus"] > 0
@@ -3101,10 +3173,21 @@ def add_price_target_metrics(targets: pd.DataFrame, prices: pd.Series) -> pd.Dat
         )
 
     target_rows = ["Target Consensus", "Target Median", "Target High", "Target Low"]
+    parts = [targets.loc[target_rows], measures]
 
-    return pd.concat(
-        [targets.loc[target_rows], measures, targets.drop(index=target_rows)]
-    )
+    if latest_date is not None:
+        today = pd.Timestamp.today() if today is None else pd.Timestamp(today)
+        days_since = (today.normalize() - pd.to_datetime(latest_date)).dt.days
+        parts.append(
+            pd.DataFrame(
+                {
+                    "Latest Target Date": latest_date,
+                    "Days Since Latest Target": days_since.astype(float),
+                }
+            ).T
+        )
+
+    return pd.concat(parts + [targets.drop(index=target_rows)])
 
 
 def get_price_target_history(

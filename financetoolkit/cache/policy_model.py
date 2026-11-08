@@ -28,6 +28,9 @@ STATISTICS_BUREAU_OF_JAPAN = "StatisticsBureauOfJapan"
 US_TREASURY = "USTreasury"
 BUREAU_OF_LABOR_STATISTICS = "BLS"
 FREDDIE_MAC = "FreddieMac"
+DEPARTMENT_OF_LABOR = "DepartmentOfLabor"
+CENSUS_BUREAU = "CensusBureau"
+BUREAU_OF_ECONOMIC_ANALYSIS = "BEA"
 FEDERAL_RESERVE_BOARD = "FederalReserveBoard"
 NATIONAL_BUREAU_OF_ECONOMIC_RESEARCH = "NBER"
 IBGE = "IBGE"
@@ -257,7 +260,17 @@ POLICIES: dict[str, CachePolicy] = {
     # Auctions are added several times a week; a past year's results are final.
     f"{US_TREASURY}.auctions": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.auctions_year": CachePolicy(ttl_seconds=30 * DAY),
+    # The FedInvest prices of a day are completed with the end-of-day price the next
+    # business day; a day that has them is final.
+    f"{US_TREASURY}.fedinvest_prices": CachePolicy(ttl_seconds=3600),
+    f"{US_TREASURY}.fedinvest_prices_final": CachePolicy(ttl_seconds=365 * DAY),
     f"{FREDDIE_MAC}.series": CachePolicy(ttl_seconds=DAY),
+    f"{DEPARTMENT_OF_LABOR}.series": CachePolicy(ttl_seconds=DAY),
+    f"{CENSUS_BUREAU}.series": CachePolicy(ttl_seconds=DAY),
+    f"{BUREAU_OF_ECONOMIC_ANALYSIS}.series": CachePolicy(ttl_seconds=DAY),
+    # The HQM curve is published monthly in files of five years; a past file is final.
+    f"{US_TREASURY}.hqm": CachePolicy(ttl_seconds=DAY),
+    f"{US_TREASURY}.hqm_years": CachePolicy(ttl_seconds=30 * DAY),
     f"{IBGE}.series": CachePolicy(ttl_seconds=DAY),
     # Daily bond yields; a rerun only asks for the last month, since yields are not revised
     # but a holiday or late publication can leave the latest days open.

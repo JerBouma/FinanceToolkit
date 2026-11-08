@@ -5,6 +5,9 @@
 # Finance Toolkit does with a response: the shaping, the date filtering, the conversion
 # of percentages to decimals and the routing between endpoints.
 
+import json
+from urllib.parse import parse_qs, urlsplit
+
 import pandas as pd
 import pytest
 import requests
@@ -335,7 +338,7 @@ def test_currency_pairs_are_recognised(ticker, expected):
     assert currencies_model.is_currency_pair(ticker) is expected
 
 
-def test_news_is_routed_by_ticker_type(cache_location, monkeypatch):
+def test_news_is_routed_by_ticker_type(cache_location, monkeypatch, known_fmp_plan):
     calls: dict[str, list[str]] = {}
 
     def fake_search(feed):
@@ -376,7 +379,7 @@ def test_news_is_routed_by_ticker_type(cache_location, monkeypatch):
 
 
 def test_etf_methods_do_not_remove_tickers_that_are_not_funds(
-    cache_location, monkeypatch
+    cache_location, monkeypatch, known_fmp_plan
 ):
     monkeypatch.setattr(
         toolkit_controller,
@@ -409,7 +412,9 @@ def test_executives_list_the_best_paid_first(responses):
     assert list(executives.loc["AAPL"].index) == ["Chief", "Counsel", "Undisclosed"]
 
 
-def test_a_sector_a_fund_does_not_hold_weighs_zero(cache_location, monkeypatch):
+def test_a_sector_a_fund_does_not_hold_weighs_zero(
+    cache_location, monkeypatch, known_fmp_plan
+):
     weightings = pd.DataFrame(
         {"QQQ": [0.6, None], "VTI": [0.4, 0.02]},
         index=pd.Index(["Technology", "Real Estate"], name="Sector"),
@@ -946,13 +951,13 @@ def test_an_unrecognised_error_is_logged_without_the_api_key(monkeypatch, caplog
         "https://financialmodelingprep.com/stable/profile?symbol=X&apikey=SECRETKEY123"
     )
 
-    def not_found(*_, **__):
+    def forbidden(*_, **__):
         response = requests.models.Response()
-        response.status_code = 404
+        response.status_code = 403
         response.url = url
         response.raise_for_status()
 
-    monkeypatch.setattr(fmp_model, "get_request", not_found)
+    monkeypatch.setattr(fmp_model, "get_request", forbidden)
 
     with caplog.at_level("ERROR"):
         result = fmp_model.get_financial_data(url)
@@ -1332,3 +1337,204 @@ def test_the_toolkit_measures_the_upside_against_the_quote(responses, cache_loca
 
     assert targets.loc["Upside", "AAPL"] == pytest.approx(0.25)
     assert targets.loc["Dispersion", "AAPL"] == pytest.approx(0.4)
+
+
+class _JSONResponse(_Response):
+    """A response whose body is JSON, as requests returns it."""
+
+    def json(self):
+        return json.loads(self.text)
+
+
+PROFILE_FIELDS = {
+    "price": 1.0,
+    "image": "",
+    "defaultImage": False,
+    "isEtf": False,
+    "isActivelyTrading": True,
+    "isAdr": False,
+    "isFund": False,
+}
+
+
+def test_each_symbol_is_requested_as_itself(monkeypatch):
+    # Answered as a server reads the request: an unencoded M&M.NS would be read as M, Macy's.
+    names = {
+        "M": "Macy's",
+        "M&M.NS": "Mahindra & Mahindra",
+        "BRK.B": "Berkshire Hathaway",
+        "^N225": "Nikkei 225",
+    }
+    requested = []
+
+    def fake_get_request(url, timeout):  # noqa: ARG001
+        sent = requests.Request("GET", url).prepare().url
+        requested.append(sent)
+        symbol = parse_qs(urlsplit(sent).query)["symbol"][0]
+
+        return _JSONResponse(
+            200,
+            json.dumps(
+                [{"symbol": symbol, "companyName": names[symbol], **PROFILE_FIELDS}]
+            ),
+        )
+
+    monkeypatch.setattr(fmp_model, "get_request", fake_get_request)
+
+    profile, _ = fmp_model.get_profile(["M&M.NS", "BRK.B", "^N225"], api_key="K")
+
+    assert profile.loc["Company Name"].to_dict() == {
+        "M&M.NS": "Mahindra & Mahindra",
+        "BRK.B": "Berkshire Hathaway",
+        "^N225": "Nikkei 225",
+    }
+    assert [url.split("?")[1] for url in requested] == [
+        "symbol=M%26M.NS&apikey=K",
+        "symbol=BRK.B&apikey=K",
+        "symbol=%5EN225&apikey=K",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("/profile?symbol=M&M.NS&apikey=K", "/profile?symbol=M%26M.NS&apikey=K"),
+        (
+            "/income-statement?symbol=J&KBANK.NS&period=annual&apikey=K&limit=5",
+            "/income-statement?symbol=J%26KBANK.NS&period=annual&apikey=K&limit=5",
+        ),
+        (
+            "/news?apikey=K&symbols=M&M.NS,BRK.B",
+            "/news?apikey=K&symbols=M%26M.NS,BRK.B",
+        ),
+        # An encoded symbol is not encoded twice.
+        (
+            "/light?symbol=%5EGSPC&from=2024-01-01",
+            "/light?symbol=%5EGSPC&from=2024-01-01",
+        ),
+        ("/quote?symbol=A+B#C&apikey=K", "/quote?symbol=A%2BB%23C&apikey=K"),
+    ],
+)
+def test_symbols_are_encoded_up_to_the_next_parameter(url, expected):
+    assert fmp_model.to_financial_modeling_prep_symbols(url) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Invalid API KEY. Feel free to create a Free API Key.", "INVALID API KEY"),
+        ("Limit Reach . Please upgrade your plan.", "LIMIT REACH"),
+        (
+            "Premium Query Parameter: this value is not available.",
+            "PREMIUM QUERY PARAMETER",
+        ),
+        ("Exclusive Endpoint : This endpoint is not available.", "EXCLUSIVE ENDPOINT"),
+        ("Symbol not found.", "NO DATA"),
+        ("Something unexpected happened.", "REQUEST FAILED"),
+    ],
+)
+@pytest.mark.parametrize("raw", [False, True])
+def test_an_error_message_sent_with_status_200_is_classified(
+    monkeypatch, message, expected, raw
+):
+    body = json.dumps({"Error Message": message})
+    monkeypatch.setattr(
+        fmp_model, "get_request", lambda *_, **__: _JSONResponse(200, body)
+    )
+    failures = fmp_model.error_model.get_request_failures()
+
+    result = fmp_model.get_financial_data(
+        "https://financialmodelingprep.com/stable/profile?symbol=AAPL&apikey=K", raw=raw
+    )
+
+    assert list(result.columns) == [expected]
+    # A failed request is counted, which keeps its answer out of the cache.
+    assert fmp_model.error_model.get_request_failures() == failures + 1
+
+
+def test_a_rate_limit_sent_with_status_200_is_retried(monkeypatch):
+    responses = [
+        _JSONResponse(200, json.dumps({"Error Message": "Limit Reach ."})),
+        _JSONResponse(200, '[{"a": 1}]'),
+    ]
+    monkeypatch.setattr(fmp_model, "get_request", lambda *_, **__: responses.pop(0))
+    monkeypatch.setattr(fmp_model.time, "sleep", lambda _: None)
+
+    result = fmp_model.get_financial_data(
+        "https://example.com", user_subscription="Premium"
+    )
+
+    assert result.to_dict("list") == {"a": [1]}
+
+
+def test_an_error_message_sent_with_status_200_is_not_cached(
+    cache_location, monkeypatch
+):
+    from financetoolkit.discovery import discovery_model  # noqa: PLC0415
+
+    cache_controller.set_active_cache(
+        cache_controller.get_cache(location=cache_location)
+    )
+    responses = [
+        _JSONResponse(200, json.dumps({"Error Message": "Limit Reach ."})),
+        _JSONResponse(200, '[{"symbol": "M&M.NS", "price": 1.0}]'),
+    ]
+    monkeypatch.setattr(fmp_model, "get_request", lambda *_, **__: responses.pop(0))
+    url = "https://financialmodelingprep.com/stable/quote?symbol=M&M.NS&apikey=K"
+
+    first = discovery_model.get_cached_financial_data(url)
+    second = discovery_model.get_cached_financial_data(url)
+
+    assert list(first.columns) == ["LIMIT REACH"]
+    assert second["symbol"].tolist() == ["M&M.NS"]
+
+
+def test_price_targets_say_when_the_latest_target_was_published(responses):
+    canned, requested = responses
+    canned["price-target-consensus"] = [
+        {
+            "symbol": "NVDA",
+            "targetHigh": 300,
+            "targetLow": 150,
+            "targetConsensus": 250,
+            "targetMedian": 240,
+        }
+    ]
+    canned["price-target-news"] = [
+        {
+            "symbol": "NVDA",
+            "publishedDate": "2026-10-05T15:32:19.000Z",
+            "analystCompany": "BNP Paribas",
+            "adjPriceTarget": 345,
+        }
+    ]
+
+    targets, _ = fmp_model.get_price_targets(["NVDA"], "key")
+    measures = fmp_model.add_price_target_metrics(
+        targets, pd.Series({"NVDA": 200.0}), today=pd.Timestamp("2026-11-07")
+    )
+
+    news = next(url for url in requested if "price-target-news" in url)
+    assert "from=" in news and "to=" in news
+    assert measures.loc["Latest Target Date", "NVDA"] == "2026-10-05"
+    assert measures.loc["Days Since Latest Target", "NVDA"] == 33
+    assert measures.loc["Upside", "NVDA"] == pytest.approx(0.25)
+
+
+def test_price_targets_without_any_published_target_have_no_latest_date(responses):
+    canned, _ = responses
+    canned["price-target-consensus"] = [
+        {
+            "symbol": "NVDA",
+            "targetHigh": 300,
+            "targetLow": 150,
+            "targetConsensus": 250,
+            "targetMedian": 240,
+        }
+    ]
+
+    targets, _ = fmp_model.get_price_targets(["NVDA"], "key")
+    measures = fmp_model.add_price_target_metrics(targets, pd.Series({"NVDA": 200.0}))
+
+    assert pd.isna(measures.loc["Latest Target Date", "NVDA"])
+    assert pd.isna(measures.loc["Days Since Latest Target", "NVDA"])

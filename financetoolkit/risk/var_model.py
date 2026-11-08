@@ -6,6 +6,7 @@ from scipy import stats
 
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import as_float
+from financetoolkit.utilities.statistics_model import by_own_trading_days
 
 ALPHA_CONSTRAINT = 0.5
 
@@ -88,6 +89,7 @@ def get_var_gaussian(
     return returns.mean() + za * returns.std(ddof=1)
 
 
+@by_own_trading_days
 def get_rolling_var_historic(
     returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
 ) -> pd.Series | pd.DataFrame:

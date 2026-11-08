@@ -18,8 +18,13 @@ services:
       # 1 counts the tool calls and publishes the totals at /stats; the counts are kept
       # in mcp_stats.json on the volume below. Off by default.
       FT_MCP_ANALYTICS: "${FT_MCP_ANALYTICS:-0}"
+      # The addresses of the reverse proxy in front of the server (comma-separated, CIDR
+      # ranges allowed), whose X-Forwarded-For header names the client. Requests from any
+      # other address are taken at face value. 127.0.0.1 by default.
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
     volumes:
-      - ft_cache:/root/.config/financetoolkit
+      # The server runs as the non-root user financetoolkit (uid 10001); see the Dockerfile.
+      - ft_cache:/home/financetoolkit/.config/financetoolkit
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s

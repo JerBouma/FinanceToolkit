@@ -164,7 +164,7 @@ def test_the_calendar_refuses_arguments_it_cannot_honour(arguments, message):
     ],
 )
 def test_discovery_refuses_arguments_the_endpoints_would_ignore(
-    method, arguments, error, message
+    method, arguments, error, message, known_fmp_plan
 ):
     with pytest.raises(error, match=message):
         getattr(Discovery(api_key="key"), method)(**arguments)

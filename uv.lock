@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11, <3.16"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -1031,7 +1031,7 @@ server = [
 
 [[package]]
 name = "financetoolkit"
-version = "2.3.2"
+version = "2.3.3"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -1053,6 +1053,7 @@ econometrics = [
     { name = "statsmodels" },
 ]
 mcp = [
+    { name = "cryptography" },
     { name = "fastmcp" },
     { name = "linearmodels" },
     { name = "mcp", extra = ["cli"] },
@@ -1087,6 +1088,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", marker = "extra == 'mcp'", specifier = ">=42" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.4.2" },
     { name = "financetoolkit", extras = ["econometrics"], marker = "extra == 'mcp'", editable = "." },
     { name = "linearmodels", marker = "extra == 'econometrics'", specifier = ">=6.0" },
@@ -1097,7 +1099,7 @@ requires-dist = [
     { name = "python-calamine", marker = "python_full_version < '3.15'", specifier = ">=0.3.0" },
     { name = "python-dotenv", marker = "extra == 'mcp'", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.32" },
+    { name = "requests", specifier = ">=2.32.4" },
     { name = "rich", marker = "extra == 'mcp'", specifier = ">=13.0" },
     { name = "scipy", specifier = ">=1.10" },
     { name = "statsmodels", marker = "extra == 'econometrics'", specifier = ">=0.14" },

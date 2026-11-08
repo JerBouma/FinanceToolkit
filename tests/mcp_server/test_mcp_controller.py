@@ -125,35 +125,88 @@ def test_a_hosted_server_shares_everything_but_financial_modeling_prep(monkeypat
     monkeypatch.delenv("FINANCE_TOOLKIT_CACHE_ENABLED", raising=False)
 
     for transport in ("sse", "streamable-http"):
-        monkeypatch.setenv("MCP_TRANSPORT", transport)
-        assert _resolve_cache_mode("auto") == "shared"
+        assert _resolve_cache_mode("auto", transport) == "shared"
 
-    monkeypatch.setenv("MCP_TRANSPORT", "stdio")
-    assert _resolve_cache_mode("auto") == "full"
-
-    monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-    assert _resolve_cache_mode("auto") == "full"
+    assert _resolve_cache_mode("auto", "stdio") == "full"
 
 
 def test_cache_enabled_env_overrides_transport(monkeypatch):
     """Test that the explicit environment override wins over both defaults."""
     from financetoolkit.mcp_server.mcp_controller import _resolve_cache_mode
 
-    monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
     monkeypatch.setenv("FINANCE_TOOLKIT_CACHE_ENABLED", "true")
 
-    assert _resolve_cache_mode("auto") == "full"
+    assert _resolve_cache_mode("auto", "streamable-http") == "full"
 
-    monkeypatch.setenv("MCP_TRANSPORT", "stdio")
     monkeypatch.setenv("FINANCE_TOOLKIT_CACHE_ENABLED", "false")
 
-    assert _resolve_cache_mode("auto") == "off"
+    assert _resolve_cache_mode("auto", "stdio") == "off"
 
     # An explicit boolean in config.yaml still beats the transport heuristic.
     monkeypatch.delenv("FINANCE_TOOLKIT_CACHE_ENABLED", raising=False)
-    monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
 
-    assert _resolve_cache_mode(True) == "full"
+    assert _resolve_cache_mode(True, "streamable-http") == "full"
+
+
+def test_the_transport_flag_builds_the_server_as_mcp_transport_does(monkeypatch):
+    """--transport decides the cache mode and limits, as MCP_TRANSPORT does.
+
+    The server is built after the arguments are read, for the transport they name, and
+    an HTTP server on its own computer listens on 127.0.0.1 only, accepts only the local
+    host names and allows no web origin.
+    """
+    import sys
+
+    import anyio
+    from mcp.server.fastmcp import FastMCP
+
+    from financetoolkit.mcp_server import mcp_controller
+
+    built = []
+
+    def build(transport="stdio"):
+        built.append(transport)
+        return FastMCP("test")
+
+    configs = []
+    monkeypatch.setattr(mcp_controller, "_servers", {})
+    monkeypatch.setattr(mcp_controller, "_build_mcp_app", build)
+    monkeypatch.setattr(mcp_controller, "register_auth_routes", lambda server: None)
+    monkeypatch.setattr(
+        mcp_controller.uvicorn,
+        "Server",
+        lambda config: configs.append(config) or types.SimpleNamespace(serve=None),
+    )
+    monkeypatch.setattr(anyio, "run", lambda serve: None)
+    for name in (
+        "MCP_TRANSPORT",
+        "MCP_HOST",
+        "FT_MCP_CORS_ORIGINS",
+        "FORWARDED_ALLOW_IPS",
+        "FINANCE_TOOLKIT_CACHE_ENABLED",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        sys, "argv", ["financetoolkit-mcp", "--transport", "streamable-http"]
+    )
+
+    mcp_controller.main()
+
+    assert built == ["streamable-http"]
+    assert mcp_controller._resolve_cache_mode("auto", built[0]) == "shared"
+
+    server = mcp_controller.get_server("streamable-http")
+    assert server.settings.host == "127.0.0.1"
+    assert server.settings.transport_security.enable_dns_rebinding_protection
+    assert configs[0].forwarded_allow_ips == "127.0.0.1"
+    assert mcp_controller.cors_origins(loopback=True) == []
+    assert mcp_controller.cors_origins(loopback=False) == ["*"]
+
+    monkeypatch.setenv("FT_MCP_CORS_ORIGINS", "https://a.example, https://b.example")
+    assert mcp_controller.cors_origins(loopback=True) == [
+        "https://a.example",
+        "https://b.example",
+    ]
 
 
 def test_setup_leaves_a_config_it_cannot_read_unchanged(monkeypatch, tmp_path):
@@ -272,3 +325,102 @@ def test_vscode_entries_name_their_stdio_transport(monkeypatch, tmp_path):
         (tmp_path / "cli" / ".vscode" / "mcp.json").read_text()
     )
     assert non_interactive["servers"]["finance-toolkit"]["type"] == "stdio"
+
+
+def test_only_missing_api_keys_are_read_from_env_files(monkeypatch, tmp_path):
+    """
+    A .env file can fill in a missing API key and nothing else: a project's .env must not
+    set a proxy, a CA bundle or the cache database, nor replace a key that is set.
+    """
+    import os
+
+    from financetoolkit.mcp_server.mcp_controller import _load_dotenv_configuration
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".env").write_text(
+        "FINANCIAL_MODELING_PREP_API_KEY=PROJECTKEY\n"
+        "FRED_API_KEY=PROJECTFRED\n"
+        "HTTPS_PROXY=http://proxy.example:8080\n"
+        "FINANCE_TOOLKIT_CACHE_DB=./planted.db\n"
+    )
+    global_env = tmp_path / "config" / "financetoolkit" / ".env"
+    global_env.parent.mkdir(parents=True)
+    global_env.write_text("FRED_API_KEY=GLOBALFRED\n")
+
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("FINANCIAL_MODELING_PREP_API_KEY", "")
+    monkeypatch.setenv("FRED_API_KEY", "")
+    monkeypatch.setenv("HTTPS_PROXY", "")
+    monkeypatch.setenv("FINANCE_TOOLKIT_CACHE_DB", "")
+    monkeypatch.delenv("FINANCETOOLKIT_ENV_FILE", raising=False)
+
+    _load_dotenv_configuration()
+
+    # The global .env comes before the working directory's.
+    assert os.environ["FRED_API_KEY"] == "GLOBALFRED"
+    assert os.environ["FINANCIAL_MODELING_PREP_API_KEY"] == "PROJECTKEY"
+    assert os.environ["HTTPS_PROXY"] == ""
+    assert os.environ["FINANCE_TOOLKIT_CACHE_DB"] == ""
+
+    # A key set in the environment is never replaced, and FINANCETOOLKIT_ENV_FILE comes first.
+    env_file = tmp_path / "keys.env"
+    env_file.write_text("FRED_API_KEY=FILEFRED\n")
+    monkeypatch.setenv("FINANCIAL_MODELING_PREP_API_KEY", "CLIENTKEY")
+    monkeypatch.setenv("FRED_API_KEY", "")
+    monkeypatch.setenv("FINANCETOOLKIT_ENV_FILE", str(env_file))
+
+    _load_dotenv_configuration()
+
+    assert os.environ["FINANCIAL_MODELING_PREP_API_KEY"] == "CLIENTKEY"
+    assert os.environ["FRED_API_KEY"] == "FILEFRED"
+
+
+def test_the_wizard_writes_key_files_privately_and_masks_keys(monkeypatch, tmp_path):
+    import json
+    import os
+
+    from financetoolkit.mcp_server import setup_model
+
+    env = tmp_path / "config" / ".env"
+    monkeypatch.setattr(setup_model, "get_global_env_path", lambda: env)
+    printed = []
+    monkeypatch.setattr(
+        setup_model.console, "print", lambda *args, **kwargs: printed.append(args)
+    )
+    monkeypatch.setattr(setup_model.Confirm, "ask", lambda *args, **kwargs: True)
+
+    assert setup_model.write_global_env_key("FMPKEY1234567890")
+    assert setup_model.write_global_env_fred_key("FREDKEY1234567890")
+    assert env.read_text().splitlines() == [
+        "FINANCIAL_MODELING_PREP_API_KEY=FMPKEY1234567890",
+        "FRED_API_KEY=FREDKEY1234567890",
+    ]
+    backup = env.with_name(".env.bak")
+    assert backup.read_text() == "FINANCIAL_MODELING_PREP_API_KEY=FMPKEY1234567890\n"
+    if os.name == "posix":
+        assert env.stat().st_mode & 0o777 == 0o600
+        assert backup.stat().st_mode & 0o777 == 0o600
+
+    config = tmp_path / ".cursor" / "mcp.json"
+    config.parent.mkdir()
+    config.write_text('{"mcpServers": {"other": {"command": "x"}}}')
+    setup_model.write_cursor_config("FMPKEY1234567890", tmp_path, "FREDKEY1234567890")
+    # An existing entry is shown with its keys masked before it is replaced.
+    setup_model.write_cursor_config("NEWKEY1234567890", tmp_path)
+
+    servers = json.loads(config.read_text())["mcpServers"]
+    assert set(servers) == {"other", "finance-toolkit"}
+    assert servers["finance-toolkit"]["env"]["FINANCIAL_MODELING_PREP_API_KEY"] == (
+        "NEWKEY1234567890"
+    )
+    assert "FMPKEY1234567890" in config.with_name("mcp.json.bak").read_text()
+    if os.name == "posix":
+        assert config.stat().st_mode & 0o777 == 0o600
+    assert not [path for path in config.parent.iterdir() if path.name.startswith(".")]
+
+    output = " ".join(str(part) for args in printed for part in args)
+    assert "FMPK...7890" in output
+    assert "FMPKEY1234567890" not in output
+    assert "FREDKEY1234567890" not in output

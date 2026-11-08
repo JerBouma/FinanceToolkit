@@ -4,7 +4,9 @@ __docformat__ = "google"
 
 
 import difflib
-from collections.abc import Iterable
+import functools
+import inspect
+from collections.abc import Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -524,6 +526,148 @@ def to_datetime_index(index: pd.Index) -> pd.DatetimeIndex:
         )
 
     return index
+
+
+def by_own_trading_days(
+    function: Callable | None = None, *, compound: bool = False
+) -> Callable:
+    """
+    Calculate a measure on the trading days of each column.
+
+    Tickers listed on different exchanges, and the benchmark, share one set of dates, so a
+    ticker has no Return on the dates only another one traded, such as a holiday on its own
+    exchange (see `historical_model.fill_non_trading_days`). Measures that skip missing
+    values (a mean, a standard deviation, a quantile) are unaffected, but a measure that
+    counts or walks through rows (a drawdown, a duration, a rolling window or a recursion)
+    would count those dates as periods without a move, or lose every rolling window that
+    holds one. When a column has dates without a value inside its history, the decorated
+    function is therefore called per column on its own rows, together with the same rows of
+    every argument on the same dates (the risk free rate, the benchmark), and the results
+    are put back on the original dates, NaN where the column did not trade. Columns without
+    such dates, the usual case for tickers on one exchange, are calculated at once as before.
+
+    With compound=True, for a measure against the benchmark, the rows are the dates both
+    traded and the returns on them are those since the previous date both traded: the
+    returns of the dates only one of them traded are compounded into the next shared date.
+    Pairing each one's own daily return instead would compare, after a holiday on one
+    exchange, a two-day move with a one-day move.
+
+    Args:
+        function (Callable | None): A function taking the returns (or prices), a Series or
+            DataFrame with one column per asset, as its first argument.
+        compound (bool, optional): Whether to compound the returns of the left out dates
+            into the next date kept, for returns measured against each other. Defaults to False.
+
+    Returns:
+        Callable: The function, calculated per column when the columns trade on different dates.
+    """
+    if function is None:
+        return functools.partial(by_own_trading_days, compound=compound)
+
+    # The returns are the first parameter, passed by position or by name.
+    returns_name = next(iter(inspect.signature(function).parameters))
+
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        if args:
+            returns, args = args[0], args[1:]
+        else:
+            returns = kwargs.pop(returns_name)
+        if not isinstance(returns, pd.Series | pd.DataFrame):
+            return function(returns, *args, **kwargs)
+
+        frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
+        index = frame.index
+        values = (*args, *kwargs.values())
+
+        def on_index(value) -> bool:
+            return isinstance(value, pd.Series | pd.DataFrame) and value.index.equals(
+                index
+            )
+
+        # A Series on the same dates (the benchmark, the risk free rate) is needed on
+        # every date the column is calculated on.
+        partners = [
+            value
+            for value in values
+            if isinstance(value, pd.Series) and on_index(value)
+        ]
+
+        def own_rows(column) -> tuple[np.ndarray, np.ndarray]:
+            has_value = frame[column].notna()
+            for partner in partners:
+                has_value &= partner.notna()
+            started = has_value.cummax()
+            ended = has_value[::-1].cummax()[::-1]
+            # Rows before the first and after the last value stay, as without other tickers.
+            return (has_value | ~started | ~ended).to_numpy(), has_value.to_numpy()
+
+        rows = {column: own_rows(column) for column in frame.columns}
+
+        if all(keep.all() for keep, _ in rows.values()):
+            return function(returns, *args, **kwargs)
+
+        def take(value, column, keep, has_value):
+            if isinstance(value, pd.DataFrame) and column in value.columns:
+                value = value[[column]]
+            if not on_index(value):
+                return value
+            if compound and isinstance(value, pd.Series | pd.DataFrame):
+                # Each kept row with the left out rows before it, within its period.
+                group = keep[::-1].cumsum()[::-1]
+                keys = (
+                    [group]
+                    if index.nlevels == 1
+                    else [index.get_level_values(0), group]
+                )
+                compounded = (1 + value.fillna(0)).groupby(keys).transform("prod") - 1
+                value = value.mask(
+                    pd.Series(has_value, index=index), compounded, axis=0
+                )
+            return value[keep]
+
+        results = {}
+        for column, (keep, has_value) in rows.items():
+            column_returns = take(frame, column, keep, has_value)
+            results[column] = function(
+                (
+                    column_returns[column]
+                    if isinstance(returns, pd.Series)
+                    else column_returns
+                ),
+                *(take(value, column, keep, has_value) for value in args),
+                **{
+                    key: take(value, column, keep, has_value)
+                    for key, value in kwargs.items()
+                },
+            )
+
+        first = next(iter(results.values()))
+        # A result on the dates of the returns goes back on all of them, NaN where the
+        # column was not calculated; a value per column or per period is combined as it is.
+        on_dates = (
+            isinstance(first, pd.Series | pd.DataFrame)
+            and first.index.nlevels == index.nlevels
+            and first.index.isin(index).all()
+        )
+
+        if isinstance(returns, pd.Series):
+            return first.reindex(index) if on_dates else first
+
+        first_column = frame.columns[0]
+        if isinstance(first, pd.DataFrame) and any(
+            first_column in first.columns.get_level_values(level)
+            for level in range(first.columns.nlevels)
+        ):
+            combined = pd.concat(results.values(), axis=1)
+            return combined.reindex(index) if on_dates else combined
+
+        if isinstance(first, pd.Series | pd.DataFrame):
+            return pd.concat(results.values())
+
+        return pd.Series(results)
+
+    return wrapper
 
 
 def apply_rounding(

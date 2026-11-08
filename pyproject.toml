@@ -1,6 +1,6 @@
 [project]
 name = "financetoolkit"
-version = "2.3.2"
+version = "2.3.3"
 description = "Transparent and Efficient Financial Analysis"
 license = {text = "MIT"}
 authors = [
@@ -41,7 +41,7 @@ keywords = [
 requires-python = ">=3.11, <3.16"
 dependencies = [
     "pandas>=3.0",
-    "requests>=2.32",
+    "requests>=2.32.4",
     "yfinance",
     "openpyxl>=3.1",
     "xlrd>=2.0",
@@ -61,6 +61,7 @@ mcp = [
     "fastmcp>=3.4.2",
     "mcp[cli]>=1.27.0,<2",
     "python-dotenv>=1.0",
+    "cryptography>=42",
     "rich>=13.0",
 ]
 

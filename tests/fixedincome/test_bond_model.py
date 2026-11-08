@@ -13,14 +13,12 @@ TAYLOR_APPROXIMATION_TOLERANCE = 0.0001
 
 def test_get_bond_price_from_curve_matches_flat_yield(recorder):
     flat_curve = pd.Series({1: 0.08, 2: 0.08, 3: 0.08, 5: 0.08, 10: 0.08})
-    price_from_curve = (
-        bond_model._get_bond_price_from_curve(  # pylint: disable=protected-access
-            par_value=100,
-            coupon_rate=0.05,
-            years_to_maturity=5,
-            spot_rates=flat_curve,
-            frequency=1,
-        )
+    price_from_curve = bond_model.get_bond_price_from_curve(
+        par_value=100,
+        coupon_rate=0.05,
+        years_to_maturity=5,
+        spot_rates=flat_curve,
+        frequency=1,
     )
     price_from_ytm = bond_model.get_bond_price(
         par_value=100,
@@ -49,14 +47,12 @@ def test_get_z_spread(recorder):
 def test_get_z_spread_recovers_synthetic_spread(recorder):
     benchmark = pd.Series({1: 0.03, 2: 0.035, 3: 0.04, 5: 0.045, 10: 0.05})
     true_spread = 0.015
-    synthetic_price = (
-        bond_model._get_bond_price_from_curve(  # pylint: disable=protected-access
-            par_value=100,
-            coupon_rate=0.05,
-            years_to_maturity=5,
-            spot_rates=benchmark + true_spread,
-            frequency=1,
-        )
+    synthetic_price = bond_model.get_bond_price_from_curve(
+        par_value=100,
+        coupon_rate=0.05,
+        years_to_maturity=5,
+        spot_rates=benchmark + true_spread,
+        frequency=1,
     )
     recovered_spread = bond_model.get_z_spread(
         par_value=100,
@@ -295,17 +291,14 @@ def test_curve_price_uses_fractional_times_on_a_flat_curve():
     flat_curve = pd.Series({0.25: 0.06, 1: 0.06, 5: 0.06, 10: 0.06})
 
     for maturity, frequency in ((2.5, 1), (2.75, 2), (7.3, 4)):
-        assert (
-            bond_model._get_bond_price_from_curve(  # pylint: disable=protected-access
-                100, 0.05, maturity, flat_curve, frequency
-            )
-            == pytest.approx(
-                bond_model.get_bond_price(100, 0.05, maturity, 0.06, frequency)
-            )
+        assert bond_model.get_bond_price_from_curve(
+            100, 0.05, maturity, flat_curve, frequency
+        ) == pytest.approx(
+            bond_model.get_bond_price(100, 0.05, maturity, 0.06, frequency)
         )
 
     # A bond priced on the curve has a Z-spread of zero.
-    price = bond_model._get_bond_price_from_curve(  # pylint: disable=protected-access
+    price = bond_model.get_bond_price_from_curve(
         100, 0.05, 2.5, pd.Series({1: 0.03, 2: 0.035, 5: 0.04}), 1
     )
     assert bond_model.get_z_spread(
@@ -331,3 +324,31 @@ def test_yield_to_maturity_is_nan_when_no_yield_gives_the_price():
 
     with pytest.raises(ValueError, match="frequency"):
         bond_model.get_bond_price(100, 0.05, 10, 0.05, 0)
+
+
+def test_get_current_yield_is_the_coupon_over_the_price():
+    assert bond_model.get_current_yield(
+        par_value=1000, coupon_rate=0.05, bond_price=950
+    ) == pytest.approx(50 / 950)
+
+
+def test_get_effective_yield_compounds_the_coupon_payments():
+    assert bond_model.get_effective_yield(0.06, 2) == pytest.approx(1.03**2 - 1)
+    assert bond_model.get_effective_yield(0.06, 1) == pytest.approx(0.06)
+
+    with pytest.raises(ValueError, match="positive"):
+        bond_model.get_effective_yield(0.06, 0)
+
+
+def test_dollar_duration_and_dv01_of_a_zero_coupon_bond():
+    # A two-year zero at 5%: price 100 / 1.05^2, Macaulay duration 2, modified 2 / 1.05.
+    price = 100 / 1.05**2
+    modified_duration = 2 / 1.05
+
+    dollar_duration = bond_model.get_dollar_duration(100, 0.0, 2, 0.05, 1)
+    assert dollar_duration == pytest.approx(modified_duration * price / 100)
+
+    # DV01 is the price change of one basis point: the dollar duration over 100.
+    dv01 = bond_model.get_dv01(100, 0.0, 2, 0.05, 1)
+    assert dv01 == pytest.approx(modified_duration * price * 0.0001, rel=1e-6)
+    assert dv01 == pytest.approx(dollar_duration / 100, rel=1e-6)

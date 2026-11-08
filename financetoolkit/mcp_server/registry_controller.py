@@ -37,6 +37,7 @@ from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thr
 from financetoolkit.mcp_server.coercion_model import (
     accepts_text_only,
     coerce_value,
+    size_limit_problem,
     text_from_parsed_json,
     to_boolean,
     validate_date,
@@ -45,7 +46,6 @@ from financetoolkit.mcp_server.diagnostics_model import (
     call_input_info,
     capture_call_messages,
     missing_data_notes,
-    redact,
     summarize_reasons,
 )
 from financetoolkit.mcp_server.formatting_model import (
@@ -61,7 +61,7 @@ from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.logger_model import get_logger, redact
 from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
@@ -77,23 +77,6 @@ _OPAQUE_TYPES = {
     "Series",
     "DataFrame",
 }
-
-
-# Injected into each tool's Args docstring so FastMCP can surface them.
-def _curve_maturity(maturity: Any) -> float | str:
-    """A curve maturity as a number of years, or the label itself ("10Y", "6M")."""
-    try:
-        return float(maturity)
-    except (TypeError, ValueError):
-        label = str(maturity).strip().upper()
-        if label[:-1].replace(".", "", 1).isdigit() and label[-1:] in (
-            "D",
-            "W",
-            "M",
-            "Y",
-        ):
-            return label
-        raise
 
 
 # The indicators that read the returns of the period itself rather than results within each
@@ -129,6 +112,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     ),
     "quarterly": "Return quarterly data instead of annual when True.",
     "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'; 'None' for no benchmark.",
+    "risk_free_rate": (
+        "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' "
+        "(default) or '30y'."
+    ),
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
     "compound": (
@@ -396,23 +383,6 @@ def _annotate_with_description(
 MAXIMUM_SUMMARY_CHARACTERS = 200
 
 
-# The inputs of a bond or derivative calculation whose defaults are assumptions about the
-# instrument, named in the answer when the caller leaves them out.
-ASSUMED_INPUTS = (
-    "par_value",
-    "coupon_rate",
-    "yield_to_maturity",
-    "bond_price",
-    "volatility",
-    "strike_rate",
-    "notional",
-)
-
-# The yield curves the fixed income calculations take, which default to a sample curve,
-# except for the calculations that default to the current market curve.
-CURVE_PARAMETERS = ("spot_rates", "nominal_rates", "real_rates")
-MARKET_CURVE_METHODS = ("get_option_adjusted_spread",)
-
 # A window of at most this many days can be empty for lack of trading days alone.
 SHORT_WINDOW_DAYS = 3
 
@@ -437,7 +407,9 @@ TRANSACTION_FIELDS = {
     "currency": "Currency",
 }
 REBALANCING_FREQUENCIES = ("none", "monthly", "quarterly", "yearly")
-TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-=^]{0,19}$")
+# A ticker as the sources write it ("AAPL", "ASML.AS", "BTC-USD", "EURUSD=X", "^GSPC"), checked
+# before it becomes part of a web address.
+TICKER_PATTERN = re.compile(r"^\^?[A-Z0-9][A-Z0-9.\-=^]{0,19}$")
 CURRENCY_PATTERN = re.compile(r"^[A-Za-z]{3}$")
 
 
@@ -877,6 +849,16 @@ def _simplify_annotation(ann: Any) -> Any:
         combined = scalar | list[scalar]  # ty: ignore[invalid-type-form]
         return combined | None if has_none else combined
 
+    # A number that may also be given per ticker (the weight bounds of the portfolio
+    # optimizers) accepts both, as the indicator does.
+    if scalar in (int, float) and any(
+        typing.get_origin(a) is dict
+        and all(arg in (str, int, float) for arg in typing.get_args(a))
+        for a in args
+    ):
+        combined = scalar | dict[str, scalar]  # ty: ignore[invalid-type-form]
+        return combined | None if has_none else combined
+
     return scalar | None if has_none else scalar
 
 
@@ -906,6 +888,9 @@ class RouterGroupSpec(NamedTuple):
             the tool index. Defaults to module_name when None.
         description (str | None): Optional custom description for the tool. When None,
             a default description is generated from display_name and the method list.
+        risk_free_rate (bool): Whether the tool takes the Toolkit's risk_free_rate, for the
+            modules that use a risk-free rate (performance, risk, models, portfolio). The
+            options methods take a risk_free_rate of their own (the rate as a number).
     """
 
     tool_name: str
@@ -917,6 +902,7 @@ class RouterGroupSpec(NamedTuple):
     method_to_module: dict[str, dict[str, str]] | None = None
     index_category: str | None = None
     description: str | None = None
+    risk_free_rate: bool = False
 
 
 def _split_values(value: object) -> list[str]:
@@ -1180,6 +1166,7 @@ class ToolRegistry:
         max_response_characters: int | None = None,
         full_text_methods: list[str] | None = None,
         tickers_optional: list[str] | None = None,
+        parameter_limits: dict[str, Any] | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -1219,6 +1206,10 @@ class ToolRegistry:
             tickers_optional (list[str] | None): Toolkit methods that answer the same for any
                 ticker (market-wide snapshots) and so may be called without tickers.
                 Defaults to None.
+            parameter_limits (dict[str, Any] | None): The most a size parameter may be
+                ("maximums") and the most parameters computed together may multiply to
+                ("products"), see coercion_model.size_limit_problem. Defaults to None (no
+                limits).
         """
         self._mcp = mcp
         self._provider = provider
@@ -1244,6 +1235,7 @@ class ToolRegistry:
         self._max_response_characters = max_response_characters
         self._full_text_methods: frozenset[str] = frozenset(full_text_methods or [])
         self._tickers_optional: frozenset[str] = frozenset(tickers_optional or [])
+        self._parameter_limits: dict[str, Any] = parameter_limits or {}
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -1330,6 +1322,7 @@ class ToolRegistry:
                     method_to_module=raw.get("method_to_module"),
                     index_category=raw.get("index_category"),
                     description=raw.get("description"),
+                    risk_free_rate=bool(raw.get("risk_free_rate")),
                 )
             )
         return specifications
@@ -1361,7 +1354,17 @@ class ToolRegistry:
             ValueError: When a reference names an unknown tool or indicator.
         """
         frames = []
-        for reference in series_model.parse_series_references(references):
+        parsed = series_model.parse_series_references(references)
+        # Each reference collects its own tickers or countries, so together they are held
+        # to the most one call may analyze.
+        if (
+            count := sum(len(reference.entities) for reference in parsed)
+        ) > MAX_ENTITIES:
+            raise ValueError(
+                f"The series name {count} tickers and countries together; at most "
+                f"{MAX_ENTITIES} can be analyzed in one call. Split them over several calls."
+            )
+        for reference in parsed:
             tools = (
                 [reference.tool]
                 if reference.tool
@@ -1388,6 +1391,17 @@ class ToolRegistry:
                 self._inspector.categories.get("ticker", "ticker"),
                 self._inspector.categories.get("toolkit", "toolkit"),
             )
+            if by_ticker and (
+                invalid := [
+                    entity
+                    for entity in reference.entities
+                    if not TICKER_PATTERN.match(entity.upper())
+                ]
+            ):
+                raise ValueError(
+                    f"The series '{reference.text[:80]}' has an invalid ticker: "
+                    f"{invalid[0][:40]!r}."
+                )
             entities = (
                 [entity.upper() for entity in reference.entities]
                 if by_ticker
@@ -1591,6 +1605,14 @@ class ToolRegistry:
                         f"{MAX_ENTITIES} can be analyzed in one call. Split them over "
                         "several calls."
                     )
+            if invalid := [
+                ticker for ticker in tickers or [] if not TICKER_PATTERN.match(ticker)
+            ]:
+                return (
+                    f"`{tool_name}` received an invalid ticker: {invalid[0][:40]!r}. A ticker "
+                    "has at most 20 letters, digits and the characters . - = ^, e.g. 'AAPL', "
+                    "'ASML.AS', 'BTC-USD' or '^GSPC'."
+                )
 
             # A market-wide snapshot (config.yaml tickers_optional) does not depend on the
             # tickers, but the Toolkit it is reached through needs one to be built.
@@ -1697,6 +1719,32 @@ class ToolRegistry:
                 "null",
             ):
                 benchmark_ticker = None
+            elif benchmark_ticker is not None and not TICKER_PATTERN.match(
+                str(benchmark_ticker).strip().upper()
+            ):
+                return (
+                    f"Invalid `benchmark_ticker` for `{tool_name}` (`{method_name}`): "
+                    f"{str(benchmark_ticker)[:40]!r}. Please use a ticker such as 'SPY' or "
+                    "'^GSPC', or 'None' for no benchmark."
+                )
+
+            # The Toolkit's own setting, taken off before the method's arguments and passed under
+            # its own name, so it never meets a method's own risk_free_rate (options takes the
+            # rate as a number).
+            toolkit_risk_free_rate = "10y"
+            if spec.risk_free_rate:
+                toolkit_risk_free_rate = (
+                    str(kwargs.pop("risk_free_rate", None) or "10y").strip().lower()
+                )
+                if (
+                    toolkit_risk_free_rate
+                    not in validation_model.RISK_FREE_RATE_OPTIONS
+                ):
+                    return (
+                        f"Invalid `risk_free_rate` for `{tool_name}` (`{method_name}`): "
+                        f"'{toolkit_risk_free_rate}'. Please use one of "
+                        f"{', '.join(validation_model.RISK_FREE_RATE_OPTIONS)}."
+                    )
 
             # show_columns is handled entirely here — never forwarded to methods
             raw_show_columns = kwargs.pop("show_columns", None)
@@ -1814,48 +1862,20 @@ class ToolRegistry:
                 ):
                     method_kwargs[pname] = value
 
-            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number; a
-            # label such as "10Y" or "6M" is passed on for the indicator to read.
-            curve_note = None
-            for curve in CURVE_PARAMETERS:
-                given = method_kwargs.get(curve)
-                if isinstance(given, dict):
-                    try:
-                        method_kwargs[curve] = {
-                            _curve_maturity(maturity): float(rate)
-                            for maturity, rate in given.items()
-                        }
-                    except (TypeError, ValueError):
-                        return (
-                            f"Invalid `{curve}` for `{tool_name}` (`{method_name}`): give the "
-                            "rate per maturity in years, e.g. {'1': 0.042, '10': 0.043}."
-                        )
-            if missing_curves := [
-                curve
-                for curve in CURVE_PARAMETERS
-                if curve in accepted_params
-                and method_kwargs.get(curve) in (None, "", {})
-                and method_name not in MARKET_CURVE_METHODS
-            ]:
-                curve_note = (
-                    f"{', '.join(f'`{curve}`' for curve in missing_curves)} "
-                    f"{'was' if len(missing_curves) == 1 else 'were'} not given, so a fixed "
-                    "sample curve was used for illustration, not market data. Pass a "
-                    "current zero-coupon (spot) curve from the rates tool, e.g. "
-                    "get_bank_of_england_yield_curve or get_hqm_corporate_bond_yield_curve "
-                    "with rate='spot'; get_treasury_rates is a par curve."
+            # A call that would simulate or download more than the server can hold is
+            # refused before anything is collected.
+            if size_problem := size_limit_problem(
+                method_kwargs,
+                {
+                    pname: per_method[method_name]
+                    for pname, per_method in parameter_defaults.items()
+                    if method_name in per_method
+                },
+                self._parameter_limits,
+            ):
+                return (
+                    f"Invalid input for `{tool_name}` (`{method_name}`): {size_problem}"
                 )
-
-            # The economic inputs of a calculation that the caller left to their defaults
-            # (a bond priced at an 8% yield) are named, as they decide the answer.
-            assumed_inputs = [
-                f"{pname}={parameter_defaults[pname][method_name]}"
-                for pname in ASSUMED_INPUTS
-                if pname in accepted_params
-                and pname not in given_params
-                and parameter_defaults.get(pname, {}).get(method_name)
-                not in (None, inspect.Parameter.empty, "")
-            ]
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
@@ -1991,6 +2011,7 @@ class ToolRegistry:
                         result = provider.call_method(
                             **call_arguments,
                             benchmark_ticker=benchmark_ticker,
+                            toolkit_risk_free_rate=toolkit_risk_free_rate,
                             **method_kwargs,
                         )
                         upper_tickers = {ticker.upper() for ticker in tickers or []}
@@ -2006,6 +2027,7 @@ class ToolRegistry:
                             result = provider.call_method(
                                 **call_arguments,
                                 benchmark_ticker=None,
+                                toolkit_risk_free_rate=toolkit_risk_free_rate,
                                 **method_kwargs,
                             )
                     input_info = call_input_info()
@@ -2059,6 +2081,7 @@ class ToolRegistry:
                         benchmark_ticker=benchmark_ticker,
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
+                        toolkit_risk_free_rate=toolkit_risk_free_rate,
                     )
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
@@ -2243,14 +2266,6 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
-                if curve_note:
-                    notes.append(curve_note)
-                if assumed_inputs:
-                    notes.append(
-                        f"Assumed {', '.join(assumed_inputs)} (the "
-                        f"{'default' if len(assumed_inputs) == 1 else 'defaults'}); pass "
-                        "your own values for the bond in question."
-                    )
                 # The inputs an option model used, which it only logs.
                 if method_kwargs.get("show_input_info"):
                     notes.extend(input_info)
@@ -2349,6 +2364,22 @@ class ToolRegistry:
         common = inspector.build_common_signature_params(
             category, mixed_categories=mixed_cats
         )
+        if spec.risk_free_rate:
+            common.append(
+                P(
+                    "risk_free_rate",
+                    POS,
+                    default="10y",
+                    annotation=Annotated[
+                        str,
+                        PydanticField(
+                            json_schema_extra={
+                                "enum": list(validation_model.RISK_FREE_RATE_OPTIONS)
+                            }
+                        ),
+                    ],
+                )
+            )
         portfolio_tool = category == inspector.categories.get("portfolio", "portfolio")
         sig_params = [indicator_param] + [
             P(

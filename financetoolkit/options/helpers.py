@@ -15,6 +15,12 @@ logger = logger_model.get_logger()
 # pylint: disable=too-many-locals
 
 
+# The most strike prices per ticker: every one is priced for each expiration (and in a
+# binomial model has a tree of its own), so a grid of a high share price in small steps
+# would not fit in memory.
+MAX_STRIKES = 10_000
+
+
 def define_strike_prices(
     tickers: list[str],
     stock_price: pd.DataFrame,
@@ -47,6 +53,17 @@ def define_strike_prices(
             raise ValueError("The strike price range must be between 0 and 1.")
         if strike_step_size == 0:
             raise ValueError("The strike step size must be greater than 0.")
+        if (
+            strike_count := 2
+            * strike_price_range
+            * float(stock_price.loc[ticker])
+            / strike_step_size
+        ) > MAX_STRIKES:
+            raise ValueError(
+                f"The strike prices of {ticker} would be about {strike_count:,.0f} prices; at "
+                f"most {MAX_STRIKES:,} can be calculated. Please use a larger "
+                "strike_step_size or a smaller strike_price_range."
+            )
 
         if strike_price_range == 0:
             strike_prices_per_ticker[ticker] = [

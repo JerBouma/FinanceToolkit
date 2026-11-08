@@ -473,3 +473,104 @@ def test_fractional_kelly_with_a_net_exposure_holds_the_rest_in_cash(test_toolki
 
     assert table.loc[["AAPL", "MSFT"], "Weight"].sum() == pytest.approx(0.4)
     assert table.loc["Cash", "Weight"] == pytest.approx(0.6)
+
+
+def test_get_optimization_backtest(recorder, portfolio_module):
+    summary = portfolio_module.get_optimization_backtest(transaction_cost=0.001)
+    recorder.capture(summary)
+    assert {"Equal Weight", "Benchmark"} <= set(summary.index)
+    assert summary.loc["Equal Weight", "Average Turnover"] > 0
+    assert np.isnan(summary.loc["Benchmark", "Average Turnover"])
+
+    returns = portfolio_module.get_optimization_backtest(
+        methods="minimum_variance,minimum_cvar",
+        rebalancing="quarterly",
+        output="returns",
+    )
+    recorder.capture(returns.iloc[-20:])
+    assert list(returns.columns) == [
+        "Minimum Variance",
+        "Minimum CVaR",
+        "Equal Weight",
+        "Benchmark",
+    ]
+    weights = portfolio_module.get_optimization_backtest(
+        methods=["mean_variance"], expected_returns="james_stein", output="weights"
+    )
+    recorder.capture(weights)
+    assert np.allclose(weights.T.groupby(level=0).sum().T, 1, atol=1e-3)
+
+
+def test_get_optimization_backtest_refuses_unknown_methods(portfolio_module):
+    assert portfolio_module.get_optimization_backtest(methods="best").empty
+    assert portfolio_module.get_optimization_backtest(lookback=2).empty
+
+
+def test_get_risk_contributions_to_the_expected_shortfall(recorder, portfolio_module):
+    contributions = portfolio_module.get_risk_contributions(
+        weights={"AAPL": 0.7, "MSFT": 0.3}, risk_measure="cvar", rounding=8
+    )
+    recorder.capture(contributions)
+    returns = portfolio_module._get_returns("daily", False)
+    portfolio = returns["AAPL"] * 0.7 + returns["MSFT"] * 0.3
+    shortfall = -portfolio[portfolio <= portfolio.quantile(0.05)].mean()
+    assert contributions.loc["Total", "Risk Contribution"] == pytest.approx(
+        shortfall, abs=1e-8
+    )
+
+
+def test_get_diversification_metrics(recorder, portfolio_module):
+    metrics = portfolio_module.get_diversification_metrics()
+    recorder.capture(metrics)
+    assert metrics["Effective Number of Assets"] == pytest.approx(2)
+    assert 1 <= metrics["Effective Number of Bets"] <= 2  # noqa: PLR2004
+
+
+def test_expected_return_estimators_change_the_expected_returns(portfolio_module):
+    tables = {
+        method: portfolio_module.get_mean_variance_weights(
+            expected_returns=method, include_benchmark=True, rounding=8
+        )
+        for method in ("mean", "exponential", "capm", "james_stein")
+    }
+    returns = portfolio_module._get_returns("daily", True)
+    assert np.allclose(
+        tables["mean"]["Expected Return"].drop("Portfolio"), returns.mean() * 252
+    )
+    # The benchmark's beta to itself is one, so CAPM gives it its own average return.
+    assert tables["capm"].loc["Benchmark", "Expected Return"] == pytest.approx(
+        tables["mean"].loc["Benchmark", "Expected Return"]
+    )
+    for method in ("exponential", "capm", "james_stein"):
+        assert not np.allclose(
+            tables[method]["Expected Return"], tables["mean"]["Expected Return"]
+        )
+
+
+def test_current_weights_add_the_turnover_and_limit_it(portfolio_module):
+    current = {"AAPL": 0.2, "MSFT": 0.8}
+    free = portfolio_module.get_minimum_variance_weights(current_weights=current)
+    capped = portfolio_module.get_minimum_variance_weights(
+        current_weights=current, maximum_turnover=0.1, rounding=8
+    )
+
+    assert free.loc["Portfolio", "Turnover"] > 0.1  # noqa: PLR2004
+    assert capped.loc["Portfolio", "Turnover"] == pytest.approx(0.1)
+    assert capped.loc["AAPL", "Turnover"] == pytest.approx(
+        abs(capped.loc["AAPL", "Weight"] - 0.2)
+    )
+    assert "Turnover" not in portfolio_module.get_minimum_variance_weights().columns
+    # A turnover limit or cost without current weights or a Portfolio to take them from.
+    assert portfolio_module.get_minimum_variance_weights(maximum_turnover=0.1).empty
+    assert portfolio_module.get_maximum_sharpe_weights(transaction_cost=0.01).empty
+
+
+def test_a_transaction_cost_trades_less(portfolio_module):
+    current = {"AAPL": 0.2, "MSFT": 0.8}
+    free = portfolio_module.get_mean_variance_weights(
+        current_weights=current, include_benchmark=True
+    )
+    costly = portfolio_module.get_mean_variance_weights(
+        current_weights=current, transaction_cost=0.02, include_benchmark=True
+    )
+    assert costly.loc["Portfolio", "Turnover"] < free.loc["Portfolio", "Turnover"]

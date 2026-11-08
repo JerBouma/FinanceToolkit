@@ -972,3 +972,218 @@ def test_a_gross_exposure_adds_absolute_weights_only_with_short_positions():
     # t_i >= |w_i| for each asset and their sum at most the gross exposure.
     assert long_short.inequality.shape == (7, 6)
     assert long_short.upper[-1] == 1.5  # noqa: PLR2004
+
+
+def test_expected_returns_match_pyportfolioopt_and_riskfolio():
+    returns, benchmark = _reference_returns()
+
+    def estimate(method, **kwargs):
+        return optimization_model.get_expected_returns(
+            returns, 252, method, **kwargs
+        ).to_numpy()
+
+    assert np.allclose(estimate("mean"), returns.mean() * 252)
+    # PyPortfolioOpt ema_historical_return(span=60, compounding=False).
+    assert np.allclose(
+        estimate("exponential", span=60),
+        [0.4248258365, 0.3784078348, 0.9053789584, 0.4968557113, 0.672913352],
+    )
+    # PyPortfolioOpt capm_return(risk_free_rate=0.02, compounding=False).
+    assert np.allclose(
+        estimate("capm", benchmark_returns=benchmark, risk_free_rate=0.02),
+        [0.0863760324, 0.1009805469, 0.1085805934, 0.1087109621, 0.060395485],
+    )
+    # Riskfolio-Lib mean_vector(method="BS", target="b2"), annualized.
+    assert np.allclose(
+        estimate("james_stein"),
+        [0.1208729336, 0.1210211013, 0.121169269, 0.1209470175, 0.1210951851],
+    )
+
+
+def test_james_stein_leaves_equal_averages_and_shrinks_dispersed_ones():
+    returns, _ = _reference_returns()
+    equal = returns - returns.mean() + 0.0004
+    assert np.allclose(
+        optimization_model.get_expected_returns(equal, 252, "james_stein"), 0.0004 * 252
+    )
+
+    shrunk = optimization_model.get_expected_returns(returns, 252, "james_stein")
+    assert shrunk.std() < (returns.mean() * 252).std()
+
+
+def test_capm_returns_need_a_benchmark_and_unknown_estimators_are_refused():
+    returns, _ = _reference_returns()
+    with pytest.raises(ValueError, match="benchmark"):
+        optimization_model.get_expected_returns(returns, 252, "capm")
+    with pytest.raises(ValueError, match="must be one of"):
+        optimization_model.get_expected_returns(returns, 252, "median")
+
+
+CURRENT = pd.Series({"A": 0.4, "B": 0.3, "C": 0.2, "D": 0.1})
+
+
+def test_a_maximum_turnover_limits_the_trades_from_the_current_weights():
+    returns, _ = _reference_returns()
+    covariance = returns.cov() * 252
+    free = optimization_model.get_minimum_variance_weights(covariance)
+    capped = optimization_model.get_minimum_variance_weights(
+        covariance, current_weights=CURRENT, maximum_turnover=0.2
+    )
+    current = CURRENT.reindex(covariance.index).fillna(0)
+
+    assert np.abs(free - current).sum() > 0.2  # noqa: PLR2004
+    assert np.abs(capped - current).sum() == pytest.approx(0.2, abs=1e-7)
+    assert capped @ covariance @ capped < current @ covariance @ current
+    # No turnover keeps the current weights, a wide limit gives the free optimum.
+    assert np.allclose(
+        optimization_model.get_minimum_variance_weights(
+            covariance, current_weights=CURRENT, maximum_turnover=0
+        ),
+        current,
+        atol=1e-7,
+    )
+    assert np.allclose(
+        optimization_model.get_minimum_variance_weights(
+            covariance, current_weights=CURRENT, maximum_turnover=2
+        ),
+        free,
+        atol=1e-5,
+    )
+
+
+def test_a_turnover_limit_works_next_to_a_gross_exposure_limit():
+    returns, _ = _reference_returns()
+    weights = optimization_model.get_minimum_cvar_weights(
+        returns,
+        minimum_weight=-0.5,
+        gross_exposure=1.4,
+        current_weights=CURRENT,
+        maximum_turnover=0.5,
+    )
+    current = CURRENT.reindex(returns.columns).fillna(0)
+
+    assert weights.sum() == pytest.approx(1)
+    assert np.abs(weights).sum() <= 1.4 + 1e-7  # noqa: PLR2004
+    assert np.abs(weights - current).sum() <= 0.5 + 1e-7  # noqa: PLR2004
+
+
+def test_transaction_costs_match_pyportfolioopt_and_skfolio():
+    returns, _ = _reference_returns()
+    expected_returns, covariance = (
+        optimization_model.get_expected_returns_and_covariance(returns, 252)
+    )
+    # PyPortfolioOpt max_quadratic_utility(risk_aversion=2.5) with transaction_cost(k=0.01).
+    assert np.allclose(
+        optimization_model.get_mean_variance_weights(
+            expected_returns,
+            covariance,
+            current_weights=CURRENT,
+            transaction_cost=0.01,
+        ),
+        [0.104088, 0.194714, 0.2, 0.049088, 0.45211],
+        atol=1e-4,
+    )
+    # skfolio MeanRisk(MAXIMIZE_RATIO, transaction_costs=0.01 / 252, risk_free_rate=0.02 / 252)
+    # on the daily returns, the same problem per day.
+    assert np.allclose(
+        optimization_model.get_maximum_sharpe_weights(
+            expected_returns,
+            covariance,
+            0.02,
+            current_weights=CURRENT,
+            transaction_cost=0.01,
+        ),
+        [0.148652, 0.156373, 0.2, 0.047757, 0.447217],
+        atol=1e-4,
+    )
+
+
+def test_a_high_transaction_cost_keeps_the_current_weights():
+    expected_returns, covariance = EXPECTED_RETURNS, COVARIANCE
+    weights = optimization_model.get_mean_variance_weights(
+        expected_returns, covariance, current_weights=CURRENT, transaction_cost=10
+    )
+    assert np.allclose(weights, CURRENT.reindex(ASSETS), atol=1e-7)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        ({"maximum_turnover": 0.2}, "needs the current weights"),
+        ({"transaction_cost": 0.01}, "needs the current weights"),
+        (
+            {"current_weights": CURRENT, "transaction_cost": -0.01},
+            "cannot be negative",
+        ),
+        ({"current_weights": CURRENT, "maximum_turnover": -1}, "cannot be negative"),
+        ({"current_weights": pd.Series({"Z": 1.0})}, "not in the portfolio"),
+    ],
+)
+def test_turnover_and_cost_arguments_are_checked(arguments, message):
+    with pytest.raises(ValueError, match=message):
+        optimization_model.get_maximum_sharpe_weights(
+            EXPECTED_RETURNS, COVARIANCE, **arguments
+        )
+
+
+def test_a_transaction_cost_cannot_be_combined_with_a_target_return():
+    with pytest.raises(ValueError, match="target return"):
+        optimization_model.get_mean_variance_weights(
+            EXPECTED_RETURNS,
+            COVARIANCE,
+            target_return=0.08,
+            current_weights=CURRENT,
+            transaction_cost=0.01,
+        )
+
+
+def test_expected_shortfall_contributions_match_riskfolio_and_add_up():
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+    contributions = optimization_model.get_expected_shortfall_contributions(
+        weights, returns, 0.95
+    )
+    portfolio = returns @ weights
+    shortfall = -portfolio[portfolio <= portfolio.quantile(0.05)].mean()
+
+    # Riskfolio-Lib Risk_Contribution(rm="CVaR", alpha=0.05); 25 tail periods, so its
+    # Rockafellar-Uryasev CVaR equals the average of the tail.
+    assert np.allclose(
+        contributions["Risk Contribution"],
+        [0.0069948866, 0.0060393695, 0.0041596864, 0.0036566954, 0.0008148678],
+    )
+    assert contributions["Risk Contribution"].sum() == pytest.approx(shortfall)
+    assert contributions["Percentage Contribution"].sum() == pytest.approx(1)
+
+
+def test_an_asset_that_gains_in_the_portfolios_worst_periods_contributes_negatively():
+    returns, _ = _reference_returns()
+    returns["H"] = -returns["A"]
+    weights = pd.Series([0.5, 0.1, 0.1, 0.1, 0.1, 0.1], index=returns.columns)
+    contributions = optimization_model.get_expected_shortfall_contributions(
+        weights, returns
+    )
+    assert contributions.loc["H", "Risk Contribution"] < 0
+
+
+def test_diversification_metrics():
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+    metrics = optimization_model.get_diversification_metrics(weights, returns.cov())
+    # skfolio Portfolio.diversification and effective_number_assets.
+    assert metrics["Diversification Ratio"] == pytest.approx(1.4213985072385122)
+    assert metrics["Effective Number of Assets"] == pytest.approx(4.444444444444445)
+    assert metrics["Herfindahl-Hirschman Index"] == pytest.approx(0.225)
+
+    # Uncorrelated assets with the same variance: N bets and a ratio of √N.
+    independent = pd.DataFrame(np.eye(4) * 0.04, index=ASSETS, columns=ASSETS)
+    equal = pd.Series(0.25, index=ASSETS)
+    metrics = optimization_model.get_diversification_metrics(equal, independent)
+    assert metrics["Effective Number of Bets"] == pytest.approx(4)
+    assert metrics["Diversification Ratio"] == pytest.approx(2)
+
+    # Perfectly correlated assets are one bet, however many there are.
+    common = pd.DataFrame(np.full((4, 4), 0.04), index=ASSETS, columns=ASSETS)
+    metrics = optimization_model.get_diversification_metrics(equal, common)
+    assert metrics["Effective Number of Bets"] == pytest.approx(1)
+    assert metrics["Effective Number of Assets"] == pytest.approx(4)

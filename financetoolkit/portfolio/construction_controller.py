@@ -7,7 +7,11 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
-from financetoolkit.portfolio import attribution_model, optimization_model
+from financetoolkit.portfolio import (
+    attribution_model,
+    backtest_model,
+    optimization_model,
+)
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
@@ -20,6 +24,27 @@ START_PRICE_TOLERANCE_DAYS = 5
 BENCHMARK_TICKER = "Benchmark"
 PORTFOLIO_TICKER = "Portfolio"
 PERIODS = ["daily", "weekly", "monthly", "quarterly", "yearly"]
+
+# The optimizers a backtest can compare, with the names they are shown under.
+BACKTEST_METHODS = {
+    "minimum_variance": "Minimum Variance",
+    "maximum_sharpe": "Maximum Sharpe",
+    "mean_variance": "Mean Variance",
+    "risk_parity": "Risk Parity",
+    "hierarchical_risk_parity": "Hierarchical Risk Parity",
+    "inverse_volatility": "Inverse Volatility",
+    "maximum_diversification": "Maximum Diversification",
+    "minimum_cvar": "Minimum CVaR",
+    "equal_weight": "Equal Weight",
+}
+DEFAULT_BACKTEST_METHODS = (
+    "minimum_variance",
+    "maximum_sharpe",
+    "risk_parity",
+    "hierarchical_risk_parity",
+    "maximum_diversification",
+    "inverse_volatility",
+)
 
 # How far weights may sum from one before they are reported as scaled.
 WEIGHT_SUM_TOLERANCE = 1e-6
@@ -34,10 +59,12 @@ class PortfolioConstruction:
     Toolkit: optimal weights (minimum variance, maximum Sharpe ratio, mean-variance,
     risk parity, Hierarchical Risk Parity, Black-Litterman, minimum CVaR, maximum
     diversification, minimum tracking error, growth optimal), the efficient
-    frontier, risk contributions, historical stress tests, look-through exposure and a
-    Brinson-Fachler attribution against the benchmark. The optimizers take weight bounds
-    per asset, sector and country bounds from the company profiles and, for long-short
-    portfolios, a net and gross exposure.
+    frontier, a walk-forward backtest of the optimizers against equal weights, risk
+    contributions to volatility and expected shortfall, diversification metrics,
+    historical stress tests, look-through exposure and a Brinson-Fachler attribution
+    against the benchmark. The optimizers take weight bounds per asset, sector and
+    country bounds from the company profiles, for long-short portfolios a net and gross
+    exposure and, from current weights, a maximum turnover.
     """
 
     def __init__(
@@ -146,29 +173,84 @@ class PortfolioConstruction:
             )
         return returns
 
+    def _get_risk_free_rate(self, period: str, index: pd.Index) -> float:
+        """The average annualized risk free rate over the periods, 0 when unknown."""
+        risk_free = self._risk_free_rate_data.get(period)
+        risk_free_rate = (
+            float(risk_free.reindex(index).mean())
+            if risk_free is not None and not risk_free.empty
+            else 0.0
+        )
+        return 0.0 if np.isnan(risk_free_rate) else risk_free_rate
+
+    def _get_benchmark_returns(self, period: str) -> pd.Series | None:
+        """The returns of the benchmark per period, None when there is no benchmark."""
+        returns = self._historical_data[period]["Return"]
+        return returns.get(BENCHMARK_TICKER)
+
     def _get_inputs(
         self,
         period: str,
         include_benchmark: bool,
         covariance: str = "sample",
         covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
     ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, float]:
         """The returns, annualized expected returns, covariance and risk free rate."""
         returns = self._get_returns(period, include_benchmark)
-        expected_returns, covariance_matrix = (
+        risk_free_rate = self._get_risk_free_rate(period, returns.index)
+        expected, covariance_matrix = (
             optimization_model.get_expected_returns_and_covariance(
-                returns, PERIODS_PER_YEAR[period], covariance, covariance_span
+                returns,
+                PERIODS_PER_YEAR[period],
+                covariance,
+                covariance_span,
+                expected_returns,
+                expected_returns_span,
+                (
+                    self._get_benchmark_returns(period)
+                    if expected_returns == "capm"
+                    else None
+                ),
+                risk_free_rate,
             )
         )
-        risk_free = self._risk_free_rate_data.get(period)
-        risk_free_rate = (
-            float(risk_free.reindex(returns.index).mean())
-            if risk_free is not None and not risk_free.empty
-            else 0.0
-        )
-        if np.isnan(risk_free_rate):
-            risk_free_rate = 0.0
-        return returns, expected_returns, covariance_matrix, risk_free_rate
+        return returns, expected, covariance_matrix, risk_free_rate
+
+    def _get_current_weights(
+        self,
+        current_weights: dict[str, float] | None,
+        assets: list[str],
+        needed: bool,
+    ) -> pd.Series | None:
+        """
+        The weights held now that the turnover is measured from: as given, otherwise,
+        when a maximum turnover or transaction cost needs them, the latest weights of the
+        Portfolio the Toolkit came from. None when neither applies.
+        """
+        if current_weights is not None:
+            return pd.Series(current_weights, dtype=float)
+        if needed and self._portfolio_weights:
+            latest = self._portfolio_weights.get("daily", pd.DataFrame())
+            if not latest.empty:
+                return latest.iloc[-1].reindex(assets).fillna(0).astype(float)
+        return None
+
+    @staticmethod
+    def _add_turnover(
+        table: pd.DataFrame, weights: pd.Series, current: pd.Series | None
+    ) -> pd.DataFrame:
+        """
+        The table with a Turnover column, |w_i - w0_i| per asset and their sum for the
+        portfolio, when there are current weights.
+        """
+        if current is None:
+            return table
+        traded = (weights - current.reindex(weights.index).fillna(0)).abs()
+        table["Turnover"] = traded
+        table.loc[PORTFOLIO_TICKER, "Turnover"] = traded.sum()
+        return table
 
     def _resolve_weights(
         self, weights: dict[str, float] | pd.Series | None, assets: list[str]
@@ -342,6 +424,8 @@ class PortfolioConstruction:
         country_bounds: dict[str, tuple[float, float]] | None = None,
         net_exposure: float = 1.0,
         gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -394,6 +478,15 @@ class PortfolioConstruction:
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover or transaction cost needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -415,8 +508,10 @@ class PortfolioConstruction:
           PyPortfolioOpt's add_sector_constraints and skfolio's group constraints do. A
           gross exposure limit is linearized with one extra variable t_i ≥ |w_i| per asset
           (t_i ≥ w_i, t_i ≥ -w_i, Σ t_i ≤ the limit), so the solution stays exact. A
-          combination of constraints no portfolio can meet raises an error before the
-          optimization runs.
+          maximum turnover from the current weights is linearized the same way, with one
+          variable d_i ≥ |w_i - w0_i| per asset and Σ d_i ≤ the limit (Lobo, Fazel and
+          Boyd, 2007). A combination of constraints no portfolio can meet raises an error
+          before the optimization runs.
 
         As an example:
 
@@ -448,6 +543,11 @@ class PortfolioConstruction:
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
+        current = self._get_current_weights(
+            current_weights,
+            covariance_matrix.index.tolist(),
+            maximum_turnover is not None,
+        )
         weights = optimization_model.get_minimum_variance_weights(
             covariance_matrix,
             **self._get_constraints(
@@ -459,10 +559,13 @@ class PortfolioConstruction:
             ),
             net_exposure=net_exposure,
             gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
         )
-        return self._weights_table(
+        table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
+        return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
     def get_maximum_sharpe_weights(
@@ -470,12 +573,17 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
         minimum_weight: float | dict[str, float] = 0.0,
         maximum_weight: float | dict[str, float] = 1.0,
         sector_bounds: dict[str, tuple[float, float]] | None = None,
         country_bounds: dict[str, tuple[float, float]] | None = None,
         net_exposure: float = 1.0,
         gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
+        transaction_cost: float = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -512,6 +620,15 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns:
+                "mean" (the historical average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "capm" (the returns the
+                Capital Asset Pricing Model implies from each asset's beta to the
+                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
+                that of the minimum variance portfolio, Jorion, 1986). Defaults to
+                "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
                 every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
@@ -530,6 +647,18 @@ class PortfolioConstruction:
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover or transaction cost needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
+            transaction_cost (float, optional): The cost per unit of weight traded
+                from the current weights, e.g. 0.001 for 10 basis points, subtracted once
+                from the portfolio's annualized expected return. Defaults to 0.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -541,9 +670,15 @@ class PortfolioConstruction:
             annualized.
 
         Notes:
-        - The expected returns are the historical average returns. They are the noisiest
-          input of the optimization, so the weights tend to concentrate in the assets that
-          happened to do best; a maximum weight or the Black-Litterman returns temper that.
+        - The expected returns are the noisiest input of the optimization, so with the
+          historical averages the weights tend to concentrate in the assets that happened
+          to do best. A maximum weight, the CAPM or James-Stein expected returns or the
+          Black-Litterman returns temper that.
+        - A transaction cost lowers the expected return of the portfolio by the cost
+          times the turnover from the current weights, so the optimizer only trades when
+          the gain in Sharpe ratio pays for it (as skfolio's transaction_costs). The cost
+          is taken once from an annualized return, which spreads it over a year of
+          holding the portfolio.
 
         As an example:
 
@@ -570,11 +705,21 @@ class PortfolioConstruction:
         | XOM       |   0.4    |            0.291  |       0.2702 |         0.9522 |              0.5369 |
         | Portfolio |   1      |            0.2105 |       0.1568 |         1.1275 |              1      |
         """
-        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
-            period, include_benchmark, covariance, covariance_span
+        _, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            expected_returns,
+            expected_returns_span,
+        )
+        current = self._get_current_weights(
+            current_weights,
+            covariance_matrix.index.tolist(),
+            maximum_turnover is not None or transaction_cost > 0,
         )
         weights = optimization_model.get_maximum_sharpe_weights(
-            expected_returns,
+            expected,
             covariance_matrix,
             risk_free_rate,
             **self._get_constraints(
@@ -586,10 +731,14 @@ class PortfolioConstruction:
             ),
             net_exposure=net_exposure,
             gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
+            transaction_cost=transaction_cost,
         )
-        return self._weights_table(
-            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+        table = self._weights_table(
+            weights, expected, covariance_matrix, risk_free_rate, rounding
         )
+        return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
     def get_mean_variance_weights(
@@ -599,12 +748,17 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
         minimum_weight: float | dict[str, float] = 0.0,
         maximum_weight: float | dict[str, float] = 1.0,
         sector_bounds: dict[str, tuple[float, float]] | None = None,
         country_bounds: dict[str, tuple[float, float]] | None = None,
         net_exposure: float = 1.0,
         gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
+        transaction_cost: float = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -642,6 +796,15 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns:
+                "mean" (the historical average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "capm" (the returns the
+                Capital Asset Pricing Model implies from each asset's beta to the
+                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
+                that of the minimum variance portfolio, Jorion, 1986). Defaults to
+                "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
                 every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
@@ -660,6 +823,18 @@ class PortfolioConstruction:
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover or transaction cost needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
+            transaction_cost (float, optional): The cost per unit of weight traded
+                from the current weights, e.g. 0.001 for 10 basis points, subtracted once
+                from the portfolio's annualized expected return. Defaults to 0.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -700,11 +875,21 @@ class PortfolioConstruction:
         | XOM       |   0.8168 |            0.2911 |       0.2702 |         0.9524 |              0.7803 |
         | Portfolio |   1      |            0.3    |       0.2521 |         1.0561 |              1      |
         """
-        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
-            period, include_benchmark, covariance, covariance_span
+        _, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            expected_returns,
+            expected_returns_span,
+        )
+        current = self._get_current_weights(
+            current_weights,
+            covariance_matrix.index.tolist(),
+            maximum_turnover is not None or transaction_cost > 0,
         )
         weights = optimization_model.get_mean_variance_weights(
-            expected_returns,
+            expected,
             covariance_matrix,
             target_return,
             risk_aversion,
@@ -717,10 +902,14 @@ class PortfolioConstruction:
             ),
             net_exposure=net_exposure,
             gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
+            transaction_cost=transaction_cost,
         )
-        return self._weights_table(
-            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+        table = self._weights_table(
+            weights, expected, covariance_matrix, risk_free_rate, rounding
         )
+        return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
     def get_efficient_frontier(
@@ -729,12 +918,16 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
         minimum_weight: float | dict[str, float] = 0.0,
         maximum_weight: float | dict[str, float] = 1.0,
         sector_bounds: dict[str, tuple[float, float]] | None = None,
         country_bounds: dict[str, tuple[float, float]] | None = None,
         net_exposure: float = 1.0,
         gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -765,6 +958,15 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns:
+                "mean" (the historical average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "capm" (the returns the
+                Capital Asset Pricing Model implies from each asset's beta to the
+                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
+                that of the minimum variance portfolio, Jorion, 1986). Defaults to
+                "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
                 every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
@@ -783,6 +985,15 @@ class PortfolioConstruction:
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover or transaction cost needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -817,11 +1028,21 @@ class PortfolioConstruction:
         |           4 |            0.2576 |       0.2016 |         1.111  | 0.0111 | 0.3616 | 0      | 0.6274 |
         |           5 |            0.291  |       0.2702 |         0.9522 | 0      | 0      | 0      | 1      |
         """
-        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
-            period, include_benchmark, covariance, covariance_span
+        _, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            expected_returns,
+            expected_returns_span,
+        )
+        current = self._get_current_weights(
+            current_weights,
+            covariance_matrix.index.tolist(),
+            maximum_turnover is not None,
         )
         frontier = optimization_model.get_efficient_frontier(
-            expected_returns,
+            expected,
             covariance_matrix,
             risk_free_rate,
             points,
@@ -834,6 +1055,8 @@ class PortfolioConstruction:
             ),
             net_exposure=net_exposure,
             gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
         )
         return self._round(frontier, rounding)
 
@@ -1151,6 +1374,8 @@ class PortfolioConstruction:
         country_bounds: dict[str, tuple[float, float]] | None = None,
         net_exposure: float = 1.0,
         gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -1195,6 +1420,15 @@ class PortfolioConstruction:
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover or transaction cost needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1233,6 +1467,11 @@ class PortfolioConstruction:
         returns, expected_returns, covariance, risk_free_rate = self._get_inputs(
             period, include_benchmark
         )
+        current = self._get_current_weights(
+            current_weights,
+            returns.columns.tolist(),
+            maximum_turnover is not None,
+        )
         weights = optimization_model.get_minimum_cvar_weights(
             returns,
             confidence_level,
@@ -1245,6 +1484,8 @@ class PortfolioConstruction:
             ),
             net_exposure=net_exposure,
             gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
         )
         table = self._weights_table(
             weights, expected_returns, covariance, risk_free_rate, rounding
@@ -1258,7 +1499,7 @@ class PortfolioConstruction:
         table["CVaR"] = [cvar(returns[asset]) for asset in returns.columns] + [
             cvar(returns @ weights)
         ]
-        return self._round(table, rounding)
+        return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
     def get_maximum_diversification_weights(
@@ -1272,6 +1513,8 @@ class PortfolioConstruction:
         country_bounds: dict[str, tuple[float, float]] | None = None,
         net_exposure: float = 1.0,
         gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -1330,6 +1573,15 @@ class PortfolioConstruction:
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover or transaction cost needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1376,6 +1628,11 @@ class PortfolioConstruction:
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
+        current = self._get_current_weights(
+            current_weights,
+            covariance_matrix.index.tolist(),
+            maximum_turnover is not None,
+        )
         weights = optimization_model.get_maximum_diversification_weights(
             covariance_matrix,
             **self._get_constraints(
@@ -1387,6 +1644,8 @@ class PortfolioConstruction:
             ),
             net_exposure=net_exposure,
             gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
         )
         table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -1395,7 +1654,7 @@ class PortfolioConstruction:
         table.loc[PORTFOLIO_TICKER, "Diversification Ratio"] = (
             optimization_model.get_diversification_ratio(weights, covariance_matrix)
         )
-        return self._round(table, rounding)
+        return self._round(self._add_turnover(table, weights, current), rounding)
 
     @handle_errors
     def get_minimum_tracking_error_weights(
@@ -1404,12 +1663,16 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
         minimum_weight: float | dict[str, float] = 0.0,
         maximum_weight: float | dict[str, float] = 1.0,
         sector_bounds: dict[str, tuple[float, float]] | None = None,
         country_bounds: dict[str, tuple[float, float]] | None = None,
         net_exposure: float = 1.0,
         gross_exposure: float | None = None,
+        current_weights: dict[str, float] | None = None,
+        maximum_turnover: float | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1455,6 +1718,15 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns:
+                "mean" (the historical average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "capm" (the returns the
+                Capital Asset Pricing Model implies from each asset's beta to the
+                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
+                that of the minimum variance portfolio, Jorion, 1986). Defaults to
+                "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
                 every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
@@ -1473,6 +1745,15 @@ class PortfolioConstruction:
             gross_exposure (float | None, optional): The highest sum of the absolute
                 weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
                 a 130/30 portfolio. Defaults to None, no limit.
+            current_weights (dict[str, float] | None, optional): The weights held now,
+                e.g. {"AAPL": 0.5, "MSFT": 0.5} (an asset left out is not held), which
+                the turnover is measured from; they add a Turnover column, |w_i - w0_i|
+                per asset and its sum for the portfolio. Defaults to None, which uses
+                the latest weights of the Portfolio the Toolkit came from when a maximum
+                turnover or transaction cost needs them.
+            maximum_turnover (float | None, optional): The highest turnover
+                Σ |w_i - w0_i| from the current weights, e.g. 0.2 to trade at most 10%
+                of the portfolio each way. Defaults to None, no limit.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
 
@@ -1516,13 +1797,23 @@ class PortfolioConstruction:
         | XOM       |   0.172  |            0.291  |          0.1388 |           0.2658 |              0.5224 |
         | Portfolio |   1      |            0.1928 |          0.0406 |           0.0881 |              0.4603 |
         """
-        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
-            period, True, covariance, covariance_span
+        _, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+            period,
+            True,
+            covariance,
+            covariance_span,
+            expected_returns,
+            expected_returns_span,
         )
         if BENCHMARK_TICKER not in covariance_matrix.index:
             raise ValueError("The tracking error needs the returns of a benchmark.")
+        current = self._get_current_weights(
+            current_weights,
+            covariance_matrix.index.drop(BENCHMARK_TICKER).tolist(),
+            maximum_turnover is not None,
+        )
         weights = optimization_model.get_minimum_tracking_error_weights(
-            expected_returns,
+            expected,
             covariance_matrix,
             BENCHMARK_TICKER,
             objective,
@@ -1535,11 +1826,13 @@ class PortfolioConstruction:
             ),
             net_exposure=net_exposure,
             gross_exposure=gross_exposure,
+            current_weights=current,
+            maximum_turnover=maximum_turnover,
         )
         assets = weights.index
         table = self._weights_table(
             weights,
-            expected_returns[assets],
+            expected[assets],
             covariance_matrix.loc[assets, assets],
             risk_free_rate,
             rounding,
@@ -1548,7 +1841,7 @@ class PortfolioConstruction:
             {
                 asset: optimization_model.get_tracking_error(
                     pd.Series({asset: 1.0}),
-                    expected_returns,
+                    expected,
                     covariance_matrix,
                     BENCHMARK_TICKER,
                 )
@@ -1556,9 +1849,12 @@ class PortfolioConstruction:
             }
         ).T
         tracking.loc[PORTFOLIO_TICKER] = optimization_model.get_tracking_error(
-            weights, expected_returns, covariance_matrix, BENCHMARK_TICKER
+            weights, expected, covariance_matrix, BENCHMARK_TICKER
         )
-        return self._round(pd.concat([table, tracking], axis=1), rounding)
+        return self._round(
+            self._add_turnover(pd.concat([table, tracking], axis=1), weights, current),
+            rounding,
+        )
 
     @handle_errors
     def get_growth_optimal_weights(
@@ -1568,6 +1864,8 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
         minimum_weight: float | dict[str, float] = 0.0,
         maximum_weight: float | dict[str, float] = 1.0,
         sector_bounds: dict[str, tuple[float, float]] | None = None,
@@ -1626,6 +1924,15 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns:
+                "mean" (the historical average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "capm" (the returns the
+                Capital Asset Pricing Model implies from each asset's beta to the
+                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
+                that of the minimum variance portfolio, Jorion, 1986). Defaults to
+                "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
                 every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
@@ -1656,9 +1963,10 @@ class PortfolioConstruction:
             asset on its own and of the portfolio. Returns and volatilities are annualized.
 
         Notes:
-        - The expected returns are historical averages, so the full Kelly weights tend to
-          concentrate in the assets that happened to grow fastest; a fraction below one or
-          a maximum weight tempers that.
+        - With historical average returns the full Kelly weights tend to concentrate in the
+          assets that happened to grow fastest; a fraction below one or a maximum weight
+          tempers that. The expected returns only enter the "approximate" method; the
+          "exact" method uses the returns themselves.
         - The log growth is the average of ln(1 + r) per period times the number of periods
           in a year, so the growth of daily returns is comparable to that of monthly ones.
         - The weight bounds, sector and country bounds and exposures apply to the full
@@ -1691,12 +1999,17 @@ class PortfolioConstruction:
         | Cash      |      0.5 |            0.0337 |       0      |       nan      |              0      |       0.0337 |
         | Portfolio |      1   |            0.1347 |       0.0959 |         1.0531 |              1      |       0.1301 |
         """
-        returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
-            period, include_benchmark, covariance, covariance_span
+        returns, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+            period,
+            include_benchmark,
+            covariance,
+            covariance_span,
+            expected_returns,
+            expected_returns_span,
         )
         weights = optimization_model.get_growth_optimal_weights(
             returns,
-            expected_returns,
+            expected,
             covariance_matrix,
             method,
             fraction,
@@ -1724,7 +2037,7 @@ class PortfolioConstruction:
         # portfolio's expected return and Sharpe ratio include it.
         if cash != 0:
             weights["Cash"] = cash
-            expected_returns["Cash"] = risk_free_rate
+            expected["Cash"] = risk_free_rate
             covariance_matrix = covariance_matrix.reindex(
                 index=weights.index, columns=weights.index, fill_value=0.0
             )
@@ -1733,7 +2046,7 @@ class PortfolioConstruction:
             )
 
         table = self._weights_table(
-            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+            weights, expected, covariance_matrix, risk_free_rate, rounding
         )
         table["Log Growth"] = growth
         table.loc[PORTFOLIO_TICKER, "Log Growth"] = portfolio_growth
@@ -1917,6 +2230,8 @@ class PortfolioConstruction:
     def get_risk_contributions(
         self,
         weights: dict[str, float] | None = None,
+        risk_measure: str = "volatility",
+        confidence_level: float = 0.95,
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
@@ -1924,19 +2239,153 @@ class PortfolioConstruction:
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
-        Calculate how much each asset contributes to the volatility of a portfolio. The
-        marginal contribution is the change in portfolio volatility from a small increase in
-        an asset's weight, (Σw)_i / σ_p; the risk contribution is the weight times that, and
-        the contributions add up to the portfolio's volatility (Euler allocation). A large
-        position in a calm asset can contribute less risk than a small one in a volatile
-        asset.
+        Calculate how much each asset contributes to the risk of a portfolio, measured as
+        its volatility or its expected shortfall (CVaR). The marginal contribution is the
+        change in the portfolio's risk from a small increase in an asset's weight; the
+        risk contribution is the weight times that, and the contributions add up to the
+        portfolio's risk (Euler allocation). A large position in a calm asset can
+        contribute less risk than a small one in a volatile asset.
 
-        For more information, see the following paper:
+        - risk_measure="volatility": the marginal contribution is (Σw)_i / σ_p, with Σ
+          the annualized covariance matrix.
+        - risk_measure="cvar": the expected shortfall is the average loss in the periods
+          in which the portfolio's return is at or below its Value at Risk, and the
+          marginal contribution of an asset is its average loss in those same periods,
+          -E[r_i | r_p ≤ VaR], so the contributions show which assets lose in the
+          portfolio's worst periods. These are per period (e.g. daily), like the
+          Finance Toolkit's historical CVaR, and not annualized.
+
+        For more information, see the following papers:
 
         - Litterman, R. (1996). "Hot Spots and Hedges." The Journal of Portfolio Management,
           23(5), 52-75.
+        - Tasche, D. (2000). "Conditional Expectations as Quantile Derivatives." Working
+          paper, arXiv math/0104190.
+        - Scaillet, O. (2004). "Nonparametric Estimation and Sensitivity Analysis of
+          Expected Shortfall." Mathematical Finance, 14(1), 115-129.
 
-        Also known as: risk decomposition, marginal contribution to risk, risk budget.
+        Also known as: risk decomposition, marginal contribution to risk, risk budget,
+        component expected shortfall, component CVaR.
+
+        Args:
+            weights (dict[str, float] | None, optional): The weight per asset. Defaults to
+                None, which uses the latest weights of the Portfolio the Toolkit came from,
+                or equal weights.
+            risk_measure (str, optional): "volatility" or "cvar" (the expected shortfall).
+                Defaults to "volatility".
+            confidence_level (float, optional): The confidence level of the expected
+                shortfall, e.g. 0.95 for the average of the worst 5% of periods.
+                Defaults to 0.95.
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
+            Contribution and Percentage Contribution: annualized volatility terms, or
+            expected shortfall terms per period as positive losses.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_risk_contributions(
+            weights={"AAPL": 0.4, "MSFT": 0.3, "JNJ": 0.2, "XOM": 0.1},
+            risk_measure="cvar",
+        )
+        ```
+
+        Which returns:
+
+        | Asset   |   Weight |   Marginal Contribution |   Risk Contribution |   Percentage Contribution |
+        |:--------|---------:|------------------------:|--------------------:|--------------------------:|
+        | AAPL    |      0.4 |                  0.0352 |              0.0141 |                    0.5365 |
+        | MSFT    |      0.3 |                  0.0306 |              0.0092 |                    0.3492 |
+        | JNJ     |      0.2 |                  0.0082 |              0.0016 |                    0.0625 |
+        | XOM     |      0.1 |                  0.0136 |              0.0014 |                    0.0518 |
+        | Total   |      1   |                nan      |              0.0263 |                    1      |
+        """
+        if risk_measure not in ("volatility", "cvar"):
+            raise ValueError(
+                f"The risk measure must be 'volatility' or 'cvar', not '{risk_measure}'."
+            )
+        returns, _, covariance_matrix, _ = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
+        )
+        resolved = self._resolve_weights(weights, covariance_matrix.index.tolist())
+        table = (
+            optimization_model.get_risk_contributions(resolved, covariance_matrix)
+            if risk_measure == "volatility"
+            else optimization_model.get_expected_shortfall_contributions(
+                resolved, returns, confidence_level
+            )
+        )
+        table.index.name = "Asset"
+        table.loc["Total"] = [
+            table["Weight"].sum(),
+            np.nan,
+            table["Risk Contribution"].sum(),
+            table["Percentage Contribution"].sum(),
+        ]
+        return self._round(table, rounding)
+
+    @handle_errors
+    def get_diversification_metrics(
+        self,
+        weights: dict[str, float] | None = None,
+        period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.Series:
+        """
+        Calculate how diversified a portfolio is, by the concentration of its weights and
+        by how its risk spreads over independent sources.
+
+        - Herfindahl-Hirschman Index: Σ w_i², from 1/N for equal weights to 1 for a single
+          asset.
+        - Effective Number of Assets: 1 / Σ w_i², the number of equally weighted assets
+          that would be as concentrated.
+        - Diversification Ratio: the weighted average volatility of the assets over the
+          portfolio's volatility, w'σ / √(w'Σw); one for a single asset, higher as the
+          assets move less together (Choueifaty and Coignard, 2008).
+        - Effective Number of Bets: the covariance matrix is split into uncorrelated
+          principal components, p_k is the share of the portfolio's variance from
+          component k, and the number of bets is exp(-Σ p_k ln p_k): 1 when all risk comes
+          from one source and N when it spreads evenly over all of them (Meucci, 2009).
+          Equal weights in assets that all follow the market are many assets but close
+          to one bet.
+
+        For more information, see the following papers:
+
+        - Choueifaty, Y. and Coignard, Y. (2008). "Toward Maximum Diversification." The
+          Journal of Portfolio Management, 35(1), 40-51.
+        - Meucci, A. (2009). "Managing Diversification." Risk, 22(5), 74-79.
+
+        Also known as: concentration, HHI, effective N, ENB, diversification ratio.
 
         Args:
             weights (dict[str, float] | None, optional): The weight per asset. Defaults to
@@ -1961,8 +2410,8 @@ class PortfolioConstruction:
                 Defaults to None, which uses the Toolkit's rounding.
 
         Returns:
-            pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
-            Contribution and Percentage Contribution (annualized volatility terms).
+            pd.Series: The Herfindahl-Hirschman Index, Effective Number of Assets,
+            Diversification Ratio and Effective Number of Bets of the portfolio.
 
         As an example:
 
@@ -1976,34 +2425,279 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_risk_contributions(
+        toolkit.portfolio.get_diversification_metrics(
             weights={"AAPL": 0.4, "MSFT": 0.3, "JNJ": 0.2, "XOM": 0.1}
         )
         ```
 
         Which returns:
 
-        | Asset   |   Weight |   Marginal Contribution |   Risk Contribution |   Percentage Contribution |
-        |:--------|---------:|------------------------:|--------------------:|--------------------------:|
-        | AAPL    |      0.4 |                  0.2564 |              0.1025 |                    0.5529 |
-        | MSFT    |      0.3 |                  0.2116 |              0.0635 |                    0.3423 |
-        | JNJ     |      0.2 |                  0.0541 |              0.0108 |                    0.0584 |
-        | XOM     |      0.1 |                  0.0862 |              0.0086 |                    0.0465 |
-        | Total   |      1   |                nan      |              0.1855 |                    1      |
+        |                            |   Portfolio |
+        |:---------------------------|------------:|
+        | Herfindahl-Hirschman Index |      0.3    |
+        | Effective Number of Assets |      3.3333 |
+        | Diversification Ratio      |      1.343  |
+        | Effective Number of Bets   |      1.1298 |
         """
         _, _, covariance_matrix, _ = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
         resolved = self._resolve_weights(weights, covariance_matrix.index.tolist())
-        table = optimization_model.get_risk_contributions(resolved, covariance_matrix)
-        table.index.name = "Asset"
-        table.loc["Total"] = [
-            table["Weight"].sum(),
-            np.nan,
-            table["Risk Contribution"].sum(),
-            table["Percentage Contribution"].sum(),
-        ]
-        return self._round(table, rounding)
+        metrics = optimization_model.get_diversification_metrics(
+            resolved, covariance_matrix
+        )
+        metrics.name = PORTFOLIO_TICKER
+        return self._round(metrics.to_frame(), rounding)[PORTFOLIO_TICKER]
+
+    @handle_errors
+    def get_optimization_backtest(
+        self,
+        methods: list[str] | str | None = None,
+        rebalancing: str = "monthly",
+        lookback: int = 252,
+        transaction_cost: float = 0.0,
+        maximum_turnover: float | None = None,
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        expected_returns: str = "mean",
+        expected_returns_span: int = 180,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        output: str = "summary",
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Backtest the portfolio optimizers out of sample against equal weights (1/N) and
+        the benchmark. On every rebalancing date (the last trading day of each month,
+        quarter or year) each optimizer sets its weights from the daily returns of the
+        `lookback` trading days up to and including that date, and the portfolio holds
+        them from the next day on, so no weight is estimated with a return it is then
+        measured on (walk-forward). Between rebalancing dates the weights drift with the
+        prices, as those of a portfolio that does not trade. The 1/N portfolio is
+        rebalanced to equal weights on the same dates and the benchmark is bought and
+        held.
+
+        Each rebalancing trades from the drifted weights to the new ones. Its turnover is
+        Σ |w_i,new - w_i,drifted| and its cost the transaction cost times the turnover,
+        taken from the portfolio's value, so the returns shown are after costs
+        (DeMiguel, Garlappi and Uppal, 2009). With a maximum turnover, a portfolio trades
+        towards its new weights only as far as the limit allows. DeMiguel et al. found
+        that none of fourteen optimizers consistently beat 1/N out of sample, because the
+        estimation error in the expected returns outweighs the gain from optimizing; a
+        backtest shows whether that holds for these assets.
+
+        For more information, see the following paper:
+
+        - DeMiguel, V., Garlappi, L. and Uppal, R. (2009). "Optimal Versus Naive
+          Diversification: How Inefficient Is the 1/N Portfolio Strategy?" The Review of
+          Financial Studies, 22(5), 1915-1953.
+
+        Also known as: walk-forward backtest, out-of-sample backtest, rolling
+        optimization, 1/N comparison.
+
+        Args:
+            methods (list[str] | str | None, optional): The optimizers to backtest, as a
+                list or comma separated: "minimum_variance", "maximum_sharpe",
+                "mean_variance" (a risk aversion of 2.5), "risk_parity",
+                "hierarchical_risk_parity", "inverse_volatility",
+                "maximum_diversification" and "minimum_cvar" (95%). Equal weights and
+                the benchmark are always included. Defaults to None, which backtests
+                minimum variance, maximum Sharpe, risk parity, Hierarchical Risk Parity,
+                maximum diversification and inverse volatility.
+            rebalancing (str, optional): How often the weights are set anew: "monthly",
+                "quarterly" or "yearly". Defaults to "monthly".
+            lookback (int, optional): The number of daily returns each estimation uses.
+                The backtest starts on the first rebalancing date with that many returns
+                before it. Defaults to 252, a year of trading days.
+            transaction_cost (float, optional): The cost per unit of weight traded, e.g.
+                0.001 for 10 basis points. The first investment is free, so every
+                portfolio starts from the same value. Defaults to 0.
+            maximum_turnover (float | None, optional): The highest turnover of a
+                rebalancing, e.g. 0.2. Defaults to None, no limit.
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
+            expected_returns (str, optional): The estimator of the expected returns:
+                "mean" (the historical average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "capm" (the returns the
+                Capital Asset Pricing Model implies from each asset's beta to the
+                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
+                that of the minimum variance portfolio, Jorion, 1986). Defaults to
+                "mean".
+            expected_returns_span (int, optional): The span in periods of the
+                "exponential" expected returns. Defaults to 180.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, for the optimizers that take weight bounds (all
+                but inverse volatility). Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, for the optimizers that take weight bounds.
+                Defaults to 1.
+            output (str, optional): "summary" for the performance of each portfolio,
+                "returns" for the daily returns after costs, or "weights" for the weights
+                set on each rebalancing date. Defaults to "summary".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: With output="summary", per portfolio the Annualized Return
+            (geometric), Annualized Volatility, Sharpe Ratio (the annualized average return
+            above the risk free rate over the volatility), Maximum Drawdown, Average
+            Turnover per rebalancing and Annualized Costs. With output="returns", the
+            daily returns after costs of every portfolio and the benchmark. With
+            output="weights", the weights each optimizer set on each rebalancing date.
+
+        Notes:
+        - The returns are daily total returns (from adjusted closing prices), over the days
+          on which every asset has a return.
+        - When an optimizer finds no weights on a rebalancing date (e.g. the maximum Sharpe
+          ratio when no asset beat the risk free rate over the lookback), the portfolio
+          keeps its drifted weights until the next date, and a warning says how often.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_optimization_backtest(transaction_cost=0.001)
+        ```
+
+        Which returns:
+
+        | Portfolio                |   Annualized Return |   Annualized Volatility |   Sharpe Ratio |   Maximum Drawdown |   Average Turnover |   Annualized Costs |
+        |:-------------------------|--------------------:|------------------------:|---------------:|-------------------:|-------------------:|-------------------:|
+        | Minimum Variance         |              0.0891 |                  0.1375 |         0.4061 |            -0.1268 |             0.0667 |             0.0008 |
+        | Maximum Sharpe           |              0.0828 |                  0.2124 |         0.2971 |            -0.2776 |             0.4378 |             0.0052 |
+        | Risk Parity              |              0.1242 |                  0.1469 |         0.6056 |            -0.1439 |             0.0428 |             0.0005 |
+        | Hierarchical Risk Parity |              0.1003 |                  0.1382 |         0.4784 |            -0.135  |             0.0474 |             0.0006 |
+        | Maximum Diversification  |              0.1225 |                  0.1426 |         0.6085 |            -0.1357 |             0.0617 |             0.0007 |
+        | Inverse Volatility       |              0.122  |                  0.151  |         0.5798 |            -0.1484 |             0.0415 |             0.0005 |
+        | Equal Weight             |              0.1407 |                  0.1624 |         0.6519 |            -0.1594 |             0.0388 |             0.0005 |
+        | Benchmark                |              0.1285 |                  0.1799 |         0.545  |            -0.221  |           nan      |           nan      |
+        """
+        if output not in ("summary", "returns", "weights"):
+            raise ValueError(
+                f"The output must be 'summary', 'returns' or 'weights', not '{output}'."
+            )
+        if isinstance(methods, str):
+            methods = [
+                method.strip() for method in methods.split(",") if method.strip()
+            ]
+        methods = list(methods or DEFAULT_BACKTEST_METHODS)
+        unknown = [method for method in methods if method not in BACKTEST_METHODS]
+        if unknown:
+            raise ValueError(
+                f"Unknown methods: {', '.join(unknown)}; choose from "
+                f"{', '.join(BACKTEST_METHODS)}."
+            )
+        if "equal_weight" not in methods:
+            methods.append("equal_weight")
+
+        returns = self._get_returns("daily", include_benchmark=False)
+        if lookback < returns.shape[1] + 2:
+            raise ValueError(
+                f"A lookback of {lookback} days is too short to estimate the covariance "
+                f"of {returns.shape[1]} assets."
+            )
+        benchmark = self._get_benchmark_returns("daily")
+        periods_per_year = PERIODS_PER_YEAR["daily"]
+
+        def strategy(method: str) -> Callable[[pd.DataFrame], pd.Series]:
+            def weights(window: pd.DataFrame) -> pd.Series:
+                if method == "equal_weight":
+                    return pd.Series(1 / window.shape[1], index=window.columns)
+                if method == "minimum_cvar":
+                    return optimization_model.get_minimum_cvar_weights(
+                        window,
+                        minimum_weight=minimum_weight,
+                        maximum_weight=maximum_weight,
+                    )
+                risk_free_rate = self._get_risk_free_rate("daily", window.index)
+                mu, sigma = optimization_model.get_expected_returns_and_covariance(
+                    window,
+                    periods_per_year,
+                    covariance,
+                    covariance_span,
+                    expected_returns,
+                    expected_returns_span,
+                    benchmark if expected_returns == "capm" else None,
+                    risk_free_rate,
+                )
+                if method == "inverse_volatility":
+                    return optimization_model.get_inverse_volatility_weights(sigma)
+                if method == "hierarchical_risk_parity":
+                    return optimization_model.get_hierarchical_risk_parity_weights(
+                        sigma,
+                        minimum_weight=minimum_weight,
+                        maximum_weight=maximum_weight,
+                    )
+                if method == "risk_parity":
+                    return optimization_model.get_risk_parity_weights(
+                        sigma,
+                        minimum_weight=minimum_weight,
+                        maximum_weight=maximum_weight,
+                    )
+                if method == "minimum_variance":
+                    return optimization_model.get_minimum_variance_weights(
+                        sigma, minimum_weight, maximum_weight
+                    )
+                if method == "maximum_diversification":
+                    return optimization_model.get_maximum_diversification_weights(
+                        sigma, minimum_weight, maximum_weight
+                    )
+                if method == "maximum_sharpe":
+                    return optimization_model.get_maximum_sharpe_weights(
+                        mu, sigma, risk_free_rate, minimum_weight, maximum_weight
+                    )
+                return optimization_model.get_mean_variance_weights(
+                    mu,
+                    sigma,
+                    minimum_weight=minimum_weight,
+                    maximum_weight=maximum_weight,
+                )
+
+            return weights
+
+        net_returns, weights_table, turnover = backtest_model.get_walk_forward_backtest(
+            returns,
+            {BACKTEST_METHODS[method]: strategy(method) for method in methods},
+            backtest_model.get_rebalancing_dates(returns.index, rebalancing, lookback),
+            lookback,
+            transaction_cost,
+            maximum_turnover,
+        )
+
+        if output == "weights":
+            return self._round(weights_table, rounding)
+
+        if benchmark is not None:
+            net_returns[BENCHMARK_TICKER] = benchmark.reindex(net_returns.index)
+        if output == "returns":
+            return self._round(net_returns, rounding)
+
+        summary = backtest_model.get_backtest_statistics(
+            net_returns.dropna(how="any"),
+            turnover,
+            periods_per_year,
+            self._get_risk_free_rate("daily", net_returns.index),
+            transaction_cost,
+        )
+        summary.index.name = "Portfolio"
+        return self._round(summary, rounding)
 
     @handle_errors
     def get_stress_test(

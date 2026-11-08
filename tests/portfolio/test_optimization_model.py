@@ -1549,3 +1549,229 @@ def test_minimum_drawdown_refuses_the_empty_market_neutral_portfolio():
         optimization_model.get_minimum_drawdown_weights(
             returns, minimum_weight=-1.0, net_exposure=0.0, gross_exposure=1.0
         )
+
+
+CURRENT_FIVE = pd.Series([0.4, 0.3, 0.1, 0.1, 0.1], index=list("ABCDE"))
+
+
+def test_the_drawdown_and_ratio_optimizers_limit_the_turnover():
+    returns, _ = _reference_returns()
+
+    # The same problems written out in cvxpy 1.7 (Clarabel), with the turnover
+    # Σ |w_i - w0_i| ≤ L, and for the ratios Σ |y_i - κ w0_i| ≤ L κ; they agree to 3e-7.
+    references = {
+        (optimization_model.get_minimum_drawdown_weights, 0.1): [
+            0.4,
+            0.25,
+            0.15,
+            0.1,
+            0.1,
+        ],
+        (optimization_model.get_maximum_cvar_ratio_weights, 0.1): [
+            0.35,
+            0.3,
+            0.1,
+            0.1,
+            0.15,
+        ],
+        (optimization_model.get_maximum_cvar_ratio_weights, 0.3): [
+            0.2894037749,
+            0.2605962251,
+            0.1,
+            0.1,
+            0.25,
+        ],
+        (optimization_model.get_maximum_omega_weights, 0.1): [
+            0.358543048,
+            0.291456952,
+            0.1,
+            0.1,
+            0.15,
+        ],
+        (optimization_model.get_maximum_omega_weights, 0.3): [
+            0.2926110051,
+            0.2573889949,
+            0.1,
+            0.1,
+            0.25,
+        ],
+    }
+    for (optimizer, turnover), reference in references.items():
+        weights = optimizer(
+            returns, current_weights=CURRENT_FIVE, maximum_turnover=turnover
+        )
+        np.testing.assert_allclose(weights, reference, atol=1e-6)
+        assert (weights - CURRENT_FIVE).abs().sum() <= turnover + 1e-8
+
+    maximum = optimization_model.get_minimum_drawdown_weights(
+        returns, "maximum", current_weights=CURRENT_FIVE, maximum_turnover=0.1
+    )
+    np.testing.assert_allclose(maximum, [0.4, 0.25, 0.15, 0.1, 0.1], atol=1e-6)
+
+
+def test_the_ratio_optimizers_take_expected_returns():
+    returns, _ = _reference_returns()
+    expected = pd.Series([0.0006, 0.0002, 0.0004, 0.0005, 0.0001], index=list("ABCDE"))
+
+    # Riskfolio-Lib 7.4.1 optimization(obj="Sharpe", rm="FLPM" / "CVaR") with port.mu
+    # set to these expected returns.
+    np.testing.assert_allclose(
+        optimization_model.get_maximum_omega_weights(
+            returns, expected_returns=expected
+        ),
+        [0.6338427083, 0, 0.1340901416, 0.23206715, 0],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_maximum_cvar_ratio_weights(
+            returns, expected_returns=expected
+        ),
+        [0.5991221747, 0, 0.1482425477, 0.2526352776, 0],
+        atol=1e-6,
+    )
+    with pytest.raises(ValueError, match="every asset"):
+        optimization_model.get_maximum_omega_weights(
+            returns, expected_returns=expected.drop("E")
+        )
+
+
+def test_expected_shortfall_contributions_count_a_fraction_of_the_boundary_period():
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+
+    # Riskfolio-Lib Risk_Contribution(rm="CVaR"), with tails of 22.5 and 13.5 periods.
+    for confidence_level, reference in (
+        (0.955, [0.0071414198, 0.006284051, 0.0043148177, 0.0035652219, 0.0007657886]),
+        (0.973, [0.0079713688, 0.0068635433, 0.0046414049, 0.0035747537, 0.0009117271]),
+    ):
+        contributions = optimization_model.get_expected_shortfall_contributions(
+            weights, returns, confidence_level
+        )
+        np.testing.assert_allclose(
+            contributions["Risk Contribution"], reference, atol=1e-9
+        )
+        assert contributions["Risk Contribution"].sum() == pytest.approx(
+            optimization_model.get_expected_tail_loss(
+                -(returns @ weights), confidence_level
+            )
+        )
+
+
+def test_tail_probabilities_sum_to_one_with_a_fraction_on_the_boundary():
+    losses = np.array([3.0, 10.0, 1.0, 9.0, 5.0])
+    probabilities = optimization_model.get_tail_probabilities(losses, 0.5)
+
+    # 2.5 periods: 10 and 9 in full and half of 5.
+    np.testing.assert_allclose(probabilities, [0, 0.4, 0, 0.4, 0.2])
+    assert probabilities.sum() == pytest.approx(1)
+    # A tail shorter than a period is the largest loss.
+    assert optimization_model.get_expected_tail_loss(losses, 0.99) == pytest.approx(10)
+    with pytest.raises(ValueError, match="confidence level"):
+        optimization_model.get_tail_probabilities(losses, 1)
+
+
+def test_resampled_efficient_weights_average_the_optimizer_over_the_draws():
+    returns, _ = _reference_returns()
+    expected, covariance = returns.mean() * 252, returns.cov() * 252
+
+    # Every draw solved by Riskfolio-Lib 7.4.1 (MinRisk, MV) or cvxpy (the risk
+    # aversion utility) on the same draws, numpy's multivariate_normal(method="eigh")
+    # and integers for the bootstrap with default_rng(7), and averaged.
+    for objective, resampling, reference in (
+        (
+            "minimum_variance",
+            "parametric",
+            [0.229921588, 0.1330852067, 0.0955409025, 0.0806252357, 0.460827067],
+        ),
+        (
+            "minimum_variance",
+            "bootstrap",
+            [0.2305472472, 0.1338746262, 0.0980794088, 0.0806223961, 0.4568763219],
+        ),
+        (
+            "mean_variance",
+            "parametric",
+            [0.1483744711, 0.2223718445, 0.1965154474, 0.1280152188, 0.3047230183],
+        ),
+    ):
+        draws = optimization_model.get_resampled_efficient_weights(
+            returns, expected, covariance, 252, objective, 200, resampling, 7
+        )
+        assert len(draws) == 200  # noqa: PLR2004
+        np.testing.assert_allclose(draws.mean(), reference, atol=1e-5)
+
+    # The draws match numpy's multivariate normal draws for the same seed, from the
+    # same matrix (the sign of an eigenvector, and so the draws, can flip with the last
+    # digit).
+    generator = np.random.default_rng(3)
+    sample = generator.multivariate_normal(
+        expected / 252, covariance / 252, size=len(returns), method="eigh"
+    )
+    first = optimization_model.get_resampled_efficient_weights(
+        returns, expected, covariance, 252, "minimum_variance", 1, seed=3
+    )
+    np.testing.assert_allclose(
+        first.iloc[0],
+        optimization_model.get_minimum_variance_weights(
+            pd.DataFrame(
+                np.cov(sample, rowvar=False) * 252,
+                index=list("ABCDE"),
+                columns=list("ABCDE"),
+            )
+        ),
+        atol=1e-6,
+    )
+
+
+def test_resampled_efficient_weights_leave_out_draws_without_a_solution():
+    returns, _ = _reference_returns()
+    expected, covariance = returns.mean() * 252, returns.cov() * 252
+
+    # With a risk free rate near the expected returns, some draws have no asset above
+    # it and no maximum Sharpe ratio portfolio.
+    draws = optimization_model.get_resampled_efficient_weights(
+        returns, expected, covariance, 252, resamples=100, risk_free_rate=0.12
+    )
+    assert 0 < len(draws) < 100  # noqa: PLR2004
+    np.testing.assert_allclose(draws.sum(axis=1), 1, atol=1e-8)
+    assert (draws >= -1e-10).all().all()
+
+    capped = optimization_model.get_resampled_efficient_weights(
+        returns, expected, covariance, 252, resamples=50, maximum_weight=0.3
+    )
+    assert (capped.mean() <= 0.3 + 1e-8).all()
+
+    with pytest.raises(ValueError, match="None of the"):
+        optimization_model.get_resampled_efficient_weights(
+            returns, expected, covariance, 252, resamples=5, risk_free_rate=10
+        )
+    with pytest.raises(ValueError, match="objective"):
+        optimization_model.get_resampled_efficient_weights(
+            returns, expected, covariance, 252, "maximum_return"
+        )
+    with pytest.raises(ValueError, match="resampling"):
+        optimization_model.get_resampled_efficient_weights(
+            returns, expected, covariance, 252, resampling="jackknife"
+        )
+
+
+def test_resampled_efficient_weights_settle_as_the_draws_grow():
+    returns, _ = _reference_returns()
+    expected, covariance = returns.mean() * 252, returns.cov() * 252
+
+    # The spread of the average over seeds falls with the number of draws, about as
+    # 1 / √S.
+    def spread(resamples):
+        return np.std(
+            [
+                optimization_model.get_resampled_efficient_weights(
+                    returns, expected, covariance, 252, resamples=resamples, seed=seed
+                )
+                .mean()
+                .to_numpy()
+                for seed in range(8)
+            ],
+            axis=0,
+        ).max()
+
+    assert spread(100) < spread(10) / 2

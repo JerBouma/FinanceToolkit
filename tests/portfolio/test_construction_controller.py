@@ -425,6 +425,7 @@ def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit
         "get_growth_optimal_weights",
         "get_hierarchical_equal_risk_contribution_weights",
         "get_nested_clustered_optimization_weights",
+        "get_resampled_efficient_weights",
     ],
 )
 @pytest.mark.parametrize(
@@ -438,6 +439,8 @@ def test_the_optimizers_take_a_covariance_estimator(
     extra = (
         {"market_weights": {"AAPL": 2.0, "MSFT": 1.5}} if "litterman" in method else {}
     )
+    # Fewer resamples keep the resampled weights quick.
+    extra |= {"resamples": 50} if "resampled" in method else {}
     weights = getattr(portfolio_module, method)(covariance=covariance, **extra)[
         "Weight"
     ].drop("Portfolio", errors="ignore")
@@ -477,21 +480,27 @@ def test_a_covariance_estimator_changes_the_weights_and_their_risk(portfolio_mod
         "get_minimum_drawdown_weights",
         "get_maximum_omega_weights",
         "get_maximum_cvar_ratio_weights",
+        "get_resampled_efficient_weights",
     ],
 )
 def test_sector_and_country_bounds_come_from_the_profiles(test_toolkit, method):
     construction = _offline_construction(test_toolkit)
+    extra = {"resamples": 50} if "resampled" in method else {}
     by_sector = getattr(construction, method)(
-        include_benchmark=True, sector_bounds={"Technology": (0, 0.6)}, rounding=10
+        include_benchmark=True,
+        sector_bounds={"Technology": (0, 0.6)},
+        rounding=10,
+        **extra,
     )
     # The country is named by its code in the profile; both the code and the name work.
     by_country = getattr(construction, method)(
-        include_benchmark=True, country_bounds={"US": [0.2, 0.5]}, rounding=10
+        include_benchmark=True, country_bounds={"US": [0.2, 0.5]}, rounding=10, **extra
     )
     by_name = getattr(construction, method)(
         include_benchmark=True,
         country_bounds={"United States": [0.2, 0.5]},
         rounding=10,
+        **extra,
     )
 
     assert by_sector.loc[["AAPL", "MSFT"], "Weight"].sum() <= 0.6 + 1e-8
@@ -602,7 +611,14 @@ def test_get_risk_contributions_to_the_expected_shortfall(recorder, portfolio_mo
     recorder.capture(contributions)
     returns = portfolio_module._get_returns("daily", False)
     portfolio = returns["AAPL"] * 0.7 + returns["MSFT"] * 0.3
-    shortfall = -portfolio[portfolio <= portfolio.quantile(0.05)].mean()
+    # The tail of 5% of the periods holds a fraction of its boundary period, as in the
+    # Rockafellar-Uryasev CVaR the optimizers minimize.
+    tail = 0.05 * len(portfolio)
+    assert tail != int(tail)
+    losses = (-portfolio).sort_values(ascending=False).to_numpy()
+    shortfall = (
+        losses[: int(tail)].sum() + (tail - int(tail)) * losses[int(tail)]
+    ) / tail
     assert contributions.loc["Total", "Risk Contribution"] == pytest.approx(
         shortfall, abs=1e-8
     )
@@ -680,3 +696,124 @@ def test_the_backtest_leaves_out_days_on_which_none_of_the_assets_traded(
 
     assert closed not in returns.index
     assert returns.index[-1] == daily.index[-1]
+
+
+def test_get_resampled_efficient_weights(recorder, portfolio_module):
+    table = portfolio_module.get_resampled_efficient_weights(
+        resamples=100, include_benchmark=True
+    )
+    recorder.capture(table)
+    recorder.capture(
+        portfolio_module.get_resampled_efficient_weights(
+            objective="minimum_variance",
+            resamples=100,
+            resampling="bootstrap",
+            include_benchmark=True,
+        )
+    )
+    assert table.loc["Portfolio", "Weight"] == pytest.approx(1)
+    assert (table["Weight Standard Deviation"].drop("Portfolio") > 0).all()
+
+    # The same seed gives the same weights, another seed or none other ones.
+    same = portfolio_module.get_resampled_efficient_weights(
+        resamples=100, include_benchmark=True
+    )
+    pd.testing.assert_frame_equal(table, same)
+    other = portfolio_module.get_resampled_efficient_weights(
+        resamples=100, seed=None, include_benchmark=True
+    )
+    assert not np.allclose(table["Weight"], other["Weight"])
+
+    # The average of weights within the bounds is within them.
+    capped = portfolio_module.get_resampled_efficient_weights(
+        resamples=50, maximum_weight=0.4, include_benchmark=True, rounding=10
+    )
+    assert (capped["Weight"].drop("Portfolio") <= 0.4 + 1e-8).all()
+    assert portfolio_module.get_resampled_efficient_weights(objective="best").empty
+    assert portfolio_module.get_resampled_efficient_weights(
+        resampling="jackknife"
+    ).empty
+
+
+def test_the_backtest_runs_the_clustering_drawdown_and_ratio_optimizers(
+    recorder, portfolio_module
+):
+    methods = [
+        "hierarchical_equal_risk_contribution",
+        "nested_clustered_optimization",
+        "minimum_drawdown",
+        "maximum_omega",
+        "maximum_cvar_ratio",
+    ]
+    summary = portfolio_module.get_optimization_backtest(
+        methods=methods, rebalancing="quarterly", transaction_cost=0.001
+    )
+    recorder.capture(summary)
+    assert list(summary.index) == [
+        "Hierarchical Equal Risk Contribution",
+        "Nested Clustered Optimization",
+        "Minimum Drawdown",
+        "Maximum Omega",
+        "Maximum CVaR Ratio",
+        "Equal Weight",
+        "Benchmark",
+    ]
+    weights = portfolio_module.get_optimization_backtest(
+        methods=methods, rebalancing="quarterly", maximum_weight=0.7, output="weights"
+    )
+    assert np.allclose(weights.T.groupby(level=0).sum().T, 1, atol=1e-6)
+    # The ratio optimizers find no weights on a date on which no asset had a return
+    # above zero, and keep their drifted weights there.
+    bounded = ["Hierarchical Equal Risk Contribution", "Minimum Drawdown"]
+    assert (weights[bounded] <= 0.7 + 1e-6).all().all()
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_minimum_drawdown_weights",
+        "get_maximum_omega_weights",
+        "get_maximum_cvar_ratio_weights",
+    ],
+)
+def test_the_drawdown_and_ratio_optimizers_limit_the_turnover(portfolio_module, method):
+    current = {"AAPL": 0.2, "MSFT": 0.6, "Benchmark": 0.2}
+    free = getattr(portfolio_module, method)(
+        current_weights=current, include_benchmark=True, rounding=10
+    )
+    capped = getattr(portfolio_module, method)(
+        current_weights=current,
+        maximum_turnover=0.1,
+        include_benchmark=True,
+        rounding=10,
+    )
+    assert free.loc["Portfolio", "Turnover"] > 0.1  # noqa: PLR2004
+    assert capped.loc["Portfolio", "Turnover"] == pytest.approx(0.1, abs=1e-7)
+    assert capped.loc["Portfolio", "Weight"] == pytest.approx(1)
+
+
+@pytest.mark.parametrize(
+    ("method", "column"),
+    [
+        ("get_maximum_omega_weights", "Omega Ratio"),
+        ("get_maximum_cvar_ratio_weights", "CVaR Ratio"),
+        ("get_nested_clustered_optimization_weights", None),
+    ],
+)
+def test_the_ratio_optimizers_take_an_expected_return_estimator(
+    portfolio_module, method, column
+):
+    extra = {"objective": "maximum_sharpe"} if column is None else {}
+    mean = getattr(portfolio_module, method)(include_benchmark=True, **extra)
+    shrunk = getattr(portfolio_module, method)(
+        expected_returns="james_stein", include_benchmark=True, **extra
+    )
+    assert not np.allclose(mean["Weight"], shrunk["Weight"])
+    assert not np.allclose(mean["Expected Return"], shrunk["Expected Return"])
+    if column is not None:
+        # The ratio reported is the one maximized, on the expected returns used, so no
+        # asset alone beats the portfolio.
+        assert (
+            shrunk[column].drop("Portfolio").max()
+            <= shrunk.loc["Portfolio", column] + 1e-8
+        )

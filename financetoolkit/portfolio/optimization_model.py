@@ -1957,14 +1957,49 @@ def get_minimum_cvar_weights(
     return _as_series(result.x[:assets], returns.columns)
 
 
+def get_tail_probabilities(
+    losses: np.ndarray | pd.Series, confidence_level: float
+) -> np.ndarray:
+    """
+    The weight of every period in the expected tail loss of Rockafellar and Uryasev
+    (2002): 1 / ((1 - α)T) for each of the ⌊(1 - α)T⌋ largest losses, the remaining
+    fraction of the tail for the next largest and 0 for the others, so that the weights
+    sum to one. The expected tail loss is the losses weighted by them; the returns
+    weighted by them give each asset's share of it (Euler allocation).
+
+    Args:
+        losses (np.ndarray | pd.Series): The losses per period, a loss being positive.
+        confidence_level (float): The confidence level α, e.g. 0.95 for the worst 5%.
+
+    Returns:
+        np.ndarray: The weight of every period, in the order of the losses.
+    """
+    if not 0 < confidence_level < 1:
+        raise ValueError("The confidence level must lie between 0 and 1.")
+    losses = np.asarray(losses, dtype=float)
+    if len(losses) == 0:
+        raise ValueError("There are no losses to take the tail of.")
+    tail = (1 - confidence_level) * len(losses)
+    # A tail of 62.75 periods holds the 62 largest losses in full and three quarters of
+    # the 63rd; the stable sort keeps the earliest of tied losses first.
+    order = np.argsort(-losses, kind="stable")
+    full = min(math.floor(tail), len(losses))
+    probabilities = np.zeros(len(losses))
+    probabilities[order[:full]] = 1 / tail
+    if full < len(losses):
+        probabilities[order[full]] = (tail - full) / tail
+    return probabilities
+
+
 def get_expected_tail_loss(
     losses: np.ndarray | pd.Series, confidence_level: float
 ) -> float:
     """
-    The average of the worst 1 - α share of the losses, as the minimum over ζ of
+    The average of the worst 1 - α share of the losses, the minimum over ζ of
     ζ + Σ max(0, L_t - ζ) / ((1 - α)T) (Rockafellar and Uryasev, 2002). It counts a
     fraction of the loss on the boundary when (1 - α)T is not a whole number, and it is
-    the value the CVaR and CDaR linear programmes minimize.
+    the value the CVaR and CDaR linear programmes minimize. Every CVaR, CDaR and expected
+    shortfall of the portfolio construction uses it.
 
     Args:
         losses (np.ndarray | pd.Series): The losses per period, a loss being positive.
@@ -1973,19 +2008,8 @@ def get_expected_tail_loss(
     Returns:
         float: The expected tail loss.
     """
-    losses = np.sort(np.asarray(losses, dtype=float))[::-1]
-    tail = (1 - confidence_level) * len(losses)
-    # The function is convex and piecewise linear with its minimum at the loss ranked
-    # ⌈(1 - α)T⌉; both neighbouring ranks are tried against rounding of (1 - α)T.
-    return min(
-        float(cutoff + np.clip(losses - cutoff, 0, None).sum() / tail)
-        for cutoff in losses[
-            [
-                min(max(rank, 1), len(losses)) - 1
-                for rank in (math.floor(tail), math.ceil(tail))
-            ]
-        ]
-    )
+    losses = np.asarray(losses, dtype=float)
+    return float(get_tail_probabilities(losses, confidence_level) @ losses)
 
 
 def get_drawdowns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
@@ -2019,6 +2043,8 @@ def get_minimum_drawdown_weights(
     group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
     net_exposure: float = 1.0,
     gross_exposure: float | None = None,
+    current_weights: pd.Series | None = None,
+    maximum_turnover: float | None = None,
 ) -> pd.Series:
     """
     The portfolio with the lowest drawdown risk over the historical returns, solved as a
@@ -2052,6 +2078,10 @@ def get_minimum_drawdown_weights(
             portfolio. Defaults to 1.
         gross_exposure (float | None, optional): The highest sum of the absolute weights,
             e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
+        current_weights (pd.Series | None, optional): The weights held now, which the
+            turnover is measured from. Defaults to None.
+        maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
+            from the current weights. Defaults to None, no limit.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2077,6 +2107,8 @@ def get_minimum_drawdown_weights(
         group_bounds,
         net_exposure,
         gross_exposure,
+        current_weights,
+        maximum_turnover,
     )
     # The variables are the weights (and, with a gross exposure limit and short
     # positions, their absolute values), the running peaks u_t and then, for the CDaR,
@@ -2175,6 +2207,9 @@ def get_maximum_omega_weights(
     group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
     net_exposure: float = 1.0,
     gross_exposure: float | None = None,
+    current_weights: pd.Series | None = None,
+    maximum_turnover: float | None = None,
+    expected_returns: pd.Series | None = None,
 ) -> pd.Series:
     """
     The portfolio with the highest Omega ratio over the historical returns,
@@ -2209,6 +2244,14 @@ def get_maximum_omega_weights(
             portfolio. Defaults to 1.
         gross_exposure (float | None, optional): The highest sum of the absolute weights,
             e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
+        current_weights (pd.Series | None, optional): The weights held now, which the
+            turnover is measured from. Defaults to None.
+        maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
+            from the current weights. Defaults to None, no limit.
+        expected_returns (pd.Series | None, optional): The expected return per period of
+            every asset in the numerator, e.g. from a shrinkage estimator; the losses in
+            the denominator stay those of the historical returns. Defaults to None, the
+            average of the returns.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2225,8 +2268,16 @@ def get_maximum_omega_weights(
         group_bounds,
         net_exposure,
         gross_exposure,
+        current_weights,
+        maximum_turnover,
     )
-    mean = data.mean(axis=0)
+    mean = (
+        data.mean(axis=0)
+        if expected_returns is None
+        else expected_returns.reindex(returns.columns).to_numpy(dtype=float)
+    )
+    if np.isnan(mean).any():
+        raise ValueError("The expected returns must cover every asset.")
     # The transformation needs a positive numerator: with κ = 0 every ratio below zero
     # would be traded for the value 0 of y = 0.
     if _return_range(mean, constraints)[1] <= minimum_acceptable_return:
@@ -2302,6 +2353,9 @@ def get_maximum_cvar_ratio_weights(
     group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
     net_exposure: float = 1.0,
     gross_exposure: float | None = None,
+    current_weights: pd.Series | None = None,
+    maximum_turnover: float | None = None,
+    expected_returns: pd.Series | None = None,
 ) -> pd.Series:
     """
     The portfolio with the highest ratio of expected excess return to Conditional Value
@@ -2336,6 +2390,14 @@ def get_maximum_cvar_ratio_weights(
             portfolio. Defaults to 1.
         gross_exposure (float | None, optional): The highest sum of the absolute weights,
             e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
+        current_weights (pd.Series | None, optional): The weights held now, which the
+            turnover is measured from. Defaults to None.
+        maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
+            from the current weights. Defaults to None, no limit.
+        expected_returns (pd.Series | None, optional): The expected return per period of
+            every asset in the numerator, e.g. from a shrinkage estimator; the losses in
+            the denominator stay those of the historical returns. Defaults to None, the
+            average of the returns.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2354,8 +2416,16 @@ def get_maximum_cvar_ratio_weights(
         group_bounds,
         net_exposure,
         gross_exposure,
+        current_weights,
+        maximum_turnover,
     )
-    excess = data.mean(axis=0) - risk_free_rate
+    excess = (
+        data.mean(axis=0)
+        if expected_returns is None
+        else expected_returns.reindex(returns.columns).to_numpy(dtype=float)
+    ) - risk_free_rate
+    if np.isnan(excess).any():
+        raise ValueError("The expected returns must cover every asset.")
     # The transformation needs a positive numerator: with κ = 0 every ratio below zero
     # would be traded for the value 0 of y = 0.
     if _return_range(excess, constraints)[1] <= 0:
@@ -2779,6 +2849,186 @@ def get_growth_optimal_weights(
     return _as_series(weights * fraction, returns.columns)
 
 
+RESAMPLED_OBJECTIVES = ("maximum_sharpe", "minimum_variance", "mean_variance")
+RESAMPLING_METHODS = ("parametric", "bootstrap")
+
+
+def get_resampled_efficient_weights(
+    returns: pd.DataFrame,
+    expected_returns: pd.Series,
+    covariance: pd.DataFrame,
+    periods_per_year: int,
+    objective: str = "maximum_sharpe",
+    resamples: int = 500,
+    resampling: str = "parametric",
+    seed: int | None = 0,
+    risk_free_rate: float = 0.0,
+    risk_aversion: float = 2.5,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
+    current_weights: pd.Series | None = None,
+    maximum_turnover: float | None = None,
+) -> pd.DataFrame:
+    """
+    The weights of the resampled efficient portfolio (Michaud, 1998): the optimal weights
+    for many return histories that could have been drawn instead of the one observed,
+    whose average is the resampled portfolio. Each draw has as many periods as the
+    returns and comes from a normal distribution with the expected returns and
+    covariance ("parametric", as in Michaud), or is drawn with replacement from the
+    periods of the returns ("bootstrap", which keeps their fat tails and skew). The
+    expected returns and covariance of every draw are its sample mean and sample
+    covariance (ddof=1), annualized, and the objective is optimized on them within the
+    constraints.
+
+    The average of the draws hedges against the estimation error a single optimization
+    takes at face value: an asset only gets a large weight when it does so in most of
+    the histories the data could have produced. As every constraint is linear (or, for
+    the gross exposure and turnover, convex), the average of weights that meet them
+    meets them too.
+
+    See Michaud, R. O. (1998), "Efficient Asset Management: A Practical Guide to Stock
+    Portfolio Optimization and Asset Allocation", Harvard Business School Press, and
+    Scherer, B. (2002), "Portfolio Resampling: Review and Critique", Financial Analysts
+    Journal, 58(6), 98-109.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset; their
+            number of periods sets that of every draw and, for "bootstrap", the draws
+            come from them.
+        expected_returns (pd.Series): The annualized expected returns the "parametric"
+            draws are centred on.
+        covariance (pd.DataFrame): The annualized covariance matrix of the "parametric"
+            draws.
+        periods_per_year (int): The number of periods in a year, e.g. 252 for daily
+            returns.
+        objective (str, optional): The portfolio of every draw: "maximum_sharpe",
+            "minimum_variance" or "mean_variance" (with the risk aversion). Defaults to
+            "maximum_sharpe".
+        resamples (int, optional): The number of draws. Defaults to 500.
+        resampling (str, optional): How the draws are made: "parametric" or
+            "bootstrap". Defaults to "parametric".
+        seed (int | None, optional): The seed of the random draws, so that the same seed
+            gives the same weights. Defaults to 0; None draws anew every time.
+        risk_free_rate (float, optional): The annualized risk free rate of the maximum
+            Sharpe ratio. Defaults to 0.
+        risk_aversion (float, optional): The risk aversion of "mean_variance".
+            Defaults to 2.5.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
+        current_weights (pd.Series | None, optional): The weights held now, which the
+            turnover is measured from. Defaults to None.
+        maximum_turnover (float | None, optional): The highest turnover Σ |w_i - w0_i|
+            from the current weights. Defaults to None, no limit.
+
+    Returns:
+        pd.DataFrame: The weights of every draw that has a solution, one row per draw
+            (numbered from 0) and one column per asset; their average is the resampled
+            efficient portfolio. A draw without a solution, e.g. one in which no asset
+            beats the risk free rate for the maximum Sharpe ratio, is left out.
+    """
+    if objective not in RESAMPLED_OBJECTIVES:
+        raise ValueError(
+            f"The objective must be one of {', '.join(RESAMPLED_OBJECTIVES)}, not "
+            f"'{objective}'."
+        )
+    if resampling not in RESAMPLING_METHODS:
+        raise ValueError(
+            f"The resampling must be one of {', '.join(RESAMPLING_METHODS)}, not "
+            f"'{resampling}'."
+        )
+    if resamples < 1:
+        raise ValueError("At least one resample is needed.")
+    data = returns.dropna(how="any")
+    periods, assets = data.shape
+    if periods < assets + 1:
+        raise ValueError(
+            f"{periods} periods are too few to estimate the covariance of {assets} "
+            "assets in every draw."
+        )
+    columns = data.columns
+    mean = expected_returns.reindex(columns).to_numpy(dtype=float) / periods_per_year
+    sigma = (
+        covariance.reindex(index=columns, columns=columns).to_numpy(dtype=float)
+        / periods_per_year
+    )
+    if np.isnan(mean).any() or np.isnan(sigma).any():
+        raise ValueError("The expected returns and covariance must cover every asset.")
+
+    # The constraints are checked once, so that infeasible ones fail with their own
+    # message instead of leaving every draw without a solution.
+    constraints = {
+        "minimum_weight": minimum_weight,
+        "maximum_weight": maximum_weight,
+        "groups": groups,
+        "group_bounds": group_bounds,
+        "net_exposure": net_exposure,
+        "gross_exposure": gross_exposure,
+        "current_weights": current_weights,
+        "maximum_turnover": maximum_turnover,
+    }
+    get_weight_constraints(columns, **constraints)
+
+    # The normal draws are mean + z F' with F = U √Λ from the eigendecomposition of the
+    # covariance, decomposed once rather than per draw, which gives the draws of
+    # numpy's multivariate_normal(method="eigh") for the same seed.
+    eigenvalues, eigenvectors = np.linalg.eigh(sigma)
+    factor = eigenvectors * np.sqrt(np.clip(eigenvalues, 0, None))
+    generator = np.random.default_rng(seed)
+    history = data.to_numpy()
+    draws = {}
+    for draw in range(resamples):
+        sample = (
+            mean + generator.standard_normal((periods, assets)) @ factor.T
+            if resampling == "parametric"
+            else history[generator.integers(0, periods, size=periods)]
+        )
+        centred = sample - sample.mean(axis=0)
+        mu = pd.Series(sample.mean(axis=0) * periods_per_year, index=columns)
+        cov = pd.DataFrame(
+            centred.T @ centred / (periods - 1) * periods_per_year,
+            index=columns,
+            columns=columns,
+        )
+        try:
+            if objective == "maximum_sharpe":
+                weights = get_maximum_sharpe_weights(
+                    mu, cov, risk_free_rate, **constraints
+                )
+            elif objective == "minimum_variance":
+                weights = get_minimum_variance_weights(cov, **constraints)
+            else:
+                weights = get_mean_variance_weights(
+                    mu, cov, risk_aversion=risk_aversion, **constraints
+                )
+        except ValueError:
+            continue
+        draws[draw] = weights
+
+    if not draws:
+        raise ValueError(
+            f"None of the {resamples} draws has a {objective.replace('_', ' ')} "
+            "portfolio within the constraints."
+        )
+    return pd.DataFrame(draws).T
+
+
 def get_black_litterman_returns(
     covariance: pd.DataFrame,
     market_weights: pd.Series,
@@ -2947,19 +3197,19 @@ def get_expected_shortfall_contributions(
 ) -> pd.DataFrame:
     """
     How much each asset adds to the historical expected shortfall (CVaR) of a portfolio
-    (Euler allocation). The expected shortfall is the average loss in the periods in
-    which the portfolio's return is at or below its Value at Risk, the
-    (1 - confidence level) quantile of its returns, ES = -E[r_p | r_p ≤ VaR]. Because it
-    is homogeneous of degree one in the weights, its derivative per asset,
-    ∂ES/∂w_i = -E[r_i | r_p ≤ VaR], times the weight gives contributions that add up to
-    the expected shortfall (Tasche, 2000; Scaillet, 2004). The tail periods are those of
-    the portfolio, so an asset that tends to gain when the portfolio loses contributes
-    less than its own expected shortfall, or a negative amount when it hedges.
+    (Euler allocation). The expected shortfall is the average loss in the worst
+    1 - α share of the periods, ES = -Σ p_t r_p,t, with p_t the tail probabilities of
+    Rockafellar and Uryasev (2002): 1 / ((1 - α)T) for each of the ⌊(1 - α)T⌋ worst
+    periods of the portfolio and the remaining fraction of the tail for the next one.
+    Because it is homogeneous of degree one in the weights, its derivative per asset,
+    ∂ES/∂w_i = -Σ p_t r_i,t, times the weight gives contributions that add up to the
+    expected shortfall (Tasche, 2000; Scaillet, 2004). The tail periods are those of the
+    portfolio, so an asset that tends to gain when the portfolio loses contributes less
+    than its own expected shortfall, or a negative amount when it hedges.
 
-    The expected shortfall is the average of the returns at or below the quantile, as in
-    the Finance Toolkit's historical CVaR and the CVaR column of the minimum CVaR
-    weights; it equals the Rockafellar-Uryasev CVaR of the minimum CVaR optimization
-    when the tail holds a whole number of periods.
+    The expected shortfall is the one the minimum CVaR and maximum CVaR ratio
+    optimizations minimize and report, the average of the tail with a fraction of the
+    boundary period when (1 - α)T is not a whole number (Riskfolio-Lib's CVaR).
 
     See Tasche, D. (2000), "Conditional Expectations as Quantile Derivatives", arXiv
     math/0104190, and Scaillet, O. (2004), "Nonparametric Estimation and Sensitivity
@@ -2972,7 +3222,7 @@ def get_expected_shortfall_contributions(
             worst 5% of periods. Defaults to 0.95.
 
     Returns:
-        pd.DataFrame: The Weight, Marginal Contribution (-E[r_i | tail]), Risk
+        pd.DataFrame: The Weight, Marginal Contribution (-Σ p_t r_i,t), Risk
         Contribution (the weight times the marginal contribution) and Percentage
         Contribution per asset, as losses per period.
     """
@@ -2982,10 +3232,9 @@ def get_expected_shortfall_contributions(
     if returns.empty:
         raise ValueError("No period has a return for every asset.")
     weights = weights.reindex(returns.columns).fillna(0)
-    portfolio = returns @ weights
-    tail = portfolio <= portfolio.quantile(1 - confidence_level)
+    probabilities = get_tail_probabilities(-(returns @ weights), confidence_level)
 
-    marginal = -returns[tail].mean().to_numpy()
+    marginal = -(probabilities @ returns.to_numpy())
     contribution = weights.to_numpy() * marginal
     shortfall = contribution.sum()
     if shortfall == 0:

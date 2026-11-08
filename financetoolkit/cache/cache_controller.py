@@ -2,9 +2,11 @@
 
 __docformat__ = "google"
 
+import contextlib
 import os
 import platform
 import time
+import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -513,7 +515,7 @@ class Cache:
                         stored, start, end, date_axis
                     )
                 except Exception as error:  # pylint: disable=broad-except
-                    # An unreadable payload is a miss: ask the source for the lot.
+                    # An unreadable payload (one in another format, such as a pickle, is never read) is a miss: ask the source for the lot.  # noqa: E501
                     logger.debug(
                         "Could not decode cached %s.%s for %s: %s",
                         source,
@@ -522,6 +524,10 @@ class Cache:
                         error,
                     )
                     plan.missing[entity] = [request]
+
+                    # Removed with its coverage, so the rows fetched now are not recorded as merged with ranges that are no longer held.  # noqa: E501
+                    with contextlib.suppress(Exception):
+                        self._backend.delete_entity(key, entity)
 
         return plan
 
@@ -599,11 +605,12 @@ class Cache:
             Returns:
                 bytes: The payload to store in its place.
             """
-            existing = (
-                serialization_model.decode_dataframe(existing_payload)
-                if existing_payload is not None
-                else None
-            )
+            existing = None
+
+            # A payload that can't be read (another format, such as a pickle) is replaced.
+            if existing_payload is not None:
+                with contextlib.suppress(ValueError, zlib.error):
+                    existing = serialization_model.decode_dataframe(existing_payload)
 
             return serialization_model.encode_dataframe(
                 frame_model.merge_frames(existing, data, date_axis)
@@ -699,7 +706,8 @@ class Cache:
             source (str): The external data source.
             dataset (str): The dataset within that source.
             entity (str): The entity the data belongs to.
-            data (Any): The value to store. Any picklable object is accepted.
+            data (Any): The value to store: a DataFrame, Series or Index, a scalar, or a
+                list, tuple or dictionary of these (see serialization_model.encode_object).
             parameters (dict[str, Any] | None): Parameters that change the data.
         """
         if not self.serves(source):

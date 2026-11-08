@@ -291,10 +291,16 @@ def test_rolling_cvar_historic_matches_the_cvar_of_every_window():
         value_at_risk = np.percentile(window, 5)
         return window[window <= value_at_risk].mean()
 
-    expected = returns.rolling(30).apply(window_cvar, raw=True)
+    # A missing return is a day the ticker didn't trade: each window holds its own last
+    # 30 returns, as for the ticker on its own.
+    expected = pd.DataFrame(
+        {
+            column: returns[column].dropna().rolling(30).apply(window_cvar, raw=True)
+            for column in returns.columns
+        }
+    ).reindex(returns.index)
     rolling_cvar = cvar_model.get_rolling_cvar_historic(returns, 0.05, 30)
 
-    # Windows with a missing return stay empty, as in a rolling apply.
     pd.testing.assert_frame_equal(rolling_cvar, expected, rtol=1e-12, atol=1e-15)
     pd.testing.assert_series_equal(
         cvar_model.get_rolling_cvar_historic(returns["A"], 0.05, 30),

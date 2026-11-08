@@ -1676,7 +1676,8 @@ class Models:
         one: with quarterly data the last four quarters are summed. Setting `trailing` with yearly data sums
         several years into one base cash flow, which logs a warning.
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
-        and the valuation is not calculated.
+        and the valuation is not calculated. Within 2 percentage points of it the valuation is calculated
+        with a warning, as a tenth of a percentage point on either rate then moves it by about 5%.
         - The Total Debt, Cash and Cash Equivalents and Short Term Investments are those of the most
         recent period. Short Term Investments are added back with the cash, the same cash and marketable
         securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
@@ -2338,6 +2339,10 @@ class Models:
         or even be suspended. Therefore, the Gordon Growth Model should be used with caution and in conjunction
         with other valuation methods.
 
+        The Rate of Return must exceed the growth rate; periods where it doesn't are left out with a
+        warning. Within 2 percentage points of it the value is calculated with a warning, as a tenth of a
+        percentage point on either rate then moves it by about 5%.
+
         Also known as: Gordon Growth Model, DDM, dividend discount model, GGM.
 
         Args:
@@ -2543,7 +2548,9 @@ class Models:
         - The results are highly dependent on the input. Therefore, think carefully about
         each input parameter to ensure the results are accurate (given your beliefs).
         - The Rate of Return must be greater than the Stable Growth Rate, otherwise the
-        Terminal Value formula divides by a non-positive number.
+        Terminal Value formula divides by a non-positive number. Within 2 percentage points of
+        it the value is calculated with a warning, as a tenth of a percentage point on either
+        rate then moves it by about 5%.
         - The base dividend used for the projection is the annual Dividends Per Share of the last complete
         period for each ticker: the last complete year, or with quarterly data the sum of the last four
         complete quarters, since the rates are annual and each projection period is a year. The current,
@@ -2684,7 +2691,9 @@ class Models:
 
         Notes:
         - The results depend heavily on the inputs, in particular the high growth rate and
-        how long it lasts.
+        how long it lasts. A rate of return within 2 percentage points of the stable growth
+        rate is valued with a warning, as a tenth of a percentage point on either rate then
+        moves the value by about 5%.
         - The H-Model is close to the exact value of a linearly declining growth rate when
         the high-growth period is short or the gap between the growth rates is small, and
         overstates it as either grows.
@@ -3155,7 +3164,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
                 which shows all columns.
 
@@ -3205,6 +3216,10 @@ class Models:
         | NFLX |  2.379  |  2.8961 |  3.3806 |  4.3943 | 5.2949 |
         | UBER | -2.0375 | -3.3028 | -1.6181 | -0.0662 | 1.0641 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         if model not in altman_model.ALTMAN_COEFFICIENTS:
             raise ValueError(
                 f"Invalid model {model!r}. Please choose from: "
@@ -3432,7 +3447,9 @@ class Models:
         Also known as: Piotroski F-score, financial strength, quality score.
 
         Args:
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all columns
                 will be shown. Defaults to None.
 
@@ -3465,6 +3482,10 @@ class Models:
         | GM   |      6 |      6 |      7 |      5 |
         | TSLA |      8 |      3 |      4 |      5 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         piotroski_score = {}
 
         # Every change-based criterion compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the signal.  # noqa: E501
@@ -3714,7 +3735,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -3762,6 +3785,10 @@ class Models:
         | DIS   | -2.5143 | -2.5357 | -2.6392 | -2.6963 | -2.595  |
         | NFLX  | -1.6697 | -1.3345 | -2.5628 | -2.3319 | -2.1611 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         beneish_m_score = {}
 
         # Every index compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the score.  # noqa: E501
@@ -3976,7 +4003,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4007,8 +4036,9 @@ class Models:
         - Ohlson, James A. "Financial Ratios and the Probabilistic Prediction of Bankruptcy." Journal of
         Accounting Research, Vol. 18, No. 1, 1980, pp. 109-131.
 
-        Note that the first period is NaN because the Change in Net Income and Negative Income
-        Indicator components require a prior period to compare against.
+        Note that the first year is NaN because the Change in Net Income and Negative Income
+        Indicator components require a prior year to compare against. On quarterly data both
+        compare with the same quarter a year earlier.
 
         As an example:
 
@@ -4033,6 +4063,10 @@ class Models:
         | NCLH | -4.4192 | -4.1038 | -5.0639 | -5.269  | -4.9984 |
         | RCL  | -4.9997 | -5.0496 | -6.2194 | -6.3642 | -6.6839 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         ohlson_o_score = {}
 
         current_assets = (
@@ -4132,15 +4166,21 @@ class Models:
             )
         )
 
+        # Ohlson defines both terms on the last two years, so quarterly data is compared with the
+        # same quarter a year earlier, as Piotroski and Beneish do.
+        comparison_lag = 4 if self._quarterly else 1
+
         ohlson_o_score["Negative Income Indicator"] = (
             ohlson_model.get_negative_income_indicator(
                 net_income=net_income,
+                lag=comparison_lag,
             )
         )
 
         ohlson_o_score["Change in Net Income"] = (
             ohlson_model.get_change_in_net_income_ratio(
                 net_income=net_income,
+                lag=comparison_lag,
             )
         )
 
@@ -4233,7 +4273,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4276,6 +4318,10 @@ class Models:
         | DAL | 1.017  | 0.7425 | 0.2026 | -0.0177 | -0.3885 |
         | UAL | 1.0493 | 0.7082 | 0.4288 |  0.1763 |  0.0073 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         zmijewski_score = {}
 
         current_assets = (
@@ -4416,7 +4462,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4457,6 +4505,10 @@ class Models:
         | KSS | 1.2226 | 0.5896 | 0.809  | 0.6373 | 0.759  |
         | M   | 1.2937 | 1.1721 | 0.7495 | 0.9653 | 1.015  |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         springate_score = {}
 
         current_assets = (
@@ -4602,7 +4654,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4645,6 +4699,10 @@ class Models:
         | GM   | 0.2379 | 0.2474 | 0.2157 | 0.2846 |  0.1825 |
         | STLA | 0.477  | 0.5941 | 0.5796 | 0.2001 | -0.3018 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         grover_score = {}
 
         current_assets = (
@@ -4777,7 +4835,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4829,6 +4889,10 @@ class Models:
         | DIS   | 10.8945 | 11.5241 | 12.0105 | 12.4096 | 12.7101 |
         | FOXA  | 10.9776 | 11.0388 | 10.9996 | 11.0274 | 11.8441 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         fulmer_h_score = {}
 
         current_assets = (
@@ -5081,7 +5145,8 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation: flows are
-                summed and balances averaged over it. Defaults to None.
+                summed and balances averaged over it. Defaults to None, which is 4 on quarterly data (a
+                trailing twelve months), as the score was estimated on yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -5128,6 +5193,10 @@ class Models:
         | KSS |   0.4845 | 5.7852 | -0.0302 | 2.4432 | 0.1935 |
         | M   | -11.3244 | 3.8969 |  3.4676 | 0.2883 | 2.4301 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         taffler_score = {}
 
         def balance_item(item: str) -> pd.DataFrame:

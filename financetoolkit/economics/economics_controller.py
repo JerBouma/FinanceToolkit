@@ -9905,17 +9905,21 @@ class Economics:
         self,
         commodity: str | list[str] | None,
         contracts: int,
-        constant_maturity: bool,
+        generic: bool,
         start_date: str,
     ) -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
         """
         Collects the forward curve of each commodity with the contract behind every price:
-        the listed contracts as columns, or, with constant_maturity, the positions on the
-        curve of each day (see futures_model.get_constant_maturity_curve).
+        the listed contracts as columns, or, with generic, the positions on the curve of
+        each day (see futures_model.get_generic_curve).
 
-        Yahoo Finance drops a contract once it expires, so the contracts that expired since
-        are added as contracts without prices from the commodity's listing cycle and last
-        trading day rule: the positions after them stay right and theirs are NaN.
+        Yahoo Finance drops a contract once it expires, so every expired month of the
+        commodity's listing cycle (for gold and silver the active cycle, which the generic
+        series rolls through) that it does not return is added as a contract without
+        prices, with its last trading day from the contract specification: the positions
+        after it stay right and its own is NaN. A month that has not expired and is not
+        returned is left out: Yahoo Finance carries the other gold and silver months only
+        shortly before delivery.
 
         Returns:
             dict[str, tuple[pd.DataFrame, pd.DataFrame]]: Per commodity the prices and the
@@ -9926,7 +9930,6 @@ class Economics:
             if isinstance(commodity, str)
             else list(commodity or yfinance_model.COMMODITY_TICKERS)
         )
-        today = pd.Timestamp.today().normalize()
         curves: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {}
 
         for name in names:
@@ -9937,7 +9940,7 @@ class Economics:
             if forward_curve.empty:
                 continue
 
-            if not constant_maturity:
+            if not generic:
                 labels = pd.DataFrame(
                     [forward_curve.columns.to_list()] * len(forward_curve),
                     index=forward_curve.index,
@@ -9968,15 +9971,24 @@ class Economics:
                     or str(month) in forward_curve.columns
                 }
             )
+            today = pd.Timestamp.today().normalize()
+            # Only the months of the active cycle are added back: a placeholder has no first
+            # price, so it counts as listed on every date and an off-cycle month would take a
+            # position on dates before it traded.
+            active_months = futures_model.ACTIVE_MONTHS.get(
+                name, futures_model.CONTRACT_MONTHS[name]
+            )
             expired = [
                 label
                 for label, last_trading_day in last_trading_days.items()
-                if last_trading_day < today and label not in forward_curve.columns
+                if last_trading_day < today
+                and label not in forward_curve.columns
+                and pd.Period(label, freq="M").month in active_months
             ]
             forward_curve = forward_curve.reindex(
                 columns=sorted([*forward_curve.columns, *expired])
             )
-            curves[name] = futures_model.get_constant_maturity_curve(
+            curves[name] = futures_model.get_generic_curve(
                 forward_curve, last_trading_days, contracts
             )
 
@@ -9987,7 +9999,7 @@ class Economics:
         self,
         commodity: str | list[str] | None = None,
         contracts: int = 12,
-        constant_maturity: bool = False,
+        generic: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -10011,11 +10023,13 @@ class Economics:
 
         By default the columns are the contracts listed today, so a past date shows how
         those contracts traded then, not the curve as it stood that day. With
-        constant_maturity=True the columns are the positions on each day's curve instead:
+        generic=True the columns are the positions on each day's curve instead:
         the front (the nearest contract that has not expired on that day), +1, +2 and so on,
         rolling to the next contract the day after the front's last trading day (the
-        generic series, CL1, CL2, ... in Bloomberg notation). The last trading days follow
-        the CME Group contract specifications on the US exchange calendar.
+        generic or nearby series, CL1, CL2, ... in Bloomberg notation). A position is a
+        rank on the curve, not a constant maturity: the front's time to expiry shortens
+        each day and jumps at the roll, as no price is interpolated. The last trading days
+        follow the CME Group contract specifications on the US exchange calendar.
 
         Yahoo Finance only publishes the contracts that still trade: a contract's history
         disappears once it expires, and no free source publishes it (FinancialModelingPrep
@@ -10026,11 +10040,11 @@ class Economics:
         date, the more positions are NaN, until none is left about `contracts` months back.
 
         With growth=True the change is that of each column over `lag` trading days: of a
-        contract, or with constant_maturity of a position, which compares two contracts
+        contract, or with generic of a position, which compares two contracts
         across a roll.
 
-        Also known as: futures term structure, forward curve, generic futures, constant
-        maturity futures.
+        Also known as: futures term structure, forward curve, generic futures, nearby
+        futures.
 
         Args:
             commodity (str | list[str] | None, optional): The commodity, or a list of
@@ -10038,9 +10052,9 @@ class Economics:
                 "Silver", "Copper", "Corn", "Wheat" or "Soybeans". Defaults to None, which
                 retrieves every one of them.
             contracts (int, optional): The number of contracts to return, the nearest
-                listed ones from the current month on, or with constant_maturity the
+                listed ones from the current month on, or with generic the
                 number of positions (the front included). Defaults to 12.
-            constant_maturity (bool, optional): Whether the columns are the positions on
+            generic (bool, optional): Whether the columns are the positions on
                 each day's curve (Front, +1, +2, ...) instead of the contracts listed
                 today. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -10056,7 +10070,7 @@ class Economics:
             pd.DataFrame: A DataFrame indexed by date, with one column per contract
             labeled by its delivery month (e.g. "2026-12"), containing that
             contract's daily closing price over its trading life, or with
-            constant_maturity one column per position ("Front", "+1", ...). Columns are NaN
+            generic one column per position ("Front", "+1", ...). Columns are NaN
             outside the date range the contract actually traded in. With a list of
             commodities (or none given), the columns are the commodity and the contract.
 
@@ -10068,7 +10082,7 @@ class Economics:
         economics = Economics(start_date='2026-10-13', end_date='2026-10-23')
 
         economics.get_commodity_forward_curve(
-            "Crude Oil", contracts=4, constant_maturity=True
+            "Crude Oil", contracts=4, generic=True
         )
         ```
 
@@ -10091,9 +10105,7 @@ class Economics:
             if growth
             else self._start_date
         )
-        curves = self._get_commodity_curves(
-            commodity, contracts, constant_maturity, start_date
-        )
+        curves = self._get_commodity_curves(commodity, contracts, generic, start_date)
 
         # Each commodity's changes are taken over its own trading days.
         commodity_forward_curve = {
@@ -10107,7 +10119,7 @@ class Economics:
                 rounding=rounding,
                 axis="rows",
                 row_slice=True,
-                dropna=constant_maturity,
+                dropna=generic,
             )
             for name, (prices, _) in curves.items()
         }
@@ -10121,14 +10133,14 @@ class Economics:
     def get_commodity_term_structure(
         self,
         commodity: str | list[str] | None = None,
-        constant_maturity: bool = True,
+        generic: bool = True,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
         Get the term structure of a commodity futures curve per day: the front contract,
         the 12-month calendar spread between the front and the last contract of the
         12-month strip that starts with it (in price and in percent), the annualised roll
-        yield and whether the curve is in backwardation or contango.
+        yield and whether the curve is in backwardation, contango or flat.
 
         The far contract is the furthest one delivering less than 12 months after the
         front: for a December 2026 front of a monthly listed commodity (crude oil, natural
@@ -10151,11 +10163,11 @@ class Economics:
         months between both delivery months.
 
         By default the front of each day is the nearest contract that had not expired on
-        that day (see get_commodity_forward_curve with constant_maturity=True), so the
+        that day (see get_commodity_forward_curve with generic=True), so the
         spread is a time series of the curve as it stood each day. Yahoo Finance drops a
         contract once it expires, so on the days whose front has expired since, Front, the
         Spread, Slope and Roll Yield are NaN while Front Contract names the contract.
-        constant_maturity=False instead takes today's front and far contract on every day
+        generic=False instead takes today's front and far contract on every day
         (e.g. December 2026 against November 2027 for crude oil): a fixed calendar spread
         with its full history.
 
@@ -10165,7 +10177,7 @@ class Economics:
             commodity (str | list[str] | None, optional): The commodity, or a list of
                 them: "Crude Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn",
                 "Wheat" or "Soybeans". Defaults to None, which retrieves every one of them.
-            constant_maturity (bool, optional): Whether the front and far contract are
+            generic (bool, optional): Whether the front and far contract are
                 those of each day's curve, instead of today's. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
@@ -10175,7 +10187,8 @@ class Economics:
         Returns:
             pd.DataFrame: Per date the Front Contract and Far Contract (delivery months),
             their prices Front and Far, the Months between them, the Spread, Slope and Roll
-            Yield (decimals) and the Structure ("Backwardation" or "Contango"). With a list
+            Yield (decimals) and the Structure ("Backwardation", "Contango" or "Flat" when
+            the front and far contract trade at the same price). With a list
             of commodities (or none given), the columns are the commodity and the field.
 
         As an example:
@@ -10203,9 +10216,7 @@ class Economics:
         | 2026-11-05 | 2026-12          |   90.52 | 2027-11        | 75.11 |       11 |    15.41 | -0.1702 |       0.2036 | Backwardation |
         | 2026-11-06 | 2026-12          |   90.83 | 2027-11        | 76.42 |       11 |    14.41 | -0.1586 |       0.1884 | Backwardation |
         """
-        curves = self._get_commodity_curves(
-            commodity, 12, constant_maturity, self._start_date
-        )
+        curves = self._get_commodity_curves(commodity, 12, generic, self._start_date)
 
         term_structures = {}
 

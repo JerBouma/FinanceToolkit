@@ -1262,7 +1262,10 @@ def get_analyst_estimates(
         try:
             analyst_estimates = analyst_estimates.drop("symbol", axis=1)
 
-            # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
+            # An estimate carries the fiscal period end date of the statement it estimates
+            # (Western Digital's fiscal 2022 ends 2022-07-01 in both), so it is shifted back
+            # one day exactly as the financial statements are: a period reported as 2023-07-01
+            # is really 2023Q2, and both then land in the same calendar period.
             analyst_estimates["date"] = pd.to_datetime(
                 analyst_estimates["date"]
             ) - pd.offsets.Day(1)

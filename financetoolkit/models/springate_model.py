@@ -4,6 +4,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import drop_non_finite
+
 
 def get_working_capital_to_total_assets_ratio(
     working_capital: float | pd.Series | pd.DataFrame,
@@ -30,7 +32,7 @@ def get_working_capital_to_total_assets_ratio(
     - A ratio of less than 1 indicates that a company may have difficulty meeting its short-term obligations.
     """
 
-    return working_capital / total_assets
+    return drop_non_finite(working_capital / total_assets)
 
 
 def get_ebit_to_total_assets_ratio(
@@ -56,7 +58,7 @@ def get_ebit_to_total_assets_ratio(
     - A high ratio indicates that a company is generating a high return on its assets.
     """
 
-    return ebit / total_assets
+    return drop_non_finite(ebit / total_assets)
 
 
 def get_ebt_to_current_liabilities_ratio(
@@ -83,7 +85,7 @@ def get_ebt_to_current_liabilities_ratio(
     - A low (or negative) ratio indicates weak coverage of short-term liabilities out of pre-tax earnings.
     """
 
-    return ebt / current_liabilities
+    return drop_non_finite(ebt / current_liabilities)
 
 
 def get_sales_to_total_assets_ratio(
@@ -110,7 +112,7 @@ def get_sales_to_total_assets_ratio(
     - A low ratio can indicate that a company is not efficiently using its assets to generate sales.
     """
 
-    return sales / total_assets
+    return drop_non_finite(sales / total_assets)
 
 
 def get_springate_score(

@@ -5,6 +5,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import drop_non_finite
+
 
 def get_log_of_total_assets(
     total_assets: float | pd.Series | pd.DataFrame,
@@ -71,7 +73,7 @@ def get_total_liabilities_to_total_assets_ratio(
     Notes:
     - A higher TLTA indicates higher leverage and, all else equal, a higher probability of bankruptcy.
     """
-    return total_liabilities / total_assets
+    return drop_non_finite(total_liabilities / total_assets)
 
 
 def get_working_capital_to_total_assets_ratio(
@@ -98,7 +100,7 @@ def get_working_capital_to_total_assets_ratio(
     Notes:
     - A lower (or negative) WCTA indicates weaker short-term liquidity, which raises the O-Score.
     """
-    return working_capital / total_assets
+    return drop_non_finite(working_capital / total_assets)
 
 
 def get_current_liabilities_to_current_assets_ratio(
@@ -126,7 +128,7 @@ def get_current_liabilities_to_current_assets_ratio(
     Notes:
     - A higher CLCA indicates weaker short-term liquidity, which raises the O-Score.
     """
-    return current_liabilities / current_assets
+    return drop_non_finite(current_liabilities / current_assets)
 
 
 def get_negative_equity_indicator(
@@ -191,7 +193,7 @@ def get_net_income_to_total_assets_ratio(
       total assets — it uses the point-in-time Total Assets balance, matching Ohlson's (1980) original
       specification.
     """
-    return net_income / total_assets
+    return drop_non_finite(net_income / total_assets)
 
 
 def get_funds_from_operations_to_total_liabilities_ratio(
@@ -223,11 +225,12 @@ def get_funds_from_operations_to_total_liabilities_ratio(
       typically close to, but not identical to, the original FFO measure (it additionally reflects
       changes in working capital), so treat FUTL as an approximation rather than an exact reproduction.
     """
-    return funds_from_operations / total_liabilities
+    return drop_non_finite(funds_from_operations / total_liabilities)
 
 
 def get_negative_income_indicator(
     net_income: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Negative Income Indicator (INTWO) is a binary dummy variable used in the Ohlson O-Score that
@@ -239,23 +242,27 @@ def get_negative_income_indicator(
 
     Args:
         net_income (pd.Series | pd.DataFrame): The net income (or loss) of a company, as a time-series.
+        lag (int, optional): The number of periods between the current and the prior period, 4 for
+            quarterly data so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: A binary indicator equal to 1 when net income was negative in both
         the current and prior period, 0 otherwise.
 
     Notes:
-    - The first period in any series will always evaluate to 0 (never 1) since there is no prior period
-      to compare against.
+    - Periods without a current or prior net income (such as the first `lag` periods) are NaN.
     """
-    current_period_loss = net_income < 0
-    prior_period_loss = net_income.shift(1, axis=1) < 0
+    net_income_prior = net_income.shift(lag, axis=1)
+    negative_income = (net_income < 0) & (net_income_prior < 0)
 
-    return current_period_loss & prior_period_loss
+    return negative_income.astype(float).where(
+        net_income.notna() & net_income_prior.notna()
+    )
 
 
 def get_change_in_net_income_ratio(
     net_income: pd.Series | pd.DataFrame,
+    lag: int = 1,
 ) -> pd.Series | pd.DataFrame:
     """
     The Change in Net Income Ratio (CHIN) measures the direction and relative magnitude of the change in
@@ -268,6 +275,8 @@ def get_change_in_net_income_ratio(
 
     Args:
         net_income (pd.Series | pd.DataFrame): The net income (or loss) of a company, as a time-series.
+        lag (int, optional): The number of periods between the current and the prior period, 4 for
+            quarterly data so the comparison is year over year. Defaults to 1.
 
     Returns:
         pd.Series | pd.DataFrame: The Change in Net Income Ratio.
@@ -275,10 +284,9 @@ def get_change_in_net_income_ratio(
     Notes:
     - A positive CHIN indicates improving profitability compared to the prior period, which lowers the
       O-Score (i.e. lowers the probability of bankruptcy), reflected by CHIN's negative coefficient.
-    - The first period in any series will always be NaN since there is no prior period to compare
-      against.
+    - The first `lag` periods are NaN since there is no prior period to compare against.
     """
-    net_income_prior = net_income.shift(1, axis=1)
+    net_income_prior = net_income.shift(lag, axis=1)
 
     return (net_income - net_income_prior) / (net_income.abs() + net_income_prior.abs())
 
@@ -366,7 +374,7 @@ def get_ohlson_o_score(
         negative_equity_indicator = negative_equity_indicator.astype(int)
 
     if isinstance(negative_income_indicator, pd.Series | pd.DataFrame):
-        negative_income_indicator = negative_income_indicator.astype(int)
+        negative_income_indicator = negative_income_indicator.astype(float)
 
     return (
         -1.32

@@ -8,6 +8,7 @@ from urllib.parse import quote
 import numpy as np
 import pandas as pd
 
+from financetoolkit import currencies_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
@@ -285,6 +286,10 @@ COUNTRY_CURRENCIES = {
     "AU": "AUD",
     "NZ": "NZD",
 }
+
+# Exchanges that trade in another currency than their country's: the London International
+# Order Book (IOB) lists depositary receipts in US dollars.
+EXCHANGE_CURRENCIES = {"IOB": "USD"}
 
 
 def _to_country_code(country: str | None) -> str | None:
@@ -651,7 +656,11 @@ def _add_market_cap_in_dollars(
             exchanges["exchange"], exchanges["countryCode"], strict=False
         )
     }
-    listings["Currency"] = listings["Exchange Code"].map(exchange_currencies)
+    listings["Currency"] = (
+        listings["Exchange Code"]
+        .map(EXCHANGE_CURRENCIES)
+        .fillna(listings["Exchange Code"].map(exchange_currencies))
+    )
     # Whether a listing trades in the company's own country, which marks its home listing.
     exchange_countries = dict(
         zip(exchanges["exchange"], exchanges["countryCode"], strict=False)
@@ -2437,6 +2446,11 @@ EARNINGS_CALENDAR_LIMIT = 4000
 # The number of symbols asked for in one batch quote request.
 QUOTE_BATCH_SIZE = 1000
 
+# The exchanges that quote prices in a minor unit (London in pence, Johannesburg in cents,
+# Tel Aviv in agorot) while their market caps are in the major one. The batch quote has no
+# currency, so the unit follows from the exchange, as the company profile reports it.
+MINOR_UNIT_EXCHANGES = {"LSE": "GBp", "JNB": "ZAc", "TLV": "ILA"}
+
 # The words that set a depositary receipt's name apart from its company's, such as
 # "Tata Steel Limited Sponsored GDR".
 DEPOSITARY_WORDS = re.compile(r"\b(?:sponsored|unsponsored|adr|gdr|ads)\b")
@@ -2472,8 +2486,12 @@ def get_earnings_calendar(
 
     The calendar holds every listing of a company (Cisco in New York, Frankfurt and Hong
     Kong). A company's primary listing is its most traded one (price times volume in US
-    dollars), and every listing of a company is given the market cap of that listing:
-    the market cap of a depositary receipt or a secondary listing is often far off.
+    dollars, with prices in pence, South African cents or agorot taken in pounds, rand or
+    shekels), and every listing of a company is given the market cap of that listing:
+    the market cap of a depositary receipt or a secondary listing is often far off. The
+    listings of one company are those with the same name, so share classes with names of
+    their own (such as "Alphabet Inc." and "Alphabet Inc. Class C") count as separate
+    companies, each with its own primary listing.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
@@ -2612,7 +2630,21 @@ def get_earnings_calendar(
         .str.replace(r"[^a-z0-9]", "", regex=True)
         .fillna(pd.Series(listings.index, index=listings.index))
     )
-    traded_value = (listings["Price"] * listings["Volume"] * rates).astype(float)
+    # The price of a listing quoted in a minor unit is converted to the major unit its
+    # market cap, and so its exchange rate, is in: a price in pence is 100 times too large.
+    minor_units = (
+        listings["Exchange Code"]
+        .map(
+            {
+                exchange: currencies_model.MINOR_CURRENCY_UNITS[currency][1]
+                for exchange, currency in MINOR_UNIT_EXCHANGES.items()
+            }
+        )
+        .fillna(1)
+    )
+    traded_value = (
+        listings["Price"] / minor_units * listings["Volume"] * rates
+    ).astype(float)
     primary_listings = (
         traded_value.fillna(-1).groupby(company).idxmax()
         if not company.empty

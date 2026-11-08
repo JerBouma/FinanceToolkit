@@ -105,7 +105,7 @@ AAPL,Tangible Asset Value,,,-0.1142,-0.0083
 AAPL,Net Current Asset Value,,,-0.1935,0.0194
 AAPL,EV-to-Free-Cash-Flow,,,-0.4152,
 AAPL,Buyback Yield,,,0.5747,
-AAPL,Shareholder Yield,,,0.3357,
+AAPL,Shareholder Yield,,,0.3343,
 AAPL,SBC-Adjusted Free Cash Flow,,,0.2366,0.0198
 AAPL,Free Cash Flow Payout Ratio,,,-0.1643,-0.0132
 AAPL,EV-to-Invested-Capital,,,-0.3822,
@@ -219,7 +219,7 @@ MSFT,Tangible Asset Value,,,0.13,0.2584
 MSFT,Net Current Asset Value,,,-3.2467,-0.392
 MSFT,EV-to-Free-Cash-Flow,,,-0.4091,
 MSFT,Buyback Yield,,,0.6919,
-MSFT,Shareholder Yield,,,0.6297,
+MSFT,Shareholder Yield,,,0.6349,
 MSFT,SBC-Adjusted Free Cash Flow,,,0.1968,-0.0013
 MSFT,Free Cash Flow Payout Ratio,,,-0.0851,0.0651
 MSFT,EV-to-Invested-Capital,,,-0.5383,

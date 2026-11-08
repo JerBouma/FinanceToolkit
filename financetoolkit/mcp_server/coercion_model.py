@@ -8,6 +8,7 @@ Python types required by controller methods, as well as date-string validation.
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any, Union, get_args, get_origin
 
@@ -191,3 +192,63 @@ def validate_date(date_str: str, default_date: str) -> str:
 
     logger.warning(f"Invalid date input '{date_str}', defaulting to {default_date}")
     return default_date
+
+
+def _numbers(value: Any) -> list[float]:
+    """The numbers in a value: the value itself, or the elements of a list."""
+    values = value if isinstance(value, list | tuple) else [value]
+
+    return [
+        float(item)
+        for item in values
+        if isinstance(item, int | float) and not isinstance(item, bool)
+    ]
+
+
+def size_limit_problem(
+    arguments: dict[str, Any], defaults: dict[str, Any], limits: dict[str, Any]
+) -> str | None:
+    """
+    Checks the size parameters of a call against the limits of the server (config.yaml
+    parameter_limits), so a call cannot simulate or download more than the server can hold.
+
+    Args:
+        arguments (dict[str, Any]): The arguments the indicator receives.
+        defaults (dict[str, Any]): The indicator's own default per parameter, used in a
+            product for a parameter the caller left out.
+        limits (dict[str, Any]): The "maximums" (per parameter) and "products" (a list of
+            parameters and the maximum of their product).
+
+    Returns:
+        str | None: What is over a limit, or None when the call is within them.
+    """
+    for name, maximum in limits.get("maximums", {}).items():
+        if any(number > maximum for number in _numbers(arguments.get(name))):
+            return (
+                f"`{name}` may be at most {maximum:,} on this server, which keeps every call "
+                "to a size it can compute next to the others. Please use a smaller value."
+            )
+
+    for product in limits.get("products", []):
+        names = product["parameters"]
+        if not all(name in arguments or name in defaults for name in names):
+            continue
+        values = [
+            _numbers(
+                arguments[name]
+                if arguments.get(name) is not None
+                else defaults.get(name)
+            )
+            for name in names
+        ]
+        if (
+            all(values)
+            and math.prod(max(value) for value in values) > product["maximum"]
+        ):
+            return (
+                f"{' times '.join(f'`{name}`' for name in names)} may be at most "
+                f"{product['maximum']:,} on this server, which keeps every call to a size it "
+                "can compute next to the others. Please use smaller values."
+            )
+
+    return None

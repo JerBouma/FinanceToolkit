@@ -65,6 +65,79 @@ responses:
   max_characters: 60000
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Size limits
+# The parameters that decide how much a call simulates, computes or downloads are
+# capped, so one call cannot take the memory of a server others share. The Python
+# methods keep their own, wider limits.
+# maximums caps a value (every value of a list); products caps parameters that are
+# computed together (simulated paths times their steps), with the indicator's own
+# default for a parameter the caller left out. A call over a limit is refused with
+# the limit, before anything is collected.
+# ──────────────────────────────────────────────────────────────────────────────
+parameter_limits:
+  maximums:
+    # Every simulated draw is a row of the answer, with a column per ticker.
+    n_simulations: 10000
+    # Monte Carlo valuations and option prices (paths per ticker and expiration).
+    simulations: 100000
+    # Monte Carlo steps per path and GARCH forecast horizons.
+    time_steps: 1000
+    # A binomial tree per strike has (timesteps + 1)² nodes.
+    timesteps: 50
+    # Short rate simulations; see products for their combined size.
+    paths: 10000
+    steps_per_year: 52
+    years: 50
+    # Option grids have a value per strike and expiration day.
+    strike_price_range: 0.5
+    expiration_time_range: 366
+    number_of_strikes: 1000
+    # Each expiration, holding, page, contract or day is a download of its own.
+    number_of_expirations: 24
+    holdings: 500
+    pages: 10
+    contracts: 36
+    history_days: 366
+    limit: 10000
+    # Resampling, optimization and model orders, each a fit or a loop of its own.
+    n_bootstrap: 1000
+    points: 100
+    max_iterations: 1000
+    max_breaks: 10
+    regimes: 5
+    forecast_steps: 365
+    periods: 100
+    project_periods: 100
+    high_growth_periods: 100
+    transition_periods: 100
+    lags: 100
+    max_lag: 100
+    maxlags: 100
+    k_ar_diff: 20
+    p: 10
+    d: 2
+    q: 10
+    power: 5
+  products:
+    # 10,000 paths of 100 steps per expiration by default.
+    - parameters: [simulations, time_steps]
+      maximum: 5000000
+    # 10,000 paths of ten years of monthly steps by default.
+    - parameters: [paths, steps_per_year, years]
+      maximum: 5000000
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Hosted server limits
+# A hosted server (MCP_TRANSPORT=sse or streamable-http) shares its work slots among
+# everyone. A call is answered with a timeout after call_timeout_seconds, and each
+# user (an API key) has at most calls_per_user calls running at a time; a further
+# call is refused until one of them finishes. A local server has neither limit.
+# ──────────────────────────────────────────────────────────────────────────────
+hosted_limits:
+  call_timeout_seconds: 180
+  calls_per_user: 3
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Server instructions
 # Sent to the client once when it connects, so an agent knows how to find an
 # indicator and how to read and narrow the answers before its first call.
@@ -1014,6 +1087,10 @@ method_defaults:
   # step are the same information in about 20 rows.
   get_stock_price_simulation:
     show_unique_combinations: true
+  # One FINRA download per trading day; without history_days the whole date range would
+  # be downloaded. history_days= asks for another window (see parameter_limits).
+  get_short_volume:
+    history_days: 92
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Methods whose answer is only of use in full

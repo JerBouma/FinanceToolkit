@@ -43,6 +43,8 @@ TOOLKIT_HEADERS = {
 # Set to 1 to send requests that carry an API key without verifying the certificate when
 # verification fails, which exposes the key to whoever intercepts the connection.
 # Pointing REQUESTS_CA_BUNDLE to the certificate of a corporate proxy is the safe fix.
+# Set to 0 to never send a request without verification, not even one without a key; a
+# hosted MCP server does so, since the data it fetches reaches every user through its cache.
 UNVERIFIED_SSL_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL"
 
 CREDENTIAL_IN_URL = re.compile(
@@ -107,6 +109,8 @@ def get_request(
     A request that carries an API key is not retried without verification unless
     FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL is set to 1, since an intercepted connection would
     hand over the key; REQUESTS_CA_BUNDLE can point to a corporate proxy's certificate.
+    With FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL set to 0, no request is retried without
+    verification.
 
     Raises:
         requests.exceptions.SSLError: If the certificate cannot be verified for a request
@@ -143,10 +147,18 @@ def get_request(
             header.lower() == "authorization" for header in (extra_headers or {})
         )
 
-        if (
-            carries_credentials
-            and os.environ.get(UNVERIFIED_SSL_ENVIRONMENT_VARIABLE) != "1"
-        ):
+        allowed = os.environ.get(UNVERIFIED_SSL_ENVIRONMENT_VARIABLE, "").strip()
+        if allowed == "0":
+            logger.error(
+                "SSL certificate verification failed for %s. Requests are not retried "
+                "without verification (%s=0); set REQUESTS_CA_BUNDLE to the path of the "
+                "certificate of a corporate network.",
+                redact_credentials(url),
+                UNVERIFIED_SSL_ENVIRONMENT_VARIABLE,
+            )
+            raise
+
+        if carries_credentials and allowed != "1":
             # An unverified connection could be intercepted, which would hand over the
             # API key, so a request carrying one is not retried without verification.
             logger.error(

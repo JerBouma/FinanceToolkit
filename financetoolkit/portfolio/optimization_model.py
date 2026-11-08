@@ -1528,9 +1528,10 @@ def get_nested_clustered_optimization_weights(
     within = pd.DataFrame(0.0, index=covariance.index, columns=np.unique(labels))
     for label in within.columns:
         assets = covariance.index[labels == label]
-        if objective == "maximum_sharpe" and (
-            expected_returns[assets] <= risk_free_rate
-        ).all():
+        if (
+            objective == "maximum_sharpe"
+            and (expected_returns[assets] <= risk_free_rate).all()
+        ):
             # No asset of the cluster beats the risk free rate, so it has no maximum
             # Sharpe portfolio; it holds its least risky one and the step across the
             # clusters decides how much it gets.

@@ -150,6 +150,83 @@ def test_get_minimum_cvar_weights(recorder, portfolio_module):
     )
 
 
+def test_get_hierarchical_equal_risk_contribution_weights(recorder, portfolio_module):
+    table = portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+        include_benchmark=True
+    )
+    recorder.capture(table)
+    assert table["Weight"].drop("Portfolio").sum() == pytest.approx(1, abs=1e-4)
+    recorder.capture(
+        portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+            clusters=3, linkage_method="average", include_benchmark=True
+        )
+    )
+
+
+def test_get_nested_clustered_optimization_weights(recorder, portfolio_module):
+    recorder.capture(
+        portfolio_module.get_nested_clustered_optimization_weights(
+            include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_nested_clustered_optimization_weights(
+            objective="risk_parity", clusters=2, include_benchmark=True
+        )
+    )
+
+
+def test_get_minimum_drawdown_weights(recorder, portfolio_module):
+    for measure in ("cdar", "maximum", "average"):
+        recorder.capture(
+            portfolio_module.get_minimum_drawdown_weights(
+                measure=measure, include_benchmark=True
+            )
+        )
+
+
+def test_the_minimum_drawdown_portfolio_has_the_lowest_drawdown(portfolio_module):
+    table = portfolio_module.get_minimum_drawdown_weights(
+        measure="maximum", include_benchmark=True, rounding=12
+    )
+    returns = portfolio_module._get_returns("daily", True)
+    weights = table["Weight"].drop("Portfolio")
+    cumulative = (returns @ weights).cumsum()
+    drawdown = (cumulative.cummax().clip(lower=0) - cumulative).max()
+
+    assert table.loc["Portfolio", "Maximum Drawdown"] == pytest.approx(drawdown)
+    assert (
+        table.loc["Portfolio", "Maximum Drawdown"]
+        <= table["Maximum Drawdown"].drop("Portfolio").min() + 1e-12
+    )
+
+
+def test_get_maximum_omega_weights(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_maximum_omega_weights(include_benchmark=True))
+    recorder.capture(
+        portfolio_module.get_maximum_omega_weights(
+            minimum_acceptable_return=0.0005, period="weekly", include_benchmark=True
+        )
+    )
+    assert portfolio_module.get_maximum_omega_weights(
+        minimum_acceptable_return=0.5
+    ).empty
+
+
+def test_get_maximum_cvar_ratio_weights(recorder, portfolio_module):
+    table = portfolio_module.get_maximum_cvar_ratio_weights(include_benchmark=True)
+    recorder.capture(table)
+    assert (
+        table.loc["Portfolio", "CVaR Ratio"]
+        >= table["CVaR Ratio"].drop("Portfolio").max() - 1e-4
+    )
+    recorder.capture(
+        portfolio_module.get_maximum_cvar_ratio_weights(
+            confidence_level=0.99, include_benchmark=True
+        )
+    )
+
+
 def test_get_black_litterman_weights(recorder, portfolio_module):
     market = {"AAPL": 2.0, "MSFT": 1.5}
     recorder.capture(
@@ -346,10 +423,13 @@ def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit
         "get_maximum_diversification_weights",
         "get_minimum_tracking_error_weights",
         "get_growth_optimal_weights",
+        "get_hierarchical_equal_risk_contribution_weights",
+        "get_nested_clustered_optimization_weights",
     ],
 )
 @pytest.mark.parametrize(
-    "covariance", ["ledoit_wolf", "oas", "semicovariance", "exponential", "denoised"]
+    "covariance",
+    ["sample", "ledoit_wolf", "oas", "semicovariance", "exponential", "denoised"],
 )
 def test_the_optimizers_take_a_covariance_estimator(
     portfolio_module, method, covariance
@@ -393,6 +473,10 @@ def test_a_covariance_estimator_changes_the_weights_and_their_risk(portfolio_mod
         "get_maximum_diversification_weights",
         "get_growth_optimal_weights",
         "get_risk_parity_weights",
+        "get_hierarchical_equal_risk_contribution_weights",
+        "get_minimum_drawdown_weights",
+        "get_maximum_omega_weights",
+        "get_maximum_cvar_ratio_weights",
     ],
 )
 def test_sector_and_country_bounds_come_from_the_profiles(test_toolkit, method):
@@ -463,6 +547,11 @@ def test_unsupported_or_impossible_constraints_are_refused(test_toolkit):
         construction.get_hierarchical_risk_parity_weights(
             sector_bounds={"Technology": (0, 0.5)}
         )
+    assert construction.get_hierarchical_equal_risk_contribution_weights(
+        minimum_weight=-0.1
+    ).empty
+    with pytest.raises(TypeError, match="maximum_weight"):
+        construction.get_nested_clustered_optimization_weights(maximum_weight=0.5)
 
 
 def test_fractional_kelly_with_a_net_exposure_holds_the_rest_in_cash(test_toolkit):

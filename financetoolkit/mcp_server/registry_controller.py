@@ -111,6 +111,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     ),
     "quarterly": "Return quarterly data instead of annual when True.",
     "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'; 'None' for no benchmark.",
+    "risk_free_rate": (
+        "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' "
+        "(default) or '30y'."
+    ),
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
     "compound": (
@@ -871,6 +875,9 @@ class RouterGroupSpec(NamedTuple):
             the tool index. Defaults to module_name when None.
         description (str | None): Optional custom description for the tool. When None,
             a default description is generated from display_name and the method list.
+        risk_free_rate (bool): Whether the tool takes the Toolkit's risk_free_rate, for the
+            modules that use a risk-free rate (performance, risk, models, portfolio). The
+            options methods take a risk_free_rate of their own (the rate as a number).
     """
 
     tool_name: str
@@ -882,6 +889,7 @@ class RouterGroupSpec(NamedTuple):
     method_to_module: dict[str, dict[str, str]] | None = None
     index_category: str | None = None
     description: str | None = None
+    risk_free_rate: bool = False
 
 
 def _split_values(value: object) -> list[str]:
@@ -1295,6 +1303,7 @@ class ToolRegistry:
                     method_to_module=raw.get("method_to_module"),
                     index_category=raw.get("index_category"),
                     description=raw.get("description"),
+                    risk_free_rate=bool(raw.get("risk_free_rate")),
                 )
             )
         return specifications
@@ -1663,6 +1672,24 @@ class ToolRegistry:
             ):
                 benchmark_ticker = None
 
+            # The Toolkit's own setting, taken off before the method's arguments and passed under
+            # its own name, so it never meets a method's own risk_free_rate (options takes the
+            # rate as a number).
+            toolkit_risk_free_rate = "10y"
+            if spec.risk_free_rate:
+                toolkit_risk_free_rate = (
+                    str(kwargs.pop("risk_free_rate", None) or "10y").strip().lower()
+                )
+                if (
+                    toolkit_risk_free_rate
+                    not in validation_model.RISK_FREE_RATE_OPTIONS
+                ):
+                    return (
+                        f"Invalid `risk_free_rate` for `{tool_name}` (`{method_name}`): "
+                        f"'{toolkit_risk_free_rate}'. Please use one of "
+                        f"{', '.join(validation_model.RISK_FREE_RATE_OPTIONS)}."
+                    )
+
             # show_columns is handled entirely here — never forwarded to methods
             raw_show_columns = kwargs.pop("show_columns", None)
             show_columns = (
@@ -1913,6 +1940,7 @@ class ToolRegistry:
                         result = provider.call_method(
                             **call_arguments,
                             benchmark_ticker=benchmark_ticker,
+                            toolkit_risk_free_rate=toolkit_risk_free_rate,
                             **method_kwargs,
                         )
                         upper_tickers = {ticker.upper() for ticker in tickers or []}
@@ -1928,6 +1956,7 @@ class ToolRegistry:
                             result = provider.call_method(
                                 **call_arguments,
                                 benchmark_ticker=None,
+                                toolkit_risk_free_rate=toolkit_risk_free_rate,
                                 **method_kwargs,
                             )
                     input_info = call_input_info()
@@ -1981,6 +2010,7 @@ class ToolRegistry:
                         benchmark_ticker=benchmark_ticker,
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
+                        toolkit_risk_free_rate=toolkit_risk_free_rate,
                     )
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
@@ -2263,6 +2293,22 @@ class ToolRegistry:
         common = inspector.build_common_signature_params(
             category, mixed_categories=mixed_cats
         )
+        if spec.risk_free_rate:
+            common.append(
+                P(
+                    "risk_free_rate",
+                    POS,
+                    default="10y",
+                    annotation=Annotated[
+                        str,
+                        PydanticField(
+                            json_schema_extra={
+                                "enum": list(validation_model.RISK_FREE_RATE_OPTIONS)
+                            }
+                        ),
+                    ],
+                )
+            )
         portfolio_tool = category == inspector.categories.get("portfolio", "portfolio")
         sig_params = [indicator_param] + [
             P(

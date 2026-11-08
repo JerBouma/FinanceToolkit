@@ -16,8 +16,6 @@ from financetoolkit.econometrics.regression_model import (
     get_wls,
 )
 
-# pylint: disable=too-many-locals,too-many-arguments,too-many-instance-attributes
-
 MINIMUM_LOCAL_OBSERVATIONS = 3
 MINIMUM_DONORS = 2
 MINIMUM_PRE_PERIODS = 2

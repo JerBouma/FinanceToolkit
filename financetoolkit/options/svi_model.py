@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
-# pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
-
 MINIMUM_OBSERVATIONS_FOR_SVI_FIT = 5
 
 

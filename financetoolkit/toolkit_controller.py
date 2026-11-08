@@ -93,8 +93,6 @@ if TYPE_CHECKING:
 logger_model.setup_logger()
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
-# pylint: disable=too-many-function-args,too-many-public-methods
 # ruff: noqa: E501
 
 # The calendar days of prices before the start date that the technical indicators and daily
@@ -2562,7 +2560,7 @@ class Toolkit:
         fill_nan: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_ticker_seperation: bool = True,
+        show_ticker_separation: bool = True,
         show_columns: list[str] | None = None,
     ):
         """
@@ -2609,7 +2607,7 @@ class Toolkit:
             will return the earlier retrieved data. This is done to prevent too many API calls. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+            show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
             show_columns (list[str], optional): A list of columns to include in the output. Valid columns
             are Open, High, Low, Close, Adj Close, Volume, Dividends, Return and Cumulative Return.
@@ -2698,7 +2696,7 @@ class Toolkit:
                 fill_nan=fill_nan,
                 rounding=None,
                 sleep_timer=self._sleep_timer,
-                show_ticker_seperation=show_ticker_seperation,
+                show_ticker_separation=show_ticker_separation,
                 show_errors=True,
                 user_subscription=self._fmp_plan,
                 cache=self._cache,
@@ -5203,7 +5201,7 @@ class Toolkit:
         fill_nan: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_ticker_seperation: bool = True,
+        show_ticker_separation: bool = True,
     ):
         """
         This functionality looks at the exchange rates between the currency of the historical data and the currency
@@ -5237,7 +5235,7 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the returned data to. Defaults
             to None, which uses the rounding of the Toolkit. The rates the financial statements are
             translated with are never rounded.
-            show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+            show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
 
         Raises:
@@ -5332,7 +5330,7 @@ class Toolkit:
                     # Only what this method returns is rounded.
                     rounding=None,
                     sleep_timer=self._sleep_timer,
-                    show_ticker_seperation=show_ticker_seperation,
+                    show_ticker_separation=show_ticker_separation,
                     log_message="Obtaining currency exchange data",
                     user_subscription=self._fmp_plan,
                     cache=self._cache,
@@ -6474,7 +6472,7 @@ class Toolkit:
                 fill_nan=fill_nan,
                 rounding=None,
                 sleep_timer=self._sleep_timer,
-                show_ticker_seperation=True,
+                show_ticker_separation=True,
                 show_errors=False,
                 user_subscription=self._fmp_plan,
                 cache=self._cache,

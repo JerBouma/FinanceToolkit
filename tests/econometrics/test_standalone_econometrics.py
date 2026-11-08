@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit import Econometrics
 
-# pylint: disable=missing-function-docstring
-
 
 @pytest.fixture(scope="module")
 def monthly_rates():

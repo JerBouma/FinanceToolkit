@@ -5,7 +5,6 @@ import pytest
 from financetoolkit.ratios import profitability_model
 
 
-# pylint: disable=missing-function-docstring
 def test_get_gross_margin(recorder):
     recorder.capture(
         profitability_model.get_gross_margin(

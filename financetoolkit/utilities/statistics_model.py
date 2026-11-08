@@ -15,7 +15,6 @@ from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-# pylint: disable=comparison-with-itself,too-many-locals
 
 # Period to pandas frequency, shared so every period calculation agrees.
 PERIOD_TRANSLATION = {

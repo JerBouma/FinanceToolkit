@@ -4,8 +4,6 @@ import pytest
 
 from financetoolkit.models import eva_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_net_operating_profit_after_taxes(recorder):
     recorder.capture(

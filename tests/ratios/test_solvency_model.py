@@ -4,8 +4,6 @@ import pytest
 
 from financetoolkit.ratios import solvency_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_debt_to_assets_ratio(recorder):
     recorder.capture(

@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.models import altman_model, taffler_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_profit_before_tax_to_current_liabilities_ratio(recorder):
     recorder.capture(

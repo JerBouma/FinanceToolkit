@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.econometrics import data_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_series_and_monthly_periods():
     series = pd.Series(

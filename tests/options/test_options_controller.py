@@ -2,8 +2,6 @@
 import pandas as pd
 import pytest
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_binomial_model(recorder, options_module):
     recorder.capture(options_module.get_binomial_model())

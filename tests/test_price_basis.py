@@ -5,8 +5,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# pylint: disable=missing-function-docstring,protected-access
-
 
 def test_market_cap_uses_the_traded_close(test_toolkit):
     market_cap = test_toolkit.ratios.get_market_cap(rounding=None)

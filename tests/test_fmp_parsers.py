@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit import fmp_model
 
-# pylint: disable=missing-function-docstring
-
 
 def _answer(monkeypatch, response):
     """Answer every FMP request with the given response, raw or as a DataFrame."""

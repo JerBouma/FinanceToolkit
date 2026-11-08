@@ -6,8 +6,6 @@ from scipy import stats
 
 from financetoolkit.econometrics import regression_model, specification_tests_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_breusch_pagan_test_detects_heteroskedasticity(recorder):
     # Error variance grows with x -- textbook heteroskedasticity.

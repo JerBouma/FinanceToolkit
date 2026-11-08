@@ -12,8 +12,6 @@ from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-locals
-
 
 # The most strike prices per ticker: every one is priced for each expiration (and in a
 # binomial model has a tree of its own), so a grid of a high share price in small steps
@@ -189,7 +187,7 @@ def create_binomial_tree_dataframe(
 
 
 def create_stock_simulation_dataframe(
-    stock_simulation_dictonary: dict[str, pd.DataFrame],
+    stock_simulation_dictionary: dict[str, pd.DataFrame],
     start_date: str | pd.Period,
     time_to_expiration: float,
 ):
@@ -198,7 +196,7 @@ def create_stock_simulation_dataframe(
     over time (the time of expiration).
 
     Args:
-        stock_simulation_dictonary (dict[str, pd.DataFrame]): the simulated stock prices
+        stock_simulation_dictionary (dict[str, pd.DataFrame]): the simulated stock prices
         per ticker, one DataFrame of price paths per ticker.
         start_date (str | pd.Period): the date the simulation starts from, which labels
         the first column.
@@ -208,7 +206,7 @@ def create_stock_simulation_dataframe(
         pd.DataFrame: the DataFrame that correctly displays the simulated stock prices for
         each ticker over time.
     """
-    stock_simulation_dataframe = pd.concat(stock_simulation_dictonary)
+    stock_simulation_dataframe = pd.concat(stock_simulation_dictionary)
 
     start_date_string = pd.to_datetime(str(start_date))
     end_date_string = pd.to_datetime(

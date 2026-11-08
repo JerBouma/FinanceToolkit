@@ -908,7 +908,7 @@ def test_asset_class_proxies(name):
         start=START,
         end=END,
         fill_nan=False,
-        show_ticker_seperation=False,
+        show_ticker_separation=False,
     )
 
     assert not historical_data.empty, f"{name} returned no data"

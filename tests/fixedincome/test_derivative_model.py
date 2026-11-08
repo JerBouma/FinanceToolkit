@@ -2,8 +2,6 @@
 
 from financetoolkit.fixedincome import derivative_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_annuity_factor(recorder):
     recorder.capture(

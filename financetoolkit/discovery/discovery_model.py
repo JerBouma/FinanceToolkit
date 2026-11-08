@@ -1154,14 +1154,14 @@ def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.Data
     # The "symbol/available-commodities" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
     url = f"https://financialmodelingprep.com/stable/commodities-list?apikey={api_key}"
 
-    commody_list = get_cached_financial_data(
+    commodity_list = get_cached_financial_data(
         url=url, user_subscription=user_subscription
     )
 
-    if commody_list.empty:
-        return commody_list
+    if commodity_list.empty:
+        return commodity_list
 
-    commody_list = commody_list.rename(
+    commodity_list = commodity_list.rename(
         columns={
             "symbol": "Symbol",
             "name": "Name",
@@ -1171,9 +1171,9 @@ def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.Data
         }
     )
 
-    commody_list = commody_list.set_index("Symbol").sort_index()
+    commodity_list = commodity_list.set_index("Symbol").sort_index()
 
-    return commody_list
+    return commodity_list
 
 
 def get_etf_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:

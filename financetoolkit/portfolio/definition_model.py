@@ -13,8 +13,6 @@ import yaml
 
 from financetoolkit.portfolio import portfolio_model
 
-# pylint: disable=too-many-instance-attributes
-
 # How often a model portfolio is brought back to its target weights.
 REBALANCING_FREQUENCIES = {
     "none": None,

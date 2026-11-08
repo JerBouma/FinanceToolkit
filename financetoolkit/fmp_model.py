@@ -29,8 +29,6 @@ from financetoolkit.utilities.requests_model import get_request
 logger = logger_model.get_logger()
 
 
-# pylint: disable=no-member,too-many-locals,too-many-lines
-
 RETRY_LIMIT = 12
 
 # Identifiers that look like numbers but are not: inferring their type would drop the

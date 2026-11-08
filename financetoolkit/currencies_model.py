@@ -10,8 +10,6 @@ from financetoolkit.utilities import logger_model
 logger = logger_model.get_logger()
 
 
-# pylint: disable=comparison-with-itself,too-many-locals,protected-access
-
 # LSE (GBp), JSE (ZAc), TASE (ILA) quote in a fractional unit; most providers only publish the major-unit rate.
 MINOR_CURRENCY_UNITS: dict[str, tuple[str, int]] = {
     "GBp": ("GBP", 100),

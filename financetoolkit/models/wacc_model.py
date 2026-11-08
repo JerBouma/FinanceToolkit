@@ -13,8 +13,6 @@ from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
 
-# pylint: disable=too-many-locals
-
 
 def get_cost_of_equity(
     risk_free_rate: pd.Series,

@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit import fundamentals_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_collect_financial_statements_invalid_ticker_type():
     with pytest.raises(ValueError, match="Type for the tickers"):

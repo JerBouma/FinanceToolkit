@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import unitroot_model
 
-# pylint: disable=missing-function-docstring
-
 # The simulated break sits at index 150, so the last pre-break index is expected.
 EXPECTED_BREAK_INDEX = 149
 

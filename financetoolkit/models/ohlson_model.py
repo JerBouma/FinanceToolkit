@@ -7,8 +7,6 @@ import pandas as pd
 
 from financetoolkit.utilities.statistics_model import drop_non_finite
 
-# pylint: disable=too-many-arguments,too-many-positional-arguments
-
 
 def get_log_of_total_assets(
     total_assets: float | pd.Series | pd.DataFrame,

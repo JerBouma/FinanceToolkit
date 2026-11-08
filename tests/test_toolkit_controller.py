@@ -13,9 +13,6 @@ risk_free_rate = pd.read_pickle("tests/datasets/risk_free_rate.pickle")
 treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
 
 
-# pylint: disable=missing-function-docstring
-
-
 def test_toolkit_balance(recorder):
     toolkit = Toolkit(
         tickers=["AAPL", "MSFT"],

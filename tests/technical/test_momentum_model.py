@@ -7,8 +7,6 @@ import pytest
 from financetoolkit.technicals import momentum_model
 from tests.technical.sample_prices import sample_prices
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_money_flow_index(recorder):
     prices = sample_prices()

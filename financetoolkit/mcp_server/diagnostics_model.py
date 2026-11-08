@@ -66,7 +66,7 @@ class _CallMessageHandler(logging.Handler):
 
         try:
             messages.append(record.getMessage())
-        except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        except Exception:  # noqa: BLE001
             # A message that cannot be formatted is not worth failing a tool call for.
             return
 

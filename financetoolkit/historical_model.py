@@ -22,7 +22,6 @@ from financetoolkit.utilities.statistics_model import (
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-locals,unsubscriptable-object,too-many-lines
 
 INTERVAL_STR = {
     "1min": "min",
@@ -234,7 +233,7 @@ def get_historical_data(
     divide_ohlc_by: int | float | None = None,
     rounding: int | None = None,
     sleep_timer: bool = True,
-    show_ticker_seperation: bool = True,
+    show_ticker_separation: bool = True,
     show_errors: bool = False,
     log_message: str = "Obtaining historical data",
     user_subscription: str = "Free",
@@ -274,7 +273,7 @@ def get_historical_data(
         rounding (int, optional): The number of decimal places to round the data to. Defaults to None.
         sleep_timer (bool, optional): A boolean representing whether to introduce a sleep timer to prevent
         rate limit errors. Defaults to True.
-        show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+        show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
         acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
         show_errors (bool, optional): A boolean representing whether to show errors. Defaults to True.
         log_message (str, optional): A string representing the message to show in the log output.
@@ -713,7 +712,7 @@ def get_historical_data(
             user_subscription=user_subscription,
         )
 
-    if fmp_tickers and yf_tickers and show_ticker_seperation:
+    if fmp_tickers and yf_tickers and show_ticker_separation:
         logger.info(
             "Acquired historical data from FinancialModelingPrep for: %s",
             ", ".join(fmp_tickers),

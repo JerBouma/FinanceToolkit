@@ -4,8 +4,6 @@ Data retrieved from external sources is cached by default in every module, unles
 use_cached_data says otherwise or FINANCE_TOOLKIT_CACHE_ENABLED switches the default off.
 """
 
-# pylint: disable=missing-function-docstring
-
 import pandas as pd
 import pytest
 

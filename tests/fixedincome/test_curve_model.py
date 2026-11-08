@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.fixedincome import curve_model
 
-# pylint: disable=missing-function-docstring
-
 MATURITIES = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30.0])
 
 

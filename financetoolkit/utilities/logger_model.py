@@ -6,8 +6,6 @@ import logging
 import re
 import sys
 
-# pylint: disable=too-few-public-methods
-
 # Credentials that can appear in a logged URL or message: the value after any parameter
 # whose name ends in "key" (apikey, api_key, fmp_api_key, fred_key, ...) or is "token".
 # A placeholder in angle brackets, as in the setup hints, is not a credential.
@@ -43,7 +41,7 @@ class RedactingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         try:
             message = record.getMessage()
-        except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        except Exception:  # noqa: BLE001
             # Arguments that don't fit the message are left to the handler to report.
             message = f"{record.msg} {record.args}"
         record.msg = redact(message)

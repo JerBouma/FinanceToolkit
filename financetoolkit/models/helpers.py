@@ -17,7 +17,6 @@ logger = get_logger()
 # r - g <= 2%. Such values are kept but flagged.
 NARROW_SPREAD = 0.02
 
-# pylint: disable=protected-access
 
 PERIOD_TRANSLATION: dict[str, str] = {
     "weekly": "W",

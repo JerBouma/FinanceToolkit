@@ -10,8 +10,6 @@ import pytest
 from financetoolkit.performance import performance_model
 from financetoolkit.risk import cvar_model
 
-# pylint: disable=missing-function-docstring
-
 RESIDUAL_STD_TOLERANCE = 0.002
 
 

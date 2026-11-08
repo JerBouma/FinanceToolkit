@@ -7,8 +7,6 @@ import pytest
 from financetoolkit.portfolio import definition_model
 from financetoolkit.portfolio.definition_model import Holding, PortfolioDefinition
 
-# pylint: disable=missing-function-docstring
-
 
 def test_every_preset_is_valid_and_sourced():
     presets = definition_model.load_presets()

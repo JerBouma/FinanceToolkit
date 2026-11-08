@@ -1,7 +1,5 @@
 """Economics Controller Tests"""
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_gross_domestic_product(recorder, economics_module):
     recorder.capture(economics_module.get_gross_domestic_product())

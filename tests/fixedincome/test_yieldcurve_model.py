@@ -5,8 +5,6 @@ import pytest
 
 from financetoolkit.fixedincome import yieldcurve_model
 
-# pylint: disable=missing-function-docstring
-
 FLAT_CURVE_RATE = 0.05
 
 

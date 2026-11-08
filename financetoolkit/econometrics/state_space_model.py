@@ -11,8 +11,6 @@ from statsmodels.tsa.statespace.mlemodel import MLEModel
 
 from financetoolkit.risk import garch_model
 
-# pylint: disable=abstract-method,too-many-locals
-
 
 class _TimeVaryingRegression(MLEModel):
     """

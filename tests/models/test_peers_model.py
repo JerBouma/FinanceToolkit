@@ -5,8 +5,6 @@ import pytest
 
 from financetoolkit.models import peers_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_peer_comparison():
     metrics = pd.DataFrame(

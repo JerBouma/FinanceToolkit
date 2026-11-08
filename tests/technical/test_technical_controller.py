@@ -1,5 +1,4 @@
 """Technical Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 
 import pandas as pd
 import pytest

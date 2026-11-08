@@ -411,3 +411,31 @@ def test_get_industry_statistics_reads_the_dataset_of_the_region():
             dataset="cost_of_capital", region="Europe"
         )
         assert result.loc["Semiconductor", "Cost of Capital"] == 0.0983
+
+
+def test_search_news_without_symbols():
+    discovery = discovery_controller.Discovery(api_key="test_key")
+
+    # Without symbols, stock news and press releases are the latest of every company.
+    with patch("financetoolkit.discovery.discovery_model.get_stock_news") as mock_fn:
+        mock_fn.return_value = _news_mock_data()
+        assert len(discovery.search_stock_news(limit=2)) == len(_news_mock_data())
+        mock_fn.assert_called_once()
+    with patch(
+        "financetoolkit.discovery.discovery_model.get_press_releases"
+    ) as mock_fn:
+        mock_fn.return_value = _news_mock_data()
+        discovery.search_press_releases(limit=2)
+        mock_fn.assert_called_once()
+
+    # Crypto and forex news cover the largest coins and the major pairs.
+    with patch(
+        "financetoolkit.discovery.discovery_model.search_crypto_news"
+    ) as mock_fn:
+        mock_fn.return_value = _news_mock_data()
+        discovery.search_crypto_news(limit=2)
+        assert mock_fn.call_args.kwargs["symbols"] == ["BTCUSD", "ETHUSD"]
+    with patch("financetoolkit.discovery.discovery_model.search_forex_news") as mock_fn:
+        mock_fn.return_value = _news_mock_data()
+        discovery.search_forex_news(limit=2)
+        assert "EURUSD" in mock_fn.call_args.kwargs["symbols"]

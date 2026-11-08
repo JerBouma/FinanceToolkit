@@ -1322,7 +1322,7 @@ class Discovery:
 
     def search_stock_news(
         self,
-        symbols: str | list[str],
+        symbols: str | list[str] | None = None,
         pages: int = 1,
         limit: int = 100,
         start_date: str | None = None,
@@ -1334,8 +1334,9 @@ class Discovery:
         Also known as: ticker news search, company news lookup.
 
         Args:
-            symbols (str | list[str]): One or more ticker symbols, e.g. "AAPL" or
-                ["AAPL", "MSFT"].
+            symbols (str | list[str] | None, optional): One or more ticker symbols, e.g. "AAPL" or
+                ["AAPL", "MSFT"]. Defaults to None, which returns the latest articles of every
+                symbol, as `get_stock_news` does.
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
@@ -1371,6 +1372,11 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        if symbols is None:
+            return self.get_stock_news(
+                pages=pages, limit=limit, start_date=start_date, end_date=end_date
+            )
+
         stock_news = discovery_model.search_stock_news(
             api_key=self._api_key,
             symbols=symbols,
@@ -1385,7 +1391,7 @@ class Discovery:
 
     def search_press_releases(
         self,
-        symbols: str | list[str],
+        symbols: str | list[str] | None = None,
         pages: int = 1,
         limit: int = 100,
         start_date: str | None = None,
@@ -1397,8 +1403,9 @@ class Discovery:
         Also known as: press release search, corporate announcement lookup.
 
         Args:
-            symbols (str | list[str]): One or more ticker symbols, e.g. "AAPL" or
-                ["AAPL", "MSFT"].
+            symbols (str | list[str] | None, optional): One or more ticker symbols, e.g. "AAPL" or
+                ["AAPL", "MSFT"]. Defaults to None, which returns the latest press releases of
+                every company, as `get_press_releases` does.
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
@@ -1431,6 +1438,11 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        if symbols is None:
+            return self.get_press_releases(
+                pages=pages, limit=limit, start_date=start_date, end_date=end_date
+            )
+
         press_releases = discovery_model.search_press_releases(
             api_key=self._api_key,
             symbols=symbols,
@@ -1445,7 +1457,7 @@ class Discovery:
 
     def search_crypto_news(
         self,
-        symbols: str | list[str],
+        symbols: str | list[str] | None = None,
         pages: int = 1,
         limit: int = 100,
         start_date: str | None = None,
@@ -1457,8 +1469,9 @@ class Discovery:
         Also known as: crypto news search, coin news lookup.
 
         Args:
-            symbols (str | list[str]): One or more crypto symbols, e.g. "BTCUSD" or
-                ["BTCUSD", "ETHUSD"].
+            symbols (str | list[str] | None, optional): One or more crypto symbols, e.g. "BTCUSD" or
+                ["BTCUSD", "ETHUSD"]. Defaults to None, which uses Bitcoin and Ether (BTCUSD and
+                ETHUSD), the two largest cryptocurrencies by market value.
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
@@ -1496,7 +1509,7 @@ class Discovery:
 
         crypto_news = discovery_model.search_crypto_news(
             api_key=self._api_key,
-            symbols=symbols,
+            symbols=symbols if symbols is not None else ["BTCUSD", "ETHUSD"],
             limit=limit,
             pages=pages,
             start_date=start_date,
@@ -1508,7 +1521,7 @@ class Discovery:
 
     def search_forex_news(
         self,
-        symbols: str | list[str],
+        symbols: str | list[str] | None = None,
         pages: int = 1,
         limit: int = 100,
         start_date: str | None = None,
@@ -1520,8 +1533,9 @@ class Discovery:
         Also known as: forex news search, currency pair news lookup.
 
         Args:
-            symbols (str | list[str]): One or more forex pairs, e.g. "EURUSD" or
-                ["EURUSD", "GBPUSD"].
+            symbols (str | list[str] | None, optional): One or more forex pairs, e.g. "EURUSD" or
+                ["EURUSD", "GBPUSD"]. Defaults to None, which uses the seven major pairs: EURUSD,
+                USDJPY, GBPUSD, USDCHF, AUDUSD, USDCAD and NZDUSD.
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
@@ -1559,7 +1573,19 @@ class Discovery:
 
         forex_news = discovery_model.search_forex_news(
             api_key=self._api_key,
-            symbols=symbols,
+            symbols=(
+                symbols
+                if symbols is not None
+                else [
+                    "EURUSD",
+                    "USDJPY",
+                    "GBPUSD",
+                    "USDCHF",
+                    "AUDUSD",
+                    "USDCAD",
+                    "NZDUSD",
+                ]
+            ),
             limit=limit,
             pages=pages,
             start_date=start_date,

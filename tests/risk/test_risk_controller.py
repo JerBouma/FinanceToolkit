@@ -652,6 +652,50 @@ def test_a_single_return_over_the_whole_range_is_reported(risk_module, caplog):
     assert "Fewer than two yearly returns" in caplog.text
 
 
+def test_pairwise_measures_default_to_the_benchmark(risk_module):
+    tail_dependence = risk_module.get_tail_dependence_coefficient()
+    covar = risk_module.get_covar()
+
+    # Every ticker is paired with the benchmark, which is not paired with itself.
+    assert list(tail_dependence.index) == ["AAPL", "MSFT"]
+    assert list(covar.index) == ["AAPL", "MSFT"]
+    pd.testing.assert_series_equal(
+        tail_dependence.loc["AAPL"],
+        risk_module.get_tail_dependence_coefficient("AAPL", "Benchmark"),
+        check_names=False,
+    )
+    # CoVaR conditions the benchmark (the system) on each ticker's distress.
+    pd.testing.assert_series_equal(
+        covar.loc["MSFT"],
+        risk_module.get_covar("Benchmark", "MSFT"),
+        check_names=False,
+    )
+    # One side given pairs it with the benchmark.
+    assert list(risk_module.get_tail_dependence_coefficient("MSFT").index) == ["MSFT"]
+
+
+def test_pairwise_measures_keep_the_role_of_a_given_ticker(risk_module):
+    # A given system is measured against every other ticker, the benchmark included.
+    exposure = risk_module.get_covar(ticker="AAPL")
+    assert list(exposure.index) == ["MSFT", "Benchmark"]
+    pd.testing.assert_series_equal(
+        exposure.loc["MSFT"], risk_module.get_covar("AAPL", "MSFT"), check_names=False
+    )
+
+    # A given conditioning ticker is paired with the benchmark as the system.
+    contribution = risk_module.get_covar(conditioning_ticker="AAPL")
+    assert list(contribution.index) == ["AAPL"]
+    pd.testing.assert_series_equal(
+        contribution.loc["AAPL"],
+        risk_module.get_covar("Benchmark", "AAPL"),
+        check_names=False,
+    )
+
+    # The same for tail dependence: a given ticker_b is paired with every other ticker.
+    tail_dependence = risk_module.get_tail_dependence_coefficient(ticker_b="AAPL")
+    assert list(tail_dependence.index) == ["MSFT", "Benchmark"]
+
+
 def _toolkit_with_historical(historical):
     from financetoolkit import Toolkit
 

@@ -64,6 +64,12 @@ FACTOR_COLLECTIONS = {
 }
 
 
+# The style indices get_style_analysis uses by default, Sharpe's (1992) asset classes as
+# funds: US large cap value and growth (Russell 1000), small cap value and growth (Russell
+# 2000), investment grade bonds (Bloomberg US Aggregate) and cash (1-3 month Treasury bills).
+STYLE_TICKERS = ["IWD", "IWF", "IWN", "IWO", "AGG", "BIL"]
+
+
 class Performance:
     """
     The Performance module is meant to calculate important performance metrics such
@@ -82,6 +88,7 @@ class Performance:
         end_date: str | None = None,
         intraday_period: str | None = None,
         progress_bar: bool = True,
+        returns_function: Callable[[list[str], str], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Performance Controller Class.
@@ -101,6 +108,9 @@ class Performance:
             intraday_period (str | None, optional): The intraday period used for within-period calculations.
                 Defaults to None.
             progress_bar (bool, optional): Whether to show a progress bar. Defaults to True.
+            returns_function (Callable[[list[str], str], pd.DataFrame] | None, optional): Returns the returns of
+                tickers outside the Toolkit for a period, such as the style indices of
+                `get_style_analysis`. Defaults to None, which only allows the Toolkit's tickers.
 
         As an example:
 
@@ -150,6 +160,7 @@ class Performance:
         self._progress_bar: bool = progress_bar
         self._intraday_period: str | None = intraday_period
         self._portfolio_weights: dict | None = None
+        self._returns_function = returns_function
 
         # Historical Data
         self._historical_data = historical_data
@@ -1841,7 +1852,7 @@ class Performance:
     @handle_errors
     def get_style_analysis(
         self,
-        style_tickers: str | list[str],
+        style_tickers: str | list[str] | None = None,
         period: str = "monthly",
         window: int | None = None,
         rounding: int | None = None,
@@ -1869,9 +1880,11 @@ class Performance:
         shows whether the manager added value beyond a passive mix of the styles the fund was
         known to follow.
 
-        The style indices are tickers of the Toolkit as well (an ETF per style works well, for
-        example IWF, IWD, IWO and IWN for US large and small cap growth and value and AGG for
-        bonds), and every other ticker is analyzed against them. "Benchmark" can be one of them.
+        By default the styles are Sharpe's asset classes as ETFs: IWD and IWF for US large cap
+        value and growth, IWN and IWO for small cap value and growth, AGG for bonds and BIL for
+        cash. Style tickers that are not in the Toolkit are retrieved for the same dates, and
+        every Toolkit ticker that is not a style is analyzed against them. "Benchmark" can be
+        one of them.
 
         For more information, see the following paper:
 
@@ -1882,8 +1895,9 @@ class Performance:
         selection return.
 
         Args:
-            style_tickers (str | list[str]): The tickers of the style indices, as a list or a
-                comma-separated string.
+            style_tickers (str | list[str] | None, optional): The tickers of the style indices, as a
+                list or a comma-separated string. Defaults to None, which uses IWD, IWF, IWN, IWO,
+                AGG and BIL.
             period (str, optional): The return frequency (daily, weekly, monthly, quarterly or
                 yearly). Defaults to "monthly".
             window (int | None, optional): The number of periods to estimate the weights over on a
@@ -1904,20 +1918,21 @@ class Performance:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["ARKK", "IWF", "IWD", "IWO", "IWN", "AGG"],
+            ["ARKK", "BRK-B"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2019-01-01",
             end_date="2025-12-31",
         )
 
-        toolkit.performance.get_style_analysis(["IWF", "IWD", "IWO", "IWN", "AGG"])
+        toolkit.performance.get_style_analysis()
         ```
 
         Which returns:
 
-        |      |    IWF |   IWD |    IWO |   IWN |   AGG |   R Squared |   Selection Return |   Tracking Error |
-        |:-----|-------:|------:|-------:|------:|------:|------------:|-------------------:|-----------------:|
-        | ARKK | 0.0091 |     0 | 0.9909 |     0 |     0 |      0.6123 |             0.0638 |           0.2632 |
+        |       |    IWD |    IWF |   IWN |    IWO |   AGG |    BIL |   R Squared |   Selection Return |   Tracking Error |
+        |:------|-------:|-------:|------:|-------:|------:|-------:|------------:|-------------------:|-----------------:|
+        | ARKK  | 0      | 0.0091 |     0 | 0.9909 |     0 | 0      |      0.6123 |             0.0638 |           0.2632 |
+        | BRK-B | 0.8793 | 0      |     0 | 0      |     0 | 0.1207 |      0.5662 |             0.0425 |           0.1304 |
         """
         if period not in PERIODS_PER_YEAR:
             raise ValueError(
@@ -1925,15 +1940,31 @@ class Performance:
             )
         # A comma-separated string (as the MCP server passes a list) is split.
         style_tickers = (
-            [ticker.strip() for ticker in style_tickers.split(",") if ticker.strip()]
-            if isinstance(style_tickers, str)
-            else list(style_tickers)
+            STYLE_TICKERS
+            if style_tickers is None
+            else (
+                [
+                    ticker.strip()
+                    for ticker in style_tickers.split(",")
+                    if ticker.strip()
+                ]
+                if isinstance(style_tickers, str)
+                else list(style_tickers)
+            )
         )
         returns = self._historical_data[period].loc[:, "Return"]
         if missing := [ticker for ticker in style_tickers if ticker not in returns]:
-            raise ValueError(
-                f"The style tickers {', '.join(missing)} are not part of the Toolkit; add "
-                "them to its tickers."
+            if self._returns_function is None:
+                raise ValueError(
+                    f"The style tickers {', '.join(missing)} are not part of the Toolkit; add "
+                    "them to its tickers."
+                )
+            returns = pd.concat(
+                [
+                    returns,
+                    self._returns_function(missing, period).reindex(columns=missing),
+                ],
+                axis=1,
             )
         funds = [
             ticker
@@ -5959,7 +5990,7 @@ class Performance:
     @handle_errors
     def get_factor_analysis(
         self,
-        metrics: str | list[str] | pd.DataFrame,
+        metrics: str | list[str] | pd.DataFrame = "all",
         period: str = "monthly",
         horizons: list[int] | int | None = None,
         quantiles: int = 5,
@@ -6003,9 +6034,9 @@ class Performance:
                 period, e.g. "get_sharpe_ratio", a list of them, "all", or a factor of your own
                 as a DataFrame. "all" holds the returns, excess return, beta, Sharpe, Sortino,
                 Treynor and information ratios, tracking error, Jensen's alpha, Calmar and
-                Omega ratios and the win rate.
-            period (str, optional): The frequency at which the metrics are measured and evaluated
-                (weekly, monthly, quarterly or yearly). Each metric is calculated
+                Omega ratios and the win rate. Defaults to "all".
+            period (str, optional): The frequency at which the metrics are measured and
+                evaluated: weekly, monthly, quarterly or yearly. Each metric is calculated
                 within each period from that period's daily returns, so use monthly or longer
                 for enough returns per period. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward

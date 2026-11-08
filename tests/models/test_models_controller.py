@@ -247,22 +247,34 @@ def test_cost_of_equity_follows_trailing(models_module):
     import pandas as pd
 
     # A trailing sum of two years of Net Income or Interest Expense is charged the Cost of
-    # Equity of two years, in residual income and in the WACC (and so EVA and PVGO).
-    single = models_module.get_residual_income(rounding=10).xs(
+    # Equity of two years, in residual income and in the WACC (and so EVA and PVGO). Without
+    # a premium the Cost of Equity is the risk-free rate, which doubles.
+    single = models_module.get_residual_income(rounding=10, market_risk_premium=0).xs(
         "Cost of Equity", level=1
     )
-    double = models_module.get_residual_income(rounding=10, trailing=2).xs(
-        "Cost of Equity", level=1
-    )
+    double = models_module.get_residual_income(
+        rounding=10, trailing=2, market_risk_premium=0
+    ).xs("Cost of Equity", level=1)
     pd.testing.assert_frame_equal(double, 2 * single, rtol=1e-6)
 
-    wacc_single = models_module.get_weighted_average_cost_of_capital(rounding=10).xs(
-        "Cost of Equity", level=1
-    )
+    wacc_single = models_module.get_weighted_average_cost_of_capital(
+        rounding=10, market_risk_premium=0
+    ).xs("Cost of Equity", level=1)
     wacc_double = models_module.get_weighted_average_cost_of_capital(
-        rounding=10, trailing=2
+        rounding=10, trailing=2, market_risk_premium=0
     ).xs("Cost of Equity", level=1)
     pd.testing.assert_frame_equal(wacc_double, 2 * wacc_single, rtol=1e-6)
+
+    # With a premium, both use the same Beta of the two years of daily returns.
+    pd.testing.assert_frame_equal(
+        models_module.get_residual_income(rounding=10, trailing=2).xs(
+            "Cost of Equity", level=1
+        ),
+        models_module.get_weighted_average_cost_of_capital(rounding=10, trailing=2).xs(
+            "Cost of Equity", level=1
+        ),
+        rtol=1e-6,
+    )
 
 
 def test_intrinsic_valuation_discounts_the_free_cash_flow_to_firm(models_module):
@@ -1506,6 +1518,40 @@ def test_historical_intrinsic_valuation_ends_at_the_single_valuation(models_modu
 def test_get_return_decomposition(recorder, models_module):
     recorder.capture(models_module.get_return_decomposition())
     recorder.capture(models_module.get_return_decomposition(logarithmic=True))
+
+
+def test_default_growth_uses_no_later_periods(models_module):
+    import pandas as pd
+    import pytest
+
+    growth = models_module._operating_growth()
+    components = models_module.get_free_cash_flow_to_firm(rounding=15)
+    reinvestment = (
+        components.xs("Net Operating Profit After Taxes", level=1)
+        - components.xs("Free Cash Flow to Firm", level=1)
+    ).loc["AAPL"]
+    invested_capital = (
+        models_module._rows(
+            models_module._balance_sheet_statement, "Total Shareholder Equity"
+        )
+        + models_module._rows(models_module._balance_sheet_statement, "Total Debt")
+    ).loc["AAPL"]
+
+    # Each period's growth only uses the reinvestment and capital up to that period.
+    period = growth.columns[2]
+    up_to = reinvestment.loc[:period].dropna()
+    expected = (
+        up_to.sum()
+        / len(up_to)
+        / invested_capital.reindex(reinvestment.index).loc[:period].mean()
+    )
+    assert growth.loc["AAPL", period] == pytest.approx(expected)
+
+    # The stable growth stays within 0 and the long-run rate.
+    stable = models_module._stable_growth(
+        pd.DataFrame([[-0.1, 0.01, 0.2, float("nan")]], index=["AAPL"])
+    ).loc["AAPL"]
+    assert stable.tolist()[:4] == pytest.approx([0, 0.01, 0.025, 0.025])
 
 
 def _models_without_benchmark():

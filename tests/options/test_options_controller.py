@@ -1039,6 +1039,26 @@ def test_monte_carlo_paths_in_chunks_give_the_same_price_and_large_runs_are_refu
         )
 
 
+def test_get_strategy_payoff_defaults_to_an_at_the_money_straddle(options_module):
+    payoff = options_module.get_strategy_payoff()
+    date = options_module._daily_historical.index[-1]
+
+    for ticker in payoff.columns:
+        legs = options_module._at_the_money_straddle(ticker, date)
+        premiums = sum(leg["premium"] for leg in legs)
+        strike = legs[0]["strike_price"]
+        ticker_payoff = payoff[ticker].dropna()
+
+        # The loss is largest, both premiums, at the strike and shrinks one for one away from it.
+        assert legs[0]["put_option"] is False and legs[1]["put_option"] is True
+        assert premiums > 0
+        assert ticker_payoff.min() >= -premiums - 1e-9
+        nearest = ticker_payoff.index[abs(ticker_payoff.index - strike).argmin()]
+        assert ticker_payoff[nearest] == pytest.approx(
+            abs(nearest - strike) - premiums, abs=1e-3
+        )
+
+
 def _options_without_msft_prices_after(date):
     import numpy as np
 

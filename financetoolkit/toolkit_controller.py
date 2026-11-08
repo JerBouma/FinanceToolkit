@@ -1092,6 +1092,7 @@ class Toolkit:
             end_date=self._end_date,
             intraday_period=self._intraday_period,
             progress_bar=self._progress_bar,
+            returns_function=self._other_returns,
         )
 
         if self._portfolio_weights:
@@ -1237,6 +1238,20 @@ class Toolkit:
             benchmark_ticker=None,
             progress_bar=False,
             rounding=None,
+        )
+
+    def _other_returns(self, tickers: list[str], period: str) -> pd.DataFrame:
+        """
+        The returns of other tickers (style indices, say) over this Toolkit's dates, a column
+        per ticker.
+        """
+        returns = self._other_toolkit(
+            tickers, self._start_date, self._end_date
+        ).get_historical_data(period=period)["Return"]
+
+        # One ticker comes back as a Series.
+        return (
+            returns.to_frame(tickers[0]) if isinstance(returns, pd.Series) else returns
         )
 
     @property

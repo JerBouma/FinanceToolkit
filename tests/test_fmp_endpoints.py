@@ -338,7 +338,7 @@ def test_currency_pairs_are_recognised(ticker, expected):
     assert currencies_model.is_currency_pair(ticker) is expected
 
 
-def test_news_is_routed_by_ticker_type(cache_location, monkeypatch):
+def test_news_is_routed_by_ticker_type(cache_location, monkeypatch, known_fmp_plan):
     calls: dict[str, list[str]] = {}
 
     def fake_search(feed):
@@ -379,7 +379,7 @@ def test_news_is_routed_by_ticker_type(cache_location, monkeypatch):
 
 
 def test_etf_methods_do_not_remove_tickers_that_are_not_funds(
-    cache_location, monkeypatch
+    cache_location, monkeypatch, known_fmp_plan
 ):
     monkeypatch.setattr(
         toolkit_controller,
@@ -412,7 +412,9 @@ def test_executives_list_the_best_paid_first(responses):
     assert list(executives.loc["AAPL"].index) == ["Chief", "Counsel", "Undisclosed"]
 
 
-def test_a_sector_a_fund_does_not_hold_weighs_zero(cache_location, monkeypatch):
+def test_a_sector_a_fund_does_not_hold_weighs_zero(
+    cache_location, monkeypatch, known_fmp_plan
+):
     weightings = pd.DataFrame(
         {"QQQ": [0.6, None], "VTI": [0.4, 0.02]},
         index=pd.Index(["Technology", "Real Estate"], name="Sector"),

@@ -724,7 +724,7 @@ def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
     pd.testing.assert_frame_equal(may, regular.loc[may.index])
 
 
-def test_statistics_come_from_the_balance_sheet_getter(monkeypatch):
+def test_statistics_come_from_the_balance_sheet_getter(monkeypatch, known_fmp_plan):
     toolkit = Toolkit(
         tickers=["AAPL"],
         api_key="KEY",
@@ -764,7 +764,7 @@ def test_quarterly_lookback_covers_a_trailing_year_and_its_growth():
     assert lookback > pd.Timestamp("2022-09-30")
 
 
-def test_statistics_are_shown_from_the_start_date(monkeypatch):
+def test_statistics_are_shown_from_the_start_date(monkeypatch, known_fmp_plan):
     toolkit = Toolkit(
         tickers=["AAPL", "MSFT"],
         api_key="KEY",

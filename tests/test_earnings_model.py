@@ -95,7 +95,9 @@ def test_announcements_that_are_not_reported_yet_are_left_out():
     assert result.index.tolist() == [pd.Timestamp("2024-01-10")]
 
 
-def test_the_toolkit_scales_the_sue_with_reports_before_its_start_date(monkeypatch):
+def test_the_toolkit_scales_the_sue_with_reports_before_its_start_date(
+    monkeypatch, known_fmp_plan
+):
     dates = pd.bdate_range("2023-01-02", "2024-12-31")
     columns = pd.MultiIndex.from_product(
         [["Adj Close", "Volume"], ["AAPL", "Benchmark"]]

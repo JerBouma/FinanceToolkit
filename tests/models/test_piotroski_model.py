@@ -281,3 +281,41 @@ def test_piotroski_score_scales_by_beginning_total_assets(models_module):
             assert scores["Accruals Criteria"] == int(
                 cash_return.loc[ticker, period] > return_on_assets.loc[ticker, period]
             )
+
+
+def _row(*values: float) -> pd.DataFrame:
+    return pd.DataFrame([values], index=["A"], columns=["2020", "2021", "2022"])
+
+
+def test_piotroski_change_criteria_compare_with_the_previous_year():
+    # Return on assets 10%, 12%, 11%: only 2021 improved.
+    assert piotroski_model.get_change_in_return_on_asset_criteria(
+        _row(10, 12, 11), _row(100, 100, 100)
+    ).loc["A"].tolist() == [False, True, False]
+
+    # Debt over assets 30%, 25%, 25%: lower leverage in 2021, unchanged in 2022.
+    assert piotroski_model.get_change_in_leverage_criteria(
+        _row(30, 25, 30), _row(100, 100, 120)
+    ).loc["A"].tolist() == [False, True, False]
+
+    # Current ratio 1.0, 1.5, 2.0: improved in both years.
+    assert piotroski_model.get_change_in_current_ratio_criteria(
+        _row(100, 150, 200), _row(100, 100, 100)
+    ).loc["A"].tolist() == [False, True, True]
+
+    # Gross margin 40%, 50%, 45%.
+    assert piotroski_model.get_gross_margin_criteria(
+        _row(100, 100, 100), _row(60, 50, 55)
+    ).loc["A"].tolist() == [False, True, False]
+
+    # Asset turnover 1.0, 0.8, 1.2.
+    assert piotroski_model.get_asset_turnover_ratio_criteria(
+        _row(100, 80, 120), _row(100, 100, 100)
+    ).loc["A"].tolist() == [False, False, True]
+
+
+def test_piotroski_change_criteria_take_a_lag():
+    # Two years back: 2022 (11%) beats 2020 (10%).
+    assert piotroski_model.get_change_in_return_on_asset_criteria(
+        _row(10, 12, 11), _row(100, 100, 100), lag=2
+    ).loc["A"].tolist() == [False, False, True]

@@ -129,7 +129,9 @@ def test_fred_header_beats_query(monkeypatch):
 
 def test_an_expired_access_token_is_never_used_as_a_key(monkeypatch):
     """An access token that no longer verifies is not passed on as a raw key."""
-    expired = auth_model.sign_jwt({"fmp_api_key": "OLD", "fred_api_key": "F"}, -10)
+    expired = auth_model.issue_token(
+        {"fmp_api_key": "OLD", "fred_api_key": "F"}, "access", -10
+    )
     monkeypatch.setattr(
         deps,
         "get_http_headers",

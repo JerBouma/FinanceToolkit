@@ -63,7 +63,7 @@
   "tools": [
     {
       "name": "efficiency",
-      "description": "Pre-computed efficiency ratios (asset turnover, inventory turnover, days sales outstanding, days payable outstanding, cash conversion cycle). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. For the predictive power of these ratios across tickers (factor analysis), use the valuation tool with indicator='get_factor_analysis' and metrics='efficiency'."
+      "description": "Pre-computed efficiency ratios (asset turnover, inventory turnover, days sales outstanding, days payable outstanding, cash conversion cycle, capex intensity (capex/revenue), capex to depreciation). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. For the predictive power of these ratios across tickers (factor analysis), use the valuation tool with indicator='get_factor_analysis' and metrics='efficiency'."
     },
     {
       "name": "liquidity",
@@ -71,7 +71,7 @@
     },
     {
       "name": "profitability",
-      "description": "Pre-computed profitability ratios (gross margin, operating margin, net margin, ROE, ROA, ROIC, ROCE). Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. For the predictive power of these ratios across tickers (factor analysis), use the valuation tool with indicator='get_factor_analysis' and metrics='profitability'."
+      "description": "Pre-computed profitability ratios (gross margin, operating margin, net margin, ROE, ROA, ROIC, ROCE, cash ROIC (CROIC), FCF conversion (FCF/net income, FCF/EBITDA), and the profitability factors: gross profitability (Novy-Marx GP/A), operating profitability (Fama-French RMW) and cash-based operating profitability (Ball et al.)). Gross, operating and cash-based operating profitability use the trailing twelve months on quarterly data. Requires tickers='AAPL' \u2014 use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. For the predictive power of these ratios across tickers (factor analysis), use the valuation tool with indicator='get_factor_analysis' and metrics='profitability'."
     },
     {
       "name": "solvency",

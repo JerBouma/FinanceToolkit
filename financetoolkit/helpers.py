@@ -687,7 +687,7 @@ def period_of_result(result: pd.DataFrame) -> str | None:
     """
     for axis in (result.index, result.columns):
         if isinstance(axis, pd.PeriodIndex):
-            return PERIODS_BY_FREQUENCY.get(axis.freqstr[0])
+            return PERIODS_BY_FREQUENCY.get(axis.freq.rule_code[0])
 
     return None
 

@@ -297,6 +297,28 @@ class Risk:
 
         return returns
 
+    def _get_prices(
+        self, column: str, period: str = "daily", within_period: bool = False
+    ) -> pd.DataFrame:
+        """
+        The `column` prices on the dates each ticker traded.
+
+        On a date only another ticker or the benchmark traded, a ticker's last price is
+        carried forward as a flat bar without a Return (see
+        `historical_model.fill_non_trading_days`). A measure on the prices themselves (a
+        daily range, a price change) would count it as a day without a move, so the price
+        is NaN there, as its Return is.
+        """
+        frame = (
+            self._within_historical_data[period]
+            if within_period
+            else self._historical_data[period]
+        )
+        has_return = frame["Return"].notna()
+        inside = has_return.cummax() & has_return[::-1].cummax()[::-1]
+
+        return frame[column].mask(~has_return & inside)
+
     @handle_errors
     def collect_all_metrics(
         self,
@@ -1689,6 +1711,7 @@ class Risk:
         self,
         period: str | None = None,
         recovery: bool = False,
+        deepest_since: bool = False,
         rounding: int | None = None,
     ):
         """
@@ -1704,12 +1727,17 @@ class Risk:
         at its high, after a fall of 50% a gain of 100%. With recovery=True the series shows that gain,
         the return needed from each period's value to get back to the running peak.
 
+        With deepest_since=True every period below the peak also gets the last earlier date with a
+        drawdown at least as deep, the familiar headline ("the deepest drawdown since April"), as
+        `get_move_significance` gives the "largest since" date of a single move.
+
         The formula is as follows:
 
         - Wealth(t) = Π (1 + Return(s)) for s <= t
         - Peak(t) = max(1, max(Wealth(s) for s <= t))
         - Drawdown(t) = Wealth(t) / Peak(t) - 1
         - Recovery Needed(t) = Peak(t) / Wealth(t) - 1 = -Drawdown(t) / (1 + Drawdown(t))
+        - Deepest Since(t) = the last date s < t with Drawdown(s) <= Drawdown(t), for Drawdown(t) < 0
 
         Returns are total returns (Adj Close). Wealth starts at 1 at the first close of the window, so a
         decline from the start of the window counts as well.
@@ -1722,18 +1750,24 @@ class Risk:
                 Defaults to "daily".
             recovery (bool, optional): Whether to return the gain needed to get back to the running peak
                 (Recovery Needed) instead of the drawdown. Defaults to False.
+            deepest_since (bool, optional): Whether to add the Deepest Since date of every period below the
+                peak. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
 
         Returns:
             pd.DataFrame: The drawdown per period as a negative decimal or, with recovery=True, the gain needed
-                as a positive decimal (0 at a new high), with time as the index.
+                as a positive decimal (0 at a new high), with time as the index. With deepest_since=True, the
+                columns hold the measures (Drawdown or Recovery Needed, and Deepest Since, the date as text)
+                and the tickers.
 
         Notes:
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close
         and is NaN before it.
         - A longer period only compares the closes of each period, so period="monthly" shows shallower
         drawdowns than period="daily".
+        - Deepest Since is NaN at a high and when no earlier period in the data was as deep, which makes
+        the drawdown the deepest since the start_date. Choose an early start_date for a long history.
 
         As an example:
 
@@ -1788,6 +1822,21 @@ class Risk:
 
         drawdown_series = risk_model.get_drawdown_series(returns, recovery=recovery)
 
+        if deepest_since:
+            # Found on the drawdowns, which order the periods the same way as the gain needed.
+            since = risk_model.get_deepest_since(
+                drawdown_series
+                if not recovery
+                else risk_model.get_drawdown_series(returns)
+            )
+            drawdown_series = pd.concat(
+                {
+                    "Recovery Needed" if recovery else "Drawdown": drawdown_series,
+                    "Deepest Since": since,
+                },
+                axis=1,
+            )
+
         return finalize_dataset(
             dataset=drawdown_series,
             start_date=self._start_date,
@@ -1822,10 +1871,15 @@ class Risk:
         - To Recovery = t(recovery) - t(trough)
         - Length = t(recovery) - t(peak)
         - Recovery Needed = -Drawdown / (1 + Drawdown)
+        - To Trough (Days) = date(trough) - date(peak), likewise To Recovery (Days) and Length (Days)
+        - Length (Years) = Length (Days) / 365.25
 
         The Drawdown is the drawdown series of `get_drawdown_series`. A drawdown runs from the Peak (the last
         period at a high) to the Recovery (the first period back at that high), with its Trough at the lowest
-        Drawdown in between; To Trough, To Recovery and Length count periods.
+        Drawdown in between. To Trough, To Recovery and Length count periods (trading days for daily data),
+        the columns marked (Days) count calendar days between the same dates (the last day of each period for
+        weekly or longer periods), and Length (Years) is Length (Days) in years of 365.25 days. Calendar time
+        compares assets on exchanges with other holidays, and reads as the time an investor waited.
 
         The dates follow pyfolio's drawdown table (peak, valley and recovery dates). QuantStats and ffn
         instead start a drawdown at the first period below the peak and count calendar days. The deepest
@@ -1844,13 +1898,15 @@ class Risk:
         Returns:
             pd.DataFrame: One row per drawdown, indexed by ticker and rank, with the dates of the Peak, Trough
                 and Recovery, the Drawdown as a negative decimal, the gain needed from the trough back to the peak
-                (Recovery Needed) as a positive decimal and, in periods, the time from peak to trough
-                (To Trough), from trough to recovery (To Recovery) and from peak to recovery (Length).
+                (Recovery Needed) as a positive decimal, in periods the time from peak to trough
+                (To Trough), from trough to recovery (To Recovery) and from peak to recovery (Length), the
+                same in calendar days (To Trough (Days), To Recovery (Days), Length (Days)) and Length
+                (Years).
 
         Notes:
         - A drawdown that has not recovered by the end of the window has no Recovery, To Recovery or
-        Length (NaN). Its Recovery Needed is the gain from its trough; the gain still needed from the latest
-        value is the last row of `get_drawdown_series(recovery=True)`.
+        Length, in periods or calendar time (NaN). Its Recovery Needed is the gain from its trough; the gain
+        still needed from the latest value is the last row of `get_drawdown_series(recovery=True)`.
         - Each ticker keeps its own history: a ticker that listed during the window starts at its first close.
         - The table depends on the window: a drawdown that started before the start date is measured from
         the first close of the window.
@@ -1872,17 +1928,17 @@ class Risk:
 
         Which returns:
 
-        |                  | Peak       | Trough     | Recovery   |   Drawdown |   Recovery Needed |   To Trough |   To Recovery |   Length |
-        |:-----------------|:-----------|:-----------|:-----------|-----------:|------------------:|------------:|--------------:|---------:|
-        | ('META', 1)      | 2021-09-07 | 2022-11-03 | 2024-01-19 |    -0.7672 |            3.2955 |         293 |           302 |      595 |
-        | ('META', 2)      | 2025-02-14 | 2025-04-21 | 2025-06-30 |    -0.3416 |            0.5189 |          44 |            48 |       92 |
-        | ('META', 3)      | 2025-08-12 | 2025-11-20 | NaT        |    -0.2537 |            0.34   |          71 |           nan |      nan |
-        | ('NFLX', 1)      | 2021-11-17 | 2022-05-11 | 2024-08-20 |    -0.7593 |            3.1548 |         120 |           571 |      691 |
-        | ('NFLX', 2)      | 2025-06-30 | 2025-12-10 | NaT        |    -0.3076 |            0.4443 |         114 |           nan |      nan |
-        | ('NFLX', 3)      | 2025-02-14 | 2025-04-04 | 2025-04-24 |    -0.1916 |            0.237  |          34 |            13 |       47 |
-        | ('Benchmark', 1) | 2022-01-03 | 2022-10-12 | 2023-12-13 |    -0.245  |            0.3245 |         195 |           294 |      489 |
-        | ('Benchmark', 2) | 2025-02-19 | 2025-04-08 | 2025-06-26 |    -0.1877 |            0.2311 |          34 |            54 |       88 |
-        | ('Benchmark', 3) | 2024-07-16 | 2024-08-05 | 2024-09-19 |    -0.0841 |            0.0918 |          14 |            32 |       46 |
+        |                  | Peak       | Trough     | Recovery   |   Drawdown |   Recovery Needed |   To Trough |   To Recovery |   Length |   To Trough (Days) |   To Recovery (Days) |   Length (Days) |   Length (Years) |
+        |:-----------------|:-----------|:-----------|:-----------|-----------:|------------------:|------------:|--------------:|---------:|-------------------:|---------------------:|----------------:|-----------------:|
+        | ('META', 1)      | 2021-09-07 | 2022-11-03 | 2024-01-19 |    -0.7672 |            3.2955 |         293 |           302 |      595 |                422 |                  442 |             864 |           2.3655 |
+        | ('META', 2)      | 2025-02-14 | 2025-04-21 | 2025-06-30 |    -0.3416 |            0.5189 |          44 |            48 |       92 |                 66 |                   70 |             136 |           0.3723 |
+        | ('META', 3)      | 2025-08-12 | 2025-11-20 | NaT        |    -0.2537 |            0.34   |          71 |           nan |      nan |                100 |                  nan |             nan |         nan      |
+        | ('NFLX', 1)      | 2021-11-17 | 2022-05-11 | 2024-08-20 |    -0.7593 |            3.1548 |         120 |           571 |      691 |                175 |                  832 |            1007 |           2.757  |
+        | ('NFLX', 2)      | 2025-06-30 | 2025-12-10 | NaT        |    -0.3076 |            0.4443 |         114 |           nan |      nan |                163 |                  nan |             nan |         nan      |
+        | ('NFLX', 3)      | 2025-02-14 | 2025-04-04 | 2025-04-24 |    -0.1916 |            0.237  |          34 |            13 |       47 |                 49 |                   20 |              69 |           0.1889 |
+        | ('Benchmark', 1) | 2022-01-03 | 2022-10-12 | 2023-12-13 |    -0.245  |            0.3245 |         195 |           294 |      489 |                282 |                  427 |             709 |           1.9411 |
+        | ('Benchmark', 2) | 2025-02-19 | 2025-04-08 | 2025-06-26 |    -0.1877 |            0.2311 |          34 |            54 |       88 |                 48 |                   79 |             127 |           0.3477 |
+        | ('Benchmark', 3) | 2024-07-16 | 2024-08-05 | 2024-09-19 |    -0.0841 |            0.0918 |          14 |            32 |       46 |                 20 |                   45 |              65 |           0.178  |
         """
         period = period if period else "daily"
 
@@ -1900,9 +1956,8 @@ class Risk:
         decimals = rounding if rounding is not None else self._rounding
 
         if decimals is not None:
-            drawdown_table[["Drawdown", "Recovery Needed"]] = drawdown_table[
-                ["Drawdown", "Recovery Needed"]
-            ].round(decimals)
+            rounded = ["Drawdown", "Recovery Needed", "Length (Years)"]
+            drawdown_table[rounded] = drawdown_table[rounded].round(decimals)
 
         return drawdown_table
 
@@ -5108,8 +5163,8 @@ class Risk:
                 volatility = risk_model.get_volatility(returns, period)
         elif method == "parkinson":
             volatility = realized_volatility_model.get_parkinson_volatility(
-                self._historical_data["daily"]["High"],
-                self._historical_data["daily"]["Low"],
+                self._get_prices("High"),
+                self._get_prices("Low"),
                 period,
             )
         else:
@@ -5120,10 +5175,10 @@ class Risk:
             }
 
             volatility = estimators[method](
-                self._historical_data["daily"]["Open"],
-                self._historical_data["daily"]["High"],
-                self._historical_data["daily"]["Low"],
-                self._historical_data["daily"]["Close"],
+                self._get_prices("Open"),
+                self._get_prices("High"),
+                self._get_prices("Low"),
+                self._get_prices("Close"),
                 period,
             )
 
@@ -5262,10 +5317,10 @@ class Risk:
                 self._historical_data["daily"]["Return"].dropna(how="all") ** 2
             )
         else:
-            open_prices = self._historical_data["daily"]["Open"]
-            high_prices = self._historical_data["daily"]["High"]
-            low_prices = self._historical_data["daily"]["Low"]
-            close_prices = self._historical_data["daily"]["Close"]
+            open_prices = self._get_prices("Open")
+            high_prices = self._get_prices("High")
+            low_prices = self._get_prices("Low")
+            close_prices = self._get_prices("Close")
 
             if estimator == "parkinson":
                 realized_variance = np.log(high_prices / low_prices) ** 2 / (
@@ -5544,11 +5599,7 @@ class Risk:
                 "within_period=False or initialise the Toolkit with an intraday_period."
             )
 
-        close_prices = (
-            self._within_historical_data[period]["Close"]
-            if within_period
-            else self._historical_data[period]["Close"]
-        )
+        close_prices = self._get_prices("Close", period, within_period)
 
         result = market_liquidity_model.get_roll_spread(close_prices)
 
@@ -6402,7 +6453,7 @@ class Risk:
         """
         # The estimator regresses the dispersion of lagged differences on the lag, which only identifies self-affinity on a level series. Feeding it returns, which are already differenced, collapses the exponent towards zero.  # noqa: E501
         # Log prices, as in Di Matteo et al. (2005): their lagged differences are log returns over the lag, whose dispersion does not depend on the price level, whereas price differences grow with the price and tilt the slope on a series that trends over the sample.  # noqa: E501
-        log_prices = np.log(self._historical_data["daily"]["Adj Close"])
+        log_prices = np.log(self._get_prices("Adj Close"))
 
         hurst_exponent = log_prices.apply(
             lambda column: risk_model.get_hurst_exponent(column, max_lag=max_lag)

@@ -18,6 +18,8 @@ AAPL,G&A to Revenue Ratio,,0.0,0.0,0.0
 AAPL,SBC to Revenue Ratio,,0.023,0.0223,0.0256
 AAPL,Deferred Revenue Ratio,,0.0111,0.0102,0.0103
 AAPL,Working Capital Turnover Ratio,,26.8618,-164.8547,-76.5405
+AAPL,Capex Intensity,,0.0287,0.0287,0.0279
+AAPL,Capex to Depreciation,,0.8234,0.9734,0.9577
 AAPL,Current Ratio,,1.2065,0.967,0.9321
 AAPL,Quick Ratio,,0.8489,0.5919,0.5598
 AAPL,Cash Ratio,,0.6652,0.397,0.3671
@@ -47,6 +49,12 @@ AAPL,EBT to EBIT Ratio,,0.9697,0.9762,0.9714
 AAPL,EBIT to Revenue,,0.2839,0.3077,0.3083
 AAPL,Cash Tax Rate,,0.1979,0.1969,0.1643
 AAPL,Tax Rate Divergence,,0.0606,0.0487,0.0095
+AAPL,Gross Profitability,,0.7344,0.9174,0.9641
+AAPL,Operating Profitability,,2.6901,4.3971,3.6507
+AAPL,Cash-Based Operating Profitability,,,0.8499,0.8233
+AAPL,Cash Return on Invested Capital,,0.859,1.068,1.1843
+AAPL,Free Cash Flow Conversion,,1.0935,1.051,1.0723
+AAPL,Free Cash Flow to EBITDA,,0.8418,0.8151,0.8232
 AAPL,Debt-to-Assets Ratio,,0.3835,0.3822,0.3453
 AAPL,Asset Coverage Ratio,,1.8292,1.7138,1.8187
 AAPL,Debt-to-Equity Ratio,,2.0151,2.3646,2.1589
@@ -118,6 +126,8 @@ MSFT,G&A to Revenue Ratio,,0.0328,0.03,0.0329
 MSFT,SBC to Revenue Ratio,,0.0367,0.0372,0.0417
 MSFT,Deferred Revenue Ratio,,0.1246,0.1188,0.1176
 MSFT,Working Capital Turnover Ratio,,3.0299,4.3012,5.3026
+MSFT,Capex Intensity,,0.1159,0.1215,0.1268
+MSFT,Capex to Depreciation,,1.473,1.7023,1.8358
 MSFT,Current Ratio,,2.2758,1.9271,1.7765
 MSFT,Quick Ratio,,2.0926,1.727,1.5507
 MSFT,Cash Ratio,,1.6574,1.279,1.0842
@@ -147,6 +157,12 @@ MSFT,EBT to EBIT Ratio,,0.9618,0.9723,0.9772
 MSFT,EBIT to Revenue,,0.4149,0.4346,0.4317
 MSFT,Cash Tax Rate,,0.0,0.0,0.0
 MSFT,Tax Rate Divergence,,-0.1497,-0.1344,-0.1614
+MSFT,Gross Profitability,,0.6375,0.6893,0.6837
+MSFT,Operating Profitability,,0.8295,0.8928,0.8123
+MSFT,Cash-Based Operating Profitability,,,0.6642,0.6762
+MSFT,Cash Return on Invested Capital,,0.5079,0.5543,0.5046
+MSFT,Free Cash Flow Conversion,,0.9602,0.9049,0.8589
+MSFT,Free Cash Flow to EBITDA,,0.6878,0.6758,0.6224
 MSFT,Debt-to-Assets Ratio,,0.2185,0.1847,0.1561
 MSFT,Asset Coverage Ratio,,3.3948,3.9258,4.6597
 MSFT,Debt-to-Equity Ratio,,0.5331,0.4183,0.3252

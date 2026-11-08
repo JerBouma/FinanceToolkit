@@ -35,7 +35,7 @@ def get_forward_rate(
     Both the spot rates supplied and the forward rate returned are treated as **effective
     annual** rates, i.e. compounded once per year, which is why the maturities appear
     directly as exponents. Note that this is a different convention from
-    `get_par_yield` and `bond_model._get_bond_price_from_curve`, which read the same kind
+    `get_par_yield` and `bond_model.get_bond_price_from_curve`, which read the same kind
     of spot curve as nominal annual rates compounded `frequency` times per year. The two
     coincide at frequency=1; at any other frequency a curve should not be passed to both
     without first restating it, since a 4% nominal semi-annual rate is a 4.04% effective
@@ -110,7 +110,7 @@ def get_par_yield(
     remaining coupons, t_i is the time of the i-th coupon in periods and a is the elapsed
     fraction of the current coupon period (see `bond_model.get_cash_flow_periods`), so
     t_n = years_to_maturity * m. Spot rates are treated as nominal annual rates
-    compounded at `frequency`, consistent with `bond_model._get_bond_price_from_curve`.
+    compounded at `frequency`, consistent with `bond_model.get_bond_price_from_curve`.
 
     For a maturity that is a whole number of periods a = 0 and t_i = i, the textbook
     formula. Otherwise the coupon is the one at which the clean (quoted) price, the

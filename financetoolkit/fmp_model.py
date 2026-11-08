@@ -29,8 +29,6 @@ from financetoolkit.utilities.requests_model import get_request
 logger = logger_model.get_logger()
 
 
-# pylint: disable=no-member,too-many-locals,too-many-lines
-
 RETRY_LIMIT = 12
 
 # Identifiers that look like numbers but are not: inferring their type would drop the
@@ -470,15 +468,10 @@ def get_financial_statement(
         # period it ends.
         financial_statement["periodEndDate"] = period_end_dates.dt.strftime("%Y-%m-%d")
 
-        # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
-        financial_statement["date"] = pd.to_datetime(
-            financial_statement["date"]
-        ) - pd.offsets.Day(1)
-
-        # A fiscal period is labelled with the calendar period holding most of it, at both frequencies, so yearly and quarterly output stay consistent.  # noqa: E501
+        # A fiscal period is labelled with the calendar period holding most of it, at both frequencies, so yearly and quarterly output stay consistent, and identically to the Yahoo Finance path.  # noqa: E501
         financial_statement["date"] = (
             helpers.convert_period_end_dates_to_calendar_periods(
-                period_end_dates=financial_statement["date"],
+                period_end_dates=period_end_dates,
                 quarter=quarter,
                 ticker=ticker,
                 fiscal_year_adjustments=fiscal_year_adjustments,
@@ -1264,14 +1257,11 @@ def get_analyst_estimates(
         try:
             analyst_estimates = analyst_estimates.drop("symbol", axis=1)
 
-            # One day is deducted: a period reported as 2023-07-01 is really 2023Q2.
-            analyst_estimates["date"] = pd.to_datetime(
-                analyst_estimates["date"]
-            ) - pd.offsets.Day(1)
-
-            # Labelled like the financial statements (the calendar period holding most of the
-            # fiscal period), so an estimate sits in the same column as the reported figure it
-            # estimates: NVIDIA's fiscal year ending January 2026 is 2025 in both.
+            # An estimate carries the fiscal period end date of the statement it estimates
+            # (Western Digital's fiscal 2022 ends 2022-07-01 in both) and is labelled like the
+            # financial statements (the calendar period holding most of the fiscal period), so
+            # it sits in the same column as the reported figure it estimates: NVIDIA's fiscal
+            # year ending January 2026 is 2025 in both.
             analyst_estimates["date"] = (
                 helpers.convert_period_end_dates_to_calendar_periods(
                     period_end_dates=analyst_estimates["date"], quarter=quarter
@@ -2050,6 +2040,68 @@ def get_market_risk_premium(api_key: str) -> pd.DataFrame:
     market_risk_premium[premium_columns] = market_risk_premium[premium_columns] / 100
 
     return market_risk_premium
+
+
+def get_sp500_market_value(api_key: str, user_subscription: str = "Free") -> pd.Series:
+    """
+    Obtains the total market value of the S&P 500 companies: the market capitalization of
+    every current constituent (FinancialModelingPrep's S&P 500 constituent list and its
+    market capitalization batch), summed per company. A company with more than one share
+    class in the index (Alphabet, Fox, News Corp) is counted once, as FinancialModelingPrep
+    reports the market capitalization of the whole company for each of its share classes.
+
+    Campbell, Hilscher and Szilagyi (2008) measure a company's size relative to this total
+    (RSIZE), which is why the Models module retrieves it.
+
+    Args:
+        api_key (str): the API Key obtained from https://www.jeroenbouma.com/fmp
+        user_subscription (str, optional): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        pd.Series: The total market value (in dollars) indexed by the date of the market
+        capitalizations, or an empty Series when the constituents or their market
+        capitalizations are not available.
+    """
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://www.jeroenbouma.com/fmp"
+        )
+
+    constituents = _get_records(
+        f"https://financialmodelingprep.com/stable/sp500-constituent?apikey={api_key}",
+        user_subscription,
+    )
+
+    if not {"symbol", "cik"}.issubset(constituents.columns):
+        return pd.Series(dtype=float)
+
+    symbols = constituents["symbol"].dropna().astype(str).tolist()
+    market_caps = []
+    # Batches of 100 keep the URL short; the endpoint has no date range, it returns the
+    # latest market capitalization.
+    for start in range(0, len(symbols), 100):
+        batch = ",".join(symbols[start : start + 100])
+        market_caps.append(
+            _get_records(
+                "https://financialmodelingprep.com/stable/market-capitalization-batch"
+                f"?symbols={batch}&apikey={api_key}",
+                user_subscription,
+            )
+        )
+
+    market_caps = pd.concat(market_caps) if market_caps else pd.DataFrame()
+
+    if not {"symbol", "date", "marketCap"}.issubset(market_caps.columns):
+        return pd.Series(dtype=float)
+
+    companies = market_caps.merge(constituents[["symbol", "cik"]], on="symbol")
+    companies["marketCap"] = pd.to_numeric(companies["marketCap"], errors="coerce")
+    # Every share class of a company carries the company's market capitalization.
+    total = companies.groupby("cik")["marketCap"].max().sum(min_count=1)
+    date = pd.to_datetime(companies["date"]).max()
+
+    return pd.Series({date: total}, dtype=float)
 
 
 def get_commitment_of_traders(

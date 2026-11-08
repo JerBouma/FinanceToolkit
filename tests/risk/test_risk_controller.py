@@ -1,5 +1,4 @@
 """Risk Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 
 import copy
 
@@ -182,6 +181,51 @@ def test_get_gjr_garch_forecast(recorder, risk_module):
     monthly = risk_module.get_gjr_garch_forecast(period="monthly")
     assert monthly.shape == (10, 3)
     assert (monthly > 0).all().all()
+
+
+def test_get_gjr_garch_forecast_monthly_matches_the_arch_package(
+    risk_module, monkeypatch
+):
+    arch = pytest.importorskip("arch")
+    from tests.risk.test_garch_fit import simulate_gjr_garch
+
+    # Twenty years of months simulated well inside the stationarity region (persistence
+    # Alpha + Gamma / 2 + Beta of 0.78 and 0.92 once fitted), so that the fit and its
+    # forecast are well defined on every platform, unlike the fixture's 36 months.
+    months = pd.period_range("2005-01", periods=240, freq="M")
+    returns = pd.DataFrame(
+        {
+            ticker: simulate_gjr_garch(2e-4, 0.05, 0.15, 0.75, n=240, seed=seed)
+            for ticker, seed in (("A", 4), ("B", 10))
+        },
+        index=months,
+    )
+    # The memoized monthly returns are replaced for this test only.
+    monkeypatch.setitem(risk_module._data_cache, ("monthly", False), returns)
+
+    forecast = risk_module.get_gjr_garch_forecast(period="monthly", rounding=12)
+
+    assert forecast.index.tolist() == list(
+        pd.period_range("2025-01", periods=10, freq="M")
+    )
+    for ticker in returns:
+        reference = (
+            arch.arch_model(
+                returns[ticker] * 100,
+                mean="Zero",
+                vol="GARCH",
+                p=1,
+                o=1,
+                q=1,
+                rescale=False,
+            )
+            .fit(disp="off")
+            .forecast(horizon=10)
+            .variance.iloc[-1]
+            .to_numpy()
+            / 1e4
+        )
+        np.testing.assert_allclose(forecast[ticker], reference, rtol=1e-3)
 
 
 def test_get_gjr_garch_parameters(recorder, risk_module):

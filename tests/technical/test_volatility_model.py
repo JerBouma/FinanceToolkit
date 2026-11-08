@@ -6,8 +6,6 @@ import pytest
 from financetoolkit.technicals import volatility_model
 from tests.technical.sample_prices import sample_prices
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_true_range(recorder):
     recorder.capture(

@@ -20,8 +20,6 @@ from financetoolkit.utilities.statistics_model import apply_rounding, to_period_
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
-# pylint: disable=too-many-function-args,too-many-public-methods
 # ruff: noqa: E501
 
 _PERIOD_SYMBOLS = {

@@ -8,8 +8,6 @@ from functools import reduce
 import numpy as np
 import pandas as pd
 
-# pylint: disable=too-many-arguments,too-many-locals
-
 # The coefficients of Model 1 of Dechow, Ge, Larson and Sloan (2011), and the share of firms
 # with a misstatement in their sample, which scales the probability into the F-Score.
 DECHOW_INTERCEPT = -7.893

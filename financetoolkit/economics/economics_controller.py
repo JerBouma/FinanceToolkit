@@ -81,8 +81,6 @@ ASSET_CLASS_PROXIES = {
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
-# pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 
@@ -516,13 +514,13 @@ class Economics:
         Database (GMDB), so they always come from it. For more information see:
         https://www.globalmacrodata.com/documentation.html
 
-        Also known as: GDP, national income, economic growth.
+        Also known as: GDP, national income, economic growth, real GDP, real GDP in USD, cross-country comparable GDP.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
             gmdb_source (bool | None, optional): Whether to retrieve the data from the GMDB. Defaults to None, which falls back to the gmdb_source set on the Economics class (True by default).
-            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. With inflation_adjusted=True, real GDP in US dollars. Always from the GMDB. Defaults to False.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. With inflation_adjusted=True, real GDP in millions of US dollars at constant 2015 prices, converted at the 2015 market exchange rate (not at purchasing power parities), so its growth equals the growth of real GDP in the national currency. Always from the GMDB. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -823,104 +821,6 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Gross Domestic Product Deflator",
-            countries=countries,
-            rolling=rolling,
-            trailing=trailing,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-        )
-
-    @handle_errors
-    def get_real_gross_domestic_product_usd(
-        self,
-        countries: list[str] | str | None = None,
-        rolling: int | None = None,
-        trailing: int | None = None,
-        growth: bool = False,
-        lag: int = 1,
-        standardize: bool = False,
-        rounding: int | None = None,
-        gmdb_forecasts: bool = False,
-    ):
-        """
-        Get the Real Gross Domestic Product expressed in cross-country comparable US Dollars
-        for a variety of countries over time from the Global Macro Database (GMDB). This is the
-        inflation-adjusted GDP of a country converted into US Dollars, which makes it possible to
-        directly compare the economic output of countries that use different currencies without
-        having to perform the currency conversion or inflation adjustment yourself.
-
-        The values are in millions of US dollars at constant 2015 prices, so the 18295020 for
-        the United States in 2015 is a real GDP of 18.3 trillion dollars. The real GDP in the
-        national currency is converted at the 2015 market exchange rate against the dollar,
-        not at purchasing power parities, so a country's level reflects its 2015 exchange
-        rate and its growth equals the growth of its real GDP in its own currency.
-
-        Data comes from the Global Macro Database (GMDB), further information about the
-        variable can be found within https://www.globalmacrodata.com/documentation.html
-
-        Also known as: real GDP in USD, cross-country comparable GDP.
-
-        Args:
-            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
-            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
-            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
-                Database projects, from the IMF's World Economic Outlook, up to five years
-                ahead. Only applies to data from the Global Macro Database. Defaults to
-                False, which ends a series with its last observation.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Real Gross Domestic Product in US Dollars
-
-        As an example:
-
-        ```python
-        from financetoolkit import Economics
-
-        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
-
-        economics.get_real_gross_domestic_product_usd(countries=['United States', 'Japan', 'Germany'])
-        ```
-
-        Which returns:
-
-        |      |   United States |       Japan |     Germany |
-        |:-----|----------------:|------------:|------------:|
-        | 2015 |     1.8295e+07  | 4.53311e+06 | 3.41986e+06 |
-        | 2016 |     1.86279e+07 | 4.56506e+06 | 3.49293e+06 |
-        | 2017 |     1.90857e+07 | 4.63917e+06 | 3.60121e+06 |
-        | 2018 |     1.96519e+07 | 4.67787e+06 | 3.64259e+06 |
-        | 2019 |     2.01596e+07 | 4.66344e+06 | 3.67938e+06 |
-        | 2020 |     1.974e+07   | 4.46369e+06 | 3.51432e+06 |
-        | 2021 |     2.09545e+07 | 4.62279e+06 | 3.65016e+06 |
-        | 2022 |     2.14834e+07 | 4.68435e+06 | 3.719e+06   |
-        | 2023 |     2.21138e+07 | 4.71811e+06 | 3.69391e+06 |
-        | 2024 |     2.27315e+07 | 4.71016e+06 | 3.67648e+06 |
-        | 2025 |     2.32103e+07 | 4.75982e+06 | 3.68916e+06 |
-        """
-
-        real_gross_domestic_product_usd = (
-            gmdb_model.get_real_gross_domestic_product_usd(
-                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
-            )
-        )
-
-        return finalize_dataset(
-            dataset=real_gross_domestic_product_usd,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            indicator_name="Real Gross Domestic Product (USD)",
             countries=countries,
             rolling=rolling,
             trailing=trailing,
@@ -3496,7 +3396,7 @@ class Economics:
         | 2024 |          0.2944 |   0.2732 |  0.3215 |
         | 2025 |          0.2944 |   0.2732 |  0.3215 |
         """
-        trust_in_government = oecd_model.get_trust_in_goverment(
+        trust_in_government = oecd_model.get_trust_in_government(
             start_date=self._start_date, end_date=self._end_date
         )
 
@@ -9970,7 +9870,7 @@ class Economics:
             start=start_date,
             end=self._end_date,
             fill_nan=False,
-            show_ticker_seperation=False,
+            show_ticker_separation=False,
             cache=self._cache,
         )
 
@@ -10005,17 +9905,21 @@ class Economics:
         self,
         commodity: str | list[str] | None,
         contracts: int,
-        constant_maturity: bool,
+        generic: bool,
         start_date: str,
     ) -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
         """
         Collects the forward curve of each commodity with the contract behind every price:
-        the listed contracts as columns, or, with constant_maturity, the positions on the
-        curve of each day (see futures_model.get_constant_maturity_curve).
+        the listed contracts as columns, or, with generic, the positions on the curve of
+        each day (see futures_model.get_generic_curve).
 
-        Yahoo Finance drops a contract once it expires, so the contracts that expired since
-        are added as contracts without prices from the commodity's listing cycle and last
-        trading day rule: the positions after them stay right and theirs are NaN.
+        Yahoo Finance drops a contract once it expires, so every expired month of the
+        commodity's listing cycle (for gold and silver the active cycle, which the generic
+        series rolls through) that it does not return is added as a contract without
+        prices, with its last trading day from the contract specification: the positions
+        after it stay right and its own is NaN. A month that has not expired and is not
+        returned is left out: Yahoo Finance carries the other gold and silver months only
+        shortly before delivery.
 
         Returns:
             dict[str, tuple[pd.DataFrame, pd.DataFrame]]: Per commodity the prices and the
@@ -10026,7 +9930,6 @@ class Economics:
             if isinstance(commodity, str)
             else list(commodity or yfinance_model.COMMODITY_TICKERS)
         )
-        today = pd.Timestamp.today().normalize()
         curves: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {}
 
         for name in names:
@@ -10037,7 +9940,7 @@ class Economics:
             if forward_curve.empty:
                 continue
 
-            if not constant_maturity:
+            if not generic:
                 labels = pd.DataFrame(
                     [forward_curve.columns.to_list()] * len(forward_curve),
                     index=forward_curve.index,
@@ -10068,15 +9971,24 @@ class Economics:
                     or str(month) in forward_curve.columns
                 }
             )
+            today = pd.Timestamp.today().normalize()
+            # Only the months of the active cycle are added back: a placeholder has no first
+            # price, so it counts as listed on every date and an off-cycle month would take a
+            # position on dates before it traded.
+            active_months = futures_model.ACTIVE_MONTHS.get(
+                name, futures_model.CONTRACT_MONTHS[name]
+            )
             expired = [
                 label
                 for label, last_trading_day in last_trading_days.items()
-                if last_trading_day < today and label not in forward_curve.columns
+                if last_trading_day < today
+                and label not in forward_curve.columns
+                and pd.Period(label, freq="M").month in active_months
             ]
             forward_curve = forward_curve.reindex(
                 columns=sorted([*forward_curve.columns, *expired])
             )
-            curves[name] = futures_model.get_constant_maturity_curve(
+            curves[name] = futures_model.get_generic_curve(
                 forward_curve, last_trading_days, contracts
             )
 
@@ -10087,7 +9999,7 @@ class Economics:
         self,
         commodity: str | list[str] | None = None,
         contracts: int = 12,
-        constant_maturity: bool = False,
+        generic: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -10111,11 +10023,13 @@ class Economics:
 
         By default the columns are the contracts listed today, so a past date shows how
         those contracts traded then, not the curve as it stood that day. With
-        constant_maturity=True the columns are the positions on each day's curve instead:
+        generic=True the columns are the positions on each day's curve instead:
         the front (the nearest contract that has not expired on that day), +1, +2 and so on,
         rolling to the next contract the day after the front's last trading day (the
-        generic series, CL1, CL2, ... in Bloomberg notation). The last trading days follow
-        the CME Group contract specifications on the US exchange calendar.
+        generic or nearby series, CL1, CL2, ... in Bloomberg notation). A position is a
+        rank on the curve, not a constant maturity: the front's time to expiry shortens
+        each day and jumps at the roll, as no price is interpolated. The last trading days
+        follow the CME Group contract specifications on the US exchange calendar.
 
         Yahoo Finance only publishes the contracts that still trade: a contract's history
         disappears once it expires, and no free source publishes it (FinancialModelingPrep
@@ -10126,11 +10040,11 @@ class Economics:
         date, the more positions are NaN, until none is left about `contracts` months back.
 
         With growth=True the change is that of each column over `lag` trading days: of a
-        contract, or with constant_maturity of a position, which compares two contracts
+        contract, or with generic of a position, which compares two contracts
         across a roll.
 
-        Also known as: futures term structure, forward curve, generic futures, constant
-        maturity futures.
+        Also known as: futures term structure, forward curve, generic futures, nearby
+        futures.
 
         Args:
             commodity (str | list[str] | None, optional): The commodity, or a list of
@@ -10138,9 +10052,9 @@ class Economics:
                 "Silver", "Copper", "Corn", "Wheat" or "Soybeans". Defaults to None, which
                 retrieves every one of them.
             contracts (int, optional): The number of contracts to return, the nearest
-                listed ones from the current month on, or with constant_maturity the
+                listed ones from the current month on, or with generic the
                 number of positions (the front included). Defaults to 12.
-            constant_maturity (bool, optional): Whether the columns are the positions on
+            generic (bool, optional): Whether the columns are the positions on
                 each day's curve (Front, +1, +2, ...) instead of the contracts listed
                 today. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -10156,7 +10070,7 @@ class Economics:
             pd.DataFrame: A DataFrame indexed by date, with one column per contract
             labeled by its delivery month (e.g. "2026-12"), containing that
             contract's daily closing price over its trading life, or with
-            constant_maturity one column per position ("Front", "+1", ...). Columns are NaN
+            generic one column per position ("Front", "+1", ...). Columns are NaN
             outside the date range the contract actually traded in. With a list of
             commodities (or none given), the columns are the commodity and the contract.
 
@@ -10168,7 +10082,7 @@ class Economics:
         economics = Economics(start_date='2026-10-13', end_date='2026-10-23')
 
         economics.get_commodity_forward_curve(
-            "Crude Oil", contracts=4, constant_maturity=True
+            "Crude Oil", contracts=4, generic=True
         )
         ```
 
@@ -10191,9 +10105,7 @@ class Economics:
             if growth
             else self._start_date
         )
-        curves = self._get_commodity_curves(
-            commodity, contracts, constant_maturity, start_date
-        )
+        curves = self._get_commodity_curves(commodity, contracts, generic, start_date)
 
         # Each commodity's changes are taken over its own trading days.
         commodity_forward_curve = {
@@ -10207,7 +10119,7 @@ class Economics:
                 rounding=rounding,
                 axis="rows",
                 row_slice=True,
-                dropna=constant_maturity,
+                dropna=generic,
             )
             for name, (prices, _) in curves.items()
         }
@@ -10221,14 +10133,14 @@ class Economics:
     def get_commodity_term_structure(
         self,
         commodity: str | list[str] | None = None,
-        constant_maturity: bool = True,
+        generic: bool = True,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
         Get the term structure of a commodity futures curve per day: the front contract,
         the 12-month calendar spread between the front and the last contract of the
         12-month strip that starts with it (in price and in percent), the annualised roll
-        yield and whether the curve is in backwardation or contango.
+        yield and whether the curve is in backwardation, contango or flat.
 
         The far contract is the furthest one delivering less than 12 months after the
         front: for a December 2026 front of a monthly listed commodity (crude oil, natural
@@ -10251,11 +10163,11 @@ class Economics:
         months between both delivery months.
 
         By default the front of each day is the nearest contract that had not expired on
-        that day (see get_commodity_forward_curve with constant_maturity=True), so the
+        that day (see get_commodity_forward_curve with generic=True), so the
         spread is a time series of the curve as it stood each day. Yahoo Finance drops a
         contract once it expires, so on the days whose front has expired since, Front, the
         Spread, Slope and Roll Yield are NaN while Front Contract names the contract.
-        constant_maturity=False instead takes today's front and far contract on every day
+        generic=False instead takes today's front and far contract on every day
         (e.g. December 2026 against November 2027 for crude oil): a fixed calendar spread
         with its full history.
 
@@ -10265,7 +10177,7 @@ class Economics:
             commodity (str | list[str] | None, optional): The commodity, or a list of
                 them: "Crude Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn",
                 "Wheat" or "Soybeans". Defaults to None, which retrieves every one of them.
-            constant_maturity (bool, optional): Whether the front and far contract are
+            generic (bool, optional): Whether the front and far contract are
                 those of each day's curve, instead of today's. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
@@ -10275,7 +10187,8 @@ class Economics:
         Returns:
             pd.DataFrame: Per date the Front Contract and Far Contract (delivery months),
             their prices Front and Far, the Months between them, the Spread, Slope and Roll
-            Yield (decimals) and the Structure ("Backwardation" or "Contango"). With a list
+            Yield (decimals) and the Structure ("Backwardation", "Contango" or "Flat" when
+            the front and far contract trade at the same price). With a list
             of commodities (or none given), the columns are the commodity and the field.
 
         As an example:
@@ -10303,9 +10216,7 @@ class Economics:
         | 2026-11-05 | 2026-12          |   90.52 | 2027-11        | 75.11 |       11 |    15.41 | -0.1702 |       0.2036 | Backwardation |
         | 2026-11-06 | 2026-12          |   90.83 | 2027-11        | 76.42 |       11 |    14.41 | -0.1586 |       0.1884 | Backwardation |
         """
-        curves = self._get_commodity_curves(
-            commodity, 12, constant_maturity, self._start_date
-        )
+        curves = self._get_commodity_curves(commodity, 12, generic, self._start_date)
 
         term_structures = {}
 
@@ -10527,19 +10438,6 @@ class Economics:
             row_slice=True,
         )
 
-    def _require_api_key(self) -> None:
-        """Warns and raises when a FinancialModelingPrep method is used without a key."""
-        if not self._api_key:
-            logger.warning(
-                "No FinancialModelingPrep API key found. The economic calendar and the market "
-                "risk premium require a key to access, obtain one (with 15% off) at "
-                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
-            )
-            raise ValueError(
-                "A FinancialModelingPrep API key is required for this data. Obtain one at "
-                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
-            )
-
     @handle_errors
     def get_economic_calendar(
         self,
@@ -10622,7 +10520,7 @@ class Economics:
         | 2026-09-04 12:30:00 | United States | Non Farm Payrolls (Aug)     |     21     |     56     |  162     |
         | 2026-09-04 12:30:00 | United States | Unemployment Rate (Aug)     |      0.041 |      0.041 |    0.041 |
         """
-        self._require_api_key()
+        helpers.require_api_key(self._api_key, "the economic calendar")
 
         return economics_fmp_model.get_economic_calendar(
             api_key=self._api_key,
@@ -10682,7 +10580,7 @@ class Economics:
         | Brazil        | South America |                 0.0324 |                      0.0747 |
         | India         | Asia          |                 0.0285 |                      0.0708 |
         """
-        self._require_api_key()
+        helpers.require_api_key(self._api_key, "the market risk premium")
 
         # Published per country rather than per ticker, so it is one cache entry, the
         # same one Toolkit.get_market_risk_premium uses.

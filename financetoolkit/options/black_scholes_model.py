@@ -24,8 +24,6 @@ _GAUSS_LEGENDRE = {
     for points in (3, 6, 10)
 }
 
-# pylint: disable=too-many-arguments,too-many-locals
-
 
 @np.errstate(divide="ignore", invalid="ignore")
 def get_d1(

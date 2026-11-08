@@ -7,8 +7,6 @@ import re
 import numpy as np
 import pandas as pd
 
-# pylint: disable=too-many-locals
-
 # The decay parameters (in years) the fits search over, on logarithmic grids. For every grid
 # point the betas follow exactly from linear least squares; around the best point the search
 # then zooms in, on a 7 by 7 grid that shrinks threefold each round, until the decays are

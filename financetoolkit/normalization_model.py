@@ -19,8 +19,6 @@ from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-locals, broad-exception-caught
-
 
 def initialize_statements_and_normalization(
     balance: pd.DataFrame,

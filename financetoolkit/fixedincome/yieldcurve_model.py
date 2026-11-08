@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.fixedincome import bond_model
 
-# pylint: disable=unsubscriptable-object
-
 
 def get_forward_rate(
     near_rate: float | pd.Series,

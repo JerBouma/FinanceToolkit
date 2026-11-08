@@ -5,8 +5,6 @@ import pytest
 
 from financetoolkit.ratios import valuation_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_earnings_per_share(recorder):
     recorder.capture(

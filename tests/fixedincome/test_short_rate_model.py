@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.fixedincome import short_rate_model
 
-# pylint: disable=missing-function-docstring
-
 ZERO_MATURITIES = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30.0])
 ZERO_RATES = np.array(
     [0.04, 0.041, 0.042, 0.043, 0.044, 0.045, 0.046, 0.047, 0.049, 0.05]

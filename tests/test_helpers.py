@@ -499,3 +499,98 @@ def test_round_half_up_rounds_a_half_away_from_zero():
     assert helpers.round_half_up(0.125, 2) == 0.13
     assert helpers.round_half_up(Decimal("17015150") / 1000, 1) == 17015.2
     assert pd.isna(helpers.round_half_up(float("nan"), 2))
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (None, []),
+        ("", []),
+        (" a ,, b ,", ["a", "b"]),
+        ([" a", "b ", "", None], ["a", "b"]),
+        (("a",), ["a"]),
+        ([1, 5, 10], [1, 5, 10]),
+        (5, [5]),
+        (0.5, [0.5]),
+        (pd.Index(["a", "b"]), ["a", "b"]),
+    ],
+)
+def test_split_values_returns_a_list_of_the_given_values(values, expected):
+    assert helpers.split_values(values) == expected
+
+
+# Fiscal period ends as FinancialModelingPrep reports them (the actual last day) next to the
+# month end Yahoo Finance reports for the same period, with the calendar label both get.
+FISCAL_PERIOD_ENDS = [
+    # ticker, quarter, FinancialModelingPrep, Yahoo Finance, label
+    ("AAPL", False, "2025-09-27", "2025-09-30", "2025"),
+    ("NVDA", False, "2026-01-25", "2026-01-31", "2025"),
+    ("MSFT", False, "2025-06-30", "2025-06-30", "2025"),
+    ("WMT", False, "2026-01-31", "2026-01-31", "2025"),
+    ("COST", False, "2023-09-03", "2023-08-31", "2023"),
+    ("WDC", False, "2022-07-01", "2022-06-30", "2022"),
+    ("HD", False, "2026-02-01", "2026-01-31", "2025"),
+    ("TGT", False, "2024-02-03", "2024-01-31", "2023"),
+    ("AAPL", True, "2025-12-27", "2025-12-31", "2025Q4"),
+    ("NVDA", True, "2025-10-26", "2025-10-31", "2025Q3"),
+    ("COST", True, "2025-05-11", "2025-05-31", "2025Q2"),
+    ("WDC", True, "2026-01-02", "2025-12-31", "2025Q4"),
+    ("HD", True, "2025-08-03", "2025-07-31", "2025Q2"),
+    ("HD", True, "2026-05-03", "2026-04-30", "2026Q1"),
+    ("TGT", True, "2025-11-01", "2025-10-31", "2025Q3"),
+    ("TGT", True, "2026-08-01", "2026-07-31", "2026Q2"),
+    ("LOW", True, "2025-08-01", "2025-07-31", "2025Q2"),
+    ("DG", True, "2026-05-01", "2026-04-30", "2026Q1"),
+]
+
+
+@pytest.mark.parametrize(
+    "ticker, quarter, fmp_date, yahoo_date, label", FISCAL_PERIOD_ENDS
+)
+def test_both_sources_label_a_fiscal_period_alike(
+    ticker, quarter, fmp_date, yahoo_date, label
+):
+    fmp_label, yahoo_label = helpers.convert_period_end_dates_to_calendar_periods(
+        pd.to_datetime([fmp_date, yahoo_date]), quarter=quarter
+    )
+
+    assert str(fmp_label) == str(yahoo_label) == label, ticker
+
+
+def test_consecutive_52_53_week_quarters_keep_their_own_calendar_quarter():
+    # Home Depot's quarters end on a Sunday a few days into August, November, February and May.
+    dates = pd.to_datetime(["2020-05-03", "2020-08-02", "2020-11-01", "2021-01-31"])
+    adjustments = {}
+
+    labels = helpers.convert_period_end_dates_to_calendar_periods(
+        dates, quarter=True, ticker="HD", fiscal_year_adjustments=adjustments
+    )
+
+    assert [str(label) for label in labels] == ["2020Q1", "2020Q2", "2020Q3", "2020Q4"]
+    # Each quarter ends in the month after a calendar quarter (April, July, October, January).
+    assert adjustments["HD"] == [
+        {"fiscal_year": fiscal, "calendar_year": calendar}
+        for fiscal, calendar in [
+            ("2020Q2", "2020Q1"),
+            ("2020Q3", "2020Q2"),
+            ("2020Q4", "2020Q3"),
+            ("2021Q1", "2020Q4"),
+        ]
+    ]
+
+
+def test_twelve_week_quarters_ending_later_in_a_month_stay_in_that_month():
+    # Costco's 12-week quarters ending 12 February and 7 May 2023.
+    labels = helpers.convert_period_end_dates_to_calendar_periods(
+        pd.to_datetime(["2023-02-12", "2023-05-07"]), quarter=True
+    )
+
+    assert [str(label) for label in labels] == ["2023Q1", "2023Q2"]
+
+
+def test_a_fiscal_year_ending_in_the_first_days_of_june_belongs_to_the_previous_year():
+    labels = helpers.convert_period_end_dates_to_calendar_periods(
+        pd.to_datetime(["2023-06-05", "2023-06-06"]), quarter=False
+    )
+
+    assert [str(label) for label in labels] == ["2022", "2023"]

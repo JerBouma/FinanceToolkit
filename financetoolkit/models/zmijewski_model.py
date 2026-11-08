@@ -5,6 +5,8 @@ __docformat__ = "google"
 import pandas as pd
 from scipy.stats import norm
 
+from financetoolkit.utilities.statistics_model import drop_non_finite
+
 
 def get_net_income_to_total_assets_ratio(
     net_income: float | pd.Series | pd.DataFrame,
@@ -31,7 +33,7 @@ def get_net_income_to_total_assets_ratio(
     - A lower (or negative) ratio indicates weaker profitability, which raises the Zmijewski Score and,
     in turn, the estimated probability of financial distress.
     """
-    return net_income / total_assets
+    return drop_non_finite(net_income / total_assets)
 
 
 def get_total_liabilities_to_total_assets_ratio(
@@ -59,7 +61,7 @@ def get_total_liabilities_to_total_assets_ratio(
     - A higher ratio indicates higher leverage, which raises the Zmijewski Score and, in turn, the
     estimated probability of financial distress.
     """
-    return total_liabilities / total_assets
+    return drop_non_finite(total_liabilities / total_assets)
 
 
 def get_current_assets_to_current_liabilities_ratio(
@@ -88,7 +90,7 @@ def get_current_assets_to_current_liabilities_ratio(
     - This is the standard Current Ratio. Within the Zmijewski Score it carries a small negative
     coefficient, so a higher (stronger) liquidity ratio slightly lowers the score.
     """
-    return current_assets / current_liabilities
+    return drop_non_finite(current_assets / current_liabilities)
 
 
 def get_zmijewski_score(

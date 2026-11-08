@@ -6,8 +6,6 @@ from scipy import stats
 
 from financetoolkit.risk import copula_model
 
-# pylint: disable=missing-function-docstring
-
 INDEPENDENCE_TOLERANCE = 0.02
 STUDENT_T_TAIL_DEPENDENCE_MINIMUM = 0.3
 STUDENT_T_GAUSSIAN_AGREEMENT_TOLERANCE = 0.1

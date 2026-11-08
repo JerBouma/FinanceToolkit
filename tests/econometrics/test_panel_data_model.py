@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.econometrics import panel_data_model, regression_model
 
-# pylint: disable=missing-function-docstring
-
 
 def _make_panel(
     n_entities: int,

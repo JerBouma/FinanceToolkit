@@ -7,8 +7,6 @@ from scipy.stats import norm
 
 from financetoolkit.models import credit_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_merton_model_solves_both_equations():
     result = credit_model.get_merton_model(100, 0.4, 80, 0.04)

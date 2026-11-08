@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.etf.etf_controller import ETF
 
-# pylint: disable=missing-function-docstring
-
 
 @pytest.fixture(name="etf")
 def fixture_etf():

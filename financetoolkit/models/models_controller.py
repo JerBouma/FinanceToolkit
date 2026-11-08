@@ -12,6 +12,7 @@ from financetoolkit.helpers import LazyDict
 from financetoolkit.models import (
     altman_model,
     beneish_model,
+    chs_model,
     credit_model,
     damodaran_model,
     dupont_model,
@@ -43,7 +44,6 @@ from financetoolkit.utilities.statistics_model import (
     finalize_dataset,
 )
 
-# pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
 # ruff: noqa: E501
 
 
@@ -72,6 +72,7 @@ FACTOR_COLLECTIONS = {
         "get_grover_score",
         "get_fulmer_h_score",
         "get_taffler_z_score",
+        "get_campbell_hilscher_szilagyi_score",
         "get_dechow_f_score",
         "get_montier_c_score",
         "get_mohanram_g_score",
@@ -112,6 +113,9 @@ class Models:
         ) = None,
         country_risk_premiums: pd.Series | Callable[[], pd.Series] | None = None,
         period_end_dates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
+        sp500_function: (
+            Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
+        ) = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -123,7 +127,9 @@ class Models:
 
         Args:
             tickers (list[str] | Callable[[], list[str]]): The ticker(s) to use for the models.
-            historical_data (dict[str, pd.DataFrame]): The historical data per period.
+            historical_data (dict[str, pd.DataFrame]): The historical data per period, and
+                under "lookback" the daily data from a year before the start date when
+                available.
             risk_free_rate_data (dict[str, pd.DataFrame]): The risk free rate data per period.
             balance (pd.DataFrame | Callable[[], pd.DataFrame]): The balance sheet data.
             income (pd.DataFrame | Callable[[], pd.DataFrame]): The income statement data.
@@ -142,6 +148,12 @@ class Models:
                 the periods as columns (the filing days with point_in_time). get_factor_analysis
                 applies each period's model values from that day on. Defaults to None, which
                 applies them from the end of the calendar period the column is labelled with.
+            sp500_function (Callable | None, optional): Retrieves the S&P 500 between two
+                dates for get_campbell_hilscher_szilagyi_score: its daily price and total
+                return index (the columns "Price Index" and "Total Return Index", with a
+                DatetimeIndex) and the latest total market value of its companies (a Series
+                with the date as index). Defaults to None, which leaves the excess returns
+                and the relative size NaN.
 
         As an example:
 
@@ -180,6 +192,7 @@ class Models:
         self._peer_function = peer_function
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
+        self._sp500_function = sp500_function
 
         # Historical Data
         self._historical_data = historical_data
@@ -1677,7 +1690,8 @@ class Models:
         one: with quarterly data the last four quarters are summed. Setting `trailing` with yearly data sums
         several years into one base cash flow, which logs a warning.
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
-        and the valuation is not calculated.
+        and the valuation is not calculated. Within 2 percentage points of it the valuation is calculated
+        with a warning, as a tenth of a percentage point on either rate then moves it by about 5%.
         - The Total Debt, Cash and Cash Equivalents and Short Term Investments are those of the most
         recent period. Short Term Investments are added back with the cash, the same cash and marketable
         securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
@@ -2306,7 +2320,7 @@ class Models:
         return dividends_per_share
 
     @handle_errors
-    def get_gorden_growth_model(
+    def get_gordon_growth_model(
         self,
         rate_of_return: float | list | dict[str, float] | None = None,
         growth_rate: float | list | dict[str, float] | None = None,
@@ -2338,6 +2352,10 @@ class Models:
         The assumption of constant growth of dividends is often unrealistic. In reality, dividends may fluctuate
         or even be suspended. Therefore, the Gordon Growth Model should be used with caution and in conjunction
         with other valuation methods.
+
+        The Rate of Return must exceed the growth rate; periods where it doesn't are left out with a
+        warning. Within 2 percentage points of it the value is calculated with a warning, as a tenth of a
+        percentage point on either rate then moves it by about 5%.
 
         Also known as: Gordon Growth Model, DDM, dividend discount model, GGM.
 
@@ -2385,7 +2403,7 @@ class Models:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_gorden_growth_model()
+        toolkit.models.get_gordon_growth_model()
         ```
 
         Which returns:
@@ -2433,16 +2451,16 @@ class Models:
             rates, growth_rates, "rate of return"
         )
 
-        gorden_growth_model: dict[str, dict[str, float]] = {}
+        gordon_growth_model: dict[str, dict[str, float]] = {}
 
         for ticker in self._tickers:
-            gorden_growth_model[ticker] = {}
+            gordon_growth_model[ticker] = {}
 
             for period in dividends_per_share.index:
                 if not exceeds.loc[ticker, period]:
                     continue
-                gorden_growth_model[ticker][period] = (
-                    intrinsic_model.get_gorden_growth_model(
+                gordon_growth_model[ticker][period] = (
+                    intrinsic_model.get_gordon_growth_model(
                         dividends_per_share=dividends_per_share.loc[period, ticker],
                         rate_of_return=rates.loc[ticker, period],
                         growth_rate=growth_rates.loc[ticker, period],
@@ -2455,8 +2473,8 @@ class Models:
                 continue
 
             for distance, period in enumerate(projected_periods, start=1):
-                gorden_growth_model[ticker][period] = (
-                    intrinsic_model.get_gorden_growth_model(
+                gordon_growth_model[ticker][period] = (
+                    intrinsic_model.get_gordon_growth_model(
                         dividends_per_share=dividends_per_share.loc[
                             last_known_period, ticker
                         ]
@@ -2466,13 +2484,13 @@ class Models:
                     )
                 )
 
-        gorden_growth_model_df = pd.DataFrame(gorden_growth_model).dropna(how="all")
+        gordon_growth_model_df = pd.DataFrame(gordon_growth_model).dropna(how="all")
 
-        gorden_growth_model_df = apply_rounding(
-            gorden_growth_model_df, rounding if rounding is not None else self._rounding
+        gordon_growth_model_df = apply_rounding(
+            gordon_growth_model_df, rounding if rounding is not None else self._rounding
         )
 
-        return gorden_growth_model_df.loc[self._start_date :]
+        return gordon_growth_model_df.loc[self._start_date :]
 
     @handle_errors
     def get_two_stage_dividend_discount_model(
@@ -2544,7 +2562,9 @@ class Models:
         - The results are highly dependent on the input. Therefore, think carefully about
         each input parameter to ensure the results are accurate (given your beliefs).
         - The Rate of Return must be greater than the Stable Growth Rate, otherwise the
-        Terminal Value formula divides by a non-positive number.
+        Terminal Value formula divides by a non-positive number. Within 2 percentage points of
+        it the value is calculated with a warning, as a tenth of a percentage point on either
+        rate then moves it by about 5%.
         - The base dividend used for the projection is the annual Dividends Per Share of the last complete
         period for each ticker: the last complete year, or with quarterly data the sum of the last four
         complete quarters, since the rates are annual and each projection period is a year. The current,
@@ -2685,7 +2705,9 @@ class Models:
 
         Notes:
         - The results depend heavily on the inputs, in particular the high growth rate and
-        how long it lasts.
+        how long it lasts. A rate of return within 2 percentage points of the stable growth
+        rate is valued with a warning, as a tenth of a percentage point on either rate then
+        moves the value by about 5%.
         - The H-Model is close to the exact value of a linearly declining growth rate when
         the high-growth period is short or the gap between the growth rates is small, and
         overstates it as either grows.
@@ -3156,7 +3178,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
                 which shows all columns.
 
@@ -3206,6 +3230,10 @@ class Models:
         | NFLX |  2.379  |  2.8961 |  3.3806 |  4.3943 | 5.2949 |
         | UBER | -2.0375 | -3.3028 | -1.6181 | -0.0662 | 1.0641 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         if model not in altman_model.ALTMAN_COEFFICIENTS:
             raise ValueError(
                 f"Invalid model {model!r}. Please choose from: "
@@ -3433,7 +3461,9 @@ class Models:
         Also known as: Piotroski F-score, financial strength, quality score.
 
         Args:
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all columns
                 will be shown. Defaults to None.
 
@@ -3466,6 +3496,10 @@ class Models:
         | GM   |      6 |      6 |      7 |      5 |
         | TSLA |      8 |      3 |      4 |      5 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         piotroski_score = {}
 
         # Every change-based criterion compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the signal.  # noqa: E501
@@ -3715,7 +3749,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -3763,6 +3799,10 @@ class Models:
         | DIS   | -2.5143 | -2.5357 | -2.6392 | -2.6963 | -2.595  |
         | NFLX  | -1.6697 | -1.3345 | -2.5628 | -2.3319 | -2.1611 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         beneish_m_score = {}
 
         # Every index compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the score.  # noqa: E501
@@ -3977,7 +4017,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4008,8 +4050,9 @@ class Models:
         - Ohlson, James A. "Financial Ratios and the Probabilistic Prediction of Bankruptcy." Journal of
         Accounting Research, Vol. 18, No. 1, 1980, pp. 109-131.
 
-        Note that the first period is NaN because the Change in Net Income and Negative Income
-        Indicator components require a prior period to compare against.
+        Note that the first year is NaN because the Change in Net Income and Negative Income
+        Indicator components require a prior year to compare against. On quarterly data both
+        compare with the same quarter a year earlier.
 
         As an example:
 
@@ -4034,6 +4077,10 @@ class Models:
         | NCLH | -4.4192 | -4.1038 | -5.0639 | -5.269  | -4.9984 |
         | RCL  | -4.9997 | -5.0496 | -6.2194 | -6.3642 | -6.6839 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         ohlson_o_score = {}
 
         current_assets = (
@@ -4133,15 +4180,21 @@ class Models:
             )
         )
 
+        # Ohlson defines both terms on the last two years, so quarterly data is compared with the
+        # same quarter a year earlier, as Piotroski and Beneish do.
+        comparison_lag = 4 if self._quarterly else 1
+
         ohlson_o_score["Negative Income Indicator"] = (
             ohlson_model.get_negative_income_indicator(
                 net_income=net_income,
+                lag=comparison_lag,
             )
         )
 
         ohlson_o_score["Change in Net Income"] = (
             ohlson_model.get_change_in_net_income_ratio(
                 net_income=net_income,
+                lag=comparison_lag,
             )
         )
 
@@ -4234,7 +4287,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4277,6 +4332,10 @@ class Models:
         | DAL | 1.017  | 0.7425 | 0.2026 | -0.0177 | -0.3885 |
         | UAL | 1.0493 | 0.7082 | 0.4288 |  0.1763 |  0.0073 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         zmijewski_score = {}
 
         current_assets = (
@@ -4417,7 +4476,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4458,6 +4519,10 @@ class Models:
         | KSS | 1.2226 | 0.5896 | 0.809  | 0.6373 | 0.759  |
         | M   | 1.2937 | 1.1721 | 0.7495 | 0.9653 | 1.015  |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         springate_score = {}
 
         current_assets = (
@@ -4603,7 +4668,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4646,6 +4713,10 @@ class Models:
         | GM   | 0.2379 | 0.2474 | 0.2157 | 0.2846 |  0.1825 |
         | STLA | 0.477  | 0.5941 | 0.5796 | 0.2001 | -0.3018 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         grover_score = {}
 
         current_assets = (
@@ -4778,7 +4849,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4830,6 +4903,10 @@ class Models:
         | DIS   | 10.8945 | 11.5241 | 12.0105 | 12.4096 | 12.7101 |
         | FOXA  | 10.9776 | 11.0388 | 10.9996 | 11.0274 | 11.8441 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         fulmer_h_score = {}
 
         current_assets = (
@@ -5082,7 +5159,8 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation: flows are
-                summed and balances averaged over it. Defaults to None.
+                summed and balances averaged over it. Defaults to None, which is 4 on quarterly data (a
+                trailing twelve months), as the score was estimated on yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -5129,6 +5207,10 @@ class Models:
         | KSS |   0.4845 | 5.7852 | -0.0302 | 2.4432 | 0.1935 |
         | M   | -11.3244 | 3.8969 |  3.4676 | 0.2883 | 2.4301 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         taffler_score = {}
 
         def balance_item(item: str) -> pd.DataFrame:
@@ -6814,6 +6896,308 @@ class Models:
 
         return filter_columns(
             merton.loc[:, self._start_date : self._end_date], show_columns
+        )
+
+    @handle_errors
+    def get_campbell_hilscher_szilagyi_score(
+        self,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the probability of failure of Campbell, Hilscher and Szilagyi (2008), a
+        logit model that combines accounting figures with market data to predict failure: a
+        bankruptcy filing, a delisting or a D (default) rating. It measures profitability
+        and leverage against the market value of the assets rather than the book value, and
+        adds the excess return of the shares, their volatility, the company's size, its
+        cash, its market-to-book ratio and its share price. In the paper it predicts failure
+        better than Shumway's (2001) model and than the Merton distance to default.
+
+        The model is the 12-month-ahead logit of Table IV, column (3), of the paper:
+
+            - LPFD = -9.164 - 20.264 NIMTAAVG + 1.416 TLMTA - 7.129 EXRETAVG + 1.411 SIGMA
+              - 0.045 RSIZE - 2.132 CASHMTA + 0.075 MB - 0.058 PRICE
+            - Failure Probability = 1 / (1 + e^(-LPFD))
+
+        with:
+
+            - MTA = Market Value of Equity + Total Liabilities (the market value of total
+              assets)
+            - NIMTA = Quarterly Net Income / MTA, and NIMTAAVG its average over four quarters
+              with weights that halve every quarter: (1 - φ³) / (1 - φ¹²) × (NIMTA(t) +
+              φ³ NIMTA(t-1) + φ⁶ NIMTA(t-2) + φ⁹ NIMTA(t-3)), φ = 2^(-1/3)
+            - EXRET = ln(1 + Return) - ln(1 + S&P 500 Return) per month, and EXRETAVG its
+              average over twelve months: (1 - φ) / (1 - φ¹²) × (EXRET(t) + φ EXRET(t-1) +
+              ... + φ¹¹ EXRET(t-11))
+            - TLMTA = Total Liabilities / MTA
+            - CASHMTA = Cash and Short Term Investments / MTA
+            - MB = Market Value of Equity / Adjusted Book Equity, where Adjusted Book Equity =
+              Book Equity + 0.1 × (Market Value of Equity - Book Equity) (Cohen, Polk and
+              Vuolteenaho, 2003), and a value that is still not positive becomes 1
+            - SIGMA = sqrt(252 / (N - 1) × Σ r²), the annualized volatility around zero of
+              the N daily returns of the three months before, NaN with fewer than five
+              non-zero returns
+            - RSIZE = ln(Market Value of Equity / Total Market Value of the S&P 500)
+            - PRICE = ln(min(Share Price, 15))
+
+        Book Equity is Total Shareholder Equity plus Deferred Tax Liabilities minus Preferred
+        Stock (Davis, Fama and French, 2000), the latter two counted as zero when not
+        reported. The market value of equity is the closing price times the diluted
+        weighted average shares, the returns are total returns (Adj Close) against the S&P
+        500 total return index (^SP500TR), and every market variable is measured on the day
+        each period's figures apply from (the fiscal period end, or the filing day with
+        point_in_time): no market data after that day is used.
+
+        The probability is that of failing in the month 12 months ahead, given that the
+        company survives until then. It is a monthly probability, not the probability of
+        failing within a year. For comparison, between 0.4% and 3.7% of the companies in the
+        paper's sample failed per year from 1983 to 2003 (Table I).
+
+        Also known as: CHS model, failure probability, distress risk, default probability, LPFD.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the eight variables as they enter the model,
+            the CHS Score (LPFD) and the Failure Probability (a decimal).
+
+        Notes:
+            - Winsorization: the paper winsorizes every variable at the 5th and 95th
+              percentiles of the monthly cross-section of all US companies, which a
+              calculation per company cannot repeat. Each variable (NIMTA per quarter, EXRET
+              per month) is clipped instead to the range the winsorized variables span in
+              the paper's full sample (Table II, minimum and maximum): NIMTA -0.069 to 0.028,
+              TLMTA 0.036 to 0.923, EXRET -0.243 to 0.218, RSIZE -13.568 to -6.773, SIGMA
+              0.153 to 1.353, CASHMTA 0.002 to 0.358, MB 0.358 to 6.471 and PRICE -0.065 to
+              2.708. The variables are shown clipped, as they enter the score; a company
+              larger than about 0.1% of the S&P 500 has the largest RSIZE the paper used.
+            - RSIZE: the total market value of the S&P 500 is the sum of the latest market
+              capitalizations of its current companies (FinancialModelingPrep, each company
+              once), scaled back to each date with the S&P 500 price index (^GSPC). This
+              holds the companies and share counts of the latest date: changes in the index
+              membership and share counts that S&P offsets with its divisor are not
+              followed, and the index weighs float-adjusted shares while the total counts all
+              shares. As RSIZE enters with a coefficient of -0.045, an error of 5% in the
+              total moves the score by about 0.002. Without an API key that has access to
+              the constituents, RSIZE and the probability are NaN.
+            - On yearly statements NIMTAAVG is a quarter of the yearly net income over the
+              market value of total assets at the year end, equal weights for the four
+              quarters instead of weights that halve every quarter; on quarterly statements
+              it is calculated as in the paper. A missing quarter or month leaves the average
+              NaN where the paper fills it with the cross-sectional mean.
+            - PRICE uses the split-adjusted closing price, so for a company that split its
+              shares (or reverse-split them) after the period, the price differs from the
+              price traded then by the split ratio, which matters only below $15.
+            - The paper lags the accounting figures by two months so they are known; set
+              point_in_time on the Toolkit to measure on the filing day instead of the
+              fiscal period end.
+            - The coefficients were estimated on US companies from 1963 to 2003 with the S&P
+              500 as the market. For a company listed in another currency, its market value
+              is compared with the dollar total of the S&P 500, which moves RSIZE by the log
+              of the exchange rate (about 0.004 on the score for the euro).
+
+        References:
+        - Campbell, J.Y., Hilscher, J. and Szilagyi, J. (2008). "In Search of Distress Risk."
+          The Journal of Finance, 63(6), 2899-2939.
+        - Cohen, R.B., Polk, C. and Vuolteenaho, T. (2003). "The Value Spread." The Journal
+          of Finance, 58(2), 609-641.
+        - Davis, J.L., Fama, E.F. and French, K.R. (2000). "Characteristics, Covariances, and
+          Average Returns: 1929 to 1997." The Journal of Finance, 55(1), 389-406.
+        - Shumway, T. (2001). "Forecasting Bankruptcy More Accurately: A Simple Hazard
+          Model." The Journal of Business, 74(1), 101-124.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_campbell_hilscher_szilagyi_score().loc["F"]
+        ```
+
+        Which returns:
+
+        |                                        |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:---------------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | Net Income to Market Assets (NIMTAAVG) |  0.0153 | -0.0019 |  0.0039 |  0.0052 | -0.0067 |
+        | Liabilities to Market Assets (TLMTA)   |  0.7133 |  0.82   |  0.8239 |  0.8579 |  0.8291 |
+        | Excess Return (EXRETAVG)               |  0.0573 | -0.0308 | -0.007  | -0.037  |  0.015  |
+        | Volatility (SIGMA)                     |  0.4477 |  0.4187 |  0.4069 |  0.3133 |  0.3746 |
+        | Relative Size (RSIZE)                  | -6.773  | -6.773  | -6.7827 | -7.2053 | -7.0859 |
+        | Cash to Market Assets (CASHMTA)        |  0.1697 |  0.1699 |  0.1436 |  0.1369 |  0.126  |
+        | Market to Book (MB)                    |  1.567  |  1.0379 |  1.1113 |  0.8788 |  1.3456 |
+        | Log Price (PRICE)                      |  2.708  |  2.4536 |  2.5006 |  2.2925 |  2.5741 |
+        | CHS Score                              | -8.3383 | -7.2758 | -7.5146 | -7.3842 | -7.4308 |
+        | Failure Probability                    |  0.0002 |  0.0007 |  0.0005 |  0.0006 |  0.0006 |
+        """
+        balance = self._balance_sheet_statement
+        periods = balance.columns
+        tickers = self._tickers
+
+        dates = self._period_end_dates
+        if dates is None or dates.empty:
+            dates = pd.DataFrame(
+                {
+                    period: period.to_timestamp(how="end").normalize()
+                    for period in periods
+                },
+                index=tickers,
+            )
+        dates = dates.reindex(index=tickers, columns=periods).apply(pd.to_datetime)
+
+        # The daily data from a year before the start date, so that the excess returns of
+        # the first periods have their twelve months.
+        daily = self._historical_data.get("lookback")
+        if daily is None or daily.empty:
+            daily = self._historical_data["daily"]
+        close = daily["Close"].reindex(columns=tickers)
+        close.index = close.index.to_timestamp()
+        adjusted_close = daily["Adj Close"].reindex(columns=tickers)
+        adjusted_close.index = adjusted_close.index.to_timestamp()
+        daily_returns = daily["Return"].reindex(columns=tickers)
+        daily_returns.index = daily_returns.index.to_timestamp()
+
+        # The S&P 500 over the prices' dates and up to today, as its total market value is
+        # known for the latest date only.
+        index_data, latest_market_value = (
+            self._sp500_function(
+                close.index.min().strftime("%Y-%m-%d"),
+                pd.Timestamp.today().strftime("%Y-%m-%d"),
+            )
+            if self._sp500_function is not None and not close.empty
+            else (pd.DataFrame(), pd.Series(dtype=float))
+        )
+        price_index = index_data.get("Price Index", pd.Series(dtype=float))
+        total_return_index = index_data.get(
+            "Total Return Index", pd.Series(dtype=float)
+        )
+        index_market_value = chs_model.get_index_market_value(
+            price_index, latest_market_value
+        )
+        if index_market_value.dropna().empty:
+            logger.warning(
+                "The total market value of the S&P 500 (its constituents and their market "
+                "capitalizations from FinancialModelingPrep) is not available, so the "
+                "relative size (RSIZE) and the failure probability are NaN."
+            )
+
+        price = helpers.values_on_or_before(close, dates)
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        market_equity = price * shares.reindex(index=tickers, columns=periods)
+        total_liabilities = self._rows(balance, "Total Liabilities")
+        market_total_assets = chs_model.get_market_total_assets(
+            market_equity, total_liabilities
+        )
+        book_equity = (
+            self._rows(balance, "Total Shareholder Equity")
+            + self._rows(balance, "Deferred Tax Liabilities").fillna(0)
+            - self._rows(balance, "Preferred Stock").fillna(0)
+        )
+
+        # NIMTA is a quarterly figure: a yearly net income counts as four equal quarters.
+        net_income = self._rows(self._income_statement, "Net Income")
+        quarterly_net_income = net_income if self._quarterly else net_income / 4
+        net_income_to_market_total_assets = chs_model.get_winsorized_variable(
+            self._calendar(quarterly_net_income / market_total_assets), "NIMTA"
+        )
+        net_income_average = (
+            chs_model.get_geometric_average(
+                [net_income_to_market_total_assets.T.shift(lag).T for lag in range(4)],
+                chs_model.MONTHLY_DECAY**3,
+            ).reindex(columns=periods)
+            if self._quarterly
+            else net_income_to_market_total_assets.reindex(columns=periods)
+        )
+
+        monthly_excess_returns = chs_model.get_monthly_log_excess_returns(
+            adjusted_close,
+            total_return_index.dropna(),
+            dates,
+        )
+        excess_return_average = chs_model.get_geometric_average(
+            [
+                chs_model.get_winsorized_variable(excess_return, "EXRET")
+                for excess_return in monthly_excess_returns
+            ],
+            chs_model.MONTHLY_DECAY,
+        )
+
+        index_value = helpers.values_on_or_before(
+            pd.DataFrame(
+                {ticker: index_market_value for ticker in tickers},
+                index=index_market_value.index,
+            ),
+            dates,
+        )
+
+        variables = {
+            "NIMTAAVG": net_income_average,
+            "TLMTA": chs_model.get_winsorized_variable(
+                total_liabilities / market_total_assets, "TLMTA"
+            ),
+            "EXRETAVG": excess_return_average,
+            "SIGMA": chs_model.get_winsorized_variable(
+                chs_model.get_sigma(daily_returns, dates), "SIGMA"
+            ),
+            "RSIZE": chs_model.get_winsorized_variable(
+                chs_model.get_relative_size(market_equity, index_value), "RSIZE"
+            ),
+            "CASHMTA": chs_model.get_winsorized_variable(
+                self._rows(balance, "Cash and Short Term Investments")
+                / market_total_assets,
+                "CASHMTA",
+            ),
+            "MB": chs_model.get_winsorized_variable(
+                market_equity
+                / chs_model.get_adjusted_book_equity(book_equity, market_equity),
+                "MB",
+            ),
+            "PRICE": chs_model.get_winsorized_variable(
+                chs_model.get_log_price(price), "PRICE"
+            ),
+        }
+
+        chs_score = chs_model.get_chs_score(
+            net_income_to_market_total_assets_average=variables["NIMTAAVG"],
+            total_liabilities_to_market_total_assets=variables["TLMTA"],
+            excess_return_average=variables["EXRETAVG"],
+            sigma=variables["SIGMA"],
+            relative_size=variables["RSIZE"],
+            cash_to_market_total_assets=variables["CASHMTA"],
+            market_to_book=variables["MB"],
+            log_price=variables["PRICE"],
+        )
+
+        results = {
+            "Net Income to Market Assets (NIMTAAVG)": variables["NIMTAAVG"],
+            "Liabilities to Market Assets (TLMTA)": variables["TLMTA"],
+            "Excess Return (EXRETAVG)": variables["EXRETAVG"],
+            "Volatility (SIGMA)": variables["SIGMA"],
+            "Relative Size (RSIZE)": variables["RSIZE"],
+            "Cash to Market Assets (CASHMTA)": variables["CASHMTA"],
+            "Market to Book (MB)": variables["MB"],
+            "Log Price (PRICE)": variables["PRICE"],
+            "CHS Score": chs_score,
+            "Failure Probability": chs_model.get_chs_failure_probability(chs_score),
+        }
+
+        chs = self._combine(
+            {name: frame.astype(float) for name, frame in results.items()}
+        ).dropna(axis=1, how="all")
+        chs = apply_rounding(chs, rounding if rounding is not None else self._rounding)
+
+        return filter_columns(
+            chs.loc[:, self._start_date : self._end_date], show_columns
         )
 
     @handle_errors

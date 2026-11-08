@@ -5,8 +5,6 @@ import pytest
 
 from financetoolkit.models import growth_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_present_value_of_growth_opportunities(recorder):
     recorder.capture(

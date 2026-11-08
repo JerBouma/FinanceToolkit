@@ -72,8 +72,18 @@ SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
         "get_intrinsic_valuation",
         "get_ev_to_ebitda_ratio",
     ),
-    "bankruptcy": ("get_altman_z_score", "get_ohlson_o_score", "get_zmijewski_score"),
-    "distress": ("get_altman_z_score", "get_ohlson_o_score", "get_zmijewski_score"),
+    "bankruptcy": (
+        "get_altman_z_score",
+        "get_ohlson_o_score",
+        "get_zmijewski_score",
+        "get_campbell_hilscher_szilagyi_score",
+    ),
+    "distress": (
+        "get_altman_z_score",
+        "get_ohlson_o_score",
+        "get_zmijewski_score",
+        "get_campbell_hilscher_szilagyi_score",
+    ),
     "default": (
         "get_altman_z_score",
         "get_default_rates",

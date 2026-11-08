@@ -36,7 +36,6 @@ from financetoolkit.utilities.statistics_model import (
     to_period_index,
 )
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
 
@@ -2438,7 +2437,11 @@ class Performance:
         the excess returns at lag k. Positive autocorrelation lowers the annualized ratio below
         SQRT(q) * SR, negative autocorrelation raises it. Sample autocorrelations at lags close
         to the sample size rest on a handful of pairs, so the sum runs over `lags` lags and takes
-        the autocorrelations beyond them as 0. The result is always annualized.
+        the autocorrelations beyond them as 0. Each ρ_k is corrected for its small-sample bias
+        −(n − k) / (n · (n − 1)) (Moran, 1948), which the (q − k) weights would otherwise turn
+        into an overstated ratio on short samples, and fewer than 30 observations give NaN: a
+        week or a month of daily returns, or a rolling window below 30, so use quarterly or
+        yearly periods or a longer window. The result is always annualized.
 
         - `"adjusted"` — the Adjusted Sharpe Ratio (ASR, Pezier & White, 2006) penalizes (or
         rewards) the Sharpe ratio for negative skewness and excess kurtosis using a
@@ -2517,7 +2520,7 @@ class Performance:
             is known.
             lags (int, optional): The number of autocorrelation lags in Lo's η(q). Only used when
             method="lo". Defaults to None, which uses the Newey and West (1994) rule
-            floor(4 * (n / 100)^(2/9)) on the n observations (5 for a year of daily returns),
+            floor(4 * (n / 100)^(2/9)) on the n observations (4 for a year of daily returns),
             capped at q − 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
@@ -6190,7 +6193,7 @@ class Performance:
                 to "iid".
             lags (int, optional): The number of lags in the Newey-West covariance, only used
                 when method="gmm". Defaults to None, which uses the Newey and West (1994) rule
-                floor(4 * (n / 100)^(2/9)), 5 for a year of daily returns.
+                floor(4 * (n / 100)^(2/9)), 4 for a year of daily returns.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the standard errors. Defaults to False.

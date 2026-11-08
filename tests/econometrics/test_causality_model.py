@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import causality_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_granger_causality_causal(recorder):
     rng = np.random.default_rng(3)

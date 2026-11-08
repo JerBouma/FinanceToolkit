@@ -30,24 +30,6 @@ logger = get_logger()
 ECONOMIC_CALENDAR_COUNTRIES = COUNTRY_CODES
 
 
-def _as_list(value: str | list[str] | None) -> list[str]:
-    """
-    Normalises a filter argument given as one value, a comma-separated string or a list.
-
-    Args:
-        value (str | list[str] | None): The filter value(s).
-
-    Returns:
-        list[str]: The values, stripped of surrounding spaces.
-    """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        value = value.split(",")
-
-    return [item.strip() for item in value if item and item.strip()]
-
-
 def _windows(start_date: str, end_date: str) -> list[tuple[str, str]]:
     """
     Splits a date range into consecutive windows the endpoint accepts in one request.
@@ -125,7 +107,7 @@ def get_economic_calendar(
             f"The start_date {start_date} must be on or before the end_date {end_date}."
         )
 
-    impact_levels = {level.lower() for level in _as_list(impact)}
+    impact_levels = {level.lower() for level in helpers.split_values(impact)}
     if unknown_levels := impact_levels - {"low", "medium", "high", "all"}:
         raise ValueError(
             f"The impact must be 'Low', 'Medium', 'High' or 'All', not {', '.join(sorted(unknown_levels))}."
@@ -159,7 +141,7 @@ def get_economic_calendar(
 
     country_codes = economic_calendar["country"].fillna("").str.upper()
 
-    if requested_countries := _as_list(countries):
+    if requested_countries := helpers.split_values(countries):
         wanted = {country.upper() for country in requested_countries}
         names = country_codes.map(ECONOMIC_CALENDAR_COUNTRIES).fillna("").str.upper()
         economic_calendar = economic_calendar[
@@ -167,7 +149,7 @@ def get_economic_calendar(
         ]
         country_codes = country_codes[economic_calendar.index]
 
-    if requested_currencies := _as_list(currencies):
+    if requested_currencies := helpers.split_values(currencies):
         wanted = {currency.upper() for currency in requested_currencies}
         economic_calendar = economic_calendar[
             economic_calendar["currency"].fillna("").str.upper().isin(wanted)
@@ -175,7 +157,7 @@ def get_economic_calendar(
         country_codes = country_codes[economic_calendar.index]
 
     # "All" asks for every release, which is how an MCP caller widens its High default.
-    requested_impact = _as_list(impact)
+    requested_impact = helpers.split_values(impact)
     if requested_impact and "all" not in {level.lower() for level in requested_impact}:
         wanted = {level.lower() for level in requested_impact}
         economic_calendar = economic_calendar[
@@ -183,7 +165,7 @@ def get_economic_calendar(
         ]
         country_codes = country_codes[economic_calendar.index]
 
-    if requested_events := _as_list(events):
+    if requested_events := helpers.split_values(events):
         # Matched as plain text, so a name like "S&P Global PMI" needs no escaping, and
         # without spaces or hyphens, as the source writes "Non Farm Payrolls" for the
         # headline and "Nonfarm Payrolls Private" for its private part.

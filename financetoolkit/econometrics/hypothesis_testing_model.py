@@ -12,8 +12,6 @@ from financetoolkit.econometrics.regression_model import (
     get_ols,
 )
 
-# pylint: disable=too-many-locals
-
 SIGNIFICANCE_LEVEL = 0.05
 
 

@@ -206,7 +206,7 @@ def test_the_curve_of_a_day_starts_with_its_own_front_and_leaves_expired_ones_em
         }
     )
 
-    prices, labels = futures_model.get_constant_maturity_curve(
+    prices, labels = futures_model.get_generic_curve(
         curve, last_trading_days, contracts=12
     )
 
@@ -254,9 +254,7 @@ def test_the_term_structure_matches_the_spreads_worked_out_by_hand(economics):
 
 
 def test_a_fixed_calendar_spread_keeps_its_full_history(economics):
-    term_structure = economics.get_commodity_term_structure(
-        "Crude Oil", constant_maturity=False
-    )
+    term_structure = economics.get_commodity_term_structure("Crude Oil", generic=False)
 
     assert term_structure["Spread"].max() == pytest.approx(22.31)
     assert term_structure["Spread"].idxmax() == pd.Period("2026-09-15", freq="D")
@@ -300,3 +298,63 @@ def test_gold_in_contango_has_a_positive_slope():
     assert gold["Spread"] == pytest.approx(-177.0)
     assert gold["Roll Yield"] < 0
     assert gold["Structure"] == "Contango"
+
+
+def test_a_month_that_is_not_listed_yet_is_not_a_position(monkeypatch):
+    # A month that has not expired and is not returned is not listed yet (Yahoo Finance
+    # carries most gold and silver months only shortly before delivery), so the next
+    # contract takes its place.
+    clear_active_cache()
+    monkeypatch.setattr(
+        yfinance_model,
+        "get_commodity_forward_curve",
+        lambda commodity, start_date, end_date, contracts: crude_oil_curve().drop(
+            columns="2027-03"
+        ),
+    )
+    economics = Economics(start_date="2026-09-01", end_date="2026-11-06")
+
+    curve = economics.get_commodity_forward_curve("Crude Oil", generic=True)
+    clear_active_cache()
+    november = curve.loc[pd.Period("2026-11-06", freq="D")]
+
+    assert november["+2"] == pytest.approx(88.0)
+    assert november["+3"] == pytest.approx(84.73)
+
+
+def test_only_expired_gold_months_of_the_active_cycle_hold_a_position(monkeypatch):
+    # June, August and October 2026 gold expired before 2026-11-08 and come back as
+    # placeholders. July and September are off the active cycle and never traded as a
+    # position of the generic series, so December 2026 is the fourth contract in June.
+    clear_active_cache()
+    monkeypatch.setattr(
+        yfinance_model,
+        "get_commodity_forward_curve",
+        lambda commodity, start_date, end_date, contracts: pd.DataFrame(
+            [[3400.0, 3420.0], [4074.9, 4090.0]],
+            index=pd.PeriodIndex(["2026-06-01", "2026-11-06"], freq="D"),
+            columns=["2026-12", "2027-02"],
+        ),
+    )
+    economics = Economics(start_date="2026-06-01", end_date="2026-11-06")
+
+    curve = economics.get_commodity_forward_curve("Gold", generic=True, contracts=6)
+    clear_active_cache()
+    june = curve.loc[pd.Period("2026-06-01", freq="D")]
+
+    assert june["+3"] == pytest.approx(3400.0)
+    assert june["+4"] == pytest.approx(3420.0)
+
+
+def test_a_curve_whose_front_and_far_contract_trade_at_one_price_is_flat():
+    labels = pd.DataFrame(
+        [["2026-12", "2027-11"]],
+        index=pd.PeriodIndex(["2026-11-06"], freq="D"),
+        columns=["Front", "+1"],
+    )
+    prices = pd.DataFrame([[80.0, 80.0]], index=labels.index, columns=labels.columns)
+
+    term_structure = futures_model.get_term_structure(prices, labels).iloc[0]
+
+    assert term_structure["Structure"] == "Flat"
+    assert term_structure["Spread"] == 0

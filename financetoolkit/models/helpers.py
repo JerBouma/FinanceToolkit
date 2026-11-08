@@ -5,13 +5,19 @@ __docformat__ = "google"
 
 from collections.abc import Callable
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
 
-# pylint: disable=protected-access
+# Below this spread between the discount rate and the growth rate kept forever, the terminal
+# value 1 / (r - g) is so sensitive that a change of either rate by a tenth of a percentage
+# point moves the value by about 5%: (1 / (r - g - 0.001)) / (1 / (r - g)) - 1 >= 5% for
+# r - g <= 2%. Such values are kept but flagged.
+NARROW_SPREAD = 0.02
+
 
 PERIOD_TRANSLATION: dict[str, str] = {
     "weekly": "W",
@@ -172,6 +178,8 @@ def exceeds_growth_per_period(
     Per ticker (rows) and period (columns), whether the discount rate exceeds the growth
     rate kept forever, as `exceeds_growth` checks for one rate. The periods where it
     doesn't are logged per ticker and left out (NaN), so the other periods are still valued.
+    Periods where the rate exceeds the growth by less than NARROW_SPREAD are valued and
+    logged, as their values are very sensitive to both rates.
 
     Args:
         rates (pd.DataFrame): The discount rate per ticker and period.
@@ -194,6 +202,22 @@ def exceeds_growth_per_period(
             len(left_out),
             ", ".join(str(period) for period in left_out),
             rate_name,
+        )
+
+    # The tolerance keeps a spread of exactly 2 points (0.06 - 0.04) from warning on rounding.
+    narrow = (rates - growth < NARROW_SPREAD - 1e-12) & (rates > growth)
+
+    for ticker in narrow.index[narrow.any(axis=1)]:
+        flagged = narrow.columns[narrow.loc[ticker]]
+        logger.warning(
+            "%s's %s lies less than %.0f percentage points above the growth rate it keeps "
+            "forever in %d period(s) (%s), so its value is very sensitive to both rates: a "
+            "tenth of a percentage point moves it by about 5%%.",
+            ticker,
+            rate_name,
+            NARROW_SPREAD * 100,
+            len(flagged),
+            ", ".join(str(period) for period in flagged),
         )
 
     return exceeds
@@ -232,7 +256,9 @@ def exceeds_growth(
     """
     Whether a ticker's discount rate exceeds the growth rate it keeps forever, which the
     terminal value of a perpetuity needs to be finite. A ticker where it doesn't is logged
-    and left out, so the other tickers are still valued.
+    and left out, so the other tickers are still valued. A rate that exceeds the growth by
+    less than NARROW_SPREAD is accepted with a warning, as the value is then very sensitive
+    to both rates.
 
     Args:
         ticker (str): The ticker, for the log.
@@ -245,7 +271,21 @@ def exceeds_growth(
         bool: True when the rate exceeds the growth or either is NaN (the valuation is then
         NaN by itself), False otherwise.
     """
-    if pd.isna(rate) or pd.isna(growth) or rate > growth:
+    if pd.isna(rate) or pd.isna(growth):
+        return True
+
+    if rate > growth:
+        if rate - growth < NARROW_SPREAD - 1e-12:
+            logger.warning(
+                "%s's %s (%.4f) lies less than %.0f percentage points above the growth rate "
+                "it keeps forever (%.4f), so its value is very sensitive to both rates: a "
+                "tenth of a percentage point moves it by about 5%%.",
+                ticker,
+                rate_name,
+                rate,
+                NARROW_SPREAD * 100,
+                growth,
+            )
         return True
 
     logger.warning(
@@ -257,3 +297,42 @@ def exceeds_growth(
         growth,
     )
     return False
+
+
+def values_on_or_before(
+    daily: pd.DataFrame, dates: pd.DataFrame, tolerance: int = 10
+) -> pd.DataFrame:
+    """
+    The last value of each ticker on or before a date per ticker and period, taken from the
+    ticker's own history, so that a day without a value (a holiday on its exchange) uses
+    the value before it.
+
+    Args:
+        daily (pd.DataFrame): The daily values with a DatetimeIndex and the tickers as
+            columns.
+        dates (pd.DataFrame): The dates per ticker (rows) and period (columns).
+        tolerance (int, optional): The number of days a value may lie before the date; an
+            older value (the ticker had stopped trading, or had not started) is NaN.
+            Defaults to 10.
+
+    Returns:
+        pd.DataFrame: The values per ticker (rows) and period (columns).
+    """
+    values = pd.DataFrame(float("nan"), index=dates.index, columns=dates.columns)
+
+    for ticker in dates.index:
+        if ticker not in daily.columns:
+            continue
+        series = daily[ticker].dropna()
+        if series.empty:
+            continue
+        ticker_dates = pd.DatetimeIndex(dates.loc[ticker])
+        positions = series.index.searchsorted(ticker_dates, side="right") - 1
+        found = positions >= 0
+        observed = series.index[positions.clip(min=0)]
+        recent = found & ((ticker_dates - observed).days <= tolerance)
+        values.loc[ticker] = np.where(
+            recent, series.to_numpy()[positions.clip(min=0)], np.nan
+        )
+
+    return values

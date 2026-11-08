@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.fixedincome import bond_model
 
-# pylint: disable=missing-function-docstring
-
 TAYLOR_APPROXIMATION_TOLERANCE = 0.0001
 
 

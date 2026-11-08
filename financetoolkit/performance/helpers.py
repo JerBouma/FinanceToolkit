@@ -76,7 +76,7 @@ def determine_within_dataset(
 def get_newey_west_lags(n_observations: int) -> int:
     """
     The Newey and West (1994) rule of thumb for the number of autocorrelation lags to
-    include: floor(4 * (n / 100)^(2/9)), e.g. 5 lags for a year of 252 daily returns and 3
+    include: floor(4 * (n / 100)^(2/9)), e.g. 4 lags for a year of 252 daily returns and 3
     for five years of monthly returns.
 
     For more information about the rule, see the following paper:

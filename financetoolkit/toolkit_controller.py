@@ -48,6 +48,7 @@ from financetoolkit.fmp_model import (
     get_ratios_ttm as _get_ratios_ttm,
     get_revenue_segmentation as _get_revenue_segmentation,
     get_shares_float as _get_shares_float,
+    get_sp500_market_value as _get_sp500_market_value,
     get_stock_grades as _get_stock_grades,
     get_stock_splits as _get_stock_splits,
 )
@@ -93,8 +94,6 @@ if TYPE_CHECKING:
 logger_model.setup_logger()
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
-# pylint: disable=too-many-function-args,too-many-public-methods
 # ruff: noqa: E501
 
 # The calendar days of prices before the start date that the technical indicators and daily
@@ -265,8 +264,11 @@ class Toolkit:
             yearly and quarterly statements stay consistent with each other: NVIDIA's fiscal 2024 is
             labelled 2023 and its four quarters are labelled 2023Q1 through 2023Q4. Companies reporting
             on calendar quarter ends (March, June, September and December) are never relabelled, and
-            neither are fiscal years ending in June through December. Which tickers were relabelled is
-            reported in the log and available on the Toolkit as _fiscal_year_adjustments.
+            neither are fiscal years ending in June through December. A period ending in the first five
+            days of a month, as the periods of a 52/53-week fiscal year can, counts as ending in the month
+            before: Home Depot's quarter ending 3 August 2025 is 2025Q2, from FinancialModelingPrep
+            and Yahoo Finance alike. Which tickers were relabelled is reported in the log and available
+            on the Toolkit as _fiscal_year_adjustments.
 
             The last day of each fiscal period is kept as well: daily ratios apply a period's figures
             from that day on (not from the end of its calendar label), and currency translation uses
@@ -841,9 +843,40 @@ class Toolkit:
                 }
             )
 
+        def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:
+            # The price index scales the total market value of the S&P 500 companies, known
+            # for the latest date only, back in time; the total return index is the market
+            # return.
+            historical = self._other_toolkit(
+                ["^GSPC", "^SP500TR"], start, end
+            ).get_historical_data(period="daily")
+            if historical.empty:
+                index_data = pd.DataFrame(columns=["Price Index", "Total Return Index"])
+            else:
+                index_data = (
+                    historical["Close"]
+                    .reindex(columns=["^GSPC", "^SP500TR"])
+                    .set_axis(["Price Index", "Total Return Index"], axis=1)
+                )
+                index_data.index = index_data.index.to_timestamp()
+            market_value = (
+                _get_sp500_market_value(self._api_key, self._fmp_plan)
+                if self._api_key
+                else pd.Series(dtype=float)
+            )
+            return index_data, market_value
+
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
-            historical_data=LazyDict(self._get_module_historical_data),
+            # "lookback" is the daily data from a year before the start date, for the
+            # models that measure returns over the year before a period end.
+            historical_data=LazyDict(
+                lambda key: (
+                    self._get_lookback_historical_data("daily")
+                    if key == "lookback"
+                    else self._get_module_historical_data(key)
+                )
+            ),
             risk_free_rate_data=LazyDict(self._get_module_risk_free_rate),
             balance=lambda: self._get_module_statement(
                 "balance_sheet_statement", "Models"
@@ -859,6 +892,7 @@ class Toolkit:
             period_end_dates=lambda: self._get_daily_start_dates(
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
+            sp500_function=sp500,
         )
 
     @property
@@ -2562,7 +2596,7 @@ class Toolkit:
         fill_nan: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_ticker_seperation: bool = True,
+        show_ticker_separation: bool = True,
         show_columns: list[str] | None = None,
     ):
         """
@@ -2609,7 +2643,7 @@ class Toolkit:
             will return the earlier retrieved data. This is done to prevent too many API calls. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+            show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
             show_columns (list[str], optional): A list of columns to include in the output. Valid columns
             are Open, High, Low, Close, Adj Close, Volume, Dividends, Return and Cumulative Return.
@@ -2698,7 +2732,7 @@ class Toolkit:
                 fill_nan=fill_nan,
                 rounding=None,
                 sleep_timer=self._sleep_timer,
-                show_ticker_seperation=show_ticker_seperation,
+                show_ticker_separation=show_ticker_separation,
                 show_errors=True,
                 user_subscription=self._fmp_plan,
                 cache=self._cache,
@@ -5203,7 +5237,7 @@ class Toolkit:
         fill_nan: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_ticker_seperation: bool = True,
+        show_ticker_separation: bool = True,
     ):
         """
         This functionality looks at the exchange rates between the currency of the historical data and the currency
@@ -5237,7 +5271,7 @@ class Toolkit:
             rounding (int): Defines the number of decimal places to round the returned data to. Defaults
             to None, which uses the rounding of the Toolkit. The rates the financial statements are
             translated with are never rounded.
-            show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+            show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
 
         Raises:
@@ -5332,7 +5366,7 @@ class Toolkit:
                     # Only what this method returns is rounded.
                     rounding=None,
                     sleep_timer=self._sleep_timer,
-                    show_ticker_seperation=show_ticker_seperation,
+                    show_ticker_separation=show_ticker_separation,
                     log_message="Obtaining currency exchange data",
                     user_subscription=self._fmp_plan,
                     cache=self._cache,
@@ -6474,7 +6508,7 @@ class Toolkit:
                 fill_nan=fill_nan,
                 rounding=None,
                 sleep_timer=self._sleep_timer,
-                show_ticker_seperation=True,
+                show_ticker_separation=True,
                 show_errors=False,
                 user_subscription=self._fmp_plan,
                 cache=self._cache,

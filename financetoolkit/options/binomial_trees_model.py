@@ -6,9 +6,6 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-# pylint: disable=too-many-locals
-
-
 # The most time steps of a tree: the tree is returned as a table of steps by steps, so its size
 # grows with the square of the steps.
 MAX_TIMESTEPS = 1_000

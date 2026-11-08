@@ -12,8 +12,6 @@ from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
 
-# pylint: disable=too-many-arguments,too-many-locals
-
 
 def get_option_expiry_dates(ticker: str) -> list[str]:
     """

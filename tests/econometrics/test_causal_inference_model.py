@@ -5,9 +5,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import causal_inference_model, regression_model
 
-# pylint: disable=missing-function-docstring
-
-
 # --- IV / 2SLS -----------------------------------------------------------------------
 
 

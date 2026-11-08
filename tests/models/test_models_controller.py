@@ -1,5 +1,4 @@
 """Models Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 import pandas as pd
 
 
@@ -52,12 +51,12 @@ def test_get_intrinsic_valuation(recorder, models_module):
     )
 
 
-def test_get_gorden_growth_model(recorder, models_module):
+def test_get_gordon_growth_model(recorder, models_module):
     recorder.capture(
-        models_module.get_gorden_growth_model(rate_of_return=0.1, growth_rate=0.09)
+        models_module.get_gordon_growth_model(rate_of_return=0.1, growth_rate=0.09)
     )
     recorder.capture(
-        models_module.get_gorden_growth_model(
+        models_module.get_gordon_growth_model(
             rate_of_return=0.2, growth_rate=0.1, project_periods=10
         )
     )
@@ -514,7 +513,7 @@ def test_quarterly_dividend_discount_models_use_an_annual_dividend(
     annual_dividend = quarterly_dividends.rolling(4).sum().iloc[-1]
     last_quarter = quarterly_dividends.index[-1]
 
-    gordon = models_module.get_gorden_growth_model(
+    gordon = models_module.get_gordon_growth_model(
         rate_of_return=0.08, growth_rate=0.03, project_periods=2, rounding=10
     )
     # The last complete quarter is valued off the trailing four quarters of dividends.
@@ -649,7 +648,9 @@ def test_piotroski_score_compares_quarters_year_over_year(models_module, monkeyp
             )
 
     _use_quarterly_statements(models_module, monkeypatch)
-    quarterly = models_module.get_piotroski_score()
+    # trailing=1 scores single quarters (the default sums four), so the criteria can be
+    # recomputed from the quarterly statements as they are.
+    quarterly = models_module.get_piotroski_score(trailing=1)
     balance = models_module._balance_sheet_statement
     income = models_module._income_statement
     current_ratio = (
@@ -715,7 +716,7 @@ def test_beneish_m_score_compares_quarters_year_over_year(models_module, monkeyp
     )
 
     _use_quarterly_statements(models_module, monkeypatch)
-    quarterly = models_module.get_beneish_m_score(rounding=10)
+    quarterly = models_module.get_beneish_m_score(rounding=10, trailing=1)
     revenue = models_module._income_statement.loc[:, "Revenue", :]
     expected = (revenue / revenue.shift(4, axis=1)).round(10)
 
@@ -728,6 +729,25 @@ def test_beneish_m_score_compares_quarters_year_over_year(models_module, monkeyp
     m_score = quarterly.xs("Beneish M-Score", level=1)
     assert m_score.loc[:, : revenue.columns[3]].isna().all().all()
     assert m_score.loc[:, revenue.columns[4] :].notna().all().all()
+
+
+def test_ohlson_o_score_compares_quarters_year_over_year(models_module, monkeypatch):
+    import pandas as pd
+
+    _use_quarterly_statements(models_module, monkeypatch)
+    quarterly = models_module.get_ohlson_o_score(rounding=10, trailing=1)
+    net_income = models_module._income_statement.loc[:, "Net Income", :]
+    prior = net_income.shift(4, axis=1)
+    expected = ((net_income - prior) / (net_income.abs() + prior.abs())).round(10)
+
+    pd.testing.assert_frame_equal(
+        quarterly.xs("Change in Net Income", level=1),
+        expected.loc[:, quarterly.columns],
+        check_names=False,
+    )
+    # Without a prior year the loss indicator is unknown, not 0.
+    indicator = quarterly.xs("Negative Income Indicator", level=1)
+    assert indicator.loc[:, : net_income.columns[3]].isna().all().all()
 
 
 def test_get_reverse_discounted_cash_flow(recorder, models_module):
@@ -1603,3 +1623,40 @@ def test_the_wacc_keeps_no_results_between_calls(models_module):
         models_module.get_weighted_average_cost_of_capital(), plain
     )
     assert not hasattr(models_module, "_weighted_average_cost_of_capital_growth")
+
+
+def test_distress_scores_sum_a_year_of_quarters_by_default(models_module, monkeypatch):
+    import pandas as pd
+
+    _use_quarterly_statements(models_module, monkeypatch)
+
+    # The scores were estimated on yearly statements, so quarterly data is a trailing year.
+    for method in [
+        models_module.get_altman_z_score,
+        models_module.get_taffler_z_score,
+        models_module.get_ohlson_o_score,
+        models_module.get_springate_score,
+    ]:
+        pd.testing.assert_frame_equal(method(), method(trailing=4))
+
+
+def test_get_campbell_hilscher_szilagyi_score(recorder, models_module, monkeypatch):
+    # The S&P 500 offline: the benchmark of the pickled prices as both its price and its
+    # total return index, and a total market value of 30 trillion on the last day.
+    benchmark = models_module._historical_data["daily"]["Adj Close"]["Benchmark"]
+    benchmark.index = benchmark.index.to_timestamp()
+
+    def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:  # noqa: ARG001
+        index_data = pd.DataFrame(
+            {"Price Index": benchmark, "Total Return Index": benchmark}
+        )
+        return index_data, pd.Series({benchmark.index[-1]: 3e13})
+
+    monkeypatch.setattr(models_module, "_sp500_function", sp500)
+    recorder.capture(models_module.get_campbell_hilscher_szilagyi_score())
+    recorder.capture(models_module.get_campbell_hilscher_szilagyi_score(rounding=2))
+
+    # Without the S&P 500, the relative size and the probability are NaN.
+    monkeypatch.setattr(models_module, "_sp500_function", None)
+    result = models_module.get_campbell_hilscher_szilagyi_score()
+    assert result.xs("Failure Probability", level=1).isna().all().all()

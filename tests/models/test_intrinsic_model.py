@@ -5,8 +5,6 @@ import pytest
 
 from financetoolkit.models import intrinsic_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_intrinsic_value(recorder):
     recorder.capture(
@@ -173,7 +171,7 @@ def test_valuations_require_a_discount_rate_above_the_perpetual_growth_rate():
         )
 
     with pytest.raises(ValueError, match="Growth Rate"):
-        intrinsic_model.get_gorden_growth_model(
+        intrinsic_model.get_gordon_growth_model(
             dividends_per_share=1.0, rate_of_return=0.05, growth_rate=0.06
         )
 
@@ -313,7 +311,7 @@ def test_h_model_is_gordon_plus_the_extra_growth():
 
     # Without extra growth it is the Gordon Growth Model.
     assert intrinsic_model.get_h_model(2.0, 0.10, 0.05, 0.05) == pytest.approx(
-        intrinsic_model.get_gorden_growth_model(2.0, 0.10, 0.05)
+        intrinsic_model.get_gordon_growth_model(2.0, 0.10, 0.05)
     )
 
     with pytest.raises(ValueError):

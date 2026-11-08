@@ -7,8 +7,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import regression_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_ols_recovers_known_coefficients(recorder):
     # y = 2 + 3*x + noise -- OLS on a large sample should recover ~[2, 3].

@@ -1,7 +1,5 @@
 """Economics Controller Tests"""
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_gross_domestic_product(recorder, economics_module):
     recorder.capture(economics_module.get_gross_domestic_product())
@@ -290,9 +288,15 @@ def test_get_poverty_rate(recorder, economics_module):
     recorder.capture(economics_module.get_poverty_rate(growth=True))
 
 
-def test_get_real_gross_domestic_product_usd(recorder, economics_module):
-    recorder.capture(economics_module.get_real_gross_domestic_product_usd())
-    recorder.capture(economics_module.get_real_gross_domestic_product_usd(growth=True))
+def test_get_gross_domestic_product_real_usd(recorder, economics_module):
+    recorder.capture(
+        economics_module.get_gross_domestic_product(inflation_adjusted=True, usd=True)
+    )
+    recorder.capture(
+        economics_module.get_gross_domestic_product(
+            inflation_adjusted=True, usd=True, growth=True
+        )
+    )
 
 
 def test_get_real_gross_domestic_product_per_capita(recorder, economics_module):

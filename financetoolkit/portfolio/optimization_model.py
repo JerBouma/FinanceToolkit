@@ -119,7 +119,8 @@ def get_weight_constraints(
       group's minimum and maximum, Σ_{i ∈ g} w_i, as in PyPortfolioOpt's
       add_sector_constraints and skfolio's groups with linear constraints.
     - The net exposure Σ w_i equals net_exposure (1 for a fully invested portfolio, 0 for
-      a market neutral one).
+      a market neutral one). A net exposure of 0 or below needs a negative minimum_weight
+      for at least one asset.
     - The gross exposure Σ |w_i| is at most gross_exposure, e.g. 1.6 for a 130/30
       portfolio. |w_i| is linearized with one variable t_i per asset: t_i ≥ w_i,
       t_i ≥ -w_i and Σ t_i ≤ gross_exposure, which is exact because a smaller Σ t_i is
@@ -167,6 +168,13 @@ def get_weight_constraints(
     if len(crossed):
         raise ValueError(
             f"The minimum weight is above the maximum weight for {', '.join(map(str, crossed))}."
+        )
+    # Without short positions the only portfolio with a net exposure of 0 holds nothing and
+    # a negative net exposure holds less than nothing.
+    if net_exposure <= 0 and np.all(lower >= 0):
+        raise ValueError(
+            f"A net exposure of {net_exposure} needs short positions: set a negative "
+            "minimum_weight for at least one asset."
         )
     if lower.sum() > net_exposure + 1e-9 or upper.sum() < net_exposure - 1e-9:
         bounds_text = (
@@ -347,6 +355,7 @@ def _solve(
     constraints: WeightConstraints,
     extra: list[dict] | None = None,
     all_variables: bool = False,
+    direction: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     Run SLSQP from the portfolio with equal weights summing to the net exposure, clipped
@@ -357,6 +366,12 @@ def _solve(
     search that stops without a better step (status 8) is accepted when the weights meet
     every constraint and bound: SLSQP reports it at optima whose objective no longer
     changes at machine precision, e.g. for the maximum Sharpe ratio.
+
+    With a net exposure of 0 the equal weights are all 0, where a ratio such as the
+    Sharpe or diversification ratio is 0 / 0. When the objective is not finite there,
+    SLSQP starts halfway between them and the portfolio within the constraints with the
+    highest weights @ direction (a corner found by linear programming), e.g. the
+    expected excess returns for the Sharpe ratio.
     """
     assets = constraints.assets
     lower = np.array([bound[0] for bound in constraints.bounds])
@@ -373,6 +388,15 @@ def _solve(
     )
     absolute = [np.abs(weights)] if len(lower) - assets * (1 + len(trades)) > 0 else []
     start = np.clip(np.concatenate([weights, *absolute, *trades]), lower, upper)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        undefined = not np.isfinite(
+            objective(start) if all_variables else objective(start[:assets])
+        )
+    if direction is not None and undefined:
+        corner = _linear_programme(
+            np.concatenate([-direction, np.zeros(len(lower) - assets)]), constraints
+        ).x
+        start = (start + corner) / 2
 
     padding = np.zeros(len(lower) - assets)
     slsqp_constraints = _linear_constraints(constraints) + [
@@ -959,7 +983,8 @@ def get_minimum_variance_weights(
             classification in groups, the minimum and maximum total weight per group,
             e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
         net_exposure (float, optional): The sum of the weights, 1 for a fully invested
-            portfolio. Defaults to 1.
+            portfolio. At 0 (market neutral) the lowest variance is that of holding
+            nothing, so all weights are 0. Defaults to 1.
         gross_exposure (float | None, optional): The highest sum of the absolute weights,
             e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
         current_weights (pd.Series | None, optional): The weights held now, which the
@@ -1081,7 +1106,9 @@ def get_maximum_sharpe_weights(
         )
         return slope
 
-    weights = _solve(negative_sharpe, gradient, constraints, all_variables=True)
+    weights = _solve(
+        negative_sharpe, gradient, constraints, all_variables=True, direction=mu
+    )
 
     return _as_series(weights, covariance.index)
 
@@ -1233,7 +1260,9 @@ def get_efficient_frontier(
             classification in groups, the minimum and maximum total weight per group,
             e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
         net_exposure (float, optional): The sum of the weights, 1 for a fully invested
-            portfolio. Defaults to 1.
+            portfolio. At 0 (market neutral) the minimum variance portfolio holds nothing,
+            so the first portfolio has all weights 0 and no Sharpe ratio (NaN). Defaults
+            to 1.
         gross_exposure (float | None, optional): The highest sum of the absolute weights,
             e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
         current_weights (pd.Series | None, optional): The weights held now, which the
@@ -1876,7 +1905,8 @@ def get_minimum_cvar_weights(
             classification in groups, the minimum and maximum total weight per group,
             e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
         net_exposure (float, optional): The sum of the weights, 1 for a fully invested
-            portfolio. Defaults to 1.
+            portfolio. At 0 (market neutral) the lowest CVaR is that of holding nothing,
+            so all weights are 0. Defaults to 1.
         gross_exposure (float | None, optional): The highest sum of the absolute weights,
             e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
         current_weights (pd.Series | None, optional): The weights held now, which the
@@ -2577,7 +2607,7 @@ def get_maximum_diversification_weights(
             - (weights @ volatility) * (sigma @ weights) / variance**1.5
         )
 
-    weights = _solve(negative_ratio, gradient, constraints)
+    weights = _solve(negative_ratio, gradient, constraints, direction=volatility)
 
     return _as_series(weights, covariance.index)
 

@@ -1,7 +1,5 @@
 """Discovery Model Tests"""
 
-# pylint: disable=missing-function-docstring
-
 import pandas as pd
 import pytest
 
@@ -768,3 +766,63 @@ def test_the_earnings_calendar_always_asks_for_a_range(monkeypatch):
     discovery_model.get_earnings_calendar("KEY", end_date="2026-11-13")
 
     assert "from=2026-11-06&to=2026-11-13" in requested[0]
+
+
+def test_the_earnings_calendar_takes_prices_in_pence_in_pounds(monkeypatch):
+    # London quotes in pence while its market caps are in pounds: BHP's price of 2,993
+    # pence is 29.93 pounds, so Sydney, not London, is its most traded listing.
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "/earnings-calendar" in url:
+            return pd.DataFrame(
+                {"symbol": ["BHP.L", "BHP.AX"], "date": ["2026-11-12", "2026-11-12"]}
+            )
+        if "/batch-quote" in url and "GBPUSD" in url:
+            return pd.DataFrame({"symbol": ["AUDUSD", "GBPUSD"], "price": [0.65, 1.3]})
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["BHP.L", "BHP.AX"],
+                    "name": ["BHP Group Limited", "BHP Group Limited"],
+                    "exchange": ["LSE", "ASX"],
+                    "marketCap": [152e9, 293e9],
+                    "price": [2993.0, 57.62],
+                    "volume": [3.06e6, 10.57e6],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {"exchange": ["LSE", "ASX"], "countryCode": ["UK", "AU"]}
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    calendar = discovery_model.get_earnings_calendar(
+        "KEY", "2026-11-09", "2026-11-13", primary_only=True
+    )
+
+    assert list(calendar.index) == ["BHP.AX"]
+    assert calendar.loc["BHP.AX", "Market Cap (USD)"] == pytest.approx(293e9 * 0.65)
+
+
+def test_the_international_order_book_trades_in_dollars(monkeypatch):
+    # IOB is a London exchange, but its depositary receipts trade in US dollars.
+    def fake(url, user_subscription):  # noqa: ARG001
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {"exchange": ["IOB", "LSE"], "countryCode": ["UK", "UK"]}
+            )
+        if "/batch-quote" in url:
+            return pd.DataFrame({"symbol": ["GBPUSD"], "price": [1.3]})
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+    listings = pd.DataFrame(
+        {"Exchange Code": ["IOB", "LSE"], "Market Cap": [300e9, 10e9]},
+        index=["SMSN.IL", "VOD.L"],
+    )
+
+    listings = discovery_model._add_market_cap_in_dollars(listings, "KEY", "Premium")
+
+    assert listings["Currency"].tolist() == ["USD", "GBP"]
+    assert listings["Market Cap (USD)"].tolist() == pytest.approx([300e9, 13e9])

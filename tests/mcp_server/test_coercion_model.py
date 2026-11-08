@@ -4,8 +4,6 @@ import pytest
 
 from financetoolkit.mcp_server.coercion_model import coerce_value
 
-# pylint: disable=missing-function-docstring
-
 
 @pytest.mark.parametrize(
     ("value", "annotation", "expected"),

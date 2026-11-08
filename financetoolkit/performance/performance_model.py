@@ -37,8 +37,6 @@ MIN_SORTINO_OBSERVATIONS = 2
 # The Euler-Mascheroni constant, used by the Deflated Sharpe Ratio.
 EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 
-# pylint: disable=isinstance-second-argument-not-valid-type
-
 
 @by_own_trading_days(compound=True)
 def get_covariance(
@@ -3961,10 +3959,20 @@ def get_lo_sharpe_ratio(
     autocorrelations beyond them as 0. By default `lags` follows the Newey and West (1994)
     rule floor(4 * (n / 100)^(2/9)), capped at q - 1 (Lo's formula itself).
 
+    The sample autocorrelation is biased towards a negative value: for independent returns
+    its expectation is −(n − k) / (n · (n − 1)) (Moran, 1948), since the deviations from the
+    sample mean sum to zero. Weighted by (q − k) these small biases add up and would raise
+    η(q) above SQRT(q) on short samples (by about 7% for a quarter of daily returns), so each
+    ρ_k is bias corrected with ρ_k + (n − k) / (n · (n − 1)) first. Below 30 observations the
+    standard error of each ρ_k (about 1 / SQRT(n)) is too large for a meaningful η(q), since
+    the (q − k) weights magnify it, and NaN is returned.
+
     For more information about the method, see the following papers:
 
     - Lo, A.W. (2002). "The Statistics of Sharpe Ratios." Financial Analysts Journal,
     58(4), 36-52.
+    - Moran, P.A.P. (1948). "Some Theorems on Time Series: I." Biometrika, 35(3/4),
+    255-260.
     - Newey, W.K., & West, K.D. (1994). "Automatic Lag Selection in Covariance Matrix
     Estimation." Review of Economic Studies, 61(4), 631-653.
 
@@ -3978,7 +3986,8 @@ def get_lo_sharpe_ratio(
 
     Returns:
         pd.Series | pd.DataFrame | float: The annualized Sharpe ratio per period (Multi
-        Index), per column (DataFrame) or a single value (Series).
+        Index), per column (DataFrame) or a single value (Series), NaN with fewer than 30
+        observations.
     """
 
     if isinstance(excess_returns, pd.DataFrame):
@@ -3996,7 +4005,9 @@ def get_lo_sharpe_ratio(
     values = excess_returns.dropna().to_numpy(dtype=float)
     n = len(values)
 
-    if n < 3:  # noqa: PLR2004
+    # With fewer observations each ρ_k has a standard error of about 1 / SQRT(n) > 0.18,
+    # which the (q − k) weights magnify into an η(q) that is mostly noise.
+    if n < 30:  # noqa: PLR2004
         return np.nan
 
     q = int(round(periods_per_year))
@@ -4006,9 +4017,12 @@ def get_lo_sharpe_ratio(
     deviation = values - values.mean()
     variance = np.sum(deviation**2)
     # The sample autocorrelation of Box and Jenkins: autocovariances over n with the
-    # mean of the whole sample, as in `risk_model.get_autocorrelation`.
+    # mean of the whole sample, as in `risk_model.get_autocorrelation`, plus Moran's (1948)
+    # correction of its expectation −(n − k) / (n · (n − 1)) under independence, which
+    # (q − k)-weighted would otherwise push η(q) above SQRT(q) on independent returns.
     rho = [
         np.sum(deviation[:-lag] * deviation[lag:]) / variance
+        + (n - lag) / (n * (n - 1))
         for lag in range(1, lags + 1)
     ]
 

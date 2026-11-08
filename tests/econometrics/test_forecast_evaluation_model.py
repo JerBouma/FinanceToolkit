@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import forecast_evaluation_model
 
-# pylint: disable=missing-function-docstring
-
 SIGNIFICANCE_LEVEL = 0.05
 
 

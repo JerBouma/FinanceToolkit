@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import event_study_model
 
-# pylint: disable=missing-function-docstring
-
 
 def _synthetic_returns(n=300, seed=1):
     rng = np.random.default_rng(seed)

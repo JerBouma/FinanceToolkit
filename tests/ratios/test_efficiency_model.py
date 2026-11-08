@@ -4,8 +4,6 @@ import pytest
 
 from financetoolkit.ratios import efficiency_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_asset_turnover_ratio(recorder):
     recorder.capture(

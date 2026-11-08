@@ -4,6 +4,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import drop_non_finite
+
 
 def get_profit_before_tax_to_current_liabilities_ratio(
     profit_before_tax: float | pd.Series | pd.DataFrame,
@@ -29,7 +31,7 @@ def get_profit_before_tax_to_current_liabilities_ratio(
     Notes:
     - A low or negative ratio lowers the Taffler z-score.
     """
-    return profit_before_tax / current_liabilities
+    return drop_non_finite(profit_before_tax / current_liabilities)
 
 
 def get_current_assets_to_total_liabilities_ratio(
@@ -56,7 +58,7 @@ def get_current_assets_to_total_liabilities_ratio(
     Notes:
     - A higher ratio raises the Taffler z-score.
     """
-    return current_assets / total_liabilities
+    return drop_non_finite(current_assets / total_liabilities)
 
 
 def get_current_liabilities_to_total_assets_ratio(
@@ -82,7 +84,7 @@ def get_current_liabilities_to_total_assets_ratio(
     Notes:
     - A higher ratio lowers the Taffler z-score, as its coefficient is negative.
     """
-    return current_liabilities / total_assets
+    return drop_non_finite(current_liabilities / total_assets)
 
 
 def get_no_credit_interval(
@@ -121,7 +123,9 @@ def get_no_credit_interval(
     """
     daily_operating_expenses = (sales - profit_before_tax - depreciation) / days
 
-    return (quick_assets - current_liabilities) / daily_operating_expenses
+    return drop_non_finite(
+        (quick_assets - current_liabilities) / daily_operating_expenses
+    )
 
 
 def get_taffler_z_score(

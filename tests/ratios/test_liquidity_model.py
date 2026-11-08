@@ -3,8 +3,6 @@ import pandas as pd
 
 from financetoolkit.ratios import liquidity_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_current_ratio(recorder):
     recorder.capture(

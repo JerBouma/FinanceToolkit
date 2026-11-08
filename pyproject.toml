@@ -133,31 +133,30 @@ lint.select = [
     "W",   # W: pycodestyle warning checks (style warnings)
     "F",   # F: pyflakes checks (possible logic errors, undefined names)
     "Q",   # Q: quote-related checks (enforce consistent quoting rules)
-    "W",   # W: duplicate W entry preserved from original configuration
     "S",   # S: security-related checks (bandit-style security rules)
     "UP",  # UP: pyupgrade / modernization fixers and related rules
-    "I",   # I: import-related checks (ordering, unused imports)
-    "PD",  # PD: plugin-specific or project-defined diagnostics
-    "SIM", # SIM: similarity/simplification suggestions (refactoring hints)
-    "PLC", # PLC: complexity-related checks (long/complex functions)
-    "PLE", # PLE: plugin linting errors (external plugin category)
-    "PLR", # PLR: plugin linting rules (external plugin category)
-    "PLW", # PLW: plugin linting warnings (external plugin category)
+    "I",   # I: isort (import ordering)
+    "PD",  # PD: pandas-vet (pandas idioms)
+    "SIM", # SIM: flake8-simplify (simplification suggestions)
+    "PLC", # PLC: Pylint conventions
+    "PLE", # PLE: Pylint errors
+    "PLR", # PLR: Pylint refactoring suggestions
+    "PLW", # PLW: Pylint warnings
 ]
 
 lint.ignore = [
-    "S105",  # Bandit: possible hardcoded credential/secret
-    "S106",  # Bandit: insecure usage pattern (e.g., weak crypto or risky API)
-    "S107",  # Bandit: use of eval/exec or other code-injection risk
+    "S105",  # Bandit: possible hardcoded password assigned to a variable
+    "S106",  # Bandit: possible hardcoded password passed as an argument
+    "S107",  # Bandit: possible hardcoded password as an argument default
     "PLR0913",  # Pylint-refactor: too many arguments in function/method
     "PLR0917",  # Pylint-refactor: too many positional arguments in function/method
     "PLR0912",  # Pylint-refactor: too many branches in function/method
     "PLR0911",  # Pylint-refactor: too many return statements in function/method
     "PLR0915",  # Pylint-refactor: function/method too many statements (too complex)
-    "PD010",  # Docstring/plugin: docstring-related diagnostic (see plugin docs)
-    "PD013",  # Docstring/plugin: docstring style/content diagnostic (see plugin docs)
-    "S310",  # Bandit: insecure deserialization or risky module usage
-    "S301",  # Bandit: insecure crypto/hash or deprecated API usage
+    "PD010",  # pandas-vet: .pivot_table preferred over .pivot or .unstack
+    "PD013",  # pandas-vet: .melt preferred over .stack
+    "S310",  # Bandit: URL open with a scheme that is not checked
+    "S301",  # Bandit: pickle deserialization
     "S101",  # Bandit: use of assert (assert removed in optimized runs)
 ]
 
@@ -170,12 +169,6 @@ exclude = ["conftest.py"]
 [tool.ruff.lint.isort]
 combine-as-imports = true
 force-wrap-aliases = true
-
-[tool.lint.isort]
-profile = "black"
-line_length = 122
-skip_gitignore = true
-combine_as_imports = true
 
 [tool.ty.src]
 # Mirror the other linters: the package is what is checked, not the tests

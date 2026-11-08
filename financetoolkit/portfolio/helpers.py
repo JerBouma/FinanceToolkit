@@ -7,23 +7,6 @@ import yaml
 
 from financetoolkit.utilities.excel_model import read_excel as read_workbook
 
-# pylint: disable=too-few-public-methods
-
-
-class Style:
-    """
-    This class is meant for easier styling throughout the application where it
-    adds value (e.g. to create a distinction between an error and warning).
-    """
-
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    BOLD = "\033[1m"
-    UNDERLINE = "\033[4m"
-    RESET = "\033[0m"
-
 
 def read_excel(location: str):
     """

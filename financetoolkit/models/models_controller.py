@@ -7701,8 +7701,8 @@ class Models:
 
         Args:
             metrics (str | list[str], optional): A model method name with one value per
-                ticker and period, e.g. "get_piotroski_score", a list of them, or a
-                collection: "scores" or "all". Defaults to "scores", the Piotroski, Altman Z,
+                ticker and period, e.g. "get_piotroski_score", a list of them, or one of the
+                collections "scores" and "all". Defaults to "scores", the Piotroski, Altman Z,
                 Beneish M, Ohlson O, Zmijewski, Springate, Grover, Fulmer H, Dechow F,
                 Montier C and Mohanram G scores. "all" adds the accruals ratio, Tobin's Q, the
                 sustainable and internal growth rates, the magic formula and the Merton

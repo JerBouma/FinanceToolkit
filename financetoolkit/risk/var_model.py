@@ -5,6 +5,7 @@ import pandas as pd
 from scipy import stats
 
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.helpers import as_float
 
 ALPHA_CONSTRAINT = 0.5
 
@@ -33,8 +34,6 @@ def get_var_historic(
         otherwise as pd.Series or pd.DataFrame with time as index.
     """
     return risk_model.get_quantile(returns, alpha)
-
-    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
 def get_var_gaussian(
@@ -363,7 +362,7 @@ def get_var_studentt(
     degrees_of_freedom, location, scale = fit_student_t(returns)
     value_at_risk = location + scale * stats.t.ppf(alpha, degrees_of_freedom)
 
-    # A Series gives a length one array, the type `_as_scalar` in the controller reduces.
+    # A Series gives a length one array, the type `as_float` (risk helpers) reduces.
     if isinstance(returns, pd.Series):
         return value_at_risk
 
@@ -447,20 +446,6 @@ def get_var_cornish_fisher(
     )
 
     return returns.mean() + z_cornish_fisher * returns.std(ddof=1)
-
-
-def _as_float(value: float | np.ndarray | pd.Series) -> float:
-    """
-    Reduce a single-value VaR (a float, or the length one array the Student-T VaR
-    returns for a Series) to a float.
-
-    Args:
-        value (float | np.ndarray | pd.Series): The VaR.
-
-    Returns:
-        float: The VaR as a float.
-    """
-    return float(np.asarray(value, dtype=float).reshape(-1)[0])
 
 
 def _get_portfolio_var(
@@ -577,9 +562,7 @@ def get_marginal_var(
     returns = returns.dropna()
 
     portfolio_returns = returns.mul(weights, axis=1).sum(axis=1)
-    portfolio_var = _as_float(
-        _get_portfolio_var(portfolio_returns, alpha, distribution)
-    )
+    portfolio_var = as_float(_get_portfolio_var(portfolio_returns, alpha, distribution))
     portfolio_variance = portfolio_returns.var(ddof=1)
 
     if portfolio_variance == 0 or np.isnan(portfolio_variance):

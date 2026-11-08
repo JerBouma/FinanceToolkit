@@ -280,9 +280,7 @@ class ControllerInspector:
 
         seen: dict[str, inspect.Parameter] = {}
         for meth_name in all_methods:
-            target_cls = (method_to_cls or {}).get(meth_name) if method_to_cls else cls
-            if target_cls is None:
-                target_cls = cls
+            target_cls = (method_to_cls or {}).get(meth_name) or cls
             if target_cls is None:
                 continue
             meth_func = getattr(target_cls, meth_name, None)
@@ -348,10 +346,7 @@ class ControllerInspector:
         defaults: dict[str, dict[str, Any]] = {}
 
         for meth_name in all_methods:
-            target_cls = (method_to_cls or {}).get(meth_name) if method_to_cls else cls
-
-            if target_cls is None:
-                target_cls = cls
+            target_cls = (method_to_cls or {}).get(meth_name) or cls
             if target_cls is None:
                 continue
 

@@ -181,8 +181,8 @@ class ToolkitProvider:
                 all. When False no database is opened and every layer runs
                 uncached, including the source data behind a tool response.
                 Defaults to True, which suits a local single-user server; a hosted
-                one is expected to pass False (see ``_resolve_cache_enabled`` in
-                ``mcp_controller``). Defaults to True.
+                one is expected to pass False (see ``_resolve_cache_mode`` in
+                ``mcp_controller``).
             excluded_sources (frozenset[str], optional): Sources whose data is never
                 cached, such as FinancialModelingPrep on a hosted server, where it
                 belongs to each subscriber. Defaults to an empty set.
@@ -190,7 +190,6 @@ class ToolkitProvider:
         # A placeholder from the docs counts as no key, so tools answer with the "key required" message.
         self._api_key = validation_model.resolve_api_key(api_key)
         self._fred_api_key = fred_api_key
-        self._cache_enabled = cache_enabled
 
         # Zeroing the TTL and withholding the location is what turns both layers off.
         self._cache_ttl: int = cache_ttl if cache_enabled else 0

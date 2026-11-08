@@ -23,7 +23,7 @@ from financetoolkit.risk import (
     risk_model,
     var_model,
 )
-from financetoolkit.risk.helpers import determine_within_historical_data
+from financetoolkit.risk.helpers import as_float, determine_within_historical_data
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -67,23 +67,6 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["anomalies"] + [
 # pylint: disable=too-many-boolean-expressions
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
-
-
-def _as_scalar(value: float | np.ndarray | pd.Series | pd.DataFrame) -> float:
-    """
-    Reduces a Value at Risk or Conditional Value at Risk estimate to a single float.
-
-    A rolling apply only accepts a scalar return value, but the Student-t and Extreme
-    Value Theory variants return a length one array or Series when given a Series, which
-    would otherwise raise a TypeError before it reaches the backtest.
-
-    Args:
-        value (float | np.ndarray | pd.Series | pd.DataFrame): the estimate to reduce.
-
-    Returns:
-        float: the estimate as a single float.
-    """
-    return float(np.asarray(value).reshape(-1)[0])
 
 
 def _get_out_of_sample_estimates(
@@ -146,9 +129,7 @@ def _get_out_of_sample_estimates(
             # seconds per thousand windows.
             estimator = parametric_estimators[(measure, distribution)]
             estimate = column_returns.rolling(window=window_size).apply(
-                lambda window, estimator=estimator: _as_scalar(
-                    estimator(window, alpha)
-                ),
+                lambda window, estimator=estimator: as_float(estimator(window, alpha)),
                 raw=False,
             )
 
@@ -6455,8 +6436,8 @@ class Risk:
                 Defaults to "anomalies", the volatility, maximum drawdown, skewness and Amihud
                 illiquidity. "all" adds the downside deviation, kurtosis, value at risk,
                 conditional value at risk, tail ratio and Roll spread.
-            period (str, optional): The frequency at which the metrics are measured and
-                evaluated: weekly, monthly, quarterly or yearly. Each metric is calculated
+            period (str, optional): The frequency at which the metrics are measured and evaluated
+                (weekly, monthly, quarterly or yearly). Each metric is calculated
                 within each period from that period's daily returns, so use monthly or longer
                 for enough returns per period. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward

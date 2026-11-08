@@ -323,3 +323,32 @@ def evaluate_on_grid(
         strike: {time: float(values[row, column]) for column, time in enumerate(times)}
         for row, strike in enumerate(strikes)
     }
+
+
+def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:
+    """
+    Raises a TypeError for an option input that is not a number. A boolean is not taken as a
+    number, even though Python counts it as an int.
+
+    Args:
+        arrays (bool, optional): Whether an np.ndarray or pd.Series is accepted as well, for
+            the formulas that price a whole range of inputs at once. An input of None (an
+            optional input left out) is then skipped. Defaults to False.
+        **kwargs: The inputs to validate, keyed by argument name.
+
+    Raises:
+        TypeError: If any of the inputs is not a float or int (or, with arrays=True, an
+            np.ndarray or pd.Series).
+    """
+    for name, value in kwargs.items():
+        if arrays and value is None:
+            continue
+        if not isinstance(
+            value, (int, float, np.ndarray, pd.Series) if arrays else (int, float)
+        ) or isinstance(value, bool):
+            raise TypeError(
+                f"{name} must be a float, int, np.ndarray or pd.Series, "
+                f"received {type(value).__name__}."
+                if arrays
+                else f"{name} must be a float or int, received {type(value).__name__}."
+            )

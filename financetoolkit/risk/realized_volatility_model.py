@@ -9,6 +9,7 @@ from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     VOLATILITY_WINDOW_TRANSLATION,
     to_period_index,
+    validate_period,
 )
 
 # The natural logarithm of 2, used by Parkinson, Garman-Klass and Yang-Zhang.
@@ -16,14 +17,6 @@ LN_2 = np.log(2)
 
 # HAR-RV needs overlap between the monthly window, horizon and observations.
 MINIMUM_HAR_RV_OBSERVATIONS = 10
-
-
-def _validate_period(period: str) -> None:
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
 
 
 def _group_and_scale(
@@ -120,7 +113,7 @@ def get_parkinson_volatility(
         pd.Series | pd.DataFrame: Parkinson Volatility values with time (or `groups`)
         as the index.
     """
-    _validate_period(period)
+    validate_period(period)
 
     if not isinstance(high_prices, pd.Series | pd.DataFrame) or not isinstance(
         low_prices, pd.Series | pd.DataFrame
@@ -188,7 +181,7 @@ def get_garman_klass_volatility(
         pd.Series | pd.DataFrame: Garman-Klass Volatility values with time (or
         `groups`) as the index.
     """
-    _validate_period(period)
+    validate_period(period)
 
     if not all(
         isinstance(prices, pd.Series | pd.DataFrame)
@@ -257,7 +250,7 @@ def get_rogers_satchell_volatility(
         pd.Series | pd.DataFrame: Rogers-Satchell Volatility values with time (or
         `groups`) as the index.
     """
-    _validate_period(period)
+    validate_period(period)
 
     if not all(
         isinstance(prices, pd.Series | pd.DataFrame)
@@ -336,7 +329,7 @@ def get_yang_zhang_volatility(
         pd.Series | pd.DataFrame: Yang-Zhang Volatility values with time (or `groups`)
         as the index.
     """
-    _validate_period(period)
+    validate_period(period)
 
     if not all(
         isinstance(prices, pd.Series | pd.DataFrame)

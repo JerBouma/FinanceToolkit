@@ -373,7 +373,6 @@ def get_garch(
     Returns:
         np.array | pd.Series | pd.DataFrame: An object with sigma_2 values
     """
-    # TODO: support GARCH(p, q), for any p and q  # pylint: disable=W0511
     if p != 1 or q != 1:
         raise ValueError(
             "Invalid input for p or/and q, currently only GARCH(1, 1) is implemented."
@@ -432,9 +431,10 @@ def get_garch(
         # The first step treats the squared return and the variance before the sample as the backcast, as the arch package does, see get_backcast.  # noqa: E501
         first_variance = omega + (alpha + beta) * get_backcast(returns)
 
-        # sigma2[i] = omega + alpha * returns[i - 1] ** 2 + beta * sigma2[i - 1] is a
-        # first-order linear recursion, which lfilter computes in compiled code with the
-        # same operations in the same order as the loop it replaces.
+        # The GARCH(1, 1) variance (omega plus alpha times the previous squared return plus
+        # beta times the previous variance) is a first-order linear recursion, which lfilter
+        # computes in compiled code with the same operations in the same order as the loop
+        # it replaces.
         return _linear_variance_recursion(
             omega + alpha * returns[: time_steps - 1] ** 2,
             beta,

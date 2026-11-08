@@ -211,50 +211,6 @@ class SQLiteBackend:
         except (TypeError, ValueError):
             return None
 
-    def read_series(self, key: str, entity: str) -> bytes | None:
-        """
-        Read the stored payload for a single entity of a dataset.
-
-        Args:
-            key (str): The dataset key.
-            entity (str): The entity within the dataset, e.g. a ticker.
-
-        Returns:
-            bytes | None: The stored payload, or None when nothing is cached.
-        """
-        with self._connect() as connection:
-            row = connection.execute(
-                "SELECT payload FROM series WHERE key = ? AND entity = ?",
-                (key, entity),
-            ).fetchone()
-
-        return row[0] if row else None
-
-    def read_coverage(
-        self, key: str, entity: str, minimum_fetched_at: float = 0.0
-    ) -> list[Interval]:
-        """
-        Read the date ranges already fetched for an entity.
-
-        Args:
-            key (str): The dataset key.
-            entity (str): The entity within the dataset.
-            minimum_fetched_at (float): Only return ranges fetched at or after this
-                Unix timestamp. Ranges fetched earlier are considered expired and
-                are therefore omitted, which makes them show up as missing again.
-
-        Returns:
-            list[Interval]: The stored intervals, unmerged and in insertion order.
-        """
-        with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT start_date, end_date FROM coverage "
-                "WHERE key = ? AND entity = ? AND fetched_at >= ?",
-                (key, entity, minimum_fetched_at),
-            ).fetchall()
-
-        return [(normalize_date(start), normalize_date(end)) for start, end in rows]
-
     def get_oldest_coverage_timestamp(self, key: str, entity: str) -> float | None:
         """
         Return the oldest fetch timestamp recorded for an entity.

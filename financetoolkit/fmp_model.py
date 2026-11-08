@@ -1970,10 +1970,7 @@ def get_esg_scores(
     return pd.DataFrame(), no_data
 
 
-def get_market_risk_premium(
-    api_key: str,
-    user_subscription: str = "Free",
-) -> pd.DataFrame:
+def get_market_risk_premium(api_key: str) -> pd.DataFrame:
     """
     Obtains the equity market risk premium by country -- the country default spread plus the
     equity risk premium, following the approach popularized by Aswath Damodaran -- which is
@@ -1985,7 +1982,6 @@ def get_market_risk_premium(
     Args:
         api_key (string): the API Key obtained from
         https://www.jeroenbouma.com/fmp
-        user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
         pd.DataFrame: the market risk premium by country, indexed by country and including

@@ -439,11 +439,11 @@ class PortfolioConstruction:
 
         |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
         |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-        | AAPL      |   0.1225 |            0.1933 |       0.2786 |         0.5727 |              0.1683 |
-        | MSFT      |   0.3275 |            0.2017 |       0.2572 |         0.6532 |              0.4499 |
-        | JNJ       |   0.4    |            0.0984 |       0.1673 |         0.3867 |              0.2624 |
-        | XOM       |   0.15   |            0.291  |       0.2702 |         0.9522 |              0.1194 |
-        | Portfolio |   1      |            0.1727 |       0.1463 |         0.9504 |              1      |
+        | AAPL      |   0.1225 |            0.1932 |       0.2786 |         0.5725 |              0.1683 |
+        | MSFT      |   0.3275 |            0.2017 |       0.2571 |         0.6534 |              0.4499 |
+        | JNJ       |   0.4    |            0.0987 |       0.1673 |         0.3884 |              0.2624 |
+        | XOM       |   0.15   |            0.2911 |       0.2702 |         0.9524 |              0.1194 |
+        | Portfolio |   1      |            0.1729 |       0.1463 |         0.9513 |              1      |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
@@ -694,10 +694,10 @@ class PortfolioConstruction:
 
         |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
         |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-        | AAPL      |   0.0069 |            0.1933 |       0.2786 |         0.5727 |              0.0032 |
-        | MSFT      |   0.423  |            0.2017 |       0.2572 |         0.6532 |              0.2149 |
-        | JNJ       |  -0.2463 |            0.0984 |       0.1673 |         0.3867 |              0.0022 |
-        | XOM       |   0.8164 |            0.291  |       0.2702 |         0.9522 |              0.7798 |
+        | AAPL      |   0.0057 |            0.1932 |       0.2786 |         0.5725 |              0.0027 |
+        | MSFT      |   0.4234 |            0.2017 |       0.2571 |         0.6534 |              0.2149 |
+        | JNJ       |  -0.2459 |            0.0987 |       0.1673 |         0.3884 |              0.0022 |
+        | XOM       |   0.8168 |            0.2911 |       0.2702 |         0.9524 |              0.7803 |
         | Portfolio |   1      |            0.3    |       0.2521 |         1.0561 |              1      |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
@@ -938,11 +938,11 @@ class PortfolioConstruction:
 
         |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
         |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-        | AAPL      |   0.1991 |            0.1933 |       0.2786 |         0.5727 |              0.2763 |
-        | MSFT      |   0.2388 |            0.2017 |       0.2572 |         0.6532 |              0.2816 |
-        | JNJ       |   0.3    |            0.0984 |       0.1673 |         0.3867 |              0.1575 |
-        | XOM       |   0.2621 |            0.291  |       0.2702 |         0.9522 |              0.2846 |
-        | Portfolio |   1      |            0.1924 |       0.1523 |         1.0422 |              1      |
+        | AAPL      |   0.1991 |            0.1932 |       0.2786 |         0.5725 |              0.2763 |
+        | MSFT      |   0.2388 |            0.2017 |       0.2571 |         0.6534 |              0.2816 |
+        | JNJ       |   0.3    |            0.0987 |       0.1673 |         0.3884 |              0.1575 |
+        | XOM       |   0.2621 |            0.2911 |       0.2702 |         0.9524 |              0.2846 |
+        | Portfolio |   1      |            0.1925 |       0.1523 |         1.0429 |              1      |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
@@ -1052,11 +1052,11 @@ class PortfolioConstruction:
 
         |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
         |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-        | AAPL      |   0.1287 |            0.1933 |       0.2786 |         0.5727 |              0.1307 |
-        | MSFT      |   0.1511 |            0.2017 |       0.2572 |         0.6532 |              0.1183 |
-        | JNJ       |   0.3    |            0.0984 |       0.1673 |         0.3867 |              0.1503 |
-        | XOM       |   0.4202 |            0.291  |       0.2702 |         0.9522 |              0.6007 |
-        | Portfolio |   1      |            0.2072 |       0.1569 |         1.1052 |              1      |
+        | AAPL      |   0.1287 |            0.1932 |       0.2786 |         0.5725 |              0.1307 |
+        | MSFT      |   0.1511 |            0.2017 |       0.2571 |         0.6534 |              0.1184 |
+        | JNJ       |   0.3    |            0.0987 |       0.1673 |         0.3884 |              0.1503 |
+        | XOM       |   0.4201 |            0.2911 |       0.2702 |         0.9524 |              0.6006 |
+        | Portfolio |   1      |            0.2073 |       0.1569 |         1.1059 |              1      |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span

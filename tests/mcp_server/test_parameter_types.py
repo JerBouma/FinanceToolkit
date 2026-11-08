@@ -153,3 +153,65 @@ def test_a_weight_bound_is_a_number_or_one_per_ticker(
 
     assert captured[-1]["maximum_weight"] in (0.4, {"AAPL": 0.3})
     assert captured[-1]["sector_bounds"] == {"Technology": (0, 0.8)}
+
+
+def test_the_tools_with_a_risk_free_rate_take_the_toolkit_setting(schemas):
+    # Performance, risk, models and portfolio use the Toolkit's risk free rate; options has a
+    # risk_free_rate of its own (the rate as a number), so it keeps that one.
+    for tool in ("performance", "risk", "models", "portfolio"):
+        assert schemas[tool]["risk_free_rate"]["default"] == "10y"
+        assert schemas[tool]["risk_free_rate"]["enum"] == ["13w", "5y", "10y", "30y"]
+    assert types_of(schemas["options"]["risk_free_rate"]) == {"number"}
+    assert "risk_free_rate" not in schemas["momentum"]
+
+
+@pytest.mark.parametrize(("given", "expected"), [(None, "10y"), ("13W", "13w")])
+def test_the_risk_free_rate_reaches_the_toolkit(captured, given, expected):
+    arguments = {"indicator": "get_sharpe_ratio", "tickers": "AAPL"}
+    if given:
+        arguments["risk_free_rate"] = given
+    call("performance", arguments)
+
+    assert captured[-1]["toolkit_risk_free_rate"] == expected
+
+
+@pytest.mark.parametrize(
+    ("tool", "indicator"),
+    [
+        ("performance", "get_sharpe_ratio"),
+        ("risk", "get_value_at_risk"),
+        ("models", "get_weighted_average_cost_of_capital"),
+        ("portfolio", "get_minimum_variance_weights"),
+    ],
+)
+def test_every_tool_with_a_risk_free_rate_passes_it_on(captured, tool, indicator):
+    text = call(
+        tool, {"indicator": indicator, "tickers": "AAPL,MSFT", "risk_free_rate": "30y"}
+    )
+
+    assert "error" not in text.lower()
+    assert captured[-1]["toolkit_risk_free_rate"] == "30y"
+    assert "risk_free_rate" not in captured[-1]
+
+
+@pytest.mark.parametrize("rate", [None, 0.04])
+def test_options_keeps_its_own_risk_free_rate(captured, rate):
+    # The options methods take the rate as a number; it must not meet the Toolkit setting.
+    arguments = {"indicator": "get_black_scholes_model", "tickers": "AAPL"}
+    if rate is not None:
+        arguments["risk_free_rate"] = rate
+    text = call("options", arguments)
+
+    assert "error" not in text.lower()
+    assert captured[-1]["risk_free_rate"] == rate
+    assert captured[-1]["toolkit_risk_free_rate"] == "10y"
+
+
+def test_an_unknown_risk_free_rate_is_refused(captured):
+    text = call(
+        "performance",
+        {"indicator": "get_sharpe_ratio", "tickers": "AAPL", "risk_free_rate": "1y"},
+    )
+
+    assert "13w, 5y, 10y, 30y" in text
+    assert not captured

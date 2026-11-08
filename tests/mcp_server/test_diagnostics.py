@@ -104,10 +104,12 @@ def test_an_empty_result_is_not_cached(tmp_path, monkeypatch):
 def test_the_key_hints_survive_redaction_and_logs_are_redacted():
     import logging
 
-    assert diagnostics_model.redact(diagnostics_model.FMP_KEY_HINT) == (
-        diagnostics_model.FMP_KEY_HINT
-    )
-    assert "?fmp_api_key=<your key>" in diagnostics_model.FMP_KEY_HINT
+    from financetoolkit.utilities.logger_model import RedactingFilter, redact
+
+    for hint in (diagnostics_model.FMP_KEY_HINT, diagnostics_model.FRED_KEY_HINT):
+        assert redact(hint) == hint
+        # A key in a URL ends up in proxy logs and browser history, so it isn't advised.
+        assert "_api_key=" not in hint
 
     record = logging.LogRecord(
         "uvicorn.access",
@@ -124,7 +126,7 @@ def test_the_key_hints_survive_redaction_and_logs_are_redacted():
         ),
         None,
     )
-    diagnostics_model.RedactingFilter().filter(record)
+    RedactingFilter().filter(record)
     assert "SECRET" not in record.getMessage()
     assert "fmp_api_key=***" in record.getMessage()
 

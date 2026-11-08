@@ -45,7 +45,6 @@ from financetoolkit.mcp_server.diagnostics_model import (
     call_input_info,
     capture_call_messages,
     missing_data_notes,
-    redact,
     summarize_reasons,
 )
 from financetoolkit.mcp_server.formatting_model import (
@@ -61,7 +60,7 @@ from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.logger_model import get_logger, redact
 from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
@@ -77,23 +76,6 @@ _OPAQUE_TYPES = {
     "Series",
     "DataFrame",
 }
-
-
-# Injected into each tool's Args docstring so FastMCP can surface them.
-def _curve_maturity(maturity: Any) -> float | str:
-    """A curve maturity as a number of years, or the label itself ("10Y", "6M")."""
-    try:
-        return float(maturity)
-    except (TypeError, ValueError):
-        label = str(maturity).strip().upper()
-        if label[:-1].replace(".", "", 1).isdigit() and label[-1:] in (
-            "D",
-            "W",
-            "M",
-            "Y",
-        ):
-            return label
-        raise
 
 
 # The indicators that read the returns of the period itself rather than results within each
@@ -129,6 +111,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     ),
     "quarterly": "Return quarterly data instead of annual when True.",
     "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'; 'None' for no benchmark.",
+    "risk_free_rate": (
+        "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' "
+        "(default) or '30y'."
+    ),
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
     "compound": (
@@ -395,23 +381,6 @@ def _annotate_with_description(
 # The length of an indicator's summary in the search results.
 MAXIMUM_SUMMARY_CHARACTERS = 200
 
-
-# The inputs of a bond or derivative calculation whose defaults are assumptions about the
-# instrument, named in the answer when the caller leaves them out.
-ASSUMED_INPUTS = (
-    "par_value",
-    "coupon_rate",
-    "yield_to_maturity",
-    "bond_price",
-    "volatility",
-    "strike_rate",
-    "notional",
-)
-
-# The yield curves the fixed income calculations take, which default to a sample curve,
-# except for the calculations that default to the current market curve.
-CURVE_PARAMETERS = ("spot_rates", "nominal_rates", "real_rates")
-MARKET_CURVE_METHODS = ("get_option_adjusted_spread",)
 
 # A window of at most this many days can be empty for lack of trading days alone.
 SHORT_WINDOW_DAYS = 3
@@ -916,6 +885,9 @@ class RouterGroupSpec(NamedTuple):
             the tool index. Defaults to module_name when None.
         description (str | None): Optional custom description for the tool. When None,
             a default description is generated from display_name and the method list.
+        risk_free_rate (bool): Whether the tool takes the Toolkit's risk_free_rate, for the
+            modules that use a risk-free rate (performance, risk, models, portfolio). The
+            options methods take a risk_free_rate of their own (the rate as a number).
     """
 
     tool_name: str
@@ -927,6 +899,7 @@ class RouterGroupSpec(NamedTuple):
     method_to_module: dict[str, dict[str, str]] | None = None
     index_category: str | None = None
     description: str | None = None
+    risk_free_rate: bool = False
 
 
 def _split_values(value: object) -> list[str]:
@@ -1340,6 +1313,7 @@ class ToolRegistry:
                     method_to_module=raw.get("method_to_module"),
                     index_category=raw.get("index_category"),
                     description=raw.get("description"),
+                    risk_free_rate=bool(raw.get("risk_free_rate")),
                 )
             )
         return specifications
@@ -1708,6 +1682,24 @@ class ToolRegistry:
             ):
                 benchmark_ticker = None
 
+            # The Toolkit's own setting, taken off before the method's arguments and passed under
+            # its own name, so it never meets a method's own risk_free_rate (options takes the
+            # rate as a number).
+            toolkit_risk_free_rate = "10y"
+            if spec.risk_free_rate:
+                toolkit_risk_free_rate = (
+                    str(kwargs.pop("risk_free_rate", None) or "10y").strip().lower()
+                )
+                if (
+                    toolkit_risk_free_rate
+                    not in validation_model.RISK_FREE_RATE_OPTIONS
+                ):
+                    return (
+                        f"Invalid `risk_free_rate` for `{tool_name}` (`{method_name}`): "
+                        f"'{toolkit_risk_free_rate}'. Please use one of "
+                        f"{', '.join(validation_model.RISK_FREE_RATE_OPTIONS)}."
+                    )
+
             # show_columns is handled entirely here — never forwarded to methods
             raw_show_columns = kwargs.pop("show_columns", None)
             show_columns = (
@@ -1823,49 +1815,6 @@ class ToolRegistry:
                     and method_kwargs.get(pname) in (None, "")
                 ):
                     method_kwargs[pname] = value
-
-            # A curve given as {"10": 0.043} is keyed by maturity in years, as a number; a
-            # label such as "10Y" or "6M" is passed on for the indicator to read.
-            curve_note = None
-            for curve in CURVE_PARAMETERS:
-                given = method_kwargs.get(curve)
-                if isinstance(given, dict):
-                    try:
-                        method_kwargs[curve] = {
-                            _curve_maturity(maturity): float(rate)
-                            for maturity, rate in given.items()
-                        }
-                    except (TypeError, ValueError):
-                        return (
-                            f"Invalid `{curve}` for `{tool_name}` (`{method_name}`): give the "
-                            "rate per maturity in years, e.g. {'1': 0.042, '10': 0.043}."
-                        )
-            if missing_curves := [
-                curve
-                for curve in CURVE_PARAMETERS
-                if curve in accepted_params
-                and method_kwargs.get(curve) in (None, "", {})
-                and method_name not in MARKET_CURVE_METHODS
-            ]:
-                curve_note = (
-                    f"{', '.join(f'`{curve}`' for curve in missing_curves)} "
-                    f"{'was' if len(missing_curves) == 1 else 'were'} not given, so a fixed "
-                    "sample curve was used for illustration, not market data. Pass a "
-                    "current zero-coupon (spot) curve from the rates tool, e.g. "
-                    "get_bank_of_england_yield_curve or get_hqm_corporate_bond_yield_curve "
-                    "with rate='spot'; get_treasury_rates is a par curve."
-                )
-
-            # The economic inputs of a calculation that the caller left to their defaults
-            # (a bond priced at an 8% yield) are named, as they decide the answer.
-            assumed_inputs = [
-                f"{pname}={parameter_defaults[pname][method_name]}"
-                for pname in ASSUMED_INPUTS
-                if pname in accepted_params
-                and pname not in given_params
-                and parameter_defaults.get(pname, {}).get(method_name)
-                not in (None, inspect.Parameter.empty, "")
-            ]
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.
@@ -2001,6 +1950,7 @@ class ToolRegistry:
                         result = provider.call_method(
                             **call_arguments,
                             benchmark_ticker=benchmark_ticker,
+                            toolkit_risk_free_rate=toolkit_risk_free_rate,
                             **method_kwargs,
                         )
                         upper_tickers = {ticker.upper() for ticker in tickers or []}
@@ -2016,6 +1966,7 @@ class ToolRegistry:
                             result = provider.call_method(
                                 **call_arguments,
                                 benchmark_ticker=None,
+                                toolkit_risk_free_rate=toolkit_risk_free_rate,
                                 **method_kwargs,
                             )
                     input_info = call_input_info()
@@ -2069,6 +2020,7 @@ class ToolRegistry:
                         benchmark_ticker=benchmark_ticker,
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
+                        toolkit_risk_free_rate=toolkit_risk_free_rate,
                     )
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
@@ -2253,14 +2205,6 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
-                if curve_note:
-                    notes.append(curve_note)
-                if assumed_inputs:
-                    notes.append(
-                        f"Assumed {', '.join(assumed_inputs)} (the "
-                        f"{'default' if len(assumed_inputs) == 1 else 'defaults'}); pass "
-                        "your own values for the bond in question."
-                    )
                 # The inputs an option model used, which it only logs.
                 if method_kwargs.get("show_input_info"):
                     notes.extend(input_info)
@@ -2359,6 +2303,22 @@ class ToolRegistry:
         common = inspector.build_common_signature_params(
             category, mixed_categories=mixed_cats
         )
+        if spec.risk_free_rate:
+            common.append(
+                P(
+                    "risk_free_rate",
+                    POS,
+                    default="10y",
+                    annotation=Annotated[
+                        str,
+                        PydanticField(
+                            json_schema_extra={
+                                "enum": list(validation_model.RISK_FREE_RATE_OPTIONS)
+                            }
+                        ),
+                    ],
+                )
+            )
         portfolio_tool = category == inspector.categories.get("portfolio", "portfolio")
         sig_params = [indicator_param] + [
             P(

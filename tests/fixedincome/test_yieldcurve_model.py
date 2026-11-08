@@ -140,9 +140,6 @@ def test_get_par_yield_prices_at_par_between_coupon_dates():
         par_yield = yieldcurve_model.get_par_yield(
             spot_rates=spot_rates, years_to_maturity=maturity, frequency=frequency
         )
-        assert (
-            bond_model._get_bond_price_from_curve(  # pylint: disable=protected-access
-                100, par_yield, maturity, spot_rates, frequency
-            )
-            == pytest.approx(100)
-        )
+        assert bond_model.get_bond_price_from_curve(
+            100, par_yield, maturity, spot_rates, frequency
+        ) == pytest.approx(100)

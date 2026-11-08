@@ -1272,7 +1272,11 @@ def test_nested_clustered_maximum_sharpe_holds_minimum_variance_in_a_cluster_bel
     for clusters in (1, 3):
         with pytest.raises(ValueError, match="No asset has an expected return"):
             optimization_model.get_nested_clustered_optimization_weights(
-                expected_returns * 0, covariance, "maximum_sharpe", 0.01, clusters=clusters
+                expected_returns * 0,
+                covariance,
+                "maximum_sharpe",
+                0.01,
+                clusters=clusters,
             )
 
 

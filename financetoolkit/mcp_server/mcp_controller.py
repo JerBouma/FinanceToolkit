@@ -15,7 +15,7 @@ from typing import Literal
 import anyio
 import uvicorn
 import yaml
-from dotenv import dotenv_values, load_dotenv
+from dotenv import dotenv_values
 from fastmcp.server.dependencies import (  # noqa: PLC0415
     get_http_headers,
     get_http_request,
@@ -33,12 +33,16 @@ from financetoolkit.mcp_server.auth_model import (
     resolve_api_key,
     resolve_fred_api_key,
 )
-from financetoolkit.mcp_server.diagnostics_model import RedactingFilter, redact
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.mcp_server.registry_controller import ToolRegistry
 from financetoolkit.mcp_server.tools_model import UtilityToolRegistry
-from financetoolkit.utilities.logger_model import get_logger, setup_logger
+from financetoolkit.utilities.logger_model import (
+    add_redaction,
+    get_logger,
+    redact,
+    setup_logger,
+)
 
 # The transports FastMCP serves on, keyed by the name used on the command line and
 # in MCP_TRANSPORT; the values carry the literal type FastMCP's `run` is typed with.
@@ -52,32 +56,45 @@ TRANSPORTS: dict[str, Literal["stdio", "sse", "streamable-http"]] = {
 setup_logger()
 
 
+# The only variables the server reads from a .env file. Everything else (proxies, CA
+# bundles, the cache location, the server's own settings) comes from the environment alone.
+ENV_FILE_KEYS = ("FINANCIAL_MODELING_PREP_API_KEY", "FRED_API_KEY")
+
+
 def _load_dotenv_configuration() -> None:
-    """Load dotenv configuration unless both API keys are already present.
+    """Fill in the API keys the environment doesn't set from .env files.
 
-    MCP clients can inject ``FINANCIAL_MODELING_PREP_API_KEY`` and/or the
-    optional ``FRED_API_KEY`` directly into the server process environment
-    (the ``env`` block in their config).  When a key is present the server
-    uses it immediately without reading any file. Otherwise the server falls
-    back to ``FINANCETOOLKIT_ENV_FILE`` (a path to a ``.env`` file) and then
-    to the global Finance Toolkit ``.env`` location. Both keys are checked
-    (rather than short-circuiting on FMP alone) so that a client which embeds
-    the FMP key directly but leaves FRED to the env file still picks up FRED.
+    MCP clients pass ``FINANCIAL_MODELING_PREP_API_KEY`` and the optional ``FRED_API_KEY``
+    in the ``env`` block of their config; a key set in the environment is always used as
+    it is. A key the environment lacks is taken from the first of these files that has it:
+
+    1. The file ``FINANCETOOLKIT_ENV_FILE`` points to.
+    2. The global Finance Toolkit ``.env`` (see ``setup_model.get_global_env_path``).
+    3. A ``.env`` file in the working directory.
+
+    Only these two keys are read from a file. An MCP client starts the server in the
+    project that is open, so a ``.env`` there may come from anyone: reading other
+    variables from it (a proxy, a CA bundle, the cache database) would let that project
+    redirect the requests that carry the keys, and overriding the environment would let it
+    replace a key the user set.
     """
-    if os.environ.get("FINANCIAL_MODELING_PREP_API_KEY") and os.environ.get(
-        "FRED_API_KEY"
-    ):
-        return
+    env_files = [
+        os.environ.get("FINANCETOOLKIT_ENV_FILE", ""),
+        setup_model.get_global_env_path(),
+        pathlib.Path.cwd() / ".env",
+    ]
 
-    # Order: cwd .env, then FINANCETOOLKIT_ENV_FILE, then the global config dir.
-    local_env = pathlib.Path.cwd() / ".env"
-    if local_env.exists():
-        load_dotenv(local_env, override=True)
-    env_file = os.environ.get("FINANCETOOLKIT_ENV_FILE")
-    if env_file and pathlib.Path(env_file).exists():
-        load_dotenv(env_file, override=False)
-    else:
-        load_dotenv(override=False)
+    for env_file in env_files:
+        missing = [name for name in ENV_FILE_KEYS if not os.environ.get(name)]
+        if not missing:
+            return
+        if not env_file or not pathlib.Path(env_file).is_file():
+            continue
+
+        values = dotenv_values(env_file)
+        for name in missing:
+            if values.get(name):
+                os.environ[name] = str(values[name])
 
 
 _load_dotenv_configuration()
@@ -326,6 +343,10 @@ def _build_mcp_app() -> FastMCP:
 mcp = _build_mcp_app()
 register_auth_routes(mcp)
 
+# The handlers FastMCP and the MCP SDK log through, which can repeat a failed request.
+for _logger_name in ("", "fastmcp", "mcp"):
+    add_redaction(logging.getLogger(_logger_name))
+
 
 def main() -> None:
     """
@@ -354,7 +375,9 @@ def main() -> None:
             "Every option falls back to its environment variable, so an MCP client "
             "that can only set the environment (MCP_TRANSPORT, MCP_HOST, MCP_PORT) "
             "keeps working unchanged. API keys are read from FINANCIAL_MODELING_PREP_API_KEY "
-            "and FRED_API_KEY, or from a .env file in the working directory. Caching is "
+            "and FRED_API_KEY; a key the environment lacks is read from FINANCETOOLKIT_ENV_FILE, "
+            "the global Finance Toolkit .env file or a .env file in the working directory, in "
+            "that order (only these two keys are read from a file). Caching is "
             "controlled with FINANCE_TOOLKIT_CACHE_ENABLED and defaults to off when hosted."
         ),
     )
@@ -432,9 +455,11 @@ def main() -> None:
             forwarded_allow_ips="*",
         )
         # The access log prints each request's path with its query string, which can hold
-        # the caller's FMP or FRED key (?fmp_api_key=...). Added after the Config, which
-        # sets up uvicorn's loggers.
-        logging.getLogger("uvicorn.access").addFilter(RedactingFilter())
+        # the caller's FMP or FRED key (?fmp_api_key=...), and the error log the
+        # tracebacks of failed requests. Added after the Config, which sets up uvicorn's
+        # handlers.
+        for logger_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+            add_redaction(logging.getLogger(logger_name))
         server = uvicorn.Server(config)
         anyio.run(server.serve)
     else:
@@ -531,9 +556,7 @@ def _setup_cli(client: str, overwrite: bool) -> None:
     global_env = setup_model.get_global_env_path()
 
     if api_key:
-        masked = (
-            f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"  # noqa
-        )
+        masked = setup_model.mask_key(api_key)
         setup_model.ok(
             f"API key found  [dim]·[/]  [dim]{key_source}[/]  [dim]·[/]  [dim cyan]{masked}[/]"
         )
@@ -556,11 +579,7 @@ def _setup_cli(client: str, overwrite: bool) -> None:
         )
 
     if fred_api_key:
-        masked_fred = (
-            f"{fred_api_key[:4]}...{fred_api_key[-4:]}"
-            if len(fred_api_key) > 8  # noqa
-            else "****"
-        )
+        masked_fred = setup_model.mask_key(fred_api_key)
         setup_model.ok(
             f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
             f"  [dim]·[/]  [dim cyan]{masked_fred}[/]"
@@ -611,9 +630,7 @@ def _setup_interactive() -> None:
     global_env = setup_model.get_global_env_path()
 
     if api_key:
-        masked_key = (
-            f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"  # noqa
-        )
+        masked_key = setup_model.mask_key(api_key)
         setup_model.ok(
             f"API key found  [dim]·[/]  [dim]{key_source}[/]  [dim]·[/]  [dim cyan]{masked_key}[/]"
         )
@@ -624,7 +641,7 @@ def _setup_interactive() -> None:
         setup_model.info("Press [bold]Enter[/] to skip and configure via .env later.")
         setup_model.console.print()
         api_key = setup_model.console.input(
-            "  [bold]API Key[/]  [dim cyan]›[/] "
+            "  [bold]API Key[/]  [dim cyan]›[/] ", password=True
         ).strip()
 
         if api_key and not setup_model.write_global_env_key(api_key):
@@ -636,11 +653,7 @@ def _setup_interactive() -> None:
     setup_model.console.print()
 
     if fred_api_key:
-        masked_fred_key = (
-            f"{fred_api_key[:4]}...{fred_api_key[-4:]}"
-            if len(fred_api_key) > 8  # noqa
-            else "****"
-        )
+        masked_fred_key = setup_model.mask_key(fred_api_key)
         setup_model.ok(
             f"FRED API key found (optional)  [dim]·[/]  [dim]{fred_key_source}[/]"
             f"  [dim]·[/]  [dim cyan]{masked_fred_key}[/]"
@@ -655,7 +668,7 @@ def _setup_interactive() -> None:
         setup_model.info("Press [bold]Enter[/] to skip — everything else still works.")
         setup_model.console.print()
         fred_api_key = setup_model.console.input(
-            "  [bold]FRED API Key (optional)[/]  [dim cyan]›[/] "
+            "  [bold]FRED API Key (optional)[/]  [dim cyan]›[/] ", password=True
         ).strip()
 
         if fred_api_key and not setup_model.write_global_env_fred_key(fred_api_key):

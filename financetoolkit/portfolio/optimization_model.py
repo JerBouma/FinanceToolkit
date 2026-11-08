@@ -324,7 +324,93 @@ def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.Dat
     return pd.DataFrame(covariance, index=returns.columns, columns=returns.columns)
 
 
-COVARIANCE_METHODS = ("sample", "ledoit_wolf", "oas", "semicovariance", "exponential")
+def get_denoised_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """
+    The denoised covariance matrix: the sample covariance with the eigenvalues of its
+    correlation matrix that random returns could produce replaced by their average. Under
+    random matrix theory, the eigenvalues of the correlation matrix of T periods of N
+    unrelated returns fall below the Marčenko-Pastur upper edge λ+ = σ²(1 + √(N/T))², so
+    the eigenvalues below it carry noise rather than structure. Averaging them keeps the
+    trace (the total variance) and the eigenvectors of the signal, and removes the small
+    eigenvalues that make the inverse of the matrix, and with it optimized weights, chase
+    estimation error.
+
+    The variance σ² of the noise is the one whose Marčenko-Pastur density fits the
+    eigenvalues best: the sum of squared differences with a Gaussian kernel density of
+    the eigenvalues (bandwidth 0.01), at 1,000 points between the edges of the
+    Marčenko-Pastur distribution, minimized for σ² between 0.00001 and 0.99999 starting
+    at 0.5. This is López de Prado's "constant residual eigenvalue" method, as in
+    skfolio's DenoiseCovariance, so the results agree with it. The correlation matrix is
+    rescaled to a unit diagonal after the replacement and turned back into a covariance
+    with the sample standard deviations (ddof=1).
+
+    See Laloux, L., Cizeau, P., Bouchaud, J.-P. and Potters, M. (2000), "Random Matrix
+    Approach to Cross Correlations in Financial Data", Physical Review E, 63(3), 037101,
+    and López de Prado, M. (2020), "Machine Learning for Asset Managers", Cambridge
+    University Press, chapter 2.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+
+    Returns:
+        tuple[pd.DataFrame, int]: The covariance matrix per period and the number of
+            eigenvalues kept as signal (those above the Marčenko-Pastur upper edge).
+    """
+    sample = returns.cov().to_numpy(dtype=float)
+    periods, assets = returns.shape
+    ratio = periods / assets
+    volatility = np.sqrt(np.diag(sample))
+    correlation = sample / np.outer(volatility, volatility)
+    eigenvalues, eigenvectors = np.linalg.eigh(correlation)
+    eigenvalues, eigenvectors = eigenvalues[::-1], eigenvectors[:, ::-1]
+
+    def density_error(variance: np.ndarray) -> float:
+        # The Marčenko-Pastur density at 1,000 points between its edges against a Gaussian
+        # kernel density of the eigenvalues at the same points.
+        lower = variance[0] * (1 - (1 / ratio) ** 0.5) ** 2
+        upper = variance[0] * (1 + (1 / ratio) ** 0.5) ** 2
+        points = np.linspace(lower, upper, 1000)
+        theoretical = (
+            ratio
+            / (2 * np.pi * variance[0] * points)
+            * np.sqrt(np.clip((upper - points) * (points - lower), 0, None))
+        )
+        bandwidth = 0.01
+        empirical = np.exp(
+            -0.5 * ((points[:, None] - eigenvalues[None, :]) / bandwidth) ** 2
+        ).mean(axis=1) / (bandwidth * np.sqrt(2 * np.pi))
+        return float(np.sum((empirical - theoretical) ** 2))
+
+    variance = minimize(density_error, x0=0.5, bounds=((1e-5, 1 - 1e-5),)).x[0]
+    upper_edge = variance * (1 + (1 / ratio) ** 0.5) ** 2
+    signals = int(assets - np.searchsorted(eigenvalues[::-1], upper_edge))
+
+    if signals < assets:
+        eigenvalues = eigenvalues.copy()
+        eigenvalues[signals:] = eigenvalues[signals:].mean()
+        correlation = eigenvectors @ np.diag(eigenvalues) @ eigenvectors.T
+        scale = np.sqrt(np.diag(correlation))
+        correlation = correlation / np.outer(scale, scale)
+
+    return (
+        pd.DataFrame(
+            correlation * np.outer(volatility, volatility),
+            index=returns.columns,
+            columns=returns.columns,
+        ),
+        signals,
+    )
+
+
+COVARIANCE_METHODS = (
+    "sample",
+    "ledoit_wolf",
+    "oas",
+    "semicovariance",
+    "exponential",
+    "denoised",
+)
 
 
 def get_expected_returns_and_covariance(
@@ -341,8 +427,8 @@ def get_expected_returns_and_covariance(
         returns (pd.DataFrame): The returns per period, one column per asset.
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
         covariance (str, optional): The estimator of the covariance matrix: "sample"
-            (ddof=1), "ledoit_wolf", "oas", "semicovariance" (below a zero return) or
-            "exponential". Defaults to "sample".
+            (ddof=1), "ledoit_wolf", "oas", "semicovariance" (below a zero return),
+            "exponential" or "denoised" (Marčenko-Pastur). Defaults to "sample".
         covariance_span (int, optional): The span in periods of the "exponential"
             covariance. Defaults to 180.
 
@@ -364,6 +450,8 @@ def get_expected_returns_and_covariance(
         matrix = get_semicovariance(returns)
     elif covariance == "exponential":
         matrix = get_exponential_covariance(returns, covariance_span)
+    elif covariance == "denoised":
+        matrix, _ = get_denoised_covariance(returns)
     else:
         raise ValueError(
             f"The covariance must be one of {', '.join(COVARIANCE_METHODS)}, not "
@@ -822,6 +910,282 @@ def get_minimum_cvar_weights(
         raise ValueError(f"The optimization did not converge: {result.message}")
 
     return _as_series(result.x[:assets], returns.columns)
+
+
+def get_diversification_ratio(weights: pd.Series, covariance: pd.DataFrame) -> float:
+    """
+    The diversification ratio of a portfolio (Choueifaty and Coignard, 2008): the weighted
+    average volatility of its assets divided by its volatility, w'σ / √(w'Σw). It is one
+    for a single asset or perfectly correlated assets and grows as the correlations fall;
+    its square is the number of independent risk factors a long-only portfolio holds
+    (Choueifaty, Froidure and Reynier, 2013).
+
+    Args:
+        weights (pd.Series): The weight per asset.
+        covariance (pd.DataFrame): The covariance matrix of the assets.
+
+    Returns:
+        float: The diversification ratio.
+    """
+    weights = weights.reindex(covariance.index).fillna(0).to_numpy(dtype=float)
+    sigma = covariance.to_numpy(dtype=float)
+    return float(weights @ np.sqrt(np.diag(sigma)) / np.sqrt(weights @ sigma @ weights))
+
+
+def get_maximum_diversification_weights(
+    covariance: pd.DataFrame,
+    minimum_weight: float = 0.0,
+    maximum_weight: float = 1.0,
+) -> pd.Series:
+    """
+    The fully invested portfolio with the highest diversification ratio w'σ / √(w'Σw), the
+    most diversified portfolio of Choueifaty and Coignard (2008). The ratio is maximized
+    directly with SLSQP within the weight bounds, with its gradient
+    σ / √(w'Σw) - (w'σ) Σw / (w'Σw)^(3/2).
+
+    Args:
+        covariance (pd.DataFrame): The covariance matrix of the assets.
+        minimum_weight (float, optional): The lowest weight an asset may have. Defaults to 0.
+        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+
+    Returns:
+        pd.Series: The weight per asset.
+    """
+    _validate_covariance(covariance)
+    sigma = covariance.to_numpy()
+    volatility = np.sqrt(np.diag(sigma))
+    assets = len(sigma)
+
+    def negative_ratio(weights):
+        return -(weights @ volatility) / np.sqrt(weights @ sigma @ weights)
+
+    def gradient(weights):
+        variance = weights @ sigma @ weights
+        return -(
+            volatility / np.sqrt(variance)
+            - (weights @ volatility) * (sigma @ weights) / variance**1.5
+        )
+
+    weights = _solve(
+        negative_ratio,
+        gradient,
+        assets,
+        _bounds(assets, minimum_weight, maximum_weight),
+        [_fully_invested()],
+    )
+
+    return _as_series(weights, covariance.index)
+
+
+def get_minimum_tracking_error_weights(
+    expected_returns: pd.Series,
+    covariance: pd.DataFrame,
+    benchmark: str,
+    objective: str = "tracking_error",
+    minimum_weight: float = 0.0,
+    maximum_weight: float = 1.0,
+) -> pd.Series:
+    """
+    The fully invested portfolio closest to a benchmark (Roll, 1992): with the objective
+    "tracking_error", the one with the lowest tracking error, the volatility of its return
+    minus the benchmark's, TE²(w) = Var(R w - r_b) = w'Σ_AA w - 2 w'Σ_Ab + σ_b²; with
+    "information_ratio", the one with the highest information ratio, the expected active
+    return per unit of tracking error, (w'μ - μ_b) / TE(w).
+
+    Args:
+        expected_returns (pd.Series): The annualized expected return of the assets and the
+            benchmark.
+        covariance (pd.DataFrame): The annualized covariance matrix of the assets and the
+            benchmark.
+        benchmark (str): The name of the benchmark in the expected returns and covariance
+            matrix; it is not an asset of the portfolio.
+        objective (str, optional): "tracking_error" or "information_ratio". Defaults to
+            "tracking_error".
+        minimum_weight (float, optional): The lowest weight an asset may have. Defaults to 0.
+        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+
+    Returns:
+        pd.Series: The weight per asset, without the benchmark.
+    """
+    if objective not in ("tracking_error", "information_ratio"):
+        raise ValueError(
+            "The objective must be 'tracking_error' or 'information_ratio', not "
+            f"'{objective}'."
+        )
+    if benchmark not in covariance.index:
+        raise ValueError(f"The covariance matrix holds no benchmark '{benchmark}'.")
+    _validate_covariance(covariance)
+    assets = covariance.index.drop(benchmark)
+    if len(assets) < 2:  # noqa: PLR2004
+        raise ValueError("At least two assets besides the benchmark are needed.")
+    sigma = covariance.loc[assets, assets].to_numpy()
+    with_benchmark = covariance.loc[assets, benchmark].to_numpy()
+    benchmark_variance = float(covariance.loc[benchmark, benchmark])
+    active = expected_returns.reindex(assets).to_numpy() - expected_returns[benchmark]
+    bounds = _bounds(len(assets), minimum_weight, maximum_weight)
+
+    def tracking_variance(weights):
+        return (
+            weights @ sigma @ weights
+            - 2 * weights @ with_benchmark
+            + benchmark_variance
+        )
+
+    if objective == "tracking_error":
+        weights = _solve(
+            tracking_variance,
+            lambda w: 2 * sigma @ w - 2 * with_benchmark,
+            len(assets),
+            bounds,
+            [_fully_invested()],
+        )
+    else:
+        if np.all(active <= 0):
+            raise ValueError(
+                "No asset has an expected return above the benchmark's, so no portfolio "
+                "has a positive information ratio."
+            )
+
+        def gradient(weights):
+            variance = tracking_variance(weights)
+            excess = weights @ active
+            return -(
+                active / np.sqrt(variance)
+                - excess * (sigma @ weights - with_benchmark) / variance**1.5
+            )
+
+        weights = _solve(
+            lambda w: -(w @ active) / np.sqrt(tracking_variance(w)),
+            gradient,
+            len(assets),
+            bounds,
+            [_fully_invested()],
+        )
+
+    return _as_series(weights, assets)
+
+
+def get_tracking_error(
+    weights: pd.Series,
+    expected_returns: pd.Series,
+    covariance: pd.DataFrame,
+    benchmark: str,
+) -> pd.Series:
+    """
+    The expected active return, tracking error and information ratio of a portfolio
+    against a benchmark: w'μ - μ_b, √(w'Σ_AA w - 2 w'Σ_Ab + σ_b²) and their ratio
+    (Roll, 1992; Grinold and Kahn, 2000).
+
+    Args:
+        weights (pd.Series): The weight per asset.
+        expected_returns (pd.Series): The annualized expected return of the assets and the
+            benchmark.
+        covariance (pd.DataFrame): The annualized covariance matrix of the assets and the
+            benchmark.
+        benchmark (str): The name of the benchmark in the expected returns and covariance
+            matrix.
+
+    Returns:
+        pd.Series: The Active Return, Tracking Error and Information Ratio.
+    """
+    # The active position: the weights of the assets against a short position in the
+    # benchmark, whose variance is the tracking variance.
+    active = weights.reindex(covariance.index).fillna(0)
+    active[benchmark] -= 1
+    active_return = float(active @ expected_returns.reindex(covariance.index))
+    tracking_error = float(np.sqrt(max(active @ covariance @ active, 0)))
+
+    return pd.Series(
+        {
+            "Active Return": active_return,
+            "Tracking Error": tracking_error,
+            "Information Ratio": (
+                active_return / tracking_error
+                if tracking_error > ZERO_VOLATILITY_TOLERANCE
+                else np.nan
+            ),
+        }
+    )
+
+
+def get_growth_optimal_weights(
+    returns: pd.DataFrame,
+    expected_returns: pd.Series,
+    covariance: pd.DataFrame,
+    method: str = "exact",
+    fraction: float = 1.0,
+    minimum_weight: float = 0.0,
+    maximum_weight: float = 1.0,
+) -> pd.Series:
+    """
+    The growth optimal (Kelly) portfolio: the fully invested portfolio with the highest
+    expected logarithmic growth of wealth (Kelly, 1956; Breiman, 1961; Thorp, 2006). The
+    "exact" method maximizes the average log return over the historical returns,
+    (1/T) Σ ln(1 + r_t'w), with gradient (1/T) Σ r_t / (1 + r_t'w). The "approximate"
+    method maximizes its second-order approximation w'μ - ½ w'Σw, a mean-variance
+    portfolio with a risk aversion of one. Fractional Kelly scales the weights by the
+    fraction; the remainder (1 - fraction) is cash, or borrowed when the fraction is
+    above one.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, for the
+            "exact" method.
+        expected_returns (pd.Series): The expected return per asset, for the
+            "approximate" method, on the same scale (per period or annualized) as the
+            covariance.
+        covariance (pd.DataFrame): The covariance matrix of the assets, for the
+            "approximate" method.
+        method (str, optional): "exact" or "approximate". Defaults to "exact".
+        fraction (float, optional): The share of the growth optimal weights to hold, e.g.
+            0.5 for half Kelly. Defaults to 1.
+        minimum_weight (float, optional): The lowest weight an asset may have before the
+            fraction is applied. Defaults to 0.
+        maximum_weight (float, optional): The highest weight an asset may have before the
+            fraction is applied. Defaults to 1.
+
+    Returns:
+        pd.Series: The weight per asset, summing to the fraction.
+    """
+    if method not in ("exact", "approximate"):
+        raise ValueError(
+            f"The method must be 'exact' or 'approximate', not '{method}'."
+        )
+    if fraction <= 0:
+        raise ValueError("The fraction must be positive.")
+
+    if method == "approximate":
+        weights = get_mean_variance_weights(
+            expected_returns,
+            covariance,
+            risk_aversion=1.0,
+            minimum_weight=minimum_weight,
+            maximum_weight=maximum_weight,
+        )
+        return _as_series(weights.to_numpy() * fraction, weights.index)
+
+    data = returns.dropna(how="any").to_numpy(dtype=float)
+    if len(data) == 0:
+        raise ValueError("No period has a return for every asset.")
+    assets = data.shape[1]
+
+    # The sum rather than the average of the log returns keeps the objective of daily
+    # returns large enough for the optimizer's tolerance. A wealth of zero or less in a
+    # period (possible with short positions) is ruin, an infinitely bad outcome.
+    def negative_growth(weights):
+        wealth = 1 + data @ weights
+        if np.any(wealth <= 0):
+            return np.inf
+        return -np.sum(np.log(wealth))
+
+    weights = _solve(
+        negative_growth,
+        lambda w: -(data / (1 + data @ w)[:, None]).sum(axis=0),
+        assets,
+        _bounds(assets, minimum_weight, maximum_weight),
+        [_fully_invested()],
+    )
+
+    return _as_series(weights * fraction, returns.columns)
 
 
 def get_black_litterman_returns(

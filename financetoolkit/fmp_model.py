@@ -3019,8 +3019,11 @@ def get_price_targets(
 ) -> tuple[pd.DataFrame, list[str]]:
     """
     Retrieves the current analyst price targets of each ticker: the consensus, median,
-    highest and lowest target, and the number and average of the targets published over
-    the last month, quarter, year and all time.
+    highest and lowest target, the date of the most recent target, and the number and
+    average of the targets published over the last month, quarter, year and all time.
+
+    The consensus endpoints carry no date, so the most recent target comes from the
+    newest article reporting a target (the first row of the price target news).
 
     Args:
         tickers (list[str] | str): The tickers to retrieve the price targets for.
@@ -3084,6 +3087,26 @@ def get_price_targets(
             if targets.get(f"{window} Count") == 0:
                 targets[f"{window} Average"] = np.nan
 
+        # The newest target, to tell how current the consensus is: the windows above only
+        # say that no target was published in the last month, not when the last one was.
+        today = datetime.now()
+        newest = get_financial_data(
+            url=f"https://financialmodelingprep.com/stable/price-target-news?symbol={ticker}"
+            f"&from={(today - timedelta(days=10 * 365)).strftime('%Y-%m-%d')}"
+            f"&to={today.strftime('%Y-%m-%d')}&page=0&limit=1&apikey={api_key}",
+            user_subscription=user_subscription,
+        )
+        latest_date = (
+            pd.to_datetime(newest["publishedDate"])
+            .dt.tz_localize(None)
+            .max()
+            .strftime("%Y-%m-%d")
+            if "publishedDate" in newest.columns and not newest.empty
+            else np.nan
+        )
+        targets = targets.astype(object)
+        targets["Latest Target Date"] = latest_date
+
         return ticker, targets, True
 
     ticker_list = _to_ticker_list(tickers)
@@ -3094,10 +3117,13 @@ def get_price_targets(
     )
 
 
-def add_price_target_metrics(targets: pd.DataFrame, prices: pd.Series) -> pd.DataFrame:
+def add_price_target_metrics(
+    targets: pd.DataFrame, prices: pd.Series, today: pd.Timestamp | None = None
+) -> pd.DataFrame:
     """
     Adds the measures analysts' price targets are read with: the share price, the upside
-    to the consensus target, the dispersion of the targets and the revision momentum.
+    to the consensus target, the dispersion of the targets, the revision momentum and the
+    days since the most recent target.
 
     - Upside: the consensus target divided by the share price, minus one.
     - Dispersion: the range of the targets (highest minus lowest) relative to the
@@ -3106,17 +3132,29 @@ def add_price_target_metrics(targets: pd.DataFrame, prices: pd.Series) -> pd.Dat
     - Revision Momentum: the average target of the last quarter relative to that of the
       last year, minus one. Positive when the recent targets are higher, i.e. analysts
       have been raising them.
+    - Days Since Latest Target: the calendar days from the most recent target to today,
+      large when the consensus is made of old targets.
 
     Args:
         targets (pd.DataFrame): The price targets with a column per ticker, as returned by
             get_price_targets.
         prices (pd.Series): The share price per ticker.
+        today (pd.Timestamp | None): The date the days since the latest target are counted
+            to. Defaults to None, which is today.
 
     Returns:
         pd.DataFrame: The price targets with the Price, Upside, Dispersion and Revision
-            Momentum rows added after the targets.
+            Momentum rows added after the targets, followed by the Latest Target Date and
+            the Days Since Latest Target.
     """
-    targets = targets.copy()
+    latest_date = (
+        targets.loc["Latest Target Date"]
+        if "Latest Target Date" in targets.index
+        else None
+    )
+    targets = targets.drop(index="Latest Target Date", errors="ignore").apply(
+        pd.to_numeric, errors="coerce"
+    )
     prices = pd.to_numeric(prices.reindex(targets.columns), errors="coerce")
     consensus = targets.loc["Target Consensus"].where(
         targets.loc["Target Consensus"] > 0
@@ -3139,10 +3177,21 @@ def add_price_target_metrics(targets: pd.DataFrame, prices: pd.Series) -> pd.Dat
         )
 
     target_rows = ["Target Consensus", "Target Median", "Target High", "Target Low"]
+    parts = [targets.loc[target_rows], measures]
 
-    return pd.concat(
-        [targets.loc[target_rows], measures, targets.drop(index=target_rows)]
-    )
+    if latest_date is not None:
+        today = pd.Timestamp.today() if today is None else pd.Timestamp(today)
+        days_since = (today.normalize() - pd.to_datetime(latest_date)).dt.days
+        parts.append(
+            pd.DataFrame(
+                {
+                    "Latest Target Date": latest_date,
+                    "Days Since Latest Target": days_since.astype(float),
+                }
+            ).T
+        )
+
+    return pd.concat(parts + [targets.drop(index=target_rows)])
 
 
 def get_price_target_history(

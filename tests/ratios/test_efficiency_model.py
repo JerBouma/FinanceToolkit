@@ -1,5 +1,6 @@
 """Efficiency Model Tests""" ""
 import pandas as pd
+import pytest
 
 from financetoolkit.ratios import efficiency_model
 
@@ -154,3 +155,24 @@ def test_capex_ratios_use_the_magnitude_of_capital_expenditure():
     assert pd.isna(intensity.iloc[1])
     assert to_depreciation.iloc[0] == 1.5
     assert pd.isna(to_depreciation.iloc[1])
+
+
+def test_asset_growth_and_net_operating_assets():
+    asset_growth = efficiency_model.get_asset_growth(
+        total_assets=pd.Series([110.0, 110.0]),
+        beginning_total_assets=pd.Series([100.0, 0.0]),
+    )
+    net_operating_assets = efficiency_model.get_net_operating_assets(
+        total_assets=pd.Series([500.0, 500.0]),
+        cash_and_short_term_investments=pd.Series([50.0, 50.0]),
+        short_term_debt=pd.Series([20.0, 20.0]),
+        long_term_debt=pd.Series([100.0, 100.0]),
+        total_equity=pd.Series([230.0, 230.0]),
+        beginning_total_assets=pd.Series([400.0, -1.0]),
+    )
+
+    assert asset_growth.iloc[0] == pytest.approx(0.1)
+    assert pd.isna(asset_growth.iloc[1])
+    # Operating assets 450 minus operating liabilities 150 (500 - 20 - 100 - 230).
+    assert net_operating_assets.iloc[0] == pytest.approx(300 / 400)
+    assert pd.isna(net_operating_assets.iloc[1])

@@ -784,3 +784,32 @@ def get_free_cash_flow_to_ebitda_ratio(
     ebitda = operating_income + depreciation_and_amortization
 
     return free_cash_flow / ebitda.where(ebitda > 0)
+
+
+def get_percent_accruals(
+    net_income: pd.Series | pd.DataFrame,
+    operating_cash_flow: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the percent accruals of Hafzalla, Lundholm and Van Winkle (2011): the
+    accruals (the part of earnings not received in cash) relative to the size of the
+    earnings rather than to total assets. It separates the companies whose earnings
+    are mostly accruals, which go on to underperform, better than accruals scaled by
+    total assets do.
+
+    The formula is as follows:
+
+        Percent Accruals = (Net Income - Cash Flow from Operations) / |Net Income|
+
+    A net income of zero gives NaN.
+
+    Also known as: percent operating accruals, PctAcc, accruals to earnings.
+
+    Args:
+        net_income (float or pd.Series): Net income of the company.
+        operating_cash_flow (float or pd.Series): Cash flow from operations of the company.
+
+    Returns:
+        float | pd.Series: The percent accruals value.
+    """
+    return (net_income - operating_cash_flow) / net_income.abs().where(net_income != 0)

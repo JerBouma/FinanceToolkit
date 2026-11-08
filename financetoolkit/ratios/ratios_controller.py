@@ -50,6 +50,9 @@ FACTOR_COLLECTIONS = {
         "get_dividend_payout_ratio",
         "get_buyback_yield",
         "get_shareholder_yield",
+        "get_net_share_issuance",
+        "get_composite_equity_issuance",
+        "get_net_external_financing",
         "get_ev_to_sales_ratio",
         "get_ev_to_ebit",
         "get_ev_to_ebitda_ratio",
@@ -88,6 +91,7 @@ FACTOR_COLLECTIONS = {
         "get_cash_return_on_invested_capital",
         "get_free_cash_flow_conversion",
         "get_free_cash_flow_to_ebitda_ratio",
+        "get_percent_accruals",
     ],
     "solvency": [
         "get_debt_to_assets_ratio",
@@ -144,6 +148,8 @@ FACTOR_COLLECTIONS = {
         "get_working_capital_turnover_ratio",
         "get_capex_intensity",
         "get_capex_to_depreciation_ratio",
+        "get_asset_growth",
+        "get_net_operating_assets",
     ],
 }
 FACTOR_COLLECTIONS["all"] = [
@@ -1067,6 +1073,10 @@ class Ratios:
         efficiency_ratios_dict["Capex to Depreciation"] = (
             self.get_capex_to_depreciation_ratio(trailing=trailing)
         )
+        efficiency_ratios_dict["Asset Growth"] = self.get_asset_growth(
+            trailing=trailing
+        )
+        efficiency_ratios_dict["Net Operating Assets"] = self.get_net_operating_assets()
 
         self._efficiency_ratios = (
             pd.concat(efficiency_ratios_dict)
@@ -3499,6 +3509,225 @@ class Ratios:
             standardize=standardize,
         )
 
+    @handle_portfolio
+    @handle_errors
+    def get_asset_growth(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the asset growth of Cooper, Gulen and Schill (2008): the change in total
+        assets over a year relative to the total assets at the start of it.
+
+        Cooper, Gulen and Schill find that the growth of a company's total assets predicts
+        its returns strongly and negatively: the companies that grow their assets the most
+        earn far lower returns over the following years than those that grow them the
+        least, more so than the book-to-market ratio, size or past returns predict. Asset
+        growth captures every form of investment (capital expenditure, acquisitions,
+        working capital) and of the financing behind it, and is the investment measure of
+        the CMA (conservative minus aggressive) factor of the Fama-French five-factor model.
+
+        The formula is as follows:
+
+        - Asset Growth = (Total Assets - Beginning Total Assets) / Beginning Total Assets
+
+        The total assets are those at the end of the period and the beginning total assets
+        those a year earlier: the end of the year before with annual data and four quarters
+        back with quarterly data, so quarterly values are year over year. Beginning total
+        assets of zero or less give NaN.
+
+        Also known as: total asset growth, investment, CMA investment, ASSETG.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods the total assets are compared
+                over. E.g. 3 with annual data gives the growth over three years. Defaults to
+                None, which uses a year: 4 quarters with quarterly data and 1 year with annual
+                data.
+
+        Returns:
+            pd.DataFrame: Asset growth values.
+
+        Notes:
+        - Cooper, M. J., H. Gulen and M. J. Schill, "Asset Growth and the Cross-Section of
+        Stock Returns," Journal of Finance 63(4), 2008, pp. 1609-1651. Fama, E. F. and K. R.
+        French, "A Five-Factor Asset Pricing Model," Journal of Financial Economics 116(1),
+        2015, pp. 1-22.
+        - The first period has no total assets a year earlier and is NaN, so set an earlier
+        start_date to obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "NVDA", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_asset_growth()
+        ```
+
+        Which returns:
+
+        |      |   2021 |    2022 |    2023 |   2024 |     2025 |
+        |:-----|-------:|--------:|--------:|-------:|---------:|
+        | AAPL | 0.0837 |  0.005  | -0.0005 | 0.0352 |  -0.0157 |
+        | MSFT | 0.1078 |  0.0931 |  0.1292 | 0.2432 |   0.2086 |
+        | NVDA | 0.5348 | -0.068  |  0.596  | 0.6979 | nan      |
+        | XOM  | 0.0186 |  0.0889 |  0.0196 | 0.205  |  -0.0099 |
+        """
+        # A year back by default: four quarters on quarterly data, so the growth is year over year.
+        window = self._get_valuation_trailing(trailing) or 1
+
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
+
+        asset_growth = efficiency_model.get_asset_growth(
+            total_assets, total_assets.shift(window, axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=asset_growth,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_operating_assets(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Calculate the net operating assets of Hirshleifer, Hou, Teoh and Zhang (2004): the
+        operating assets minus the operating liabilities, scaled by the total assets at the
+        start of the period.
+
+        Net operating assets are the cumulative difference between the operating income
+        and the free cash flow a company has reported over the years, so a high value means
+        its earnings have run ahead of its cash for a long time (a bloated balance sheet).
+        Hirshleifer et al. show that investors overlook this, so that companies with high
+        net operating assets earn lower earnings growth and lower returns over the
+        following years than those with low net operating assets.
+
+        The formula is as follows:
+
+        - Operating Assets = Total Assets - Cash and Short Term Investments
+        - Operating Liabilities = Total Assets - Short Term Debt - Long Term Debt - Total Equity
+        - Net Operating Assets = (Operating Assets - Operating Liabilities) / Beginning Total Assets
+
+        The paper deducts the debt in current liabilities, the long term debt, the minority
+        interest, the preferred stock and the common equity from the total assets for the
+        operating liabilities; the total equity here holds the last three. The debt excludes
+        lease liabilities, as Compustat's debt does. The balances are those at the end of
+        the period and the beginning total assets those at the end of the period before
+        (the year before with annual data, the quarter before with quarterly data, as in
+        the quarterly version of Hou, Xue and Zhang). Beginning total assets of zero or less
+        give NaN.
+
+        Also known as: NOA, scaled net operating assets, balance sheet bloat.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Net operating assets values.
+
+        Notes:
+        - Hirshleifer, D., K. Hou, S. H. Teoh and Y. Zhang, "Do Investors Overvalue Firms with
+        Bloated Balance Sheets?," Journal of Accounting and Economics 38, 2004, pp. 297-331.
+        Hou, K., C. Xue and L. Zhang, "Replicating Anomalies," Review of Financial Studies
+        33(5), 2020, pp. 2019-2133.
+        - The first period has no total assets of the period before and is NaN, so set an
+        earlier start_date to obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_net_operating_assets()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.3865 | 0.3488 | 0.3166 | 0.2791 | 0.3225 |
+        | KO   | 0.6335 | 0.5654 | 0.6024 | 0.5765 | 0.6554 |
+        | MSFT | 0.2319 | 0.3343 | 0.3898 | 0.5937 | 0.5703 |
+        | XOM  | 0.6453 | 0.6218 | 0.5927 | 0.7582 | 0.6604 |
+        """
+
+        def balance(row: str) -> pd.DataFrame:
+            return self._balance_sheet_statement.loc[:, row, :]
+
+        net_operating_assets = efficiency_model.get_net_operating_assets(
+            balance("Total Assets"),
+            balance("Cash and Short Term Investments"),
+            balance("Short Term Debt"),
+            balance("Long Term Debt"),
+            balance("Total Equity"),
+            balance("Total Assets").shift(1, axis=1),
+        )
+
+        return finalize_dataset(
+            dataset=net_operating_assets,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
     @handle_errors
     def collect_liquidity_ratios(
         self,
@@ -4719,6 +4948,9 @@ class Ratios:
         )
         profitability_ratios_dict["Free Cash Flow to EBITDA"] = (
             self.get_free_cash_flow_to_ebitda_ratio(trailing=trailing)
+        )
+        profitability_ratios_dict["Percent Accruals"] = self.get_percent_accruals(
+            trailing=trailing
         )
 
         self._profitability_ratios = (
@@ -7904,6 +8136,114 @@ class Ratios:
             standardize=standardize,
         )
 
+    @handle_portfolio
+    @handle_errors
+    def get_percent_accruals(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the percent accruals of Hafzalla, Lundholm and Van Winkle (2011): the
+        accruals, the part of the net income that is not received in cash, as a share of the
+        net income itself.
+
+        Sloan (1996) scaled the accruals by total assets, which mostly sorts companies by the
+        size of their earnings changes. Hafzalla, Lundholm and Van Winkle scale them by the
+        absolute net income instead, which measures how much of the earnings consists of
+        accruals: the companies whose earnings are mostly accruals earn markedly lower
+        returns afterwards, and the companies with the most negative percent accruals (cash
+        flows well above earnings) higher returns, a larger spread than that of the accruals
+        scaled by total assets. With a loss, a positive value still means the accruals make
+        the loss smaller than the cash flow would.
+
+        The formula is as follows:
+
+        - Percent Accruals = (Net Income - Cash Flow from Operations) / |Net Income|
+
+        The paper takes the income before extraordinary items, which is the net income here.
+        A net income of zero gives NaN. It is an annual measure, so with quarterly data the
+        flows are those of the trailing twelve months by default.
+
+        Also known as: percent operating accruals, PctAcc, accruals to earnings.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum the net income and cash
+                flow from operations over. Defaults to None, which uses the trailing twelve
+                months (4 quarters) with quarterly data and single years with annual data.
+
+        Returns:
+            pd.DataFrame: Percent accruals values.
+
+        Notes:
+        - Hafzalla, N., R. Lundholm and E. M. Van Winkle, "Percent Accruals," The Accounting
+        Review 86(1), 2011, pp. 209-236. Sloan, R. G., "Do Stock Prices Fully Reflect
+        Information in Accruals and Cash Flows about Future Earnings?," The Accounting Review
+        71(3), 1996, pp. 289-315 (the accruals scaled by total assets, see
+        `toolkit.models.get_accruals_ratio`).
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_percent_accruals()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -0.0988 | -0.2239 | -0.1397 | -0.2616 |  0.0047 |
+        | KO   | -0.2921 | -0.1547 | -0.0826 |  0.3599 |  0.4348 |
+        | MSFT | -0.2525 | -0.2241 | -0.2103 | -0.3451 | -0.3371 |
+        | XOM  | -1.0889 | -0.3778 | -0.5376 | -0.6337 | -0.8018 |
+        """
+        trailing = self._get_valuation_trailing(trailing)
+
+        percent_accruals = profitability_model.get_percent_accruals(
+            self._sum_trailing(
+                self._income_statement.loc[:, "Net Income", :], trailing
+            ),
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=percent_accruals,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
     @handle_errors
     def collect_solvency_ratios(
         self,
@@ -10860,6 +11200,16 @@ class Ratios:
             self.get_price_to_tangible_book_ratio(diluted=diluted, trailing=trailing)
         )
 
+        # The issuance measures use the basic shares, as the paper's shares outstanding.
+        valuation_ratios_dict["Net Share Issuance"] = self.get_net_share_issuance(
+            trailing=trailing
+        )
+        valuation_ratios_dict["Composite Equity Issuance"] = (
+            self.get_composite_equity_issuance(trailing=trailing)
+        )
+        valuation_ratios_dict["Net External Financing"] = (
+            self.get_net_external_financing(trailing=trailing)
+        )
         self._valuation_ratios = (
             pd.concat(valuation_ratios_dict)
             .swaplevel(0, 1)
@@ -15004,6 +15354,373 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_share_issuance(
+        self,
+        diluted: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the net share issuance of Pontiff and Woodgate (2008): the log change in
+        the split-adjusted number of shares over a year.
+
+        Pontiff and Woodgate show that companies that issue shares earn lower returns over
+        the following year and companies that buy back shares higher returns, and that the
+        share issuance predicts returns more strongly than size, book-to-market or momentum
+        in the years after 1970. The measure is positive for a net issuer of shares and
+        negative for a company that buys back more shares than it issues.
+
+        The formula is as follows:
+
+        - Net Share Issuance = ln(Shares / Shares a Year Earlier)
+
+        The shares are the weighted average shares of the period, which the statements
+        report adjusted for later stock splits, so only issuance and repurchases change them.
+        The paper takes the shares outstanding at a date; the weighted average moves with
+        them but spreads a change over the period it occurs in. The shares a year earlier
+        are those of the year before with annual data and four quarters back with quarterly
+        data. Shares of zero or less give NaN.
+
+        Also known as: share issuance, ISSUE, net stock issues, change in shares outstanding.
+
+        Args:
+            diluted (bool, optional): Whether to use the diluted weighted average shares instead of
+                the basic ones. Defaults to False, as the dilution from options and convertibles
+                moves with the share price rather than with issuance.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods the shares are compared over.
+                E.g. 5 with annual data gives the five-year issuance. Defaults to None, which
+                uses a year: 4 quarters with quarterly data and 1 year with annual data.
+
+        Returns:
+            pd.DataFrame: Net share issuance values.
+
+        Notes:
+        - Pontiff, J. and A. Woodgate, "Share Issuance and Cross-Sectional Returns," Journal
+        of Finance 63(2), 2008, pp. 921-945.
+        - The first period has no shares a year earlier and is NaN, so set an earlier
+        start_date to obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "TSLA", "META", "AMZN"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_net_share_issuance()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -0.0382 | -0.0295 | -0.0295 | -0.0258 | -0.0261 |
+        | AMZN |  0.0119 |  0.0068 |  0.0112 |  0.0163 |  0.0173 |
+        | META | -0.0127 | -0.0465 | -0.043  | -0.0157 | -0.0051 |
+        | TSLA |  0.0556 |  0.0562 |  0.0138 |  0.0074 |  0.0087 |
+        """
+        # A year back by default: four quarters on quarterly data, so the change is year over year.
+        window = self._get_valuation_trailing(trailing) or 1
+
+        shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        net_share_issuance = valuation_model.get_net_share_issuance(
+            shares, shares.shift(window, axis=1)
+        )
+
+        return finalize_dataset(
+            dataset=net_share_issuance,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_composite_equity_issuance(
+        self,
+        diluted: bool = False,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the composite equity issuance of Daniel and Titman (2006): the growth in
+        market capitalization over five years that the stock return does not explain.
+
+        A company's market capitalization grows with its stock return and with the equity
+        it issues, so what remains after the return is the net equity issued: seasoned
+        offerings, shares issued to employees and in stock-financed acquisitions, minus
+        buybacks and dividends. Daniel and Titman show that this composite issuance
+        predicts returns negatively and, unlike past returns, independently of the
+        book-to-market ratio: companies that issue equity tend to do so when their shares
+        are expensive, and those that return cash when they are cheap.
+
+        The formula is as follows:
+
+        - Composite Equity Issuance = ln(Market Cap / Market Cap Five Years Earlier)
+          - ln(Total Return over the Five Years)
+
+        The total return is the log change in the price adjusted for dividends and splits,
+        so a company that pays dividends without issuing shares has a negative value. The
+        market cap is the close (adjusted for splits only) at the end of each period times
+        the weighted average shares, as in `get_market_cap`, and the periods follow the
+        calendar. The window is five years, as in the paper: 5 years with annual data and
+        20 quarters with quarterly data.
+
+        Also known as: CEI, iota, composite issuance, composite share issuance.
+
+        Args:
+            diluted (bool, optional): Whether to use the diluted weighted average shares instead of
+                the basic ones. Defaults to False, as the dilution from options and convertibles
+                moves with the share price rather than with issuance.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods of the window. E.g. 1 with annual
+                data gives the issuance over a year. Defaults to None, which uses five years:
+                20 quarters with quarterly data and 5 years with annual data.
+
+        Returns:
+            pd.DataFrame: Composite equity issuance values.
+
+        Notes:
+        - Daniel, K. and S. Titman, "Market Reactions to Tangible and Intangible
+        Information," Journal of Finance 61(4), 2006, pp. 1605-1643.
+        - The prices and statements reach about a year before the start date, so with the
+        five-year window the first years are NaN; set an earlier start_date to obtain them.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "TSLA", "META", "AMZN"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_composite_equity_issuance()
+        ```
+
+        Which returns:
+
+        |      |   2016 |   2017 |   2018 |    2019 |    2020 |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|-------:|-------:|-------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|
+        | AAPL |    nan |    nan |    nan | -0.361  | -0.3589 | -0.331  | -0.3028 | -0.2715 | -0.2165 | -0.176  |
+        | AMZN |    nan |    nan |    nan |  0.067  |  0.0683 |  0.0653 |  0.0595 |  0.0563 |  0.0583 |  0.0635 |
+        | META |    nan |    nan |    nan |  0.074  |  0.0045 | -0.0355 | -0.0945 | -0.1158 | -0.1227 | -0.13   |
+        | TSLA |    nan |    nan |    nan |  0.3515 |  0.3754 |  0.3133 |  0.2302 |  0.2152 |  0.1858 |  0.1417 |
+        """
+        window = trailing or (20 if self._quarterly else 5)
+
+        shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        # The period prices from a year before the start date onwards, as the statements are,
+        # so the first window can start before the start date.
+        prices = self._historical["quarterly" if self._quarterly else "yearly"]
+
+        def period_prices(column: str) -> pd.DataFrame:
+            return (
+                prices[column]
+                .reindex(columns=self._tickers_without_portfolio)
+                .T.reindex(columns=shares.columns)
+            )
+
+        market_cap = valuation_model.get_market_cap(period_prices("Close"), shares)
+        total_return_price = period_prices("Adj Close")
+
+        composite_equity_issuance = valuation_model.get_composite_equity_issuance(
+            market_cap,
+            market_cap.shift(window, axis=1),
+            total_return_price,
+            total_return_price.shift(window, axis=1),
+        )
+
+        return finalize_dataset(
+            dataset=composite_equity_issuance,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_external_financing(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the net external financing of Bradshaw, Richardson and Sloan (2006): the
+        cash a company raises from shareholders and lenders, net of what it returns to them,
+        scaled by its average total assets.
+
+        Bradshaw, Richardson and Sloan show that the net external financing predicts returns
+        negatively: companies that raise the most cash from equity and debt investors earn
+        the lowest returns afterwards, and the relation holds for equity and for debt
+        financing separately. Analysts are also most optimistic about the companies that
+        raise the most financing, which fits the view that companies raise capital when
+        investors overvalue them.
+
+        The formula is as follows:
+
+        - Net External Financing = (Net Equity Financing + Net Debt Financing) / Average
+          Total Assets
+        - Net Equity Financing = Common and Preferred Stock Issued - Stock Repurchased -
+          Dividends Paid
+        - Net Debt Financing = Long Term Debt Issued - Long Term Debt Repaid + Change in
+          Short Term Debt
+
+        The flows are those of the cash flow statement and the average total assets the
+        average of the total assets at the start and the end of the window. It is an annual
+        measure, so with quarterly data the flows are those of the trailing twelve months
+        and the total assets are averaged over the start and end of that year by default.
+        Average total assets of zero or less give NaN.
+
+        Also known as: XFIN, ΔXFIN, net financing, external financing.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum the cash flow statement
+                items over, with the total assets averaged over the start and the end of that
+                window. Defaults to None, which uses the trailing twelve months (4 quarters)
+                with quarterly data and single years with annual data.
+
+        Returns:
+            pd.DataFrame: Net external financing values.
+
+        Notes:
+        - Bradshaw, M. T., S. A. Richardson and R. G. Sloan, "The Relation Between Corporate
+        Financing Activities, Analysts' Forecasts and Stock Returns," Journal of Accounting
+        and Economics 42(1-2), 2006, pp. 53-85.
+        - The first period has no total assets at the start of the window and is NaN, so set
+        an earlier start_date to obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_net_external_financing()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -0.2568 | -0.2966 | -0.2906 | -0.3238 | -0.3165 |
+        | KO   | -0.0708 | -0.0979 | -0.0824 | -0.0694 | -0.0896 |
+        | MSFT | -0.1447 | -0.1661 | -0.1105 | -0.0789 | -0.0874 |
+        | XOM  | -0.1034 | -0.1054 | -0.0884 | -0.0997 | -0.083  |
+        """
+        trailing = self._get_valuation_trailing(trailing)
+
+        def flow(row: str) -> pd.DataFrame:
+            return self._sum_trailing(
+                self._cash_flow_statement.loc[:, row, :], trailing
+            )
+
+        # The issuance and repurchases of common and preferred stock and of long and short
+        # term debt are taken line by line: the aggregate net issuance lines of the data
+        # provider do not always add them up.
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
+
+        net_external_financing = valuation_model.get_net_external_financing(
+            flow("Common Stock Issued")
+            + flow("Common Stock Purchased")
+            + flow("Net Preferred Stock Issued"),
+            flow("Dividends Paid"),
+            flow("Long Term Debt Issued") + flow("Short Term Debt Issued"),
+            (total_assets + total_assets.shift(trailing or 1, axis=1)) / 2,
+        )
+
+        return finalize_dataset(
+            dataset=net_external_financing,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
         )
 
     @handle_errors

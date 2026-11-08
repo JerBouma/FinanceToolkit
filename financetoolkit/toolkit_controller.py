@@ -4432,6 +4432,10 @@ class Toolkit:
           Diether, Malloy and Scherbina (2002).
         - Revision Momentum: Last Quarter Average / Last Year Average − 1, positive when the
           targets published over the last quarter are higher than those of the last year.
+        - Latest Target Date and Days Since Latest Target: the date of the most recent target
+          and the calendar days since. The consensus is made of every analyst's current
+          target, so when no target was published for a while it can be months old; the
+          Last Month and Last Quarter Count and Average are the recent consensus.
         - Last Month, Last Quarter, Last Year and All Time Count and Average: the number of
           targets published in each window and their average.
 
@@ -4439,7 +4443,8 @@ class Toolkit:
         start_date and end_date. The targets as they were published over time come from
         get_price_target_history.
 
-        Also known as: analyst price target, consensus price target, target upside.
+        Also known as: analyst price target, consensus price target, target upside, stale
+        price targets.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
@@ -4450,7 +4455,8 @@ class Toolkit:
 
         Returns:
             pd.DataFrame: The price targets and their measures with a column per ticker.
-            Upside, Dispersion and Revision Momentum are decimals (0.05 is 5%).
+            Upside, Dispersion and Revision Momentum are decimals (0.05 is 5%), the Latest
+            Target Date is text (YYYY-MM-DD).
 
         Notes:
             A window without published targets has no average (NaN). The targets are those
@@ -4474,24 +4480,26 @@ class Toolkit:
 
         Which returns:
 
-        |                      |     AAPL |     NVDA |     MSFT |
-        |:---------------------|---------:|---------:|---------:|
-        | Target Consensus     | 344.46   | 339.17   | 611.74   |
-        | Target Median        | 355      | 325      | 625      |
-        | Target High          | 400      | 515      | 750      |
-        | Target Low           | 245      | 210      | 440      |
-        | Price                | 344.17   | 181.6    | 535.93   |
-        | Upside               |   0.0008 |   0.8677 |   0.1415 |
-        | Dispersion           |   0.45   |   0.8993 |   0.5068 |
-        | Revision Momentum    |   0.0557 |   0.0891 |   0.0824 |
-        | Last Month Count     |  12      |   0      |  20      |
-        | Last Month Average   | 349.42   | nan      | 643.95   |
-        | Last Quarter Count   |  18      |  25      |  30      |
-        | Last Quarter Average | 348.65   | 332.32   | 629.23   |
-        | Last Year Count      |  61      |  83      |  92      |
-        | Last Year Average    | 330.27   | 305.12   | 581.32   |
-        | All Time Count       | 275      | 343      | 299      |
-        | All Time Average     | 239.2    | 152.9    | 466.96   |
+        |                          | AAPL       | NVDA       | MSFT       |
+        |:-------------------------|:-----------|:-----------|:-----------|
+        | Target Consensus         | 344.46     | 339.17     | 611.74     |
+        | Target Median            | 355.0      | 325.0      | 625.0      |
+        | Target High              | 400.0      | 515.0      | 750.0      |
+        | Target Low               | 245.0      | 210.0      | 440.0      |
+        | Price                    | 342.37     | 186.64     | 530.61     |
+        | Upside                   | 0.0061     | 0.8172     | 0.1529     |
+        | Dispersion               | 0.45       | 0.8993     | 0.5068     |
+        | Revision Momentum        | 0.0557     | 0.0891     | 0.0824     |
+        | Latest Target Date       | 2026-11-04 | 2026-10-05 | 2026-10-29 |
+        | Days Since Latest Target | 3.0        | 33.0       | 9.0        |
+        | Last Month Count         | 12.0       | 0.0        | 20.0       |
+        | Last Month Average       | 349.42     | nan        | 643.95     |
+        | Last Quarter Count       | 18.0       | 25.0       | 30.0       |
+        | Last Quarter Average     | 348.65     | 332.32     | 629.23     |
+        | Last Year Count          | 61.0       | 83.0       | 92.0       |
+        | Last Year Average        | 330.27     | 305.12     | 581.32     |
+        | All Time Count           | 275.0      | 343.0      | 299.0      |
+        | All Time Average         | 239.2      | 152.9      | 466.96     |
         """
         if not self._api_key:
             self._missing_api_key_message()

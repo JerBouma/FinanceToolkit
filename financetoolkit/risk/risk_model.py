@@ -9,10 +9,14 @@ from numpy.lib.stride_tricks import sliding_window_view
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     VOLATILITY_WINDOW_TRANSLATION,
+    by_own_trading_days,
     to_period_index,
 )
 
 ALPHA_CONSTRAINT = 0.5
+
+# Calendar days per year, including leap years, for a length in years.
+DAYS_PER_YEAR = 365.25
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
@@ -197,6 +201,7 @@ def get_max_drawdown(
     return mask_without_observations((wealth / peak - 1).min(), returns)
 
 
+@by_own_trading_days
 def get_ui(
     returns: pd.Series | pd.DataFrame,
     rolling: int | None = 14,
@@ -454,6 +459,7 @@ def get_variance(
     return returns.groupby(dates).var() * volatility_window
 
 
+@by_own_trading_days
 def get_rolling_variance(
     returns: pd.Series | pd.DataFrame, period: str, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -482,6 +488,7 @@ def get_rolling_variance(
     return returns.rolling(window=window_size).var()
 
 
+@by_own_trading_days
 def get_rolling_volatility(
     returns: pd.Series | pd.DataFrame, period: str, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -557,6 +564,7 @@ def get_volatility(
     return returns.groupby(dates).std() * np.sqrt(volatility_window)
 
 
+@by_own_trading_days
 def get_conditional_drawdown_at_risk(
     returns: pd.Series | pd.DataFrame, alpha: float, method: str = "return"
 ) -> pd.Series | pd.DataFrame:
@@ -654,6 +662,7 @@ def get_tail_ratio(
     return (right_tail.abs() / left_tail.abs()).replace([np.inf, -np.inf], np.nan)
 
 
+@by_own_trading_days
 def get_rolling_tail_ratio(
     returns: pd.Series | pd.DataFrame, alpha: float, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -677,6 +686,7 @@ def get_rolling_tail_ratio(
     return (right_tail.abs() / left_tail.abs()).replace([np.inf, -np.inf], np.nan)
 
 
+@by_own_trading_days
 def get_rolling_conditional_drawdown_at_risk(
     returns: pd.Series | pd.DataFrame,
     alpha: float,
@@ -763,6 +773,7 @@ def _drawdown_trough(
     return computed, running_max, trough_position, all_nan
 
 
+@by_own_trading_days
 def get_max_drawdown_duration(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -855,6 +866,7 @@ def get_max_drawdown_duration(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_max_drawdown_recovery_time(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -951,6 +963,7 @@ def get_max_drawdown_recovery_time(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_drawdown_series(returns: pd.DataFrame, recovery: bool = False) -> pd.DataFrame:
     """
     Calculate the drawdown of every period: the decline of the wealth path from its
@@ -992,6 +1005,52 @@ def get_drawdown_series(returns: pd.DataFrame, recovery: bool = False) -> pd.Dat
     return drawdowns.mask(before_start)
 
 
+def get_deepest_since(drawdowns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Find, for every period below the peak, the last earlier period with a drawdown at
+    least as deep: the "deepest since" date of the drawdown, as `get_move_significance`
+    gives the "largest since" date of a return.
+
+    The formula is as follows:
+
+    - Deepest Since(t) = the last date s < t with Drawdown(s) <= Drawdown(t), for Drawdown(t) < 0
+
+    Args:
+        drawdowns (pd.DataFrame): The drawdowns, one column per asset (see
+            `get_drawdown_series`).
+
+    Returns:
+        pd.DataFrame: The date as text (YYYY-MM-DD for daily data) per period and asset,
+            NaN at a high, before an asset's start and when no earlier period was as deep,
+            which makes the drawdown the deepest since the start of the data.
+    """
+    deepest_since = pd.DataFrame(
+        np.nan, index=drawdowns.index, columns=drawdowns.columns, dtype=object
+    )
+
+    for column in drawdowns.columns:
+        observed = drawdowns[column].dropna()
+        values = observed.to_numpy(dtype=float)
+        labels = observed.index.astype(str)
+        since = np.full(len(values), None, dtype=object)
+        # Earlier positions whose drawdowns rise from the bottom of the stack to the top: a
+        # position is left out once a later one is at least as deep, as that one is then
+        # the later answer for every drawdown it would answer.
+        stack: list[int] = []
+
+        for position, value in enumerate(values):
+            while stack and values[stack[-1]] > value:
+                stack.pop()
+            if value < 0 and stack:
+                since[position] = labels[stack[-1]]
+            stack.append(position)
+
+        deepest_since.loc[observed.index, column] = since
+
+    return deepest_since
+
+
+@by_own_trading_days
 def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     """
     List the largest drawdowns of every column with their peak, trough and recovery.
@@ -1000,9 +1059,11 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     high (the recovery). Its depth is the lowest drawdown in between (the trough), and its
     lengths count periods (rows), so the deepest drawdown matches `get_max_drawdown`,
     `get_max_drawdown_duration` (To Trough) and `get_max_drawdown_recovery_time`
-    (To Recovery). The dates follow pyfolio's `gen_drawdown_table` (peak, valley and
-    recovery dates); QuantStats' `drawdown_details` and ffn instead start at the first
-    day below the peak and count calendar days.
+    (To Recovery). The same lengths in calendar days are the differences between the
+    dates (the last day of each period), and in years those days divided by 365.25.
+    The dates follow pyfolio's `gen_drawdown_table` (peak, valley and recovery dates);
+    QuantStats' `drawdown_details` and ffn instead start at the first day below the peak
+    and count calendar days.
 
     Args:
         returns (pd.DataFrame): The returns, one column per asset.
@@ -1013,13 +1074,27 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
         pd.DataFrame: One row per drawdown, indexed by column and rank, with the dates of
             the Peak, Trough and Recovery (NaN when not yet recovered), the Drawdown as a
             negative decimal, the gain needed from the trough back to the peak (Recovery
-            Needed = -Drawdown / (1 + Drawdown)) and, in periods, the time from peak to trough (To Trough),
-            from trough to recovery (To Recovery) and from peak to recovery (Length). The
-            Peak is NaN when it is the starting wealth before the first row.
+            Needed = -Drawdown / (1 + Drawdown)), in periods the time from peak to trough (To Trough),
+            from trough to recovery (To Recovery) and from peak to recovery (Length), the same
+            in calendar days (To Trough (Days), To Recovery (Days), Length (Days)) and Length
+            (Years). The Peak, and the lengths from it, are NaN when it is the starting
+            wealth before the first row.
     """
     drawdown_series = get_drawdown_series(returns)
     dates = drawdown_series.index
+    # The last day of each period, so the calendar days between two months run from month end
+    # to month end.
+    days = (
+        dates.end_time.normalize()
+        if isinstance(dates, pd.PeriodIndex)
+        else pd.DatetimeIndex(dates).normalize()
+    )
     rows = []
+
+    def calendar_days(start: int | None, end: int | None) -> float:
+        if start is None or end is None or start < 0:
+            return np.nan
+        return float((days[end] - days[start]).days)
 
     for column in drawdown_series.columns:
         drawdowns = drawdown_series[column].to_numpy()
@@ -1049,6 +1124,10 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
                     "Length": (
                         float(recovery - peak) if recovery is not None else np.nan
                     ),
+                    "To Trough (Days)": calendar_days(peak, trough),
+                    "To Recovery (Days)": calendar_days(trough, recovery),
+                    "Length (Days)": calendar_days(peak, recovery),
+                    "Length (Years)": calendar_days(peak, recovery) / DAYS_PER_YEAR,
                 }
             )
 
@@ -1068,11 +1147,16 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
         "To Trough",
         "To Recovery",
         "Length",
+        "To Trough (Days)",
+        "To Recovery (Days)",
+        "Length (Days)",
+        "Length (Years)",
     ]
 
     return pd.DataFrame(rows, columns=columns).set_index(["Ticker", "Rank"])
 
 
+@by_own_trading_days
 def get_rolling_skewness(
     returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -1089,6 +1173,7 @@ def get_rolling_skewness(
     return returns.rolling(window=window_size).skew()
 
 
+@by_own_trading_days
 def get_rolling_kurtosis(
     returns: pd.Series | pd.DataFrame, window_size: int, fisher: bool = True
 ) -> pd.Series | pd.DataFrame:
@@ -1172,6 +1257,7 @@ def get_downside_deviation(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_rolling_downside_deviation(
     returns: pd.Series | pd.DataFrame,
     window_size: int,
@@ -1228,6 +1314,7 @@ def get_excess_volatility(
     return get_volatility(excess_returns, period)
 
 
+@by_own_trading_days
 def get_rolling_excess_volatility(
     returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series,
@@ -1347,6 +1434,7 @@ def get_coefficient_of_variation(
     return grouped.std() / grouped.mean()
 
 
+@by_own_trading_days
 def get_ewma_volatility(
     returns: pd.Series | pd.DataFrame, lambda_: float = 0.94
 ) -> pd.Series | pd.DataFrame:
@@ -1394,6 +1482,7 @@ def get_ewma_volatility(
     return np.sqrt(ewma_variance)
 
 
+@by_own_trading_days
 def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
     """
     Calculate the Autocorrelation Function (ACF) of a series for a range of lags.
@@ -1558,6 +1647,7 @@ def get_hill_estimator(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     """
     Calculate the Hurst Exponent of a series, a measure of long-term memory that
@@ -1619,6 +1709,7 @@ def get_hurst_exponent(data: pd.Series, max_lag: int = 20) -> float:
     return poly[0]
 
 
+@by_own_trading_days
 def get_move_significance(
     returns: pd.Series, window: int = 252, alpha: float = 0.05
 ) -> pd.DataFrame:

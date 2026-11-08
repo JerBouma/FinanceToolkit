@@ -12,7 +12,7 @@ import pandas as pd
 CONTRACT_MONTHS: dict[str, tuple[int, ...]] = {
     "Crude Oil": tuple(range(1, 13)),
     "Natural Gas": tuple(range(1, 13)),
-    "Gold": (2, 4, 6, 8, 10, 12),
+    "Gold": tuple(range(1, 13)),
     "Silver": tuple(range(1, 13)),
     "Copper": tuple(range(1, 13)),
     "Corn": (3, 5, 7, 9, 12),

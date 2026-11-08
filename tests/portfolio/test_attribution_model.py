@@ -97,3 +97,27 @@ def test_look_through_exposure_skips_assets_without_weight():
     )
 
     assert exposure.to_dict() == {"Technology": 1.0}
+
+
+def test_money_weighted_return_with_more_than_one_solution_is_refused():
+    # Invested, received and paid again: both 10.34% and 19.26% a year settle these flows.
+    dates = pd.to_datetime(["2020-01-01", "2021-01-01", "2022-01-01"])
+    flows = pd.Series([-100.0, 230.0, -132.0], index=dates)
+
+    with pytest.raises(ValueError, match=r"2 annual rates .*10\.34%, 19\.26%"):
+        attribution_model.get_money_weighted_return(flows)
+
+
+def test_money_weighted_return_with_dividends_between_purchases():
+    # The flows change sign many times (dividends between purchases) yet have one solution,
+    # which the search over the grid finds as the direct solution does.
+    dates = pd.date_range("2020-01-01", periods=9, freq="QS")
+    flows = pd.Series(
+        [-100.0, 1.0, -100.0, 1.0, -100.0, 1.0, -100.0, 1.0, 450.0], index=dates
+    )
+    years = ((dates - dates[0]).days / 365).to_numpy()
+
+    rate = attribution_model.get_money_weighted_return(flows)
+
+    assert np.sum(flows.to_numpy() / (1 + rate) ** years) == pytest.approx(0, abs=1e-8)
+    assert 0 < rate < 1

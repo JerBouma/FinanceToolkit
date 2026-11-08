@@ -80,6 +80,10 @@ def _apply_per_column(
     )
 
 
+# Outside the stationarity region the log-likelihood is infinite, so the finite-difference
+# gradient there subtracts infinities; L-BFGS-B handles the NaN step, and the warning it
+# raises says nothing to the user.
+@np.errstate(invalid="ignore", over="ignore", divide="ignore")
 def _fit_multi_start(
     wrapper_func,
     bounds: list[tuple[float, float]],

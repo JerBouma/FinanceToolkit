@@ -40,19 +40,30 @@ def define_strike_prices(
         strike_price_range (float): the strike price range.
 
     Returns:
-        dict: a dictionary of strike prices for each ticker.
+        dict: a dictionary of strike prices for each ticker, without the tickers that have no
+        price.
     """
+    if strike_price_range < 0 or strike_step_size < 0:
+        raise ValueError(
+            "The strike price range and the strike step size must be positive."
+        )
+    if strike_price_range > 1:
+        raise ValueError("The strike price range must be between 0 and 1.")
+    if strike_step_size == 0:
+        raise ValueError("The strike step size must be greater than 0.")
+
     strike_prices_per_ticker = {}
 
     for ticker in tickers:
-        if strike_price_range < 0 or strike_step_size < 0:
-            raise ValueError(
-                "The strike price range and the strike step size must be positive."
+        # A ticker without a price on the date (not listed yet, delisted or suspended) has
+        # no strikes around it, and is left out rather than failing the other tickers.
+        if pd.isna(stock_price.get(ticker)):
+            logger.warning(
+                "%s has no price on %s, so it is left out of the option values.",
+                ticker,
+                stock_price.name,
             )
-        if strike_price_range > 1:
-            raise ValueError("The strike price range must be between 0 and 1.")
-        if strike_step_size == 0:
-            raise ValueError("The strike step size must be greater than 0.")
+            continue
         if (
             strike_count := 2
             * strike_price_range

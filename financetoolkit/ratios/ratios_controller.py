@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 
-import warnings
 from collections.abc import Callable
 from functools import cached_property
 
@@ -139,9 +138,6 @@ FACTOR_COLLECTIONS = {
 FACTOR_COLLECTIONS["all"] = [
     metric for metrics in FACTOR_COLLECTIONS.values() for metric in metrics
 ]
-
-# Division by zero is normal in these calculations, not a bug.
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-lines,too-many-instance-attributes,too-many-public-methods,too-many-locals,eval-used
 # The examples' output tables are wider than the line length.

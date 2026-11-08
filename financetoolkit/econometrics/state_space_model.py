@@ -207,18 +207,21 @@ def get_dcc_garch(returns: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, float]
         quadratic = np.einsum("ti,ti->t", residuals, solved)
         return 0.5 * float(np.sum(log_determinant + quadratic))
 
-    best = min(
-        (
-            optimize.minimize(
-                negative_likelihood,
-                start,
-                method="Nelder-Mead",
-                options={"xatol": 1e-6},
-            )
-            for start in ((0.02, 0.95), (0.05, 0.9), (0.01, 0.98))
-        ),
-        key=lambda result: result.fun,
-    )
+    # Nelder-Mead compares infinite likelihoods (inf - inf) at the boundary, which is handled
+    # below rather than worth a warning.
+    with np.errstate(invalid="ignore"):
+        best = min(
+            (
+                optimize.minimize(
+                    negative_likelihood,
+                    start,
+                    method="Nelder-Mead",
+                    options={"xatol": 1e-6},
+                )
+                for start in ((0.02, 0.95), (0.05, 0.9), (0.01, 0.98))
+            ),
+            key=lambda result: result.fun,
+        )
     # Perfectly correlated series give a singular correlation matrix at every parameter, so
     # the likelihood is infinite everywhere and the optimizer stays at its starting point.
     if not np.isfinite(best.fun):

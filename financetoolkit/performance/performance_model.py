@@ -2424,7 +2424,9 @@ def get_gain_to_pain_ratio(
     if isinstance(returns, pd.Series):
         losses = returns[returns < 0].abs().sum()
 
-        return returns.sum() / losses
+        # A period without losses (or without returns) divides by zero, which is inf or NaN.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return returns.sum() / losses
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 

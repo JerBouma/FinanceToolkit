@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import itertools
-import warnings
 from collections.abc import Callable
 from functools import cached_property
 
@@ -35,9 +34,6 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 logger = get_logger()
-
-# Division by zero is normal in these calculations, not a bug.
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 

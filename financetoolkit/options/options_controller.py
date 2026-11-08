@@ -22,6 +22,7 @@ from financetoolkit.options import (
 )
 from financetoolkit.ratios import valuation_model
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_standardization,
@@ -296,6 +297,50 @@ class Options:
                 spot_age,
             )
 
+    def _pricing_date(self, start_date: str | None) -> pd.Period:
+        """
+        The date the theoretical option values start from: the last date of the historical
+        data, or the last trading day on or before start_date, so that a weekend or holiday
+        uses the close before it rather than being rejected.
+
+        Args:
+            start_date (str | None): The requested date, None for the last date.
+
+        Returns:
+            pd.Period: The date of the prices to use.
+
+        Raises:
+            ValueError: If start_date is not a date or lies before the historical data.
+        """
+        dates = self._prices.index
+
+        if start_date is None:
+            return dates[-1]
+
+        try:
+            requested = pd.Period(start_date, freq="D")
+        except ValueError as error:
+            raise ValueError(
+                f"The start date {start_date} is not a valid date."
+            ) from error
+
+        position = dates.searchsorted(requested, side="right") - 1
+
+        if position < 0:
+            raise ValueError(
+                f"The start date {start_date} lies before the historical data, which starts on "
+                f"{dates[0]}."
+            )
+
+        if dates[position] != requested:
+            logger.info(
+                "There are no prices on %s, so the option values start from %s.",
+                start_date,
+                dates[position],
+            )
+
+        return dates[position]
+
     def _dividend_yield_on(self, ticker: str, date) -> float:
         """
         The dividend yield of a ticker on a pricing date: the dividends of the 365 days up to
@@ -323,6 +368,7 @@ class Options:
         # stock by the same amount over a year, as the risk-free rate conversion does.  # noqa: E501
         return float(np.log1p(self._dividend_yield[ticker].iloc[-1]))
 
+    @handle_errors
     def get_option_chains(
         self,
         expiration_date: str | None = None,
@@ -453,6 +499,7 @@ class Options:
 
         return option_chains
 
+    @handle_errors
     def get_black_scholes_model(
         self,
         start_date: str | None = None,
@@ -513,8 +560,9 @@ class Options:
         Also known as: BSM, Black-Scholes-Merton, option pricing model.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -576,10 +624,7 @@ class Options:
         |            205 |       4.3742 |       8.5311 |      11.9811 |
         |            210 |       3.313  |       7.1639 |      10.4798 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -655,6 +700,7 @@ class Options:
 
         return black_scholes_df
 
+    @handle_errors
     def get_implied_volatility(
         self,
         expiration_date: str | None = None,
@@ -868,6 +914,7 @@ class Options:
 
         return implied_volatility_df
 
+    @handle_errors
     def get_volatility_surface(
         self,
         expiration_dates: list[str] | None = None,
@@ -1159,6 +1206,7 @@ class Options:
             volatility_surface, rounding if rounding is not None else self._rounding
         )
 
+    @handle_errors
     def get_risk_neutral_density(
         self,
         expiration_date: str | None = None,
@@ -1446,6 +1494,7 @@ class Options:
             density_df, rounding if rounding is not None else self._rounding
         )
 
+    @handle_errors
     def get_binomial_model(
         self,
         start_date: str | None = None,
@@ -1508,8 +1557,9 @@ class Options:
         Also known as: binomial tree, lattice model, option pricing.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             american_option (bool, optional): Whether to value an American option, which can be exercised at every
@@ -1569,10 +1619,7 @@ class Options:
         | (69, 'DDDDU') |      nan     |     nan      |     nan      |     nan      |       0      |       0      |
         | (69, 'DDDDD') |      nan     |     nan      |     nan      |     nan      |     nan      |       0      |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -1676,6 +1723,7 @@ class Options:
 
         return binomial_trees_df
 
+    @handle_errors
     def get_stock_price_simulation(
         self,
         start_date: str | None = None,
@@ -1719,8 +1767,9 @@ class Options:
         Also known as: binomial tree, stock price tree, stock price path, lattice.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
             one year.
             timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
@@ -1772,10 +1821,7 @@ class Options:
         | DDDDU      |       214.16 |      163.226 |      124.405 |      94.8177 |       72.267 |      94.8177 |
         | DDDDD      |       214.16 |      163.226 |      124.405 |      94.8177 |       72.267 |      55.0796 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -1846,6 +1892,7 @@ class Options:
 
         return stock_price_simulation_df
 
+    @handle_errors
     def get_put_call_parity(
         self,
         start_date: str | None = None,
@@ -1887,8 +1934,9 @@ class Options:
         and puts.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -1945,10 +1993,7 @@ class Options:
         |            215 |            0 |            0 |            0 |
         |            220 |            0 |            0 |            0 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -2043,6 +2088,7 @@ class Options:
 
         return parity_gap_df
 
+    @handle_errors
     def get_garman_kohlhagen(
         self,
         start_date: str | None = None,
@@ -2081,8 +2127,9 @@ class Options:
         model.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -2145,10 +2192,7 @@ class Options:
         |            160 |       0.4601 |       0.8903 |       1.2176 |
         |            162 |       0.1832 |       0.494  |       0.7678 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -2217,6 +2261,7 @@ class Options:
 
         return garman_kohlhagen_df
 
+    @handle_errors
     def get_binary_option(
         self,
         start_date: str | None = None,
@@ -2261,8 +2306,9 @@ class Options:
         asset-or-nothing option.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             option_type (str, optional): Either "cash-or-nothing" or "asset-or-nothing". Defaults to
@@ -2330,10 +2376,7 @@ class Options:
         |            335 |       0.2278 |       0.2945 |       0.3254 |
         |            340 |       0.1827 |       0.257  |       0.2931 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -2411,6 +2454,7 @@ class Options:
 
         return binary_option_df
 
+    @handle_errors
     def get_bjerksund_stensland(
         self,
         start_date: str | None = None,
@@ -2468,8 +2512,9 @@ class Options:
         approximation.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -2532,10 +2577,7 @@ class Options:
         |             44 |       0.1144 |       0.3314 |       0.5365 |
         |             45 |       0.0497 |       0.2001 |       0.366  |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -2611,6 +2653,7 @@ class Options:
 
         return bjerksund_stensland_df
 
+    @handle_errors
     def get_monte_carlo_option_price(
         self,
         start_date: str | None = None,
@@ -2665,8 +2708,9 @@ class Options:
         Also known as: Monte Carlo option pricing, simulation-based option pricing.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -2741,10 +2785,7 @@ class Options:
         |            930 |       0.0583 |       0.6377 |       3.2783 |
         |            940 |       0.018  |       0.3433 |       2.3104 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -2846,6 +2887,7 @@ class Options:
 
         return monte_carlo_price_df
 
+    @handle_errors
     def get_barrier_option(
         self,
         start_date: str | None = None,
@@ -2920,8 +2962,9 @@ class Options:
         up-and-out, up-and-in option.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             barrier_percentage (float, optional): The barrier level as a percentage of the current stock price.
@@ -3013,10 +3056,7 @@ class Options:
                 f"(received {barrier_percentage}). Use barrier_direction='up' for a barrier above the stock price."
             )
 
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -3097,6 +3137,7 @@ class Options:
 
         return barrier_option_df
 
+    @handle_errors
     def get_asian_option(
         self,
         start_date: str | None = None,
@@ -3141,8 +3182,9 @@ class Options:
         option.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
@@ -3205,10 +3247,7 @@ class Options:
         |            128 |       0.1143 |       0.4421 |       0.8013 |
         |            130 |       0.0423 |       0.2462 |       0.5176 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -3284,6 +3323,7 @@ class Options:
 
         return asian_option_df
 
+    @handle_errors
     def get_strategy_payoff(
         self,
         legs: list[dict[str, float | bool | str]],
@@ -3335,8 +3375,9 @@ class Options:
             contain at least one leg. The same legs are applied to every ticker, so
             strike prices should be chosen with the relevant tickers' price levels in
             mind.
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             stock_price_range (float): The percentage range to use for the stock prices at expiration. Defaults
             to 0.5 which equals 50% and thus results in stock prices from 50 to 150 if the current stock price is
             100.
@@ -3420,10 +3461,7 @@ class Options:
         |           550 |     42 |
         |           555 |     47 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
 
         stock_price_range_per_ticker = helpers.define_strike_prices(
@@ -3452,6 +3490,7 @@ class Options:
 
         return strategy_payoff_df
 
+    @handle_errors
     def collect_all_greeks(
         self,
         start_date: str | None = None,
@@ -3524,8 +3563,9 @@ class Options:
         before it, it takes the dividend yield of the first date that has one.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -3642,6 +3682,7 @@ class Options:
 
         return all_greeks
 
+    @handle_errors
     def collect_first_order_greeks(
         self,
         start_date: str | None = None,
@@ -3685,8 +3726,9 @@ class Options:
         before it, it takes the dividend yield of the first date that has one.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -3843,6 +3885,7 @@ class Options:
 
         return greeks_df
 
+    @handle_errors
     def get_delta(
         self,
         start_date: str | None = None,
@@ -3896,8 +3939,9 @@ class Options:
         Also known as: option price sensitivity to underlying, hedge ratio.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -3960,10 +4004,7 @@ class Options:
         |            255 |       0.1777 |       0.2762 |       0.3311 |
         |            260 |       0.1313 |       0.2317 |       0.2911 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -4039,6 +4080,7 @@ class Options:
 
         return delta_df
 
+    @handle_errors
     def get_dual_delta(
         self,
         start_date: str | None = None,
@@ -4081,8 +4123,9 @@ class Options:
         Also known as: strike delta, binary option delta.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4150,10 +4193,7 @@ class Options:
         |            360 |      -0.059  |      -0.1327 |      -0.1794 |
         |            365 |      -0.0395 |      -0.1056 |      -0.1518 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -4229,6 +4269,7 @@ class Options:
 
         return dual_delta_df
 
+    @handle_errors
     def get_vega(
         self,
         start_date: str | None = None,
@@ -4281,8 +4322,9 @@ class Options:
         Also known as: option sensitivity to volatility changes.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4343,10 +4385,7 @@ class Options:
         |            104 |       0.0664 |       0.1241 |       0.1664 |
         |            106 |       0.0538 |       0.1126 |       0.1568 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -4421,6 +4460,7 @@ class Options:
 
         return vega_df
 
+    @handle_errors
     def get_theta(
         self,
         start_date: str | None = None,
@@ -4475,8 +4515,9 @@ class Options:
         Also known as: time decay, option time value erosion.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4536,10 +4577,7 @@ class Options:
         |            380 |      -0.347  |      -0.369  |      -0.3216 |
         |            390 |      -0.2114 |      -0.2901 |      -0.287  |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -4615,6 +4653,7 @@ class Options:
 
         return theta_df
 
+    @handle_errors
     def get_rho(
         self,
         start_date: str | None = None,
@@ -4663,8 +4702,9 @@ class Options:
         Also known as: option sensitivity to interest rate.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4722,10 +4762,7 @@ class Options:
         |            155 |       0.9292 |       7.4974 |      20.2949 |
         |            160 |       0.2728 |       4.6028 |      15.3122 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -4801,6 +4838,7 @@ class Options:
 
         return rho_df
 
+    @handle_errors
     def get_epsilon(
         self,
         start_date: str | None = None,
@@ -4845,8 +4883,9 @@ class Options:
         Also known as: option sensitivity to dividend yield.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -4905,10 +4944,7 @@ class Options:
         |             76 |      -0.3054 |      -3.2454 |      -9.7093 |
         |             78 |      -0.0951 |      -2.0461 |      -7.4315 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -4984,6 +5020,7 @@ class Options:
 
         return epsilon_df
 
+    @handle_errors
     def get_lambda(
         self,
         start_date: str | None = None,
@@ -5030,8 +5067,9 @@ class Options:
         Also known as: option elasticity, leverage factor.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5094,10 +5132,7 @@ class Options:
         |            375 |      29.8195 |      18.7791 |      14.5451 |
         |            380 |      32.1368 |      19.8667 |      15.2458 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -5173,6 +5208,7 @@ class Options:
 
         return lambda_df
 
+    @handle_errors
     def collect_second_order_greeks(
         self,
         start_date: str | None = None,
@@ -5218,8 +5254,9 @@ class Options:
         before it, it takes the dividend yield of the first date that has one.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5382,6 +5419,7 @@ class Options:
 
         return greeks_df
 
+    @handle_errors
     def get_gamma(
         self,
         start_date: str | None = None,
@@ -5430,8 +5468,9 @@ class Options:
         Also known as: rate of change of delta, option convexity.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5487,10 +5526,7 @@ class Options:
         |             27 |       0.0366 |       0.0903 |       0.119  |
         |             28 |       0.0023 |       0.0229 |       0.0601 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -5565,6 +5601,7 @@ class Options:
 
         return gamma_df
 
+    @handle_errors
     def get_dual_gamma(
         self,
         start_date: str | None = None,
@@ -5604,8 +5641,9 @@ class Options:
         Also known as: strike gamma, binary option gamma.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5661,10 +5699,7 @@ class Options:
         |             27 |       0.0115 |       0.0513 |       0.0911 |
         |             28 |       0.0002 |       0.0068 |       0.0323 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -5739,6 +5774,7 @@ class Options:
 
         return dual_gamma_df
 
+    @handle_errors
     def get_vanna(
         self,
         start_date: str | None = None,
@@ -5782,8 +5818,9 @@ class Options:
         Also known as: delta-vega cross-derivative.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -5846,10 +5883,7 @@ class Options:
         |            126 |       0.8593 |       0.874  |       0.8096 |
         |            128 |       0.7923 |       0.9055 |       0.8713 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -5924,6 +5958,7 @@ class Options:
 
         return vanna_df
 
+    @handle_errors
     def get_charm(
         self,
         start_date: str | None = None,
@@ -5971,8 +6006,9 @@ class Options:
         Also known as: delta time decay, delta bleed.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6041,10 +6077,7 @@ class Options:
         |            385 |      -0.0885 |      -0.6684 |      -1.1018 |
         |            390 |      -0.0225 |      -0.3577 |      -0.8537 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -6120,6 +6153,7 @@ class Options:
 
         return charm_df
 
+    @handle_errors
     def get_vomma(
         self,
         start_date: str | None = None,
@@ -6162,8 +6196,9 @@ class Options:
         Also known as: volga, vega convexity.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6229,10 +6264,7 @@ class Options:
         |            370 |      40.3869 |      32.4074 |      26.2771 |
         |            375 |      46.762  |      39.4615 |      32.8086 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -6307,6 +6339,7 @@ class Options:
 
         return vomma_df
 
+    @handle_errors
     def get_vera(
         self,
         start_date: str | None = None,
@@ -6352,8 +6385,9 @@ class Options:
         Also known as: rho-vega cross-derivative.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6415,10 +6449,7 @@ class Options:
         |           1200 |      51.8631 |      97.3981 |      94.5578 |
         |           1220 |      52.8138 |     112.963  |     122.847  |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -6493,6 +6524,7 @@ class Options:
 
         return vera_df
 
+    @handle_errors
     def get_veta(
         self,
         start_date: str | None = None,
@@ -6542,8 +6574,9 @@ class Options:
         Also known as: vega time decay.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6603,10 +6636,7 @@ class Options:
         |           3650 |      -0.063  |      -0.0994 |      -0.0875 |
         |           3700 |      -0.0288 |      -0.0759 |      -0.0835 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -6681,6 +6711,7 @@ class Options:
 
         return veta_df
 
+    @handle_errors
     def get_partial_derivative(
         self,
         start_date: str | None = None,
@@ -6720,8 +6751,9 @@ class Options:
         Also known as: second strike derivative, lognormal risk-neutral density.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -6789,10 +6821,7 @@ class Options:
         |             64 |       0      |       0.0018 |       0.0101 |
         |             65 |       0      |       0.0007 |       0.0063 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -6867,6 +6896,7 @@ class Options:
 
         return partial_derivative_df
 
+    @handle_errors
     def collect_third_order_greeks(
         self,
         start_date: str | None = None,
@@ -6900,8 +6930,9 @@ class Options:
         before it, it takes the dividend yield of the first date that has one.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7031,6 +7062,7 @@ class Options:
 
         return greeks_df
 
+    @handle_errors
     def get_speed(
         self,
         start_date: str | None = None,
@@ -7072,8 +7104,9 @@ class Options:
         Also known as: gamma rate of change.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7126,10 +7159,7 @@ class Options:
         |             14 |       0.5578 |       0.3088 |       0.1259 |
         |             15 |       0.0474 |       0.136  |       0.1319 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -7204,6 +7234,7 @@ class Options:
 
         return speed_df
 
+    @handle_errors
     def get_zomma(
         self,
         start_date: str | None = None,
@@ -7247,8 +7278,9 @@ class Options:
         Also known as: gamma sensitivity to volatility.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7306,10 +7338,7 @@ class Options:
         |             84 |       0.1311 |       0.2138 |       0.0997 |
         |             86 |       0.0273 |       0.1413 |       0.1536 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -7384,6 +7413,7 @@ class Options:
 
         return zomma_df
 
+    @handle_errors
     def get_color(
         self,
         start_date: str | None = None,
@@ -7432,8 +7462,9 @@ class Options:
         Also known as: gamma time decay.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7488,10 +7519,7 @@ class Options:
         |            155 |      -0.6021 |      -0.3776 |      -0.0689 |
         |            160 |      -0.0689 |      -0.2173 |      -0.1354 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -7566,6 +7594,7 @@ class Options:
 
         return color_df
 
+    @handle_errors
     def get_ultima(
         self,
         start_date: str | None = None,
@@ -7610,8 +7639,9 @@ class Options:
         Also known as: third-order vega.
 
         Args:
-            start_date (str | None, optional): The start date which determines the stock price. Defaults to None
-            which means it will use the most recent date.
+            start_date (str | None, optional): The date whose price, volatility and rates the values
+            start from; a date without prices (a weekend, a holiday or a ticker that did not trade) uses the last
+            trading day before it. Defaults to None, which uses the last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
             strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
@@ -7666,10 +7696,7 @@ class Options:
         |             68 |     -28.3077 |     -22.0046 |     -18.3164 |
         |             70 |     -45.8895 |     -41.5496 |     -36.2787 |
         """
-        if start_date is not None and start_date not in self._prices.index:
-            raise ValueError(f"The start date {start_date} is not a valid date.")
-
-        start_date = start_date if start_date else self._daily_historical.index[-1]
+        start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
         volatility = self._volatility.loc[start_date]
 
@@ -7891,6 +7918,7 @@ class Options:
             table, rounding if rounding is not None else self._rounding
         )
 
+    @handle_errors
     def get_put_call_ratio(
         self,
         expiration_dates: list[str] | None = None,
@@ -7974,6 +8002,7 @@ class Options:
             combined, rounding if rounding is not None else self._rounding
         )
 
+    @handle_errors
     def get_max_pain(
         self,
         expiration_dates: list[str] | None = None,
@@ -8037,6 +8066,7 @@ class Options:
             calculate, expiration_dates, number_of_expirations, rounding
         )
 
+    @handle_errors
     def get_gamma_exposure(
         self,
         expiration_dates: list[str] | None = None,
@@ -8164,6 +8194,7 @@ class Options:
             result, rounding if rounding is not None else self._rounding
         )
 
+    @handle_errors
     def get_implied_volatility_term_structure(
         self,
         expiration_dates: list[str] | None = None,
@@ -8237,6 +8268,7 @@ class Options:
             rounding,
         )
 
+    @handle_errors
     def get_volatility_skew(
         self,
         expiration_dates: list[str] | None = None,
@@ -8311,6 +8343,7 @@ class Options:
             rounding,
         )
 
+    @handle_errors
     def get_implied_move(
         self,
         expiration_dates: list[str] | None = None,
@@ -8472,6 +8505,7 @@ class Options:
             }
         )
 
+    @handle_errors
     def get_model_free_implied_volatility(
         self,
         days: int = 30,
@@ -8561,6 +8595,7 @@ class Options:
         )
         return table
 
+    @handle_errors
     def get_volatility_risk_premium(
         self,
         days: int = 30,

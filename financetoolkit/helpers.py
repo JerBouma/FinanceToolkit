@@ -8,6 +8,7 @@ import inspect
 import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from decimal import ROUND_HALF_UP, Decimal
 from functools import wraps
 from typing import Any
 
@@ -569,6 +570,28 @@ class LazyDict(dict):
             return self[key]
         except KeyError:
             return default
+
+
+def round_half_up(value: float | str | Decimal, decimals: int) -> float:
+    """
+    Rounds a number to a number of decimals with a half rounded up (away from zero), as
+    statistical agencies round their published figures. Python's round() rounds a half to
+    even and works on the binary float, so 0.125 and 2.675 would not round up.
+
+    Args:
+        value (float | str | Decimal): The number, a missing value is returned as is.
+        decimals (int): The number of decimals to round to.
+
+    Returns:
+        float: The rounded number.
+    """
+    if not isinstance(value, str | Decimal) and pd.isna(value):
+        return value
+
+    # str gives the shortest decimal that is the float, so 2.675 rounds as 2.675.
+    number = value if isinstance(value, Decimal) else Decimal(str(value))
+
+    return float(number.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
 
 
 def handle_portfolio(func):

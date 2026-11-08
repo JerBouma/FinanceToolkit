@@ -9,18 +9,21 @@ import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
-from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 
 BASE_URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/"
 
 # The keyless version of the API returns at most three years per request and accepts 25
 # requests a day per IP address. It is therefore only asked for the latest releases,
 # once a day, and never for a full history.
-RECENT_YEARS = 2
+RECENT_YEARS = 3
 
 SERIES = {
     # Unemployment rate, 16 years and over, seasonally adjusted (Current Population Survey).
     "unemployment_rate": "LNS14000000",
+    # Total nonfarm employment in thousands, seasonally adjusted (Current Employment
+    # Statistics), the source of FRED's PAYEMS series.
+    "nonfarm_payrolls": "CES0000000001",
 }
 
 COUNTRY = "United States"
@@ -34,8 +37,8 @@ def collect_recent_bls_series(
     series_id: str, description: str, fallback: str | None = None
 ) -> pd.DataFrame:
     """
-    Retrieves the monthly observations of a BLS series for the current and the previous
-    year, in a single request that is cached for a day.
+    Retrieves the monthly observations of a BLS series for the current and the two
+    previous years, in a single request that is cached for a day.
 
     Args:
         series_id (str): The BLS series identifier, e.g. "LNS14000000".
@@ -56,6 +59,7 @@ def collect_recent_bls_series(
             f"{BASE_URL}{series_id}?startyear={current_year - RECENT_YEARS + 1}"
             f"&endyear={current_year}",
             timeout=60,
+            extra_headers=TOOLKIT_HEADERS,
         ).json()
 
         # A refused request, such as one over the daily limit, is answered with status 200.
@@ -102,7 +106,7 @@ def get_unemployment_rate() -> pd.DataFrame:
 
     Returns:
         pd.DataFrame: The unemployment rate as a decimal fraction of the labour force
-        (0.042 for 4.2%), indexed by month, for the current and the previous year.
+        (0.042 for 4.2%), indexed by month, for the current and the two previous years.
     """
     # The BLS publishes the rate in percent of the labour force.
     return (
@@ -113,3 +117,26 @@ def get_unemployment_rate() -> pd.DataFrame:
         )
         / 100
     )
+
+
+def get_nonfarm_payrolls() -> pd.DataFrame:
+    """
+    Retrieves the latest months of total nonfarm payroll employment, in thousands of
+    persons and seasonally adjusted (series CES0000000001), the headline figure of the
+    monthly Employment Situation report.
+
+    The keyless BLS API returns about the last three years, so the full history, from
+    1939, requires a FRED API key.
+
+    Returns:
+        pd.DataFrame: A single "United States" column indexed by month.
+    """
+    payrolls = collect_recent_bls_series(
+        SERIES["nonfarm_payrolls"], "nonfarm payrolls"
+    ).copy()
+
+    # Dated on the first day of each month, as FRED dates the series.
+    payrolls.index = payrolls.index.asfreq("D", how="start")
+    payrolls.index.name = "Date"
+
+    return payrolls

@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
@@ -84,3 +85,23 @@ def determine_within_dataset(
         )
 
     return within_historical_data
+
+
+def get_newey_west_lags(n_observations: int) -> int:
+    """
+    The Newey and West (1994) rule of thumb for the number of autocorrelation lags to
+    include: floor(4 * (n / 100)^(2/9)), e.g. 5 lags for a year of 252 daily returns and 3
+    for five years of monthly returns.
+
+    For more information about the rule, see the following paper:
+
+    - Newey, W.K., & West, K.D. (1994). "Automatic Lag Selection in Covariance Matrix
+    Estimation." Review of Economic Studies, 61(4), 631-653.
+
+    Args:
+        n_observations (int): The number of observations.
+
+    Returns:
+        int: The number of lags.
+    """
+    return int(np.floor(4 * (n_observations / 100) ** (2 / 9)))

@@ -6,6 +6,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import by_own_trading_days
+
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
@@ -105,6 +107,7 @@ def get_amihud_illiquidity(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_roll_spread(
     close_prices: pd.Series | pd.DataFrame,
 ) -> pd.Series | pd.DataFrame:

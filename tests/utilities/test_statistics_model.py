@@ -666,3 +666,39 @@ def test_compound_growth_needs_periods_with_a_yearly_count():
 
     with pytest.raises(ValueError, match="yearly, quarterly, monthly or weekly"):
         statistics_model.calculate_growth(daily, lag=1, compound=True, axis="rows")
+
+
+def test_by_own_trading_days_counts_each_columns_own_rows():
+    """A row-counting measure counts the rows each column has a value on."""
+    from financetoolkit.utilities.statistics_model import by_own_trading_days
+
+    @by_own_trading_days
+    def rows(returns):
+        return returns.apply(len)
+
+    returns = pd.DataFrame(
+        {"A": [0.01, np.nan, 0.02, 0.03], "B": [0.01, 0.02, 0.03, 0.04]}
+    )
+
+    # A did not trade on the second row, which only B did.
+    assert rows(returns).to_dict() == {"A": 3, "B": 4}
+
+
+def test_by_own_trading_days_compounds_returns_between_shared_dates():
+    """Against a benchmark, the returns run between the dates both traded."""
+    from financetoolkit.utilities.statistics_model import by_own_trading_days
+
+    @by_own_trading_days(compound=True)
+    def paired(returns, benchmark_returns):
+        return returns.assign(Benchmark=benchmark_returns)
+
+    index = pd.RangeIndex(4)
+    returns = pd.DataFrame({"A": [np.nan, 0.10, np.nan, 0.10]}, index=index)
+    benchmark = pd.Series([np.nan, 0.05, 0.05, 0.05], index=index)
+
+    result = paired(returns, benchmark)
+
+    # On the last row, the benchmark's two days since the previous shared date.
+    assert np.isclose(result.loc[3, "Benchmark"], 1.05**2 - 1)
+    assert np.isclose(result.loc[3, "A"], 0.10)
+    assert pd.isna(result.loc[2, "A"])

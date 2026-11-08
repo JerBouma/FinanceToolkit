@@ -719,10 +719,11 @@ def get_expected_returns(
       capm_return with compounding=False).
     - "james_stein": the Bayes-Stein shrinkage estimator of Jorion (1986), which pulls
       every average return towards the average return of the minimum variance portfolio,
-      μ_0 = 1'S⁻¹μ̂ / 1'S⁻¹1, by φ = (N + 2) / ((N + 2) + T (μ̂ - μ_0 1)'S⁻¹(μ̂ - μ_0 1)),
-      with μ̂ the average and S the sample covariance (ddof=1) of the T returns per
-      period of the N assets: μ = (1 - φ) μ̂ + φ μ_0 1 (Riskfolio-Lib's mean_vector with
-      method="BS", target="b2"). The average returns are the noisiest input of a mean-variance
+      μ_0 = 1'Σ⁻¹μ̂ / 1'Σ⁻¹1, by φ = (N + 2) / ((N + 2) + T (μ̂ - μ_0 1)'Σ⁻¹(μ̂ - μ_0 1)),
+      with μ̂ the average of the T returns per period of the N assets and Σ = S (T - 1) /
+      (T - N - 2) Jorion's estimate of the covariance matrix from the sample covariance
+      S (ddof=1): μ = (1 - φ) μ̂ + φ μ_0 1. Riskfolio-Lib's mean_vector with method="BS"
+      uses S itself, which shrinks slightly less. The average returns are the noisiest input of a mean-variance
       optimization, and the shrinkage is strongest when they differ little compared to
       their estimation error.
 
@@ -756,22 +757,29 @@ def get_expected_returns(
     elif method == "capm":
         if benchmark_returns is None:
             raise ValueError("The CAPM returns need the returns of a benchmark.")
-        market = benchmark_returns.reindex(returns.index)
-        if market.isna().any():
-            raise ValueError(
-                "The benchmark has no return in some of the periods of the assets."
-            )
+        # The betas and the market return are estimated on the periods both have.
+        market = benchmark_returns.reindex(returns.index).dropna()
+        if len(market) < 2:  # noqa: PLR2004
+            raise ValueError("The benchmark shares too few periods with the assets.")
         variance = market.var()
         if variance <= 0:
             raise ValueError("The benchmark's returns have no variance.")
-        beta = returns.apply(lambda column: column.cov(market)) / variance
+        beta = returns.loc[market.index].apply(lambda column: column.cov(market)) / variance
         return risk_free_rate + beta * (
             market.mean() * periods_per_year - risk_free_rate
         )
     elif method == "james_stein":
         periods, assets = returns.shape
+        if periods <= assets + 2:
+            raise ValueError(
+                "The James-Stein expected returns need more periods than the number of "
+                "assets plus two."
+            )
         average = returns.mean().to_numpy()
-        inverse = np.linalg.pinv(returns.cov().to_numpy())
+        # Jorion's estimate of the covariance matrix, S (T - 1) / (T - N - 2).
+        inverse = np.linalg.pinv(
+            returns.cov().to_numpy() * (periods - 1) / (periods - assets - 2)
+        )
         ones = np.ones(assets)
         target = float(ones @ inverse @ average / (ones @ inverse @ ones))
         deviation = average - target
@@ -1479,16 +1487,19 @@ def get_hierarchical_risk_parity_weights(
     distance = np.sqrt(np.clip((1 - correlation.to_numpy()) / 2, 0, None))
     np.fill_diagonal(distance, 0)
     order = leaves_list(linkage(pdist(distance), method=linkage_method))
-    ordered = covariance.index[order].tolist()
+    # The bisection works on positions in numpy: label lookups in pandas took most of
+    # the time, which counts in a backtest that runs it on every rebalancing date.
+    sigma = covariance.to_numpy()
+    lower, upper = lower.to_numpy(), upper.to_numpy()
 
     def cluster_variance(items: list) -> float:
-        sub = covariance.loc[items, items].to_numpy()
+        sub = sigma[np.ix_(items, items)]
         inverse_variance = 1 / np.diag(sub)
         weights = inverse_variance / inverse_variance.sum()
         return float(weights @ sub @ weights)
 
-    weights = pd.Series(1.0, index=ordered)
-    clusters = [ordered]
+    weights = np.ones(len(sigma))
+    clusters = [order.tolist()]
     while clusters:
         clusters = [
             half
@@ -1514,7 +1525,7 @@ def get_hierarchical_risk_parity_weights(
             weights[left] *= alpha
             weights[right] *= 1 - alpha
 
-    return _as_series(weights.reindex(covariance.index).to_numpy(), covariance.index)
+    return _as_series(weights, covariance.index)
 
 
 def get_minimum_cvar_weights(
@@ -2251,8 +2262,10 @@ def get_diversification_metrics(
         raise ValueError("The portfolio has no volatility.")
 
     eigenvalues, eigenvectors = np.linalg.eigh(sigma)
-    shares = np.clip(eigenvalues, 0, None) * (eigenvectors.T @ vector) ** 2 / variance
-    shares = shares[shares > 0]
+    shares = np.clip(eigenvalues, 0, None) * (eigenvectors.T @ vector) ** 2
+    # Normalized by their sum, which is the variance when the covariance matrix is
+    # positive semi-definite and keeps the shares a distribution when it is not.
+    shares = shares[shares > 0] / shares.sum()
     concentration = float(np.sum(vector**2))
 
     return pd.Series(

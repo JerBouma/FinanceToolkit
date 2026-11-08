@@ -138,3 +138,45 @@ def test_backtest_statistics():
 def test_a_backtest_needs_a_rebalancing_date():
     with pytest.raises(ValueError, match="No rebalancing date"):
         backtest_model.get_walk_forward_backtest(_returns(), {"1/N": _equal}, [], 100)
+
+
+def test_each_strategy_is_measured_over_its_own_periods():
+    returns = pd.DataFrame(
+        {"A": [0.01, -0.02, 0.03, 0.0], "Benchmark": [0.02, np.nan, 0.01, np.nan]}
+    )
+    statistics = backtest_model.get_backtest_statistics(
+        returns, pd.DataFrame({"A": [np.nan]}), 4
+    )
+
+    # A gap in the benchmark leaves the four periods of A as they are.
+    assert statistics.loc["A", "Annualized Return"] == pytest.approx(
+        1.01 * 0.98 * 1.03 - 1
+    )
+    assert statistics.loc["Benchmark", "Annualized Return"] == pytest.approx(
+        (1.02 * 1.01) ** 2 - 1
+    )
+
+
+def test_holdings_earn_the_returns_of_days_left_out_of_the_estimates():
+    holding = _returns(days=300)
+    # A0's market is closed every tenth day: 0% that day, the next day covers both.
+    closed = holding.index[5::10]
+    holding.loc[closed, "A0"] = 0.0
+    estimation = holding.drop(index=closed)
+    dates = backtest_model.get_rebalancing_dates(estimation.index, "monthly", 100)
+
+    net, _, _ = backtest_model.get_walk_forward_backtest(
+        estimation, {"1/N": _equal}, dates, 100, holding_returns=holding
+    )
+
+    assert net.index.equals(holding.index[holding.index.get_loc(dates[0]) + 1 :])
+    # Value per asset, rebalanced to 1/N on every date, as an independent check.
+    value = np.full(3, 1 / 3)
+    path = []
+    for date, row in holding.loc[net.index].iterrows():
+        before = value.sum()
+        value = value * (1 + row.to_numpy())
+        path.append(value.sum() / before - 1)
+        if date in dates:
+            value = np.full(3, value.sum() / 3)
+    np.testing.assert_allclose(net["1/N"], path, atol=1e-14)

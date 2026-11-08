@@ -2508,7 +2508,7 @@ class PortfolioConstruction:
                 "quarterly" or "yearly". Defaults to "monthly".
             lookback (int, optional): The number of daily returns each estimation uses.
                 The backtest starts on the first rebalancing date with that many returns
-                before it. Defaults to 252, a year of trading days.
+                up to and including it. Defaults to 252, a year of trading days.
             transaction_cost (float, optional): The cost per unit of weight traded, e.g.
                 0.001 for 10 basis points. The first investment is free, so every
                 portfolio starts from the same value. Defaults to 0.
@@ -2555,8 +2555,11 @@ class PortfolioConstruction:
             output="weights", the weights each optimizer set on each rebalancing date.
 
         Notes:
-        - The returns are daily total returns (from adjusted closing prices), over the days
-          on which every asset has a return.
+        - The returns are daily total returns (from adjusted closing prices). The
+          estimates use the days on which every asset has a return; the portfolios earn
+          the returns of every day, so a day on which one market is closed (its assets
+          return 0%, the next day covers both) still counts for the others. Each
+          portfolio and the benchmark are measured over the days they have a return.
         - When an optimizer finds no weights on a rebalancing date (e.g. the maximum Sharpe
           ratio when no asset beat the risk free rate over the lookback), the portfolio
           keeps its drifted weights until the next date, and a warning says how often.
@@ -2614,7 +2617,36 @@ class PortfolioConstruction:
                 f"of {returns.shape[1]} assets."
             )
         benchmark = self._get_benchmark_returns("daily")
+        if expected_returns == "capm" and benchmark is None:
+            raise ValueError("The CAPM expected returns need a benchmark.")
         periods_per_year = PERIODS_PER_YEAR["daily"]
+        # The portfolios earn every day's return: a day on which only some markets traded
+        # is a 0% return for the others, whose next return covers both days.
+        holding_returns = (
+            self._historical_data["daily"]["Return"]
+            .loc[returns.index[0] : returns.index[-1], returns.columns]
+            .fillna(0)
+        )
+        # The estimates of a window are the same for every method, so they are made once.
+        estimates: dict = {}
+
+        def window_estimates(window: pd.DataFrame) -> tuple:
+            if window.index[-1] not in estimates:
+                risk_free_rate = self._get_risk_free_rate("daily", window.index)
+                estimates[window.index[-1]] = (
+                    risk_free_rate,
+                    *optimization_model.get_expected_returns_and_covariance(
+                        window,
+                        periods_per_year,
+                        covariance,
+                        covariance_span,
+                        expected_returns,
+                        expected_returns_span,
+                        benchmark if expected_returns == "capm" else None,
+                        risk_free_rate,
+                    ),
+                )
+            return estimates[window.index[-1]]
 
         def strategy(method: str) -> Callable[[pd.DataFrame], pd.Series]:
             def weights(window: pd.DataFrame) -> pd.Series:
@@ -2626,17 +2658,7 @@ class PortfolioConstruction:
                         minimum_weight=minimum_weight,
                         maximum_weight=maximum_weight,
                     )
-                risk_free_rate = self._get_risk_free_rate("daily", window.index)
-                mu, sigma = optimization_model.get_expected_returns_and_covariance(
-                    window,
-                    periods_per_year,
-                    covariance,
-                    covariance_span,
-                    expected_returns,
-                    expected_returns_span,
-                    benchmark if expected_returns == "capm" else None,
-                    risk_free_rate,
-                )
+                risk_free_rate, mu, sigma = window_estimates(window)
                 if method == "inverse_volatility":
                     return optimization_model.get_inverse_volatility_weights(sigma)
                 if method == "hierarchical_risk_parity":
@@ -2679,6 +2701,7 @@ class PortfolioConstruction:
             lookback,
             transaction_cost,
             maximum_turnover,
+            holding_returns,
         )
 
         if output == "weights":
@@ -2690,7 +2713,7 @@ class PortfolioConstruction:
             return self._round(net_returns, rounding)
 
         summary = backtest_model.get_backtest_statistics(
-            net_returns.dropna(how="any"),
+            net_returns,
             turnover,
             periods_per_year,
             self._get_risk_free_rate("daily", net_returns.index),

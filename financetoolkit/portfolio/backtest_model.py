@@ -59,6 +59,7 @@ def get_walk_forward_backtest(
     lookback: int,
     transaction_cost: float = 0.0,
     maximum_turnover: float | None = None,
+    holding_returns: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     A walk-forward (out-of-sample) backtest of weighting strategies. On every rebalancing
@@ -77,6 +78,10 @@ def get_walk_forward_backtest(
     new weights only as far as the limit allows, w = w_drifted + min(1, τ / turnover)
     (w_new - w_drifted), which keeps the weights summing to one and every strategy
     comparable.
+
+    The estimates use the periods in which every asset has a return. The holdings earn
+    the returns of every period, so a day on which one market is closed (a 0% return for
+    its assets, the next day covering both) still counts for the others.
 
     When a strategy finds no weights on a rebalancing date (for example the maximum
     Sharpe ratio portfolio when no asset beat the risk free rate over the window), it
@@ -99,6 +104,9 @@ def get_walk_forward_backtest(
             0.001 for 10 basis points. Defaults to 0.
         maximum_turnover (float | None, optional): The highest turnover of a rebalancing.
             Defaults to None, no limit.
+        holding_returns (pd.DataFrame | None, optional): The returns per period the
+            portfolios earn, with the same assets, every date of `returns` and 0 on the
+            days an asset did not trade. Defaults to None, which uses `returns`.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: The returns per period after
@@ -116,13 +124,15 @@ def get_walk_forward_backtest(
     if maximum_turnover is not None and maximum_turnover < 0:
         raise ValueError("The maximum turnover cannot be negative.")
 
-    data = returns.to_numpy(dtype=float)
+    holding_returns = returns if holding_returns is None else holding_returns
+    data = holding_returns[returns.columns].to_numpy(dtype=float)
     assets = returns.columns
-    positions = [returns.index.get_loc(date) for date in rebalancing_dates]
-    if positions[0] < lookback - 1:
+    windows = [returns.index.get_loc(date) for date in rebalancing_dates]
+    if windows[0] < lookback - 1:
         raise ValueError(
             "The first rebalancing date has fewer returns than the lookback."
         )
+    positions = [holding_returns.index.get_loc(date) for date in rebalancing_dates]
     # Each holding period runs from the day after a rebalancing date up to and including
     # the next one (the last up to the end of the data).
     ends = positions[1:] + [len(data) - 1]
@@ -132,10 +142,10 @@ def get_walk_forward_backtest(
         path = np.empty(len(data) - positions[0] - 1)
         held = None
         targets, turnovers, failures = [], [], 0
-        for position, end in zip(positions, ends, strict=True):
+        for window, position, end in zip(windows, positions, ends, strict=True):
             try:
                 target = (
-                    strategy(returns.iloc[position - lookback + 1 : position + 1])
+                    strategy(returns.iloc[window - lookback + 1 : window + 1])
                     .reindex(assets)
                     .fillna(0)
                     .to_numpy(dtype=float)
@@ -189,7 +199,7 @@ def get_walk_forward_backtest(
         )
         turnover_rows[name] = turnovers
 
-    index = returns.index[positions[0] + 1 :]
+    index = holding_returns.index[positions[0] + 1 :]
     weights_table = pd.concat(weight_rows, axis=1)
     weights_table.index.name = "Date"
     turnover_table = pd.DataFrame(turnover_rows, index=rebalancing_dates)
@@ -212,6 +222,9 @@ def get_backtest_statistics(
     the compounded returns, the average turnover per rebalancing (DeMiguel, Garlappi and
     Uppal, 2009) and the transaction costs per year.
 
+    Each strategy is measured over the periods in which it has a return, so a benchmark
+    that misses some days does not shorten the others.
+
     Args:
         returns (pd.DataFrame): The returns per period after costs, one column per
             strategy.
@@ -227,8 +240,8 @@ def get_backtest_statistics(
         pd.DataFrame: Per strategy the Annualized Return, Annualized Volatility, Sharpe
         Ratio, Maximum Drawdown, Average Turnover and Annualized Costs.
     """
-    years = len(returns) / periods_per_year
-    annualized_return = (1 + returns).prod() ** (1 / years) - 1
+    years = returns.count() / periods_per_year
+    annualized_return = (1 + returns).prod(min_count=1) ** (1 / years) - 1
     volatility = returns.std() * np.sqrt(periods_per_year)
     average_turnover = turnover.reindex(columns=returns.columns).mean()
 

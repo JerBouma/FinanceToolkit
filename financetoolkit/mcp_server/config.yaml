@@ -101,8 +101,11 @@ parameter_limits:
     limit: 10000
     # Resampling, optimization and model orders, each a fit or a loop of its own.
     n_bootstrap: 1000
-    # Ten years of daily returns per estimate of a walk-forward backtest.
-    lookback: 2520
+    # Five years of daily returns per estimate of a walk-forward backtest; minimum CVaR
+    # solves a linear programme with a variable per day and ticker. 50 tickers over 21
+    # years with all eight methods take about 100 s with a lookback of 2,520 days and
+    # 60 s with 252.
+    lookback: 1260
     points: 100
     max_iterations: 1000
     max_breaks: 10

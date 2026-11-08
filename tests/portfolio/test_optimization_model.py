@@ -993,11 +993,23 @@ def test_expected_returns_match_pyportfolioopt_and_riskfolio():
         estimate("capm", benchmark_returns=benchmark, risk_free_rate=0.02),
         [0.0863760324, 0.1009805469, 0.1085805934, 0.1087109621, 0.060395485],
     )
-    # Riskfolio-Lib mean_vector(method="BS", target="b2"), annualized.
-    assert np.allclose(
-        estimate("james_stein"),
-        [0.1208729336, 0.1210211013, 0.121169269, 0.1209470175, 0.1210951851],
+    # Jorion (1986) with Σ = S (T - 1) / (T - N - 2), written out. Riskfolio-Lib's
+    # mean_vector(method="BS", target="b2") uses S itself and gives
+    # [0.1208729336, 0.1210211013, 0.121169269, 0.1209470175, 0.1210951851].
+    periods, assets = returns.shape
+    average = returns.mean().to_numpy()
+    inverse = np.linalg.inv(
+        returns.cov().to_numpy() * (periods - 1) / (periods - assets - 2)
     )
+    ones = np.ones(assets)
+    target = ones @ inverse @ average / (ones @ inverse @ ones)
+    deviation = average - target
+    phi = (assets + 2) / (assets + 2 + periods * deviation @ inverse @ deviation)
+    assert np.allclose(
+        estimate("james_stein"), ((1 - phi) * average + phi * target) * 252
+    )
+    with pytest.raises(ValueError, match="more periods"):
+        optimization_model.get_expected_returns(returns.iloc[:7], 252, "james_stein")
 
 
 def test_james_stein_leaves_equal_averages_and_shrinks_dispersed_ones():
@@ -1187,3 +1199,39 @@ def test_diversification_metrics():
     metrics = optimization_model.get_diversification_metrics(equal, common)
     assert metrics["Effective Number of Bets"] == pytest.approx(1)
     assert metrics["Effective Number of Assets"] == pytest.approx(4)
+
+
+def test_capm_expected_returns_use_the_periods_the_benchmark_has():
+    returns, benchmark = _reference_returns()
+    gaps = benchmark.copy()
+    gaps.iloc[::40] = np.nan
+
+    estimate = optimization_model.get_expected_returns(
+        returns, 252, "capm", benchmark_returns=gaps, risk_free_rate=0.02
+    )
+    shared = returns.loc[gaps.dropna().index]
+    expected = optimization_model.get_expected_returns(
+        shared, 252, "capm", benchmark_returns=gaps.dropna(), risk_free_rate=0.02
+    )
+
+    pd.testing.assert_series_equal(estimate, expected)
+
+
+def test_effective_number_of_bets_stays_a_distribution_without_a_positive_covariance():
+    covariance = pd.DataFrame(
+        [[0.04, 0.05, 0.0], [0.05, 0.04, 0.0], [0.0, 0.0, 0.09]],
+        index=list("ABC"),
+        columns=list("ABC"),
+    )
+    weights = pd.Series([0.4, 0.3, 0.3], index=list("ABC"))
+
+    bets = optimization_model.get_diversification_metrics(weights, covariance)[
+        "Effective Number of Bets"
+    ]
+
+    # The eigenvalue -0.01 is clipped and the shares of the others sum to one.
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance.to_numpy())
+    shares = np.clip(eigenvalues, 0, None) * (eigenvectors.T @ weights.to_numpy()) ** 2
+    shares = shares[shares > 0] / shares.sum()
+    assert bets == pytest.approx(np.exp(-np.sum(shares * np.log(shares))))
+    assert 1 <= bets <= 3  # noqa: PLR2004

@@ -1388,10 +1388,11 @@ def test_each_symbol_is_requested_as_itself(monkeypatch):
         "BRK.B": "Berkshire Hathaway",
         "^N225": "Nikkei 225",
     }
-    assert [url.split("?")[1] for url in requested] == [
-        "symbol=M%26M.NS&apikey=K",
-        "symbol=BRK.B&apikey=K",
+    # The tickers are requested in parallel, so in any order.
+    assert sorted(url.split("?")[1] for url in requested) == [
         "symbol=%5EN225&apikey=K",
+        "symbol=BRK.B&apikey=K",
+        "symbol=M%26M.NS&apikey=K",
     ]
 
 

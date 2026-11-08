@@ -574,3 +574,20 @@ def test_a_transaction_cost_trades_less(portfolio_module):
         current_weights=current, transaction_cost=0.02, include_benchmark=True
     )
     assert costly.loc["Portfolio", "Turnover"] < free.loc["Portfolio", "Turnover"]
+
+
+def test_the_backtest_leaves_out_days_on_which_none_of_the_assets_traded(
+    portfolio_module, monkeypatch
+):
+    daily = portfolio_module._historical_data["daily"].copy()
+    # Only the benchmark's market is open on this day.
+    closed = daily.index[-30]
+    daily.loc[closed, [("Return", "AAPL"), ("Return", "MSFT")]] = np.nan
+    monkeypatch.setitem(portfolio_module._historical_data, "daily", daily)
+
+    returns = portfolio_module.get_optimization_backtest(
+        methods="minimum_variance", output="returns"
+    )
+
+    assert closed not in returns.index
+    assert returns.index[-1] == daily.index[-1]

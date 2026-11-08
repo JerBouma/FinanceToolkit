@@ -2621,10 +2621,13 @@ class PortfolioConstruction:
             raise ValueError("The CAPM expected returns need a benchmark.")
         periods_per_year = PERIODS_PER_YEAR["daily"]
         # The portfolios earn every day's return: a day on which only some markets traded
-        # is a 0% return for the others, whose next return covers both days.
+        # is a 0% return for the others, whose next return covers both days. A day on
+        # which none of the assets traded (only the benchmark's market was open) is no
+        # day of the portfolios.
         holding_returns = (
             self._historical_data["daily"]["Return"]
             .loc[returns.index[0] : returns.index[-1], returns.columns]
+            .dropna(how="all")
             .fillna(0)
         )
         # The estimates of a window are the same for every method, so they are made once.

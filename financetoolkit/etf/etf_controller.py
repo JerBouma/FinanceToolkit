@@ -12,7 +12,6 @@ from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
 
-# pylint: disable=too-many-instance-attributes,too-many-arguments
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
 
@@ -194,11 +193,6 @@ class ETF:
             by=weightings.columns[0], ascending=False, kind="stable"
         )
 
-    def _round(self, data: pd.DataFrame, rounding: int | None) -> pd.DataFrame:
-        return apply_rounding(
-            data, rounding if rounding is not None else self._rounding
-        )
-
     def get_holdings(
         self,
         overwrite: bool = False,
@@ -279,7 +273,9 @@ class ETF:
                 .reindex(holdings.index.get_level_values(0).unique(), level=0)
             )
 
-        holdings = self._round(holdings, rounding)
+        holdings = apply_rounding(
+            holdings, rounding if rounding is not None else self._rounding
+        )
 
         if len(self._tickers) == 1 and not holdings.empty:
             return filter_columns(holdings.loc[self._tickers[0]], show_columns)
@@ -774,7 +770,9 @@ class ETF:
                 results[fund] = etf_model.get_tracking(
                     returns[fund], returns[BENCHMARK_TICKER], PERIODS_PER_YEAR[period]
                 )
-        return self._round(pd.DataFrame(results), rounding)
+        return apply_rounding(
+            pd.DataFrame(results), rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_concentration(self, rounding: int | None = None) -> pd.DataFrame:
@@ -827,7 +825,9 @@ class ETF:
         numeric = concentration.drop(index="Largest Holding").apply(
             pd.to_numeric, errors="coerce"
         )
-        numeric = self._round(numeric, rounding)
+        numeric = apply_rounding(
+            numeric, rounding if rounding is not None else self._rounding
+        )
         return pd.concat([numeric, concentration.loc[["Largest Holding"]]]).reindex(
             concentration.index
         )
@@ -867,7 +867,10 @@ class ETF:
         | VTI  | 0.8911 | 0.4994 | 1.0005 | 0.071  |
         | SCHD | 0.0764 | 0.0516 | 0.071  | 1      |
         """
-        return self._round(etf_model.get_overlap(self._weights()), rounding)
+        return apply_rounding(
+            etf_model.get_overlap(self._weights()),
+            rounding if rounding is not None else self._rounding,
+        )
 
     @handle_errors
     def get_active_share(self, rounding: int | None = None) -> pd.DataFrame:
@@ -926,7 +929,10 @@ class ETF:
         | SCHD | 0.9238 | 0.945  | 0      | 1      |
         | MGK  | 0.4784 | 0.3822 | 1      | 0      |
         """
-        return self._round(etf_model.get_active_share(self._weights()), rounding)
+        return apply_rounding(
+            etf_model.get_active_share(self._weights()),
+            rounding if rounding is not None else self._rounding,
+        )
 
     @handle_errors
     def get_look_through_valuation(
@@ -1004,7 +1010,9 @@ class ETF:
                 for fund, fund_weights in weights.items()
             }
         )
-        return self._round(valuation, rounding)
+        return apply_rounding(
+            valuation, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_liquidity(self, rounding: int | None = None) -> pd.DataFrame:
@@ -1085,7 +1093,9 @@ class ETF:
                 ),
             }
         liquidity = pd.DataFrame(liquidity)
-        rounded = self._round(liquidity, rounding)
+        rounded = apply_rounding(
+            liquidity, rounding if rounding is not None else self._rounding
+        )
         if rounding is None:
             # A price impact of a fraction of a basis point matters, so the Toolkit's
             # rounding would turn it into zero.
@@ -1343,7 +1353,9 @@ class ETF:
             else:
                 tables[fund] = self._contribution_table(table, fund_return, level)
 
-        result = self._round(pd.concat(tables), rounding)
+        result = apply_rounding(
+            pd.concat(tables), rounding if rounding is not None else self._rounding
+        )
         if len(tables) == 1:
             return result.loc[next(iter(tables))]
         return result
@@ -1475,4 +1487,6 @@ class ETF:
                     else float("nan")
                 ),
             }
-        return self._round(pd.DataFrame(result), rounding)
+        return apply_rounding(
+            pd.DataFrame(result), rounding if rounding is not None else self._rounding
+        )

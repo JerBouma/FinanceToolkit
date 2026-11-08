@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.risk import garch_model, realized_volatility_model
 
-# pylint: disable=missing-function-docstring
-
 
 def simulate_garch(omega, alpha, beta, n=1500, seed=0):
     rng = np.random.default_rng(seed)

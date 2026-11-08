@@ -4,8 +4,6 @@ rounding=0 rounds to whole numbers, and rounding=None, on a method or on the Too
 leaves the results unrounded, in every module.
 """
 
-# pylint: disable=missing-function-docstring,protected-access
-
 import numpy as np
 import pandas as pd
 import pytest

@@ -43,7 +43,6 @@ from financetoolkit.utilities.statistics_model import (
     finalize_dataset,
 )
 
-# pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
 # ruff: noqa: E501
 
 
@@ -2306,7 +2305,7 @@ class Models:
         return dividends_per_share
 
     @handle_errors
-    def get_gorden_growth_model(
+    def get_gordon_growth_model(
         self,
         rate_of_return: float | list | dict[str, float] | None = None,
         growth_rate: float | list | dict[str, float] | None = None,
@@ -2385,7 +2384,7 @@ class Models:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_gorden_growth_model()
+        toolkit.models.get_gordon_growth_model()
         ```
 
         Which returns:
@@ -2433,16 +2432,16 @@ class Models:
             rates, growth_rates, "rate of return"
         )
 
-        gorden_growth_model: dict[str, dict[str, float]] = {}
+        gordon_growth_model: dict[str, dict[str, float]] = {}
 
         for ticker in self._tickers:
-            gorden_growth_model[ticker] = {}
+            gordon_growth_model[ticker] = {}
 
             for period in dividends_per_share.index:
                 if not exceeds.loc[ticker, period]:
                     continue
-                gorden_growth_model[ticker][period] = (
-                    intrinsic_model.get_gorden_growth_model(
+                gordon_growth_model[ticker][period] = (
+                    intrinsic_model.get_gordon_growth_model(
                         dividends_per_share=dividends_per_share.loc[period, ticker],
                         rate_of_return=rates.loc[ticker, period],
                         growth_rate=growth_rates.loc[ticker, period],
@@ -2455,8 +2454,8 @@ class Models:
                 continue
 
             for distance, period in enumerate(projected_periods, start=1):
-                gorden_growth_model[ticker][period] = (
-                    intrinsic_model.get_gorden_growth_model(
+                gordon_growth_model[ticker][period] = (
+                    intrinsic_model.get_gordon_growth_model(
                         dividends_per_share=dividends_per_share.loc[
                             last_known_period, ticker
                         ]
@@ -2466,13 +2465,13 @@ class Models:
                     )
                 )
 
-        gorden_growth_model_df = pd.DataFrame(gorden_growth_model).dropna(how="all")
+        gordon_growth_model_df = pd.DataFrame(gordon_growth_model).dropna(how="all")
 
-        gorden_growth_model_df = apply_rounding(
-            gorden_growth_model_df, rounding if rounding is not None else self._rounding
+        gordon_growth_model_df = apply_rounding(
+            gordon_growth_model_df, rounding if rounding is not None else self._rounding
         )
 
-        return gorden_growth_model_df.loc[self._start_date :]
+        return gordon_growth_model_df.loc[self._start_date :]
 
     @handle_errors
     def get_two_stage_dividend_discount_model(

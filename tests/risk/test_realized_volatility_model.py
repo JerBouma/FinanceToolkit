@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.risk import realized_volatility_model
 
-# pylint: disable=missing-function-docstring
-
 # How far apart the four range-based estimators may sit on a calm path.
 MAGNITUDE_AGREEMENT_RATIO = 2
 

@@ -36,7 +36,6 @@ from financetoolkit.utilities.statistics_model import (
     to_period_index,
 )
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
 

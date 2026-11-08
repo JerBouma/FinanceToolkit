@@ -1,7 +1,5 @@
 """Registry Description Tests"""
 
-# pylint: disable=missing-function-docstring
-
 import asyncio
 
 import yaml

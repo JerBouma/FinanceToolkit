@@ -1,7 +1,5 @@
 """Yahoo Finance Model Tests"""
 
-# pylint: disable=missing-function-docstring
-
 import time
 
 import pytest

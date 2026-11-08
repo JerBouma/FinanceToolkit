@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import diagnostics_model
 
-# pylint: disable=missing-function-docstring
-
 # Thresholds for asserting significance, or the lack of it, in the tests below.
 HIGH_P_VALUE_THRESHOLD = 0.05
 LOW_P_VALUE_THRESHOLD = 0.001

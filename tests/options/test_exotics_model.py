@@ -1,7 +1,5 @@
 """Exotics Model Tests"""
 
-# pylint: disable=missing-function-docstring
-
 import pytest
 
 from financetoolkit.options import exotics_model

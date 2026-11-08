@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
 
-# pylint: disable=too-many-arguments,too-many-locals
-
 MODELS = ("vasicek", "cir")
 # The tree steps per coupon period. With one step per period the call is valued too coarsely
 # (the effective convexity of a callable bond can even turn positive); twenty steps match a

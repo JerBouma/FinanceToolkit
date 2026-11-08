@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.models import damodaran_model
 
-# pylint: disable=missing-function-docstring
-
 
 def industry_sheet(total_label: str = "Total Market") -> pd.DataFrame:
     """An "Industry Averages" worksheet in Damodaran's layout, read without a header."""

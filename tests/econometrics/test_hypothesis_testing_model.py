@@ -6,8 +6,6 @@ from scipy import stats
 
 from financetoolkit.econometrics import hypothesis_testing_model, regression_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_two_sample_t_test_detects_known_large_difference(recorder):
     # A known 5 vs 0 mean difference should be flagged and match scipy exactly.

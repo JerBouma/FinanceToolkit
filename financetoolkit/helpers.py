@@ -809,3 +809,79 @@ def handle_portfolio(func):
         return result
 
     return wrapper
+
+
+def split_values(values: Iterable | str | None) -> list:
+    """
+    Splits values given as one comma-separated string (as the MCP server passes a list) or
+    as a list into a list. Text is stripped of surrounding spaces and empty text is left
+    out; other values, such as numbers, are kept as they are.
+
+    Args:
+        values (Iterable | str | None): The values, a comma-separated string or None.
+
+    Returns:
+        list: The values, empty when none are given.
+    """
+    if values is None:
+        return []
+    if isinstance(values, str):
+        values = values.split(",")
+
+    return [
+        value.strip() if isinstance(value, str) else value
+        for value in values
+        if not isinstance(value, str) or value.strip()
+    ]
+
+
+def require_api_key(api_key: str | None, data: str) -> None:
+    """
+    Warns and raises when data from FinancialModelingPrep is requested without an API key.
+
+    Args:
+        api_key (str | None): The FinancialModelingPrep API key.
+        data (str): The data that needs the key, completing "required to retrieve ...".
+
+    Raises:
+        ValueError: When no key is given.
+    """
+    if not api_key:
+        logger.warning(
+            "No FinancialModelingPrep API key found. Retrieving %s requires a key, obtain "
+            "one (with 15%% off) at https://www.jeroenbouma.com/fmp and pass it via the "
+            "api_key argument.",
+            data,
+        )
+        raise ValueError(
+            f"A FinancialModelingPrep API key is required to retrieve {data}. Obtain one at "
+            "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
+        )
+
+
+def require_fred_api_key(fred_api_key: str | None, data: str) -> None:
+    """
+    Warns and raises when data from FRED (Federal Reserve Economic Data) is requested
+    without an API key.
+
+    Args:
+        fred_api_key (str | None): The FRED API key.
+        data (str): The data that needs the key, completing "required to retrieve ...".
+
+    Raises:
+        ValueError: When no key is given.
+    """
+    if not fred_api_key:
+        logger.warning(
+            "No FRED API key found. %s is sourced from FRED (Federal Reserve Economic Data) "
+            "and requires a key to access — registration is entirely free and takes about a "
+            "minute at https://fred.stlouisfed.org/docs/api/api_key.html. Once you have one, "
+            "pass it via the fred_api_key argument or set the FRED_API_KEY environment "
+            "variable.",
+            data[0].upper() + data[1:],
+        )
+        raise ValueError(
+            f"A FRED API key is required to retrieve {data}. Obtain a free key at "
+            "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
+            "fred_api_key argument or set the FRED_API_KEY environment variable."
+        )

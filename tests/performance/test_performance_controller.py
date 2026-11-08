@@ -1,5 +1,4 @@
 """Performance Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 
 import copy
 from functools import partial

@@ -39,9 +39,6 @@ def configure_oecd_cache(allow_stale_on_rate_limit: bool = True) -> None:
     _ALLOW_STALE_CACHE_ON_RATE_LIMIT = allow_stale_on_rate_limit
 
 
-# pylint: disable=too-many-lines
-
-
 BASE_URL = "https://sdmx.oecd.org/public/rest/data/"
 EXTENSIONS = "?dimensionAtObservation=AllDimensions&format=csvfilewithlabels"
 
@@ -1402,7 +1399,7 @@ def get_poverty_rate(start_date: str | None = None, end_date: str | None = None)
     return poverty_rate
 
 
-def get_trust_in_goverment(start_date: str | None = None, end_date: str | None = None):
+def get_trust_in_government(start_date: str | None = None, end_date: str | None = None):
     """
     Trust in government refers to the share of people who report
     having confidence in the national government.

@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit import Portfolio, Toolkit
 
-# pylint: disable=protected-access
-
 historical = pd.read_pickle("tests/datasets/portfolio_historical_dataset.pickle")
 benchmark = pd.read_pickle("tests/datasets/portfolio_benchmark_dataset.pickle")
 treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
@@ -50,8 +48,6 @@ portfolio._toolkit._daily_treasury_data = treasury_data
 portfolio._benchmark_toolkit._daily_treasury_data = treasury_data
 portfolio._benchmark_toolkit._daily_risk_free_rate = risk_free_rate
 portfolio._toolkit._daily_risk_free_rate = risk_free_rate
-
-# pylint: disable=missing-function-docstring,protected-access
 
 
 @pytest.fixture(autouse=True)

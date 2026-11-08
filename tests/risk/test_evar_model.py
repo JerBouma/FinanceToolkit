@@ -6,8 +6,6 @@ from scipy import stats
 
 from financetoolkit.risk import evar_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_evar_gaussian(recorder):
     recorder.capture(

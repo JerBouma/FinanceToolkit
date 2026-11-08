@@ -1,5 +1,4 @@
 """Ratios Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 
 import copy
 
@@ -438,7 +437,6 @@ def test_get_payout_and_book_multiples(recorder, ratios_module):
 
 
 # The tests below check the definitions behind the ratios against values calculated by hand.
-# pylint: disable=protected-access,import-outside-toplevel
 
 YEAR = "2022"
 

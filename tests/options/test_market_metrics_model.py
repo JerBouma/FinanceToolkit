@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.options import black_scholes_model, market_metrics_model
 
-# pylint: disable=missing-function-docstring
-
 STOCK_PRICE = 100.0
 TIME = 30 / 365
 RATE = 0.03

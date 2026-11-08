@@ -1,5 +1,4 @@
 """Risk Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 
 import copy
 

@@ -10,8 +10,6 @@ from financetoolkit.discovery import discovery_controller
 # Every Discovery is built with a placeholder key, whose plan probe is answered offline.
 pytestmark = pytest.mark.usefixtures("known_fmp_plan")
 
-# pylint: disable=missing-function-docstring
-
 
 def test_discovery_controller_initialization(recorder):
     """Test that Discovery controller initializes correctly."""

@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.models import quality_model
 
-# pylint: disable=missing-function-docstring
-
 PERIODS = ["2021", "2022", "2023"]
 
 

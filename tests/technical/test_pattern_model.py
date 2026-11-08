@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.technicals import pattern_model
 
-# pylint: disable=missing-function-docstring
-
 
 def candles_after_a_calm_market(*pattern_candles):
     """Fifteen identical white candles (body 1, shadows 0.5) followed by the given candles.

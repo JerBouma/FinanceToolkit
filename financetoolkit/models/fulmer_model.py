@@ -7,8 +7,6 @@ import pandas as pd
 
 from financetoolkit.utilities.statistics_model import drop_non_finite
 
-# pylint: disable=too-many-arguments,too-many-positional-arguments
-
 
 def get_retained_earnings_to_total_assets_ratio(
     retained_earnings: float | pd.Series | pd.DataFrame,

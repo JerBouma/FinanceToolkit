@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.models import fulmer_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_retained_earnings_to_total_assets_ratio(recorder):
     recorder.capture(

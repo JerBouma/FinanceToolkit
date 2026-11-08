@@ -81,8 +81,6 @@ ASSET_CLASS_PROXIES = {
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
-# pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 
@@ -3496,7 +3494,7 @@ class Economics:
         | 2024 |          0.2944 |   0.2732 |  0.3215 |
         | 2025 |          0.2944 |   0.2732 |  0.3215 |
         """
-        trust_in_government = oecd_model.get_trust_in_goverment(
+        trust_in_government = oecd_model.get_trust_in_government(
             start_date=self._start_date, end_date=self._end_date
         )
 
@@ -9970,7 +9968,7 @@ class Economics:
             start=start_date,
             end=self._end_date,
             fill_nan=False,
-            show_ticker_seperation=False,
+            show_ticker_separation=False,
             cache=self._cache,
         )
 
@@ -10527,19 +10525,6 @@ class Economics:
             row_slice=True,
         )
 
-    def _require_api_key(self) -> None:
-        """Warns and raises when a FinancialModelingPrep method is used without a key."""
-        if not self._api_key:
-            logger.warning(
-                "No FinancialModelingPrep API key found. The economic calendar and the market "
-                "risk premium require a key to access, obtain one (with 15% off) at "
-                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
-            )
-            raise ValueError(
-                "A FinancialModelingPrep API key is required for this data. Obtain one at "
-                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
-            )
-
     @handle_errors
     def get_economic_calendar(
         self,
@@ -10622,7 +10607,7 @@ class Economics:
         | 2026-09-04 12:30:00 | United States | Non Farm Payrolls (Aug)     |     21     |     56     |  162     |
         | 2026-09-04 12:30:00 | United States | Unemployment Rate (Aug)     |      0.041 |      0.041 |    0.041 |
         """
-        self._require_api_key()
+        helpers.require_api_key(self._api_key, "the economic calendar")
 
         return economics_fmp_model.get_economic_calendar(
             api_key=self._api_key,
@@ -10682,7 +10667,7 @@ class Economics:
         | Brazil        | South America |                 0.0324 |                      0.0747 |
         | India         | Asia          |                 0.0285 |                      0.0708 |
         """
-        self._require_api_key()
+        helpers.require_api_key(self._api_key, "the market risk premium")
 
         # Published per country rather than per ticker, so it is one cache entry, the
         # same one Toolkit.get_market_risk_premium uses.

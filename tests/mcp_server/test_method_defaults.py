@@ -407,7 +407,7 @@ def test_a_near_certain_indicator_name_is_read_as_the_known_one(captured):
         mcp_controller.mcp.call_tool(
             "models",
             {
-                "indicator": "get_gordon_growth_model",
+                "indicator": "get_gorden_growth_model",
                 "tickers": "KO",
                 "rate_of_return": 0.08,
                 "growth_rate": 0.03,
@@ -415,7 +415,7 @@ def test_a_near_certain_indicator_name_is_read_as_the_known_one(captured):
         )
     )[0][0].text
 
-    assert "was read as `get_gorden_growth_model`" in text
+    assert "was read as `get_gordon_growth_model`" in text
 
 
 def test_a_result_and_its_detail_become_named_tables(monkeypatch):

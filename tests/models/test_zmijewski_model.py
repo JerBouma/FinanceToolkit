@@ -3,8 +3,6 @@ import pandas as pd
 
 from financetoolkit.models import zmijewski_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_net_income_to_total_assets_ratio(recorder):
     recorder.capture(

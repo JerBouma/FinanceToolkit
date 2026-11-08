@@ -1543,8 +1543,8 @@ class ToolRegistry:
                 and f"get_{candidate}" in method_param_names
             ):
                 candidate = f"get_{candidate}"
-            # A near-certain match (get_gordon_growth_model for get_gorden_growth_model, a
-            # spelling the package keeps for compatibility) is used, with a note.
+            # A near-certain match (get_gordon_growth_model for a misspelt get_gorden_growth_model)
+            # is used, with a note.
             indicator_note = None
             if candidate not in method_param_names:
                 near = difflib.get_close_matches(

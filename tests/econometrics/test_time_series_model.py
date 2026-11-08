@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import time_series_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_arima_forecast_recovers_ar1_coefficients(recorder):
     # y_t = 0.5 + 0.6 * y_(t-1) + e_t, so phi is near 0.6 and forecasts decay to 1.25.

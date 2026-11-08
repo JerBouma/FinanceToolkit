@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.etf import etf_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_concentration():
     result = etf_model.get_concentration(

@@ -12,8 +12,6 @@ from pandas.testing import assert_frame_equal, assert_index_equal, assert_series
 
 from financetoolkit.cache import cache_controller, serialization_model
 
-# pylint: disable=missing-function-docstring
-
 UNPICKLED = []
 
 

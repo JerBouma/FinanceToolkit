@@ -4,8 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-# pylint: disable=too-many-arguments,too-many-positional-arguments
-
 
 def get_days_sales_in_receivables_index(
     net_receivables: pd.Series | pd.DataFrame,

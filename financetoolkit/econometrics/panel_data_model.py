@@ -11,8 +11,6 @@ from scipy.sparse.linalg import lsmr
 
 from financetoolkit.utilities.statistics_model import to_multi_index
 
-# pylint: disable=too-many-locals
-
 # (entity, time) levels are simultaneously meaningful, unlike the nested case.
 ENTITY_TIME_INDEX_LEVELS = 2
 

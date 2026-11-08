@@ -4,8 +4,6 @@ import pandas as pd
 
 from financetoolkit.models import taffler_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_profit_before_tax_to_current_liabilities_ratio(recorder):
     recorder.capture(

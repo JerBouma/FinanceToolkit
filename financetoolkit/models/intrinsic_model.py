@@ -8,8 +8,6 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import brentq
 
-# pylint: disable=too-many-locals
-
 
 def get_intrinsic_value(
     cash_flow: float,
@@ -136,16 +134,15 @@ def get_intrinsic_value(
     )
 
 
-def get_gorden_growth_model(
+def get_gordon_growth_model(
     dividends_per_share: float,
     rate_of_return: float,
     growth_rate: float,
 ):
     """
-    Calculates the intrinsic value of a stock using the Gorden Growth Model.
+    Calculates the intrinsic value of a stock using the Gordon Growth Model.
 
-    The Gordon Growth Model (this function is spelled "Gorden" to match the controller method
-    `get_gorden_growth_model`) is a method for calculating the intrinsic
+    The Gordon Growth Model is a method for calculating the intrinsic
     value of a stock, based on a future series of dividends that grow at a constant rate. It
     is a popular and straightforward variant of the dividend discount model (DDM). The Gordon
     Growth Model assumes that dividends increase at a constant rate indefinitely. The model is

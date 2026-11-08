@@ -4,8 +4,6 @@ import pytest
 
 from financetoolkit.models import wacc_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_cost_of_equity(recorder):
     recorder.capture(

@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.portfolio import attribution_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_brinson_effects_add_up_to_the_excess_return():
     result = attribution_model.get_brinson_fachler_attribution(

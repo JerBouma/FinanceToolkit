@@ -21,6 +21,7 @@ from financetoolkit.risk.risk_model import (
 from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
+    by_own_trading_days,
     drop_non_finite,
     to_period_index,
 )
@@ -37,6 +38,7 @@ EULER_MASCHERONI_CONSTANT = 0.5772156649015329
 # pylint: disable=isinstance-second-argument-not-valid-type
 
 
+@by_own_trading_days(compound=True)
 def get_covariance(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series | pd.DataFrame
 ) -> pd.Series | pd.DataFrame | float:
@@ -85,6 +87,7 @@ def get_covariance(
     return returns.cov(benchmark_returns)
 
 
+@by_own_trading_days(compound=True)
 def get_beta(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
@@ -146,6 +149,7 @@ def get_beta(
     return beta if isinstance(returns, pd.DataFrame) else float(beta.iloc[0])
 
 
+@by_own_trading_days(compound=True)
 def get_rolling_beta(
     returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -188,6 +192,7 @@ def get_rolling_beta(
     return rolling_beta
 
 
+@by_own_trading_days(compound=True)
 def get_beta_implied_return(
     returns: pd.DataFrame,
     benchmark_returns: pd.Series,
@@ -374,6 +379,7 @@ def _beta_of_sample(
     return beta
 
 
+@by_own_trading_days(compound=True)
 def get_beta_estimate(
     returns: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
@@ -1065,6 +1071,7 @@ def get_fama_and_french_model_single(
     return regression_results, residuals
 
 
+@by_own_trading_days(compound=True)
 def get_alpha(
     asset_returns: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
@@ -1102,6 +1109,7 @@ def get_alpha(
     return alpha
 
 
+@by_own_trading_days(compound=True)
 def get_rolling_alpha(
     asset_returns: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
@@ -1679,6 +1687,7 @@ def get_m2_ratio(
     return m2_ratio
 
 
+@by_own_trading_days(compound=True)
 def get_rolling_m2_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     risk_free_rate: pd.Series,
@@ -1713,6 +1722,7 @@ def get_rolling_m2_ratio(
     )
 
 
+@by_own_trading_days(compound=True)
 def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
@@ -1750,6 +1760,7 @@ def get_tracking_error(
     return tracking_error
 
 
+@by_own_trading_days(compound=True)
 def get_rolling_tracking_error(
     asset_returns: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
@@ -1771,6 +1782,7 @@ def get_rolling_tracking_error(
     )
 
 
+@by_own_trading_days(compound=True)
 def get_information_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame | float:
@@ -1824,6 +1836,7 @@ def get_information_ratio(
     return information_ratio
 
 
+@by_own_trading_days(compound=True)
 def get_rolling_information_ratio(
     asset_returns: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
@@ -1877,6 +1890,7 @@ def get_calmar_ratio(
     return (returns / maximum_drawdown.abs()).dropna(how="all")
 
 
+@by_own_trading_days
 def get_average_drawdown(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -1952,6 +1966,7 @@ def get_sterling_ratio(
     return (returns / (average_drawdown.abs() + adjustment)).dropna(how="all")
 
 
+@by_own_trading_days
 def get_burke_drawdown_measure(
     returns: pd.Series | pd.DataFrame,
     method: str = "return",
@@ -2109,6 +2124,7 @@ def _get_capture_ratio(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days(compound=True)
 def get_upside_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame:
@@ -2130,6 +2146,7 @@ def get_upside_capture_ratio(
     return _get_capture_ratio(asset_returns, benchmark_returns, upside=True)
 
 
+@by_own_trading_days(compound=True)
 def get_downside_capture_ratio(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame:
@@ -2151,6 +2168,7 @@ def get_downside_capture_ratio(
     return _get_capture_ratio(asset_returns, benchmark_returns, upside=False)
 
 
+@by_own_trading_days(compound=True)
 def get_win_rate(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
 ) -> pd.Series | pd.DataFrame:
@@ -2895,6 +2913,7 @@ def get_covariance_matrix(returns: pd.DataFrame) -> pd.DataFrame:
     return returns.cov()
 
 
+@by_own_trading_days(compound=True)
 def get_capm_residuals(
     excess_returns: pd.Series | pd.DataFrame,
     beta: pd.Series | pd.DataFrame,
@@ -3035,9 +3054,10 @@ def get_appraisal_ratio(
     """
     if capm_residuals.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
         residual_standard_deviation = capm_residuals.groupby(level=0).std()
-        observations_per_period = capm_residuals.groupby(level=0).size()
-        residual_standard_deviation = residual_standard_deviation.mul(
-            np.sqrt(observations_per_period), axis=0
+        # Each asset's own number of residuals in the period.
+        observations_per_period = capm_residuals.groupby(level=0).count()
+        residual_standard_deviation = residual_standard_deviation * np.sqrt(
+            observations_per_period
         )
     else:
         residual_standard_deviation = capm_residuals.std()
@@ -3292,9 +3312,11 @@ def get_starr_ratio(
     if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS and isinstance(
         conditional_value_at_risk, pd.Series | pd.DataFrame
     ):
-        observations_per_period = returns.groupby(level=0).size()
-        conditional_value_at_risk = conditional_value_at_risk.mul(
-            np.sqrt(observations_per_period), axis=0
+        # Each asset's own number of returns in the period: a date only other assets
+        # traded on is no observation of it.
+        observations_per_period = returns.groupby(level=0).count()
+        conditional_value_at_risk = conditional_value_at_risk * np.sqrt(
+            observations_per_period
         )
 
     starr_ratio = excess_returns / abs(conditional_value_at_risk)
@@ -3428,6 +3450,7 @@ def _get_market_timing_regression(
     return regression_results, residuals
 
 
+@by_own_trading_days(compound=True)
 def get_treynor_mazuy_model(
     excess_returns: pd.Series,
     benchmark_excess_returns: pd.Series,
@@ -3482,6 +3505,7 @@ def get_treynor_mazuy_model(
     )
 
 
+@by_own_trading_days(compound=True)
 def get_henriksson_merton_model(
     excess_returns: pd.Series,
     benchmark_excess_returns: pd.Series,

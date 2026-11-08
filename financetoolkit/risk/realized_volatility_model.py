@@ -8,6 +8,7 @@ import pandas as pd
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     VOLATILITY_WINDOW_TRANSLATION,
+    by_own_trading_days,
     to_period_index,
 )
 
@@ -72,6 +73,7 @@ def _group_and_scale(
     return grouped.mean()
 
 
+@by_own_trading_days
 def get_parkinson_volatility(
     high_prices: pd.Series | pd.DataFrame,
     low_prices: pd.Series | pd.DataFrame,
@@ -148,6 +150,7 @@ def get_parkinson_volatility(
     return np.sqrt(variance) * np.sqrt(volatility_window)
 
 
+@by_own_trading_days
 def get_garman_klass_volatility(
     open_prices: pd.Series | pd.DataFrame,
     high_prices: pd.Series | pd.DataFrame,
@@ -229,6 +232,7 @@ def get_garman_klass_volatility(
     return np.sqrt(variance) * np.sqrt(volatility_window)
 
 
+@by_own_trading_days
 def get_rogers_satchell_volatility(
     open_prices: pd.Series | pd.DataFrame,
     high_prices: pd.Series | pd.DataFrame,
@@ -308,6 +312,7 @@ def get_rogers_satchell_volatility(
     return np.sqrt(variance) * np.sqrt(volatility_window)
 
 
+@by_own_trading_days
 def get_yang_zhang_volatility(
     open_prices: pd.Series | pd.DataFrame,
     high_prices: pd.Series | pd.DataFrame,
@@ -428,6 +433,7 @@ def get_yang_zhang_volatility(
     return np.sqrt(variance) * np.sqrt(volatility_window)
 
 
+@by_own_trading_days
 def get_har_rv_forecast(
     realized_variance: pd.Series | pd.DataFrame,
     weekly_window: int = 5,

@@ -804,12 +804,17 @@ def fill_non_trading_days(
 ) -> pd.DataFrame:
     """
     Fill the dates a ticker did not trade but another did, such as a holiday on one
-    exchange, by interpolating its prices between the surrounding trading days.
+    exchange or the benchmark's trading days, while each ticker keeps its own trading days.
 
-    Returns and volume are not interpolated. The return of a filled date, and of the
-    trading day after it, follow from the filled prices, so the two together compound to
-    the actual move between the trading days rather than adding an invented return on top
-    of it. Nothing traded on a filled date, so its volume is 0.
+    Nothing traded on a filled date, so it gets the last price as a flat bar (Open, High,
+    Low and Close at the last close) with a volume of 0, and no Return. The return of the
+    next trading day stays the move since the ticker's previous trading day. Measures over
+    the returns, such as volatility, Value at Risk and drawdowns, therefore count the
+    ticker's own trading days only, and are the same whichever other tickers or benchmark
+    the data holds; a filled 0% return would add days without a move and lower the
+    volatility. The last price is carried forward rather than interpolated, since an
+    interpolated price is taken from the next trading day, which is not known yet on the
+    filled date.
 
     Args:
         historical_data (pd.DataFrame): The historical data with (column, ticker) columns.
@@ -818,22 +823,25 @@ def fill_non_trading_days(
     Returns:
         pd.DataFrame: The historical data with the gaps inside each ticker's history filled.
     """
-    if return_column not in historical_data.columns:
-        return historical_data.interpolate(limit_area="inside")
+    filled_data = historical_data.ffill(limit_area="inside")
 
-    missing = historical_data[return_column].isna()
-    filled_data = historical_data.interpolate(limit_area="inside")
-    filled = missing & filled_data[return_column].notna()
+    if return_column not in historical_data.columns:
+        return filled_data
+
+    filled = historical_data[return_column].isna() & filled_data[return_column].notna()
 
     if not filled.to_numpy().any():
         return filled_data
 
+    if "Close" in filled_data.columns:
+        for column in ("Open", "High", "Low"):
+            if column in filled_data.columns:
+                filled_data[column] = (
+                    filled_data[column].mask(filled, filled_data["Close"]).to_numpy()
+                )
+
     if "Return" in filled_data.columns:
-        recalculated = filled_data[return_column].pct_change(fill_method=None)
-        affected = filled | filled.shift(1, fill_value=False)
-        filled_data["Return"] = (
-            historical_data["Return"].mask(affected, recalculated).to_numpy()
-        )
+        filled_data["Return"] = historical_data["Return"].mask(filled).to_numpy()
 
     if "Volume" in filled_data.columns:
         filled_data["Volume"] = filled_data["Volume"].mask(filled, 0).to_numpy()

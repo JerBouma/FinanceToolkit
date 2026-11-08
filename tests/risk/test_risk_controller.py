@@ -201,9 +201,8 @@ def test_get_gjr_garch_forecast_monthly_matches_the_arch_package(
         },
         index=months,
     )
-    monkeypatch.setattr(
-        risk_module, "_get_returns", lambda period, within_period: returns
-    )
+    # The memoized monthly returns are replaced for this test only.
+    monkeypatch.setitem(risk_module._data_cache, ("monthly", False), returns)
 
     forecast = risk_module.get_gjr_garch_forecast(period="monthly", rounding=12)
 

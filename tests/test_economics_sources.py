@@ -452,7 +452,7 @@ def test_bls_unemployment_is_parsed_into_decimals(monkeypatch):
         },
     }
     monkeypatch.setattr(
-        bls_model, "get_request", lambda url, timeout: FakeResponse(payload)
+        bls_model, "get_request", lambda url, **kwargs: FakeResponse(payload)
     )
 
     rate = bls_model.get_unemployment_rate()
@@ -472,7 +472,7 @@ def test_a_refused_bls_request_is_not_a_format_change(monkeypatch):
         "message": ["Daily threshold reached."],
     }
     monkeypatch.setattr(
-        bls_model, "get_request", lambda url, timeout: FakeResponse(payload)
+        bls_model, "get_request", lambda url, **kwargs: FakeResponse(payload)
     )
 
     # Treated like an unreachable source: no data (or the cached copy), not an error.
@@ -484,7 +484,7 @@ def test_an_unreachable_bls_is_logged_as_the_oecd_fallback(monkeypatch, caplog):
 
     from financetoolkit.economics import bls_model, helpers  # noqa: PLC0415
 
-    def busy(url, timeout):
+    def busy(url, **kwargs):
         response = requests.Response()
         response.status_code = 503
         raise requests.HTTPError("503 Server Error", response=response)
@@ -1134,3 +1134,274 @@ def test_the_supply_chain_pressure_index_skips_the_empty_rows(monkeypatch):
         pd.Period("1998-02", freq="M"),
     ]
     assert index["World"].tolist() == [-1.18, -0.49]
+
+
+class SheetResponse:
+    """A response carrying a workbook of one sheet laid out cell by cell, without a
+    header row, as the Census Bureau and the Treasury lay out their files."""
+
+    def __init__(self, rows: list[list], sheet_name: str = "Sheet1"):
+        import io
+
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            pd.DataFrame(rows).to_excel(
+                writer, sheet_name=sheet_name, index=False, header=False
+            )
+        self.content = buffer.getvalue()
+
+
+def test_department_of_labor_claims_are_posted_for_and_seasonally_adjusted(monkeypatch):
+    from financetoolkit.economics import dol_model
+
+    text = (
+        "<r539cyState><week><weekEnded>10/18/2026</weekEnded><InitialClaims><NSA>201,000"
+        "</NSA><SA>232,000</SA></InitialClaims></week><week><weekEnded>10/25/2026"
+        "</weekEnded><InitialClaims><NSA></NSA><SA></SA></InitialClaims></week>"
+    )
+    requests_made = []
+
+    def post(url, **kwargs):
+        requests_made.append(kwargs)
+        return FakeResponse(text=text)
+
+    monkeypatch.setattr(dol_model, "get_request", post)
+
+    claims = dol_model.get_initial_jobless_claims()
+
+    # The report only answers its form, so the request is a POST of its fields.
+    assert requests_made[0]["data"]["filetype"] == "xml"
+    # A week not published yet carries no number and is left out.
+    assert claims.index.tolist() == [pd.Period("2026-10-18", "D")]
+    assert claims.index.name == "Date"
+    assert claims["United States"].iloc[0] == 232000
+
+
+def test_census_retail_sales_leave_out_the_seasonal_factors(monkeypatch):
+    from financetoolkit.economics import census_model
+
+    text = (
+        "ADVANCE MONTHLY SALES\n"
+        "YEAR  JAN  FEB  MAR  APR  MAY  JUN  JUL  AUG  SEP  OCT  NOV  DEC\n"
+        "2026  700  701  702  703  704  705  706  707  708  (NA)\n"
+        "SEASONAL FACTORS\n"
+        "2026  0.9  0.9  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.1\n"
+    )
+    monkeypatch.setattr(
+        census_model, "get_request", lambda url, **kwargs: FakeResponse(text=text)
+    )
+
+    sales = census_model.get_retail_sales()
+
+    assert len(sales) == 9
+    assert sales.index[0] == pd.Period("2026-01-01", "D")
+    assert sales.loc[pd.Period("2026-09-01", "D"), "United States"] == 708
+
+
+def test_census_housing_starts_read_the_dated_rows(monkeypatch):
+    from financetoolkit.economics import census_model
+
+    rows = [
+        ["New Privately-Owned Housing Units Started", None],
+        ["Period", "Total"],
+        ["August 2026", 1307],
+        ["Sep 2026", 1352],
+        ["Notes: (S) Does not meet publication standards.", None],
+    ]
+    response = SheetResponse(rows, sheet_name="Seasonally Adjusted")
+    monkeypatch.setattr(census_model, "get_request", lambda url, **kwargs: response)
+
+    starts = census_model.get_housing_starts()
+
+    assert starts.index.tolist() == [
+        pd.Period("2026-08-01", "D"),
+        pd.Period("2026-09-01", "D"),
+    ]
+    assert starts["United States"].tolist() == [1307, 1352]
+
+
+def test_bea_real_personal_income_is_in_billions_rounded_half_up(monkeypatch):
+    from financetoolkit.economics import bea_model
+
+    text = (
+        "%SeriesCode,Period,Value\n"
+        'W875RX,2026M08,"17,015,150"\n'
+        'W875RX,2026M09,"17,015,149"\n'
+        'W875RX1,2026M09,"99"\n'
+        'A065RC,2026M09,"25,000,000"\n'
+    )
+    monkeypatch.setattr(
+        bea_model, "get_request", lambda url, **kwargs: FakeResponse(text=text)
+    )
+
+    income = bea_model.get_real_personal_income()
+
+    # A half is rounded up, as the BEA rounds its published tables.
+    assert income["United States"].tolist() == [17015.2, 17015.1]
+    assert income.index.tolist() == [
+        pd.Period("2026-08-01", "D"),
+        pd.Period("2026-09-01", "D"),
+    ]
+
+
+def test_bls_nonfarm_payrolls_are_dated_on_the_first_of_the_month(monkeypatch):
+    from financetoolkit.economics import bls_model
+
+    payload = {
+        "status": "REQUEST_SUCCEEDED",
+        "Results": {
+            "series": [{"data": [{"year": "2026", "period": "M09", "value": "159540"}]}]
+        },
+    }
+    monkeypatch.setattr(
+        bls_model, "get_request", lambda url, **kwargs: FakeResponse(payload)
+    )
+
+    payrolls = bls_model.get_nonfarm_payrolls()
+
+    assert payrolls.index.tolist() == [pd.Period("2026-09-01", "D")]
+    assert payrolls.index.name == "Date"
+    assert payrolls["United States"].iloc[0] == 159540
+
+
+@pytest.mark.parametrize(
+    ("method", "keyless_model"),
+    [
+        ("get_nonfarm_payrolls", "bls_model"),
+        ("get_initial_jobless_claims", "dol_model"),
+        ("get_retail_sales", "census_model"),
+        ("get_housing_starts", "census_model"),
+        ("get_real_personal_income", "bea_model"),
+    ],
+)
+def test_a_fred_key_selects_fred_for_the_us_activity_indicators(
+    monkeypatch, method, keyless_model
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics import economics_controller, fred_model
+
+    days = pd.period_range("2026-09-01", periods=1, freq="D", name="Date")
+    monkeypatch.setattr(
+        fred_model,
+        method,
+        lambda *args: pd.DataFrame({"United States": [1.0]}, index=days),
+    )
+    monkeypatch.setattr(
+        getattr(economics_controller, keyless_model),
+        method,
+        lambda: pd.DataFrame({"United States": [2.0]}, index=days),
+    )
+
+    with_key = Economics(start_date="2026-09-01", gmdb_source=False, fred_api_key="key")
+    without_key = Economics(start_date="2026-09-01", gmdb_source=False, fred_api_key="")
+
+    assert getattr(with_key, method)().iloc[0, 0] == 1.0
+    assert getattr(without_key, method)().iloc[0, 0] == 2.0
+
+
+def hqm_spot_sheet() -> list[list]:
+    """The layout of a Treasury HQM spot rate file: the year above its first month, the
+    month names below it, and from the seventh row a row per maturity."""
+    rows = [[None, None, None] for _ in range(6)]
+    rows[0][0] = "HQM Corporate Bond Yield Curve Spot Rates"
+    rows[3][1:] = [2026, None]
+    rows[4][1:] = ["Sep", "Oct"]
+    rows[5][0] = "Maturity"
+    for maturity in (0.5, 1, 1.5, 2, 100):
+        rows.append([maturity, 4.0 + maturity / 100, None])
+
+    return rows
+
+
+def test_hqm_spot_rates_keep_the_named_maturities_in_decimals(monkeypatch):
+    from financetoolkit.fixedincome import hqm_model
+
+    requested = []
+
+    def answer(url, **kwargs):
+        requested.append(url.rsplit("/", 1)[-1])
+        return SheetResponse(hqm_spot_sheet())
+
+    monkeypatch.setattr(hqm_model, "get_request", answer)
+
+    rates = hqm_model.get_hqm_spot_rates("2026-01-01", "2026-12-31")
+
+    # Only the five-year file holding 2026 is requested.
+    assert requested == ["hqm_24_28.xls"]
+    # The month without rates yet is left out, and so are the unnamed maturities.
+    assert rates.index.tolist() == [pd.Period("2026-09", "M")]
+    assert rates.columns.tolist() == ["6M", "1Y", "2Y", "100Y"]
+    assert rates.index.name is None
+    assert rates.loc[pd.Period("2026-09", "M"), "100Y"] == pytest.approx(0.05)
+
+
+def test_hqm_par_yields_and_the_spread_over_treasury_averages(monkeypatch):
+    from financetoolkit.fixedincome import hqm_model
+
+    rows = [
+        ["HQM Par Yields", None, None, None, None, None],
+        ["Date", None, "2-year", "5-year", "10-year", "30-year"],
+        ["Sep 2026", None, 4.5, 4.9, 5.4, 6.2],
+    ]
+    monkeypatch.setattr(
+        hqm_model, "get_request", lambda url, **kwargs: SheetResponse(rows)
+    )
+    days = pd.period_range("2026-09-01", periods=3, freq="D")
+    # A 2-year average of 3.505 percent, which H.15 rounds up to 3.51.
+    daily = pd.DataFrame(
+        {
+            "1 Mo": [4.0, 4.0, 4.0],
+            "2 Yr": [0.03500, 0.03505, 0.03510],
+            "5 Yr": [0.04, 0.04, 0.04],
+            "10 Yr": [0.045, 0.045, 0.045],
+            "30 Yr": [None, None, None],
+        },
+        index=days,
+    )
+    monkeypatch.setattr(
+        hqm_model.treasury_model, "get_yield_curve", lambda *args: daily
+    )
+
+    par = hqm_model.get_hqm_par_yields()
+    spread = hqm_model.get_hqm_corporate_bond_spread("2026-09-01", "2026-09-30")
+
+    assert par.loc[pd.Period("2026-09", "M"), "30Y"] == pytest.approx(0.062)
+    september = spread.loc[pd.Period("2026-09", "M")]
+    assert september["2Y"] == pytest.approx(0.045 - 0.0351)
+    assert september["10Y"] == pytest.approx(0.009)
+    # Months without a 30-year Treasury yield have no 30-year spread.
+    assert pd.isna(september["30Y"])
+
+
+def test_hqm_curve_and_spread_need_no_fred_key(monkeypatch):
+    from financetoolkit import FixedIncome
+    from financetoolkit.fixedincome import fred_model, hqm_model
+
+    months = pd.period_range("2026-08", periods=2, freq="M")
+    curve = pd.DataFrame({"10Y": [0.05, 0.051]}, index=months)
+    monkeypatch.setattr(hqm_model, "get_hqm_spot_rates", lambda *args: curve)
+    monkeypatch.setattr(hqm_model, "get_hqm_par_yields", lambda: curve + 0.001)
+    monkeypatch.setattr(
+        hqm_model, "get_hqm_corporate_bond_spread", lambda *args: curve / 10
+    )
+    monkeypatch.setattr(
+        fred_model,
+        "get_hqm_corporate_bond_yield_curve",
+        lambda *args: curve * 2,
+    )
+
+    without_key = FixedIncome(
+        start_date="2026-08-01", end_date="2026-09-30", fred_api_key=""
+    )
+    with_key = FixedIncome(
+        start_date="2026-08-01", end_date="2026-09-30", fred_api_key="key"
+    )
+
+    assert without_key.get_hqm_corporate_bond_yield_curve().iloc[-1, 0] == 0.051
+    assert without_key.get_hqm_corporate_bond_yield_curve(rate="par").iloc[
+        -1, 0
+    ] == pytest.approx(0.052)
+    assert without_key.get_hqm_corporate_bond_spread().iloc[-1, 0] == pytest.approx(
+        0.0051
+    )
+    assert with_key.get_hqm_corporate_bond_yield_curve().iloc[-1, 0] == 0.102

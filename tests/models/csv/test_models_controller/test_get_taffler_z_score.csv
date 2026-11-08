@@ -1,0 +1,11 @@
+,,2020,2021,2022,2023
+AAPL,Profit Before Tax to Current Liabilities,0.6366,0.8703,0.7735,0.7827
+AAPL,Current Assets to Total Liabilities,0.5558,0.4683,0.4482,0.4943
+AAPL,Current Liabilities to Total Assets,0.3254,0.3575,0.4365,0.4121
+AAPL,No-Credit Interval,63.6809,4.1287,-32.5074,-11.4198
+AAPL,Taffler Z-Score,10.7147,11.2728,8.137,9.2367
+MSFT,Profit Before Tax to Current Liabilities,0.7335,0.802,0.8805,0.8575
+MSFT,Current Assets to Total Liabilities,0.994,0.9615,0.8557,0.8955
+MSFT,Current Liabilities to Total Assets,0.24,0.2656,0.2606,0.2528
+MSFT,No-Credit Interval,509.3628,398.4319,258.3961,260.4942
+MSFT,Taffler Z-Score,26.827,24.0897,20.7734,20.7379

@@ -51,6 +51,7 @@ ERROR_RESPONSE_COLUMNS = frozenset(
         "YFINANCE RATE LIMIT REACHED",
         "US STOCKS ONLY",
         "INVALID API KEY",
+        "NO DATA",
         "REQUEST FAILED",
         "NO ERRORS",
     }

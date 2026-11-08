@@ -2,7 +2,11 @@
 
 # pylint: disable=missing-function-docstring
 
-from tests.conftest import Record
+import socket
+
+import pytest
+
+from tests.conftest import NETWORK_ATTEMPTS, NetworkBlockedError, Record
 
 HEADER = ",AAPL\n"
 
@@ -69,3 +73,23 @@ def test_shape_and_headers_must_match_exactly():
     assert not Record._csv_strings_approx_equal(  # noqa: SLF001
         ",AAPL\nBeta,0.3754\n", ",AAPL,MSFT\nBeta,0.3754,0.2\n"
     )
+
+
+def test_offline_tests_cannot_reach_the_network(request):
+    if request.config.getoption("--live"):
+        pytest.skip("The network is open with --live.")
+
+    attempts_before = len(NETWORK_ATTEMPTS)
+    with pytest.raises(NetworkBlockedError, match="example.com"):
+        socket.getaddrinfo("example.com", 443)
+    with pytest.raises(NetworkBlockedError):
+        socket.create_connection(("93.184.215.14", 443), timeout=1)
+
+    # Both attempts were recorded; they are removed again so that the fixture that fails
+    # a test reaching the network lets this one pass.
+    assert NETWORK_ATTEMPTS[attempts_before:] == ["example.com", "93.184.215.14"]
+    del NETWORK_ATTEMPTS[attempts_before:]
+
+    # The loopback interface stays open for the MCP HTTP tests.
+    assert socket.getaddrinfo("localhost", 80)
+    assert socket.getaddrinfo("127.0.0.1", 80)

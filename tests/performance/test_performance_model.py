@@ -1,5 +1,8 @@
 """Performance Model Tests"""
 
+import io
+import zipfile
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -50,11 +53,34 @@ def test_get_capital_asset_pricing_model(recorder):
     )
 
 
-def test_obtain_fama_and_french_dataset(recorder):
+def test_obtain_fama_and_french_dataset(monkeypatch):
+    text = (
+        "This file was created by CMPT_ME_BEME_OP_INV_RETS_DAILY using the 202609 CRSP database.\n"
+        "The Tbill return is the simple daily rate.\n\n"
+        ",Mkt-RF,SMB,HML,RMW,CMA,RF\n"
+        "19630701,   -0.67,    0.02,   -0.35,    0.03,    0.13,    0.012\n"
+        "19630702,    0.79,   -0.28,    0.28,   -0.08,   -0.21,    0.012\n"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("F-F_Research_Data_5_Factors_2x3_daily.csv", text)
+    requested = []
+
+    def fake_get_request(url, timeout):  # noqa: ARG001
+        requested.append(url)
+        return type("Response", (), {"content": buffer.getvalue()})()
+
+    monkeypatch.setattr(performance_model, "get_request", fake_get_request)
+    monkeypatch.setattr(performance_model, "_factor_files", {})
+
     dataset = performance_model.obtain_fama_and_french_dataset()
 
-    # The dataset changes over time, so only short-term stability is checked.
-    recorder.capture(dataset.round(0).iloc[:100])
+    # The United States five factor file, read from percent into decimals by day.
+    assert requested == [performance_model.factor_url("United States", "five")]
+    assert list(dataset.columns) == ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"]
+    assert [str(day) for day in dataset.index] == ["1963-07-01", "1963-07-02"]
+    assert dataset.loc["1963-07-01", "Mkt-RF"] == pytest.approx(-0.0067)
+    assert dataset.loc["1963-07-02", "RF"] == pytest.approx(0.00012)
 
 
 def test_get_factor_asset_correlations(recorder):
@@ -1158,3 +1184,113 @@ def test_morningstar_risk_adjusted_return_refuses_a_negative_gamma():
         performance_model.get_morningstar_risk_adjusted_return(
             pd.Series([0.01, 0.02]), gamma=-1
         )
+
+
+def test_get_calmar_ratio_divides_the_return_by_the_absolute_maximum_drawdown():
+    result = performance_model.get_calmar_ratio(
+        returns=pd.Series([0.2, 0.1, 0.3]),
+        maximum_drawdown=pd.Series([-0.1, -0.5, np.nan]),
+    )
+
+    # A period without a drawdown has no ratio and is dropped.
+    pd.testing.assert_series_equal(result, pd.Series([2.0, 0.2]))
+
+
+def test_get_average_drawdown_averages_the_periods_under_water():
+    # Wealth 1.1, 0.55, 0.66, 1.32 against a running peak of 1.1, 1.1, 1.1, 1.32: two
+    # days under water, 50% and 40% below the peak.
+    returns = pd.Series([0.1, -0.5, 0.2, 1.0])
+
+    assert performance_model.get_average_drawdown(returns) == pytest.approx(-0.45)
+
+    # On a level (a rate or a spread) the drawdown is the distance to the running peak.
+    levels = pd.Series([1.0, 3.0, 2.0, 1.0, 4.0])
+    assert performance_model.get_average_drawdown(
+        levels, method="level"
+    ) == pytest.approx(-1.5)
+
+    with pytest.raises(ValueError, match="method"):
+        performance_model.get_average_drawdown(returns, method="price")
+
+
+def test_get_average_drawdown_per_sub_period():
+    index = pd.MultiIndex.from_tuples(
+        [("2020", 1), ("2020", 2), ("2021", 1), ("2021", 2)]
+    )
+    returns = pd.DataFrame({"A": [0.1, -0.5, -0.2, 0.1]}, index=index)
+
+    result = performance_model.get_average_drawdown(returns)
+
+    # Each sub-period starts with a fresh peak: 2020 falls 50% from 1.1, 2021 falls 20%
+    # and recovers to 12% below the starting value of 1.
+    assert result.loc["2020", "A"] == pytest.approx(-0.5)
+    assert result.loc["2021", "A"] == pytest.approx((-0.2 + 0.8 * 1.1 - 1) / 2)
+
+
+def test_get_sterling_ratio_adds_the_adjustment_to_the_average_drawdown():
+    result = performance_model.get_sterling_ratio(
+        returns=pd.Series([0.2, 0.3]),
+        average_drawdown=pd.Series([-0.1, -0.2]),
+    )
+    pd.testing.assert_series_equal(result, pd.Series([1.0, 1.0]))
+
+    assert performance_model.get_sterling_ratio(
+        pd.Series([0.2]), pd.Series([-0.1]), adjustment=0
+    ).iloc[0] == pytest.approx(2.0)
+
+
+def test_get_burke_ratio_divides_the_excess_return_by_the_drawdown_measure():
+    result = performance_model.get_burke_ratio(
+        excess_returns=pd.Series([0.3, 0.1]),
+        burke_drawdown_measure=pd.Series([0.15, np.nan]),
+    )
+
+    pd.testing.assert_series_equal(result, pd.Series([2.0]))
+
+
+def test_get_kappa_ratio_scales_by_the_lower_partial_moment():
+    excess_returns = pd.Series([0.02, -0.01, 0.03, -0.02])
+    mean = 0.005
+
+    # Order 2 is the Sortino ratio: the root of the mean squared shortfall.
+    assert performance_model.get_kappa_ratio(excess_returns, order=2) == pytest.approx(
+        mean / ((0.01**2 + 0.02**2) / 4) ** (1 / 2)
+    )
+    assert performance_model.get_kappa_ratio(excess_returns) == pytest.approx(
+        mean / ((0.01**3 + 0.02**3) / 4) ** (1 / 3)
+    )
+
+    frame = pd.DataFrame({"A": excess_returns, "B": -excess_returns})
+    result = performance_model.get_kappa_ratio(frame, order=2)
+    assert result["A"] == pytest.approx(0.005 / np.sqrt(0.000125))
+    assert result["B"] == pytest.approx(-0.005 / np.sqrt((0.02**2 + 0.03**2) / 4))
+
+    with pytest.raises(TypeError):
+        performance_model.get_kappa_ratio([0.01, -0.02])
+
+
+def test_get_kappa_ratio_per_sub_period():
+    index = pd.MultiIndex.from_tuples(
+        [("2020", 1), ("2020", 2), ("2021", 1), ("2021", 2)]
+    )
+    frame = pd.DataFrame({"A": [0.02, -0.01, 0.03, -0.02]}, index=index)
+
+    result = performance_model.get_kappa_ratio(frame, order=1)
+
+    # Order 1: the mean over the mean shortfall.
+    assert result.loc["2020", "A"] == pytest.approx(0.005 / 0.005)
+    assert result.loc["2021", "A"] == pytest.approx(0.005 / 0.01)
+
+
+def test_get_covariance_matrix_is_the_sample_covariance():
+    returns = pd.DataFrame({"X": [1.0, 2.0, 3.0], "Y": [2.0, 4.0, 7.0]})
+
+    result = performance_model.get_covariance_matrix(returns)
+
+    # Sample statistics (ddof=1): var(X) = 2 / 2, cov(X, Y) = (7/3 + 8/3) / 2.
+    assert result.loc["X", "X"] == pytest.approx(1.0)
+    assert result.loc["X", "Y"] == pytest.approx(2.5)
+    assert result.loc["Y", "X"] == result.loc["X", "Y"]
+
+    with pytest.raises(TypeError):
+        performance_model.get_covariance_matrix(returns["X"])

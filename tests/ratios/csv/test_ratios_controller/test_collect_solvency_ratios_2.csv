@@ -41,6 +41,30 @@ AAPL,Preferred Dividend Coverage Ratio,Lag 3,,,,
 AAPL,Interest Paid to Expense Ratio,Lag 1,,-0.0278,-0.0378,-0.0108
 AAPL,Interest Paid to Expense Ratio,Lag 2,,,-0.0645,-0.0482
 AAPL,Interest Paid to Expense Ratio,Lag 3,,,,-0.0746
+AAPL,EBITDA Interest Coverage,Lag 1,,0.6885,-0.0202,-0.2817
+AAPL,EBITDA Interest Coverage,Lag 2,,,0.6544,-0.2962
+AAPL,EBITDA Interest Coverage,Lag 3,,,,0.1883
+AAPL,(EBITDA - CapEx) Interest Coverage,Lag 1,,0.6928,-0.0092,-0.2857
+AAPL,(EBITDA - CapEx) Interest Coverage,Lag 2,,,0.6772,-0.2923
+AAPL,(EBITDA - CapEx) Interest Coverage,Lag 3,,,,0.198
+AAPL,Cash Interest Coverage,Lag 1,,0.5841,0.0265,-0.3069
+AAPL,Cash Interest Coverage,Lag 2,,,0.626,-0.2886
+AAPL,Cash Interest Coverage,Lag 3,,,,0.127
+AAPL,FFO to Debt,Lag 1,,0.2506,0.2063,0.1624
+AAPL,FFO to Debt,Lag 2,,,0.5086,0.4022
+AAPL,FFO to Debt,Lag 3,,,,0.7536
+AAPL,DCF to Debt,Lag 1,,0.4874,1.9909,0.1621
+AAPL,DCF to Debt,Lag 2,,,1.508,2.1515
+AAPL,DCF to Debt,Lag 3,,,,1.5903
+AAPL,Degree of Operating Leverage,Lag 1,,,-0.3617,0.2431
+AAPL,Degree of Operating Leverage,Lag 2,,,,-0.2065
+AAPL,Degree of Operating Leverage,Lag 3,,,,
+AAPL,Degree of Financial Leverage,Lag 1,,,-0.4427,0.164
+AAPL,Degree of Financial Leverage,Lag 2,,,,-0.3513
+AAPL,Degree of Financial Leverage,Lag 3,,,,
+AAPL,Degree of Total Leverage,Lag 1,,,-0.6443,0.4471
+AAPL,Degree of Total Leverage,Lag 2,,,,-0.4852
+AAPL,Degree of Total Leverage,Lag 3,,,,
 MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1379,-0.1733,-0.1328
 MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2874,-0.2831
 MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.382
@@ -83,3 +107,27 @@ MSFT,Preferred Dividend Coverage Ratio,Lag 3,,,,
 MSFT,Interest Paid to Expense Ratio,Lag 1,,,,
 MSFT,Interest Paid to Expense Ratio,Lag 2,,,,
 MSFT,Interest Paid to Expense Ratio,Lag 3,,,,
+MSFT,EBITDA Interest Coverage,Lag 1,,0.3706,0.3635,0.0969
+MSFT,EBITDA Interest Coverage,Lag 2,,,0.8688,0.4957
+MSFT,EBITDA Interest Coverage,Lag 3,,,,1.05
+MSFT,(EBITDA - CapEx) Interest Coverage,Lag 1,,0.3386,0.3792,0.0528
+MSFT,(EBITDA - CapEx) Interest Coverage,Lag 2,,,0.8461,0.452
+MSFT,(EBITDA - CapEx) Interest Coverage,Lag 3,,,,0.9436
+MSFT,Cash Interest Coverage,Lag 1,,,,
+MSFT,Cash Interest Coverage,Lag 2,,,,
+MSFT,Cash Interest Coverage,Lag 3,,,,
+MSFT,FFO to Debt,Lag 1,,,,
+MSFT,FFO to Debt,Lag 2,,,,
+MSFT,FFO to Debt,Lag 3,,,,
+MSFT,DCF to Debt,Lag 1,,0.7948,0.2969,0.2439
+MSFT,DCF to Debt,Lag 2,,,1.3277,0.6132
+MSFT,DCF to Debt,Lag 3,,,,1.8954
+MSFT,Degree of Operating Leverage,Lag 1,,,-0.4127,-0.165
+MSFT,Degree of Operating Leverage,Lag 2,,,,-0.5096
+MSFT,Degree of Operating Leverage,Lag 3,,,,
+MSFT,Degree of Financial Leverage,Lag 1,,,-0.1892,-1.0866
+MSFT,Degree of Financial Leverage,Lag 2,,,,-1.0702
+MSFT,Degree of Financial Leverage,Lag 3,,,,
+MSFT,Degree of Total Leverage,Lag 1,,,-0.5237,-1.0722
+MSFT,Degree of Total Leverage,Lag 2,,,,-1.0344
+MSFT,Degree of Total Leverage,Lag 3,,,,

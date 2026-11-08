@@ -696,6 +696,65 @@ def test_pairwise_measures_keep_the_role_of_a_given_ticker(risk_module):
     assert list(tail_dependence.index) == ["MSFT", "Benchmark"]
 
 
+def _toolkit_with_historical(historical):
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+
+    return toolkit
+
+
+def test_a_constant_price_has_no_skewness_or_kurtosis(risk_module):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    for column in ["Open", "High", "Low", "Close", "Adj Close"]:
+        historical[(column, "MSFT")] = 100.0
+    historical[("Return", "MSFT")] = 0.0
+    constant = _toolkit_with_historical(historical).risk
+
+    skewness = constant.get_skewness()
+    kurtosis = constant.get_kurtosis()
+
+    assert np.isnan(skewness["MSFT"]) and np.isnan(kurtosis["MSFT"])
+    assert skewness["AAPL"] == risk_module.get_skewness()["AAPL"]
+
+
+@pytest.mark.parametrize(
+    "method", ["parkinson", "garman_klass", "rogers_satchell", "yang_zhang"]
+)
+def test_a_bad_bar_only_leaves_out_that_day(risk_module, method):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    historical.loc["2021-03-01":"2021-03-04", ("Open", "AAPL")] = 0.0
+    historical.loc["2021-03-01":"2021-03-04", ("Low", "AAPL")] = 0.0
+    bad_bars = _toolkit_with_historical(historical).risk
+
+    volatility = bad_bars.get_volatility(method=method)
+    reference = risk_module.get_volatility(method=method)
+
+    assert np.isfinite(volatility.loc["2021", "AAPL"])
+    # Four of 252 days left out move the yearly estimate by little.
+    assert volatility.loc["2021", "AAPL"] == pytest.approx(
+        reference.loc["2021", "AAPL"], rel=0.05
+    )
+    pd.testing.assert_series_equal(volatility["MSFT"], reference["MSFT"])
+
+    if method != "yang_zhang":
+        forecast = bad_bars.get_har_rv_forecast(estimator=method)["AAPL"]
+        assert forecast.notna().any() and np.isfinite(forecast.dropna()).all()
+
+
 def test_get_mean_absolute_deviation_per_month(risk_module):
     result = risk_module.get_mean_absolute_deviation(period="monthly", rounding=None)
     daily = risk_module._historical_data["daily"]["Return"]["AAPL"]

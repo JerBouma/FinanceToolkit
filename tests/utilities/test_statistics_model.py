@@ -773,3 +773,26 @@ def test_by_own_trading_days_compounds_returns_between_shared_dates():
     assert np.isclose(result.loc[3, "Benchmark"], 1.05**2 - 1)
     assert np.isclose(result.loc[3, "A"], 0.10)
     assert pd.isna(result.loc[2, "A"])
+
+
+def test_drop_non_finite_replaces_infinities_with_nan():
+    assert np.isnan(statistics_model.drop_non_finite(np.inf))
+    assert statistics_model.drop_non_finite(1.5) == 1.5
+    assert statistics_model.drop_non_finite(
+        pd.Series([1.0, np.inf, -np.inf])
+    ).isna().tolist() == [False, True, True]
+
+
+def test_finalize_dataset_reports_a_zero_denominator_as_nan():
+    ratio = pd.DataFrame(
+        [[1.9, np.inf, 2.6, 1.8]], index=["AAPL"], columns=[2019, 2020, 2021, 2022]
+    )
+
+    finalized = statistics_model.finalize_dataset(ratio, None, None, 4)
+    standardized = statistics_model.finalize_dataset(
+        ratio, None, None, 4, standardize=True
+    )
+
+    assert finalized.loc["AAPL"].isna().tolist() == [False, True, False, False]
+    # One undefined period does not turn the whole Z-Score row into NaN.
+    assert standardized.loc["AAPL"].isna().tolist() == [False, True, False, False]

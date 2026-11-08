@@ -10,6 +10,8 @@ import statsmodels.api as sm
 from statsmodels.tsa.adfvalues import mackinnoncrit, mackinnonp
 from statsmodels.tsa.stattools import adfuller, kpss, zivot_andrews
 
+from financetoolkit.utilities.statistics_model import newey_west_long_run_variance
+
 # The conventional 5% significance level used for the boolean "reject" flags.
 SIGNIFICANCE_LEVEL = 0.05
 
@@ -40,36 +42,6 @@ def default_max_lag(observations: int) -> int:
     schwert = int(np.ceil(12 * (observations / 100) ** (1 / 4)))
 
     return max(0, min(schwert, (observations - 5) // 3))
-
-
-def _newey_west_long_run_variance(residuals: np.ndarray, lags: int) -> float:
-    """
-    Newey-West (1987) HAC long-run variance estimator with Bartlett kernel weights.
-
-    lambda^2 = gamma_0 + 2 * SUM_{l=1}^{lags} (1 - l / (lags + 1)) * gamma_l
-
-    where gamma_l is the l-th sample autocovariance of `residuals`. Needed only by
-    `get_phillips_perron_test` below, which has no `statsmodels`/`linearmodels`
-    equivalent -- every other test in this module delegates its long-run-variance
-    correction to `statsmodels` internally.
-
-    For more information about the method, see the following paper:
-
-    - Newey, W.K. and West, K.D. (1987). "A Simple, Positive Semi-Definite,
-    Heteroskedasticity and Autocorrelation Consistent Covariance Matrix."
-    Econometrica, 55(3), 703-708.
-    """
-    number_of_observations = len(residuals)
-    variance = float(np.sum(residuals**2) / number_of_observations)
-
-    for lag in range(1, lags + 1):
-        weight = 1 - lag / (lags + 1)
-        autocovariance = (
-            np.sum(residuals[lag:] * residuals[:-lag]) / number_of_observations
-        )
-        variance += 2 * weight * autocovariance
-
-    return variance
 
 
 def get_augmented_dickey_fuller(
@@ -402,7 +374,7 @@ def get_phillips_perron_test(
 
     sigma_squared = residual_sum_of_squares / (n - number_of_parameters)
     gamma_0 = residual_sum_of_squares / n
-    long_run_variance = _newey_west_long_run_variance(residuals, lags)
+    long_run_variance = newey_west_long_run_variance(residuals, lags)
 
     z_t_statistic = np.sqrt(gamma_0 / long_run_variance) * t_rho - (
         long_run_variance - gamma_0

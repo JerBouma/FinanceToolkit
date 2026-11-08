@@ -9,6 +9,8 @@ from scipy.optimize import brentq
 from scipy.special import log_ndtr, ndtr
 from scipy.stats import norm
 
+from financetoolkit.options.helpers import validate_numeric_inputs
+
 # The volatility range the implied volatility is solved within.
 MINIMUM_IMPLIED_VOLATILITY = 1e-6
 MAXIMUM_IMPLIED_VOLATILITY = 5.0
@@ -23,30 +25,6 @@ _GAUSS_LEGENDRE = {
 }
 
 # pylint: disable=too-many-arguments,too-many-locals
-
-
-def _validate_numeric_inputs(**kwargs) -> None:
-    """
-    Validate that the provided keyword arguments are numeric (int, float,
-    np.ndarray or pd.Series) and raise a TypeError otherwise.
-
-    Args:
-        **kwargs: the arguments to validate, keyed by argument name.
-
-    Raises:
-        TypeError: if any of the provided values is not a float, int,
-        np.ndarray or pd.Series.
-    """
-    for name, value in kwargs.items():
-        if value is None:
-            continue
-        if not isinstance(value, (int, float, np.ndarray, pd.Series)) or isinstance(
-            value, bool
-        ):
-            raise TypeError(
-                f"{name} must be a float, int, np.ndarray or pd.Series, "
-                f"received {type(value).__name__}."
-            )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -189,7 +167,6 @@ def get_implied_volatility(
     time_to_expiration: float,
     dividend_yield: float = 0,
     put_option: bool = False,
-    initial_guess: float = 0.3,
 ) -> float:
     """
     Numerically solve for the Black-Scholes implied volatility that reprices a
@@ -205,8 +182,6 @@ def get_implied_volatility(
         time_to_expiration (float): The time to expiration of the option, in years.
         dividend_yield (float): The dividend yield of the stock. Defaults to 0.
         put_option (bool): Whether the option is a put option or not.
-        initial_guess (float): Not used: the solver brackets the root on [1e-6, 5]
-            rather than starting from a guess. Defaults to 0.3.
 
     Returns:
         float: The implied volatility, or NaN when the observed price admits no solution.
@@ -325,7 +300,8 @@ def get_put_call_parity(
         Reference: Stoll, H. R. (1969). "The Relationship Between Put and Call Option
         Prices." Journal of Finance, 24(5), 801-824.
     """
-    _validate_numeric_inputs(
+    validate_numeric_inputs(
+        arrays=True,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -411,7 +387,8 @@ def get_garman_kohlhagen(
         Reference: Garman, M. B., & Kohlhagen, S. W. (1983). "Foreign Currency Option
         Values." Journal of International Money and Finance, 2(3), 231-237.
     """
-    _validate_numeric_inputs(
+    validate_numeric_inputs(
+        arrays=True,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -510,7 +487,8 @@ def get_binary_option(
         Reference: Reiner, E., & Rubinstein, M. (1991). "Unscrambling the Binary Code."
         Risk Magazine, 4(9), 75-83.
     """
-    _validate_numeric_inputs(
+    validate_numeric_inputs(
+        arrays=True,
         stock_price=stock_price,
         strike_price=strike_price,
         risk_free_rate=risk_free_rate,
@@ -1167,18 +1145,14 @@ def get_bjerksund_stensland(
         American price, the approximation is slightly low; for S = K = 100, r = 5%,
         q = 3%, σ = 25% and T = 1 the put is 8.8439 against 8.8823.
     """
-    for name, value in {
-        "stock_price": stock_price,
-        "strike_price": strike_price,
-        "risk_free_rate": risk_free_rate,
-        "volatility": volatility,
-        "time_to_expiration": time_to_expiration,
-        "dividend_yield": dividend_yield,
-    }.items():
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise TypeError(
-                f"{name} must be a float or int, received {type(value).__name__}."
-            )
+    validate_numeric_inputs(
+        stock_price=stock_price,
+        strike_price=strike_price,
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
+    )
 
     # The exercise boundary divides by the variance, which a constant price does not have.
     if volatility <= 0:

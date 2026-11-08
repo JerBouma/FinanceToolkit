@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import itertools
-import warnings
 from collections.abc import Callable
 from functools import cached_property
 
@@ -36,9 +35,6 @@ from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = get_logger()
-
-# Division by zero is normal in these calculations, not a bug.
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,too-many-locals
 # pylint: disable=too-many-boolean-expressions
@@ -5027,28 +5023,28 @@ class Econometrics:
 
         Args:
             independent_tickers (str | list[str] | None, optional): The factor
-            ticker(s), whose `column` values are broadcast identically to every
-            entity at each date. Mutually exclusive with `independent_column`.
-            Note: since this `Toolkit` instance's historical data is aligned onto a
-            common calendar across tickers, a broadcast factor's entity mean is
-            identical for every entity, leaving no between-entity variation to
-            identify Random Effects' between-regression step -- prefer
-            `independent_column` here unless `dependent_tickers` genuinely differ
-            in their date coverage (e.g. different listing histories).
+                ticker(s), whose `column` values are broadcast identically to every
+                entity at each date. Mutually exclusive with `independent_column`.
+                Since this `Toolkit` instance's historical data is aligned onto a
+                common calendar across tickers, a broadcast factor's entity mean is
+                identical for every entity, leaving no between-entity variation to
+                identify Random Effects' between-regression step -- prefer
+                `independent_column` here unless `dependent_tickers` genuinely differ
+                in their date coverage (e.g. different listing histories).
             independent_column (str | None, optional): A different historical data
-            column, taken per-entity from each of `dependent_tickers`' own data, to
-            use as the regressor. Mutually exclusive with `independent_tickers`.
+                column, taken per-entity from each of `dependent_tickers`' own data, to
+                use as the regressor. Mutually exclusive with `independent_tickers`.
             dependent_tickers (str | list[str] | None, optional): The panel of
-            entity tickers to explain. Defaults to None, meaning every ticker in
-            the `Toolkit` instance (other than `independent_tickers`, if given).
+                entity tickers to explain. Defaults to None, meaning every ticker in
+                the `Toolkit` instance (other than `independent_tickers`, if given).
             period (str, optional): The data frequency (daily, weekly, monthly,
-            quarterly, or yearly). Defaults to "daily".
+                quarterly, or yearly). Defaults to "daily".
             column (str, optional): The dependent variable's historical data
-            column. Defaults to "Return".
+                column. Defaults to "Return".
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
-            entities. Defaults to False.
+                entities. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
-            results to. Defaults to None.
+                results to. Defaults to None.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error,

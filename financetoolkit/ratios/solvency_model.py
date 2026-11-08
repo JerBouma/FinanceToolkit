@@ -3,7 +3,12 @@
 __docformat__ = "google"
 
 
+import numpy as np
 import pandas as pd
+
+from financetoolkit.utilities.statistics_model import (
+    calculate_change_over_absolute_base,
+)
 
 
 def get_debt_to_assets_ratio(
@@ -384,3 +389,253 @@ def get_interest_paid_to_expense_ratio(
         float | pd.Series: The interest paid to interest expense ratio value.
     """
     return interest_paid / interest_expense
+
+
+def get_ebitda_interest_coverage_ratio(
+    operating_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    interest_expense: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the EBITDA interest coverage ratio, the number of times the earnings
+    before interest, taxes, depreciation and amortization cover the interest expense.
+
+    The formula is as follows (S&P Global Ratings, Moody's):
+
+        EBITDA Interest Coverage = (Operating Income + Depreciation and Amortization)
+            / Interest Expense
+
+    The interest expense is the gross expense, without netting the interest income, as
+    S&P Global Ratings does. A zero interest expense gives no meaningful coverage, so
+    those periods are NaN.
+
+    Also known as: EBITDA to interest, EBITDA coverage, EBITDA/interest.
+
+    Args:
+        operating_income (float or pd.Series): Operating income (EBIT) of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and
+            amortization of the company.
+        interest_expense (float or pd.Series): Interest expense of the company.
+
+    Returns:
+        float | pd.Series: The EBITDA interest coverage value, NaN where the interest
+            expense is zero.
+    """
+    ebitda = operating_income + depreciation_and_amortization
+
+    return ebitda / interest_expense.where(interest_expense != 0)
+
+
+def get_ebitda_minus_capex_interest_coverage_ratio(
+    operating_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    capital_expenditure: pd.Series | pd.DataFrame,
+    interest_expense: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the EBITDA minus capital expenditure interest coverage ratio, the number
+    of times the EBITDA that is left after the capital expenditure covers the interest
+    expense.
+
+    The formula is as follows (Moody's):
+
+        (EBITDA - CapEx) / Interest = (Operating Income + Depreciation and Amortization
+            - |Capital Expenditure|) / Interest Expense
+
+    Capital expenditure is reported as a negative cash outflow, so its magnitude is
+    deducted. A zero interest expense gives NaN.
+
+    Also known as: (EBITDA - CapEx) / interest expense, EBITDA less capex coverage.
+
+    Args:
+        operating_income (float or pd.Series): Operating income (EBIT) of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and
+            amortization of the company.
+        capital_expenditure (float or pd.Series): Capital expenditure of the company, as
+            reported in the Cash Flow Statement.
+        interest_expense (float or pd.Series): Interest expense of the company.
+
+    Returns:
+        float | pd.Series: The (EBITDA - CapEx) interest coverage value, NaN where the
+            interest expense is zero.
+    """
+    ebitda_minus_capex = (
+        operating_income + depreciation_and_amortization - abs(capital_expenditure)
+    )
+
+    return ebitda_minus_capex / interest_expense.where(interest_expense != 0)
+
+
+def get_cash_interest_coverage_ratio(
+    cash_flow_from_operations: pd.Series | pd.DataFrame,
+    interest_paid: pd.Series | pd.DataFrame,
+    income_taxes_paid: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the cash interest coverage ratio, the number of times the operating cash
+    flow before interest and taxes covers the interest paid in cash.
+
+    The formula is as follows (CFA Institute):
+
+        Cash Interest Coverage = (Cash Flow from Operations + Interest Paid
+            + Income Taxes Paid) / Interest Paid
+
+    The interest and taxes paid are added back because the cash flow from operations
+    is after both (US GAAP). A zero interest paid gives NaN.
+
+    Also known as: cash flow interest coverage, CFO interest coverage.
+
+    Args:
+        cash_flow_from_operations (float or pd.Series): Cash flow from operations.
+        interest_paid (float or pd.Series): Interest paid in cash, as reported in the
+            Cash Flow Statement.
+        income_taxes_paid (float or pd.Series): Income taxes paid in cash, as reported in
+            the Cash Flow Statement.
+
+    Returns:
+        float | pd.Series: The cash interest coverage value, NaN where no interest is paid.
+    """
+    return (cash_flow_from_operations + interest_paid + income_taxes_paid) / (
+        interest_paid.where(interest_paid != 0)
+    )
+
+
+def get_funds_from_operations_to_debt_ratio(
+    operating_income: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+    stock_based_compensation: pd.Series | pd.DataFrame,
+    interest_paid: pd.Series | pd.DataFrame,
+    income_taxes_paid: pd.Series | pd.DataFrame,
+    total_debt: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the funds from operations (FFO) to debt ratio, one of the two core
+    ratios of S&P Global Ratings: the cash a company generates from its operations,
+    before working capital and investment, as a share of its debt.
+
+    The formula is as follows (S&P Global Ratings):
+
+        FFO = EBITDA - Cash Interest Paid - Cash Tax Paid
+
+        EBITDA = Operating Income + Depreciation and Amortization + Stock-Based
+            Compensation
+
+        FFO to Debt = FFO / Total Debt
+
+    S&P excludes share-based compensation expense payable in shares from its EBITDA,
+    so it is added back. A company with debt pays interest, so an interest paid of zero
+    is taken as not reported and gives NaN (counting it as zero would overstate the
+    FFO by the whole interest bill), as does a total debt of zero or less.
+
+    Also known as: FFO/debt, funds from operations to debt.
+
+    Args:
+        operating_income (float or pd.Series): Operating income (EBIT) of the company.
+        depreciation_and_amortization (float or pd.Series): Depreciation and
+            amortization of the company.
+        stock_based_compensation (float or pd.Series): Stock-based compensation of the
+            company.
+        interest_paid (float or pd.Series): Interest paid in cash.
+        income_taxes_paid (float or pd.Series): Income taxes paid in cash.
+        total_debt (float or pd.Series): Total debt at the end of the period.
+
+    Returns:
+        float | pd.Series: The FFO to debt value, NaN where there is no debt.
+    """
+    funds_from_operations = (
+        operating_income
+        + depreciation_and_amortization
+        + stock_based_compensation
+        - interest_paid.where(interest_paid != 0)
+        - income_taxes_paid
+    )
+
+    return funds_from_operations / total_debt.where(total_debt > 0)
+
+
+def get_discretionary_cash_flow_to_debt_ratio(
+    cash_flow_from_operations: pd.Series | pd.DataFrame,
+    capital_expenditure: pd.Series | pd.DataFrame,
+    dividends_paid: pd.Series | pd.DataFrame,
+    common_stock_purchased: pd.Series | pd.DataFrame,
+    total_debt: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the discretionary cash flow (DCF) to debt ratio, a supplementary ratio of
+    S&P Global Ratings: the cash flow that is left after capital expenditure, dividends
+    and share buybacks, and so could repay debt, as a share of the debt.
+
+    The formula is as follows (S&P Global Ratings):
+
+        DCF = Cash Flow from Operations - |Capital Expenditure| - |Dividends Paid|
+            - |Share Buybacks|
+
+        DCF to Debt = DCF / Total Debt
+
+    Capital expenditure, dividends and buybacks are reported as negative cash outflows,
+    so their magnitudes are deducted. A total debt of zero or less gives NaN.
+
+    Also known as: DCF/debt, discretionary cash flow to debt.
+
+    Args:
+        cash_flow_from_operations (float or pd.Series): Cash flow from operations.
+        capital_expenditure (float or pd.Series): Capital expenditure of the company.
+        dividends_paid (float or pd.Series): Dividends paid on common and preferred stock.
+        common_stock_purchased (float or pd.Series): Share buybacks (common stock
+            purchased).
+        total_debt (float or pd.Series): Total debt at the end of the period.
+
+    Returns:
+        float | pd.Series: The DCF to debt value, NaN where there is no debt.
+    """
+    discretionary_cash_flow = (
+        cash_flow_from_operations
+        - abs(capital_expenditure)
+        - abs(dividends_paid)
+        - abs(common_stock_purchased)
+    )
+
+    return discretionary_cash_flow / total_debt.where(total_debt > 0)
+
+
+def get_degree_of_leverage(
+    result: pd.Series | pd.DataFrame,
+    driver: pd.Series | pd.DataFrame,
+    lag: int = 1,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate a degree of leverage: the percentage change of a result divided by the
+    percentage change of the item that drives it, over the same periods (CFA Institute).
+
+    The formula is as follows:
+
+        Degree of Leverage = %Δ Result / %Δ Driver
+
+    with the operating income as result and the revenue as driver for the degree of
+    operating leverage (DOL), the net income and operating income for the degree of
+    financial leverage (DFL) and the net income and revenue for the degree of total
+    leverage (DTL = DOL x DFL).
+
+    Each percentage change is (Value - Previous Value) / |Previous Value|, so a change
+    from a negative base keeps its sign. A driver that does not change, or a change
+    from a base of zero, gives NaN.
+
+    Args:
+        result (pd.Series | pd.DataFrame): The result, e.g. the operating income. A
+            DataFrame has the periods as columns.
+        driver (pd.Series | pd.DataFrame): The driver, e.g. the revenue, with the same
+            shape as the result.
+        lag (int, optional): The number of periods between the compared values, e.g. 4
+            to compare a quarter with the same quarter a year earlier. Defaults to 1.
+
+    Returns:
+        pd.Series | pd.DataFrame: The degree of leverage.
+    """
+    change_in_result = calculate_change_over_absolute_base(result, lag, "columns")
+    change_in_driver = calculate_change_over_absolute_base(driver, lag, "columns")
+
+    degree_of_leverage = change_in_result / change_in_driver.where(
+        change_in_driver != 0
+    )
+
+    return degree_of_leverage.replace([np.inf, -np.inf], np.nan)

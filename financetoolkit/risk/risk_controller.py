@@ -3,7 +3,6 @@
 __docformat__ = "google"
 
 import itertools
-import warnings
 from collections.abc import Callable
 from functools import cached_property
 
@@ -23,7 +22,7 @@ from financetoolkit.risk import (
     risk_model,
     var_model,
 )
-from financetoolkit.risk.helpers import determine_within_historical_data
+from financetoolkit.risk.helpers import as_float, determine_within_historical_data
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -35,9 +34,6 @@ from financetoolkit.utilities.statistics_model import (
 )
 
 logger = get_logger()
-
-# Division by zero is normal in these calculations, not a bug.
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 
@@ -67,23 +63,6 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["anomalies"] + [
 # pylint: disable=too-many-boolean-expressions
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
-
-
-def _as_scalar(value: float | np.ndarray | pd.Series | pd.DataFrame) -> float:
-    """
-    Reduces a Value at Risk or Conditional Value at Risk estimate to a single float.
-
-    A rolling apply only accepts a scalar return value, but the Student-t and Extreme
-    Value Theory variants return a length one array or Series when given a Series, which
-    would otherwise raise a TypeError before it reaches the backtest.
-
-    Args:
-        value (float | np.ndarray | pd.Series | pd.DataFrame): the estimate to reduce.
-
-    Returns:
-        float: the estimate as a single float.
-    """
-    return float(np.asarray(value).reshape(-1)[0])
 
 
 def _get_out_of_sample_estimates(
@@ -146,9 +125,7 @@ def _get_out_of_sample_estimates(
             # seconds per thousand windows.
             estimator = parametric_estimators[(measure, distribution)]
             estimate = column_returns.rolling(window=window_size).apply(
-                lambda window, estimator=estimator: _as_scalar(
-                    estimator(window, alpha)
-                ),
+                lambda window, estimator=estimator: as_float(estimator(window, alpha)),
                 raw=False,
             )
 
@@ -4617,6 +4594,7 @@ class Risk:
         - The method retrieves historical return data based on the specified `period` and calculates Skew for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of Skewness values using the specified `lag`.
+        - Returns that do not vary (a constant price, such as a suspended stock) have no Skewness and give NaN.
 
         As an example:
 
@@ -4763,6 +4741,7 @@ class Risk:
         - The method retrieves historical return data based on the specified `period` and calculates Kurtosis for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of Kurtosis values using the specified `lag`.
+        - Returns that do not vary (a constant price, such as a suspended stock) have no Kurtosis and give NaN.
 
         As an example:
 
@@ -5156,6 +5135,9 @@ class Risk:
         the specified `period` for each asset in the Toolkit instance. The close-to-close estimator
         only needs the daily returns, Parkinson needs the High and Low, and the remaining
         estimators need the Open, High, Low and Close.
+        - A range-based estimator leaves out each day on which a price it uses is 0 or below (a bad bar, as some
+        feeds report for illiquid days), since its logarithm is undefined; the period is measured over the
+        remaining days. The Yang-Zhang overnight return also needs the previous Close.
         - If `growth` is set to True, the method calculates the growth of Volatility values using the specified `lag`.
 
         Passing `method="parkinson"` (or another range-based estimator) uses the daily trading range instead of
@@ -5373,10 +5355,15 @@ class Risk:
                 self._historical_data["daily"]["Return"].dropna(how="all") ** 2
             )
         else:
-            open_prices = self._get_prices("Open")
-            high_prices = self._get_prices("High")
-            low_prices = self._get_prices("Low")
-            close_prices = self._get_prices("Close")
+            # A bad bar (a price of 0 or below) has no logarithm and is left out, as in
+            # get_volatility, instead of putting an infinite variance into the regression.
+            open_prices, high_prices, low_prices, close_prices = (
+                prices.where(prices > 0)
+                for prices in (
+                    self._get_prices(column)
+                    for column in ("Open", "High", "Low", "Close")
+                )
+            )
 
             if estimator == "parkinson":
                 realized_variance = np.log(high_prices / low_prices) ** 2 / (
@@ -6562,8 +6549,8 @@ class Risk:
                 Defaults to "anomalies", the volatility, maximum drawdown, skewness and Amihud
                 illiquidity. "all" adds the downside deviation, kurtosis, value at risk,
                 conditional value at risk, tail ratio and Roll spread.
-            period (str, optional): The frequency at which the metrics are measured and
-                evaluated: weekly, monthly, quarterly or yearly. Each metric is calculated
+            period (str, optional): The frequency at which the metrics are measured and evaluated
+                (weekly, monthly, quarterly or yearly). Each metric is calculated
                 within each period from that period's daily returns, so use monthly or longer
                 for enough returns per period. Defaults to "monthly".
             horizons (list[int] | int | None, optional): The number of periods the forward

@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 
 import os
-import warnings
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -57,6 +56,7 @@ from financetoolkit.helpers import (
     LazyDict,
     determine_availability_dates,
     determine_period_end_dates,
+    prepare_supplied_historical_data,
 )
 from financetoolkit.historical_model import (
     calculate_period_average as _calculate_period_average,
@@ -93,14 +93,9 @@ if TYPE_CHECKING:
 logger_model.setup_logger()
 logger = logger_model.get_logger()
 
-# Division by zero is normal in these calculations, not a bug.
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-
 # pylint: disable=too-many-instance-attributes,too-many-lines,line-too-long,too-many-locals
 # pylint: disable=too-many-function-args,too-many-public-methods
 # ruff: noqa: E501
-
-TICKER_LIMIT = 20
 
 # The calendar days of prices before the start date that the technical indicators and daily
 # ratios are calculated from: about 250 trading days, ten times the window of a 25-day Wilder
@@ -509,7 +504,12 @@ class Toolkit:
         # Resolved per ticker and range on request, so an overlap is reused.
         self._intraday_historical_data: pd.DataFrame = pd.DataFrame()
 
-        # Use provided historical data if available, otherwise start empty.
+        # Use provided historical data if available, otherwise start empty. Supplied data is
+        # checked and sorted once here, as every calculation slices it by date.
+        if not historical.empty:
+            historical = prepare_supplied_historical_data(
+                historical, self._start_date, self._end_date
+            )
         self._historical = historical
 
         self._daily_historical_data: pd.DataFrame = (
@@ -3274,8 +3274,7 @@ class Toolkit:
                 self._market_risk_premium = cached_premium
             else:
                 self._market_risk_premium = _get_market_risk_premium(
-                    api_key=self._api_key,
-                    user_subscription=self._fmp_plan,
+                    api_key=self._api_key
                 )
 
                 if not self._market_risk_premium.empty:

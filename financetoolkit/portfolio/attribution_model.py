@@ -128,6 +128,20 @@ def get_brinson_fachler_attribution(
 # year), so the search reaches far beyond any realistic return.
 MAXIMUM_MONEY_WEIGHTED_RETURN = 1e30
 
+# The rates at which the net present value is checked for a change of sign when the cash
+# flows allow more than one solution, evenly spaced in the growth factor 1 + r on a log scale:
+# a step of about 1% in 1 + r from -99.99% to 1,000% a year, where returns that settle the
+# same cash flows twice lie (10% and 12%, for instance), and coarser above it.
+MONEY_WEIGHTED_RETURN_GRID = (
+    np.concatenate(
+        [
+            np.geomspace(1e-4, 11, 1000, endpoint=False),
+            np.geomspace(11, 1 + MAXIMUM_MONEY_WEIGHTED_RETURN, 200),
+        ]
+    )
+    - 1
+)
+
 
 def get_money_weighted_return(cash_flows: pd.Series) -> float:
     """
@@ -135,6 +149,11 @@ def get_money_weighted_return(cash_flows: pd.Series) -> float:
     the rate r for which the cash flows discounted with (1 + r)^(days / 365) sum to zero.
     Unlike the time-weighted return, it rewards investing more before good periods, so it
     measures the investor's own result rather than that of the assets.
+
+    Cash flows that change sign more than once, such as a position bought, sold and bought
+    again, or one that ends with a payment, can be settled by more than one rate (Descartes'
+    rule of signs allows one per change of sign). None of these rates is the return of the
+    investor, so the rates found are reported in the error rather than one of them returned.
 
     Args:
         cash_flows (pd.Series): The cash flows by date, from the investor's point of view:
@@ -145,8 +164,9 @@ def get_money_weighted_return(cash_flows: pd.Series) -> float:
         float: The annualized money-weighted return.
 
     Raises:
-        ValueError: When the cash flows lack an investment or a receipt, or no rate between
-            -99.99% and 1e30 a year makes them add up to zero.
+        ValueError: When the cash flows lack an investment or a receipt, when no rate
+            between -99.99% and 1e30 a year makes them add up to zero, or when more than one
+            rate does.
     """
     flows = cash_flows.groupby(level=0).sum()
     flows = flows[flows != 0]
@@ -164,13 +184,49 @@ def get_money_weighted_return(cash_flows: pd.Series) -> float:
         with np.errstate(over="ignore"):
             return float(np.sum(amounts / (1 + rate) ** years))
 
-    lower, upper = -0.9999, MAXIMUM_MONEY_WEIGHTED_RETURN
-    if np.sign(net_present_value(lower)) == np.sign(net_present_value(upper)):
+    # The number of solutions is at most the number of sign changes of the cash flows in time
+    # (Descartes' rule of signs, which holds for any exponents), so with one change the
+    # bracket from -99.99% to the maximum holds the only one.
+    if (np.diff(np.sign(amounts)) != 0).sum() == 1:
+        lower, upper = MONEY_WEIGHTED_RETURN_GRID[[0, -1]]
+        solutions = (
+            [brentq(net_present_value, lower, upper, maxiter=1000)]
+            if np.sign(net_present_value(lower)) != np.sign(net_present_value(upper))
+            else []
+        )
+    else:
+        # Every change of sign between neighbouring rates of the grid holds a solution. A
+        # rate near -100% over many years underflows (1 + r)^t, a high one overflows it, and
+        # the values that are not finite are left out.
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            values = np.array(
+                [
+                    (amounts * np.exp(-np.log1p(block)[:, None] * years)).sum(axis=1)
+                    for block in np.array_split(MONEY_WEIGHTED_RETURN_GRID, 12)
+                ]
+            ).ravel()
+        finite = np.isfinite(values)
+        rates, signs = MONEY_WEIGHTED_RETURN_GRID[finite], np.sign(values[finite])
+        solutions = list(rates[signs == 0]) + [
+            brentq(
+                net_present_value, rates[position], rates[position + 1], maxiter=1000
+            )
+            for position in np.flatnonzero(signs[:-1] * signs[1:] < 0)
+        ]
+
+    if not solutions:
         raise ValueError(
             "No annual rate between -99.99% and 1e30 makes the cash flows add up to zero."
         )
 
-    return float(brentq(net_present_value, lower, upper, maxiter=1000))
+    if len(solutions) > 1:
+        raise ValueError(
+            f"{len(solutions)} annual rates make the cash flows add up to zero "
+            f"({', '.join(f'{solution:.2%}' for solution in sorted(solutions))}), as they "
+            "change sign more than once, so the money-weighted return is not defined."
+        )
+
+    return float(solutions[0])
 
 
 def get_scenario_returns(

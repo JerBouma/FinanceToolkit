@@ -849,17 +849,20 @@ def test_rolling_omega_ratio_matches_every_window_and_is_infinite_without_losses
         returns.rolling(20).apply(window_omega, raw=True),
         rtol=1e-12,
     )
-    assert performance_model.get_rolling_omega_ratio(
-        pd.Series([0.01, 0.02, 0.0, 0.0]), 2
-    ).tolist()[1:] == [np.inf, np.inf, pytest.approx(np.nan, nan_ok=True)]
+    assert (
+        performance_model.get_rolling_omega_ratio(pd.Series([0.01, 0.02, 0.0, 0.0]), 2)
+        .iloc[1:]
+        .isna()
+        .all()
+    )
 
 
-def test_omega_ratio_without_losses_is_infinite():
+def test_omega_ratio_without_losses_is_nan():
     gains_only = pd.Series([0.01, 0.02, 0.005])
 
-    assert performance_model.get_omega_ratio(gains_only) == np.inf
+    assert np.isnan(performance_model.get_omega_ratio(gains_only))
     assert np.isnan(performance_model.get_omega_ratio(pd.Series([0.0, 0.0])))
-    assert performance_model.get_rolling_omega_ratio(gains_only, 2).iloc[-1] == np.inf
+    assert np.isnan(performance_model.get_rolling_omega_ratio(gains_only, 2).iloc[-1])
 
 
 def test_burke_drawdown_measure_of_a_series_without_returns_is_nan():
@@ -946,10 +949,10 @@ def test_return_statistics_match_a_hand_calculation():
     )
 
 
-def test_a_history_without_losses_has_an_infinite_profit_factor():
+def test_a_history_without_losses_has_no_profit_factor():
     statistics = performance_model.get_return_statistics(pd.Series([0.01, 0.02, 0.0]))
 
-    assert statistics["Profit Factor"] == np.inf
+    assert np.isnan(statistics["Profit Factor"])
     assert np.isnan(statistics["Payoff Ratio"])
     assert np.isnan(statistics["Recovery Factor"])
     assert statistics["Max Consecutive Losses"] == 0
@@ -1183,6 +1186,202 @@ def test_morningstar_risk_adjusted_return_refuses_a_negative_gamma():
     with pytest.raises(ValueError, match="cannot be negative"):
         performance_model.get_morningstar_risk_adjusted_return(
             pd.Series([0.01, 0.02]), gamma=-1
+        )
+
+
+def test_lo_annualization_factor_matches_the_ar1_closed_form():
+    # Lo (2002): with AR(1) returns ρ_k = ρ^k and η(q) has a closed form.
+    for rho in (-0.3, 0.0, 0.2, 0.5):
+        q = 12
+        closed_form = q / np.sqrt(
+            q + 2 * rho / (1 - rho) * (q - (1 - rho**q) / (1 - rho))
+        )
+        assert performance_model.get_lo_annualization_factor(
+            [rho**k for k in range(1, q)], q
+        ) == pytest.approx(closed_form)
+
+
+def test_lo_annualization_factor_by_hand():
+    # q = 3, ρ_1 = 0.1, ρ_2 = 0.05: 3 / SQRT(3 + 2 · (2 · 0.1 + 1 · 0.05)) = 3 / SQRT(3.5).
+    assert performance_model.get_lo_annualization_factor(
+        [0.1, 0.05], 3
+    ) == pytest.approx(3 / np.sqrt(3.5))
+    # Without autocorrelation the factor is the usual SQRT(q).
+    assert performance_model.get_lo_annualization_factor([], 252) == pytest.approx(
+        np.sqrt(252)
+    )
+    # A variance ratio that is not positive has no factor.
+    assert np.isnan(performance_model.get_lo_annualization_factor([-0.9, -0.9], 3))
+
+
+def test_lo_sharpe_ratio_approaches_the_true_ar1_sharpe_ratio():
+    rng = np.random.default_rng(0)
+    phi, q, n = 0.5, 12, 100_000
+    shocks = rng.normal(0, 1, n)
+    values = np.empty(n)
+    values[0] = shocks[0]
+    for t in range(1, n):
+        values[t] = phi * values[t - 1] + shocks[t]
+    excess_returns = pd.Series(0.1 + values)
+
+    yearly_variance = (q + 2 * sum((q - k) * phi**k for k in range(1, q))) / (
+        1 - phi**2
+    )
+    true_sharpe_ratio = q * 0.1 / np.sqrt(yearly_variance)
+
+    lo = performance_model.get_lo_sharpe_ratio(excess_returns, q, lags=q - 1)
+
+    assert lo == pytest.approx(true_sharpe_ratio, rel=0.05)
+    # The SQRT(q) annualization overstates it by over half.
+    assert np.sqrt(q) * excess_returns.mean() / excess_returns.std() > 1.5 * lo
+
+
+def test_rolling_lo_sharpe_ratio_matches_every_window():
+    rng = np.random.default_rng(1)
+    excess_returns = pd.DataFrame(
+        {"A": rng.normal(0.01, 0.05, 60), "B": rng.normal(0.0, 0.05, 60)}
+    )
+    rolling = performance_model.get_rolling_lo_sharpe_ratio(excess_returns, 24, 12)
+
+    assert rolling.iloc[:23].isna().all().all()
+    for end in (23, 40, 59):
+        assert rolling["A"].iloc[end] == pytest.approx(
+            performance_model.get_lo_sharpe_ratio(
+                excess_returns["A"].iloc[end - 23 : end + 1], 12
+            )
+        )
+
+
+def test_sharpe_ratio_standard_error_methods():
+    rng = np.random.default_rng(2)
+    normal = pd.Series(rng.normal(0.05, 1, 100_000))
+    sharpe_ratio = normal.mean() / normal.std()
+    iid = np.sqrt((1 + sharpe_ratio**2 / 2) / len(normal))
+
+    # Lo (2002), equation 9, and the other two agree for independent normal returns.
+    assert performance_model.get_sharpe_ratio_standard_error(normal) == pytest.approx(
+        iid
+    )
+    for method in ("non_normal", "gmm"):
+        assert performance_model.get_sharpe_ratio_standard_error(
+            normal, method
+        ) == pytest.approx(iid, rel=0.01)
+
+    # Without lags the GMM error is the non-normal (Mertens) error.
+    fat_tailed = pd.Series(rng.standard_t(5, 5000) * 0.01 + 0.0005)
+    assert performance_model.get_sharpe_ratio_standard_error(
+        fat_tailed, "gmm", lags=0
+    ) == pytest.approx(
+        performance_model.get_sharpe_ratio_standard_error(fat_tailed, "non_normal"),
+        rel=0.01,
+    )
+
+    with pytest.raises(ValueError, match="iid, non_normal or gmm"):
+        performance_model.get_sharpe_ratio_standard_error(normal, "other")
+
+
+def test_sharpe_ratio_standard_error_widens_with_autocorrelation():
+    rng = np.random.default_rng(3)
+    shocks = rng.normal(0, 1, 5000)
+    values = np.empty(5000)
+    values[0] = shocks[0]
+    for t in range(1, 5000):
+        values[t] = 0.5 * values[t - 1] + shocks[t]
+    excess_returns = pd.Series(0.1 + values)
+
+    # With ρ = 0.5 the variance of the mean triples: (1 + ρ) / (1 − ρ).
+    iid = performance_model.get_sharpe_ratio_standard_error(excess_returns)
+    gmm = performance_model.get_sharpe_ratio_standard_error(
+        excess_returns, "gmm", lags=30
+    )
+    assert gmm / iid == pytest.approx(np.sqrt(3), rel=0.1)
+
+
+def test_minimum_track_record_length_by_hand():
+    sharpe_ratio, skewness, kurtosis = 0.1, -0.5, 6.0
+    by_hand = (
+        1
+        + (1 - skewness * sharpe_ratio + (kurtosis - 1) / 4 * sharpe_ratio**2)
+        * (1.6448536269514722 / sharpe_ratio) ** 2
+    )
+
+    minimum = performance_model.get_minimum_track_record_length(
+        sharpe_ratio, 0.0, skewness, kurtosis
+    )
+    assert minimum == pytest.approx(by_hand)
+
+    # With MinTRL observations the Probabilistic Sharpe Ratio is the confidence level.
+    assert performance_model.get_probabilistic_sharpe_ratio(
+        sharpe_ratio, 0.0, skewness, kurtosis, minimum
+    ) == pytest.approx(0.95)
+
+    # A Sharpe ratio at or below the benchmark never becomes significant.
+    assert np.isnan(
+        performance_model.get_minimum_track_record_length(0.1, 0.2, 0.0, 3.0)
+    )
+    frame = performance_model.get_minimum_track_record_length(
+        pd.Series([0.1, -0.1]), 0.0, 0.0, 3.0
+    )
+    assert frame.iloc[0] == pytest.approx(1 + 1.005 * (1.6448536269514722 / 0.1) ** 2)
+    assert np.isnan(frame.iloc[1])
+
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        performance_model.get_minimum_track_record_length(0.1, 0.0, 0.0, 3.0, 1.5)
+
+
+def test_coskewness_and_cokurtosis_by_hand():
+    rng = np.random.default_rng(4)
+    market = pd.Series(rng.standard_t(6, 3000) * 0.01)
+    asset = 0.5 * market + 3 * market**2 + pd.Series(rng.normal(0, 0.01, 3000))
+    returns = pd.DataFrame({"Asset": asset, "Market": market})
+
+    a, m = asset - asset.mean(), market - market.mean()
+    beta = (a * m).sum() / (m**2).sum()
+    residual = a - beta * m
+
+    coskewness = performance_model.get_coskewness(returns, market)
+    cokurtosis = performance_model.get_cokurtosis(returns, market)
+
+    assert coskewness["Asset"] == pytest.approx(
+        (a * m**2).mean() / (a.std(ddof=0) * m.var(ddof=0))
+    )
+    assert cokurtosis["Asset"] == pytest.approx(
+        (a * m**3).mean() / (a.std(ddof=0) * m.std(ddof=0) ** 3)
+    )
+    # Harvey and Siddique (2000): the residual of the market regression.
+    assert performance_model.get_coskewness(returns, market, "residual")[
+        "Asset"
+    ] == pytest.approx(
+        (residual * m**2).mean() / (np.sqrt((residual**2).mean()) * (m**2).mean())
+    )
+    assert performance_model.get_cokurtosis(returns, market, "residual")[
+        "Asset"
+    ] == pytest.approx(
+        (residual * m**3).mean()
+        / (np.sqrt((residual**2).mean()) * (m**2).mean() ** 1.5)
+    )
+    # With itself, the co-moments are the market's own skewness and (raw) kurtosis.
+    assert coskewness["Market"] == pytest.approx((m**3).mean() / m.std(ddof=0) ** 3)
+    assert cokurtosis["Market"] == pytest.approx((m**4).mean() / m.std(ddof=0) ** 4)
+
+
+def test_coskewness_per_period_uses_each_period_on_its_own():
+    rng = np.random.default_rng(5)
+    index = pd.MultiIndex.from_arrays(
+        [np.repeat(["2020", "2021"], 250), np.arange(500)]
+    )
+    market = pd.Series(rng.normal(0, 0.01, 500), index=index)
+    returns = pd.DataFrame({"A": market * 2 + rng.normal(0, 0.01, 500)}, index=index)
+    returns.iloc[:5, 0] = np.nan
+
+    per_period = performance_model.get_coskewness(returns, market)
+
+    for period in ("2020", "2021"):
+        assert per_period.loc[period, "A"] == pytest.approx(
+            performance_model.get_coskewness(
+                returns.loc[period].reset_index(drop=True),
+                market.loc[period].reset_index(drop=True),
+            )["A"]
         )
 
 

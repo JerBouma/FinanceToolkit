@@ -40,19 +40,30 @@ def define_strike_prices(
         strike_price_range (float): the strike price range.
 
     Returns:
-        dict: a dictionary of strike prices for each ticker.
+        dict: a dictionary of strike prices for each ticker, without the tickers that have no
+        price.
     """
+    if strike_price_range < 0 or strike_step_size < 0:
+        raise ValueError(
+            "The strike price range and the strike step size must be positive."
+        )
+    if strike_price_range > 1:
+        raise ValueError("The strike price range must be between 0 and 1.")
+    if strike_step_size == 0:
+        raise ValueError("The strike step size must be greater than 0.")
+
     strike_prices_per_ticker = {}
 
     for ticker in tickers:
-        if strike_price_range < 0 or strike_step_size < 0:
-            raise ValueError(
-                "The strike price range and the strike step size must be positive."
+        # A ticker without a price on the date (not listed yet, delisted or suspended) has
+        # no strikes around it, and is left out rather than failing the other tickers.
+        if pd.isna(stock_price.get(ticker)):
+            logger.warning(
+                "%s has no price on %s, so it is left out of the option values.",
+                ticker,
+                stock_price.name,
             )
-        if strike_price_range > 1:
-            raise ValueError("The strike price range must be between 0 and 1.")
-        if strike_step_size == 0:
-            raise ValueError("The strike step size must be greater than 0.")
+            continue
         if (
             strike_count := 2
             * strike_price_range
@@ -340,3 +351,32 @@ def evaluate_on_grid(
         strike: {time: float(values[row, column]) for column, time in enumerate(times)}
         for row, strike in enumerate(strikes)
     }
+
+
+def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:
+    """
+    Raises a TypeError for an option input that is not a number. A boolean is not taken as a
+    number, even though Python counts it as an int.
+
+    Args:
+        arrays (bool, optional): Whether an np.ndarray or pd.Series is accepted as well, for
+            the formulas that price a whole range of inputs at once. An input of None (an
+            optional input left out) is then skipped. Defaults to False.
+        **kwargs: The inputs to validate, keyed by argument name.
+
+    Raises:
+        TypeError: If any of the inputs is not a float or int (or, with arrays=True, an
+            np.ndarray or pd.Series).
+    """
+    for name, value in kwargs.items():
+        if arrays and value is None:
+            continue
+        if not isinstance(
+            value, (int, float, np.ndarray, pd.Series) if arrays else (int, float)
+        ) or isinstance(value, bool):
+            raise TypeError(
+                f"{name} must be a float, int, np.ndarray or pd.Series, "
+                f"received {type(value).__name__}."
+                if arrays
+                else f"{name} must be a float or int, received {type(value).__name__}."
+            )

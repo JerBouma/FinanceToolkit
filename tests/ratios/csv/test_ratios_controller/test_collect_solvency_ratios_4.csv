@@ -13,6 +13,14 @@ AAPL,Dividend CAPEX Coverage Ratio,,0.1249,0.0201
 AAPL,Debt-to-Capital Ratio,,0.0516,-0.0276
 AAPL,Preferred Dividend Coverage Ratio,,,
 AAPL,Interest Paid to Expense Ratio,,-0.0342,-0.0244
+AAPL,EBITDA Interest Coverage,,0.256,-0.1695
+AAPL,(EBITDA - CapEx) Interest Coverage,,0.2646,-0.1674
+AAPL,Cash Interest Coverage,,0.2585,-0.1646
+AAPL,FFO to Debt,,0.3034,0.2699
+AAPL,DCF to Debt,,0.9854,59.1364
+AAPL,Degree of Operating Leverage,,,-0.3709
+AAPL,Degree of Financial Leverage,,,-0.4472
+AAPL,Degree of Total Leverage,,,-0.6523
 MSFT,Debt-to-Assets Ratio,,-0.1547,-0.1548
 MSFT,Asset Coverage Ratio,,0.1564,0.1869
 MSFT,Debt-to-Equity Ratio,,-0.2153,-0.2226
@@ -27,3 +35,11 @@ MSFT,Dividend CAPEX Coverage Ratio,,0.032,-0.0621
 MSFT,Debt-to-Capital Ratio,,-0.1519,-0.1679
 MSFT,Preferred Dividend Coverage Ratio,,,
 MSFT,Interest Paid to Expense Ratio,,,
+MSFT,EBITDA Interest Coverage,,0.3636,0.2204
+MSFT,(EBITDA - CapEx) Interest Coverage,,0.3576,0.2016
+MSFT,Cash Interest Coverage,,,
+MSFT,FFO to Debt,,,
+MSFT,DCF to Debt,,0.5172,0.2226
+MSFT,Degree of Operating Leverage,,,-0.2722
+MSFT,Degree of Financial Leverage,,,-0.3739
+MSFT,Degree of Total Leverage,,,-0.5442

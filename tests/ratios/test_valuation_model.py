@@ -213,6 +213,36 @@ def test_get_net_current_asset_value(recorder):
     )
 
 
+def test_free_cash_flow_payout_ratio_needs_a_positive_free_cash_flow():
+    result = valuation_model.get_free_cash_flow_payout_ratio(
+        dividends=pd.Series([-30.0, -30.0]),
+        free_cash_flow=pd.Series([100.0, -10.0]),
+    )
+
+    assert result.iloc[0] == 0.3
+    assert pd.isna(result.iloc[1])
+
+
+def test_ev_to_invested_capital_and_price_to_tangible_book():
+    ev_to_invested_capital = valuation_model.get_ev_to_invested_capital_ratio(
+        enterprise_value=pd.Series([500.0, 500.0]),
+        total_equity=pd.Series([150.0, 10.0]),
+        total_debt=pd.Series([100.0, 10.0]),
+        cash_and_short_term_investments=pd.Series([50.0, 40.0]),
+    )
+    price_to_tangible_book = valuation_model.get_price_to_tangible_book_ratio(
+        market_cap=pd.Series([400.0, 400.0]),
+        total_shareholder_equity=pd.Series([150.0, 150.0]),
+        preferred_stock=pd.Series([10.0, 10.0]),
+        goodwill_and_intangible_assets=pd.Series([40.0, 200.0]),
+    )
+
+    assert ev_to_invested_capital.iloc[0] == 2.5
+    assert pd.isna(ev_to_invested_capital.iloc[1])
+    assert price_to_tangible_book.iloc[0] == 4
+    assert pd.isna(price_to_tangible_book.iloc[1])
+
+
 def test_get_reinvestment_ratio_is_what_is_not_paid_out():
     result = valuation_model.get_reinvestment_ratio(pd.Series([0.25, 0.0, 1.2]))
 

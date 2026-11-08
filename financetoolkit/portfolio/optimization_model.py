@@ -764,7 +764,10 @@ def get_expected_returns(
         variance = market.var()
         if variance <= 0:
             raise ValueError("The benchmark's returns have no variance.")
-        beta = returns.loc[market.index].apply(lambda column: column.cov(market)) / variance
+        beta = (
+            returns.loc[market.index].apply(lambda column: column.cov(market))
+            / variance
+        )
         return risk_free_rate + beta * (
             market.mean() * periods_per_year - risk_free_rate
         )

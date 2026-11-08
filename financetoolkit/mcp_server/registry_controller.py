@@ -45,7 +45,6 @@ from financetoolkit.mcp_server.diagnostics_model import (
     call_input_info,
     capture_call_messages,
     missing_data_notes,
-    redact,
     summarize_reasons,
 )
 from financetoolkit.mcp_server.formatting_model import (
@@ -61,7 +60,7 @@ from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
-from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.logger_model import get_logger, redact
 from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()

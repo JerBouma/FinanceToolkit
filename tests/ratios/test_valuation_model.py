@@ -241,3 +241,10 @@ def test_ev_to_invested_capital_and_price_to_tangible_book():
     assert pd.isna(ev_to_invested_capital.iloc[1])
     assert price_to_tangible_book.iloc[0] == 4
     assert pd.isna(price_to_tangible_book.iloc[1])
+
+
+def test_get_reinvestment_ratio_is_what_is_not_paid_out():
+    result = valuation_model.get_reinvestment_ratio(pd.Series([0.25, 0.0, 1.2]))
+
+    # A payout above earnings means a negative reinvestment.
+    pd.testing.assert_series_equal(result, pd.Series([0.75, 1.0, -0.2]))

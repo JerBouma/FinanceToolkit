@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from typing import NamedTuple
+
 import numpy as np
 import pandas as pd
 from scipy import sparse
@@ -35,23 +37,6 @@ RISK_BUDGET_TOLERANCE = 1e-6
 ZERO_VOLATILITY_TOLERANCE = 1e-12
 
 
-def _bounds(
-    assets: int, minimum_weight: float, maximum_weight: float
-) -> list[tuple[float, float]]:
-    """
-    The weight bounds per asset, checked for feasibility: the weights have to be able to
-    sum to one within them.
-    """
-    if minimum_weight > maximum_weight:
-        raise ValueError("minimum_weight cannot be larger than maximum_weight.")
-    if assets * maximum_weight < 1 - 1e-9 or assets * minimum_weight > 1 + 1e-9:
-        raise ValueError(
-            f"Weights between {minimum_weight} and {maximum_weight} cannot sum to one "
-            f"for {assets} assets."
-        )
-    return [(minimum_weight, maximum_weight)] * assets
-
-
 def _validate_covariance(covariance: pd.DataFrame, positive: bool = True) -> None:
     """
     Raises a clear error for a covariance matrix the optimizers cannot use: one with missing
@@ -74,13 +59,213 @@ def _validate_covariance(covariance: pd.DataFrame, positive: bool = True) -> Non
             )
 
 
-def _fully_invested() -> dict:
-    """The constraint that the weights sum to one."""
-    return {
-        "type": "eq",
-        "fun": lambda weights: np.sum(weights) - 1,
-        "jac": np.ones_like,
-    }
+class WeightConstraints(NamedTuple):
+    """
+    The constraints on the weights as a linear system over the variables x: the weights
+    w, followed by one variable t_i ≥ |w_i| per asset when the gross exposure is limited
+    and short positions are allowed. Every optimizer solves over x and keeps its first
+    `assets` entries.
+    """
+
+    assets: int
+    bounds: list[tuple[float, float]]
+    inequality: np.ndarray
+    upper: np.ndarray
+    equality: np.ndarray
+    target: np.ndarray
+
+
+def _per_asset(
+    bound: float | dict[str, float], assets: pd.Index, default: float, name: str
+) -> np.ndarray:
+    """A bound per asset from one number or from {asset: bound} with a default."""
+    if not isinstance(bound, dict):
+        return np.full(len(assets), float(bound))
+    unknown = [asset for asset in bound if asset not in assets]
+    if unknown:
+        raise ValueError(
+            f"{name} names assets that are not in the portfolio: {', '.join(map(str, unknown))}."
+        )
+    return (
+        pd.Series(bound, dtype=float)
+        .reindex(assets)
+        .fillna(default)
+        .to_numpy(dtype=float)
+    )
+
+
+def get_weight_constraints(
+    assets: pd.Index,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
+) -> WeightConstraints:
+    """
+    The constraints on the weights of a portfolio as a linear system, checked for
+    feasibility so that an impossible combination fails with a clear message before any
+    optimization runs.
+
+    - Per asset, minimum_weight ≤ w_i ≤ maximum_weight; a bound given as {asset: bound}
+      applies to the assets it names, the others keep 0 (minimum) or 1 (maximum).
+    - Per group (e.g. a sector or country), the weights of its assets sum to between the
+      group's minimum and maximum, Σ_{i ∈ g} w_i, as in PyPortfolioOpt's
+      add_sector_constraints and skfolio's groups with linear constraints.
+    - The net exposure Σ w_i equals net_exposure (1 for a fully invested portfolio, 0 for
+      a market neutral one).
+    - The gross exposure Σ |w_i| is at most gross_exposure, e.g. 1.6 for a 130/30
+      portfolio. |w_i| is linearized with one variable t_i per asset: t_i ≥ w_i,
+      t_i ≥ -w_i and Σ t_i ≤ gross_exposure, which is exact because a smaller Σ t_i is
+      always allowed (the same polyhedron as the split w = w⁺ - w⁻ with Σ (w⁺ + w⁻) ≤ L).
+      Without short positions Σ |w_i| equals the net exposure, so no variables are added.
+
+    Args:
+        assets (pd.Index): The assets of the portfolio.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset. A negative value allows a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset. Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector" and "Country"); an asset without a group is in none. Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification, the minimum and maximum total weight per group, e.g.
+            {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights.
+            Defaults to None, no limit.
+
+    Returns:
+        WeightConstraints: The bounds and the linear inequality (A x ≤ b) and equality
+            (A x = b) constraints over the weights and, with a gross exposure limit and
+            short positions, the absolute weights.
+    """
+    count = len(assets)
+    lower = _per_asset(minimum_weight, assets, 0.0, "minimum_weight")
+    upper = _per_asset(maximum_weight, assets, 1.0, "maximum_weight")
+
+    crossed = assets[lower > upper]
+    if len(crossed):
+        raise ValueError(
+            f"The minimum weight is above the maximum weight for {', '.join(map(str, crossed))}."
+        )
+    if lower.sum() > net_exposure + 1e-9 or upper.sum() < net_exposure - 1e-9:
+        bounds_text = (
+            f"between {minimum_weight} and {maximum_weight}"
+            if not isinstance(minimum_weight, dict)
+            and not isinstance(maximum_weight, dict)
+            else f"between {lower.sum():.4f} and {upper.sum():.4f} in total"
+        )
+        raise ValueError(
+            f"Weights {bounds_text} cannot sum to "
+            f"{'one' if net_exposure == 1 else net_exposure} for {count} assets."
+        )
+
+    rows, limits = [], []
+    for classification, bounds_per_group in (group_bounds or {}).items():
+        if groups is None or classification not in groups.columns:
+            raise ValueError(f"The assets have no {classification} to group them by.")
+        membership = groups[classification].reindex(assets)
+        known = sorted(membership.dropna().unique().astype(str))
+        for group, group_bound in bounds_per_group.items():
+            if (
+                not isinstance(group_bound, list | tuple)
+                or len(group_bound) != 2  # noqa: PLR2004
+            ):
+                raise ValueError(
+                    f"The bounds of {classification} {group!r} must be a (minimum, "
+                    f"maximum) pair, not {group_bound!r}."
+                )
+            low, high = (float(value) for value in group_bound)
+            if group not in known:
+                raise ValueError(
+                    f"No asset has the {classification} {group!r}; the assets have "
+                    f"{', '.join(known) or 'none'}."
+                )
+            if low > high:
+                raise ValueError(
+                    f"The minimum of {classification} {group!r} is above its maximum."
+                )
+            member = (membership == group).to_numpy(dtype=float)
+            rows.extend([member, -member])
+            limits.extend([high, -low])
+
+    bounds = list(zip(lower, upper, strict=True))
+    inequality = np.array(rows).reshape(-1, count)
+    limit = np.array(limits, dtype=float)
+    equality = np.ones((1, count))
+
+    if gross_exposure is not None:
+        if gross_exposure < abs(net_exposure) - 1e-9:
+            raise ValueError(
+                f"A gross exposure of {gross_exposure} cannot hold a net exposure of "
+                f"{net_exposure}."
+            )
+        if np.any(lower < 0):
+            identity = np.eye(count)
+            inequality = np.vstack(
+                [
+                    np.hstack([inequality, np.zeros((len(inequality), count))]),
+                    np.hstack([identity, -identity]),
+                    np.hstack([-identity, -identity]),
+                    np.concatenate([np.zeros(count), np.ones(count)])[None, :],
+                ]
+            )
+            limit = np.concatenate([limit, np.zeros(2 * count), [gross_exposure]])
+            equality = np.hstack([equality, np.zeros((1, count))])
+            bounds += [(0.0, max(abs(low), abs(high))) for low, high in bounds]
+
+    constraints = WeightConstraints(
+        count, bounds, inequality, limit, equality, np.array([net_exposure])
+    )
+
+    # The individual checks above name the usual mistakes; this finds the combinations of
+    # bounds that cannot hold together, e.g. a sector minimum above its assets' maxima.
+    if (
+        len(inequality)
+        and not _linear_programme(np.zeros(len(bounds)), constraints).success
+    ):
+        raise ValueError(
+            "No weights meet all the constraints together: the weight bounds, the group "
+            "bounds and the net and gross exposure contradict each other."
+        )
+
+    return constraints
+
+
+def _linear_programme(cost: np.ndarray, constraints: WeightConstraints):
+    """A linear programme over the variables of the constraints, solved with HiGHS."""
+    return linprog(
+        cost,
+        A_ub=constraints.inequality if len(constraints.inequality) else None,
+        b_ub=constraints.upper if len(constraints.inequality) else None,
+        A_eq=constraints.equality,
+        b_eq=constraints.target,
+        bounds=constraints.bounds,
+        method="highs",
+    )
+
+
+def _linear_constraints(constraints: WeightConstraints) -> list[dict]:
+    """The linear constraints in the form SLSQP takes."""
+    linear = [
+        {
+            "type": "eq",
+            "fun": lambda x: constraints.equality @ x - constraints.target,
+            "jac": lambda x: constraints.equality,
+        }
+    ]
+    if len(constraints.inequality):
+        linear.append(
+            {
+                "type": "ineq",
+                "fun": lambda x: constraints.upper - constraints.inequality @ x,
+                "jac": lambda x: -constraints.inequality,
+            }
+        )
+    return linear
 
 
 def _target_return(mu: np.ndarray, target: float) -> dict:
@@ -112,58 +297,74 @@ def _is_feasible(
 def _solve(
     objective,
     gradient,
-    assets: int,
-    bounds: list[tuple[float, float]],
-    constraints: list[dict],
+    constraints: WeightConstraints,
+    extra: list[dict] | None = None,
 ) -> np.ndarray:
     """
-    Run SLSQP from the equally weighted portfolio, clipped into the bounds. A line search
-    that stops without a better step (status 8) is accepted when the weights meet every
-    constraint and bound: SLSQP reports it at optima whose objective no longer changes at
-    machine precision, e.g. for the maximum Sharpe ratio.
+    Run SLSQP from the portfolio with equal weights summing to the net exposure, clipped
+    into the bounds. The objective, its gradient and the extra constraints take the
+    weights; the absolute weight variables of a gross exposure limit only enter the
+    linear constraints. A line search that stops without a better step (status 8) is
+    accepted when the weights meet every constraint and bound: SLSQP reports it at optima
+    whose objective no longer changes at machine precision, e.g. for the maximum Sharpe
+    ratio.
     """
-    lower = np.array([bound[0] for bound in bounds])
-    upper = np.array([bound[1] for bound in bounds])
-    start = np.clip(np.full(assets, 1 / assets), lower, upper)
+    assets = constraints.assets
+    lower = np.array([bound[0] for bound in constraints.bounds])
+    upper = np.array([bound[1] for bound in constraints.bounds])
+    start = np.clip(
+        np.full(assets, constraints.target[0] / assets), lower[:assets], upper[:assets]
+    )
+    start = np.clip(np.concatenate([start, np.abs(start)])[: len(lower)], lower, upper)
+
+    padding = np.zeros(len(lower) - assets)
+    slsqp_constraints = _linear_constraints(constraints) + [
+        {
+            "type": constraint["type"],
+            "fun": lambda x, function=constraint["fun"]: function(x[:assets]),
+            "jac": lambda x, jacobian=constraint["jac"]: np.concatenate(
+                [jacobian(x[:assets]), padding]
+            ),
+        }
+        for constraint in extra or []
+    ]
 
     result = minimize(
-        objective,
+        lambda x: objective(x[:assets]),
         start,
-        jac=gradient,
+        jac=lambda x: np.concatenate([gradient(x[:assets]), padding]),
         method="SLSQP",
-        bounds=bounds,
-        constraints=constraints,
+        bounds=constraints.bounds,
+        constraints=slsqp_constraints,
         options=OPTIMIZER_OPTIONS,
     )
 
     if not result.success and not (
         result.status == SLSQP_LINE_SEARCH_STATUS
-        and _is_feasible(result.x, bounds, constraints)
+        and _is_feasible(result.x, constraints.bounds, slsqp_constraints)
     ):
         raise ValueError(f"The optimization did not converge: {result.message}")
 
-    return result.x
+    return result.x[:assets]
 
 
 def _return_range(
-    mu: np.ndarray, bounds: list[tuple[float, float]]
+    mu: np.ndarray, constraints: WeightConstraints
 ) -> tuple[float, float, np.ndarray]:
     """
-    The lowest and highest expected return a fully invested portfolio can have, and the
-    weights of the portfolio with the highest return.
+    The lowest and highest expected return a portfolio within the constraints can have,
+    and the weights of the portfolio with the highest return.
     """
-    assets = len(mu)
+    padding = np.zeros(len(constraints.bounds) - constraints.assets)
     extremes = [
-        linprog(
-            sign * mu,
-            A_eq=np.ones((1, assets)),
-            b_eq=[1],
-            bounds=bounds,
-            method="highs",
-        )
+        _linear_programme(np.concatenate([sign * mu, padding]), constraints)
         for sign in (1, -1)
     ]
-    return float(extremes[0].fun), float(-extremes[1].fun), extremes[1].x
+    return (
+        float(extremes[0].fun),
+        float(-extremes[1].fun),
+        extremes[1].x[: constraints.assets],
+    )
 
 
 def _as_series(weights: np.ndarray, assets: pd.Index) -> pd.Series:
@@ -498,32 +699,50 @@ def get_portfolio_statistics(
 
 def get_minimum_variance_weights(
     covariance: pd.DataFrame,
-    minimum_weight: float = 0.0,
-    maximum_weight: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
 ) -> pd.Series:
     """
     The fully invested portfolio with the lowest variance (Markowitz, 1952).
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
-        minimum_weight (float, optional): The lowest weight an asset may have; a negative
-            value allows short positions. Defaults to 0.
-        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
 
     Returns:
         pd.Series: The weight per asset.
     """
     _validate_covariance(covariance, positive=False)
     sigma = covariance.to_numpy()
-    assets = len(sigma)
-
-    weights = _solve(
-        lambda w: w @ sigma @ w,
-        lambda w: 2 * sigma @ w,
-        assets,
-        _bounds(assets, minimum_weight, maximum_weight),
-        [_fully_invested()],
+    constraints = get_weight_constraints(
+        covariance.index,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
     )
+
+    weights = _solve(lambda w: w @ sigma @ w, lambda w: 2 * sigma @ w, constraints)
 
     return _as_series(weights, covariance.index)
 
@@ -532,8 +751,12 @@ def get_maximum_sharpe_weights(
     expected_returns: pd.Series,
     covariance: pd.DataFrame,
     risk_free_rate: float = 0.0,
-    minimum_weight: float = 0.0,
-    maximum_weight: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
 ) -> pd.Series:
     """
     The fully invested portfolio with the highest Sharpe ratio, the tangency portfolio of
@@ -543,8 +766,21 @@ def get_maximum_sharpe_weights(
         expected_returns (pd.Series): The annualized expected return per asset.
         covariance (pd.DataFrame): The annualized covariance matrix.
         risk_free_rate (float, optional): The annualized risk free rate. Defaults to 0.
-        minimum_weight (float, optional): The lowest weight an asset may have. Defaults to 0.
-        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
 
     Returns:
         pd.Series: The weight per asset.
@@ -552,9 +788,18 @@ def get_maximum_sharpe_weights(
     _validate_covariance(covariance)
     mu = expected_returns.to_numpy() - risk_free_rate
     sigma = covariance.to_numpy()
-    assets = len(mu)
+    constraints = get_weight_constraints(
+        covariance.index,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+    )
 
-    if np.all(mu <= 0):
+    # Without short positions no portfolio beats the risk free rate when no asset does.
+    if np.all(mu <= 0) and all(bound[0] >= 0 for bound in constraints.bounds):
         raise ValueError(
             "No asset has an expected return above the risk free rate, so no portfolio "
             "has a positive Sharpe ratio."
@@ -569,13 +814,7 @@ def get_maximum_sharpe_weights(
         excess = weights @ mu
         return -(mu * volatility - excess * (sigma @ weights) / volatility) / variance
 
-    weights = _solve(
-        negative_sharpe,
-        gradient,
-        assets,
-        _bounds(assets, minimum_weight, maximum_weight),
-        [_fully_invested()],
-    )
+    weights = _solve(negative_sharpe, gradient, constraints)
 
     return _as_series(weights, covariance.index)
 
@@ -585,8 +824,12 @@ def get_mean_variance_weights(
     covariance: pd.DataFrame,
     target_return: float | None = None,
     risk_aversion: float = 2.5,
-    minimum_weight: float = 0.0,
-    maximum_weight: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
 ) -> pd.Series:
     """
     A mean-variance efficient portfolio (Markowitz, 1952). With a target return, the
@@ -600,38 +843,55 @@ def get_mean_variance_weights(
             expect. Defaults to None, which uses the risk aversion instead.
         risk_aversion (float, optional): The trade-off between return and variance; higher
             values give less risky portfolios. Defaults to 2.5.
-        minimum_weight (float, optional): The lowest weight an asset may have. Defaults to 0.
-        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
 
     Returns:
         pd.Series: The weight per asset.
     """
     mu = expected_returns.to_numpy()
     sigma = covariance.to_numpy()
-    assets = len(mu)
-    bounds = _bounds(assets, minimum_weight, maximum_weight)
+    constraints = get_weight_constraints(
+        covariance.index,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+    )
 
     if target_return is not None:
-        lowest, highest, _ = _return_range(mu, bounds)
+        lowest, highest, _ = _return_range(mu, constraints)
         if not lowest - 1e-9 <= target_return <= highest + 1e-9:
             raise ValueError(
                 f"A target return of {target_return:.4f} cannot be reached within the "
-                f"weight bounds ({lowest:.4f} to {highest:.4f})."
+                f"constraints ({lowest:.4f} to {highest:.4f})."
             )
         weights = _solve(
             lambda w: w @ sigma @ w,
             lambda w: 2 * sigma @ w,
-            assets,
-            bounds,
-            [_fully_invested(), _target_return(mu, target_return)],
+            constraints,
+            [_target_return(mu, target_return)],
         )
     else:
         weights = _solve(
             lambda w: -(w @ mu) + risk_aversion / 2 * (w @ sigma @ w),
             lambda w: -mu + risk_aversion * (sigma @ w),
-            assets,
-            bounds,
-            [_fully_invested()],
+            constraints,
         )
 
     return _as_series(weights, covariance.index)
@@ -642,8 +902,12 @@ def get_efficient_frontier(
     covariance: pd.DataFrame,
     risk_free_rate: float = 0.0,
     points: int = 20,
-    minimum_weight: float = 0.0,
-    maximum_weight: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
 ) -> pd.DataFrame:
     """
     The efficient frontier: for evenly spaced target returns between the minimum variance
@@ -656,8 +920,21 @@ def get_efficient_frontier(
         risk_free_rate (float, optional): The annualized risk free rate, for the Sharpe
             ratio of each portfolio. Defaults to 0.
         points (int, optional): The number of portfolios on the frontier. Defaults to 20.
-        minimum_weight (float, optional): The lowest weight an asset may have. Defaults to 0.
-        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
 
     Returns:
         pd.DataFrame: Per portfolio its Expected Return, Volatility, Sharpe Ratio and the
@@ -670,16 +947,29 @@ def get_efficient_frontier(
         raise ValueError("The efficient frontier needs at least two points.")
 
     minimum_variance = get_minimum_variance_weights(
-        covariance, minimum_weight, maximum_weight
+        covariance,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
     )
     lowest = float(minimum_variance @ expected_returns)
 
     mu = expected_returns.to_numpy()
     sigma = covariance.to_numpy()
-    assets = len(mu)
-    bounds = _bounds(assets, minimum_weight, maximum_weight)
-    # The frontier runs up to the highest return the bounds allow.
-    _, highest, highest_weights = _return_range(mu, bounds)
+    constraints = get_weight_constraints(
+        covariance.index,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+    )
+    # The frontier runs up to the highest return the constraints allow.
+    _, highest, highest_weights = _return_range(mu, constraints)
     targets = np.linspace(lowest, highest, points)
 
     rows = []
@@ -688,9 +978,8 @@ def get_efficient_frontier(
             weights = _solve(
                 lambda w: w @ sigma @ w,
                 lambda w: 2 * sigma @ w,
-                assets,
-                bounds,
-                [_fully_invested(), _target_return(mu, target)],
+                constraints,
+                [_target_return(mu, target)],
             )
         except ValueError:
             # The highest return is a corner of the weight bounds, where SLSQP can report
@@ -729,18 +1018,45 @@ def get_inverse_volatility_weights(covariance: pd.DataFrame) -> pd.Series:
 
 
 def get_risk_parity_weights(
-    covariance: pd.DataFrame, risk_budget: pd.Series | None = None
+    covariance: pd.DataFrame,
+    risk_budget: pd.Series | None = None,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
 ) -> pd.Series:
     """
     The equal risk contribution (risk parity) portfolio: every asset contributes the same
     share of the portfolio's volatility, or the share given by a risk budget (Maillard,
     Roncalli and Teïletche, 2010). It is found by minimizing the convex function
-    1/2 w'Σw - Σ b_i ln(w_i) and scaling the result to sum to one (Spinu, 2013).
+    1/2 y'Σy - Σ b_i ln(y_i) over y > 0 and scaling the result to sum to one, w = y / 1'y
+    (Spinu, 2013).
+
+    Weight and group bounds are constraints on w = y / 1'y, which are linear and
+    homogeneous in y (w_i ≤ u becomes y_i - u 1'y ≤ 0), so the problem stays convex and its
+    solution does not depend on the scale of y. Within bounds that bind, the risk
+    contributions can no longer all match the budget: the result is the constrained risk
+    budgeting portfolio of Richard and Roncalli (2019), the same problem skfolio's
+    RiskBudgeting solves. Risk parity holds long positions only, so a negative minimum
+    weight is refused, and the weights always sum to one.
+
+    See Richard, J.-C. and Roncalli, T. (2019), "Constrained Risk Budgeting Portfolios:
+    Theory, Algorithms, Applications & Puzzles", arXiv:1902.05710.
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
         risk_budget (pd.Series | None, optional): The share of the risk each asset should
             contribute; it is scaled to sum to one. Defaults to None, an equal share each.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
 
     Returns:
         pd.Series: The weight per asset.
@@ -758,12 +1074,19 @@ def get_risk_parity_weights(
         raise ValueError("Every asset needs a positive risk budget.")
     budget = budget / budget.sum()
 
+    def objective(y):
+        return 0.5 * y @ sigma @ y - budget @ np.log(y)
+
+    def gradient(y):
+        return sigma @ y - budget / y
+
+    positive = [(1e-12, None)] * assets
     result = minimize(
-        lambda y: 0.5 * y @ sigma @ y - budget @ np.log(y),
+        objective,
         np.full(assets, 1 / np.sqrt(np.trace(sigma))),
-        jac=lambda y: sigma @ y - budget / y,
+        jac=gradient,
         method="L-BFGS-B",
-        bounds=[(1e-12, None)] * assets,
+        bounds=positive,
         options={"ftol": 1e-15, "gtol": 1e-12, "maxiter": 10000},
     )
 
@@ -778,11 +1101,55 @@ def get_risk_parity_weights(
     ):
         raise ValueError(f"The optimization did not converge: {result.message}")
 
-    return _as_series(weights, covariance.index)
+    constraints = get_weight_constraints(
+        covariance.index, minimum_weight, maximum_weight, groups, group_bounds
+    )
+    lower = np.array([bound[0] for bound in constraints.bounds])
+    upper = np.array([bound[1] for bound in constraints.bounds])
+    if np.any(lower < 0):
+        raise ValueError(
+            "Risk parity holds long positions only; the minimum weight cannot be negative."
+        )
+
+    # Every constraint a'w ≤ b on the weights becomes (a - b 1)'y ≤ 0 on y, with w = y / 1'y.
+    ones = np.ones(assets)
+    rows = np.vstack(
+        [
+            constraints.inequality - constraints.upper[:, None] * ones,
+            np.eye(assets) - upper[:, None] * ones,
+            lower[:, None] * ones - np.eye(assets),
+        ]
+    )
+    # The unconstrained solution is the answer whenever it meets the constraints.
+    if np.all(rows @ weights <= FEASIBILITY_TOLERANCE):
+        return _as_series(weights, covariance.index)
+
+    homogeneous = [
+        {"type": "ineq", "fun": lambda y: -(rows @ y), "jac": lambda y: -rows}
+    ]
+    result = minimize(
+        objective,
+        result.x,
+        jac=gradient,
+        method="SLSQP",
+        bounds=positive,
+        constraints=homogeneous,
+        options=OPTIMIZER_OPTIONS,
+    )
+    if not result.success and not (
+        result.status == SLSQP_LINE_SEARCH_STATUS
+        and _is_feasible(result.x, positive, homogeneous)
+    ):
+        raise ValueError(f"The optimization did not converge: {result.message}")
+
+    return _as_series(result.x / result.x.sum(), covariance.index)
 
 
 def get_hierarchical_risk_parity_weights(
-    covariance: pd.DataFrame, linkage_method: str = "single"
+    covariance: pd.DataFrame,
+    linkage_method: str = "single",
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
 ) -> pd.Series:
     """
     Hierarchical Risk Parity (López de Prado, 2016): the assets are clustered on their
@@ -796,10 +1163,21 @@ def get_hierarchical_risk_parity_weights(
     distances that compares how each pair of assets relates to all the others. Some
     libraries cluster on d itself, which can order the assets differently.
 
+    Weight bounds move each split just enough to keep both halves within the sum of
+    their assets' bounds, as skfolio and Riskfolio-Lib do: the share α of the left half
+    is clipped to [Σ min_left / W, Σ max_left / W], with W the weight of the cluster
+    being split, and then 1 - α to the same range of the right half. A split can only
+    move weight between the two halves of a cluster, so group bounds, which cut across
+    the clusters, cannot be applied.
+
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
         linkage_method (str, optional): The linkage of the hierarchical clustering, e.g.
             "single", "complete", "average" or "ward". Defaults to "single".
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
 
     Returns:
         pd.Series: The weight per asset.
@@ -807,6 +1185,20 @@ def get_hierarchical_risk_parity_weights(
     _validate_covariance(covariance)
     if len(covariance) < 2:  # noqa: PLR2004
         raise ValueError("At least two assets are needed.")
+    constraints = get_weight_constraints(
+        covariance.index, minimum_weight, maximum_weight
+    )
+    lower = pd.Series(
+        [bound[0] for bound in constraints.bounds], index=covariance.index
+    )
+    upper = pd.Series(
+        [bound[1] for bound in constraints.bounds], index=covariance.index
+    )
+    if (lower < 0).any():
+        raise ValueError(
+            "Hierarchical Risk Parity holds long positions only; the minimum weight "
+            "cannot be negative."
+        )
     volatility = np.sqrt(np.diag(covariance.to_numpy()))
     correlation = covariance / np.outer(volatility, volatility)
 
@@ -839,6 +1231,15 @@ def get_hierarchical_risk_parity_weights(
                 right
             )
             alpha = 1 - left_variance / (left_variance + right_variance)
+            # The weight of the cluster being split, which all its assets still share.
+            parent = weights[left[0]]
+            alpha = min(
+                upper[left].sum() / parent, max(lower[left].sum() / parent, alpha)
+            )
+            alpha = 1 - min(
+                upper[right].sum() / parent,
+                max(lower[right].sum() / parent, 1 - alpha),
+            )
             weights[left] *= alpha
             weights[right] *= 1 - alpha
 
@@ -848,8 +1249,12 @@ def get_hierarchical_risk_parity_weights(
 def get_minimum_cvar_weights(
     returns: pd.DataFrame,
     confidence_level: float = 0.95,
-    minimum_weight: float = 0.0,
-    maximum_weight: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
 ) -> pd.Series:
     """
     The fully invested portfolio with the lowest Conditional Value at Risk (expected
@@ -860,8 +1265,21 @@ def get_minimum_cvar_weights(
         returns (pd.DataFrame): The returns per period, one column per asset.
         confidence_level (float, optional): The confidence level of the CVaR, e.g. 0.95 for
             the average of the worst 5% of periods. Defaults to 0.95.
-        minimum_weight (float, optional): The lowest weight an asset may have. Defaults to 0.
-        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
 
     Returns:
         pd.Series: The weight per asset.
@@ -873,36 +1291,58 @@ def get_minimum_cvar_weights(
     periods, assets = data.shape
     if periods == 0:
         raise ValueError("No period has a return for every asset.")
-    bounds = _bounds(assets, minimum_weight, maximum_weight)
+    constraints = get_weight_constraints(
+        returns.columns,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+    )
+    # The weights and, with a gross exposure limit and short positions, their absolute
+    # values, followed by the Value at Risk (1) and the shortfall per period.
+    variables = len(constraints.bounds)
 
-    # Variables: the weights (assets), the Value at Risk (1) and the shortfall per period.
     cost = np.concatenate(
         [
-            np.zeros(assets),
+            np.zeros(variables),
             [1.0],
             np.full(periods, 1 / ((1 - confidence_level) * periods)),
         ]
     )
     # Shortfall_t >= -r_t'w - VaR, written as -r_t'w - VaR - shortfall_t <= 0. Sparse, since
     # the shortfall block is an identity matrix of periods by periods (a dense one of 25 years
-    # of daily returns holds 40 million zeros).
-    inequality = sparse.hstack(
+    # of daily returns holds 40 million zeros). The constraints on the weights follow, with
+    # zeros for the Value at Risk and the shortfalls.
+    inequality = sparse.vstack(
         [
-            sparse.csr_matrix(-data),
-            sparse.csr_matrix(-np.ones((periods, 1))),
-            -sparse.eye(periods, format="csr"),
+            sparse.hstack(
+                [
+                    sparse.csr_matrix(-data),
+                    sparse.csr_matrix((periods, variables - assets)),
+                    sparse.csr_matrix(-np.ones((periods, 1))),
+                    -sparse.eye(periods, format="csr"),
+                ]
+            ),
+            sparse.hstack(
+                [
+                    sparse.csr_matrix(constraints.inequality),
+                    sparse.csr_matrix((len(constraints.inequality), 1 + periods)),
+                ]
+            ),
         ],
         format="csr",
     )
-    equality = np.concatenate([np.ones(assets), [0.0], np.zeros(periods)])[None, :]
+    equality = np.hstack([constraints.equality, np.zeros((1, 1 + periods))])
 
     result = linprog(
         cost,
         A_ub=inequality,
-        b_ub=np.zeros(periods),
+        b_ub=np.concatenate([np.zeros(periods), constraints.upper]),
         A_eq=equality,
-        b_eq=[1.0],
-        bounds=bounds + [(None, None)] + [(0, None)] * periods,
+        b_eq=constraints.target,
+        bounds=constraints.bounds + [(None, None)] + [(0, None)] * periods,
         method="highs",
     )
 
@@ -934,8 +1374,12 @@ def get_diversification_ratio(weights: pd.Series, covariance: pd.DataFrame) -> f
 
 def get_maximum_diversification_weights(
     covariance: pd.DataFrame,
-    minimum_weight: float = 0.0,
-    maximum_weight: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
 ) -> pd.Series:
     """
     The fully invested portfolio with the highest diversification ratio w'σ / √(w'Σw), the
@@ -945,8 +1389,21 @@ def get_maximum_diversification_weights(
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
-        minimum_weight (float, optional): The lowest weight an asset may have. Defaults to 0.
-        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
 
     Returns:
         pd.Series: The weight per asset.
@@ -954,7 +1411,15 @@ def get_maximum_diversification_weights(
     _validate_covariance(covariance)
     sigma = covariance.to_numpy()
     volatility = np.sqrt(np.diag(sigma))
-    assets = len(sigma)
+    constraints = get_weight_constraints(
+        covariance.index,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+    )
 
     def negative_ratio(weights):
         return -(weights @ volatility) / np.sqrt(weights @ sigma @ weights)
@@ -966,13 +1431,7 @@ def get_maximum_diversification_weights(
             - (weights @ volatility) * (sigma @ weights) / variance**1.5
         )
 
-    weights = _solve(
-        negative_ratio,
-        gradient,
-        assets,
-        _bounds(assets, minimum_weight, maximum_weight),
-        [_fully_invested()],
-    )
+    weights = _solve(negative_ratio, gradient, constraints)
 
     return _as_series(weights, covariance.index)
 
@@ -982,8 +1441,12 @@ def get_minimum_tracking_error_weights(
     covariance: pd.DataFrame,
     benchmark: str,
     objective: str = "tracking_error",
-    minimum_weight: float = 0.0,
-    maximum_weight: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
 ) -> pd.Series:
     """
     The fully invested portfolio closest to a benchmark (Roll, 1992): with the objective
@@ -1001,8 +1464,21 @@ def get_minimum_tracking_error_weights(
             matrix; it is not an asset of the portfolio.
         objective (str, optional): "tracking_error" or "information_ratio". Defaults to
             "tracking_error".
-        minimum_weight (float, optional): The lowest weight an asset may have. Defaults to 0.
-        maximum_weight (float, optional): The highest weight an asset may have. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
 
     Returns:
         pd.Series: The weight per asset, without the benchmark.
@@ -1022,7 +1498,15 @@ def get_minimum_tracking_error_weights(
     with_benchmark = covariance.loc[assets, benchmark].to_numpy()
     benchmark_variance = float(covariance.loc[benchmark, benchmark])
     active = expected_returns.reindex(assets).to_numpy() - expected_returns[benchmark]
-    bounds = _bounds(len(assets), minimum_weight, maximum_weight)
+    constraints = get_weight_constraints(
+        assets,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+    )
 
     def tracking_variance(weights):
         return (
@@ -1035,12 +1519,10 @@ def get_minimum_tracking_error_weights(
         weights = _solve(
             tracking_variance,
             lambda w: 2 * sigma @ w - 2 * with_benchmark,
-            len(assets),
-            bounds,
-            [_fully_invested()],
+            constraints,
         )
     else:
-        if np.all(active <= 0):
+        if np.all(active <= 0) and all(bound[0] >= 0 for bound in constraints.bounds):
             raise ValueError(
                 "No asset has an expected return above the benchmark's, so no portfolio "
                 "has a positive information ratio."
@@ -1057,9 +1539,7 @@ def get_minimum_tracking_error_weights(
         weights = _solve(
             lambda w: -(w @ active) / np.sqrt(tracking_variance(w)),
             gradient,
-            len(assets),
-            bounds,
-            [_fully_invested()],
+            constraints,
         )
 
     return _as_series(weights, assets)
@@ -1114,8 +1594,12 @@ def get_growth_optimal_weights(
     covariance: pd.DataFrame,
     method: str = "exact",
     fraction: float = 1.0,
-    minimum_weight: float = 0.0,
-    maximum_weight: float = 1.0,
+    minimum_weight: float | dict[str, float] = 0.0,
+    maximum_weight: float | dict[str, float] = 1.0,
+    groups: pd.DataFrame | None = None,
+    group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    net_exposure: float = 1.0,
+    gross_exposure: float | None = None,
 ) -> pd.Series:
     """
     The growth optimal (Kelly) portfolio: the fully invested portfolio with the highest
@@ -1138,13 +1622,26 @@ def get_growth_optimal_weights(
         method (str, optional): "exact" or "approximate". Defaults to "exact".
         fraction (float, optional): The share of the growth optimal weights to hold, e.g.
             0.5 for half Kelly. Defaults to 1.
-        minimum_weight (float, optional): The lowest weight an asset may have before the
-            fraction is applied. Defaults to 0.
-        maximum_weight (float, optional): The highest weight an asset may have before the
-            fraction is applied. Defaults to 1.
+        minimum_weight (float | dict[str, float], optional): The lowest weight of every
+            asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
+            a short position. Defaults to 0.
+        maximum_weight (float | dict[str, float], optional): The highest weight of every
+            asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        groups (pd.DataFrame | None, optional): The group of each asset per
+            classification, one row per asset and one column per classification (e.g.
+            "Sector"). Defaults to None.
+        group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
+            classification in groups, the minimum and maximum total weight per group,
+            e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        net_exposure (float, optional): The sum of the weights, 1 for a fully invested
+            portfolio. Defaults to 1.
+        gross_exposure (float | None, optional): The highest sum of the absolute weights,
+            e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
+
+    The constraints apply to the full Kelly portfolio, before the fraction scales it.
 
     Returns:
-        pd.Series: The weight per asset, summing to the fraction.
+        pd.Series: The weight per asset, summing to the fraction times the net exposure.
     """
     if method not in ("exact", "approximate"):
         raise ValueError(
@@ -1160,13 +1657,25 @@ def get_growth_optimal_weights(
             risk_aversion=1.0,
             minimum_weight=minimum_weight,
             maximum_weight=maximum_weight,
+            groups=groups,
+            group_bounds=group_bounds,
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         return _as_series(weights.to_numpy() * fraction, weights.index)
 
     data = returns.dropna(how="any").to_numpy(dtype=float)
     if len(data) == 0:
         raise ValueError("No period has a return for every asset.")
-    assets = data.shape[1]
+    constraints = get_weight_constraints(
+        returns.columns,
+        minimum_weight,
+        maximum_weight,
+        groups,
+        group_bounds,
+        net_exposure,
+        gross_exposure,
+    )
 
     # The sum rather than the average of the log returns keeps the objective of daily
     # returns large enough for the optimizer's tolerance. A wealth of zero or less in a
@@ -1180,9 +1689,7 @@ def get_growth_optimal_weights(
     weights = _solve(
         negative_growth,
         lambda w: -(data / (1 + data @ w)[:, None]).sum(axis=0),
-        assets,
-        _bounds(assets, minimum_weight, maximum_weight),
-        [_fully_invested()],
+        constraints,
     )
 
     return _as_series(weights * fraction, returns.columns)

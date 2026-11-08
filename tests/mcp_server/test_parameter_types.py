@@ -136,6 +136,25 @@ def test_no_benchmark_written_as_text_means_no_benchmark(captured, benchmark):
     assert captured[-1]["benchmark_ticker"] is None
 
 
+@pytest.mark.parametrize("maximum_weight", [0.4, {"AAPL": 0.3}, '{"AAPL": 0.3}', "0.4"])
+def test_a_weight_bound_is_a_number_or_one_per_ticker(
+    schemas, captured, maximum_weight
+):
+    assert types_of(schemas["portfolio"]["maximum_weight"]) == {"number", "object"}
+    call(
+        "portfolio",
+        {
+            "indicator": "get_minimum_variance_weights",
+            "tickers": "AAPL,MSFT",
+            "maximum_weight": maximum_weight,
+            "sector_bounds": {"Technology": [0, 0.8]},
+        },
+    )
+
+    assert captured[-1]["maximum_weight"] in (0.4, {"AAPL": 0.3})
+    assert captured[-1]["sector_bounds"] == {"Technology": (0, 0.8)}
+
+
 def test_the_tools_with_a_risk_free_rate_take_the_toolkit_setting(schemas):
     # Performance, risk, models and portfolio use the Toolkit's risk free rate; options has a
     # risk_free_rate of its own (the rate as a number), so it keeps that one.

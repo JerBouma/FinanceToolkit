@@ -2042,6 +2042,68 @@ def get_market_risk_premium(api_key: str) -> pd.DataFrame:
     return market_risk_premium
 
 
+def get_sp500_market_value(api_key: str, user_subscription: str = "Free") -> pd.Series:
+    """
+    Obtains the total market value of the S&P 500 companies: the market capitalization of
+    every current constituent (FinancialModelingPrep's S&P 500 constituent list and its
+    market capitalization batch), summed per company. A company with more than one share
+    class in the index (Alphabet, Fox, News Corp) is counted once, as FinancialModelingPrep
+    reports the market capitalization of the whole company for each of its share classes.
+
+    Campbell, Hilscher and Szilagyi (2008) measure a company's size relative to this total
+    (RSIZE), which is why the Models module retrieves it.
+
+    Args:
+        api_key (str): the API Key obtained from https://www.jeroenbouma.com/fmp
+        user_subscription (str, optional): The subscription type of the user. Defaults to "Free".
+
+    Returns:
+        pd.Series: The total market value (in dollars) indexed by the date of the market
+        capitalizations, or an empty Series when the constituents or their market
+        capitalizations are not available.
+    """
+    if not api_key:
+        raise ValueError(
+            "Please enter an API key from FinancialModelingPrep. "
+            "For more information, look here: https://www.jeroenbouma.com/fmp"
+        )
+
+    constituents = _get_records(
+        f"https://financialmodelingprep.com/stable/sp500-constituent?apikey={api_key}",
+        user_subscription,
+    )
+
+    if not {"symbol", "cik"}.issubset(constituents.columns):
+        return pd.Series(dtype=float)
+
+    symbols = constituents["symbol"].dropna().astype(str).tolist()
+    market_caps = []
+    # Batches of 100 keep the URL short; the endpoint has no date range, it returns the
+    # latest market capitalization.
+    for start in range(0, len(symbols), 100):
+        batch = ",".join(symbols[start : start + 100])
+        market_caps.append(
+            _get_records(
+                "https://financialmodelingprep.com/stable/market-capitalization-batch"
+                f"?symbols={batch}&apikey={api_key}",
+                user_subscription,
+            )
+        )
+
+    market_caps = pd.concat(market_caps) if market_caps else pd.DataFrame()
+
+    if not {"symbol", "date", "marketCap"}.issubset(market_caps.columns):
+        return pd.Series(dtype=float)
+
+    companies = market_caps.merge(constituents[["symbol", "cik"]], on="symbol")
+    companies["marketCap"] = pd.to_numeric(companies["marketCap"], errors="coerce")
+    # Every share class of a company carries the company's market capitalization.
+    total = companies.groupby("cik")["marketCap"].max().sum(min_count=1)
+    date = pd.to_datetime(companies["date"]).max()
+
+    return pd.Series({date: total}, dtype=float)
+
+
 def get_commitment_of_traders(
     tickers: list[str] | str,
     api_key: str,

@@ -1638,3 +1638,25 @@ def test_distress_scores_sum_a_year_of_quarters_by_default(models_module, monkey
         models_module.get_springate_score,
     ]:
         pd.testing.assert_frame_equal(method(), method(trailing=4))
+
+
+def test_get_campbell_hilscher_szilagyi_score(recorder, models_module, monkeypatch):
+    # The S&P 500 offline: the benchmark of the pickled prices as both its price and its
+    # total return index, and a total market value of 30 trillion on the last day.
+    benchmark = models_module._historical_data["daily"]["Adj Close"]["Benchmark"]
+    benchmark.index = benchmark.index.to_timestamp()
+
+    def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:  # noqa: ARG001
+        index_data = pd.DataFrame(
+            {"Price Index": benchmark, "Total Return Index": benchmark}
+        )
+        return index_data, pd.Series({benchmark.index[-1]: 3e13})
+
+    monkeypatch.setattr(models_module, "_sp500_function", sp500)
+    recorder.capture(models_module.get_campbell_hilscher_szilagyi_score())
+    recorder.capture(models_module.get_campbell_hilscher_szilagyi_score(rounding=2))
+
+    # Without the S&P 500, the relative size and the probability are NaN.
+    monkeypatch.setattr(models_module, "_sp500_function", None)
+    result = models_module.get_campbell_hilscher_szilagyi_score()
+    assert result.xs("Failure Probability", level=1).isna().all().all()

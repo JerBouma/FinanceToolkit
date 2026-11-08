@@ -48,6 +48,7 @@ from financetoolkit.fmp_model import (
     get_ratios_ttm as _get_ratios_ttm,
     get_revenue_segmentation as _get_revenue_segmentation,
     get_shares_float as _get_shares_float,
+    get_sp500_market_value as _get_sp500_market_value,
     get_stock_grades as _get_stock_grades,
     get_stock_splits as _get_stock_splits,
 )
@@ -842,9 +843,40 @@ class Toolkit:
                 }
             )
 
+        def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:
+            # The price index scales the total market value of the S&P 500 companies, known
+            # for the latest date only, back in time; the total return index is the market
+            # return.
+            historical = self._other_toolkit(
+                ["^GSPC", "^SP500TR"], start, end
+            ).get_historical_data(period="daily")
+            if historical.empty:
+                index_data = pd.DataFrame(columns=["Price Index", "Total Return Index"])
+            else:
+                index_data = (
+                    historical["Close"]
+                    .reindex(columns=["^GSPC", "^SP500TR"])
+                    .set_axis(["Price Index", "Total Return Index"], axis=1)
+                )
+                index_data.index = index_data.index.to_timestamp()
+            market_value = (
+                _get_sp500_market_value(self._api_key, self._fmp_plan)
+                if self._api_key
+                else pd.Series(dtype=float)
+            )
+            return index_data, market_value
+
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
-            historical_data=LazyDict(self._get_module_historical_data),
+            # "lookback" is the daily data from a year before the start date, for the
+            # models that measure returns over the year before a period end.
+            historical_data=LazyDict(
+                lambda key: (
+                    self._get_lookback_historical_data("daily")
+                    if key == "lookback"
+                    else self._get_module_historical_data(key)
+                )
+            ),
             risk_free_rate_data=LazyDict(self._get_module_risk_free_rate),
             balance=lambda: self._get_module_statement(
                 "balance_sheet_statement", "Models"
@@ -860,6 +892,7 @@ class Toolkit:
             period_end_dates=lambda: self._get_daily_start_dates(
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
+            sp500_function=sp500,
         )
 
     @property

@@ -5,6 +5,7 @@ __docformat__ = "google"
 
 from collections.abc import Callable
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities.logger_model import get_logger
@@ -296,3 +297,42 @@ def exceeds_growth(
         growth,
     )
     return False
+
+
+def values_on_or_before(
+    daily: pd.DataFrame, dates: pd.DataFrame, tolerance: int = 10
+) -> pd.DataFrame:
+    """
+    The last value of each ticker on or before a date per ticker and period, taken from the
+    ticker's own history, so that a day without a value (a holiday on its exchange) uses
+    the value before it.
+
+    Args:
+        daily (pd.DataFrame): The daily values with a DatetimeIndex and the tickers as
+            columns.
+        dates (pd.DataFrame): The dates per ticker (rows) and period (columns).
+        tolerance (int, optional): The number of days a value may lie before the date; an
+            older value (the ticker had stopped trading, or had not started) is NaN.
+            Defaults to 10.
+
+    Returns:
+        pd.DataFrame: The values per ticker (rows) and period (columns).
+    """
+    values = pd.DataFrame(float("nan"), index=dates.index, columns=dates.columns)
+
+    for ticker in dates.index:
+        if ticker not in daily.columns:
+            continue
+        series = daily[ticker].dropna()
+        if series.empty:
+            continue
+        ticker_dates = pd.DatetimeIndex(dates.loc[ticker])
+        positions = series.index.searchsorted(ticker_dates, side="right") - 1
+        found = positions >= 0
+        observed = series.index[positions.clip(min=0)]
+        recent = found & ((ticker_dates - observed).days <= tolerance)
+        values.loc[ticker] = np.where(
+            recent, series.to_numpy()[positions.clip(min=0)], np.nan
+        )
+
+    return values

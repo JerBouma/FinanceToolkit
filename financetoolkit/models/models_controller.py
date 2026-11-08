@@ -12,6 +12,7 @@ from financetoolkit.helpers import LazyDict
 from financetoolkit.models import (
     altman_model,
     beneish_model,
+    chs_model,
     credit_model,
     damodaran_model,
     dupont_model,
@@ -71,6 +72,7 @@ FACTOR_COLLECTIONS = {
         "get_grover_score",
         "get_fulmer_h_score",
         "get_taffler_z_score",
+        "get_campbell_hilscher_szilagyi_score",
         "get_dechow_f_score",
         "get_montier_c_score",
         "get_mohanram_g_score",
@@ -111,6 +113,9 @@ class Models:
         ) = None,
         country_risk_premiums: pd.Series | Callable[[], pd.Series] | None = None,
         period_end_dates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
+        sp500_function: (
+            Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
+        ) = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -122,7 +127,9 @@ class Models:
 
         Args:
             tickers (list[str] | Callable[[], list[str]]): The ticker(s) to use for the models.
-            historical_data (dict[str, pd.DataFrame]): The historical data per period.
+            historical_data (dict[str, pd.DataFrame]): The historical data per period, and
+                under "lookback" the daily data from a year before the start date when
+                available.
             risk_free_rate_data (dict[str, pd.DataFrame]): The risk free rate data per period.
             balance (pd.DataFrame | Callable[[], pd.DataFrame]): The balance sheet data.
             income (pd.DataFrame | Callable[[], pd.DataFrame]): The income statement data.
@@ -141,6 +148,12 @@ class Models:
                 the periods as columns (the filing days with point_in_time). get_factor_analysis
                 applies each period's model values from that day on. Defaults to None, which
                 applies them from the end of the calendar period the column is labelled with.
+            sp500_function (Callable | None, optional): Retrieves the S&P 500 between two
+                dates for get_campbell_hilscher_szilagyi_score: its daily price and total
+                return index (the columns "Price Index" and "Total Return Index", with a
+                DatetimeIndex) and the latest total market value of its companies (a Series
+                with the date as index). Defaults to None, which leaves the excess returns
+                and the relative size NaN.
 
         As an example:
 
@@ -179,6 +192,7 @@ class Models:
         self._peer_function = peer_function
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
+        self._sp500_function = sp500_function
 
         # Historical Data
         self._historical_data = historical_data
@@ -6882,6 +6896,308 @@ class Models:
 
         return filter_columns(
             merton.loc[:, self._start_date : self._end_date], show_columns
+        )
+
+    @handle_errors
+    def get_campbell_hilscher_szilagyi_score(
+        self,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the probability of failure of Campbell, Hilscher and Szilagyi (2008), a
+        logit model that combines accounting figures with market data to predict failure: a
+        bankruptcy filing, a delisting or a D (default) rating. It measures profitability
+        and leverage against the market value of the assets rather than the book value, and
+        adds the excess return of the shares, their volatility, the company's size, its
+        cash, its market-to-book ratio and its share price. In the paper it predicts failure
+        better than Shumway's (2001) model and than the Merton distance to default.
+
+        The model is the 12-month-ahead logit of Table IV, column (3), of the paper:
+
+            - LPFD = -9.164 - 20.264 NIMTAAVG + 1.416 TLMTA - 7.129 EXRETAVG + 1.411 SIGMA
+              - 0.045 RSIZE - 2.132 CASHMTA + 0.075 MB - 0.058 PRICE
+            - Failure Probability = 1 / (1 + e^(-LPFD))
+
+        with:
+
+            - MTA = Market Value of Equity + Total Liabilities (the market value of total
+              assets)
+            - NIMTA = Quarterly Net Income / MTA, and NIMTAAVG its average over four quarters
+              with weights that halve every quarter: (1 - φ³) / (1 - φ¹²) × (NIMTA(t) +
+              φ³ NIMTA(t-1) + φ⁶ NIMTA(t-2) + φ⁹ NIMTA(t-3)), φ = 2^(-1/3)
+            - EXRET = ln(1 + Return) - ln(1 + S&P 500 Return) per month, and EXRETAVG its
+              average over twelve months: (1 - φ) / (1 - φ¹²) × (EXRET(t) + φ EXRET(t-1) +
+              ... + φ¹¹ EXRET(t-11))
+            - TLMTA = Total Liabilities / MTA
+            - CASHMTA = Cash and Short Term Investments / MTA
+            - MB = Market Value of Equity / Adjusted Book Equity, where Adjusted Book Equity =
+              Book Equity + 0.1 × (Market Value of Equity - Book Equity) (Cohen, Polk and
+              Vuolteenaho, 2003), and a value that is still not positive becomes 1
+            - SIGMA = sqrt(252 / (N - 1) × Σ r²), the annualized volatility around zero of
+              the N daily returns of the three months before, NaN with fewer than five
+              non-zero returns
+            - RSIZE = ln(Market Value of Equity / Total Market Value of the S&P 500)
+            - PRICE = ln(min(Share Price, 15))
+
+        Book Equity is Total Shareholder Equity plus Deferred Tax Liabilities minus Preferred
+        Stock (Davis, Fama and French, 2000), the latter two counted as zero when not
+        reported. The market value of equity is the closing price times the diluted
+        weighted average shares, the returns are total returns (Adj Close) against the S&P
+        500 total return index (^SP500TR), and every market variable is measured on the day
+        each period's figures apply from (the fiscal period end, or the filing day with
+        point_in_time): no market data after that day is used.
+
+        The probability is that of failing in the month 12 months ahead, given that the
+        company survives until then. It is a monthly probability, not the probability of
+        failing within a year. For comparison, between 0.4% and 3.7% of the companies in the
+        paper's sample failed per year from 1983 to 2003 (Table I).
+
+        Also known as: CHS model, failure probability, distress risk, default probability, LPFD.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the eight variables as they enter the model,
+            the CHS Score (LPFD) and the Failure Probability (a decimal).
+
+        Notes:
+            - Winsorization: the paper winsorizes every variable at the 5th and 95th
+              percentiles of the monthly cross-section of all US companies, which a
+              calculation per company cannot repeat. Each variable (NIMTA per quarter, EXRET
+              per month) is clipped instead to the range the winsorized variables span in
+              the paper's full sample (Table II, minimum and maximum): NIMTA -0.069 to 0.028,
+              TLMTA 0.036 to 0.923, EXRET -0.243 to 0.218, RSIZE -13.568 to -6.773, SIGMA
+              0.153 to 1.353, CASHMTA 0.002 to 0.358, MB 0.358 to 6.471 and PRICE -0.065 to
+              2.708. The variables are shown clipped, as they enter the score; a company
+              larger than about 0.1% of the S&P 500 has the largest RSIZE the paper used.
+            - RSIZE: the total market value of the S&P 500 is the sum of the latest market
+              capitalizations of its current companies (FinancialModelingPrep, each company
+              once), scaled back to each date with the S&P 500 price index (^GSPC). This
+              holds the companies and share counts of the latest date: changes in the index
+              membership and share counts that S&P offsets with its divisor are not
+              followed, and the index weighs float-adjusted shares while the total counts all
+              shares. As RSIZE enters with a coefficient of -0.045, an error of 5% in the
+              total moves the score by about 0.002. Without an API key that has access to
+              the constituents, RSIZE and the probability are NaN.
+            - On yearly statements NIMTAAVG is a quarter of the yearly net income over the
+              market value of total assets at the year end, equal weights for the four
+              quarters instead of weights that halve every quarter; on quarterly statements
+              it is calculated as in the paper. A missing quarter or month leaves the average
+              NaN where the paper fills it with the cross-sectional mean.
+            - PRICE uses the split-adjusted closing price, so for a company that split its
+              shares (or reverse-split them) after the period, the price differs from the
+              price traded then by the split ratio, which matters only below $15.
+            - The paper lags the accounting figures by two months so they are known; set
+              point_in_time on the Toolkit to measure on the filing day instead of the
+              fiscal period end.
+            - The coefficients were estimated on US companies from 1963 to 2003 with the S&P
+              500 as the market. For a company listed in another currency, its market value
+              is compared with the dollar total of the S&P 500, which moves RSIZE by the log
+              of the exchange rate (about 0.004 on the score for the euro).
+
+        References:
+        - Campbell, J.Y., Hilscher, J. and Szilagyi, J. (2008). "In Search of Distress Risk."
+          The Journal of Finance, 63(6), 2899-2939.
+        - Cohen, R.B., Polk, C. and Vuolteenaho, T. (2003). "The Value Spread." The Journal
+          of Finance, 58(2), 609-641.
+        - Davis, J.L., Fama, E.F. and French, K.R. (2000). "Characteristics, Covariances, and
+          Average Returns: 1929 to 1997." The Journal of Finance, 55(1), 389-406.
+        - Shumway, T. (2001). "Forecasting Bankruptcy More Accurately: A Simple Hazard
+          Model." The Journal of Business, 74(1), 101-124.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_campbell_hilscher_szilagyi_score().loc["F"]
+        ```
+
+        Which returns:
+
+        |                                        |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:---------------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | Net Income to Market Assets (NIMTAAVG) |  0.0153 | -0.0019 |  0.0039 |  0.0052 | -0.0067 |
+        | Liabilities to Market Assets (TLMTA)   |  0.7133 |  0.82   |  0.8239 |  0.8579 |  0.8291 |
+        | Excess Return (EXRETAVG)               |  0.0573 | -0.0308 | -0.007  | -0.037  |  0.015  |
+        | Volatility (SIGMA)                     |  0.4477 |  0.4187 |  0.4069 |  0.3133 |  0.3746 |
+        | Relative Size (RSIZE)                  | -6.773  | -6.773  | -6.7827 | -7.2053 | -7.0859 |
+        | Cash to Market Assets (CASHMTA)        |  0.1697 |  0.1699 |  0.1436 |  0.1369 |  0.126  |
+        | Market to Book (MB)                    |  1.567  |  1.0379 |  1.1113 |  0.8788 |  1.3456 |
+        | Log Price (PRICE)                      |  2.708  |  2.4536 |  2.5006 |  2.2925 |  2.5741 |
+        | CHS Score                              | -8.3383 | -7.2758 | -7.5146 | -7.3842 | -7.4308 |
+        | Failure Probability                    |  0.0002 |  0.0007 |  0.0005 |  0.0006 |  0.0006 |
+        """
+        balance = self._balance_sheet_statement
+        periods = balance.columns
+        tickers = self._tickers
+
+        dates = self._period_end_dates
+        if dates is None or dates.empty:
+            dates = pd.DataFrame(
+                {
+                    period: period.to_timestamp(how="end").normalize()
+                    for period in periods
+                },
+                index=tickers,
+            )
+        dates = dates.reindex(index=tickers, columns=periods).apply(pd.to_datetime)
+
+        # The daily data from a year before the start date, so that the excess returns of
+        # the first periods have their twelve months.
+        daily = self._historical_data.get("lookback")
+        if daily is None or daily.empty:
+            daily = self._historical_data["daily"]
+        close = daily["Close"].reindex(columns=tickers)
+        close.index = close.index.to_timestamp()
+        adjusted_close = daily["Adj Close"].reindex(columns=tickers)
+        adjusted_close.index = adjusted_close.index.to_timestamp()
+        daily_returns = daily["Return"].reindex(columns=tickers)
+        daily_returns.index = daily_returns.index.to_timestamp()
+
+        # The S&P 500 over the prices' dates and up to today, as its total market value is
+        # known for the latest date only.
+        index_data, latest_market_value = (
+            self._sp500_function(
+                close.index.min().strftime("%Y-%m-%d"),
+                pd.Timestamp.today().strftime("%Y-%m-%d"),
+            )
+            if self._sp500_function is not None and not close.empty
+            else (pd.DataFrame(), pd.Series(dtype=float))
+        )
+        price_index = index_data.get("Price Index", pd.Series(dtype=float))
+        total_return_index = index_data.get(
+            "Total Return Index", pd.Series(dtype=float)
+        )
+        index_market_value = chs_model.get_index_market_value(
+            price_index, latest_market_value
+        )
+        if index_market_value.dropna().empty:
+            logger.warning(
+                "The total market value of the S&P 500 (its constituents and their market "
+                "capitalizations from FinancialModelingPrep) is not available, so the "
+                "relative size (RSIZE) and the failure probability are NaN."
+            )
+
+        price = helpers.values_on_or_before(close, dates)
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        market_equity = price * shares.reindex(index=tickers, columns=periods)
+        total_liabilities = self._rows(balance, "Total Liabilities")
+        market_total_assets = chs_model.get_market_total_assets(
+            market_equity, total_liabilities
+        )
+        book_equity = (
+            self._rows(balance, "Total Shareholder Equity")
+            + self._rows(balance, "Deferred Tax Liabilities").fillna(0)
+            - self._rows(balance, "Preferred Stock").fillna(0)
+        )
+
+        # NIMTA is a quarterly figure: a yearly net income counts as four equal quarters.
+        net_income = self._rows(self._income_statement, "Net Income")
+        quarterly_net_income = net_income if self._quarterly else net_income / 4
+        net_income_to_market_total_assets = chs_model.get_winsorized_variable(
+            self._calendar(quarterly_net_income / market_total_assets), "NIMTA"
+        )
+        net_income_average = (
+            chs_model.get_geometric_average(
+                [net_income_to_market_total_assets.T.shift(lag).T for lag in range(4)],
+                chs_model.MONTHLY_DECAY**3,
+            ).reindex(columns=periods)
+            if self._quarterly
+            else net_income_to_market_total_assets.reindex(columns=periods)
+        )
+
+        monthly_excess_returns = chs_model.get_monthly_log_excess_returns(
+            adjusted_close,
+            total_return_index.dropna(),
+            dates,
+        )
+        excess_return_average = chs_model.get_geometric_average(
+            [
+                chs_model.get_winsorized_variable(excess_return, "EXRET")
+                for excess_return in monthly_excess_returns
+            ],
+            chs_model.MONTHLY_DECAY,
+        )
+
+        index_value = helpers.values_on_or_before(
+            pd.DataFrame(
+                {ticker: index_market_value for ticker in tickers},
+                index=index_market_value.index,
+            ),
+            dates,
+        )
+
+        variables = {
+            "NIMTAAVG": net_income_average,
+            "TLMTA": chs_model.get_winsorized_variable(
+                total_liabilities / market_total_assets, "TLMTA"
+            ),
+            "EXRETAVG": excess_return_average,
+            "SIGMA": chs_model.get_winsorized_variable(
+                chs_model.get_sigma(daily_returns, dates), "SIGMA"
+            ),
+            "RSIZE": chs_model.get_winsorized_variable(
+                chs_model.get_relative_size(market_equity, index_value), "RSIZE"
+            ),
+            "CASHMTA": chs_model.get_winsorized_variable(
+                self._rows(balance, "Cash and Short Term Investments")
+                / market_total_assets,
+                "CASHMTA",
+            ),
+            "MB": chs_model.get_winsorized_variable(
+                market_equity
+                / chs_model.get_adjusted_book_equity(book_equity, market_equity),
+                "MB",
+            ),
+            "PRICE": chs_model.get_winsorized_variable(
+                chs_model.get_log_price(price), "PRICE"
+            ),
+        }
+
+        chs_score = chs_model.get_chs_score(
+            net_income_to_market_total_assets_average=variables["NIMTAAVG"],
+            total_liabilities_to_market_total_assets=variables["TLMTA"],
+            excess_return_average=variables["EXRETAVG"],
+            sigma=variables["SIGMA"],
+            relative_size=variables["RSIZE"],
+            cash_to_market_total_assets=variables["CASHMTA"],
+            market_to_book=variables["MB"],
+            log_price=variables["PRICE"],
+        )
+
+        results = {
+            "Net Income to Market Assets (NIMTAAVG)": variables["NIMTAAVG"],
+            "Liabilities to Market Assets (TLMTA)": variables["TLMTA"],
+            "Excess Return (EXRETAVG)": variables["EXRETAVG"],
+            "Volatility (SIGMA)": variables["SIGMA"],
+            "Relative Size (RSIZE)": variables["RSIZE"],
+            "Cash to Market Assets (CASHMTA)": variables["CASHMTA"],
+            "Market to Book (MB)": variables["MB"],
+            "Log Price (PRICE)": variables["PRICE"],
+            "CHS Score": chs_score,
+            "Failure Probability": chs_model.get_chs_failure_probability(chs_score),
+        }
+
+        chs = self._combine(
+            {name: frame.astype(float) for name, frame in results.items()}
+        ).dropna(axis=1, how="all")
+        chs = apply_rounding(chs, rounding if rounding is not None else self._rounding)
+
+        return filter_columns(
+            chs.loc[:, self._start_date : self._end_date], show_columns
         )
 
     @handle_errors

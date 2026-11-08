@@ -35,7 +35,9 @@ class PortfolioConstruction:
     risk parity, Hierarchical Risk Parity, Black-Litterman, minimum CVaR, maximum
     diversification, minimum tracking error, growth optimal), the efficient
     frontier, risk contributions, historical stress tests, look-through exposure and a
-    Brinson-Fachler attribution against the benchmark.
+    Brinson-Fachler attribution against the benchmark. The optimizers take weight bounds
+    per asset, sector and country bounds from the company profiles and, for long-short
+    portfolios, a net and gross exposure.
     """
 
     def __init__(
@@ -253,6 +255,73 @@ class PortfolioConstruction:
             self._profile = self._profile_function()
         return self._profile
 
+    def _get_classification(self, assets: list[str], row: str) -> pd.Series:
+        """
+        The sector or country of each asset from the company profiles, with countries
+        named in full ("United States" rather than "US"); empty for an asset without one.
+        """
+        profile = self._get_profile()
+        values = (
+            profile.loc[row].reindex(assets)
+            if row in profile.index
+            else pd.Series(index=assets, dtype=object)
+        )
+        values = values.where(
+            values.map(lambda value: isinstance(value, str) and value != "")
+        )
+        if row == "Country":
+            # Lazily imported: the country names live with the Economics data.
+            from financetoolkit.economics.helpers import COUNTRY_CODES  # noqa: PLC0415
+
+            values = values.map(lambda value: COUNTRY_CODES.get(value, value))
+        return values
+
+    def _get_constraints(
+        self,
+        assets: list[str],
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+    ) -> dict:
+        """
+        The weight constraints of the optimizers: the per-asset bounds as given and the
+        sector and country bounds with the sector and country of each asset from the
+        company profiles, which are only retrieved when a sector or country is bounded.
+        Countries can be named in full or by their two-letter code.
+        """
+        bounds = {
+            classification: group_bounds
+            for classification, group_bounds in (
+                ("Sector", sector_bounds),
+                ("Country", country_bounds),
+            )
+            if group_bounds
+        }
+        groups = None
+        if bounds:
+            groups = pd.DataFrame(
+                {
+                    classification: self._get_classification(assets, classification)
+                    for classification in bounds
+                }
+            )
+            if "Country" in bounds:
+                from financetoolkit.economics.helpers import (  # noqa: PLC0415
+                    COUNTRY_CODES,
+                )
+
+                bounds["Country"] = {
+                    COUNTRY_CODES.get(country, country): bound
+                    for country, bound in bounds["Country"].items()
+                }
+        return {
+            "minimum_weight": minimum_weight,
+            "maximum_weight": maximum_weight,
+            "groups": groups,
+            "group_bounds": bounds or None,
+        }
+
     def _get_prices(self, tickers: list[str], start: str, end: str) -> pd.DataFrame:
         """The daily prices of other tickers over a date range."""
         if self._price_function is None:
@@ -267,8 +336,12 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -303,10 +376,24 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
-            minimum_weight (float, optional): The lowest weight an asset may have; a
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
-            maximum_weight (float, optional): The highest weight an asset may have.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -322,6 +409,14 @@ class PortfolioConstruction:
           short history shortens the sample of all assets.
         - The expected returns are the historical average returns, annualized; the Sharpe
           ratios use the average risk free rate over the same periods.
+        - Every optimizer with weight bounds takes the same constraints. Sector and
+          country bounds limit the total weight of the assets in a group (an asset
+          without a sector or country, such as the benchmark, is in none), as
+          PyPortfolioOpt's add_sector_constraints and skfolio's group constraints do. A
+          gross exposure limit is linearized with one extra variable t_i ≥ |w_i| per asset
+          (t_i ≥ w_i, t_i ≥ -w_i, Σ t_i ≤ the limit), so the solution stays exact. A
+          combination of constraints no portfolio can meet raises an error before the
+          optimization runs.
 
         As an example:
 
@@ -335,24 +430,35 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_minimum_variance_weights()
+        toolkit.portfolio.get_minimum_variance_weights(
+            sector_bounds={"Healthcare": (0, 0.4)}, maximum_weight={"XOM": 0.15}
+        )
         ```
 
         Which returns:
 
         |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
         |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-        | AAPL      |   0.0212 |            0.1933 |       0.2786 |         0.5727 |              0.0212 |
-        | MSFT      |   0.2166 |            0.2017 |       0.2572 |         0.6532 |              0.2166 |
-        | JNJ       |   0.5821 |            0.0984 |       0.1673 |         0.3867 |              0.5821 |
-        | XOM       |   0.1801 |            0.291  |       0.2702 |         0.9522 |              0.1801 |
-        | Portfolio |   1      |            0.1575 |       0.135  |         0.9166 |              1      |
+        | AAPL      |   0.1225 |            0.1933 |       0.2786 |         0.5727 |              0.1683 |
+        | MSFT      |   0.3275 |            0.2017 |       0.2572 |         0.6532 |              0.4499 |
+        | JNJ       |   0.4    |            0.0984 |       0.1673 |         0.3867 |              0.2624 |
+        | XOM       |   0.15   |            0.291  |       0.2702 |         0.9522 |              0.1194 |
+        | Portfolio |   1      |            0.1727 |       0.1463 |         0.9504 |              1      |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_minimum_variance_weights(
-            covariance_matrix, minimum_weight, maximum_weight
+            covariance_matrix,
+            **self._get_constraints(
+                covariance_matrix.index.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         return self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -364,8 +470,12 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -402,10 +512,24 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
-            minimum_weight (float, optional): The lowest weight an asset may have; a
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
-            maximum_weight (float, optional): The highest weight an asset may have.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -453,8 +577,15 @@ class PortfolioConstruction:
             expected_returns,
             covariance_matrix,
             risk_free_rate,
-            minimum_weight,
-            maximum_weight,
+            **self._get_constraints(
+                covariance_matrix.index.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         return self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -468,8 +599,12 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -507,10 +642,24 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
-            minimum_weight (float, optional): The lowest weight an asset may have. Defaults
-                to 0.
-            maximum_weight (float, optional): The highest weight an asset may have.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -521,7 +670,7 @@ class PortfolioConstruction:
             Volatility, Sharpe Ratio and Risk Contribution.
 
         Notes:
-        - A target return outside what the assets can reach within the weight bounds
+        - A target return outside what the assets can reach within the constraints
           raises an error that states the reachable range.
 
         As an example:
@@ -536,18 +685,20 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_mean_variance_weights(target_return=0.15)
+        toolkit.portfolio.get_mean_variance_weights(
+            target_return=0.3, minimum_weight=-0.5, gross_exposure=1.6
+        )
         ```
 
         Which returns:
 
         |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
         |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-        | AAPL      |   0.0219 |            0.1933 |       0.2786 |         0.5727 |              0.0211 |
-        | MSFT      |   0.2058 |            0.2017 |       0.2572 |         0.6532 |              0.1961 |
-        | JNJ       |   0.6256 |            0.0984 |       0.1673 |         0.3867 |              0.6549 |
-        | XOM       |   0.1467 |            0.291  |       0.2702 |         0.9522 |              0.1279 |
-        | Portfolio |   1      |            0.15   |       0.1355 |         0.8583 |              1      |
+        | AAPL      |   0.0069 |            0.1933 |       0.2786 |         0.5727 |              0.0032 |
+        | MSFT      |   0.423  |            0.2017 |       0.2572 |         0.6532 |              0.2149 |
+        | JNJ       |  -0.2463 |            0.0984 |       0.1673 |         0.3867 |              0.0022 |
+        | XOM       |   0.8164 |            0.291  |       0.2702 |         0.9522 |              0.7798 |
+        | Portfolio |   1      |            0.3    |       0.2521 |         1.0561 |              1      |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
@@ -557,8 +708,15 @@ class PortfolioConstruction:
             covariance_matrix,
             target_return,
             risk_aversion,
-            minimum_weight,
-            maximum_weight,
+            **self._get_constraints(
+                covariance_matrix.index.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         return self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -571,8 +729,12 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -603,10 +765,24 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
-            minimum_weight (float, optional): The lowest weight an asset may have. Defaults
-                to 0.
-            maximum_weight (float, optional): The highest weight an asset may have.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -649,8 +825,15 @@ class PortfolioConstruction:
             covariance_matrix,
             risk_free_rate,
             points,
-            minimum_weight,
-            maximum_weight,
+            **self._get_constraints(
+                covariance_matrix.index.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         return self._round(frontier, rounding)
 
@@ -661,6 +844,10 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -680,6 +867,8 @@ class PortfolioConstruction:
           36(4), 60-70.
         - Spinu, F. (2013). "An Algorithm for Computing Risk Parity Weights." SSRN Working
           Paper.
+        - Richard, J.-C. and Roncalli, T. (2019). "Constrained Risk Budgeting Portfolios:
+          Theory, Algorithms, Applications & Puzzles." arXiv:1902.05710.
 
         Also known as: equal risk contribution, ERC, risk budgeting.
 
@@ -700,6 +889,19 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); it
+                cannot be negative. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
+                Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -708,6 +910,14 @@ class PortfolioConstruction:
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
             Volatility, Sharpe Ratio and Risk Contribution.
+
+        Notes:
+        - Weight, sector and country bounds turn it into constrained risk budgeting
+          (Richard and Roncalli, 2019): the bounds are linear constraints on w = y / Σy,
+          so the problem stays convex, the same as skfolio's RiskBudgeting. Where a bound
+          binds, the risk contributions can no longer all match the budget.
+        - Risk parity holds long positions only and is fully invested, so it takes no
+          negative minimum weight and no net or gross exposure.
 
         As an example:
 
@@ -721,18 +931,18 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_risk_parity_weights()
+        toolkit.portfolio.get_risk_parity_weights(sector_bounds={"Healthcare": (0, 0.3)})
         ```
 
         Which returns:
 
         |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
         |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-        | AAPL      |   0.1786 |            0.1933 |       0.2786 |         0.5727 |                0.25 |
-        | MSFT      |   0.2129 |            0.2017 |       0.2572 |         0.6532 |                0.25 |
-        | JNJ       |   0.3782 |            0.0984 |       0.1673 |         0.3867 |                0.25 |
-        | XOM       |   0.2303 |            0.291  |       0.2702 |         0.9522 |                0.25 |
-        | Portfolio |   1      |            0.1817 |       0.1452 |         1.0189 |                1    |
+        | AAPL      |   0.1991 |            0.1933 |       0.2786 |         0.5727 |              0.2763 |
+        | MSFT      |   0.2388 |            0.2017 |       0.2572 |         0.6532 |              0.2816 |
+        | JNJ       |   0.3    |            0.0984 |       0.1673 |         0.3867 |              0.1575 |
+        | XOM       |   0.2621 |            0.291  |       0.2702 |         0.9522 |              0.2846 |
+        | Portfolio |   1      |            0.1924 |       0.1523 |         1.0422 |              1      |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
@@ -740,6 +950,13 @@ class PortfolioConstruction:
         weights = optimization_model.get_risk_parity_weights(
             covariance_matrix,
             pd.Series(risk_budget, dtype=float) if risk_budget is not None else None,
+            **self._get_constraints(
+                covariance_matrix.index.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
         )
         return self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -752,6 +969,8 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -792,6 +1011,12 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); it
+                cannot be negative. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
+                Defaults to 1.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -800,6 +1025,13 @@ class PortfolioConstruction:
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
             Volatility, Sharpe Ratio and Risk Contribution.
+
+        Notes:
+        - Weight bounds move each split just enough to keep both halves within the sum of
+          their assets' bounds, as skfolio and Riskfolio-Lib do.
+        - A split only moves weight between the two halves of a cluster, so sector and
+          country bounds, which cut across the clusters, do not apply; neither do short
+          positions or a net or gross exposure, as HRP is long only and fully invested.
 
         As an example:
 
@@ -813,24 +1045,24 @@ class PortfolioConstruction:
             end_date="2025-12-31",
         )
 
-        toolkit.portfolio.get_hierarchical_risk_parity_weights()
+        toolkit.portfolio.get_hierarchical_risk_parity_weights(maximum_weight={"JNJ": 0.3})
         ```
 
         Which returns:
 
         |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |
         |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|
-        | AAPL      |   0.1287 |            0.1933 |       0.2786 |         0.5727 |              0.1599 |
-        | MSFT      |   0.1511 |            0.2017 |       0.2572 |         0.6532 |              0.1498 |
-        | JNJ       |   0.5206 |            0.0984 |       0.1673 |         0.3867 |              0.4742 |
-        | XOM       |   0.1996 |            0.291  |       0.2702 |         0.9522 |              0.2161 |
-        | Portfolio |   1      |            0.1647 |       0.1374 |         0.9534 |              1      |
+        | AAPL      |   0.1287 |            0.1933 |       0.2786 |         0.5727 |              0.1307 |
+        | MSFT      |   0.1511 |            0.2017 |       0.2572 |         0.6532 |              0.1183 |
+        | JNJ       |   0.3    |            0.0984 |       0.1673 |         0.3867 |              0.1503 |
+        | XOM       |   0.4202 |            0.291  |       0.2702 |         0.9522 |              0.6007 |
+        | Portfolio |   1      |            0.2072 |       0.1569 |         1.1052 |              1      |
         """
         _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_hierarchical_risk_parity_weights(
-            covariance_matrix, linkage_method
+            covariance_matrix, linkage_method, minimum_weight, maximum_weight
         )
         return self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -913,8 +1145,12 @@ class PortfolioConstruction:
         self,
         confidence_level: float = 0.95,
         period: str = "daily",
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -941,10 +1177,24 @@ class PortfolioConstruction:
                 for the average of the worst 5% of periods. Defaults to 0.95.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
-            minimum_weight (float, optional): The lowest weight an asset may have. Defaults
-                to 0.
-            maximum_weight (float, optional): The highest weight an asset may have.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -984,7 +1234,17 @@ class PortfolioConstruction:
             period, include_benchmark
         )
         weights = optimization_model.get_minimum_cvar_weights(
-            returns, confidence_level, minimum_weight, maximum_weight
+            returns,
+            confidence_level,
+            **self._get_constraints(
+                returns.columns.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         table = self._weights_table(
             weights, expected_returns, covariance, risk_free_rate, rounding
@@ -1006,8 +1266,12 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -1048,10 +1312,24 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
-            minimum_weight (float, optional): The lowest weight an asset may have; a
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
-            maximum_weight (float, optional): The highest weight an asset may have.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1099,7 +1377,16 @@ class PortfolioConstruction:
             period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_maximum_diversification_weights(
-            covariance_matrix, minimum_weight, maximum_weight
+            covariance_matrix,
+            **self._get_constraints(
+                covariance_matrix.index.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -1117,8 +1404,12 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1164,10 +1455,24 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
-            minimum_weight (float, optional): The lowest weight an asset may have; a
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
                 negative value allows short positions. Defaults to 0.
-            maximum_weight (float, optional): The highest weight an asset may have.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
 
@@ -1221,8 +1526,15 @@ class PortfolioConstruction:
             covariance_matrix,
             BENCHMARK_TICKER,
             objective,
-            minimum_weight,
-            maximum_weight,
+            **self._get_constraints(
+                covariance_matrix.index.drop(BENCHMARK_TICKER).tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         assets = weights.index
         table = self._weights_table(
@@ -1256,8 +1568,12 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -1310,11 +1626,24 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
-            minimum_weight (float, optional): The lowest weight an asset may have in the
-                full Kelly portfolio; a negative value allows short positions. Defaults
-                to 0.
-            maximum_weight (float, optional): The highest weight an asset may have in the
-                full Kelly portfolio. Defaults to 1.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
+                Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -1332,6 +1661,9 @@ class PortfolioConstruction:
           a maximum weight tempers that.
         - The log growth is the average of ln(1 + r) per period times the number of periods
           in a year, so the growth of daily returns is comparable to that of monthly ones.
+        - The weight bounds, sector and country bounds and exposures apply to the full
+          Kelly portfolio; the fraction then scales it, so the weights sum to the fraction
+          times the net exposure and the rest is cash.
 
         As an example:
 
@@ -1368,11 +1700,18 @@ class PortfolioConstruction:
             covariance_matrix,
             method,
             fraction,
-            minimum_weight,
-            maximum_weight,
+            **self._get_constraints(
+                returns.columns.tolist(),
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         periods_per_year = PERIODS_PER_YEAR[period]
-        cash = 1 - fraction
+        cash = 1 - fraction * net_exposure
         growth = np.log1p(returns).mean() * periods_per_year
         portfolio_growth = (
             np.log1p(
@@ -1411,8 +1750,12 @@ class PortfolioConstruction:
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
-        minimum_weight: float = 0.0,
-        maximum_weight: float = 1.0,
+        minimum_weight: float | dict[str, float] = 0.0,
+        maximum_weight: float | dict[str, float] = 1.0,
+        sector_bounds: dict[str, tuple[float, float]] | None = None,
+        country_bounds: dict[str, tuple[float, float]] | None = None,
+        net_exposure: float = 1.0,
+        gross_exposure: float | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -1473,10 +1816,24 @@ class PortfolioConstruction:
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
-            minimum_weight (float, optional): The lowest weight an asset may have. Defaults
-                to 0.
-            maximum_weight (float, optional): The highest weight an asset may have.
+            minimum_weight (float | dict[str, float], optional): The lowest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.05} (the others keep 0); a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float | dict[str, float], optional): The highest weight of
+                every asset, or per asset, e.g. {"AAPL": 0.3} (the others keep 1).
                 Defaults to 1.
+            sector_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per sector, e.g. {"Technology": (0, 0.4)}, with
+                the sector of each asset from its company profile. Defaults to None.
+            country_bounds (dict[str, tuple[float, float]] | None, optional): The minimum
+                and maximum total weight per country, named in full or by its two-letter
+                code, e.g. {"United States": (0, 0.6)}, with the country of each asset
+                from its company profile. Defaults to None.
+            net_exposure (float, optional): The sum of the weights: 1 for a fully
+                invested portfolio, 0 for a market neutral one. Defaults to 1.
+            gross_exposure (float | None, optional): The highest sum of the absolute
+                weights, which limits the leverage of a long-short portfolio, e.g. 1.6 for
+                a 130/30 portfolio. Defaults to None, no limit.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
 
@@ -1541,8 +1898,15 @@ class PortfolioConstruction:
             returns["Black-Litterman Return"],
             covariance_matrix,
             risk_aversion=risk_aversion,
-            minimum_weight=minimum_weight,
-            maximum_weight=maximum_weight,
+            **self._get_constraints(
+                assets,
+                minimum_weight,
+                maximum_weight,
+                sector_bounds,
+                country_bounds,
+            ),
+            net_exposure=net_exposure,
+            gross_exposure=gross_exposure,
         )
         table = pd.concat(
             [(market / market.sum()).rename("Market Weight"), returns, weights], axis=1
@@ -1778,23 +2142,11 @@ class PortfolioConstruction:
                 for asset in stocks:
                     exposures[asset] = pd.Series({asset: 1.0})
             else:
-                profile = self._get_profile()
-                row = "Sector" if by == "sector" else "Country"
-                for asset in stocks:
-                    value = (
-                        profile.loc[row, asset]
-                        if asset in profile.columns and row in profile.index
-                        else None
-                    )
-                    if by == "country" and isinstance(value, str):
-                        # Lazily imported: the country names live with the Economics data.
-                        from financetoolkit.economics.helpers import (  # noqa: PLC0415
-                            COUNTRY_CODES,
-                        )
-
-                        value = COUNTRY_CODES.get(value, value)
-                    if isinstance(value, str) and value:
-                        exposures[asset] = pd.Series({value: 1.0})
+                classification = self._get_classification(
+                    stocks, "Sector" if by == "sector" else "Country"
+                )
+                for asset, value in classification.dropna().items():
+                    exposures[asset] = pd.Series({value: 1.0})
 
         return exposures
 

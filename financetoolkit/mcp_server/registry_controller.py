@@ -877,6 +877,16 @@ def _simplify_annotation(ann: Any) -> Any:
         combined = scalar | list[scalar]  # ty: ignore[invalid-type-form]
         return combined | None if has_none else combined
 
+    # A number that may also be given per ticker (the weight bounds of the portfolio
+    # optimizers) accepts both, as the indicator does.
+    if scalar in (int, float) and any(
+        typing.get_origin(a) is dict
+        and all(arg in (str, int, float) for arg in typing.get_args(a))
+        for a in args
+    ):
+        combined = scalar | dict[str, scalar]  # ty: ignore[invalid-type-form]
+        return combined | None if has_none else combined
+
     return scalar | None if has_none else scalar
 
 

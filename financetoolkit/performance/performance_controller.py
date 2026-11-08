@@ -774,7 +774,7 @@ class Performance:
         The formula is as follows:
 
             - Implied Return = Beta × Benchmark Return
-            - Residual = Actual Return — Implied Return
+            - Residual = Actual Return - Implied Return
 
         The Beta of each period is estimated from the daily returns over the `beta_window` trading
         days that end on the day before the period starts, so the move being explained never helps
@@ -6038,8 +6038,8 @@ class Performance:
         Which returns:
         |                                |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:-------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('Custom Factor', '1 Month')   |    0.0178 |                  0.3743 |                 0.0476 |        0.4923 |    0.6235 |           0.4953 |            107 |             0.004  |              0.2391 |                 0.8822 |
-        | ('Custom Factor', '12 Months') |    0.1121 |                  0.419  |                 0.2675 |        2.6214 |    0.0102 |           0.5729 |             96 |             0.0195 |              0.2391 |                 0.8822 |
+        | ('Custom Factor', '1 Month')   |    0.018  |                  0.3745 |                 0.0481 |        0.498  |    0.6195 |           0.4953 |            107 |             0.004  |              0.2391 |                 0.8822 |
+        | ('Custom Factor', '12 Months') |    0.1122 |                  0.419  |                 0.2678 |        2.6242 |    0.0101 |           0.5729 |             96 |             0.0195 |              0.2391 |                 0.8822 |
         """
         if isinstance(metrics, pd.DataFrame):
             factors = {

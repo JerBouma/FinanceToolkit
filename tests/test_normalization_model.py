@@ -187,3 +187,21 @@ def test_statement_exchange_rates_bridge_a_gap_of_a_few_weeks():
     )
 
     assert closing.loc[pd.Period("2022", "Y"), "X"] == 1.2
+
+
+def test_yahoo_balance_sheet_maps_every_working_capital_item():
+    # The cash-based operating profitability needs each of these balances, so a Yahoo
+    # Finance statement maps them as a FinancialModelingPrep statement does.
+    balance_yf = normalization_model.read_normalization_file("balance_yf")
+
+    assert balance_yf.loc["PrepaidAssets"] == "Prepaids"
+    assert {
+        "Total Assets",
+        "Net Receivables",
+        "Inventory",
+        "Prepaids",
+        "Deferred Revenue",
+        "Deferred Revenue Non Current",
+        "Accounts Payable",
+        "Accrued Expenses",
+    } <= set(balance_yf.to_numpy())

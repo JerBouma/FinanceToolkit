@@ -1,0 +1,20 @@
+# Keeps the commit SHAs the workflows pin their actions to, and the image digests in the Dockerfile,
+# up to date. The SHAs are pinned so that a moved or compromised tag can't change what a workflow runs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # The Python version of the image is chosen by hand; only its digest (security updates) is bumped.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

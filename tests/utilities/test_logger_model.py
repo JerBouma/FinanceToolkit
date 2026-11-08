@@ -258,3 +258,39 @@ def test_logger_name_consistency():
     assert logger1.name == "financetoolkit"
     assert logger2.name == "financetoolkit"
     assert logger1.name == logger2.name
+
+
+def test_keys_in_logged_exceptions_and_tracebacks_are_redacted():
+    """
+    Test that an API key in a URL is redacted from everything the Finance Toolkit logs:
+    an exception passed as an argument, the message of a child logger and the traceback.
+    """
+    import io  # noqa: PLC0415
+
+    logger = logger_model.setup_logger()
+    handler = logger.handlers[0]
+    stream = io.StringIO()
+    previous_stream = handler.setStream(stream)
+
+    try:
+        url = (
+            "https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey=SECRET1"
+        )
+        logger.warning("Request failed: %s", ValueError(f"404 for {url}"))
+        logging.getLogger("financetoolkit.cache").warning(
+            "Inline %s https://api.example/x?fmp_api_key=SECRET2", "message"
+        )
+        try:
+            raise ConnectionError(f"{url}&api_key=SECRET3")
+        except ConnectionError:
+            logger.exception("Could not reach the source")
+    finally:
+        handler.setStream(previous_stream)
+
+    output = stream.getvalue()
+
+    assert "SECRET" not in output
+    assert "apikey=***" in output
+    assert "fmp_api_key=***" in output
+    assert "Traceback" in output
+    assert "Inline message" in output

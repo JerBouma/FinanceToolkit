@@ -193,3 +193,67 @@ def test_return_on_invested_capital_keeps_a_missing_tax_expense_missing():
     assert pd.isna(result.iloc[0])
     assert result.iloc[1] == 0.1
     assert result.iloc[2] == pytest.approx(100 * (1 - 5 / 80) / 1000)
+
+
+def test_operating_profitability_uses_fama_french_book_equity():
+    result = profitability_model.get_operating_profitability(
+        revenue=pd.Series([100.0, 100.0]),
+        cost_of_goods_sold=pd.Series([40.0, 40.0]),
+        selling_general_and_administrative_expenses=pd.Series([20.0, 20.0]),
+        research_and_development_expenses=pd.Series([5.0, 5.0]),
+        interest_expense=pd.Series([5.0, 5.0]),
+        total_shareholder_equity=pd.Series([180.0, 10.0]),
+        deferred_tax_liabilities=pd.Series([30.0, 0.0]),
+        preferred_stock=pd.Series([10.0, 20.0]),
+    )
+
+    # Book equity is 180 + 30 - 10 = 200; a book equity of zero or less has no value.
+    assert result.iloc[0] == pytest.approx(30 / 200)
+    assert pd.isna(result.iloc[1])
+
+
+def test_cash_based_operating_profitability_removes_working_capital_accruals():
+    result = profitability_model.get_cash_based_operating_profitability(
+        revenue=pd.Series([100.0]),
+        cost_of_goods_sold=pd.Series([40.0]),
+        selling_general_and_administrative_expenses=pd.Series([20.0]),
+        change_in_receivables=pd.Series([5.0]),
+        change_in_inventory=pd.Series([3.0]),
+        change_in_prepaids=pd.Series([1.0]),
+        change_in_deferred_revenue=pd.Series([2.0]),
+        change_in_accounts_payable=pd.Series([4.0]),
+        change_in_accrued_expenses=pd.Series([1.0]),
+        beginning_total_assets=pd.Series([200.0]),
+    )
+
+    assert result.iloc[0] == pytest.approx((40 - 5 - 3 - 1 + 2 + 4 + 1) / 200)
+
+
+def test_gross_profitability_and_croic():
+    assert profitability_model.get_gross_profitability(
+        revenue=pd.Series([100.0]),
+        cost_of_goods_sold=pd.Series([60.0]),
+        total_assets=pd.Series([200.0]),
+    ).iloc[0] == pytest.approx(0.2)
+    assert profitability_model.get_cash_return_on_invested_capital(
+        free_cash_flow=pd.Series([30.0]),
+        average_total_equity=pd.Series([100.0]),
+        average_total_debt=pd.Series([50.0]),
+    ).iloc[0] == pytest.approx(0.2)
+
+
+def test_free_cash_flow_conversion_ratios_need_a_positive_base():
+    conversion = profitability_model.get_free_cash_flow_conversion(
+        free_cash_flow=pd.Series([90.0, 50.0, 50.0]),
+        net_income=pd.Series([100.0, 0.0, -20.0]),
+    )
+    to_ebitda = profitability_model.get_free_cash_flow_to_ebitda_ratio(
+        free_cash_flow=pd.Series([60.0, 60.0]),
+        operating_income=pd.Series([80.0, -30.0]),
+        depreciation_and_amortization=pd.Series([20.0, 10.0]),
+    )
+
+    assert conversion.iloc[0] == pytest.approx(0.9)
+    assert conversion.iloc[1:].isna().all()
+    assert to_ebitda.iloc[0] == pytest.approx(0.6)
+    assert pd.isna(to_ebitda.iloc[1])

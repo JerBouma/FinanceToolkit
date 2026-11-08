@@ -8481,10 +8481,10 @@ class Technicals:
         Which returns:
         |                                     |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_rate_of_change', '1 Month')   |    0.053  |                  0.3536 |                 0.1499 |        1.5718 |    0.1189 |           0.6    |            110 |             0.0097 |              0.2652 |                 0.8603 |
-        | ('get_rate_of_change', '12 Months') |    0.1272 |                  0.4137 |                 0.3074 |        3.0587 |    0.0029 |           0.6364 |             99 |             0.0614 |              0.2652 |                 0.8603 |
-        | ('get_moving_average', '1 Month')   |    0.0432 |                  0.3494 |                 0.1236 |        1.2968 |    0.1974 |           0.5818 |            110 |             0.0128 |              0.3068 |                 0.8064 |
-        | ('get_moving_average', '12 Months') |    0.1073 |                  0.3924 |                 0.2735 |        2.7212 |    0.0077 |           0.596  |             99 |             0.0574 |              0.3068 |                 0.8064 |
+        | ('get_rate_of_change', '1 Month')   |    0.0475 |                  0.3466 |                 0.1369 |        1.4936 |    0.1379 |           0.5798 |            119 |             0.0093 |              0.2626 |                 0.8581 |
+        | ('get_rate_of_change', '12 Months') |    0.1187 |                  0.3985 |                 0.2979 |        3.0956 |    0.0025 |           0.6389 |            108 |             0.0799 |              0.2626 |                 0.8581 |
+        | ('get_moving_average', '1 Month')   |    0.0383 |                  0.3464 |                 0.1107 |        1.2073 |    0.2297 |           0.563  |            119 |             0.0125 |              0.3074 |                 0.8028 |
+        | ('get_moving_average', '12 Months') |    0.1019 |                  0.3843 |                 0.2652 |        2.7561 |    0.0069 |           0.5833 |            108 |             0.0843 |              0.3074 |                 0.8028 |
         """
         tickers = self._tickers
         factors = factor_model.get_daily_factors(
@@ -8529,6 +8529,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         patterns: str | list[str] | None = None,
+        signals_only: bool = False,
     ) -> pd.DataFrame:
         """
         Recognise 15 classic candlestick patterns in every ticker's candles, with the definitions
@@ -8587,6 +8588,8 @@ class Technicals:
                 uses the candles as traded (split-adjusted).
             patterns (str | list[str] | None, optional): The patterns to return, e.g. ["Hammer",
                 "Engulfing"]. Defaults to None, which returns all 15.
+            signals_only (bool, optional): Whether to return only the periods in which at least one
+                of the returned patterns occurs for at least one ticker. Defaults to False.
 
         Returns:
             pd.DataFrame: The patterns per date, with a column per pattern and ticker: 1 (bullish),
@@ -8615,10 +8618,11 @@ class Technicals:
             end_date="2025-12-31",
         )
 
-        patterns = toolkit.technicals.get_candlestick_patterns()
+        patterns = toolkit.technicals.get_candlestick_patterns(
+            patterns="Engulfing", signals_only=True
+        )
 
-        engulfing = patterns["Engulfing"]
-        engulfing[engulfing.ne(0).any(axis=1)].tail()
+        patterns["Engulfing"].tail()
         ```
 
         Which returns:
@@ -8673,9 +8677,18 @@ class Technicals:
                 .loc[self._start_date : self._end_date]
             )
 
-        candlestick_patterns = pd.concat(pattern_dict, axis=1).swaplevel(0, 1, axis=1)
+        candlestick_patterns = pd.concat(pattern_dict, axis=1).swaplevel(0, 1, axis=1)[
+            list(patterns or pattern_model.PATTERN_LOOKBACK)
+        ]
 
-        return candlestick_patterns[list(patterns or pattern_model.PATTERN_LOOKBACK)]
+        if signals_only:
+            # A pattern is a rare event, so most periods are all zeros; the empty warm-up
+            # (NaN) doesn't count as a signal either.
+            candlestick_patterns = candlestick_patterns[
+                candlestick_patterns.abs().gt(0).any(axis=1)
+            ]
+
+        return candlestick_patterns
 
     @handle_errors
     def get_signals(
@@ -8693,6 +8706,7 @@ class Technicals:
         bollinger_window: int = 20,
         bollinger_std_dev: float = 2,
         high_low_window: int | None = None,
+        signals_only: bool = False,
     ) -> pd.DataFrame:
         """
         Turn the moving averages, the MACD, the RSI, the Bollinger Bands and new highs and lows
@@ -8750,6 +8764,8 @@ class Technicals:
             high_low_window (int | None, optional): The number of previous periods a new high or
                 low is measured against. Defaults to None, which uses a year of periods: 252 daily
                 (and intraday), 52 weekly, 12 monthly, 4 quarterly and 1 yearly.
+            signals_only (bool, optional): Whether to return only the periods in which at least one
+                signal occurs for at least one ticker. Defaults to False.
 
         Returns:
             pd.DataFrame: The signals per date, with a column per signal and ticker: 1 (crossed
@@ -8826,9 +8842,15 @@ class Technicals:
             for ticker in prices.columns
         }
 
-        return pd.concat(signal_dict, axis=1).swaplevel(0, 1, axis=1)[
+        signals = pd.concat(signal_dict, axis=1).swaplevel(0, 1, axis=1)[
             list(signal_dict[prices.columns[0]].columns)
         ]
+
+        if signals_only:
+            # Most periods have no signal at all; the empty warm-up (NaN) doesn't count either.
+            signals = signals[signals.abs().gt(0).any(axis=1)]
+
+        return signals
 
     @handle_errors
     def get_indicator_summary(
@@ -8941,15 +8963,15 @@ class Technicals:
         | Latest Date                                   | 2026-11-05 |
         | Percentile                                    | 0.0008     |
         | Rank                                          | 1          |
-        | Observations                                  | 1245       |
-        | Mean                                          | 54.5091    |
+        | Observations                                  | 1259       |
+        | Mean                                          | 54.7452    |
         | Minimum                                       | 25.3948    |
         | Minimum Date                                  | 2026-11-05 |
-        | Maximum                                       | 85.2808    |
-        | Maximum Date                                  | 2024-02-05 |
-        | Average 5-Period Return                       | 0.0098     |
-        | Average 21-Period Return                      | 0.0442     |
-        | Average 63-Period Return                      | 0.153      |
+        | Maximum                                       | 89.1421    |
+        | Maximum Date                                  | 2021-11-08 |
+        | Average 5-Period Return                       | 0.0103     |
+        | Average 21-Period Return                      | 0.044      |
+        | Average 63-Period Return                      | 0.1495     |
         | Periods Below                                 | 12         |
         | Crossings Below                               | 6          |
         | Last Crossing Below                           | 2026-11-05 |

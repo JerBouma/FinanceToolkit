@@ -30,12 +30,22 @@ def test_build_mcp_app_uses_global_cache_path(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "mcp", mcp_module)
     monkeypatch.setitem(sys.modules, "mcp.server", server_module)
     monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", fastmcp_module)
+    # The modules are imported again against the stub. Through monkeypatch, the real modules
+    # (and the package attributes pointing at them) come back afterwards; otherwise later tests in
+    # the same worker would import a server built on the stub, which has no call_tool.
+    import financetoolkit.mcp_server as mcp_server_package  # noqa: PLC0415
+
     for mod in [
         "financetoolkit.mcp_server.mcp_controller",
         "financetoolkit.mcp_server.registry_controller",
         "financetoolkit.mcp_server.tools_model",
     ]:
-        sys.modules.pop(mod, None)
+        name = mod.rsplit(".", 1)[1]
+        if hasattr(mcp_server_package, name):
+            monkeypatch.setattr(
+                mcp_server_package, name, getattr(mcp_server_package, name)
+            )
+        monkeypatch.delitem(sys.modules, mod, raising=False)
 
     mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
 
@@ -262,3 +272,102 @@ def test_vscode_entries_name_their_stdio_transport(monkeypatch, tmp_path):
         (tmp_path / "cli" / ".vscode" / "mcp.json").read_text()
     )
     assert non_interactive["servers"]["finance-toolkit"]["type"] == "stdio"
+
+
+def test_only_missing_api_keys_are_read_from_env_files(monkeypatch, tmp_path):
+    """
+    A .env file can fill in a missing API key and nothing else: a project's .env must not
+    set a proxy, a CA bundle or the cache database, nor replace a key that is set.
+    """
+    import os
+
+    from financetoolkit.mcp_server.mcp_controller import _load_dotenv_configuration
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".env").write_text(
+        "FINANCIAL_MODELING_PREP_API_KEY=PROJECTKEY\n"
+        "FRED_API_KEY=PROJECTFRED\n"
+        "HTTPS_PROXY=http://proxy.example:8080\n"
+        "FINANCE_TOOLKIT_CACHE_DB=./planted.db\n"
+    )
+    global_env = tmp_path / "config" / "financetoolkit" / ".env"
+    global_env.parent.mkdir(parents=True)
+    global_env.write_text("FRED_API_KEY=GLOBALFRED\n")
+
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("FINANCIAL_MODELING_PREP_API_KEY", "")
+    monkeypatch.setenv("FRED_API_KEY", "")
+    monkeypatch.setenv("HTTPS_PROXY", "")
+    monkeypatch.setenv("FINANCE_TOOLKIT_CACHE_DB", "")
+    monkeypatch.delenv("FINANCETOOLKIT_ENV_FILE", raising=False)
+
+    _load_dotenv_configuration()
+
+    # The global .env comes before the working directory's.
+    assert os.environ["FRED_API_KEY"] == "GLOBALFRED"
+    assert os.environ["FINANCIAL_MODELING_PREP_API_KEY"] == "PROJECTKEY"
+    assert os.environ["HTTPS_PROXY"] == ""
+    assert os.environ["FINANCE_TOOLKIT_CACHE_DB"] == ""
+
+    # A key set in the environment is never replaced, and FINANCETOOLKIT_ENV_FILE comes first.
+    env_file = tmp_path / "keys.env"
+    env_file.write_text("FRED_API_KEY=FILEFRED\n")
+    monkeypatch.setenv("FINANCIAL_MODELING_PREP_API_KEY", "CLIENTKEY")
+    monkeypatch.setenv("FRED_API_KEY", "")
+    monkeypatch.setenv("FINANCETOOLKIT_ENV_FILE", str(env_file))
+
+    _load_dotenv_configuration()
+
+    assert os.environ["FINANCIAL_MODELING_PREP_API_KEY"] == "CLIENTKEY"
+    assert os.environ["FRED_API_KEY"] == "FILEFRED"
+
+
+def test_the_wizard_writes_key_files_privately_and_masks_keys(monkeypatch, tmp_path):
+    import json
+    import os
+
+    from financetoolkit.mcp_server import setup_model
+
+    env = tmp_path / "config" / ".env"
+    monkeypatch.setattr(setup_model, "get_global_env_path", lambda: env)
+    printed = []
+    monkeypatch.setattr(
+        setup_model.console, "print", lambda *args, **kwargs: printed.append(args)
+    )
+    monkeypatch.setattr(setup_model.Confirm, "ask", lambda *args, **kwargs: True)
+
+    assert setup_model.write_global_env_key("FMPKEY1234567890")
+    assert setup_model.write_global_env_fred_key("FREDKEY1234567890")
+    assert env.read_text().splitlines() == [
+        "FINANCIAL_MODELING_PREP_API_KEY=FMPKEY1234567890",
+        "FRED_API_KEY=FREDKEY1234567890",
+    ]
+    backup = env.with_name(".env.bak")
+    assert backup.read_text() == "FINANCIAL_MODELING_PREP_API_KEY=FMPKEY1234567890\n"
+    if os.name == "posix":
+        assert env.stat().st_mode & 0o777 == 0o600
+        assert backup.stat().st_mode & 0o777 == 0o600
+
+    config = tmp_path / ".cursor" / "mcp.json"
+    config.parent.mkdir()
+    config.write_text('{"mcpServers": {"other": {"command": "x"}}}')
+    setup_model.write_cursor_config("FMPKEY1234567890", tmp_path, "FREDKEY1234567890")
+    # An existing entry is shown with its keys masked before it is replaced.
+    setup_model.write_cursor_config("NEWKEY1234567890", tmp_path)
+
+    servers = json.loads(config.read_text())["mcpServers"]
+    assert set(servers) == {"other", "finance-toolkit"}
+    assert servers["finance-toolkit"]["env"]["FINANCIAL_MODELING_PREP_API_KEY"] == (
+        "NEWKEY1234567890"
+    )
+    assert "FMPKEY1234567890" in config.with_name("mcp.json.bak").read_text()
+    if os.name == "posix":
+        assert config.stat().st_mode & 0o777 == 0o600
+    assert not [path for path in config.parent.iterdir() if path.name.startswith(".")]
+
+    output = " ".join(str(part) for args in printed for part in args)
+    assert "FMPK...7890" in output
+    assert "FMPKEY1234567890" not in output
+    assert "FREDKEY1234567890" not in output

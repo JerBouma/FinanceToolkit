@@ -138,3 +138,19 @@ def test_get_operating_ratio(recorder):
             revenue=pd.Series([2000, 1000, 2500, 1200, 700]),
         )
     )
+
+
+def test_capex_ratios_use_the_magnitude_of_capital_expenditure():
+    intensity = efficiency_model.get_capex_intensity(
+        capital_expenditure=pd.Series([-10.0, -10.0]),
+        revenue=pd.Series([200.0, 0.0]),
+    )
+    to_depreciation = efficiency_model.get_capex_to_depreciation_ratio(
+        capital_expenditure=pd.Series([-30.0, -30.0]),
+        depreciation_and_amortization=pd.Series([20.0, 0.0]),
+    )
+
+    assert intensity.iloc[0] == 0.05
+    assert pd.isna(intensity.iloc[1])
+    assert to_depreciation.iloc[0] == 1.5
+    assert pd.isna(to_depreciation.iloc[1])

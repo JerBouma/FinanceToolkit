@@ -79,6 +79,12 @@ FACTOR_COLLECTIONS = {
         "get_EBIT_to_revenue",
         "get_cash_tax_rate",
         "get_tax_rate_divergence",
+        "get_gross_profitability",
+        "get_operating_profitability",
+        "get_cash_based_operating_profitability",
+        "get_cash_return_on_invested_capital",
+        "get_free_cash_flow_conversion",
+        "get_free_cash_flow_to_ebitda_ratio",
     ],
     "solvency": [
         "get_debt_to_assets_ratio",
@@ -125,6 +131,8 @@ FACTOR_COLLECTIONS = {
         "get_stock_based_compensation_ratio",
         "get_deferred_revenue_ratio",
         "get_working_capital_turnover_ratio",
+        "get_capex_intensity",
+        "get_capex_to_depreciation_ratio",
     ],
 }
 FACTOR_COLLECTIONS["all"] = [
@@ -376,11 +384,12 @@ class Ratios:
 
     def _get_valuation_trailing(self, trailing: int | None) -> int | None:
         """
-        Returns the trailing window of the price-based valuation ratios.
+        Returns the trailing window of the ratios that are annual by nature.
 
-        Prices are compared with a year of earnings, sales or cash flows, so on quarterly data
-        the flows default to the trailing twelve months (4 quarters), as for the
-        price-to-earnings ratio. An explicit `trailing` is returned unchanged.
+        Prices are compared with a year of earnings, sales or cash flows, and the gross,
+        operating and cash-based operating profitability are annual measures in their sources,
+        so on quarterly data the flows default to the trailing twelve months (4 quarters), as
+        for the price-to-earnings ratio. An explicit `trailing` is returned unchanged.
 
         Args:
             trailing (int | None): The trailing window given by the caller, or None.
@@ -943,7 +952,7 @@ class Ratios:
         | Inventory Turnover Ratio             |  40.0303 |  38.7899 |  37.9777 |  30.8955 |  33.9834 |
         | Accounts Payable Turnover Ratio      |   4.3887 |   3.7609 |   3.3795 |   3.1975 |   3.1834 |
         | SGA-to-Revenue Ratio                 |   0.0601 |   0.0636 |   0.065  |   0.0667 |   0.0663 |
-        | Fixed Asset Turnover                 |   7.7125 |   7.7273 |   7.1702 |   7.8163 |   8.7141 |
+        | Fixed Asset Turnover                 |   7.7125 |   7.7273 |   7.1702 |   7.091  |   7.1167 |
         | Asset Turnover Ratio                 |   1.0841 |   1.1206 |   1.0868 |   1.0899 |   1.1493 |
         | Operating Ratio                      |   0.7022 |   0.6971 |   0.7018 |   0.6849 |   0.6803 |
         | R&D Intensity Ratio                  |   0.0599 |   0.0666 |   0.078  |   0.0802 |   0.083  |
@@ -952,6 +961,8 @@ class Ratios:
         | SBC to Revenue Ratio                 |   0.0216 |   0.0229 |   0.0283 |   0.0299 |   0.0309 |
         | Deferred Revenue Ratio               |   0.0208 |   0.0201 |   0.021  |   0.0211 |   0.0218 |
         | Working Capital Turnover Ratio       |  15.346  | -85.519  | -37.7268 | -31.0999 | -20.2615 |
+        | Capex Intensity                      |   0.0303 |   0.0272 |   0.0286 |   0.0242 |   0.0306 |
+        | Capex to Depreciation                |   0.9824 |   0.9643 |   0.9514 |   0.8254 |   1.0869 |
         """
         self._load_statements()
 
@@ -1013,6 +1024,12 @@ class Ratios:
         )
         efficiency_ratios_dict["Working Capital Turnover Ratio"] = (
             self.get_working_capital_turnover_ratio(trailing=trailing)
+        )
+        efficiency_ratios_dict["Capex Intensity"] = self.get_capex_intensity(
+            trailing=trailing
+        )
+        efficiency_ratios_dict["Capex to Depreciation"] = (
+            self.get_capex_to_depreciation_ratio(trailing=trailing)
         )
 
         self._efficiency_ratios = (
@@ -3243,6 +3260,209 @@ class Ratios:
             standardize=standardize,
         )
 
+    @handle_portfolio
+    @handle_errors
+    def get_capex_intensity(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the capital expenditure intensity, the share of revenue a company
+        reinvests in property, plant and equipment.
+
+        Capex intensity shows how capital-heavy a business is: utilities, telecoms,
+        semiconductor manufacturers and energy producers spend a large part of their
+        revenue on capital expenditure, software and services companies very little. Over
+        time a rising intensity points to an investment cycle (capacity being built ahead
+        of revenue), a falling one to a business that is harvesting its existing assets.
+        Damodaran uses it, together with the capex to depreciation ratio, to judge how much
+        a company has to reinvest to grow.
+
+        The formula is as follows:
+
+        - Capex Intensity = |Capital Expenditure| / Revenue
+
+        Capital expenditure is reported as a negative cash outflow, so its magnitude is used.
+        A revenue of zero or less gives NaN.
+
+        Also known as: capex to revenue, capex to sales, capex ratio, capital spending intensity.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                None, which uses single-period flows.
+
+        Returns:
+            pd.DataFrame: Capex intensity values.
+
+        Notes:
+        - Damodaran, A., "Investment Valuation," 3rd edition, Wiley, 2012 (reinvestment and
+        net capital expenditure).
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["TSM", "INTC", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_capex_intensity()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | INTC | 0.2573 | 0.3973 | 0.4748 | 0.4509 | 0.2771 |
+        | MSFT | 0.1227 | 0.1205 | 0.1326 | 0.1814 | 0.2291 |
+        | TSM  | 0.5351 | 0.4813 | 0.442  | 0.3303 | 0.3367 |
+        """
+        capex_intensity = efficiency_model.get_capex_intensity(
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+            ),
+            self._sum_trailing(self._income_statement.loc[:, "Revenue", :], trailing),
+        )
+
+        return finalize_dataset(
+            dataset=capex_intensity,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_capex_to_depreciation_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the capital expenditure to depreciation ratio, which compares what a
+        company invests in its assets with what wears off them.
+
+        Depreciation and amortization approximate the investment needed to keep the asset
+        base as it is, so a ratio above 1 means the company is growing its assets, a ratio
+        around 1 that it is maintaining them, and a ratio persistently below 1 that it is
+        underinvesting, which flatters the free cash flow for a while but erodes the
+        business. Damodaran's net capital expenditure (capital expenditure minus
+        depreciation) is the same comparison as a difference. Acquisitions are not capital
+        expenditure, so a company that grows by buying others can show a low ratio while
+        its assets grow.
+
+        The formula is as follows:
+
+        - Capex to Depreciation = |Capital Expenditure| / Depreciation and Amortization
+
+        Capital expenditure is reported as a negative cash outflow, so its magnitude is used.
+        Depreciation and amortization of zero or less gives NaN.
+
+        Also known as: capex to D&A, capex to depreciation, reinvestment ratio, maintenance capex ratio.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (cash flow statement
+                items) over. E.g. 4 with quarterly data gives the trailing twelve months (TTM)
+                and 3 with annual data a three-year cumulative figure. Defaults to None, which
+                uses single-period flows.
+
+        Returns:
+            pd.DataFrame: Capex to depreciation values.
+
+        Notes:
+        - Damodaran, A., "Investment Valuation," 3rd edition, Wiley, 2012 (net capital
+        expenditure and reinvestment).
+        - Depreciation and amortization include the amortization of acquired intangibles,
+        which is no wear of the assets that capital expenditure replaces, so the ratio is low
+        for companies with large acquired intangibles.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["TSM", "INTC", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_capex_to_depreciation_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | INTC | 1.724  | 1.9217 | 2.6817 | 2.1042 | 1.2512 |
+        | MSFT | 1.7647 | 1.6519 | 2.0278 | 1.9956 | 1.8901 |
+        | TSM  | 2.011  | 2.492  | 1.7952 | 1.4424 | 1.8639 |
+        """
+        capex_to_depreciation = efficiency_model.get_capex_to_depreciation_ratio(
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+            ),
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
+                trailing,
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=capex_to_depreciation,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
     @handle_errors
     def collect_liquidity_ratios(
         self,
@@ -4373,6 +4593,12 @@ class Ratios:
         | EBIT to Revenue                             |  0.3058 |  0.3095 |  0.307  |   0.3158 |   0.3189 |
         | Cash Tax Rate                               |  0.2324 |  0.1643 |  0.1642 |   0.2114 |   0.3267 |
         | Tax Rate Divergence                         |  0.0994 |  0.0023 |  0.017  |  -0.0295 |   0.1706 |
+        | Gross Profitability                         |  0.4354 |  0.4841 |  0.4797 |   0.495  |   0.5434 |
+        | Operating Profitability                     |  1.685  |  2.2992 |  1.7759 |   2.1636 |   1.8045 |
+        | Cash-Based Operating Profitability          |  0.3943 |  0.4204 |  0.4009 |   0.4394 |   0.4742 |
+        | Cash Return on Invested Capital             |  0.4801 |  0.5823 |  0.5394 |   0.601  |   0.5455 |
+        | Free Cash Flow Conversion                   |  0.9818 |  1.1166 |  1.0267 |   1.1608 |   0.8818 |
+        | Free Cash Flow to EBITDA                    |  0.7731 |  0.8537 |  0.7915 |   0.808  |   0.6823 |
         """
         self._load_statements()
         profitability_ratios_dict: dict = {}
@@ -4439,6 +4665,24 @@ class Ratios:
         )
         profitability_ratios_dict["Tax Rate Divergence"] = self.get_tax_rate_divergence(
             trailing=trailing
+        )
+        profitability_ratios_dict["Gross Profitability"] = self.get_gross_profitability(
+            trailing=trailing
+        )
+        profitability_ratios_dict["Operating Profitability"] = (
+            self.get_operating_profitability(trailing=trailing)
+        )
+        profitability_ratios_dict["Cash-Based Operating Profitability"] = (
+            self.get_cash_based_operating_profitability(trailing=trailing)
+        )
+        profitability_ratios_dict["Cash Return on Invested Capital"] = (
+            self.get_cash_return_on_invested_capital(trailing=trailing)
+        )
+        profitability_ratios_dict["Free Cash Flow Conversion"] = (
+            self.get_free_cash_flow_conversion(trailing=trailing)
+        )
+        profitability_ratios_dict["Free Cash Flow to EBITDA"] = (
+            self.get_free_cash_flow_to_ebitda_ratio(trailing=trailing)
         )
 
         self._profitability_ratios = (
@@ -6925,6 +7169,695 @@ class Ratios:
 
         return finalize_dataset(
             dataset=tax_rate_divergence,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_gross_profitability(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the gross profitability of Novy-Marx (2013), the gross profit a company
+        earns on its assets.
+
+        Novy-Marx shows that gross profit is the cleanest accounting measure of economic
+        profitability: the further down the income statement, the more the profit is
+        polluted by expenses that are really investments (selling, research and
+        administrative expenses) or by financing and taxes. Gross profitability predicts
+        stock returns about as well as book-to-market does, and profitable companies
+        outperform unprofitable ones even though they trade at higher valuations, which
+        makes it the profitability factor that complements value.
+
+        The formula is as follows:
+
+        - Gross Profitability = (Revenue - Cost of Goods Sold) / Total Assets
+
+        The total assets are those at the end of the fiscal year, the same date as the gross
+        profit, as in the paper (a point in time, not averaged). Gross profitability is an
+        annual measure, so with quarterly data the gross profit is that of the trailing
+        twelve months by default.
+
+        Also known as: GP/A, gross profits to assets, gross profitability premium, Novy-Marx profitability.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum the revenue and cost of goods
+                sold over; the total assets stay those at the end of the last period. Defaults to
+                None, which uses the trailing twelve months (4 quarters) with quarterly data and
+                single years with annual data.
+
+        Returns:
+            pd.DataFrame: Gross profitability values.
+
+        Notes:
+        - Novy-Marx, R., "The Other Side of Value: The Gross Profitability Premium," Journal
+        of Financial Economics 108(1), 2013, pp. 1-28.
+        - The Quality Score (`Toolkit.models.get_quality_score`) uses the same measure as one
+        of its profitability components.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_gross_profitability()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.4354 | 0.4841 | 0.4797 | 0.495  | 0.5434 |
+        | KO   | 0.2469 | 0.2695 | 0.2787 | 0.2858 | 0.2819 |
+        | MSFT | 0.3471 | 0.3717 | 0.3545 | 0.3339 | 0.3132 |
+        | XOM  | 0.1914 | 0.2793 | 0.2236 | 0.1692 | 0.1564 |
+        """
+        trailing = self._get_valuation_trailing(trailing)
+
+        gross_profitability = profitability_model.get_gross_profitability(
+            self._sum_trailing(self._income_statement.loc[:, "Revenue", :], trailing),
+            self._sum_trailing(
+                self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
+            ),
+            self._balance_sheet_statement.loc[:, "Total Assets", :],
+        )
+
+        return finalize_dataset(
+            dataset=gross_profitability,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_operating_profitability(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the operating profitability of Fama and French (2015), the measure behind
+        the profitability factor RMW (robust minus weak) of their five-factor model: the
+        operating profit after interest that a company earns on its book equity.
+
+        Fama and French find that companies with a robust operating profitability earn
+        higher returns than those with a weak one, also after controlling for value, size
+        and investment. Book equity follows their definition: the stockholders' equity
+        (without minority interest) plus the balance sheet deferred taxes, minus the
+        preferred stock.
+
+        The formula is as follows:
+
+        - Operating Profitability = (Revenue - Cost of Goods Sold - Selling, General and
+          Administrative Expenses - Research and Development Expenses - Interest Expense) /
+          Book Equity
+        - Book Equity = Total Shareholder Equity + Deferred Tax Liabilities - Preferred Stock
+
+        The selling, general and administrative expenses of Compustat (XSGA), which Fama and
+        French use, include research and development, while the statements here report it
+        separately, so both are deducted. The book equity is that at the end of the fiscal
+        year, the same date as the profit (a point in time, not averaged), and a book equity
+        of zero or less has no value (NaN), as Fama and French leave those companies out.
+        Operating profitability is an annual measure, so with quarterly data the profit is
+        that of the trailing twelve months by default.
+
+        Also known as: OP, RMW, robust minus weak, Fama-French profitability.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum the income statement items
+                over; the book equity stays that at the end of the last period. Defaults to None,
+                which uses the trailing twelve months (4 quarters) with quarterly data and single
+                years with annual data.
+
+        Returns:
+            pd.DataFrame: Operating profitability values.
+
+        Notes:
+        - Fama, E. F. and K. R. French, "A Five-Factor Asset Pricing Model," Journal of
+        Financial Economics 116(1), 2015, pp. 1-22.
+        - Large buybacks shrink the book equity, which can make the ratio very large; the
+        gross profitability and cash-based operating profitability scale by total assets
+        instead.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["JNJ", "PFE", "MRK", "ABBV"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_operating_profitability()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | ABBV | 0.6533 | 0.6413 | 0.5861 | 0.8289 | 3.614  |
+        | JNJ  | 0.2547 | 0.2567 | 0.3145 | 0.2894 | 0.2788 |
+        | MRK  | 0.3033 | 0.3703 | 0.0631 | 0.4123 | 0.4095 |
+        | PFE  | 0.292  | 0.4188 | 0.0774 | 0.1897 | 0.2206 |
+        """
+        trailing = self._get_valuation_trailing(trailing)
+
+        def flow(row: str) -> pd.DataFrame:
+            return self._sum_trailing(self._income_statement.loc[:, row, :], trailing)
+
+        operating_profitability = profitability_model.get_operating_profitability(
+            flow("Revenue"),
+            flow("Cost of Goods Sold"),
+            flow("Selling, General and Administrative Expenses"),
+            flow("Research and Development Expenses"),
+            flow("Interest Expense"),
+            self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
+            self._balance_sheet_statement.loc[:, "Deferred Tax Liabilities", :],
+            self._balance_sheet_statement.loc[:, "Preferred Stock", :],
+        )
+
+        return finalize_dataset(
+            dataset=operating_profitability,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_cash_based_operating_profitability(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and
+        Nikolaev (2016): operating profit with the working capital accruals taken out, so
+        that it measures the operating profit received in cash, scaled by the total assets
+        at the start of the year.
+
+        Ball et al. show that cash-based operating profitability predicts stock returns
+        better than the profitability measures that include accruals, and that it subsumes
+        the accrual anomaly: once the cash-based profitability is known, accruals no longer
+        predict returns. The operating profit is that of Ball et al. (2015), with research
+        and development added back as an investment rather than an expense of the period.
+
+        The formula is as follows:
+
+        - Cash-Based Operating Profitability = (Revenue - Cost of Goods Sold - Selling,
+          General and Administrative Expenses - Δ Receivables - Δ Inventory - Δ Prepaids
+          + Δ Deferred Revenue + Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total
+          Assets
+
+        The selling, general and administrative expenses are without research and
+        development (Compustat XSGA - XRD in the paper), the receivables are the total
+        (trade and other) receivables and the deferred revenue the current and non-current
+        deferred revenue. Each change is that of the balance over the window of the flows
+        (a year with annual data, the year before the quarter with quarterly data), and the
+        total assets are those at the start of the window: the end of the year before with
+        annual data, the quarter four quarters back with quarterly data. Ball et al. (2016)
+        scale by these lagged total assets, unlike the end-of-year assets of Ball et al.
+        (2015) and Novy-Marx (2013); Chen and Zimmermann note this in their replication and
+        Wang (2020) defines the measure on lagged total assets as well.
+        It is an annual measure, so with quarterly data the flows are those of the trailing
+        twelve months by default.
+
+        Also known as: CbOP, cash operating profitability, cash-based profitability, accrual-free profitability.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum the income statement items
+                over, which is also the number of periods the balance changes span and the
+                number of periods the total assets are taken before. Defaults to None, which uses the
+                trailing twelve months (4 quarters) with quarterly data and single years with
+                annual data.
+
+        Returns:
+            pd.DataFrame: Cash-based operating profitability values.
+
+        Notes:
+        - Ball, R., J. Gerakos, J. T. Linnainmaa and V. Nikolaev, "Accruals, Cash Flows, and
+        Operating Profitability in the Cross Section of Stock Returns," Journal of Financial
+        Economics 121(1), 2016, pp. 28-45. Ball, R., J. Gerakos, J. T. Linnainmaa and V.
+        Nikolaev, "Deflating Profitability," Journal of Financial Economics 117(2), 2015,
+        pp. 225-248.
+        - Chen, A. Y. and T. Zimmermann, "Open Source Cross-Sectional Asset Pricing,"
+        Critical Finance Review 11(2), 2022, pp. 207-264 (the CBOperProf signal and its
+        lagged-assets variant). Wang (2020), SSRN working paper 3507251, Table A1.
+        - The first period has no earlier balances to take the changes and the total assets
+        from and is NaN, so set an earlier start_date to obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_cash_based_operating_profitability()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.3943 | 0.4204 | 0.4009 | 0.4394 | 0.4742 |
+        | KO   | 0.1425 | 0.2178 | 0.1388 | 0.2021 | 0.0879 |
+        | MSFT | 0.3035 | 0.3256 | 0.3208 | 0.3452 | 0.3146 |
+        | XOM  | 0.1542 | 0.2493 | 0.2015 | 0.1796 | 0.1769 |
+        """
+        trailing = self._get_valuation_trailing(trailing)
+
+        def flow(row: str) -> pd.DataFrame:
+            return self._sum_trailing(self._income_statement.loc[:, row, :], trailing)
+
+        # The balances change over the same window as the flows: a year on annual data and,
+        # with the default trailing twelve months, the four quarters before on quarterly data.
+        # The total assets are those at the start of that window, as in Ball et al. (2016).
+        def change(balance: pd.DataFrame) -> pd.DataFrame:
+            return balance.diff(trailing or 1, axis=1)
+
+        def balance(row: str) -> pd.DataFrame:
+            return self._balance_sheet_statement.loc[:, row, :]
+
+        cash_based_operating_profitability = (
+            profitability_model.get_cash_based_operating_profitability(
+                flow("Revenue"),
+                flow("Cost of Goods Sold"),
+                flow("Selling, General and Administrative Expenses"),
+                change(balance("Net Receivables")),
+                change(balance("Inventory")),
+                change(balance("Prepaids")),
+                change(
+                    balance("Deferred Revenue")
+                    + balance("Deferred Revenue Non Current")
+                ),
+                change(balance("Accounts Payable")),
+                change(balance("Accrued Expenses")),
+                balance("Total Assets").shift(trailing or 1, axis=1),
+            )
+        )
+
+        return finalize_dataset(
+            dataset=cash_based_operating_profitability,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_cash_return_on_invested_capital(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the cash return on invested capital (CROIC), the free cash flow a company
+        generates on the capital that shareholders and lenders have invested in it.
+
+        Where the return on invested capital measures the after-tax operating profit, CROIC
+        measures the cash left after the investments needed to keep and grow the business,
+        so it shows how much of the return can actually be paid out, used for buybacks or
+        reinvested. The invested capital is the same as in `get_return_on_invested_capital`
+        (total equity plus total debt, averaged over the period), so the two compare
+        directly: a CROIC persistently below the ROIC means profits are tied up in working
+        capital or capital expenditure.
+
+        The formula is as follows:
+
+        - Cash Return on Invested Capital = Free Cash Flow / (Average Total Equity +
+          Average Total Debt)
+
+        Also known as: CROIC, cash ROIC, FCF ROIC, free cash flow return on invested capital.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the same number of
+                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                with annual data a three-year cumulative figure. Defaults to None, which uses
+                single-period flows (per quarter and not annualized with quarterly data) against
+                the average of the opening and closing invested capital, as for the return on
+                invested capital.
+
+        Returns:
+            pd.DataFrame: Cash return on invested capital values.
+
+        Notes:
+        - CROIC is a practitioner measure (used by, among others, Morningstar); definitions
+        of the invested capital differ, and this one matches the return on invested capital
+        of the Finance Toolkit.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["CAT", "DE", "CMI"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_cash_return_on_invested_capital()
+        ```
+
+        Which returns:
+
+        |     |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:----|-------:|-------:|-------:|-------:|-------:|
+        | CAT | 0.0885 | 0.0964 | 0.1776 | 0.153  | 0.1216 |
+        | CMI | 0.1064 | 0.0642 | 0.1543 | 0.0155 | 0.118  |
+        | DE  | 0.0814 | 0.013  | 0.0521 | 0.0509 | 0.0362 |
+        """
+        # The same invested capital as the return on invested capital: averaged over the
+        # trailing period ends, or over the opening and closing balance of a single period.
+        window = trailing or 2
+
+        cash_return_on_invested_capital = (
+            profitability_model.get_cash_return_on_invested_capital(
+                self._sum_trailing(
+                    self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
+                ),
+                self._mean_trailing(
+                    self._balance_sheet_statement.loc[:, "Total Equity", :], window
+                ),
+                self._mean_trailing(
+                    self._balance_sheet_statement.loc[:, "Total Debt", :], window
+                ),
+            )
+        )
+
+        return finalize_dataset(
+            dataset=cash_return_on_invested_capital,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_free_cash_flow_conversion(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the free cash flow conversion, the share of net income that a company
+        turns into free cash flow.
+
+        A conversion around or above 1 means the reported earnings are backed by cash, as
+        depreciation and other non-cash charges outweigh the capital expenditure and the
+        working capital tied up. A conversion persistently well below 1 is an earnings
+        quality warning: profits are reported but do not arrive as cash, because of heavy
+        investment, growing receivables or inventory, or aggressive accruals. Credit
+        analysts and equity analysts use it alongside the income quality ratio
+        (`get_income_quality_ratio`, operating cash flow over net income), which is the same
+        comparison before capital expenditure.
+
+        The formula is as follows:
+
+        - Free Cash Flow Conversion = Free Cash Flow / Net Income
+
+        With a loss the ratio flips sign and has no meaning, so a net income of zero or less
+        gives NaN.
+
+        Also known as: FCF conversion, cash conversion ratio, FCF to net income, free cash flow to earnings.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                None, which uses single-period flows.
+
+        Returns:
+            pd.DataFrame: Free cash flow conversion values.
+
+        Notes:
+        - The ratio is used in the cash flow analysis of the CFA curriculum (Financial
+        Reporting and Analysis) and by the rating agencies (S&P, Moody's).
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "AMZN", "NFLX"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_free_cash_flow_conversion()
+        ```
+
+        Which returns:
+
+        |      |    2021 |     2022 |   2023 |   2024 |   2025 |
+        |:-----|--------:|---------:|-------:|-------:|-------:|
+        | AAPL |  0.9818 |   1.1166 | 1.0267 | 1.1608 | 0.8818 |
+        | AMZN | -0.4414 | nan      | 1.0589 | 0.5549 | 0.0991 |
+        | NFLX | -0.0258 |   0.3603 | 1.2807 | 0.7945 | 0.8616 |
+        """
+        free_cash_flow_conversion = profitability_model.get_free_cash_flow_conversion(
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
+            ),
+            self._sum_trailing(
+                self._income_statement.loc[:, "Net Income", :], trailing
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=free_cash_flow_conversion,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_free_cash_flow_to_ebitda_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the free cash flow to EBITDA ratio, the share of EBITDA that remains as
+        free cash flow after interest, taxes, working capital and capital expenditure.
+
+        EBITDA is often used as a proxy for cash flow (in leverage ratios such as net debt to
+        EBITDA), and this ratio shows how good a proxy it is for a company. Credit analysts
+        use it to see how much of the EBITDA is available to repay debt: capital-heavy
+        businesses (utilities, telecoms, manufacturers) convert little of their EBITDA,
+        asset-light businesses (software, services) most of it. EBITDA is operating income
+        plus depreciation and amortization, as in the EBITDA margin.
+
+        The formula is as follows:
+
+        - Free Cash Flow to EBITDA = Free Cash Flow / (Operating Income + Depreciation and
+          Amortization)
+
+        An EBITDA of zero or less gives NaN, as the ratio flips sign.
+
+        Also known as: FCF/EBITDA, EBITDA cash conversion, EBITDA to FCF conversion, cash conversion of EBITDA.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                None, which uses single-period flows.
+
+        Returns:
+            pd.DataFrame: Free cash flow to EBITDA values.
+
+        Notes:
+        - The ratio is part of the cash flow analysis of the rating agencies (S&P Global
+        Ratings' corporate methodology, Moody's) and of the CFA curriculum.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["T", "VZ", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_free_cash_flow_to_ebitda_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | MSFT | 0.6877 | 0.6659 | 0.5809 | 0.5623 | 0.4402 |
+        | T    | 0.5813 | 0.9228 | 0.4699 | 0.4127 | 0.4237 |
+        | VZ   | 0.3997 | 0.2187 | 0.4027 | 0.3902 | 0.4133 |
+        """
+        free_cash_flow_to_ebitda = (
+            profitability_model.get_free_cash_flow_to_ebitda_ratio(
+                self._sum_trailing(
+                    self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
+                ),
+                self._sum_trailing(
+                    self._income_statement.loc[:, "Operating Income", :], trailing
+                ),
+                self._sum_trailing(
+                    self._cash_flow_statement.loc[
+                        :, "Depreciation and Amortization", :
+                    ],
+                    trailing,
+                ),
+            )
+        )
+
+        return finalize_dataset(
+            dataset=free_cash_flow_to_ebitda,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -12808,9 +13741,9 @@ class Ratios:
         Which returns:
         |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:---------------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_price_to_earnings_ratio', '12 Months') |    0.0265 |                  0.3242 |                 0.0817 |        0.8174 |    0.4157 |             0.55 |            100 |             0.0757 |              0.0931 |                 0.9504 |
-        | ('get_price_to_book_ratio', '12 Months')     |    0.1122 |                  0.2952 |                 0.38   |        3.8004 |    0.0002 |             0.68 |            100 |             0.1655 |              0.0506 |                 0.9776 |
-        | ('get_return_on_equity', '12 Months')        |    0.0423 |                  0.3551 |                 0.1191 |        1.1915 |    0.2363 |             0.5  |            100 |             0.065  |              0.0517 |                 0.9671 |
+        | ('get_price_to_earnings_ratio', '12 Months') |    0.0495 |                  0.2919 |                 0.1697 |        1.7636 |    0.0807 |           0.5648 |            108 |             0.0842 |              0.0896 |                 0.95   |
+        | ('get_price_to_book_ratio', '12 Months')     |    0.1156 |                  0.2966 |                 0.3898 |        4.0507 |    0.0001 |           0.6759 |            108 |             0.1691 |              0.0501 |                 0.978  |
+        | ('get_return_on_equity', '12 Months')        |    0.0425 |                  0.355  |                 0.1198 |        1.1976 |    0.2339 |           0.5    |            100 |             0.065  |              0.0517 |                 0.9671 |
         """
         factors = factor_model.get_daily_factors(
             self,

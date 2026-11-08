@@ -121,9 +121,12 @@ def _describe_level(values: pd.Index) -> str:
 
 
 def _looks_like_tickers(values: pd.Index) -> bool:
-    """Whether every label is a ticker symbol (short and uppercase), 'Benchmark' or 'Portfolio'."""
+    """
+    Whether every label is a ticker symbol (short and uppercase), 'Benchmark', 'Portfolio'
+    or 'Cash' (the cash position of a fractional Kelly portfolio).
+    """
     return len(values) > 0 and all(
-        str(value) in ("Benchmark", "Portfolio")
+        str(value) in ("Benchmark", "Portfolio", "Cash")
         or (
             len(str(value)) <= MAX_SYMBOL_LENGTH
             and str(value) == str(value).upper()
@@ -362,6 +365,33 @@ def select_rows(data: pd.DataFrame | pd.Series, limit: int) -> pd.DataFrame | pd
         return rows.head(limit) if limit > 0 else rows.tail(-limit)
 
     return data.head(limit) if limit > 0 else data.tail(-limit)
+
+
+def signal_rows(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    A row per ticker and period with a signal, from a table with a column per signal and
+    ticker (get_signals, get_candlestick_patterns). Those keep a period when any ticker has a
+    signal, so per ticker most rows would be zeros; as rows of a ticker and a date, a limit
+    selects the last signals of every ticker.
+
+    Args:
+        data (pd.DataFrame): The signals, with the signal and the ticker as column levels.
+
+    Returns:
+        pd.DataFrame: The signals of each ticker on the periods it has one, with the ticker
+        and the date as row levels. A ticker without any signal is left out.
+    """
+    per_ticker = {}
+    for ticker in dict.fromkeys(data.columns.get_level_values(1)):
+        signals = data.xs(ticker, axis=1, level=1)
+        signals = signals[signals.abs().gt(0).any(axis=1)]
+        if not signals.empty:
+            per_ticker[ticker] = signals
+
+    if not per_ticker:
+        return data.iloc[:0]
+
+    return pd.concat(per_ticker, names=["ticker", data.index.name or "Date"])
 
 
 def is_time_index_of(data: pd.DataFrame | pd.Series) -> bool:

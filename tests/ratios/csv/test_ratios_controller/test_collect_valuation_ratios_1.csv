@@ -26,6 +26,9 @@ AAPL,EV-to-Free-Cash-Flow,,0.0275,-0.4005,
 AAPL,Buyback Yield,,-0.0782,0.4876,
 AAPL,Shareholder Yield,,-0.3413,0.4789,
 AAPL,SBC-Adjusted Free Cash Flow,,0.2782,0.2041,-0.1333
+AAPL,Net Share Issuance,,,0.2277,0.0
+AAPL,Composite Equity Issuance,,,,
+AAPL,Net External Financing,,,-0.0735,0.0202
 MSFT,Earnings per Share,,0.3973,0.1979,0.0039
 MSFT,Revenue per Share,,0.1869,0.1902,0.0785
 MSFT,Price-to-Earnings,,0.0821,-0.4047,
@@ -53,3 +56,6 @@ MSFT,EV-to-Free-Cash-Flow,,0.2244,-0.391,
 MSFT,Buyback Yield,,-0.2126,0.71,
 MSFT,Shareholder Yield,,-0.2398,0.6488,
 MSFT,SBC-Adjusted Free Cash Flow,,0.2517,0.1529,-0.135
+MSFT,Net Share Issuance,,,0.1807,0.0147
+MSFT,Composite Equity Issuance,,,,
+MSFT,Net External Financing,,,-0.1479,0.3347

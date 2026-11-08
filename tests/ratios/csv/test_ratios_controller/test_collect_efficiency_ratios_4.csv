@@ -20,6 +20,8 @@ AAPL,Deferred Revenue Ratio,,-0.0811,0.0098
 AAPL,Working Capital Turnover Ratio,,-7.1371,0.5357
 AAPL,Capex Intensity,,0.0,-0.0279
 AAPL,Capex to Depreciation,,0.1822,-0.0161
+AAPL,Asset Growth,,,-0.9495
+AAPL,Net Operating Assets,,-0.0975,-0.0923
 MSFT,Days of Inventory Outstanding,,0.2046,-0.1251
 MSFT,Days of Sales Outstanding,,-0.0023,0.0087
 MSFT,Operating Cycle,,0.0328,-0.0178
@@ -41,3 +43,5 @@ MSFT,Deferred Revenue Ratio,,-0.0465,-0.0101
 MSFT,Working Capital Turnover Ratio,,0.4196,0.2328
 MSFT,Capex Intensity,,0.0483,0.0436
 MSFT,Capex to Depreciation,,0.1557,0.0784
+MSFT,Asset Growth,,,0.1115
+MSFT,Net Operating Assets,,0.4416,0.166

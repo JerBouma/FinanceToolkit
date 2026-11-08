@@ -310,7 +310,7 @@ tool_groups:
   # ── Ratios (5 sub-groups) ────────────────────────────────────────────────
   - tool_name:      "efficiency"
     display_name:   "Efficiency Ratios"
-    description:    "Pre-computed efficiency ratios (asset turnover, inventory turnover, days sales outstanding, days payable outstanding, cash conversion cycle, capex intensity (capex/revenue), capex to depreciation). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. For the predictive power of these ratios across tickers (factor analysis), use the valuation tool with indicator='get_factor_analysis' and metrics='efficiency'."
+    description:    "Pre-computed efficiency ratios (asset turnover, inventory turnover, days sales outstanding, days payable outstanding, cash conversion cycle, capex intensity (capex/revenue), capex to depreciation, and the investment anomalies: asset growth (Cooper-Gulen-Schill, year over year on quarterly data) and net operating assets (Hirshleifer et al. NOA: operating assets minus operating liabilities over the total assets of the period before)). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. For the predictive power of these ratios across tickers (factor analysis), use the valuation tool with indicator='get_factor_analysis' and metrics='efficiency'."
     module_name:    "ratios"
     category:       "ticker"
     collect_method: "collect_efficiency_ratios"
@@ -324,7 +324,7 @@ tool_groups:
 
   - tool_name:      "profitability"
     display_name:   "Profitability Ratios"
-    description:    "Pre-computed profitability ratios (gross margin, operating margin, net margin, ROE, ROA, ROIC, ROCE, cash ROIC (CROIC), FCF conversion (FCF/net income, FCF/EBITDA), and the profitability factors: gross profitability (Novy-Marx GP/A), operating profitability (Fama-French RMW) and cash-based operating profitability (Ball et al.)). Gross, operating and cash-based operating profitability use the trailing twelve months on quarterly data. Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. For the predictive power of these ratios across tickers (factor analysis), use the valuation tool with indicator='get_factor_analysis' and metrics='profitability'."
+    description:    "Pre-computed profitability ratios (gross margin, operating margin, net margin, ROE, ROA, ROIC, ROCE, cash ROIC (CROIC), FCF conversion (FCF/net income, FCF/EBITDA), and the profitability factors: gross profitability (Novy-Marx GP/A), operating profitability (Fama-French RMW) and cash-based operating profitability (Ball et al.), and percent accruals (Hafzalla-Lundholm-Van Winkle: (net income - cash flow from operations) / |net income|)). Gross, operating and cash-based operating profitability and percent accruals use the trailing twelve months on quarterly data. Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. For the predictive power of these ratios across tickers (factor analysis), use the valuation tool with indicator='get_factor_analysis' and metrics='profitability'."
     module_name:    "ratios"
     category:       "ticker"
     # Interest/Tax Burden are DuPont components that collect_profitability_ratios does not call,
@@ -361,6 +361,7 @@ tool_groups:
       - "get_cash_return_on_invested_capital"
       - "get_free_cash_flow_conversion"
       - "get_free_cash_flow_to_ebitda_ratio"
+      - "get_percent_accruals"
 
   - tool_name:      "solvency"
     display_name:   "Solvency Ratios"
@@ -371,7 +372,7 @@ tool_groups:
 
   - tool_name:      "valuation"
     display_name:   "Valuation Ratios"
-    description:    "Pre-computed valuation ratios (P/E, EPS, EV/EBITDA, EV/EBIT, P/B, P/S, PEG, dividend yield, FCF yield, market cap, forward P/E, forward PEG). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. get_forward_price_earnings_ratio and get_forward_price_earnings_growth_ratio additionally require a Premium FMP subscription and are fetched on first use only. get_factor_analysis: factor analysis (predictive power) of the ratios across tickers: do the tickers that score high on one go on to return more than those that score low? Needs tickers= with at least ten, preferably twenty or more tickers. metrics= a ratio name, a comma-separated list, or a collection: 'valuation' (default: multiples, yields and market cap), 'profitability', 'solvency', 'liquidity', 'efficiency' or 'all'. Returns a row per metric and horizon: the mean information coefficient (IC, the Spearman rank correlation between the metric and the later returns), its standard deviation, IC information ratio, t-statistic, p-value, share of positive periods, number of periods, the Top Minus Bottom quantile spread, quantile turnover and rank autocorrelation. detail='information_coefficient', 'quantile_returns', 'quantile_turnover' or 'rank_autocorrelation' returns that part per period (or per quantile) for a single metric. period= sets how often it is evaluated (monthly by default), horizons= the periods ahead (e.g. 12 or [1, 12]), quantiles= the number of quantiles (5). Other parameters (e.g. trailing=) pass to the ratios. The IC is reported as measured: a negative IC means low values go on to outperform, as for a low P/E. Statement figures apply from the fiscal period end, so there is no look-ahead."
+    description:    "Pre-computed valuation ratios (P/E, EPS, EV/EBITDA, EV/EBIT, P/B, P/S, PEG, dividend yield, FCF yield, market cap, forward P/E, forward PEG, and the issuance anomalies: net share issuance (Pontiff-Woodgate: log change in split-adjusted basic shares over a year), composite equity issuance (Daniel-Titman: log market cap growth minus log total return over five years) and net external financing (Bradshaw-Richardson-Sloan: equity and debt raised minus repurchases, repayments and dividends over average total assets, trailing twelve months on quarterly data)). Requires tickers='AAPL' — use comma-separated values for multiple tickers. Use instead of raw financial statements. Supports quarterly=true and start_date/end_date. get_forward_price_earnings_ratio and get_forward_price_earnings_growth_ratio additionally require a Premium FMP subscription and are fetched on first use only. get_factor_analysis: factor analysis (predictive power) of the ratios across tickers: do the tickers that score high on one go on to return more than those that score low? Needs tickers= with at least ten, preferably twenty or more tickers. metrics= a ratio name, a comma-separated list, or a collection: 'valuation' (default: multiples, yields and market cap), 'profitability', 'solvency', 'liquidity', 'efficiency' or 'all'. Returns a row per metric and horizon: the mean information coefficient (IC, the Spearman rank correlation between the metric and the later returns), its standard deviation, IC information ratio, t-statistic, p-value, share of positive periods, number of periods, the Top Minus Bottom quantile spread, quantile turnover and rank autocorrelation. detail='information_coefficient', 'quantile_returns', 'quantile_turnover' or 'rank_autocorrelation' returns that part per period (or per quantile) for a single metric. period= sets how often it is evaluated (monthly by default), horizons= the periods ahead (e.g. 12 or [1, 12]), quantiles= the number of quantiles (5). Other parameters (e.g. trailing=) pass to the ratios. The IC is reported as measured: a negative IC means low values go on to outperform, as for a low P/E. Statement figures apply from the fiscal period end, so there is no look-ahead."
     module_name:    "ratios"
     category:       "ticker"
     collect_method: "collect_valuation_ratios"
@@ -410,6 +411,9 @@ tool_groups:
       - "get_buyback_yield"
       - "get_shareholder_yield"
       - "get_sbc_adjusted_free_cash_flow"
+      - "get_net_share_issuance"
+      - "get_composite_equity_issuance"
+      - "get_net_external_financing"
       - "get_price_to_sales_ratio"
       - "get_reinvestment_rate"
       - "get_factor_analysis"

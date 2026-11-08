@@ -20,6 +20,8 @@ AAPL,Deferred Revenue Ratio,,,-0.0811,0.0098
 AAPL,Working Capital Turnover Ratio,,,-7.1371,0.5357
 AAPL,Capex Intensity,,,0.0,-0.0279
 AAPL,Capex to Depreciation,,,0.1822,-0.0161
+AAPL,Asset Growth,,,,-0.9495
+AAPL,Net Operating Assets,,,-0.0975,-0.0923
 AAPL,Current Ratio,,,-0.1985,-0.0361
 AAPL,Quick Ratio,,,-0.3027,-0.0542
 AAPL,Cash Ratio,,,-0.4032,-0.0753
@@ -55,6 +57,7 @@ AAPL,Cash-Based Operating Profitability,,,,-0.0313
 AAPL,Cash Return on Invested Capital,,,0.2433,0.1089
 AAPL,Free Cash Flow Conversion,,,-0.0389,0.0203
 AAPL,Free Cash Flow to EBITDA,,,-0.0317,0.0099
+AAPL,Percent Accruals,,,0.2401,-0.119
 AAPL,Debt-to-Assets Ratio,,,-0.0034,-0.0965
 AAPL,Asset Coverage Ratio,,,-0.0631,0.0612
 AAPL,Debt-to-Equity Ratio,,,0.1734,-0.087
@@ -96,6 +99,9 @@ AAPL,EV-to-Free-Cash-Flow,,,-0.4152,
 AAPL,Buyback Yield,,,0.5747,
 AAPL,Shareholder Yield,,,0.3357,
 AAPL,SBC-Adjusted Free Cash Flow,,,0.2366,0.0198
+AAPL,Net Share Issuance,,,,0.1285
+AAPL,Composite Equity Issuance,,,,
+AAPL,Net External Financing,,,,-0.0068
 MSFT,Days of Inventory Outstanding,,,0.2046,-0.1251
 MSFT,Days of Sales Outstanding,,,-0.0023,0.0087
 MSFT,Operating Cycle,,,0.0328,-0.0178
@@ -117,6 +123,8 @@ MSFT,Deferred Revenue Ratio,,,-0.0465,-0.0101
 MSFT,Working Capital Turnover Ratio,,,0.4196,0.2328
 MSFT,Capex Intensity,,,0.0483,0.0436
 MSFT,Capex to Depreciation,,,0.1557,0.0784
+MSFT,Asset Growth,,,,0.1115
+MSFT,Net Operating Assets,,,0.4416,0.166
 MSFT,Current Ratio,,,-0.1532,-0.0781
 MSFT,Quick Ratio,,,-0.1747,-0.1021
 MSFT,Cash Ratio,,,-0.2283,-0.1523
@@ -152,6 +160,7 @@ MSFT,Cash-Based Operating Profitability,,,,0.0181
 MSFT,Cash Return on Invested Capital,,,0.0914,-0.0897
 MSFT,Free Cash Flow Conversion,,,-0.0576,-0.0508
 MSFT,Free Cash Flow to EBITDA,,,-0.0174,-0.079
+MSFT,Percent Accruals,,,0.215,0.0835
 MSFT,Debt-to-Assets Ratio,,,-0.1547,-0.1548
 MSFT,Asset Coverage Ratio,,,0.1564,0.1869
 MSFT,Debt-to-Equity Ratio,,,-0.2153,-0.2226
@@ -193,3 +202,6 @@ MSFT,EV-to-Free-Cash-Flow,,,-0.4091,
 MSFT,Buyback Yield,,,0.6919,
 MSFT,Shareholder Yield,,,0.6297,
 MSFT,SBC-Adjusted Free Cash Flow,,,0.1968,-0.0013
+MSFT,Net Share Issuance,,,,0.106
+MSFT,Composite Equity Issuance,,,,
+MSFT,Net External Financing,,,,0.1329

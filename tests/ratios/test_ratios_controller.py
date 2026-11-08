@@ -956,6 +956,190 @@ def test_get_capex_to_depreciation_ratio(recorder, ratios_module):
     recorder.capture(ratios_module.get_capex_to_depreciation_ratio(trailing=2))
 
 
+def test_get_asset_growth(recorder, ratios_module):
+    recorder.capture(ratios_module.get_asset_growth())
+    recorder.capture(ratios_module.get_asset_growth(trailing=2))
+
+
+def test_get_net_operating_assets(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_operating_assets())
+    recorder.capture(ratios_module.get_net_operating_assets(growth=True))
+
+
+def test_get_percent_accruals(recorder, ratios_module):
+    recorder.capture(ratios_module.get_percent_accruals())
+    recorder.capture(ratios_module.get_percent_accruals(trailing=2))
+
+
+def test_get_net_share_issuance(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_share_issuance())
+    recorder.capture(ratios_module.get_net_share_issuance(diluted=True, trailing=2))
+
+
+def test_get_composite_equity_issuance(recorder, ratios_module):
+    recorder.capture(ratios_module.get_composite_equity_issuance(trailing=1))
+    recorder.capture(
+        ratios_module.get_composite_equity_issuance(diluted=True, trailing=2)
+    )
+
+
+def test_get_net_external_financing(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_external_financing())
+    recorder.capture(ratios_module.get_net_external_financing(trailing=2))
+
+
+def test_investment_and_issuance_anomalies_from_the_statement_lines(ratios_module):
+    balance = ratios_module._balance_sheet_statement
+    income = ratios_module._income_statement
+    cash = ratios_module._cash_flow_statement
+    previous = str(int(YEAR) - 1)
+
+    def at(statement, item, year=YEAR):
+        return _row(statement, item).loc[year]
+
+    total_assets = at(balance, "Total Assets")
+    beginning_total_assets = at(balance, "Total Assets", previous)
+
+    assert ratios_module.get_asset_growth(rounding=8).loc["AAPL", YEAR] == _approx(
+        total_assets / beginning_total_assets - 1
+    )
+    # Operating assets minus operating liabilities is the debt and equity minus the cash.
+    assert ratios_module.get_net_operating_assets(rounding=8).loc[
+        "AAPL", YEAR
+    ] == _approx(
+        (
+            at(balance, "Short Term Debt")
+            + at(balance, "Long Term Debt")
+            + at(balance, "Total Equity")
+            - at(balance, "Cash and Short Term Investments")
+        )
+        / beginning_total_assets
+    )
+    net_income = at(income, "Net Income")
+    assert ratios_module.get_percent_accruals(rounding=8).loc["AAPL", YEAR] == _approx(
+        (net_income - at(cash, "Operating Cash Flow")) / abs(net_income)
+    )
+    assert ratios_module.get_net_share_issuance(rounding=8).loc[
+        "AAPL", YEAR
+    ] == _approx(
+        np.log(
+            at(income, "Weighted Average Shares")
+            / at(income, "Weighted Average Shares", previous)
+        )
+    )
+    # Bradshaw, Richardson and Sloan: equity issued minus repurchased minus dividends, plus
+    # debt issued minus repaid, over the average total assets (outflows are negative).
+    assert ratios_module.get_net_external_financing(rounding=8).loc[
+        "AAPL", YEAR
+    ] == _approx(
+        (
+            at(cash, "Common Stock Issued")
+            + at(cash, "Common Stock Purchased")
+            + at(cash, "Net Preferred Stock Issued")
+            + at(cash, "Dividends Paid")
+            + at(cash, "Long Term Debt Issued")
+            + at(cash, "Short Term Debt Issued")
+        )
+        / ((total_assets + beginning_total_assets) / 2)
+    )
+
+
+def test_composite_equity_issuance_is_market_cap_growth_minus_the_log_return(
+    ratios_module,
+):
+    prices = ratios_module._historical["yearly"]
+    income = ratios_module._income_statement
+    previous = str(int(YEAR) - 1)
+
+    def price(column, year):
+        return prices.loc[year, (column, "AAPL")]
+
+    shares = _row(income, "Weighted Average Shares")
+    market_cap_growth = (price("Close", YEAR) * shares.loc[YEAR]) / (
+        price("Close", previous) * shares.loc[previous]
+    )
+
+    result = ratios_module.get_composite_equity_issuance(trailing=1, rounding=8)
+
+    assert result.loc["AAPL", YEAR] == _approx(
+        np.log(market_cap_growth)
+        - np.log(price("Adj Close", YEAR) / price("Adj Close", previous))
+    )
+    # The default window is five years, longer than the test data.
+    assert ratios_module.get_composite_equity_issuance().isna().all().all()
+
+
+def test_quarterly_investment_and_issuance_anomalies_are_year_over_year():
+    from financetoolkit.ratios.ratios_controller import Ratios
+
+    quarters = pd.period_range("2021Q1", periods=8, freq="Q")
+    growth = 1.05 ** np.arange(8)
+
+    def statement(items):
+        return pd.DataFrame(
+            list(items.values()),
+            index=pd.MultiIndex.from_tuples([("XYZ", item) for item in items]),
+            columns=quarters,
+        )
+
+    income = statement(
+        {
+            "Net Income": 10 * growth,
+            "Weighted Average Shares": 100 * 0.99 ** np.arange(8),
+        }
+    )
+    balance = statement(
+        {
+            "Total Assets": 1000 * growth,
+            "Cash and Short Term Investments": 100 * growth,
+            "Short Term Debt": 50 * growth,
+            "Long Term Debt": 200 * growth,
+            "Total Equity": 400 * growth,
+        }
+    )
+    cash = statement(
+        {
+            "Operating Cash Flow": 12 * growth,
+            "Common Stock Issued": np.full(8, 1.0),
+            "Common Stock Purchased": np.full(8, -5.0),
+            "Net Preferred Stock Issued": np.zeros(8),
+            "Dividends Paid": np.full(8, -2.0),
+            "Long Term Debt Issued": np.full(8, 3.0),
+            "Short Term Debt Issued": np.zeros(8),
+        }
+    )
+    ratios = Ratios(["XYZ"], {}, balance, income, cash, quarterly=True, rounding=None)
+
+    total_assets = balance.loc[("XYZ", "Total Assets")]
+    shares = income.loc[("XYZ", "Weighted Average Shares")]
+
+    def trailing_year(statement_data, item):
+        return statement_data.loc[("XYZ", item)].iloc[-4:].sum()
+
+    assert ratios.get_asset_growth().iloc[0, -1] == pytest.approx(
+        total_assets.iloc[-1] / total_assets.iloc[-5] - 1
+    )
+    assert ratios.get_net_share_issuance().iloc[0, -1] == pytest.approx(
+        np.log(shares.iloc[-1] / shares.iloc[-5])
+    )
+    assert ratios.get_percent_accruals().iloc[0, -1] == pytest.approx(
+        (
+            trailing_year(income, "Net Income")
+            - trailing_year(cash, "Operating Cash Flow")
+        )
+        / trailing_year(income, "Net Income")
+    )
+    # A year of financing flows over the average of the total assets a year apart.
+    assert ratios.get_net_external_financing().iloc[0, -1] == pytest.approx(
+        4 * (1 - 5 - 2 + 3) / ((total_assets.iloc[-1] + total_assets.iloc[-5]) / 2)
+    )
+    # Net operating assets are a balance, scaled by the total assets of the quarter before.
+    assert ratios.get_net_operating_assets().iloc[0, -1] == pytest.approx(
+        (50 + 200 + 400 - 100) * growth[-1] / total_assets.iloc[-2]
+    )
+    assert ratios.get_asset_growth().iloc[0, :4].isna().all()
+
+
 def test_cash_based_operating_profitability_from_the_statement_lines(ratios_module):
     balance = ratios_module._balance_sheet_statement
     income = ratios_module._income_statement

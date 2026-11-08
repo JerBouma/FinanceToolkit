@@ -80,6 +80,15 @@ AAPL,Shareholder Yield,Lag 3,,,,
 AAPL,SBC-Adjusted Free Cash Flow,Lag 1,,0.2782,0.2041,-0.1333
 AAPL,SBC-Adjusted Free Cash Flow,Lag 2,,,0.5391,0.0436
 AAPL,SBC-Adjusted Free Cash Flow,Lag 3,,,,0.3339
+AAPL,Net Share Issuance,Lag 1,,,0.2277,0.0
+AAPL,Net Share Issuance,Lag 2,,,,0.2277
+AAPL,Net Share Issuance,Lag 3,,,,
+AAPL,Composite Equity Issuance,Lag 1,,,,
+AAPL,Composite Equity Issuance,Lag 2,,,,
+AAPL,Composite Equity Issuance,Lag 3,,,,
+AAPL,Net External Financing,Lag 1,,,-0.0735,0.0202
+AAPL,Net External Financing,Lag 2,,,,-0.0518
+AAPL,Net External Financing,Lag 3,,,,
 MSFT,Earnings per Share,Lag 1,,0.3973,0.1979,0.0039
 MSFT,Earnings per Share,Lag 2,,,0.6738,0.2025
 MSFT,Earnings per Share,Lag 3,,,,0.6803
@@ -161,3 +170,12 @@ MSFT,Shareholder Yield,Lag 3,,,,
 MSFT,SBC-Adjusted Free Cash Flow,Lag 1,,0.2517,0.1529,-0.135
 MSFT,SBC-Adjusted Free Cash Flow,Lag 2,,,0.4432,-0.0027
 MSFT,SBC-Adjusted Free Cash Flow,Lag 3,,,,0.2483
+MSFT,Net Share Issuance,Lag 1,,,0.1807,0.0147
+MSFT,Net Share Issuance,Lag 2,,,,0.1928
+MSFT,Net Share Issuance,Lag 3,,,,
+MSFT,Composite Equity Issuance,Lag 1,,,,
+MSFT,Composite Equity Issuance,Lag 2,,,,
+MSFT,Composite Equity Issuance,Lag 3,,,,
+MSFT,Net External Financing,Lag 1,,,-0.1479,0.3347
+MSFT,Net External Financing,Lag 2,,,,0.2364
+MSFT,Net External Financing,Lag 3,,,,

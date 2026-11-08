@@ -493,3 +493,82 @@ def get_capex_to_depreciation_ratio(
     return abs(capital_expenditure) / depreciation_and_amortization.where(
         depreciation_and_amortization > 0
     )
+
+
+def get_asset_growth(
+    total_assets: pd.Series | pd.DataFrame,
+    beginning_total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the asset growth of Cooper, Gulen and Schill (2008): the change in total
+    assets relative to the total assets at the start of the window. Companies that grow
+    their assets the most earn the lowest returns afterwards.
+
+    The formula is as follows:
+
+        Asset Growth = (Total Assets - Beginning Total Assets) / Beginning Total Assets
+
+    Beginning total assets of zero or less give NaN.
+
+    Also known as: total asset growth, investment (Fama-French CMA), ASSETG.
+
+    Args:
+        total_assets (float or pd.Series): Total assets at the end of the window.
+        beginning_total_assets (float or pd.Series): Total assets at the start of the window.
+
+    Returns:
+        float | pd.Series: The asset growth value.
+    """
+    beginning_total_assets = beginning_total_assets.where(beginning_total_assets > 0)
+
+    return (total_assets - beginning_total_assets) / beginning_total_assets
+
+
+def get_net_operating_assets(
+    total_assets: pd.Series | pd.DataFrame,
+    cash_and_short_term_investments: pd.Series | pd.DataFrame,
+    short_term_debt: pd.Series | pd.DataFrame,
+    long_term_debt: pd.Series | pd.DataFrame,
+    total_equity: pd.Series | pd.DataFrame,
+    beginning_total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the scaled net operating assets of Hirshleifer, Hou, Teoh and Zhang
+    (2004): the operating assets minus the operating liabilities, relative to the total
+    assets at the start of the year. It is the cumulative difference between operating
+    income and free cash flow, so a high value means earnings have run ahead of cash
+    for years (a bloated balance sheet), which predicts lower returns.
+
+    The formula is as follows:
+
+        Operating Assets = Total Assets - Cash and Short Term Investments
+        Operating Liabilities = Total Assets - Short Term Debt - Long Term Debt - Total Equity
+        Net Operating Assets = (Operating Assets - Operating Liabilities) / Beginning Total Assets
+
+    The total equity is the common equity, preferred stock and minority interest that
+    the paper deducts separately. Beginning total assets of zero or less give NaN.
+
+    Also known as: NOA, scaled net operating assets, balance sheet bloat.
+
+    Args:
+        total_assets (float or pd.Series): Total assets at the end of the period.
+        cash_and_short_term_investments (float or pd.Series): Cash and short term
+            investments at the end of the period.
+        short_term_debt (float or pd.Series): Debt in current liabilities at the end of
+            the period.
+        long_term_debt (float or pd.Series): Long term debt at the end of the period.
+        total_equity (float or pd.Series): Total equity, including preferred stock and
+            minority interest, at the end of the period.
+        beginning_total_assets (float or pd.Series): Total assets at the start of the year.
+
+    Returns:
+        float | pd.Series: The net operating assets value.
+    """
+    operating_assets = total_assets - cash_and_short_term_investments
+    operating_liabilities = (
+        total_assets - short_term_debt - long_term_debt - total_equity
+    )
+
+    return (operating_assets - operating_liabilities) / beginning_total_assets.where(
+        beginning_total_assets > 0
+    )

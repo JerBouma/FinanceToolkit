@@ -62,6 +62,24 @@ AAPL,Cash Tax Rate,Lag 3,,,,0.1596
 AAPL,Tax Rate Divergence,Lag 1,,37.8148,-0.9769,6.3913
 AAPL,Tax Rate Divergence,Lag 2,,,1.8519,-0.829
 AAPL,Tax Rate Divergence,Lag 3,,,,7.2963
+AAPL,Gross Profitability,Lag 1,,0.3434,0.1119,-0.0091
+AAPL,Gross Profitability,Lag 2,,,0.4937,0.1017
+AAPL,Gross Profitability,Lag 3,,,,0.4801
+AAPL,Operating Profitability,Lag 1,,0.736,0.3645,-0.2276
+AAPL,Operating Profitability,Lag 2,,,1.3688,0.0539
+AAPL,Operating Profitability,Lag 3,,,,0.8297
+AAPL,Cash-Based Operating Profitability,Lag 1,,,0.0662,-0.0464
+AAPL,Cash-Based Operating Profitability,Lag 2,,,,0.0167
+AAPL,Cash-Based Operating Profitability,Lag 3,,,,
+AAPL,Cash Return on Invested Capital,Lag 1,,,0.2129,-0.0402
+AAPL,Cash Return on Invested Capital,Lag 2,,,,0.1641
+AAPL,Cash Return on Invested Capital,Lag 3,,,,
+AAPL,Free Cash Flow Conversion,Lag 1,,-0.2317,0.1373,-0.0805
+AAPL,Free Cash Flow Conversion,Lag 2,,,-0.1262,0.0457
+AAPL,Free Cash Flow Conversion,Lag 3,,,,-0.1966
+AAPL,Free Cash Flow to EBITDA,Lag 1,,-0.185,0.1043,-0.0729
+AAPL,Free Cash Flow to EBITDA,Lag 2,,,-0.1,0.0238
+AAPL,Free Cash Flow to EBITDA,Lag 3,,,,-0.1656
 MSFT,Gross Margin,Lag 1,,0.017,-0.0077,0.0076
 MSFT,Gross Margin,Lag 2,,,0.0091,-0.0001
 MSFT,Gross Margin,Lag 3,,,,0.0168
@@ -125,3 +143,21 @@ MSFT,Cash Tax Rate,Lag 3,,,,
 MSFT,Tax Rate Divergence,Lag 1,,0.1623,0.0521,-0.4477
 MSFT,Tax Rate Divergence,Lag 2,,,0.2059,-0.3724
 MSFT,Tax Rate Divergence,Lag 3,,,,-0.1496
+MSFT,Gross Profitability,Lag 1,,0.079,0.0709,-0.0463
+MSFT,Gross Profitability,Lag 2,,,0.1554,0.0213
+MSFT,Gross Profitability,Lag 3,,,,0.102
+MSFT,Operating Profitability,Lag 1,,0.1181,0.0261,-0.1411
+MSFT,Operating Profitability,Lag 2,,,0.1473,-0.1187
+MSFT,Operating Profitability,Lag 3,,,,-0.0146
+MSFT,Cash-Based Operating Profitability,Lag 1,,,0.0728,-0.0147
+MSFT,Cash-Based Operating Profitability,Lag 2,,,,0.057
+MSFT,Cash-Based Operating Profitability,Lag 3,,,,
+MSFT,Cash Return on Invested Capital,Lag 1,,,0.059,-0.1914
+MSFT,Cash Return on Invested Capital,Lag 2,,,,-0.1437
+MSFT,Cash Return on Invested Capital,Lag 3,,,,
+MSFT,Free Cash Flow Conversion,Lag 1,,-0.1034,-0.0221,-0.0824
+MSFT,Free Cash Flow Conversion,Lag 2,,,-0.1232,-0.1026
+MSFT,Free Cash Flow Conversion,Lag 3,,,,-0.1954
+MSFT,Free Cash Flow to EBITDA,Lag 1,,-0.0003,-0.0317,-0.1276
+MSFT,Free Cash Flow to EBITDA,Lag 2,,,-0.032,-0.1553
+MSFT,Free Cash Flow to EBITDA,Lag 3,,,,-0.1555

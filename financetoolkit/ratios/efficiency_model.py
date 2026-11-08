@@ -434,3 +434,62 @@ def get_deferred_revenue_ratio(
         float | pd.Series: The deferred revenue ratio value.
     """
     return deferred_revenue / revenue
+
+
+def get_capex_intensity(
+    capital_expenditure: pd.Series | pd.DataFrame, revenue: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the capital expenditure intensity, the share of revenue a company
+    reinvests in property, plant and equipment.
+
+    The formula is as follows:
+
+        Capex Intensity = |Capital Expenditure| / Revenue
+
+    Capital expenditure is reported as a negative cash outflow, so its magnitude is
+    used. A revenue of zero or less gives NaN.
+
+    Also known as: capex to revenue, capex to sales, capital intensity of spending.
+
+    Args:
+        capital_expenditure (float or pd.Series): Capital expenditure of the company,
+            as reported in the Cash Flow Statement.
+        revenue (float or pd.Series): Total revenue of the company.
+
+    Returns:
+        float | pd.Series: The capex intensity value.
+    """
+    return abs(capital_expenditure) / revenue.where(revenue > 0)
+
+
+def get_capex_to_depreciation_ratio(
+    capital_expenditure: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the capital expenditure to depreciation ratio, which compares what a
+    company invests in its assets with what wears off them. Above 1 the asset base
+    grows, around 1 the company maintains it and below 1 it shrinks.
+
+    The formula is as follows:
+
+        Capex to Depreciation = |Capital Expenditure| / Depreciation and Amortization
+
+    Capital expenditure is reported as a negative cash outflow, so its magnitude is
+    used. Depreciation and amortization of zero or less gives NaN.
+
+    Also known as: capex to D&A, reinvestment ratio, capex to depreciation.
+
+    Args:
+        capital_expenditure (float or pd.Series): Capital expenditure of the company,
+            as reported in the Cash Flow Statement.
+        depreciation_and_amortization (float or pd.Series): Depreciation and
+            amortization of the company.
+
+    Returns:
+        float | pd.Series: The capex to depreciation value.
+    """
+    return abs(capital_expenditure) / depreciation_and_amortization.where(
+        depreciation_and_amortization > 0
+    )

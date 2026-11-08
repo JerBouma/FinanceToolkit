@@ -463,7 +463,8 @@ def test_shrinkage_keeps_the_average_variance_and_pulls_correlations_in():
 
 
 @pytest.mark.parametrize(
-    "covariance", ["sample", "ledoit_wolf", "oas", "semicovariance", "exponential"]
+    "covariance",
+    ["sample", "ledoit_wolf", "oas", "semicovariance", "exponential", "denoised"],
 )
 def test_every_covariance_estimator_is_annualized(covariance):
     _, annual = optimization_model.get_expected_returns_and_covariance(
@@ -480,4 +481,184 @@ def test_an_unknown_covariance_estimator_is_refused():
     with pytest.raises(ValueError, match="ledoit_wolf"):
         optimization_model.get_expected_returns_and_covariance(
             SHRINKAGE_RETURNS, 252, "shrunk"
+        )
+
+
+def _reference_returns() -> tuple[pd.DataFrame, pd.Series]:
+    """
+    Five assets with two common factors and set average returns, and a benchmark close to
+    their equally weighted portfolio. The reference values below come from skfolio 1.12.7,
+    PyPortfolioOpt 1.6.0 and Riskfolio-Lib 7.4.1 run on these same returns.
+    """
+    rng = np.random.default_rng(42)
+    factors = rng.normal(0.0004, 0.01, size=(500, 2))
+    loadings = rng.uniform(0.2, 1.2, size=(2, 5))
+    data = factors @ loadings + rng.normal(0.0002, 0.012, size=(500, 5))
+    data = data - data.mean(axis=0) + np.array([0.10, 0.12, 0.14, 0.11, 0.13]) / 252
+    returns = pd.DataFrame(data, columns=list("ABCDE"))
+    benchmark = returns.mean(axis=1) + rng.normal(0, 0.004, size=500)
+    return returns, benchmark
+
+
+def test_denoised_covariance_matches_skfolio():
+    returns, _ = _reference_returns()
+    covariance, signals = optimization_model.get_denoised_covariance(returns)
+
+    # skfolio's DenoiseCovariance().fit(returns).covariance_
+    assert signals == 1
+    np.testing.assert_allclose(
+        covariance.iloc[0],
+        [
+            2.0119956392e-04,
+            7.6140760647e-05,
+            8.1351640371e-05,
+            8.1579274082e-05,
+            3.9645931816e-05,
+        ],
+        rtol=1e-8,
+    )
+    np.testing.assert_allclose(np.diag(covariance), returns.var(), rtol=1e-12)
+
+
+def test_denoised_covariance_keeps_the_correlations_of_a_strong_signal():
+    rng = np.random.default_rng(0)
+    common = rng.normal(size=(1000, 1))
+    returns = pd.DataFrame(
+        common + 0.1 * rng.normal(size=(1000, 2)), columns=["A", "B"]
+    )
+    covariance, signals = optimization_model.get_denoised_covariance(returns)
+
+    # With two assets the one eigenvalue below the edge is averaged with itself.
+    assert signals == 1
+    np.testing.assert_allclose(covariance, returns.cov(), rtol=1e-10)
+
+
+def test_maximum_diversification_matches_skfolio():
+    returns, _ = _reference_returns()
+    weights = optimization_model.get_maximum_diversification_weights(returns.cov())
+
+    # skfolio's MaximumDiversification().fit(returns).weights_; its interior point solver
+    # stops a little earlier, at a diversification ratio of 1.510483907 against 1.510483920.
+    np.testing.assert_allclose(
+        weights,
+        [0.2068061426, 0.1638346123, 0.1424396347, 0.1304583187, 0.3564612917],
+        atol=1e-4,
+    )
+    assert optimization_model.get_diversification_ratio(
+        weights, returns.cov()
+    ) == pytest.approx(1.510483920, abs=1e-8)
+
+
+def test_diversification_ratio_is_one_for_a_single_asset_and_root_n_for_independent_ones():
+    single = optimization_model.get_diversification_ratio(
+        pd.Series({"A": 1.0}), COVARIANCE
+    )
+    independent = pd.DataFrame(
+        np.diag([0.04, 0.09, 0.01]), index=list("XYZ"), columns=list("XYZ")
+    )
+    weights = optimization_model.get_maximum_diversification_weights(independent)
+
+    assert single == pytest.approx(1)
+    # Uncorrelated assets: the most diversified portfolio is inverse volatility weighted
+    # and its ratio is the square root of the number of assets.
+    np.testing.assert_allclose(
+        weights, np.array([5, 10 / 3, 10]) / (5 + 10 / 3 + 10), atol=1e-6
+    )
+    assert optimization_model.get_diversification_ratio(
+        weights, independent
+    ) == pytest.approx(np.sqrt(3))
+
+
+def test_minimum_tracking_error_matches_skfolio_and_pyportfolioopt():
+    returns, benchmark = _reference_returns()
+    joint = returns.assign(Benchmark=benchmark)
+    weights = optimization_model.get_minimum_tracking_error_weights(
+        joint.mean() * 252, joint.cov() * 252, "Benchmark"
+    )
+
+    # skfolio's BenchmarkTracker().fit(returns, benchmark).weights_; PyPortfolioOpt's
+    # ex_post_tracking_error objective agrees with it to 2e-6.
+    np.testing.assert_allclose(
+        weights,
+        [0.2060920221, 0.1957605698, 0.2037438147, 0.2022345485, 0.1921690448],
+        atol=1e-5,
+    )
+    statistics = optimization_model.get_tracking_error(
+        weights, joint.mean() * 252, joint.cov() * 252, "Benchmark"
+    )
+    active = returns @ weights - benchmark
+    assert statistics["Tracking Error"] == pytest.approx(active.std() * np.sqrt(252))
+    assert statistics["Active Return"] == pytest.approx(active.mean() * 252)
+
+
+def test_maximum_information_ratio_matches_skfolio():
+    returns, benchmark = _reference_returns()
+    joint = returns.assign(Benchmark=benchmark)
+    weights = optimization_model.get_minimum_tracking_error_weights(
+        joint.mean() * 252,
+        joint.cov() * 252,
+        "Benchmark",
+        objective="information_ratio",
+    )
+
+    # skfolio's MeanRisk(objective_function=MAXIMIZE_RATIO, risk_measure=STANDARD_DEVIATION)
+    # on the active returns R - r_b, whose weights sum to one like the portfolio's.
+    np.testing.assert_allclose(
+        weights,
+        [0.0725260955, 0.1878748205, 0.3300022901, 0.1381993728, 0.271397421],
+        atol=1e-5,
+    )
+
+
+def test_tracking_error_needs_the_benchmark_and_a_valid_objective():
+    returns, benchmark = _reference_returns()
+    joint = returns.assign(Benchmark=benchmark)
+    with pytest.raises(ValueError, match="benchmark"):
+        optimization_model.get_minimum_tracking_error_weights(
+            returns.mean(), returns.cov(), "Benchmark"
+        )
+    with pytest.raises(ValueError, match="objective"):
+        optimization_model.get_minimum_tracking_error_weights(
+            joint.mean(), joint.cov(), "Benchmark", objective="sharpe"
+        )
+
+
+def test_growth_optimal_weights_match_riskfolio():
+    returns, _ = _reference_returns()
+    exact = optimization_model.get_growth_optimal_weights(
+        returns, returns.mean(), returns.cov()
+    )
+    approximate = optimization_model.get_growth_optimal_weights(
+        returns, returns.mean() * 252, returns.cov() * 252, method="approximate"
+    )
+
+    # Riskfolio-Lib's Portfolio.optimization(obj="MaxRet", kelly="exact" / "approx").
+    np.testing.assert_allclose(exact, [0, 0, 0.4255907897, 0, 0.5744092095], atol=1e-7)
+    np.testing.assert_allclose(
+        approximate, [0, 0, 0.4254029847, 0, 0.5745969921], atol=1e-4
+    )
+
+    # The approximation is a mean-variance portfolio with a risk aversion of one, here the
+    # closed form of its two-asset interior solution.
+    pair = returns[["C", "E"]]
+    system = np.block(
+        [[pair.cov().to_numpy(), np.ones((2, 1))], [np.ones((1, 2)), np.zeros((1, 1))]]
+    )
+    closed_form = np.linalg.solve(system, np.r_[pair.mean().to_numpy(), 1])[:2]
+    np.testing.assert_allclose(approximate[["C", "E"]], closed_form, atol=1e-8)
+
+
+def test_fractional_kelly_scales_the_weights():
+    returns, _ = _reference_returns()
+    full = optimization_model.get_growth_optimal_weights(
+        returns, returns.mean(), returns.cov()
+    )
+    half = optimization_model.get_growth_optimal_weights(
+        returns, returns.mean(), returns.cov(), fraction=0.5
+    )
+
+    np.testing.assert_allclose(half, full / 2)
+    with pytest.raises(ValueError, match="fraction"):
+        optimization_model.get_growth_optimal_weights(
+            returns, returns.mean(), returns.cov(), fraction=0
         )

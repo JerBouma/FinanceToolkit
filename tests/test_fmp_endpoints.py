@@ -1332,3 +1332,54 @@ def test_the_toolkit_measures_the_upside_against_the_quote(responses, cache_loca
 
     assert targets.loc["Upside", "AAPL"] == pytest.approx(0.25)
     assert targets.loc["Dispersion", "AAPL"] == pytest.approx(0.4)
+
+
+def test_price_targets_say_when_the_latest_target_was_published(responses):
+    canned, requested = responses
+    canned["price-target-consensus"] = [
+        {
+            "symbol": "NVDA",
+            "targetHigh": 300,
+            "targetLow": 150,
+            "targetConsensus": 250,
+            "targetMedian": 240,
+        }
+    ]
+    canned["price-target-news"] = [
+        {
+            "symbol": "NVDA",
+            "publishedDate": "2026-10-05T15:32:19.000Z",
+            "analystCompany": "BNP Paribas",
+            "adjPriceTarget": 345,
+        }
+    ]
+
+    targets, _ = fmp_model.get_price_targets(["NVDA"], "key")
+    measures = fmp_model.add_price_target_metrics(
+        targets, pd.Series({"NVDA": 200.0}), today=pd.Timestamp("2026-11-07")
+    )
+
+    news = next(url for url in requested if "price-target-news" in url)
+    assert "from=" in news and "to=" in news
+    assert measures.loc["Latest Target Date", "NVDA"] == "2026-10-05"
+    assert measures.loc["Days Since Latest Target", "NVDA"] == 33
+    assert measures.loc["Upside", "NVDA"] == pytest.approx(0.25)
+
+
+def test_price_targets_without_any_published_target_have_no_latest_date(responses):
+    canned, _ = responses
+    canned["price-target-consensus"] = [
+        {
+            "symbol": "NVDA",
+            "targetHigh": 300,
+            "targetLow": 150,
+            "targetConsensus": 250,
+            "targetMedian": 240,
+        }
+    ]
+
+    targets, _ = fmp_model.get_price_targets(["NVDA"], "key")
+    measures = fmp_model.add_price_target_metrics(targets, pd.Series({"NVDA": 200.0}))
+
+    assert pd.isna(measures.loc["Latest Target Date", "NVDA"])
+    assert pd.isna(measures.loc["Days Since Latest Target", "NVDA"])

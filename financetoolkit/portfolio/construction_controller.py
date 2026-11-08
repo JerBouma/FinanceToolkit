@@ -32,7 +32,8 @@ class PortfolioConstruction:
     """
     The Portfolio Construction module builds and examines portfolios from the assets of a
     Toolkit: optimal weights (minimum variance, maximum Sharpe ratio, mean-variance,
-    risk parity, Hierarchical Risk Parity, Black-Litterman, minimum CVaR), the efficient
+    risk parity, Hierarchical Risk Parity, Black-Litterman, minimum CVaR, maximum
+    diversification, minimum tracking error, growth optimal), the efficient
     frontier, risk contributions, historical stress tests, look-through exposure and a
     Brinson-Fachler attribution against the benchmark.
     """
@@ -293,10 +294,12 @@ class PortfolioConstruction:
                 "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -390,10 +393,12 @@ class PortfolioConstruction:
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -493,10 +498,12 @@ class PortfolioConstruction:
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -587,10 +594,12 @@ class PortfolioConstruction:
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -682,10 +691,12 @@ class PortfolioConstruction:
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -772,10 +783,12 @@ class PortfolioConstruction:
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -844,10 +857,12 @@ class PortfolioConstruction:
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -972,7 +987,7 @@ class PortfolioConstruction:
             returns, confidence_level, minimum_weight, maximum_weight
         )
         table = self._weights_table(
-            weights, expected_returns, covariance, risk_free_rate, None
+            weights, expected_returns, covariance, risk_free_rate, rounding
         )
 
         # The CVaR of every asset alone and of the portfolio, as a positive loss.
@@ -983,6 +998,406 @@ class PortfolioConstruction:
         table["CVaR"] = [cvar(returns[asset]) for asset in returns.columns] + [
             cvar(returns @ weights)
         ]
+        return self._round(table, rounding)
+
+    @handle_errors
+    def get_maximum_diversification_weights(
+        self,
+        period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        minimum_weight: float = 0.0,
+        maximum_weight: float = 1.0,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the weights of the maximum diversification portfolio: the fully invested
+        portfolio with the highest diversification ratio, the weighted average volatility of
+        its assets divided by its own volatility. The ratio is one for a single asset and
+        grows as the assets move less together, so the portfolio holds the assets that
+        diversify each other most. It needs no expected returns, and when every asset
+        has the same Sharpe ratio it is also the maximum Sharpe ratio portfolio.
+
+        The weights maximize DR(w) = w'σ / √(w'Σw) subject to the weights summing to one
+        and lying between the minimum and maximum weight, with σ the volatilities of the
+        assets and Σ their annualized covariance matrix. The square of the ratio is the
+        number of independent risk factors a long-only portfolio effectively holds.
+
+        For more information, see the following papers:
+
+        - Choueifaty, Y. and Coignard, Y. (2008). "Toward Maximum Diversification." The
+          Journal of Portfolio Management, 35(1), 40-51.
+        - Choueifaty, Y., Froidure, T. and Reynier, J. (2013). "Properties of the Most
+          Diversified Portfolio." Journal of Investment Strategies, 2(2), 49-70.
+
+        Also known as: most diversified portfolio, MDP, maximum diversification ratio.
+
+        Args:
+            period (str, optional): The frequency of the returns the covariance matrix is
+                estimated from (daily, weekly, monthly, quarterly or yearly). Defaults to
+                "daily".
+            covariance (str, optional): The estimator of the covariance matrix: "sample"
+                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
+            minimum_weight (float, optional): The lowest weight an asset may have; a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float, optional): The highest weight an asset may have.
+                Defaults to 1.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
+            Volatility, Sharpe Ratio and Risk Contribution, with the Diversification Ratio
+            of the portfolio (one for every asset on its own). Returns and volatilities are
+            annualized.
+
+        Notes:
+        - The ratio is maximized directly, so it works with any weight bounds, including
+          short positions; with a negative minimum weight the ratio no longer counts
+          independent risk factors.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_maximum_diversification_weights()[
+            ["Weight", "Volatility", "Sharpe Ratio", "Risk Contribution", "Diversification Ratio"]
+        ]
+        ```
+
+        Which returns:
+
+        |           |   Weight |   Volatility |   Sharpe Ratio |   Risk Contribution |   Diversification Ratio |
+        |:----------|---------:|-------------:|---------------:|--------------------:|------------------------:|
+        | AAPL      |   0.0923 |       0.2786 |         0.5727 |              0.1145 |                     1   |
+        | MSFT      |   0.2349 |       0.2572 |         0.6532 |              0.2687 |                     1   |
+        | JNJ       |   0.4194 |       0.1673 |         0.3867 |              0.3122 |                     1   |
+        | XOM       |   0.2533 |       0.2702 |         0.9522 |              0.3046 |                     1   |
+        | Portfolio |   1      |       0.1405 |         1.043  |              1      |                     1.6 |
+        """
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
+        )
+        weights = optimization_model.get_maximum_diversification_weights(
+            covariance_matrix, minimum_weight, maximum_weight
+        )
+        table = self._weights_table(
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+        )
+        table["Diversification Ratio"] = 1.0
+        table.loc[PORTFOLIO_TICKER, "Diversification Ratio"] = (
+            optimization_model.get_diversification_ratio(weights, covariance_matrix)
+        )
+        return self._round(table, rounding)
+
+    @handle_errors
+    def get_minimum_tracking_error_weights(
+        self,
+        objective: str = "tracking_error",
+        period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        minimum_weight: float = 0.0,
+        maximum_weight: float = 1.0,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the weights of the portfolio of the Toolkit's assets that follows the
+        benchmark most closely: the fully invested portfolio with the lowest tracking error,
+        the volatility of its return minus the benchmark's. With the objective
+        "information_ratio" it is instead the portfolio with the highest information ratio,
+        the expected return above the benchmark per unit of tracking error, which is what an
+        active manager measured against the benchmark maximizes.
+
+        The tracking error is TE(w) = √Var(R w - r_b) = √(w'Σ_AA w - 2 w'Σ_Ab + σ_b²), with
+        Σ_AA the annualized covariance matrix of the assets, Σ_Ab their covariances with the
+        benchmark and σ_b² the benchmark's variance. The information ratio is
+        (w'μ - μ_b) / TE(w), with μ and μ_b the annualized expected returns. The weights sum
+        to one and lie between the minimum and maximum weight; the benchmark is the
+        Toolkit's (SPY by default) and is not one of the assets.
+
+        For more information, see the following papers:
+
+        - Roll, R. (1992). "A Mean/Variance Analysis of Tracking Error." The Journal of
+          Portfolio Management, 18(4), 13-22.
+        - Jorion, P. (2003). "Portfolio Optimization with Tracking-Error Constraints."
+          Financial Analysts Journal, 59(5), 70-82.
+        - Grinold, R.C. and Kahn, R.N. (2000). "Active Portfolio Management." 2nd edition,
+          McGraw-Hill.
+
+        Also known as: index tracking, benchmark tracking, minimum active risk, maximum
+        information ratio portfolio.
+
+        Args:
+            objective (str, optional): "tracking_error" for the lowest tracking error or
+                "information_ratio" for the highest information ratio. Defaults to
+                "tracking_error".
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix of the assets
+                and the benchmark: "sample" (ddof=1), "ledoit_wolf" (Ledoit and Wolf,
+                2004), "oas" (Chen et al., 2010), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) or "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000). Defaults to
+                "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
+            minimum_weight (float, optional): The lowest weight an asset may have; a
+                negative value allows short positions. Defaults to 0.
+            maximum_weight (float, optional): The highest weight an asset may have.
+                Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
+            Volatility, Sharpe Ratio and Risk Contribution, and against the benchmark the
+            Active Return, Tracking Error and Information Ratio (each asset on its own and
+            the portfolio). Returns, volatilities and tracking errors are annualized.
+
+        Notes:
+        - Only the periods in which every asset and the benchmark have a return are used.
+        - With the sample covariance the tracking error equals the annualized standard
+          deviation (ddof=1) of the historical active returns R w - r_b.
+        - The information ratio needs an asset that expects more than the benchmark;
+          otherwise no portfolio has a positive information ratio and an error is raised.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_minimum_tracking_error_weights()[
+            ["Weight", "Expected Return", "Active Return", "Tracking Error", "Information Ratio"]
+        ]
+        ```
+
+        Which returns:
+
+        |           |   Weight |   Expected Return |   Active Return |   Tracking Error |   Information Ratio |
+        |:----------|---------:|------------------:|----------------:|-----------------:|--------------------:|
+        | AAPL      |   0.249  |            0.1933 |          0.0411 |           0.1861 |              0.2209 |
+        | MSFT      |   0.3641 |            0.2017 |          0.0495 |           0.1693 |              0.2923 |
+        | JNJ       |   0.2149 |            0.0984 |         -0.0538 |           0.2113 |             -0.2545 |
+        | XOM       |   0.172  |            0.291  |          0.1388 |           0.2658 |              0.5224 |
+        | Portfolio |   1      |            0.1928 |          0.0406 |           0.0881 |              0.4603 |
+        """
+        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, True, covariance, covariance_span
+        )
+        if BENCHMARK_TICKER not in covariance_matrix.index:
+            raise ValueError("The tracking error needs the returns of a benchmark.")
+        weights = optimization_model.get_minimum_tracking_error_weights(
+            expected_returns,
+            covariance_matrix,
+            BENCHMARK_TICKER,
+            objective,
+            minimum_weight,
+            maximum_weight,
+        )
+        assets = weights.index
+        table = self._weights_table(
+            weights,
+            expected_returns[assets],
+            covariance_matrix.loc[assets, assets],
+            risk_free_rate,
+            rounding,
+        )
+        tracking = pd.DataFrame(
+            {
+                asset: optimization_model.get_tracking_error(
+                    pd.Series({asset: 1.0}),
+                    expected_returns,
+                    covariance_matrix,
+                    BENCHMARK_TICKER,
+                )
+                for asset in assets
+            }
+        ).T
+        tracking.loc[PORTFOLIO_TICKER] = optimization_model.get_tracking_error(
+            weights, expected_returns, covariance_matrix, BENCHMARK_TICKER
+        )
+        return self._round(pd.concat([table, tracking], axis=1), rounding)
+
+    @handle_errors
+    def get_growth_optimal_weights(
+        self,
+        method: str = "exact",
+        fraction: float = 1.0,
+        period: str = "daily",
+        covariance: str = "sample",
+        covariance_span: int = 180,
+        minimum_weight: float = 0.0,
+        maximum_weight: float = 1.0,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the weights of the growth optimal (Kelly) portfolio: the fully invested
+        portfolio with the highest expected logarithmic growth of wealth, which in the long
+        run ends up with more wealth than any other strategy with near certainty. Because
+        the full Kelly portfolio is volatile and sensitive to errors in the expected
+        returns, investors often hold a fraction of it (fractional Kelly) and keep the rest
+        in cash.
+
+        The "exact" method maximizes the average log return over the historical returns,
+        (1/T) Σ ln(1 + r_t'w). The "approximate" method maximizes its second-order
+        approximation w'μ - ½ w'Σw, which is a mean-variance portfolio with a risk aversion
+        of one; it uses the expected returns and covariance matrix instead of the returns
+        themselves. Both keep the weights summing to one and between the minimum and
+        maximum weight. The weights are then multiplied by the fraction and the remainder,
+        1 - fraction, is held in cash at the risk free rate (borrowed when the fraction is
+        above one).
+
+        For more information, see the following papers:
+
+        - Kelly, J.L. (1956). "A New Interpretation of Information Rate." Bell System
+          Technical Journal, 35(4), 917-926.
+        - Breiman, L. (1961). "Optimal Gambling Systems for Favorable Games." Proceedings of
+          the Fourth Berkeley Symposium on Mathematical Statistics and Probability, 1,
+          65-78.
+        - Thorp, E.O. (2006). "The Kelly Criterion in Blackjack, Sports Betting and the
+          Stock Market." Handbook of Asset and Liability Management, 1, 385-428.
+
+        Also known as: Kelly portfolio, log-optimal portfolio, maximum geometric return,
+        fractional Kelly.
+
+        Args:
+            method (str, optional): "exact" (the historical log returns) or "approximate"
+                (the mean-variance approximation). Defaults to "exact".
+            fraction (float, optional): The share of the growth optimal portfolio to hold,
+                e.g. 0.5 for half Kelly; the rest is cash. Defaults to 1.
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). The log growth compounds per period, so it needs
+                non-overlapping returns; daily returns keep every period's wealth positive.
+                Defaults to "daily".
+            covariance (str, optional): The estimator of the covariance matrix, used by
+                the "approximate" method and for the volatility and risk contributions:
+                "sample" (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et
+                al., 2010), "semicovariance" (the co-movement below a zero return, Estrada,
+                2007), "exponential" (recent periods weigh most, RiskMetrics) or "denoised"
+                (the eigenvalues of the correlation matrix that random returns could
+                produce averaged, Laloux et al., 2000). Defaults to "sample".
+            covariance_span (int, optional): The span in periods of the "exponential"
+                covariance; the weight of a period halves after about span / 2.9
+                periods. Defaults to 180.
+            minimum_weight (float, optional): The lowest weight an asset may have in the
+                full Kelly portfolio; a negative value allows short positions. Defaults
+                to 0.
+            maximum_weight (float, optional): The highest weight an asset may have in the
+                full Kelly portfolio. Defaults to 1.
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per asset, for the Cash (when the fraction is not one) and for the
+            portfolio, the Weight, Expected Return, Volatility, Sharpe Ratio and Risk
+            Contribution, with the Log Growth, the annualized average log return of each
+            asset on its own and of the portfolio. Returns and volatilities are annualized.
+
+        Notes:
+        - The expected returns are historical averages, so the full Kelly weights tend to
+          concentrate in the assets that happened to grow fastest; a fraction below one or
+          a maximum weight tempers that.
+        - The log growth is the average of ln(1 + r) per period times the number of periods
+          in a year, so the growth of daily returns is comparable to that of monthly ones.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_growth_optimal_weights(fraction=0.5, maximum_weight=0.4)
+        ```
+
+        Which returns:
+
+        |           |   Weight |   Expected Return |   Volatility |   Sharpe Ratio |   Risk Contribution |   Log Growth |
+        |:----------|---------:|------------------:|-------------:|---------------:|--------------------:|-------------:|
+        | AAPL      |      0.1 |            0.1933 |       0.2786 |         0.5727 |              0.2141 |       0.1547 |
+        | MSFT      |      0.2 |            0.2017 |       0.2572 |         0.6532 |              0.4118 |       0.1687 |
+        | JNJ       |      0   |            0.0984 |       0.1673 |         0.3867 |              0      |       0.0844 |
+        | XOM       |      0.2 |            0.291  |       0.2702 |         0.9522 |              0.374  |       0.2544 |
+        | Cash      |      0.5 |            0.0337 |       0      |       nan      |              0      |       0.0337 |
+        | Portfolio |      1   |            0.1347 |       0.0959 |         1.0531 |              1      |       0.1301 |
+        """
+        returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+            period, include_benchmark, covariance, covariance_span
+        )
+        weights = optimization_model.get_growth_optimal_weights(
+            returns,
+            expected_returns,
+            covariance_matrix,
+            method,
+            fraction,
+            minimum_weight,
+            maximum_weight,
+        )
+        periods_per_year = PERIODS_PER_YEAR[period]
+        cash = 1 - fraction
+        growth = np.log1p(returns).mean() * periods_per_year
+        portfolio_growth = (
+            np.log1p(
+                returns @ weights + cash * risk_free_rate / periods_per_year
+            ).mean()
+            * periods_per_year
+        )
+
+        # The cash is an asset without risk that earns the risk free rate, so the
+        # portfolio's expected return and Sharpe ratio include it.
+        if cash != 0:
+            weights["Cash"] = cash
+            expected_returns["Cash"] = risk_free_rate
+            covariance_matrix = covariance_matrix.reindex(
+                index=weights.index, columns=weights.index, fill_value=0.0
+            )
+            growth["Cash"] = (
+                np.log1p(risk_free_rate / periods_per_year) * periods_per_year
+            )
+
+        table = self._weights_table(
+            weights, expected_returns, covariance_matrix, risk_free_rate, rounding
+        )
+        table["Log Growth"] = growth
+        table.loc[PORTFOLIO_TICKER, "Log Growth"] = portfolio_growth
         return self._round(table, rounding)
 
     @handle_errors
@@ -1049,10 +1464,12 @@ class PortfolioConstruction:
                 estimated from. Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1165,10 +1582,12 @@ class PortfolioConstruction:
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
                 (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007) or
-                "exponential" (recent periods weigh most, RiskMetrics). The shrinkage
-                estimators stabilize the weights when there are many assets compared to
-                the number of periods. Defaults to "sample".
+                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
+                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
+                stabilize the weights when there are many assets compared to the number of
+                periods. Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.

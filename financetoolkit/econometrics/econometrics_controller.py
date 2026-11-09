@@ -6907,3 +6907,111 @@ class Econometrics:
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
         )
+
+    @handle_errors
+    def get_level_significance(
+        self,
+        period: str | None = None,
+        column: str = "Close",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how unusual the latest value of every series is: its percentile in the series'
+        own history and the last dates the series was at least as high ("the highest since") and at
+        least as low ("the lowest since").
+
+        Where `get_move_significance` (Risk) measures how unusual a move is, this measures how
+        unusual a level is, which is the question for rates and macroeconomic series: a 10-year
+        yield of 5.13% is "the highest since May 2002" when no month since then was as high, and
+        an unemployment rate can be the lowest in decades without any single large move. Through
+        the Toolkit it measures the prices of the tickers ("the highest close since"); with
+        `Econometrics(data=...)` any series, such as the interest rates, inflation or
+        unemployment of `Economics` and the yield curves of `FixedIncome`.
+
+        The formula is as follows:
+
+        - Percentile = (Count(x(s) < x(T)) + 0.5 * Count(x(s) = x(T))) / Count(s), over s < T
+        - Highest Since = the last date s < T with x(s) >= x(T)
+        - Lowest Since = the last date s < T with x(s) <= x(T)
+
+        Where x(T) is the latest value of a series and s runs over its earlier observations. An
+        earlier value equal to the latest one counts as half (the percentile rank), so a policy
+        rate that has not changed for years sits in the middle of its own ties. Highest Since is
+        NaN when no earlier value was as high, which makes the latest value the highest of the
+        history; Lowest Since likewise.
+
+        Also known as: highest since, lowest since, record high, multi-year high, level
+        percentile, historical percentile, how unusual is the latest value.
+
+        Args:
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
+                yearly); the weekly to yearly periods take the last value of each period. Defaults to
+                None, which is "daily": the series at the dates they are observed, so a monthly
+                series is compared month by month.
+            column (str, optional): The historical data column to measure. Defaults to "Close", the
+                traded close of the tickers and the series themselves with data=.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
+                Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: Per series the Start Date and number of Observations of its history,
+            the Latest Date and Latest Value, the Percentile (decimal) and the Highest Since and
+            Lowest Since dates (as text: the dates of the observations, e.g. 2002-05-31 for a
+            monthly series, or the periods, e.g. 2002-05 with period="monthly").
+
+        Notes:
+        - The answer depends on the history it is measured against: the history starts at the start
+          date of the data, so "the highest since" can at most reach back to that date, and a
+          later start date gives a higher percentile for a value near the top. Choose a start date
+          far enough back, and read the Start Date column to see where each history begins.
+        - Each series uses its own history, so a series that starts later has a shorter one.
+        - The latest value is the last observation up to the end date, which can be older than the
+          end date for a series published with a lag; Latest Date says which it is.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics, Econometrics
+
+        economics = Economics(start_date='2000-01-01', end_date='2026-10-31')
+
+        long_term_rates = economics.get_long_term_interest_rate(
+            countries=['United States', 'Germany', 'Japan'], period='monthly'
+        )
+
+        econometrics = Econometrics(data=long_term_rates)
+
+        econometrics.get_level_significance().T
+        ```
+
+        Which returns:
+
+        |               | United States   | Germany    | Japan      |
+        |:--------------|:----------------|:-----------|:-----------|
+        | Start Date    | 2000-01-31      | 2000-01-31 | 2000-01-31 |
+        | Observations  | 322             | 322        | 322        |
+        | Latest Date   | 2026-10-31      | 2026-10-31 | 2026-10-31 |
+        | Latest Value  | 0.0513          | 0.0342     | 0.0276     |
+        | Percentile    | 0.9377          | 0.6854     | 0.9907     |
+        | Highest Since | 2002-05-31      | 2026-09-30 | 2026-09-30 |
+        | Lowest Since  | 2026-09-30      | 2026-08-31 | 2026-06-30 |
+        """
+        period = period if period else "daily"
+        levels = self._filter_benchmark(
+            self._get_series_column(period, column),
+            include_benchmark=include_benchmark,
+        )
+
+        level_significance = pd.DataFrame(
+            {
+                series: diagnostics_model.get_level_significance(levels[series])
+                for series in levels.columns
+            }
+        ).T.infer_objects()
+
+        return apply_rounding(
+            level_significance, rounding if rounding is not None else self._rounding
+        )

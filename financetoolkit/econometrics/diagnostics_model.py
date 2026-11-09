@@ -504,3 +504,59 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
         )
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_level_significance(levels: pd.Series) -> pd.Series:
+    """
+    Calculate how unusual the latest value of a series is compared with its own history: the
+    percentile of the latest value among the earlier values and the last dates the series was
+    at least as high and at least as low.
+
+    The formula is as follows:
+
+    - Percentile = (Count(x(s) < x(T)) + 0.5 * Count(x(s) = x(T))) / Count(s), over s < T
+    - Highest Since = the last date s < T with x(s) >= x(T)
+    - Lowest Since = the last date s < T with x(s) <= x(T)
+
+    Where x(T) is the latest value and s runs over every earlier observation. The percentile counts
+    an earlier value equal to the latest one as half, the percentile rank, so a rate that has been
+    unchanged for years is in the middle of its own ties rather than at their bottom. Highest Since
+    is NaN when no earlier value was as high, which makes the latest value the highest of the
+    history, and Lowest Since likewise.
+
+    Args:
+        levels (pd.Series): The values of a single series by date; missing values are left out.
+
+    Returns:
+        pd.Series: The Start Date, Observations, Latest Date, Latest Value, Percentile, Highest
+        Since and Lowest Since, the dates as text.
+    """
+    observed = levels.dropna()
+
+    if observed.empty:
+        raise ValueError("The series has no observations.")
+
+    labels = observed.index.astype(str)
+    earlier = observed.to_numpy(dtype=float)[:-1]
+    latest = float(observed.iloc[-1])
+
+    as_high = np.flatnonzero(earlier >= latest)
+    as_low = np.flatnonzero(earlier <= latest)
+
+    return pd.Series(
+        {
+            "Start Date": labels[0],
+            "Observations": len(observed),
+            "Latest Date": labels[-1],
+            "Latest Value": latest,
+            "Percentile": (
+                (np.sum(earlier < latest) + 0.5 * np.sum(earlier == latest))
+                / len(earlier)
+                if len(earlier)
+                else np.nan
+            ),
+            "Highest Since": labels[as_high[-1]] if as_high.size else np.nan,
+            "Lowest Since": labels[as_low[-1]] if as_low.size else np.nan,
+        },
+        dtype=object,
+    )

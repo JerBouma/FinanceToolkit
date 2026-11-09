@@ -137,3 +137,42 @@ def test_standalone_arima_uses_every_series_at_its_own_observations():
         len(days) * 0.8
     )
     assert validation.loc["Holdout Observations", "CPI"] == 36 - int(36 * 0.8)
+
+
+def test_level_significance_on_any_data(monthly_rates):
+    econometrics = Econometrics(data=monthly_rates, rounding=None)
+
+    significance = econometrics.get_level_significance(period="monthly")
+    assert list(significance.index) == ["United States", "Germany"]
+
+    for country in significance.index:
+        history = monthly_rates[country]
+        latest = history.iloc[-1]
+        row = significance.loc[country]
+        assert row["Latest Value"] == pytest.approx(latest)
+        assert row["Start Date"] == "2000-01"
+        assert row["Percentile"] == pytest.approx((history.iloc[:-1] < latest).mean())
+        # The dates are the months of the data, the last at least as high and as low.
+        for column, as_far in (
+            ("Highest Since", history >= latest),
+            ("Lowest Since", history <= latest),
+        ):
+            earlier = as_far.iloc[:-1]
+            expected = str(earlier[earlier].index[-1]) if earlier.any() else None
+            assert (row[column] if isinstance(row[column], str) else None) == expected
+
+    # At the dates they are observed (the default), the months are their last days.
+    daily = econometrics.get_level_significance()
+    assert daily.loc["Germany", "Start Date"] == "2000-01-31"
+
+
+def test_level_significance_on_the_toolkit(econometrics_module):
+    significance = econometrics_module.get_level_significance()
+
+    # The traded close of every ticker, the Benchmark only when asked for.
+    assert "Benchmark" not in significance.index
+    assert significance["Percentile"].between(0, 1).all()
+    assert (
+        "Benchmark"
+        in econometrics_module.get_level_significance(include_benchmark=True).index
+    )

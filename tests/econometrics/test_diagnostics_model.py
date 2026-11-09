@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.econometrics import diagnostics_model
 
@@ -198,3 +199,44 @@ def test_get_cusum_test_invalid_type():
         raise AssertionError("Expected TypeError")
     except TypeError:
         pass
+
+
+def test_get_level_significance():
+    months = pd.period_range("2002-03", periods=5, freq="M")
+    rates = pd.Series([0.0528, 0.0516, 0.04, np.nan, 0.0513], index=months)
+
+    significance = diagnostics_model.get_level_significance(rates)
+
+    # The last month at least as high is 2002-04, the last at least as low 2002-05; of the
+    # three earlier values one is below the latest (the missing month is left out).
+    assert significance["Highest Since"] == "2002-04"
+    assert significance["Lowest Since"] == "2002-05"
+    assert significance["Percentile"] == pytest.approx(1 / 3)
+    assert significance["Start Date"] == "2002-03"
+    assert significance["Observations"] == 4  # noqa: PLR2004
+    assert significance["Latest Date"] == "2002-07"
+    assert significance["Latest Value"] == pytest.approx(0.0513)
+
+
+def test_get_level_significance_ties_and_records():
+    days = pd.period_range("2026-01-01", periods=4, freq="D")
+
+    # An unchanged rate is in the middle of its ties, and was as high and as low the day before.
+    flat = diagnostics_model.get_level_significance(pd.Series([0.02] * 4, index=days))
+    assert flat["Percentile"] == pytest.approx(0.5)
+    assert flat["Highest Since"] == flat["Lowest Since"] == "2026-01-03"
+
+    # A record high has no earlier date as high.
+    record = diagnostics_model.get_level_significance(
+        pd.Series([0.01, 0.03, 0.02, 0.04], index=days)
+    )
+    assert record["Percentile"] == 1
+    assert pd.isna(record["Highest Since"])
+    assert record["Lowest Since"] == "2026-01-03"
+
+    # A single observation has no history to compare with.
+    single = diagnostics_model.get_level_significance(pd.Series([0.01], index=days[:1]))
+    assert pd.isna(single["Percentile"]) and pd.isna(single["Highest Since"])
+
+    with pytest.raises(ValueError, match="no observations"):
+        diagnostics_model.get_level_significance(pd.Series([np.nan], index=days[:1]))

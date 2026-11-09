@@ -1341,6 +1341,7 @@ class ToolRegistry:
         end_date: str,
         quarterly: bool,
         benchmark_ticker: str,
+        period: str | None = None,
     ) -> pd.DataFrame:
         """
         Retrieves the indicators an econometrics call names as its series, each through
@@ -1353,6 +1354,11 @@ class ToolRegistry:
             end_date (str): The end date of the call.
             quarterly (bool): Whether quarterly data is asked for.
             benchmark_ticker (str): The benchmark of the call.
+            period (str | None, optional): The period the call asks for, passed on to every
+                indicator that takes one and is published at it, so a monthly analysis reads
+                the monthly series its source publishes (a monthly average, for some rates)
+                rather than the last daily value of each month. Defaults to None, each
+                indicator's own default.
 
         Returns:
             pd.DataFrame: The series, a column each, by date.
@@ -1417,17 +1423,26 @@ class ToolRegistry:
                     for entity in reference.entities
                 ]
             )
-            result = self._provider.call_method(
-                module_name=module,
-                method_name=reference.indicator,
-                category=category,
-                tickers=entities if by_ticker else None,
-                countries=None if by_ticker else entities,
-                start_date=start_date,
-                end_date=end_date,
-                quarterly=quarterly,
-                benchmark_ticker=benchmark_ticker,
-            )
+            arguments = {
+                "module_name": module,
+                "method_name": reference.indicator,
+                "category": category,
+                "tickers": entities if by_ticker else None,
+                "countries": None if by_ticker else entities,
+                "start_date": start_date,
+                "end_date": end_date,
+                "quarterly": quarterly,
+                "benchmark_ticker": benchmark_ticker,
+            }
+            result = None
+            if period and "period" in self._inspector.get_method_param_names(
+                self._module_class_map.get(module), reference.indicator
+            ):
+                result = self._provider.call_method(**arguments, period=period)
+            # An indicator that is not published at the period (a monthly series asked for
+            # weekly) is read at its own frequency instead, which the analysis resamples.
+            if result is None or getattr(result, "empty", False):
+                result = self._provider.call_method(**arguments)
             resolved = reference._replace(entities=entities)
             frames.append((resolved, series_model.to_series_columns(result, resolved)))
         return series_model.combine_series(frames)
@@ -1999,6 +2014,11 @@ class ToolRegistry:
                                 end_date=end_date,
                                 quarterly=quarterly,
                                 benchmark_ticker=benchmark_ticker,
+                                period=(
+                                    method_kwargs.get("period")
+                                    if "period" in given_params
+                                    else None
+                                ),
                             ),
                             changes=changes,
                             **method_kwargs,

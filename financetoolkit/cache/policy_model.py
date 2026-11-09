@@ -244,6 +244,7 @@ POLICIES: dict[str, CachePolicy] = {
     f"{BANK_OF_ENGLAND}.millennium": CachePolicy(ttl_seconds=365 * DAY),
     f"{BANK_OF_ENGLAND}.curve_current_month": CachePolicy(ttl_seconds=DAY),
     f"{BANK_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY, revision_days=31),
+    f"{BANK_OF_JAPAN}.price_index": CachePolicy(ttl_seconds=DAY),
     f"{EUROPEAN_CENTRAL_BANK}.economics_series": CachePolicy(
         ttl_seconds=DAY, revision_days=31
     ),

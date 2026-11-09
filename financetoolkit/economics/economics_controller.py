@@ -50,6 +50,7 @@ from financetoolkit.economics import (
     yfinance_model,
 )
 from financetoolkit.economics.helpers import (
+    average_monthly_index,
     buffered_start_date,
     check_period_type,
     combine_sources,
@@ -410,6 +411,70 @@ class Economics:
             ],
             countries,
         )
+
+    def _get_monthly_industrial_prices(
+        self, measure: str, countries: list[str] | str | None = None
+    ) -> pd.DataFrame:
+        """
+        Combines a monthly industrial price index of every country from its official
+        publisher, none of which needs an API key: Eurostat (the euro area, the European
+        Union and around 35 European countries), the Bureau of Labor Statistics (United
+        States, through FRED when a FRED API key is set) and the Bank of Japan (Japan).
+
+        Args:
+            measure (str): "producer" for the producer price index, "export" for the
+                export price index or "import" for the import price index.
+            countries (list[str] | str | None, optional): The requested countries, so the
+                sources of other countries are not retrieved. Defaults to None.
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by month.
+        """
+        # Only the requested months are asked for, with room for growth and rolling.
+        start_date = buffered_start_date(self._start_date, "monthly")
+        end_date = self._end_date
+
+        # FRED republishes the BLS series in full, so it is used when a key is set; the
+        # keyless BLS API returns about the last three years.
+        united_states = (
+            (
+                lambda: fred_model.get_price_index(
+                    measure, start_date, end_date, self._fred_api_key
+                )
+            )
+            if self._fred_api_key
+            else (lambda: bls_model.get_price_index(measure))
+        )
+
+        prices = self._combine_sources_for(
+            [
+                (
+                    lambda: eurostat_model.get_industrial_price_index(
+                        measure, start_date, end_date
+                    ),
+                    None,
+                ),
+                (united_states, "United States"),
+                (lambda: boj_model.collect_price_index(measure), "Japan"),
+            ],
+            countries,
+        )
+
+        if (
+            not self._fred_api_key
+            and "United States" in prices.columns
+            and prices["United States"].first_valid_index()
+            > pd.Period(self._start_date, freq="M")
+        ):
+            logger.warning(
+                "Without a FRED API key, the US %s price index starts in %s: the keyless BLS "
+                "API only returns about the last three years. Set a FRED API key for the "
+                "full history.",
+                measure,
+                prices["United States"].first_valid_index().strftime("%Y-%m"),
+            )
+
+        return prices
 
     def _default_period(
         self, period: str | None, highest: str, quarterly_available: bool = True
@@ -3695,21 +3760,34 @@ class Economics:
         rounding: int | None = None,
     ):
         """
-        Get the Producer Price Index (PPI) for a variety of countries over time from the OECD.
-        The PPI measures the average change over time in the prices received by domestic
-        producers (manufacturing) for their output. Because producers tend to pass rising input
-        costs on to their customers with a lag, the PPI is generally seen as a leading, upstream
-        indicator of cost pressure that later shows up in the Consumer Price Index (CPI).
+        Get the Producer Price Index (PPI) for a variety of countries over time. The PPI
+        measures the average change over time in the prices domestic producers receive for
+        their output. Because producers tend to pass rising input costs on to their
+        customers with a lag, the PPI is generally seen as a leading, upstream indicator of
+        cost pressure that later shows up in the Consumer Price Index (CPI).
 
-        The index covers manufacturing output only, is not seasonally adjusted, and is set to
-        100 in the base year, which can vary per country.
+        Each country's headline index comes monthly from its official publisher, without an
+        API key:
 
-        The OECD stopped updating this series in its Key Economic Indicators dataset during
-        2023: annual values end in 2022, and monthly and quarterly values end in early 2023
-        for all but a couple of countries. A start_date after that point returns an empty
-        DataFrame.
+        - Eurostat for the euro area, the European Union and around 35 European countries:
+          the industrial producer prices on the domestic market (industry except
+          construction, sewerage and waste management), 2021 = 100.
+        - The Bureau of Labor Statistics for the United States: the PPI for final demand,
+          November 2009 = 100. The keyless BLS API returns about the last three years; with
+          a FRED API key the full history comes from FRED, which republishes it.
+        - The Bank of Japan for Japan: the Corporate Goods Price Index (domestic), 2020 =
+          100, from 1960.
 
-        See definition: https://www.oecd.org/en/data/indicators/producer-prices-ppi.html
+        China is not included: the National Bureau of Statistics of China publishes its
+        producer prices as changes rather than as an index, and its database refuses
+        automated requests. Its monthly year-on-year figure is in get_economic_calendar.
+
+        All indices are not seasonally adjusted, so changes are best taken year over year
+        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        5.7%). The base year differs per country, so compare growth rather than levels.
+        Quarterly and yearly values are the average of the months, for complete periods only.
+
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
 
         Also known as: PPI, wholesale prices, factory gate prices, upstream inflation.
 
@@ -3728,37 +3806,50 @@ class Economics:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Producer Price Index.
+            pd.DataFrame: A DataFrame containing the Producer Price Index per country.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2018-01-01', end_date='2022-01-01')
+        economics = Economics(start_date='2025-10-01', end_date='2026-09-30')
 
         economics.get_producer_price_index(
-            countries=['United States', 'Germany'],
-            period='yearly'
+            countries=['United States', 'Euro Area', 'Japan'],
+            period='monthly',
+            growth=True,
+            lag=12,
         )
         ```
 
         Which returns:
 
-        |      |   United States |   Germany |
-        |:-----|----------------:|----------:|
-        | 2018 |         106.059 |   102.758 |
-        | 2019 |         106.067 |   103.65  |
-        | 2020 |         103.849 |   103.15  |
-        | 2021 |         116.511 |   108.242 |
-        | 2022 |         134.46  |   122.75  |
+        |         |   United States |   Euro Area |   Japan |
+        |:--------|----------------:|------------:|--------:|
+        | 2025-10 |          0.0284 |     -0.004  |  0.0282 |
+        | 2025-11 |          0.0314 |     -0.0126 |  0.0281 |
+        | 2025-12 |          0.0314 |     -0.0204 |  0.0248 |
+        | 2026-01 |          0.0308 |     -0.021  |  0.0247 |
+        | 2026-02 |          0.0337 |     -0.0303 |  0.0223 |
+        | 2026-03 |          0.0429 |      0.0198 |  0.0301 |
+        | 2026-04 |          0.057  |      0.0493 |  0.0553 |
+        | 2026-05 |          0.0592 |      0.0586 |  0.068  |
+        | 2026-06 |          0.0559 |      0.046  |  0.0752 |
+        | 2026-07 |          0.0494 |      0.0578 |  0.0773 |
+        | 2026-08 |          0.0561 |      0.083  |  0.0759 |
+        | 2026-09 |          0.0634 |      0.1113 |  0.0677 |
         """
         check_period_type(period)
 
-        period = self._default_period(period, "monthly")
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "producer price index",
+        )
 
-        producer_price_index = oecd_model.get_producer_price_index(
-            period=period, start_date=self._start_date, end_date=self._end_date
+        producer_price_index = average_monthly_index(
+            self._get_monthly_industrial_prices("producer", countries), period
         )
 
         return finalize_dataset(
@@ -3776,6 +3867,244 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_export_price_index(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Export Price Index for a variety of countries over time. The index
+        measures the average change over time in the prices a country's producers receive
+        for the goods they sell abroad, in its own currency. Together with the Import Price
+        Index it gives the terms of trade, and it shows how much of a currency move or a
+        foreign price shock exporters pass on.
+
+        Each country's index comes monthly from its official publisher, without an API key:
+
+        - Eurostat for the euro area, the European Union and around 35 European countries:
+          the industrial producer prices on the non-domestic market (industry except
+          construction, sewerage and waste management), 2021 = 100. For the euro area these
+          include sales to other members.
+        - The Bureau of Labor Statistics for the United States: the export price index of
+          all commodities, 2000 = 100. The keyless BLS API returns about the last three
+          years; with a FRED API key the full history comes from FRED.
+        - The Bank of Japan for Japan: the export price index in yen, 2020 = 100, from 1960.
+
+        All indices are not seasonally adjusted, so changes are best taken year over year
+        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        5.7%). The base year differs per country, so compare growth rather than levels.
+        Quarterly and yearly values are the average of the months, for complete periods only.
+
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
+
+        Also known as: export prices, XPI, trade prices.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Export Price Index per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-10-01', end_date='2026-09-30')
+
+        economics.get_export_price_index(
+            countries=['United States', 'Euro Area', 'Japan'],
+            period='monthly',
+            growth=True,
+            lag=12,
+        )
+        ```
+
+        Which returns:
+
+        |         |   United States |   Euro Area |   Japan |
+        |:--------|----------------:|------------:|--------:|
+        | 2025-10 |        nan      |     -0.0052 |  0.0224 |
+        | 2025-11 |          0.0329 |     -0.0087 |  0.0205 |
+        | 2025-12 |          0.0341 |     -0.0147 |  0.04   |
+        | 2026-01 |          0.0251 |     -0.0129 |  0.0494 |
+        | 2026-02 |          0.038  |     -0.018  |  0.0838 |
+        | 2026-03 |          0.0564 |      0.0121 |  0.113  |
+        | 2026-04 |          0.0931 |      0.0323 |  0.1809 |
+        | 2026-05 |          0.1135 |      0.042  |  0.2057 |
+        | 2026-06 |          0.0998 |      0.042  |  0.2126 |
+        | 2026-07 |          0.0812 |      0.0525 |  0.1936 |
+        | 2026-08 |          0.0928 |      0.0623 |  0.1796 |
+        | 2026-09 |          0.1163 |      0.0747 |  0.1786 |
+        """
+        check_period_type(period)
+
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "export price index",
+        )
+
+        export_price_index = average_monthly_index(
+            self._get_monthly_industrial_prices("export", countries), period
+        )
+
+        return finalize_dataset(
+            dataset=export_price_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Export Price Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_import_price_index(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Import Price Index for a variety of countries over time. The index measures
+        the average change over time in the prices of the goods a country buys from abroad,
+        in its own currency. It shows how foreign price shocks and currency moves reach the
+        domestic economy, ahead of the Producer and Consumer Price Indices.
+
+        Each country's index comes monthly from its official publisher, without an API key:
+
+        - Eurostat for the euro area, the European Union and around 20 European countries:
+          the import prices of industrial products (mining, manufacturing and energy
+          supply), 2021 = 100. For the euro area these include imports from other members.
+        - The Bureau of Labor Statistics for the United States: the import price index of
+          all commodities, 2000 = 100. The keyless BLS API returns about the last three
+          years; with a FRED API key the full history comes from FRED.
+        - The Bank of Japan for Japan: the import price index in yen, 2020 = 100, from 1960.
+
+        All indices are not seasonally adjusted, so changes are best taken year over year
+        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        5.7%). The base year differs per country, so compare growth rather than levels.
+        Quarterly and yearly values are the average of the months, for complete periods only.
+
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpi_esms.htm
+
+        Also known as: import prices, MPI, trade prices.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Import Price Index per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-10-01', end_date='2026-09-30')
+
+        economics.get_import_price_index(
+            countries=['United States', 'Euro Area', 'Japan'],
+            period='monthly',
+            growth=True,
+            lag=12,
+        )
+        ```
+
+        Which returns:
+
+        |         |   United States |   Euro Area |   Japan |
+        |:--------|----------------:|------------:|--------:|
+        | 2025-10 |        nan      |     -0.0231 | -0.016  |
+        | 2025-11 |         -0.0007 |     -0.0291 | -0.017  |
+        | 2025-12 |          0      |     -0.036  |  0.0018 |
+        | 2026-01 |          0.0021 |     -0.0357 |  0.0072 |
+        | 2026-02 |          0.0099 |     -0.033  |  0.0283 |
+        | 2026-03 |          0.0226 |      0.015  |  0.0831 |
+        | 2026-04 |          0.0452 |      0.0617 |  0.217  |
+        | 2026-05 |          0.0688 |      0.073  |  0.2642 |
+        | 2026-06 |          0.0675 |      0.0604 |  0.3042 |
+        | 2026-07 |          0.0602 |      0.064  |  0.2939 |
+        | 2026-08 |          0.0674 |      0.0835 |  0.2506 |
+        | 2026-09 |          0.081  |      0.1072 |  0.2447 |
+        """
+        check_period_type(period)
+
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "import price index",
+        )
+
+        import_price_index = average_monthly_index(
+            self._get_monthly_industrial_prices("import", countries), period
+        )
+
+        return finalize_dataset(
+            dataset=import_price_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Import Price Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=True,
         )
 
     @handle_errors

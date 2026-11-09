@@ -440,3 +440,21 @@ def test_get_nonfarm_payrolls_requires_fred_api_key():
     result = economics.get_nonfarm_payrolls()
 
     assert result.empty
+
+
+def test_get_export_price_index(recorder, economics_module):
+    recorder.capture(economics_module.get_export_price_index())
+    recorder.capture(
+        economics_module.get_export_price_index(
+            countries=["United States", "Japan", "Euro Area"], growth=True, lag=12
+        )
+    )
+
+
+def test_get_import_price_index(recorder, economics_module):
+    recorder.capture(economics_module.get_import_price_index())
+    recorder.capture(
+        economics_module.get_import_price_index(
+            countries=["United States", "Japan", "Germany"], period="quarterly"
+        )
+    )

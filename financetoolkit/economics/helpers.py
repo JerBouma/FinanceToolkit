@@ -561,6 +561,29 @@ def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     return resampled
 
 
+def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
+    """
+    Converts a monthly index to a quarterly or yearly one by averaging the months of
+    every period, the convention statistical offices use for the quarterly and annual
+    values of a price index. A period is only averaged once all of its months are
+    published, so a partial quarter or year is not mistaken for a full one.
+
+    Args:
+        data (pd.DataFrame): The monthly index, indexed by a monthly PeriodIndex.
+        period (str): "monthly", "quarterly" or "yearly".
+
+    Returns:
+        pd.DataFrame: The index at the requested frequency, NaN for incomplete periods.
+    """
+    if data.empty or period == "monthly":
+        return data
+
+    periods = data.index.asfreq("Q" if period == "quarterly" else "Y")
+    grouped = data.groupby(periods)
+
+    return grouped.mean().where(grouped.count() == (3 if period == "quarterly" else 12))
+
+
 def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     """
     Combines country columns from several sources, taking each country from the source

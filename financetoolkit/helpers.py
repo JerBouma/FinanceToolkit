@@ -928,3 +928,27 @@ def require_fred_api_key(fred_api_key: str | None, data: str) -> None:
             "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
             "fred_api_key argument or set the FRED_API_KEY environment variable."
         )
+
+
+def get_goodwill_and_intangible_assets(balance_sheet: pd.DataFrame) -> pd.DataFrame:
+    """
+    Selects the goodwill and other intangible assets on a balance sheet, the assets the
+    tangible measures (tangible assets, tangible book value, asset coverage) deduct.
+
+    The row that combines them is used where the data provider reports it. Where it is
+    missing, the separate Goodwill and Intangible Assets rows are added up, with a missing
+    one counting as zero: a company that reports goodwill but no other intangibles (or the
+    reverse) still gets a value. The result is NaN only when none of the three is reported.
+
+    Args:
+        balance_sheet (pd.DataFrame): The balance sheet statement, with the tickers and the
+            line items as its index and the periods as its columns.
+
+    Returns:
+        pd.DataFrame: The goodwill and intangible assets, one row per ticker.
+    """
+    separate = balance_sheet.loc[:, "Goodwill", :].add(
+        balance_sheet.loc[:, "Intangible Assets", :], fill_value=0
+    )
+
+    return balance_sheet.loc[:, "Goodwill and Intangible Assets", :].fillna(separate)

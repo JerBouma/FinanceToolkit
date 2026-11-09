@@ -8,7 +8,7 @@ from functools import cache, cached_property
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import LazyDict
+from financetoolkit.helpers import LazyDict, get_goodwill_and_intangible_assets
 from financetoolkit.models import (
     altman_model,
     beneish_model,
@@ -4966,14 +4966,12 @@ class Models:
             else self._balance_sheet_statement.loc[:, "Retained Earnings", :]
         )
         goodwill_and_intangible_assets = (
-            self._balance_sheet_statement.loc[:, "Goodwill and Intangible Assets", :]
+            get_goodwill_and_intangible_assets(self._balance_sheet_statement)
             .T.rolling(trailing)
             .mean()
             .T
             if trailing
-            else self._balance_sheet_statement.loc[
-                :, "Goodwill and Intangible Assets", :
-            ]
+            else get_goodwill_and_intangible_assets(self._balance_sheet_statement)
         )
         revenue = (
             self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T

@@ -12,7 +12,7 @@ import pandas as pd
 from financetoolkit.cache import policy_model, ticker_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estimates
-from financetoolkit.helpers import handle_portfolio
+from financetoolkit.helpers import get_goodwill_and_intangible_assets, handle_portfolio
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
@@ -6456,9 +6456,9 @@ class Ratios:
                         trailing,
                     ),
                     self._mean_trailing(
-                        self._balance_sheet_statement.loc[
-                            :, "Goodwill and Intangible Assets", :
-                        ],
+                        get_goodwill_and_intangible_assets(
+                            self._balance_sheet_statement
+                        ),
                         trailing,
                     ),
                 )
@@ -6471,9 +6471,7 @@ class Ratios:
                     .T.rolling(2)
                     .mean()
                     .T,
-                    self._balance_sheet_statement.loc[
-                        :, "Goodwill and Intangible Assets", :
-                    ]
+                    get_goodwill_and_intangible_assets(self._balance_sheet_statement)
                     .T.rolling(2)
                     .mean()
                     .T,
@@ -8639,15 +8637,12 @@ class Ratios:
 
         |     |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:----|-------:|-------:|-------:|-------:|-------:|
-        | KMI | 1.9926 | 2.0029 | 2.0193 | 2.0582 | 2.1545 |
-        | OKE | 1.5362 | 1.6077 | 1.8371 | 1.7765 | 1.8112 |
-        | WMB | 1.5739 | 1.6223 | 1.6147 | 1.649  | 1.6245 |
+        | KMI | 1.4053 | 1.3851 | 1.4027 | 1.4371 | 1.5344 |
+        | OKE | 1.4978 | 1.5692 | 1.6095 | 1.526  | 1.5656 |
+        | WMB | 1.5739 | 1.6223 | 1.5972 | 1.6317 | 1.6245 |
         """
-        # Goodwill and the other intangible assets are selected separately, so that the
-        # ratio does not rely on the provider also returning the row that combines them.
-        intangible_assets = (
-            self._balance_sheet_statement.loc[:, "Goodwill", :]
-            + self._balance_sheet_statement.loc[:, "Intangible Assets", :]
+        intangible_assets = get_goodwill_and_intangible_assets(
+            self._balance_sheet_statement
         )
 
         if trailing:
@@ -14312,9 +14307,7 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
             ),
             self._mean_trailing(
-                self._balance_sheet_statement.loc[
-                    :, "Goodwill and Intangible Assets", :
-                ],
+                get_goodwill_and_intangible_assets(self._balance_sheet_statement),
                 trailing,
             ),
         )
@@ -15318,9 +15311,7 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Preferred Stock", :], trailing
             ),
             "goodwill_and_intangible_assets": self._mean_trailing(
-                self._balance_sheet_statement.loc[
-                    :, "Goodwill and Intangible Assets", :
-                ],
+                get_goodwill_and_intangible_assets(self._balance_sheet_statement),
                 trailing,
             ),
         }

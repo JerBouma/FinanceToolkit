@@ -44,8 +44,29 @@ class RedactingFilter(logging.Filter):
         except Exception:  # noqa: BLE001
             # Arguments that don't fit the message are left to the handler to report.
             message = f"{record.msg} {record.args}"
-        record.msg = redact(message)
-        record.args = None
+
+        redacted = redact(message)
+        if redacted != message:
+            # Formatters such as uvicorn's access log read the arguments themselves, so a
+            # credential inside an argument (a request path with ?apikey=...) is replaced in
+            # that argument and the arguments are kept. A credential the arguments can't
+            # hold apart, such as a key split over the message and an argument, makes the
+            # redacted message replace both.
+            arguments = None
+            if isinstance(record.args, tuple) and redact(record.msg) == str(record.msg):
+                arguments = tuple(
+                    item if redact(item) == str(item) else redact(item)
+                    for item in record.args
+                )
+                try:
+                    if str(record.msg) % arguments != redacted:
+                        arguments = None
+                except (TypeError, ValueError):
+                    arguments = None
+            if arguments is None:
+                record.msg, record.args = redacted, None
+            else:
+                record.args = arguments
 
         if record.exc_info and not record.exc_text:
             record.exc_text = _TRACEBACK_FORMATTER.formatException(record.exc_info)

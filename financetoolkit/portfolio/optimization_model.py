@@ -116,8 +116,7 @@ def get_weight_constraints(
     - Per asset, minimum_weight ≤ w_i ≤ maximum_weight; a bound given as {asset: bound}
       applies to the assets it names, the others keep 0 (minimum) or 1 (maximum).
     - Per group (e.g. a sector or country), the weights of its assets sum to between the
-      group's minimum and maximum, Σ_{i ∈ g} w_i, as in PyPortfolioOpt's
-      add_sector_constraints and skfolio's groups with linear constraints.
+      group's minimum and maximum, Σ_{i ∈ g} w_i.
     - The net exposure Σ w_i equals net_exposure (1 for a fully invested portfolio, 0 for
       a market neutral one). A net exposure of 0 or below needs a negative minimum_weight
       for at least one asset.
@@ -607,7 +606,7 @@ def get_semicovariance(returns: pd.DataFrame, threshold: float = 0.0) -> pd.Data
     an investor who doesn't mind upside surprises wants to minimize.
 
     Every period counts in the average, the ones above the threshold as zero, as in
-    Estrada and in PyPortfolioOpt's semicovariance.
+    Estrada.
 
     See Estrada, J. (2007), "Mean-Semivariance Optimization: A Heuristic Approach",
     Journal of Applied Finance, 18(1), 57-72.
@@ -632,7 +631,7 @@ def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.Dat
     periods count most and the matrix follows changes in volatility and correlation.
 
     The deviations are taken from the mean over the whole range and the weights are
-    normalized to sum to one, as in PyPortfolioOpt's exp_cov.
+    normalized to sum to one.
 
     See RiskMetrics Technical Document (J.P. Morgan/Reuters, 1996), chapter 5.
 
@@ -670,10 +669,9 @@ def get_denoised_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     eigenvalues best: the sum of squared differences with a Gaussian kernel density of
     the eigenvalues (bandwidth 0.01), at 1,000 points between the edges of the
     Marčenko-Pastur distribution, minimized for σ² between 0.00001 and 0.99999 starting
-    at 0.5. This is López de Prado's "constant residual eigenvalue" method, as in
-    skfolio's DenoiseCovariance, so the results agree with it. The correlation matrix is
-    rescaled to a unit diagonal after the replacement and turned back into a covariance
-    with the sample standard deviations (ddof=1).
+    at 0.5. This is López de Prado's "constant residual eigenvalue" method. The
+    correlation matrix is rescaled to a unit diagonal after the replacement and turned
+    back into a covariance with the sample standard deviations (ddof=1).
 
     See Laloux, L., Cizeau, P., Bouchaud, J.-P. and Potters, M. (2000), "Random Matrix
     Approach to Cross Correlations in Financial Data", Physical Review E, 63(3), 037101,
@@ -758,25 +756,21 @@ def get_expected_returns(
     The annualized expected return of each asset, estimated from its returns per period.
 
     - "mean": the average return per period times the number of periods in a year, the
-      arithmetic historical mean (PyPortfolioOpt's mean_historical_return with
-      compounding=False).
+      arithmetic historical mean.
     - "exponential": the exponentially weighted average return, with the weight of a
       period (1 - α)^age, α = 2 / (span + 1), normalized to sum to one, so recent
-      periods count most (PyPortfolioOpt's ema_historical_return with
-      compounding=False, pandas' ewm with adjust=True).
+      periods count most (pandas' ewm with adjust=True).
     - "capm": the return the Capital Asset Pricing Model implies, r_f + β_i (E[r_m] -
       r_f), with β_i = Cov(r_i, r_m) / Var(r_m) of the returns per period and E[r_m]
-      the annualized average return of the benchmark (Sharpe, 1964; PyPortfolioOpt's
-      capm_return with compounding=False).
+      the annualized average return of the benchmark (Sharpe, 1964).
     - "james_stein": the Bayes-Stein shrinkage estimator of Jorion (1986), which pulls
       every average return towards the average return of the minimum variance portfolio,
       μ_0 = 1'Σ⁻¹μ̂ / 1'Σ⁻¹1, by φ = (N + 2) / ((N + 2) + T (μ̂ - μ_0 1)'Σ⁻¹(μ̂ - μ_0 1)),
       with μ̂ the average of the T returns per period of the N assets and Σ = S (T - 1) /
       (T - N - 2) Jorion's estimate of the covariance matrix from the sample covariance
-      S (ddof=1): μ = (1 - φ) μ̂ + φ μ_0 1. Riskfolio-Lib's mean_vector with method="BS"
-      uses S itself, which shrinks slightly less. The average returns are the noisiest input of a mean-variance
-      optimization, and the shrinkage is strongest when they differ little compared to
-      their estimation error.
+      S (ddof=1): μ = (1 - φ) μ̂ + φ μ_0 1. The average returns are the noisiest input
+      of a mean-variance optimization, and the shrinkage is strongest when they differ
+      little compared to their estimation error.
 
     See Sharpe, W. F. (1964), "Capital Asset Prices: A Theory of Market Equilibrium under
     Conditions of Risk", The Journal of Finance, 19(3), 425-442, and Jorion, P. (1986),
@@ -1032,8 +1026,7 @@ def get_maximum_sharpe_weights(
     The fully invested portfolio with the highest Sharpe ratio, the tangency portfolio of
     the efficient frontier (Sharpe, 1966; Tobin, 1958). A transaction cost c lowers the
     expected return by c Σ |w_i - w0_i|, so the ratio maximized is
-    (w'μ - r_f - c Σ d_i) / √(w'Σw) with d_i ≥ |w_i - w0_i| (skfolio's MeanRisk with
-    transaction_costs does the same).
+    (w'μ - r_f - c Σ d_i) / √(w'Σw) with d_i ≥ |w_i - w0_i|.
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -1133,8 +1126,7 @@ def get_mean_variance_weights(
     portfolio with the lowest variance that expects that return; otherwise the portfolio
     that maximizes the expected return minus half the risk aversion times the variance.
     A transaction cost c lowers the expected return by c Σ |w_i - w0_i|, so the utility
-    maximized is w'μ - c Σ d_i - (λ/2) w'Σw with d_i ≥ |w_i - w0_i|, as PyPortfolioOpt's
-    transaction_cost objective adds to its quadratic utility.
+    maximized is w'μ - c Σ d_i - (λ/2) w'Σw with d_i ≥ |w_i - w0_i|.
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
@@ -1371,12 +1363,11 @@ def get_risk_parity_weights(
     (Spinu, 2013).
 
     Weight and group bounds are constraints on w = y / 1'y, which are linear and
-    homogeneous in y (w_i ≤ u becomes y_i - u 1'y ≤ 0), so the problem stays convex and its
-    solution does not depend on the scale of y. Within bounds that bind, the risk
+    homogeneous in y (w_i ≤ u becomes y_i - u 1'y ≤ 0), so the problem stays convex and
+    its solution does not depend on the scale of y. Within bounds that bind, the risk
     contributions can no longer all match the budget: the result is the constrained risk
-    budgeting portfolio of Richard and Roncalli (2019), the same problem skfolio's
-    RiskBudgeting solves. Risk parity holds long positions only, so a negative minimum
-    weight is refused, and the weights always sum to one.
+    budgeting portfolio of Richard and Roncalli (2019). Risk parity holds long positions
+    only, so a negative minimum weight is refused, and the weights always sum to one.
 
     See Richard, J.-C. and Roncalli, T. (2019), "Constrained Risk Budgeting Portfolios:
     Theory, Algorithms, Applications & Puzzles", arXiv:1902.05710.
@@ -1502,7 +1493,7 @@ def get_hierarchical_risk_parity_weights(
     libraries cluster on d itself, which can order the assets differently.
 
     Weight bounds move each split just enough to keep both halves within the sum of
-    their assets' bounds, as skfolio and Riskfolio-Lib do: the share α of the left half
+    their assets' bounds: the share α of the left half
     is clipped to [Σ min_left / W, Σ max_left / W], with W the weight of the cluster
     being split, and then 1 - α to the same range of the right half. A split can only
     move weight between the two halves of a cluster, so group bounds, which cut across
@@ -1604,9 +1595,9 @@ def get_hierarchical_clusters(
     clusters of D_r / (2 n_r), with D_r the sum of the squared distances between the n_r
     assets of cluster r, the number of clusters is the k + 1 that maximizes
     W_(k+2) + W_k - 2 W_(k+1), the sharpest bend in the dispersion, with k up to
-    max(8, √N) clusters for N assets. skfolio and Riskfolio-Lib sum the average distance
-    within each cluster instead, which does not fall as clusters split and tends to pick
-    more clusters than the correlation blocks hold.
+    max(8, √N) clusters for N assets. Summing the average distance within each cluster
+    instead does not fall as clusters split and tends to pick more clusters than the
+    correlation blocks hold.
 
     See Yue, S., Wang, X. and Wei, M. (2008), "Application of Two-Order Difference to Gap
     Statistic", Transactions of Tianjin University, 14(3), 217-221, and Tibshirani, R.,
@@ -1689,7 +1680,7 @@ def get_hierarchical_equal_risk_contribution_weights(
     bisects the ordered list of assets, the splits follow the tree, so similar assets
     stay together.
 
-    The weight and group bounds are applied afterwards as skfolio does: when the
+    The weight and group bounds are applied afterwards: when the
     weights fall outside them, they move to the weights within the bounds with the
     smallest relative deviation, Σ (w_i / w_HERC,i - 1)².
 
@@ -1799,9 +1790,9 @@ def get_nested_clustered_optimization_weights(
     across the clusters v are optimal for those, and the weight of every asset is
     w = W v. A cluster of one asset holds that asset only. With "maximum_sharpe", a
     cluster without an asset above the risk free rate holds its minimum variance
-    portfolio. Both levels are long only and fully invested, as in Riskfolio-Lib and
-    skfolio by default. The paper clusters with k-means and solves both levels without
-    bounds, allowing short positions; here the clustering is hierarchical, as in HERC.
+    portfolio. Both levels are long only and fully invested. The paper clusters with
+    k-means and solves both levels without bounds, allowing short positions; here the
+    clustering is hierarchical, as in HERC.
 
     See López de Prado, M. (2019), "A Robust Estimator of the Efficient Frontier", SSRN
     3469961, and López de Prado, M. (2020), Machine Learning for Asset Managers,
@@ -3239,7 +3230,7 @@ def get_expected_shortfall_contributions(
 
     The expected shortfall is the one the minimum CVaR and maximum CVaR ratio
     optimizations minimize and report, the average of the tail with a fraction of the
-    boundary period when (1 - α)T is not a whole number (Riskfolio-Lib's CVaR).
+    boundary period when (1 - α)T is not a whole number.
 
     See Tasche, D. (2000), "Conditional Expectations as Quantile Derivatives", arXiv
     math/0104190, and Scaillet, O. (2004), "Nonparametric Estimation and Sensitivity

@@ -817,3 +817,40 @@ def test_the_ratio_optimizers_take_an_expected_return_estimator(
             shrunk[column].drop("Portfolio").max()
             <= shrunk.loc["Portfolio", column] + 1e-8
         )
+
+
+def test_get_risk_contributions_of_historical_measures(recorder, portfolio_module):
+    for risk_measure in ("semideviation", "mad", "cdar"):
+        contributions = portfolio_module.get_risk_contributions(
+            weights={"AAPL": 0.7, "MSFT": 0.3}, risk_measure=risk_measure, rounding=10
+        )
+        recorder.capture(contributions)
+        assert contributions.loc["Total", "Percentage Contribution"] == pytest.approx(1)
+        assert contributions.loc["Total", "Risk Contribution"] == pytest.approx(
+            contributions["Risk Contribution"].drop("Total").sum()
+        )
+
+
+def test_get_portfolio_risk_metrics(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_portfolio_risk_metrics())
+    metrics = portfolio_module.get_portfolio_risk_metrics(
+        weights={"AAPL": 0.7, "MSFT": 0.3}, period="weekly", confidence_level=0.9
+    )
+    recorder.capture(metrics)
+    assert list(metrics.columns) == ["Portfolio", "Benchmark"]
+
+
+def test_get_discrete_allocation(recorder, portfolio_module):
+    recorder.capture(portfolio_module.get_discrete_allocation())
+    allocation = portfolio_module.get_discrete_allocation(
+        weights={"AAPL": 0.7, "MSFT": 0.3}, portfolio_value=2000, method="greedy"
+    )
+    recorder.capture(allocation)
+    assert allocation.loc["Total", "Amount"] == pytest.approx(2000)
+    # The latest traded closing price, not the dividend-adjusted one.
+    closes = portfolio_module._historical_data["daily"]["Close"]
+    assert allocation.loc["AAPL", "Price"] == pytest.approx(closes["AAPL"].iloc[-1])
+
+
+def test_get_discrete_allocation_invalid_method(portfolio_module):
+    assert portfolio_module.get_discrete_allocation(method="round").empty

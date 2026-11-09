@@ -1,5 +1,7 @@
 """Portfolio Optimization Model Tests"""
 
+import itertools
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -1834,3 +1836,128 @@ def test_a_net_exposure_of_zero_or_below_needs_short_positions(net_exposure):
         optimization_model.get_minimum_variance_weights(
             covariance, net_exposure=net_exposure
         )
+
+
+@pytest.mark.parametrize("risk_measure", ["semideviation", "mad", "cdar"])
+def test_historical_risk_contributions_add_up_to_the_measure(risk_measure):
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+    contributions = optimization_model.get_historical_risk_contributions(
+        weights, returns, risk_measure
+    )
+    portfolio = returns @ weights
+    measure = {
+        "semideviation": np.sqrt((portfolio.clip(upper=0) ** 2).mean()),
+        "mad": (portfolio - portfolio.mean()).abs().mean(),
+        "cdar": optimization_model.get_expected_tail_loss(
+            optimization_model.get_drawdowns(portfolio), 0.95
+        ),
+    }[risk_measure]
+    assert contributions["Risk Contribution"].sum() == pytest.approx(measure)
+    assert contributions["Percentage Contribution"].sum() == pytest.approx(1)
+
+    # The marginal contributions are the derivatives of the measure.
+    def value(vector):
+        return optimization_model.get_historical_risk_contributions(
+            pd.Series(vector, index=returns.columns), returns, risk_measure
+        )["Risk Contribution"].sum()
+
+    step = 1e-7
+    for position, asset in enumerate(returns.columns):
+        shift = np.eye(len(weights))[position] * step
+        derivative = (value(weights + shift) - value(weights - shift)) / (2 * step)
+        assert contributions.loc[asset, "Marginal Contribution"] == pytest.approx(
+            derivative, abs=1e-7
+        )
+
+
+def test_historical_risk_contributions_refuse_an_unknown_measure():
+    returns, _ = _reference_returns()
+    with pytest.raises(ValueError, match="risk measure"):
+        optimization_model.get_historical_risk_contributions(
+            pd.Series(0.2, index=returns.columns), returns, "variance"
+        )
+
+
+def test_discrete_allocation_finds_the_closest_whole_shares():
+    weights = pd.Series([0.5, 0.3, 0.2], index=["A", "B", "C"])
+    prices = pd.Series([129.93, 239.82, 57.4], index=["A", "B", "C"])
+    integer = optimization_model.get_discrete_allocation(weights, prices, 3000)
+    greedy = optimization_model.get_discrete_allocation(
+        weights, prices, 3000, method="greedy"
+    )
+
+    def deviation(table):
+        amounts = table["Amount"]
+        return (weights * 3000 - amounts.drop("Leftover Cash")).abs().sum() + amounts[
+            "Leftover Cash"
+        ]
+
+    # Every allocation within the budget, tried one by one.
+    target = weights * 3000
+    best = min(
+        np.abs(target - np.array(shares) * prices).sum()
+        + 3000
+        - np.array(shares) @ prices
+        for shares in itertools.product(
+            *[range(int(amount // price) + 3) for amount, price in zip(target, prices)]
+        )
+        if np.array(shares) @ prices <= 3000  # noqa: PLR2004
+    )
+    assert deviation(integer) == pytest.approx(best)
+    assert deviation(greedy) >= deviation(integer) - 1e-9
+    for table in (integer, greedy):
+        assert table["Amount"].sum() == pytest.approx(3000)
+        assert table.loc["Leftover Cash", "Amount"] >= 0
+        assert (table["Shares"].dropna() % 1 == 0).all()
+
+
+def test_discrete_allocation_holds_short_weights_as_short_shares():
+    weights = pd.Series([1.3, -0.3], index=["A", "B"])
+    prices = pd.Series([129.93, 239.82], index=["A", "B"])
+    for method in ("integer", "greedy"):
+        table = optimization_model.get_discrete_allocation(
+            weights, prices, 5000, method=method
+        )
+        assert table.loc["A", "Shares"] > 0
+        assert table.loc["B", "Shares"] < 0
+        assert table.loc["Leftover Cash", "Amount"] >= 0
+        assert table["Amount"].sum() == pytest.approx(5000)
+
+
+def test_discrete_allocation_needs_a_price_for_every_asset():
+    with pytest.raises(ValueError, match="no price"):
+        optimization_model.get_discrete_allocation(
+            pd.Series([0.5, 0.5], index=["A", "B"]),
+            pd.Series([10.0, np.nan], index=["A", "B"]),
+        )
+
+
+def test_portfolio_risk_metrics_use_the_risk_and_performance_formulas():
+    returns, benchmark = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+    portfolio = returns @ weights
+    metrics = optimization_model.get_portfolio_risk_metrics(
+        pd.DataFrame({"Portfolio": portfolio, "Benchmark": benchmark}), 252, 0.02
+    )["Portfolio"]
+    excess = portfolio - 0.02 / 252
+    assert metrics["Annualized Return"] == pytest.approx(
+        (1 + portfolio).prod() ** (252 / 500) - 1
+    )
+    assert metrics["Annualized Volatility"] == pytest.approx(
+        portfolio.std() * np.sqrt(252)
+    )
+    assert metrics["Sharpe Ratio"] == pytest.approx(
+        excess.mean() / excess.std() * np.sqrt(252)
+    )
+    assert metrics["Sortino Ratio"] == pytest.approx(
+        excess.mean() / np.sqrt((excess.clip(upper=0) ** 2).mean()) * np.sqrt(252)
+    )
+    wealth = (1 + portfolio).cumprod()
+    assert metrics["Maximum Drawdown"] == pytest.approx(
+        (wealth / wealth.cummax().clip(lower=1) - 1).min()
+    )
+    assert metrics["Value at Risk"] == pytest.approx(portfolio.quantile(0.05))
+    assert metrics["Conditional Value at Risk"] == pytest.approx(
+        portfolio[portfolio <= portfolio.quantile(0.05)].mean()
+    )

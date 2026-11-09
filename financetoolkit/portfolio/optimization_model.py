@@ -9,8 +9,11 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 from scipy.cluster.hierarchy import cut_tree, fcluster, leaves_list, linkage, to_tree
-from scipy.optimize import linprog, minimize
+from scipy.optimize import Bounds, LinearConstraint, linprog, milp, minimize
 from scipy.spatial.distance import pdist, squareform
+
+from financetoolkit.performance import performance_model
+from financetoolkit.risk import cvar_model, risk_model, var_model
 
 # pylint: disable=too-many-arguments,too-many-locals
 
@@ -3657,6 +3660,118 @@ def get_expected_shortfall_contributions(
     )
 
 
+HISTORICAL_RISK_MEASURES = ("semideviation", "mad", "cdar")
+
+
+def get_historical_risk_contributions(
+    weights: pd.Series,
+    returns: pd.DataFrame,
+    risk_measure: str = "semideviation",
+    confidence_level: float = 0.95,
+) -> pd.DataFrame:
+    """
+    How much each asset adds to a risk measure of a portfolio's historical returns
+    (Euler allocation). Each measure is homogeneous of degree one in the weights, so the
+    weight times its derivative per asset, w_i ∂ρ/∂w_i, adds up to the portfolio's
+    measure (Tasche, 2000). With r_p,t = Σ w_i r_i,t the portfolio's return over T
+    periods:
+
+    - "semideviation": the downside deviation below a return of zero,
+      SD⁻ = √(Σ min(r_p,t, 0)² / T) (Sortino and Price, 1994), with
+      ∂SD⁻/∂w_i = Σ min(r_p,t, 0) r_i,t / (T SD⁻). An asset contributes by losing in the
+      periods in which the portfolio loses. The threshold stays at zero: a threshold
+      other than zero would not scale with the weights and the contributions would not
+      add up.
+    - "mad": the mean absolute deviation, MAD = Σ |r_p,t - μ_p| / T (Konno and
+      Yamazaki, 1991), with ∂MAD/∂w_i = Σ sign(r_p,t - μ_p)(r_i,t - μ_i) / T: an
+      asset contributes by moving with the portfolio's deviations from its mean.
+    - "cdar": the Conditional Drawdown at Risk, the average of the worst 1 - α share of
+      the drawdowns D_t = max_(s≤t) Y_s - Y_t of the uncompounded cumulative return
+      Y_t = Σ_(s≤t) r_p,s (from Y_0 = 0), weighted by the tail probabilities p_t of
+      Rockafellar and Uryasev (2002), the drawdowns the minimum drawdown optimization
+      minimizes (Chekhlov, Uryasev and Zabarankin, 2005). A drawdown is the sum of the
+      assets' drawdowns from the portfolio's peak s*(t), so
+      ∂CDaR/∂w_i = Σ p_t (C_i,s*(t) - C_i,t) with C_i the cumulative return of asset i
+      (Goldberg and Mahmoud, 2017).
+
+    The measures are per period (e.g. daily), like the downside deviation and mean
+    absolute deviation of the Risk module, and not annualized.
+
+    See Tasche, D. (2000), "Conditional Expectations as Quantile Derivatives", arXiv
+    math/0104190; Sortino, F. A. and Price, L. N. (1994), "Performance Measurement in a
+    Downside Risk Framework", The Journal of Investing, 3(3), 59-64; Konno, H. and
+    Yamazaki, H. (1991), "Mean-Absolute Deviation Portfolio Optimization Model and Its
+    Applications to Tokyo Stock Market", Management Science, 37(5), 519-531; and
+    Goldberg, L. R. and Mahmoud, O. (2017), "Drawdown: From Practice to Theory and Back
+    Again", Mathematics and Financial Economics, 11(3), 275-297.
+
+    Args:
+        weights (pd.Series): The weight per asset.
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        risk_measure (str, optional): "semideviation", "mad" or "cdar". Defaults to
+            "semideviation".
+        confidence_level (float, optional): The confidence level of the CDaR, e.g. 0.95
+            for the average of the worst 5% of drawdowns. Defaults to 0.95.
+
+    Returns:
+        pd.DataFrame: The Weight, Marginal Contribution (∂ρ/∂w_i), Risk Contribution (the
+        weight times the marginal contribution) and Percentage Contribution per asset.
+    """
+    if risk_measure not in HISTORICAL_RISK_MEASURES:
+        raise ValueError(
+            f"The risk measure must be one of {', '.join(HISTORICAL_RISK_MEASURES)}, "
+            f"not '{risk_measure}'."
+        )
+    returns = returns.dropna(how="any")
+    if returns.empty:
+        raise ValueError("No period has a return for every asset.")
+    weights = weights.reindex(returns.columns).fillna(0)
+    data = returns.to_numpy(dtype=float)
+    portfolio = data @ weights.to_numpy()
+    periods = len(data)
+
+    if risk_measure == "semideviation":
+        shortfall = np.minimum(portfolio, 0)
+        semideviation = np.sqrt(shortfall @ shortfall / periods)
+        if semideviation == 0:
+            raise ValueError("The portfolio has no return below zero.")
+        marginal = shortfall @ data / (periods * semideviation)
+    elif risk_measure == "mad":
+        marginal = (
+            np.sign(portfolio - portfolio.mean()) @ (data - data.mean(axis=0)) / periods
+        )
+    else:
+        # The cumulative returns start from a peak of zero before the first period, as
+        # the drawdowns of the minimum drawdown optimization do.
+        cumulative = np.vstack([np.zeros(data.shape[1]), np.cumsum(data, axis=0)])
+        wealth = cumulative @ weights.to_numpy()
+        # The latest period up to each one in which the portfolio stood at its peak.
+        records = np.where(
+            wealth >= np.maximum.accumulate(wealth), np.arange(len(wealth)), 0
+        )
+        peaks = np.maximum.accumulate(records)[1:]
+        drawdowns = cumulative[peaks] - cumulative[1:]
+        probabilities = get_tail_probabilities(
+            drawdowns @ weights.to_numpy(), confidence_level
+        )
+        marginal = probabilities @ drawdowns
+
+    contribution = weights.to_numpy() * marginal
+    total = contribution.sum()
+    if total == 0:
+        raise ValueError(f"The portfolio has no {risk_measure} to decompose.")
+
+    return pd.DataFrame(
+        {
+            "Weight": weights.to_numpy(),
+            "Marginal Contribution": marginal,
+            "Risk Contribution": contribution,
+            "Percentage Contribution": contribution / total,
+        },
+        index=returns.columns,
+    )
+
+
 def get_diversification_metrics(
     weights: pd.Series, covariance: pd.DataFrame
 ) -> pd.Series:
@@ -3709,3 +3824,187 @@ def get_diversification_metrics(
             "Effective Number of Bets": float(np.exp(-np.sum(shares * np.log(shares)))),
         }
     )
+
+
+DISCRETE_ALLOCATION_METHODS = ("integer", "greedy")
+
+# The longest the integer programme of a discrete allocation may search, in seconds; it
+# returns the best allocation found by then.
+DISCRETE_ALLOCATION_TIME_LIMIT = 30
+
+
+def get_discrete_allocation(
+    weights: pd.Series,
+    prices: pd.Series,
+    portfolio_value: float = 10000,
+    method: str = "integer",
+) -> pd.DataFrame:
+    """
+    The whole number of shares per asset that comes closest to the weights for a
+    portfolio value, with the cash that is left over. The target amount of asset i is
+    t_i = w_i V, and n_i shares at a price p_i hold n_i p_i.
+
+    - "integer": the integer programme that minimizes the absolute deviation from the
+      target amounts with the leftover cash counted as a holding with a target of zero,
+      min Σ |t_i - n_i p_i| + c subject to Σ n_i p_i + c = V, c ≥ 0 and n_i whole, with
+      the absolute deviations written as d_i ≥ ±(t_i - n_i p_i), solved with branch and
+      bound (Cornuejols, Peña and Tütüncü, 2018, ch. 11).
+    - "greedy": every position is first rounded down to whole shares, ⌊t_i / p_i⌋, and
+      the leftover cash then buys one more share at a time of the asset furthest below
+      its target amount, while one is below it and its price fits the cash. A share of
+      an asset below its target never increases the total deviation, and after the
+      rounding each asset is less than one share below it, so this takes at most one
+      round per asset.
+
+    A short weight is held as a negative number of shares: rounding down makes a
+    short position larger, so the proceeds never fall short of the long positions they
+    fund and the leftover cash is never negative. The integer programme keeps each
+    position on the side of its weight.
+
+    See Cornuejols, G., Peña, J. and Tütüncü, R. (2018), "Optimization Methods in
+    Finance", 2nd edition, Cambridge University Press.
+
+    Args:
+        weights (pd.Series): The weight per asset, summing to one.
+        prices (pd.Series): The price of one share per asset.
+        portfolio_value (float, optional): The amount to invest. Defaults to 10000.
+        method (str, optional): "integer" or "greedy". Defaults to "integer".
+
+    Returns:
+        pd.DataFrame: Per asset the Price, Shares, Amount (shares times price), Target
+        Weight and Weight (the amount over the portfolio value), and a "Leftover Cash" row
+        with the amount that is not invested.
+    """
+    if method not in DISCRETE_ALLOCATION_METHODS:
+        raise ValueError(
+            f"The method must be one of {', '.join(DISCRETE_ALLOCATION_METHODS)}, "
+            f"not '{method}'."
+        )
+    if not portfolio_value > 0:
+        raise ValueError("The portfolio value must be above zero.")
+    prices = prices.reindex(weights.index).astype(float)
+    missing = prices.index[~(prices > 0)].tolist()
+    if missing:
+        raise ValueError(f"There is no price above zero for {', '.join(missing)}.")
+
+    price = prices.to_numpy()
+    target = weights.to_numpy(dtype=float) * portfolio_value
+
+    if method == "greedy":
+        shares = np.floor(target / price)
+        cash = portfolio_value - shares @ price
+        for _ in range(len(price)):
+            shortfall = target - shares * price
+            candidates = np.flatnonzero((shortfall > 0) & (price <= cash))
+            if not len(candidates):
+                break
+            asset = candidates[np.argmax(shortfall[candidates])]
+            shares[asset] += 1
+            cash -= price[asset]
+    else:
+        assets = len(price)
+        # The variables are the shares n_i and the absolute deviations d_i. The cash
+        # c = V - Σ n_i p_i is substituted, which leaves Σ d_i - Σ n_i p_i to minimize
+        # with Σ n_i p_i ≤ V.
+        identity = np.eye(assets)
+        deviations = LinearConstraint(
+            np.block([[np.diag(price), identity], [-np.diag(price), identity]]),
+            np.concatenate([target, -target]),
+            np.inf,
+        )
+        budget = LinearConstraint(
+            np.concatenate([price, np.zeros(assets)]), -np.inf, portfolio_value
+        )
+        # Beyond ⌈|t_i| / p_i⌉ shares a position only moves further from its target.
+        limit = np.ceil(np.abs(target) / price)
+        result = milp(
+            np.concatenate([-price, np.ones(assets)]),
+            constraints=[deviations, budget],
+            integrality=np.concatenate([np.ones(assets), np.zeros(assets)]),
+            bounds=Bounds(
+                np.concatenate([np.where(target < 0, -limit, 0), np.zeros(assets)]),
+                np.concatenate(
+                    [np.where(target > 0, limit, 0), np.full(assets, np.inf)]
+                ),
+            ),
+            options={"time_limit": DISCRETE_ALLOCATION_TIME_LIMIT},
+        )
+        if result.x is None:
+            raise ValueError(f"No allocation was found: {result.message}")
+        shares = np.round(result.x[:assets])
+        cash = portfolio_value - shares @ price
+        if cash < -FEASIBILITY_TOLERANCE * portfolio_value:
+            raise ValueError("The allocation costs more than the portfolio value.")
+
+    table = pd.DataFrame(
+        {
+            "Price": price,
+            "Shares": shares,
+            "Amount": shares * price,
+            "Target Weight": weights.to_numpy(dtype=float),
+            "Weight": shares * price / portfolio_value,
+        },
+        index=weights.index,
+    )
+    table.loc["Leftover Cash"] = [np.nan, np.nan, cash, 0.0, cash / portfolio_value]
+    return table
+
+
+def get_portfolio_risk_metrics(
+    returns: pd.Series | pd.DataFrame,
+    periods_per_year: int,
+    risk_free_rate: float = 0.0,
+    confidence_level: float = 0.95,
+) -> pd.DataFrame:
+    """
+    The return and risk of the return series of a portfolio, with the formulas of the
+    Performance and Risk modules:
+
+    - Annualized Return: the geometric average, Π(1 + r_t)^(P/T) - 1, with P the periods
+      per year and T the number of periods.
+    - Annualized Volatility: the standard deviation (ddof=1) times √P.
+    - Sharpe Ratio: the average excess return over its standard deviation, times √P
+      (Sharpe, 1966), with the annualized risk free rate spread evenly over the periods.
+    - Sortino Ratio: the average excess return over its downside deviation below zero,
+      times √P (Sortino and Price, 1994).
+    - Maximum Drawdown: the largest fall of the compounded value from its peak, as a
+      negative return.
+    - Value at Risk: the 1 - α quantile of the returns per period (historical).
+    - Conditional Value at Risk: the average of the returns at or below the Value at
+      Risk per period (historical).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns per period, one column per
+            portfolio.
+        periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
+        risk_free_rate (float, optional): The average annualized risk free rate over the
+            periods. Defaults to 0.
+        confidence_level (float, optional): The confidence level of the Value at Risk and
+            the Conditional Value at Risk, e.g. 0.95 for the worst 5% of periods.
+            Defaults to 0.95.
+
+    Returns:
+        pd.DataFrame: The measures as rows, one column per portfolio.
+    """
+    if not 0 < confidence_level < 1:
+        raise ValueError("The confidence level must lie between 0 and 1.")
+    returns = returns.to_frame() if isinstance(returns, pd.Series) else returns
+    excess = returns - risk_free_rate / periods_per_year
+    annualization = np.sqrt(periods_per_year)
+
+    return pd.DataFrame(
+        {
+            "Annualized Return": (1 + returns).prod(min_count=1)
+            ** (periods_per_year / returns.count())
+            - 1,
+            "Annualized Volatility": returns.std() * annualization,
+            "Sharpe Ratio": performance_model.get_sharpe_ratio(excess) * annualization,
+            "Sortino Ratio": performance_model.get_sortino_ratio(excess)
+            * annualization,
+            "Maximum Drawdown": risk_model.get_max_drawdown(returns),
+            "Value at Risk": var_model.get_var_historic(returns, 1 - confidence_level),
+            "Conditional Value at Risk": cvar_model.get_cvar_historic(
+                returns, 1 - confidence_level
+            ),
+        }
+    ).T

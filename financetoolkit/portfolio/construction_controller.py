@@ -66,8 +66,10 @@ class PortfolioConstruction:
     Clustered Optimization, Black-Litterman, minimum CVaR, minimum drawdown, maximum
     Omega ratio, maximum CVaR ratio, maximum diversification, minimum tracking error,
     growth optimal, resampled efficient), the efficient frontier, a walk-forward
-    backtest of the optimizers against equal weights, risk contributions to volatility
-    and expected shortfall, diversification metrics, historical stress tests,
+    backtest of the optimizers against equal weights, risk contributions to volatility,
+    expected shortfall, semideviation, mean absolute deviation and drawdowns, the risk
+    metrics of given weights, a whole-share allocation of the weights, diversification
+    metrics, historical stress tests,
     look-through exposure and a Brinson-Fachler attribution against the benchmark. The
     optimizers take weight bounds per asset, sector and country bounds from the company
     profiles, for long-short portfolios a net and gross exposure and, from current
@@ -3410,7 +3412,8 @@ class PortfolioConstruction:
     ) -> pd.DataFrame:
         """
         Calculate how much each asset contributes to the risk of a portfolio, measured as
-        its volatility or its expected shortfall (CVaR). The marginal contribution is the
+        its volatility, expected shortfall (CVaR), semideviation, mean absolute deviation or
+        Conditional Drawdown at Risk (CDaR). The marginal contribution is the
         change in the portfolio's risk from a small increase in an asset's weight; the
         risk contribution is the weight times that, and the contributions add up to the
         portfolio's risk (Euler allocation). A large position in a calm asset can
@@ -3424,6 +3427,19 @@ class PortfolioConstruction:
           -E[r_i | r_p ≤ VaR], so the contributions show which assets lose in the
           portfolio's worst periods. These are per period (e.g. daily), like the
           Finance Toolkit's historical CVaR, and not annualized.
+        - risk_measure="semideviation": the downside deviation of the portfolio's
+          return below zero, SD⁻ = √(Σ min(r_p,t, 0)² / T), with the marginal
+          contribution Σ min(r_p,t, 0) r_i,t / (T SD⁻): an asset contributes by losing
+          in the periods in which the portfolio loses. Per period, not annualized.
+        - risk_measure="mad": the mean absolute deviation of the portfolio's return,
+          Σ |r_p,t - μ_p| / T, with the marginal contribution
+          Σ sign(r_p,t - μ_p)(r_i,t - μ_i) / T. Per period, not annualized.
+        - risk_measure="cdar": the Conditional Drawdown at Risk, the average of the
+          worst 1 - α share of the drawdowns of the uncompounded cumulative return (the
+          drawdowns the minimum drawdown optimization minimizes). Each drawdown is the
+          sum of the assets' drawdowns from the portfolio's peak, so the marginal
+          contribution of an asset is its average drawdown over the portfolio's worst
+          drawdown periods (Goldberg and Mahmoud, 2017).
 
         For more information, see the following papers:
 
@@ -3433,19 +3449,29 @@ class PortfolioConstruction:
           paper, arXiv math/0104190.
         - Scaillet, O. (2004). "Nonparametric Estimation and Sensitivity Analysis of
           Expected Shortfall." Mathematical Finance, 14(1), 115-129.
+        - Sortino, F. A. and Price, L. N. (1994). "Performance Measurement in a Downside
+          Risk Framework." The Journal of Investing, 3(3), 59-64.
+        - Konno, H. and Yamazaki, H. (1991). "Mean-Absolute Deviation Portfolio
+          Optimization Model and Its Applications to Tokyo Stock Market." Management
+          Science, 37(5), 519-531.
+        - Goldberg, L. R. and Mahmoud, O. (2017). "Drawdown: From Practice to Theory and
+          Back Again." Mathematics and Financial Economics, 11(3), 275-297.
 
         Also known as: risk decomposition, marginal contribution to risk, risk budget,
-        component expected shortfall, component CVaR.
+        component expected shortfall, component CVaR, downside risk contribution,
+        drawdown contribution.
 
         Args:
             weights (dict[str, float] | None, optional): The weight per asset. Defaults to
                 None, which uses the latest weights of the Portfolio the Toolkit came from,
                 or equal weights.
-            risk_measure (str, optional): "volatility" or "cvar" (the expected shortfall).
-                Defaults to "volatility".
+            risk_measure (str, optional): "volatility", "cvar" (the expected shortfall),
+                "semideviation" (below a return of zero), "mad" (the mean absolute
+                deviation) or "cdar" (the Conditional Drawdown at Risk). Defaults to
+                "volatility".
             confidence_level (float, optional): The confidence level of the expected
-                shortfall, e.g. 0.95 for the average of the worst 5% of periods.
-                Defaults to 0.95.
+                shortfall and the CDaR, e.g. 0.95 for the average of the worst 5% of
+                periods or drawdowns. Defaults to 0.95.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
@@ -3471,7 +3497,7 @@ class PortfolioConstruction:
         Returns:
             pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
             Contribution and Percentage Contribution: annualized volatility terms, or
-            expected shortfall terms per period as positive losses.
+            per period terms of the other measures, with losses and drawdowns positive.
 
         As an example:
 
@@ -3501,21 +3527,28 @@ class PortfolioConstruction:
         | XOM     |      0.1 |                  0.0136 |              0.0014 |                    0.0518 |
         | Total   |      1   |                nan      |              0.0263 |                    1      |
         """
-        if risk_measure not in ("volatility", "cvar"):
+        measures = ("volatility", "cvar", *optimization_model.HISTORICAL_RISK_MEASURES)
+        if risk_measure not in measures:
             raise ValueError(
-                f"The risk measure must be 'volatility' or 'cvar', not '{risk_measure}'."
+                f"The risk measure must be one of {', '.join(measures)}, not "
+                f"'{risk_measure}'."
             )
         returns, _, covariance_matrix, _ = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
         resolved = self._resolve_weights(weights, covariance_matrix.index.tolist())
-        table = (
-            optimization_model.get_risk_contributions(resolved, covariance_matrix)
-            if risk_measure == "volatility"
-            else optimization_model.get_expected_shortfall_contributions(
+        if risk_measure == "volatility":
+            table = optimization_model.get_risk_contributions(
+                resolved, covariance_matrix
+            )
+        elif risk_measure == "cvar":
+            table = optimization_model.get_expected_shortfall_contributions(
                 resolved, returns, confidence_level
             )
-        )
+        else:
+            table = optimization_model.get_historical_risk_contributions(
+                resolved, returns, risk_measure, confidence_level
+            )
         table.index.name = "Asset"
         table.loc["Total"] = [
             table["Weight"].sum(),
@@ -3626,6 +3659,220 @@ class PortfolioConstruction:
         )
         metrics.name = PORTFOLIO_TICKER
         return self._round(metrics.to_frame(), rounding)[PORTFOLIO_TICKER]
+
+    @handle_errors
+    def get_portfolio_risk_metrics(
+        self,
+        weights: dict[str, float] | None = None,
+        confidence_level: float = 0.95,
+        period: str = "daily",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the return and risk of a portfolio with given weights over the
+        Toolkit's date range, next to the benchmark. The portfolio's return in each
+        period is the weighted return of its assets, r_p,t = Σ w_i r_i,t, which holds the
+        weights constant by rebalancing to them every period. The measures use the
+        formulas of the Performance and Risk modules:
+
+        - Annualized Return: the geometric average, Π(1 + r_t)^(P/T) - 1, with P the
+          periods per year and T the number of periods.
+        - Annualized Volatility: the standard deviation (ddof=1) times √P.
+        - Sharpe Ratio: the average return above the risk free rate over its standard
+          deviation, annualized with √P (Sharpe, 1966).
+        - Sortino Ratio: the average return above the risk free rate over its downside
+          deviation below zero, annualized with √P (Sortino and Price, 1994).
+        - Maximum Drawdown: the largest fall of the compounded value from its peak.
+        - Value at Risk: the 1 - α quantile of the returns per period (historical).
+        - Conditional Value at Risk: the average return at or below the Value at Risk
+          per period (historical).
+
+        Losses, drawdowns, the Value at Risk and the Conditional Value at Risk are
+        negative returns, as in the Risk module.
+
+        For more information, see the following papers:
+
+        - Sharpe, W. F. (1966). "Mutual Fund Performance." The Journal of Business, 39(1),
+          119-138.
+        - Sortino, F. A. and Price, L. N. (1994). "Performance Measurement in a Downside
+          Risk Framework." The Journal of Investing, 3(3), 59-64.
+        - Rockafellar, R. T. and Uryasev, S. (2002). "Conditional Value-at-Risk for General
+          Loss Distributions." Journal of Banking & Finance, 26(7), 1443-1471.
+
+        Also known as: portfolio risk report, risk summary, risk metrics of weights.
+
+        Args:
+            weights (dict[str, float] | None, optional): The weight per asset. Defaults to
+                None, which uses the latest weights of the Portfolio the Toolkit came from,
+                or equal weights.
+            confidence_level (float, optional): The confidence level of the Value at Risk
+                and the Conditional Value at Risk, e.g. 0.95 for the worst 5% of periods.
+                Defaults to 0.95.
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: The Annualized Return, Annualized Volatility, Sharpe Ratio,
+            Sortino Ratio, Maximum Drawdown, Value at Risk and Conditional Value at Risk of
+            the Portfolio and, when there is one, the Benchmark over the same periods.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_portfolio_risk_metrics(
+            weights={"AAPL": 0.4, "MSFT": 0.3, "JNJ": 0.2, "XOM": 0.1}
+        )
+        ```
+
+        Which returns:
+
+        |                           |   Portfolio |   Benchmark |
+        |:--------------------------|------------:|------------:|
+        | Annualized Return         |      0.1847 |      0.1472 |
+        | Annualized Volatility     |      0.1855 |      0.1711 |
+        | Sharpe Ratio              |      0.8247 |      0.6912 |
+        | Sortino Ratio             |      1.211  |      0.996  |
+        | Maximum Drawdown          |     -0.1977 |     -0.245  |
+        | Value at Risk             |     -0.0185 |     -0.0166 |
+        | Conditional Value at Risk |     -0.0263 |     -0.0248 |
+        """
+        returns = self._get_returns(period, include_benchmark)
+        resolved = self._resolve_weights(weights, returns.columns.tolist())
+        series = {PORTFOLIO_TICKER: returns @ resolved}
+        benchmark = self._get_benchmark_returns(period)
+        if benchmark is not None:
+            series[BENCHMARK_TICKER] = benchmark.reindex(returns.index)
+        metrics = optimization_model.get_portfolio_risk_metrics(
+            pd.DataFrame(series),
+            PERIODS_PER_YEAR[period],
+            self._get_risk_free_rate(period, returns.index),
+            confidence_level,
+        )
+        return self._round(metrics, rounding)
+
+    @handle_errors
+    def get_discrete_allocation(
+        self,
+        weights: dict[str, float] | None = None,
+        portfolio_value: float = 10000,
+        method: str = "integer",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how many whole shares to buy of each asset to hold weights with a
+        portfolio value, at the latest traded (split-adjusted) closing price. Weights
+        rarely come out in whole shares, so some cash is left over and the weights held
+        differ a little from the targets; the smaller the portfolio value compared to the
+        share prices, the larger the difference. With t_i = w_i V the target amount of
+        asset i and p_i its price:
+
+        - method="integer": the number of shares n_i that minimizes the absolute
+          deviation from the target amounts with the leftover cash c counted as a
+          holding with a target of zero, min Σ |t_i - n_i p_i| + c with
+          Σ n_i p_i + c = V and c ≥ 0, solved as an integer programme (Cornuejols, Peña
+          and Tütüncü, 2018).
+        - method="greedy": every position is first rounded down to whole shares and the
+          leftover cash then buys one more share at a time of the asset furthest below
+          its target amount, while its price fits the cash. Quick and close to the
+          integer programme, which can do better by leaving out a share of one asset to
+          buy more of another.
+
+        A short weight becomes a negative number of shares, with the proceeds funding
+        the long positions: weights that sum to one keep a net investment of the
+        portfolio value. Short positions are rounded to a larger short, so the leftover
+        cash is never negative.
+
+        For more information, see the following book:
+
+        - Cornuejols, G., Peña, J. and Tütüncü, R. (2018). "Optimization Methods in
+          Finance." 2nd edition, Cambridge University Press.
+
+        Also known as: share allocation, whole share rounding, lot sizing, order sizes.
+
+        Args:
+            weights (dict[str, float] | None, optional): The weight per asset, e.g. those
+                of one of the optimizers. Defaults to None, which uses the latest weights
+                of the Portfolio the Toolkit came from, or equal weights.
+            portfolio_value (float, optional): The amount to invest, in the currency of
+                the prices. Defaults to 10000.
+            method (str, optional): "integer" or "greedy". Defaults to "integer".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+
+        Returns:
+            pd.DataFrame: Per asset the Price, Shares, Amount (shares times price),
+            Target Weight and Weight held (the amount over the portfolio value), a
+            Leftover Cash row and a Total row that sums to the portfolio value.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        weights = toolkit.portfolio.get_maximum_sharpe_weights()["Weight"]
+
+        toolkit.portfolio.get_discrete_allocation(
+            weights=weights.drop("Portfolio").to_dict(), portfolio_value=25000
+        )
+        ```
+
+        Which returns:
+
+        | Asset         |   Price |   Shares |   Amount |   Target Weight |   Weight |
+        |:--------------|--------:|---------:|---------:|----------------:|---------:|
+        | AAPL          |  271.86 |        1 |   271.86 |          0.014  |   0.0109 |
+        | MSFT          |  483.62 |       16 |  7737.92 |          0.3121 |   0.3095 |
+        | JNJ           |  206.95 |       24 |  4966.8  |          0.1998 |   0.1987 |
+        | XOM           |  120.34 |       99 | 11913.7  |          0.4741 |   0.4765 |
+        | Leftover Cash |  nan    |      nan |   109.76 |          0      |   0.0044 |
+        | Total         |  nan    |      nan | 25000    |          1      |   1      |
+        """
+        closes = self._historical_data["daily"]["Close"].loc[: self._end_date]
+        assets = [
+            asset
+            for asset in self._get_assets(include_benchmark)
+            if asset in closes.columns
+        ]
+        resolved = self._resolve_weights(weights, assets)
+        # The latest traded price of each asset, which can be of an earlier day for an
+        # asset that did not trade on the last day.
+        prices = closes[assets].ffill().iloc[-1]
+        table = optimization_model.get_discrete_allocation(
+            resolved, prices, portfolio_value, method
+        )
+        table.index.name = "Asset"
+        table.loc["Total"] = [
+            np.nan,
+            np.nan,
+            table["Amount"].sum(),
+            table["Target Weight"].sum(),
+            table["Weight"].sum(),
+        ]
+        return self._round(table, rounding)
 
     @handle_errors
     def get_optimization_backtest(

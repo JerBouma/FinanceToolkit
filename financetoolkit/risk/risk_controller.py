@@ -1856,8 +1856,8 @@ class Risk:
         weekly or longer periods), and Length (Years) is Length (Days) in years of 365.25 days. Calendar time
         compares assets on exchanges with other holidays, and reads as the time an investor waited.
 
-        The dates follow pyfolio's drawdown table (peak, valley and recovery dates). QuantStats and ffn
-        instead start a drawdown at the first period below the peak and count calendar days. The deepest
+        Each drawdown is dated by its peak, valley and recovery, so it starts on the peak rather than on
+        the first period below it. The deepest
         drawdown matches `get_maximum_drawdown`, `get_maximum_drawdown_duration` (To Trough) and
         `get_maximum_drawdown_recovery_time` (To Recovery).
 
@@ -3360,10 +3360,10 @@ class Risk:
 
         |           |   Lower Tail Dependence |   Upper Tail Dependence |   Correlation |   Observations |
         |:----------|------------------------:|------------------------:|--------------:|---------------:|
-        | AAPL      |                  0.4545 |                  0.4769 |        0.7593 |           1290 |
-        | JPM       |                  0.4    |                  0.3846 |        0.622  |           1290 |
-        | XOM       |                  0.2424 |                  0.2154 |        0.3408 |           1290 |
-        | ^STOXX50E |                  0.3231 |                  0.3438 |        0.4449 |           1289 |
+        | AAPL      |                  0.4603 |                  0.4921 |        0.7582 |           1254 |
+        | JPM       |                  0.3968 |                  0.4127 |        0.6233 |           1254 |
+        | XOM       |                  0.2063 |                  0.2222 |        0.3425 |           1254 |
+        | ^STOXX50E |                  0.3387 |                  0.3226 |        0.4509 |           1240 |
         """
         period = period if period else "daily"
         returns = self._get_price_column(period, column)

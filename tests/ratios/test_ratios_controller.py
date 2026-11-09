@@ -1582,3 +1582,42 @@ def test_a_custom_ratio_with_a_zero_denominator_is_nan(ratios_module):
 
     values = custom_ratios.xs("Revenue over Nothing", level=1)
     assert values.isna().all().all()
+
+
+def test_asset_coverage_ratio_deducts_goodwill_with_the_other_intangibles(
+    ratios_module,
+):
+    # Microsoft's fixture carries separate, nonzero goodwill and other intangible assets.
+    # Subtracting only the "Intangible Assets" row would leave the goodwill in the asset
+    # base and give 5.0648 for 2023 (4.6597 for the trailing two-period average).
+    balance = ratios_module._balance_sheet_statement.loc["MSFT"]
+    assert (balance.loc["Goodwill"] > 0).all()
+
+    assert ratios_module.get_asset_coverage_ratio().loc["MSFT"].tolist() == [
+        pytest.approx(value, abs=1e-4) for value in [2.5685, 2.8872, 3.1612, 3.9327]
+    ]
+    assert ratios_module.get_asset_coverage_ratio(trailing=2).loc[
+        "MSFT"
+    ].dropna().tolist() == [
+        pytest.approx(value, abs=1e-4) for value in [2.7242, 3.0173, 3.5428]
+    ]
+
+
+def test_asset_coverage_ratio_does_not_need_the_combined_intangibles_row(
+    ratios_module, monkeypatch
+):
+    expected = ratios_module.get_asset_coverage_ratio()
+    expected_trailing = ratios_module.get_asset_coverage_ratio(trailing=2)
+
+    # A provider can return goodwill and the other intangible assets without the row
+    # that combines them. Selected separately, the two give the same ratio without it.
+    balance = ratios_module._balance_sheet_statement.copy()
+    combined_row = balance.index.get_level_values(1) == "Goodwill and Intangible Assets"
+    assert combined_row.any()
+    balance.loc[combined_row] = np.nan
+    monkeypatch.setattr(ratios_module, "_balance_sheet_statement", balance)
+
+    pd.testing.assert_frame_equal(ratios_module.get_asset_coverage_ratio(), expected)
+    pd.testing.assert_frame_equal(
+        ratios_module.get_asset_coverage_ratio(trailing=2), expected_trailing
+    )

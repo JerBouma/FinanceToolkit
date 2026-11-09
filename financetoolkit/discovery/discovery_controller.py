@@ -2247,9 +2247,11 @@ class Discovery:
         of a company appears (Cisco in New York, Frankfurt and Hong Kong). To see the
         largest reporters, keep the primary listing of each company (its most traded one)
         with `primary_only=True` and sort by market cap with `sort_by="market_cap"`, or set
-        a `min_market_cap`. Every listing of a company has the market cap of its primary
-        listing, since the one reported for a depositary receipt or a secondary listing is
-        often far off. The country filter uses the country of the company, so it also keeps
+        a `min_market_cap`. The listings of a company can show a release on different days
+        (Berkshire Hathaway's in Frankfurt two days after New York), so the primary listing
+        is chosen from the releases of the week before and after the range as well. Every
+        listing of a company has the market cap of its primary listing, since the one
+        reported for a depositary receipt or a secondary listing is often far off. The country filter uses the country of the company, so it also keeps
         a company's listings abroad.
 
         The EPS and revenue figures are in the currency the source reports them in for each

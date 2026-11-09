@@ -520,7 +520,9 @@ class FixedIncome:
             if maturity_start is not None:
                 treasuries = treasuries[maturities >= pd.Timestamp(maturity_start)]
             if maturity_end is not None:
-                treasuries = treasuries[maturities <= pd.Timestamp(maturity_end)]
+                treasuries = treasuries[
+                    pd.to_datetime(treasuries["Maturity"]) <= pd.Timestamp(maturity_end)
+                ]
             if not treasury_ids:
                 treasuries = treasuries[
                     treasuries["Security Type"].isin(["Bill", "Note", "Bond"])
@@ -1347,19 +1349,22 @@ class FixedIncome:
     @handle_errors
     def get_taylor_price_change(
         self,
-        yield_change: float = 0.01,
+        yield_change: float | None = None,
         bonds: list[str] | str | None = None,
         issuer: list[str] | str | None = None,
         etfs: list[str] | str | None = None,
         maturity_start: str | None = None,
         maturity_end: str | None = None,
         date: str | None = None,
+        from_date: str | None = None,
         rounding: int | None = None,
     ):
         """
         Estimates the percentage change in the price of individual bonds for a change in their
         yield, using a second-order Taylor series expansion that combines modified duration and
-        convexity.
+        convexity. With a from_date, the yield change is each bond's own change in yield from that
+        day to the price date, and the realised change of its market price sits next to the
+        estimate.
 
         Modified duration alone only captures the first-order (linear) relationship between a
         bond's price and its yield, which understates the price increase for a yield decrease and
@@ -1379,11 +1384,26 @@ class FixedIncome:
         the full (dirty) price as a decimal. The bonds are selected as in `collect_bond_statistics`. For
         terms of your own, use `bond_model.get_taylor_price_change`.
 
-        Also known as: duration-convexity approximation, second-order price approximation.
+        With a from_date, the Treasuries are selected on from_date (so the benchmark Treasuries are those
+        that already traded then) and priced again on the price date (`date`):
+
+        - Yield Change = YTM(date) - YTM(from_date)
+        - Price Change = the Taylor estimate above, with the modified duration, convexity and YTM of
+          from_date and Δy = Yield Change
+        - Realised Price Change = Price(date) / Price(from_date) - 1, on the clean FedInvest prices
+
+        The Taylor estimate holds the time to maturity fixed, while the realised change also includes
+        the pull of the price towards par over the period and is measured on the clean price, so the two
+        differ slightly even for a small yield change; over a few days the difference is mostly the
+        approximation itself. Only Treasuries have prices on earlier days, so other bonds are left out.
+
+        Also known as: duration-convexity approximation, second-order price approximation, realised
+        bond price change.
 
         Args:
-            yield_change (float, optional): The change in the yield to maturity (decimal), negative
-                for a fall. Defaults to 0.01.
+            yield_change (float | None, optional): The change in the yield to maturity (decimal),
+                negative for a fall. Defaults to None, which is 0.01, or each bond's own yield change
+                since from_date when that is given.
             bonds (list[str] | str | None, optional): CUSIPs or ISINs, see
                 `collect_bond_statistics`. Defaults to None.
             issuer (list[str] | str | None, optional): Part of an issuer's name, such as
@@ -1394,14 +1414,19 @@ class FixedIncome:
                 Defaults to None.
             maturity_end (str | None, optional): The latest maturity (YYYY-MM-DD). Defaults
                 to None.
-            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD).
-                Defaults to None, the latest day with prices.
+            date (str | None, optional): The day of the Treasury prices (YYYY-MM-DD); a weekend or
+                holiday uses the business day before it. Defaults to None, the latest day with prices.
+            from_date (str | None, optional): The day (YYYY-MM-DD) to measure each Treasury's yield
+                and price change from, up to `date`; a weekend or holiday uses the business day before
+                it. Defaults to None, which estimates the price change for yield_change instead.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
 
         Returns:
             pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
-            Price, Price Date and Price Change (decimal).
+            Price, Price Date and Price Change (decimal); with a from_date the From Price and
+            From Date before the Price and Price Date, followed by the Yield Change, Price Change
+            and Realised Price Change, all decimals.
 
         As an example:
 
@@ -1426,24 +1451,116 @@ class FixedIncome:
         | 91282CRF0 | Note            |   0.0462 | 2036-08-15 |  98.4375 |        -0.0733 |
         | 912810RU4 | Bond            |   0.0288 | 2046-11-15 |  70.0312 |        -0.1242 |
         | 912810UW6 | Bond            |   0.0512 | 2056-08-15 |  98.125  |        -0.1321 |
+
+        The price changes of the benchmark Treasuries from 28 October to 6 November 2026, each
+        for its own yield change:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome()
+
+        price_changes = fixedincome.get_taylor_price_change(from_date="2026-10-28", date="2026-11-06")
+
+        price_changes.loc[:, "Maturity":].drop(columns=["From Date", "Price Date"])
+        ```
+
+        Which returns:
+
+        |           | Maturity   |   From Price |   Price |   Yield Change |   Price Change |   Realised Price Change |
+        |:----------|:-----------|-------------:|--------:|---------------:|---------------:|------------------------:|
+        | 91282CDF5 | 2028-10-31 |      93.6562 | 94.0938 |        -0.002  |         0.0039 |                  0.0047 |
+        | 91282CLR0 | 2029-10-31 |      98.0938 | 98.7188 |        -0.0022 |         0.0061 |                  0.0064 |
+        | 91282CLU3 | 2031-10-31 |      96.6562 | 97.6562 |        -0.0023 |         0.01   |                  0.0103 |
+        | 91282CJJ1 | 2033-11-15 |      97.3438 | 98.5312 |        -0.002  |         0.0119 |                  0.0122 |
+        | 91282CRF0 | 2036-08-15 |      96.7812 | 98.2188 |        -0.0019 |         0.0147 |                  0.0149 |
+        | 912810RU4 | 2046-11-15 |      68.6875 | 69.9062 |        -0.0012 |         0.0171 |                  0.0177 |
+        | 912810UW6 | 2056-08-15 |      96.375  | 97.9688 |        -0.0011 |         0.0164 |                  0.0165 |
         """
-        selection = self._select_bonds(
-            bonds, issuer, etfs, maturity_start, maturity_end, date
-        )
-        price_changes = {
-            bond: bond_model.get_taylor_price_change(
-                **_bond_terms(row),
-                yield_to_maturity=row["Yield to Maturity"],
-                yield_change=yield_change,
+        if yield_change is not None and from_date is not None:
+            raise ValueError(
+                "Pass a yield_change to estimate the price change for, or a from_date to use "
+                "each bond's own yield change since that day, not both."
             )
-            for bond, row in selection.iterrows()
+
+        rounding = rounding if rounding is not None else self._rounding
+
+        if from_date is None:
+            selection = self._select_bonds(
+                bonds, issuer, etfs, maturity_start, maturity_end, date
+            )
+            price_changes = {
+                bond: bond_model.get_taylor_price_change(
+                    **_bond_terms(row),
+                    yield_to_maturity=row["Yield to Maturity"],
+                    yield_change=0.01 if yield_change is None else yield_change,
+                )
+                for bond, row in selection.iterrows()
+            }
+
+            return self._bond_table(
+                selection,
+                pd.Series(price_changes, name="Price Change", dtype=float),
+                rounding,
+            )
+
+        # The bonds are selected on the earlier day, so the benchmark Treasuries are those
+        # that already traded then, and priced again on the later day.
+        earlier = self._select_bonds(
+            bonds, issuer, etfs, maturity_start, maturity_end, from_date
+        )
+        treasuries = earlier.index[earlier["Issuer"] == "United States Treasury"]
+        if treasuries.empty:
+            raise ValueError(
+                "Only Treasuries have prices on earlier days, so a from_date needs Treasuries."
+            )
+        if len(treasuries) < len(earlier):
+            logger.info(
+                "Only Treasuries have prices on earlier days, so the other bonds are left out."
+            )
+        earlier = earlier.loc[treasuries]
+        later = self._select_bonds(
+            list(treasuries), None, None, None, None, date
+        ).reindex(earlier.index)
+        if (later["Price Date"].dropna() <= earlier["Price Date"].max()).any():
+            raise ValueError(
+                f"The from_date {earlier['Price Date'].max()} must be a business day before "
+                f"the price date {later['Price Date'].max()}."
+            )
+
+        yield_changes = later["Yield to Maturity"] - earlier["Yield to Maturity"]
+        price_changes = {
+            bond: (
+                bond_model.get_taylor_price_change(
+                    **_bond_terms(row),
+                    yield_to_maturity=row["Yield to Maturity"],
+                    yield_change=yield_changes[bond],
+                )
+                if np.isfinite(yield_changes[bond])
+                else np.nan
+            )
+            for bond, row in earlier.iterrows()
         }
 
-        return self._bond_table(
-            selection,
-            pd.Series(price_changes, name="Price Change", dtype=float),
-            rounding if rounding is not None else self._rounding,
+        table = pd.concat(
+            [
+                earlier[["Issuer", "Security Type", "Coupon", "Maturity"]],
+                earlier[["Price", "Price Date"]].rename(
+                    columns={"Price": "From Price", "Price Date": "From Date"}
+                ),
+                later[["Price", "Price Date"]],
+                pd.DataFrame(
+                    {
+                        "Yield Change": yield_changes,
+                        "Price Change": pd.Series(price_changes, dtype=float),
+                        "Realised Price Change": later["Price"] / earlier["Price"] - 1,
+                    }
+                ),
+            ],
+            axis=1,
         )
+
+        return apply_rounding(table, rounding)
 
     @handle_errors
     def get_bond_equivalent_yield(
@@ -2327,6 +2444,7 @@ class FixedIncome:
     @handle_errors
     def get_treasury_rates(
         self,
+        maturities: float | str | list | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int = 1,
@@ -2351,6 +2469,10 @@ class FixedIncome:
         Also known as: the Treasury yield curve, the risk-free curve.
 
         Args:
+            maturities (float | str | list | None, optional): The maturities to return, in years
+                or as labels such as "3M" and "10Y" (a list or a comma-separated string, e.g.
+                "2Y,10Y,30Y"), from 1M, 2M, 3M, 6M, 1Y, 2Y, 3Y, 5Y, 7Y, 10Y, 20Y and 30Y.
+                Defaults to None, which returns every maturity.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
@@ -2388,22 +2510,22 @@ class FixedIncome:
 
         fixedincome = FixedIncome(start_date='2024-01-01', end_date='2024-01-15')
 
-        fixedincome.get_treasury_rates()
+        fixedincome.get_treasury_rates(maturities='3M,2Y,10Y,30Y')
         ```
 
         Which returns:
 
-        | Date       |   1 Month |   2 Month |   3 Month |   6 Month |   1 Year |   2 Year |   3 Year |   5 Year |   7 Year |   10 Year |   20 Year |   30 Year |
-        |:-----------|----------:|----------:|----------:|----------:|---------:|---------:|---------:|---------:|---------:|----------:|----------:|----------:|
-        | 2024-01-02 |    0.0555 |    0.0554 |    0.0546 |    0.0524 |   0.048  |   0.0433 |   0.0409 |   0.0393 |   0.0395 |    0.0395 |    0.0425 |    0.0408 |
-        | 2024-01-03 |    0.0554 |    0.0554 |    0.0548 |    0.0525 |   0.0481 |   0.0433 |   0.0407 |   0.039  |   0.0392 |    0.0391 |    0.0421 |    0.0405 |
-        | 2024-01-04 |    0.0556 |    0.0548 |    0.0548 |    0.0525 |   0.0485 |   0.0438 |   0.0414 |   0.0397 |   0.0399 |    0.0399 |    0.043  |    0.0413 |
-        | 2024-01-05 |    0.0554 |    0.0548 |    0.0547 |    0.0524 |   0.0484 |   0.044  |   0.0417 |   0.0402 |   0.0404 |    0.0405 |    0.0437 |    0.0421 |
-        | 2024-01-08 |    0.0554 |    0.0548 |    0.0549 |    0.0524 |   0.0482 |   0.0436 |   0.0411 |   0.0397 |   0.0399 |    0.0401 |    0.0433 |    0.0417 |
-        | 2024-01-09 |    0.0553 |    0.0546 |    0.0547 |    0.0524 |   0.0482 |   0.0436 |   0.0409 |   0.0397 |   0.04   |    0.0402 |    0.0433 |    0.0418 |
-        | 2024-01-10 |    0.0553 |    0.0546 |    0.0546 |    0.0523 |   0.0482 |   0.0437 |   0.041  |   0.0399 |   0.0401 |    0.0404 |    0.0435 |    0.042  |
-        | 2024-01-11 |    0.0554 |    0.0547 |    0.0546 |    0.0522 |   0.0475 |   0.0426 |   0.0402 |   0.039  |   0.0395 |    0.0398 |    0.0432 |    0.0418 |
-        | 2024-01-12 |    0.0555 |    0.0547 |    0.0545 |    0.0516 |   0.0465 |   0.0414 |   0.0392 |   0.0384 |   0.0391 |    0.0396 |    0.0432 |    0.042  |
+        | Date       |   3 Month |   2 Year |   10 Year |   30 Year |
+        |:-----------|----------:|---------:|----------:|----------:|
+        | 2024-01-02 |    0.0546 |   0.0433 |    0.0395 |    0.0408 |
+        | 2024-01-03 |    0.0548 |   0.0433 |    0.0391 |    0.0405 |
+        | 2024-01-04 |    0.0548 |   0.0438 |    0.0399 |    0.0413 |
+        | 2024-01-05 |    0.0547 |   0.044  |    0.0405 |    0.0421 |
+        | 2024-01-08 |    0.0549 |   0.0436 |    0.0401 |    0.0417 |
+        | 2024-01-09 |    0.0547 |   0.0436 |    0.0402 |    0.0418 |
+        | 2024-01-10 |    0.0546 |   0.0437 |    0.0404 |    0.042  |
+        | 2024-01-11 |    0.0546 |   0.0426 |    0.0398 |    0.0418 |
+        | 2024-01-12 |    0.0545 |   0.0414 |    0.0396 |    0.042  |
         """
         treasury_rates = pd.DataFrame()
 
@@ -2431,6 +2553,26 @@ class FixedIncome:
             # Without a key, or when FinancialModelingPrep does not serve them, the same
             # rates come from the U.S. Department of the Treasury, already as decimals.
             treasury_rates = self._get_keyless_treasury_rates()
+
+        if maturities is not None and not treasury_rates.empty:
+            # The columns are named "1 Month" to "30 Year"; in years they compare with the
+            # maturities asked for, whether written as years or as labels such as "10Y".
+            labels = {
+                column: f"{column.split()[0]}{column.split()[1][0]}"
+                for column in treasury_rates.columns
+            }
+            columns = {_maturity_key(label): column for column, label in labels.items()}
+            requested = _maturities(maturities, [])
+            if unknown := [
+                maturity for maturity in requested if maturity not in columns
+            ]:
+                raise ValueError(
+                    f"The Treasury par yield curve has no maturity of {', '.join(map(str, unknown))} "
+                    f"years. Choose from {', '.join(labels.values())}."
+                )
+            treasury_rates = treasury_rates[
+                [columns[maturity] for maturity in requested]
+            ]
 
         return finalize_dataset(
             dataset=treasury_rates,

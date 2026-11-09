@@ -386,8 +386,8 @@ def _beta_of_sample(
         if method in ("ols", "blume", "vasicek"):
             betas[column], variances[column] = _slope(asset, market)
         elif method in ("upside", "downside"):
-            # The benchmark's direction picks the observations, as in empyrical's
-            # up_alpha_beta and down_alpha_beta; a flat benchmark falls in neither.
+            # The benchmark's direction picks the observations; a flat benchmark falls in
+            # neither.
             direction = market > 0 if method == "upside" else market < 0
             betas[column] = _slope(asset[direction], market[direction])[0]
         elif method == "dimson":
@@ -1574,8 +1574,7 @@ def get_sortino_ratio(
 
     Where N is the *total* number of observations (not just the number of negative
     ones) -- periods with a non-negative excess return contribute 0 to the sum, but
-    still count towards N, exactly as in Sortino & Price (1994) and the equivalent
-    empyrical/pyfolio `downside_risk` implementation. This is deliberately not the same
+    still count towards N, exactly as in Sortino & Price (1994). This is deliberately not the same
     as `excess_returns[excess_returns < 0].std()`: that alternative would divide by
     (number of negative observations - 1) and measure the dispersion of the losses
     around *their own mean*, rather than their root-mean-square distance below the MAR
@@ -2515,17 +2514,13 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
         - Common Sense Ratio = Profit Factor x Tail Ratio (95th / 5th percentile)
 
     A return of exactly zero is neither a win nor a loss: it is left out of the win rate
-    and ends a streak. The definitions follow the QuantStats package, except that the
-    Recovery Factor compounds the returns into the cumulative return (QuantStats sums them),
-    so that it relates the same wealth path to the drawdown measured on it.
+    and ends a streak. The Recovery Factor compounds the returns into the cumulative
+    return, so that it relates the same wealth path to the drawdown measured on it.
 
     For more information, see the following sources:
 
     - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd ed., McGraw-Hill.
     (Expectancy and the payoff ratio as the basis of evaluating a trading system.)
-    - Aroussi, R. "QuantStats: Portfolio analytics for quants."
-    https://github.com/ranaroussi/quantstats (profit factor, payoff ratio, consecutive
-    wins and losses, recovery factor and common sense ratio).
 
     Args:
         returns (pd.Series): A Series of returns; missing returns are left out.
@@ -2630,8 +2625,8 @@ def get_kelly_criterion(
         - Continuous: Kelly = Average Excess Return / Variance of the Excess Returns
 
     The discrete form is Kelly's (1956) bet with a probability of winning and a ratio of the
-    average win to the average loss, as the QuantStats package calculates it from returns
-    (a zero return counting as neither). The continuous form is Thorp's (2006) for returns
+    average win to the average loss, calculated from the returns (a zero return counting
+    as neither). The continuous form is Thorp's (2006) for returns
     that are (close to) normally distributed, on excess returns over the risk free rate,
     with the sample variance (ddof=1); its value does not depend on the return frequency,
     since the average and the variance scale alike. A value above 1 means borrowing to

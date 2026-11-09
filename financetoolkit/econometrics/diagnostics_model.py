@@ -504,3 +504,134 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
         )
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_level_significance(levels: pd.Series) -> pd.Series:
+    """
+    Calculate how unusual the latest value of a series is compared with its own history: the
+    percentile of the latest value among the earlier values and the last dates the series was
+    at least as high and at least as low.
+
+    The formula is as follows:
+
+    - Percentile = (Count(x(s) < x(T)) + 0.5 * Count(x(s) = x(T))) / Count(s), over s < T
+    - Highest Since = the last date s < T with x(s) >= x(T)
+    - Lowest Since = the last date s < T with x(s) <= x(T)
+
+    Where x(T) is the latest value and s runs over every earlier observation. The percentile counts
+    an earlier value equal to the latest one as half, the percentile rank, so a rate that has been
+    unchanged for years is in the middle of its own ties rather than at their bottom. Highest Since
+    is NaN when no earlier value was as high, which makes the latest value the highest of the
+    history, and Lowest Since likewise.
+
+    Args:
+        levels (pd.Series): The values of a single series by date; missing values are left out.
+
+    Returns:
+        pd.Series: The Start Date, Observations, Latest Date, Latest Value, Percentile, Highest
+        Since and Lowest Since, the dates as text.
+    """
+    observed = levels.dropna()
+
+    if observed.empty:
+        raise ValueError("The series has no observations.")
+
+    labels = observed.index.astype(str)
+    earlier = observed.to_numpy(dtype=float)[:-1]
+    latest = float(observed.iloc[-1])
+
+    as_high = np.flatnonzero(earlier >= latest)
+    as_low = np.flatnonzero(earlier <= latest)
+
+    return pd.Series(
+        {
+            "Start Date": labels[0],
+            "Observations": len(observed),
+            "Latest Date": labels[-1],
+            "Latest Value": latest,
+            "Percentile": (
+                (np.sum(earlier < latest) + 0.5 * np.sum(earlier == latest))
+                / len(earlier)
+                if len(earlier)
+                else np.nan
+            ),
+            "Highest Since": labels[as_high[-1]] if as_high.size else np.nan,
+            "Lowest Since": labels[as_low[-1]] if as_low.size else np.nan,
+        },
+        dtype=object,
+    )
+
+
+def get_streaks(levels: pd.Series) -> pd.Series:
+    """
+    Calculate the streak a series is on: the sign of its latest value, since when the series
+    has had that sign without a break, and how that run compares with the earlier ones.
+
+    A run is a stretch of consecutive observations with the same sign (positive, negative or
+    zero). The current run is the one the latest observation belongs to, the previous run the
+    one before it, and the longest earlier run the longest run of the current sign before the
+    current one (the most recent of them when several are as long).
+
+    Args:
+        levels (pd.Series): The values of a single series by date; missing values are left out.
+
+    Returns:
+        pd.Series: The Start Date and Observations of the history, the Latest Date and Latest
+        Value, the Sign of the current run with its Run Start and Run Length, the Previous
+        Sign, Previous Run Start, Previous Run End and Previous Run Length, and the Longest
+        Earlier Run Start, Longest Earlier Run End and Longest Earlier Run Length, the dates
+        as text and the lengths in observations. A run that does not exist is NaN.
+    """
+    observed = levels.dropna()
+
+    if observed.empty:
+        raise ValueError("The series has no observations.")
+
+    labels = observed.index.astype(str)
+    signs = np.sign(observed.to_numpy(dtype=float))
+    names = {1.0: "Positive", -1.0: "Negative", 0.0: "Zero"}
+
+    starts = np.flatnonzero(np.r_[True, signs[1:] != signs[:-1]])
+    ends = np.r_[starts[1:] - 1, len(signs) - 1]
+    lengths = ends - starts + 1
+
+    same_sign = np.flatnonzero(signs[starts[:-1]] == signs[-1])
+    # The most recent of the longest runs, as "the longest since" reads from today.
+    longest = (
+        same_sign[::-1][np.argmax(lengths[same_sign][::-1])] if same_sign.size else None
+    )
+    previous = len(starts) - 2 if len(starts) > 1 else None
+
+    return pd.Series(
+        {
+            "Start Date": labels[0],
+            "Observations": len(observed),
+            "Latest Date": labels[-1],
+            "Latest Value": float(observed.iloc[-1]),
+            "Sign": names[signs[-1]],
+            "Run Start": labels[starts[-1]],
+            "Run Length": int(lengths[-1]),
+            "Previous Sign": (
+                names[signs[starts[previous]]] if previous is not None else np.nan
+            ),
+            "Previous Run Start": (
+                labels[starts[previous]] if previous is not None else np.nan
+            ),
+            "Previous Run End": (
+                labels[ends[previous]] if previous is not None else np.nan
+            ),
+            "Previous Run Length": (
+                int(lengths[previous]) if previous is not None else np.nan
+            ),
+            "Longest Earlier Run Start": (
+                labels[starts[longest]] if longest is not None else np.nan
+            ),
+            "Longest Earlier Run End": (
+                labels[ends[longest]] if longest is not None else np.nan
+            ),
+            "Longest Earlier Run Length": (
+                int(lengths[longest]) if longest is not None else np.nan
+            ),
+        },
+        dtype=object,
+    )

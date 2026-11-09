@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.econometrics import diagnostics_model
 
@@ -198,3 +199,107 @@ def test_get_cusum_test_invalid_type():
         raise AssertionError("Expected TypeError")
     except TypeError:
         pass
+
+
+def test_get_level_significance():
+    months = pd.period_range("2002-03", periods=5, freq="M")
+    rates = pd.Series([0.0528, 0.0516, 0.04, np.nan, 0.0513], index=months)
+
+    significance = diagnostics_model.get_level_significance(rates)
+
+    # The last month at least as high is 2002-04, the last at least as low 2002-05; of the
+    # three earlier values one is below the latest (the missing month is left out).
+    assert significance["Highest Since"] == "2002-04"
+    assert significance["Lowest Since"] == "2002-05"
+    assert significance["Percentile"] == pytest.approx(1 / 3)
+    assert significance["Start Date"] == "2002-03"
+    assert significance["Observations"] == 4  # noqa: PLR2004
+    assert significance["Latest Date"] == "2002-07"
+    assert significance["Latest Value"] == pytest.approx(0.0513)
+
+
+def test_get_level_significance_ties_and_records():
+    days = pd.period_range("2026-01-01", periods=4, freq="D")
+
+    # An unchanged rate is in the middle of its ties, and was as high and as low the day before.
+    flat = diagnostics_model.get_level_significance(pd.Series([0.02] * 4, index=days))
+    assert flat["Percentile"] == pytest.approx(0.5)
+    assert flat["Highest Since"] == flat["Lowest Since"] == "2026-01-03"
+
+    # A record high has no earlier date as high.
+    record = diagnostics_model.get_level_significance(
+        pd.Series([0.01, 0.03, 0.02, 0.04], index=days)
+    )
+    assert record["Percentile"] == 1
+    assert pd.isna(record["Highest Since"])
+    assert record["Lowest Since"] == "2026-01-03"
+
+    # A single observation has no history to compare with.
+    single = diagnostics_model.get_level_significance(pd.Series([0.01], index=days[:1]))
+    assert pd.isna(single["Percentile"]) and pd.isna(single["Highest Since"])
+
+    with pytest.raises(ValueError, match="no observations"):
+        diagnostics_model.get_level_significance(pd.Series([np.nan], index=days[:1]))
+
+
+def test_get_streaks():
+    months = pd.period_range("2022-01", periods=10, freq="M")
+    inflation = pd.Series(
+        [0.02, 0.01, -0.01, -0.02, np.nan, -0.01, 0.01, -0.03, 0.02, 0.03], index=months
+    )
+
+    streaks = diagnostics_model.get_streaks(inflation)
+
+    # Positive since 2022-09 (two months), after one negative month; the longest earlier
+    # positive run is the first one (the missing month is left out, so it does not break a run).
+    assert streaks["Sign"] == "Positive"
+    assert (streaks["Run Start"], streaks["Run Length"]) == ("2022-09", 2)
+    assert streaks["Previous Sign"] == "Negative"
+    assert (streaks["Previous Run Start"], streaks["Previous Run End"]) == (
+        "2022-08",
+        "2022-08",
+    )
+    assert streaks["Previous Run Length"] == 1
+    assert (
+        streaks["Longest Earlier Run Start"],
+        streaks["Longest Earlier Run End"],
+        streaks["Longest Earlier Run Length"],
+    ) == ("2022-01", "2022-02", 2)
+    assert streaks["Observations"] == 9  # noqa: PLR2004
+    assert streaks["Latest Value"] == pytest.approx(0.03)
+
+    # Negative the whole time except the run in 2022-03 to 2022-06 (three observations).
+    negative = diagnostics_model.get_streaks(-inflation.iloc[:8])
+    assert (negative["Sign"], negative["Run Start"], negative["Run Length"]) == (
+        "Positive",
+        "2022-08",
+        1,
+    )
+    assert negative["Longest Earlier Run Length"] == 3  # noqa: PLR2004
+    assert negative["Longest Earlier Run Start"] == "2022-03"
+
+
+def test_get_streaks_zeros_ties_and_single_runs():
+    days = pd.period_range("2026-01-01", periods=7, freq="D")
+
+    # A zero is a run of its own; of two equally long earlier runs the latest is reported.
+    zero = diagnostics_model.get_streaks(
+        pd.Series([1.0, -1.0, 1.0, 0.0, 1.0, -1.0, 1.0], index=days)
+    )
+    assert zero["Previous Sign"] == "Negative"
+    assert zero["Longest Earlier Run Start"] == "2026-01-05"
+    assert zero["Longest Earlier Run Length"] == 1
+
+    # A series that never changed sign has no previous or earlier run.
+    single = diagnostics_model.get_streaks(pd.Series([0.0] * 3, index=days[:3]))
+    assert (single["Sign"], single["Run Start"], single["Run Length"]) == (
+        "Zero",
+        "2026-01-01",
+        3,
+    )
+    assert pd.isna(single["Previous Sign"]) and pd.isna(
+        single["Longest Earlier Run Length"]
+    )
+
+    with pytest.raises(ValueError, match="no observations"):
+        diagnostics_model.get_streaks(pd.Series([np.nan], index=days[:1]))

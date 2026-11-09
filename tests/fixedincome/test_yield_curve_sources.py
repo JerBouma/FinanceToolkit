@@ -507,3 +507,41 @@ def test_the_term_premium_keeps_the_requested_maturities_at_month_end(monkeypatc
         )
     )
     assert list(monthly.index) == [pd.Period("2026-09", "M"), pd.Period("2026-10", "M")]
+
+
+def test_treasury_rates_keep_the_maturities_asked_for(monkeypatch):
+    from financetoolkit import FixedIncome
+    from financetoolkit.fixedincome import fixedincome_controller
+
+    days = pd.period_range("2026-10-01", periods=1, freq="D")
+    curve = pd.DataFrame(
+        {
+            "1 Mo": [0.0417],
+            "6 Mo": [0.042],
+            "2 Yr": [0.045],
+            "10 Yr": [0.0528],
+            "30 Yr": [0.055],
+        },
+        index=days,
+    )
+    monkeypatch.setattr(
+        fixedincome_controller.treasury_model, "get_yield_curve", lambda *args: curve
+    )
+    fixedincome = FixedIncome(start_date="2026-09-01", end_date="2026-10-02")
+
+    # Labels as the other curve methods take them, or years, in the order asked for.
+    assert list(fixedincome.get_treasury_rates(maturities="2Y,10Y,30Y").columns) == [
+        "2 Year",
+        "10 Year",
+        "30 Year",
+    ]
+    assert list(
+        fixedincome.get_treasury_rates(maturities=[10, "6M", 1 / 12]).columns
+    ) == [
+        "10 Year",
+        "6 Month",
+        "1 Month",
+    ]
+    assert len(fixedincome.get_treasury_rates().columns) == 5  # noqa: PLR2004
+    # A maturity the curve does not have is an error, not every maturity.
+    assert fixedincome.get_treasury_rates(maturities="4Y").empty

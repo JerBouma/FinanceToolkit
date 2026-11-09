@@ -513,14 +513,13 @@ class PortfolioConstruction:
           ratios use the average risk free rate over the same periods.
         - Every optimizer with weight bounds takes the same constraints. Sector and
           country bounds limit the total weight of the assets in a group (an asset
-          without a sector or country, such as the benchmark, is in none), as
-          PyPortfolioOpt's add_sector_constraints and skfolio's group constraints do. A
-          gross exposure limit is linearized with one extra variable t_i ≥ |w_i| per asset
+          without a sector or country, such as the benchmark, is in none). A gross
+          exposure limit is linearized with one extra variable t_i ≥ |w_i| per asset
           (t_i ≥ w_i, t_i ≥ -w_i, Σ t_i ≤ the limit), so the solution stays exact. A
           maximum turnover from the current weights is linearized the same way, with one
           variable d_i ≥ |w_i - w0_i| per asset and Σ d_i ≤ the limit (Lobo, Fazel and
-          Boyd, 2007). A combination of constraints no portfolio can meet raises an error
-          before the optimization runs.
+          Boyd, 2007). A combination of constraints no portfolio can meet raises an
+          error before the optimization runs.
 
         As an example:
 
@@ -686,7 +685,7 @@ class PortfolioConstruction:
           Black-Litterman returns temper that.
         - A transaction cost lowers the expected return of the portfolio by the cost
           times the turnover from the current weights, so the optimizer only trades when
-          the gain in Sharpe ratio pays for it (as skfolio's transaction_costs). The cost
+          the gain in Sharpe ratio pays for it. The cost
           is taken once from an annualized return, which spreads it over a year of
           holding the portfolio.
 
@@ -1151,7 +1150,7 @@ class PortfolioConstruction:
         Notes:
         - Weight, sector and country bounds turn it into constrained risk budgeting
           (Richard and Roncalli, 2019): the bounds are linear constraints on w = y / Σy,
-          so the problem stays convex, the same as skfolio's RiskBudgeting. Where a bound
+          so the problem stays convex. Where a bound
           binds, the risk contributions can no longer all match the budget.
         - Risk parity holds long positions only and is fully invested, so it takes no
           negative minimum weight and no net or gross exposure.
@@ -1265,7 +1264,7 @@ class PortfolioConstruction:
 
         Notes:
         - Weight bounds move each split just enough to keep both halves within the sum of
-          their assets' bounds, as skfolio and Riskfolio-Lib do.
+          their assets' bounds.
         - A split only moves weight between the two halves of a cluster, so sector and
           country bounds, which cut across the clusters, do not apply; neither do short
           positions or a net or gross exposure, as HRP is long only and fully invested.
@@ -1389,9 +1388,9 @@ class PortfolioConstruction:
             (numbered from 1). Returns and volatilities are annualized.
 
         Notes:
-        - Weight, sector and country bounds are applied after the allocation as skfolio
-          does: when the weights fall outside them, they move to the weights within the
-          bounds with the smallest relative change, Σ (w_i / w_HERC,i - 1)².
+        - Weight, sector and country bounds are applied after the allocation: when the
+          weights fall outside them, they move to the weights within the bounds with the
+          smallest relative change, Σ (w_i / w_HERC,i - 1)².
         - HERC is long only and fully invested, so short positions and a net or gross
           exposure do not apply.
 
@@ -1525,11 +1524,11 @@ class PortfolioConstruction:
             (numbered from 1). Returns and volatilities are annualized.
 
         Notes:
-        - Both levels are long only and fully invested, as Riskfolio-Lib and skfolio do by
-          default. Weight, sector and country bounds and a net or gross exposure do not
-          apply: the weight of an asset is the product of its weight within its cluster
-          and the cluster's weight, from two separate problems, so a bound on it is not a
-          constraint either problem can hold.
+        - Both levels are long only and fully invested. Weight, sector and country
+          bounds and a net or gross exposure do not apply: the weight of an asset is the
+          product of its weight within its cluster and the cluster's weight, from two
+          separate problems, so a bound on it is not a constraint either problem can
+          hold.
         - With "maximum_sharpe", a cluster without an asset whose expected return
           exceeds the risk free rate holds its minimum variance portfolio. Across the
           clusters, at least one cluster needs an expected return above it.
@@ -1892,7 +1891,7 @@ class PortfolioConstruction:
 
         Notes:
         - The drawdowns are on uncompounded returns (the cumulative sum of the returns, as
-          in the paper, PyPortfolioOpt, Riskfolio-Lib and skfolio), which keeps the problem
+          in the paper), which keeps the problem
           linear: they are absolute drawdowns of a portfolio that keeps its invested amount
           constant. The compounded drawdowns of the risk module, relative to the peak
           value, are close for small drawdowns and smaller for large ones.

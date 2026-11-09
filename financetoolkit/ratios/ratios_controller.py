@@ -8594,7 +8594,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Asset Coverage Ratio = [(Total Assets - Intangible Assets) -
+        - Asset Coverage Ratio = [(Total Assets - Goodwill - Intangible Assets) -
           (Total Current Liabilities - Short Term Debt)] / Total Debt
 
         Args:
@@ -8643,15 +8643,19 @@ class Ratios:
         | OKE | 1.5362 | 1.6077 | 1.8371 | 1.7765 | 1.8112 |
         | WMB | 1.5739 | 1.6223 | 1.6147 | 1.649  | 1.6245 |
         """
+        # Goodwill and the other intangible assets are selected separately, so that the
+        # ratio does not rely on the provider also returning the row that combines them.
+        intangible_assets = (
+            self._balance_sheet_statement.loc[:, "Goodwill", :]
+            + self._balance_sheet_statement.loc[:, "Intangible Assets", :]
+        )
+
         if trailing:
             asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
                 self._mean_trailing(
                     self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
                 ),
-                self._mean_trailing(
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :],
-                    trailing,
-                ),
+                self._mean_trailing(intangible_assets, trailing),
                 self._mean_trailing(
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
@@ -8668,7 +8672,7 @@ class Ratios:
         else:
             asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
                 self._balance_sheet_statement.loc[:, "Total Assets", :],
-                self._balance_sheet_statement.loc[:, "Intangible Assets", :],
+                intangible_assets,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
                 self._balance_sheet_statement.loc[:, "Short Term Debt", :],
                 self._balance_sheet_statement.loc[:, "Total Debt", :],

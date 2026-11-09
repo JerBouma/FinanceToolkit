@@ -16,12 +16,14 @@ from financetoolkit.performance.helpers import get_newey_west_lags
 from financetoolkit.risk import cvar_model
 from financetoolkit.risk.risk_model import (
     apply_to_stacked_windows,
+    get_move_significance,
     get_tail_ratio,
     get_wealth_and_peak,
 )
 from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
+    PERIODS_PER_YEAR,
     by_own_trading_days,
     drop_non_finite,
     to_period_index,
@@ -210,6 +212,12 @@ def get_beta_implied_return(
     estimate the beta that explains it. The period returns compound the daily returns,
     as `get_returns` does.
 
+    Each Residual is also set against the residuals before it, as `get_move_significance`
+    sets a return against the earlier returns: the Residual Percentile is the share of the
+    earlier residuals with a smaller size (once a year of them, at least 20, is available)
+    and the Residual Largest Since the date of the last residual at least as large in the
+    same direction, NaN when no earlier residual was.
+
     Args:
         returns (pd.DataFrame): The daily asset returns, a daily PeriodIndex.
         benchmark_returns (pd.Series): The daily benchmark returns on the same index.
@@ -218,7 +226,8 @@ def get_beta_implied_return(
 
     Returns:
         pd.DataFrame: The periods as rows and a MultiIndex of (measure, ticker) as columns,
-        with the measures Beta, Benchmark Return, Implied Return, Actual Return and Residual.
+        with the measures Beta, Benchmark Return, Implied Return, Actual Return, Residual,
+        Residual Percentile and Residual Largest Since (the date as text).
     """
     # The window ends on the day before: the shift keeps a day out of its own beta.
     daily_beta = get_rolling_beta(returns, benchmark_returns, beta_window).shift(1)
@@ -240,6 +249,16 @@ def get_beta_implied_return(
         columns=returns.columns,
     )
     implied_return = beta.reindex(actual_return.index) * benchmark
+    residual = actual_return - implied_return
+
+    # The residual against its own history, with the window get_move_significance uses by
+    # default: the percentile needs a year of earlier residuals (at least 20).
+    significance = {
+        ticker: get_move_significance(
+            residual[ticker], window=max(PERIODS_PER_YEAR[period], 20)
+        )
+        for ticker in residual.columns
+    }
 
     return pd.concat(
         {
@@ -247,9 +266,55 @@ def get_beta_implied_return(
             "Benchmark Return": benchmark,
             "Implied Return": implied_return,
             "Actual Return": actual_return,
-            "Residual": actual_return - implied_return,
+            "Residual": residual,
+            **{
+                f"Residual {measure}": pd.DataFrame(
+                    {
+                        ticker: measures[measure]
+                        for ticker, measures in significance.items()
+                    }
+                )
+                for measure in ("Percentile", "Largest Since")
+            },
         },
         axis=1,
+    )
+
+
+def get_residual_value(
+    residual: pd.DataFrame, market_cap: pd.DataFrame, period: str
+) -> pd.DataFrame:
+    """
+    Translate the Residual of each period into money: the residual return times the market
+    capitalization at the close before the period started.
+
+        - Residual Value = Residual × Market Cap at the previous close
+
+    The previous close is the last close of the period before, so for daily periods the
+    close of the trading day before; the value is what the asset's own move added to or
+    took from the company's market value, in the currency of the market cap.
+
+    Args:
+        residual (pd.DataFrame): The residual return per period (rows) and ticker (columns),
+            with the PeriodIndex of `period`.
+        market_cap (pd.DataFrame): The daily market capitalization per ticker, a daily
+            PeriodIndex. NaN where it is unknown, which keeps the value NaN.
+        period (str): The period of the residuals: daily, weekly, monthly, quarterly or yearly.
+
+    Returns:
+        pd.DataFrame: The Residual Value per period and ticker, NaN without a market cap.
+    """
+    labels = to_period_index(market_cap.index)
+
+    if period != "daily":
+        labels = labels.asfreq(PERIOD_TRANSLATION[period])
+
+    # The last market cap of every period (the latest close with known shares), carried to
+    # the period after it.
+    previous_market_cap = market_cap.groupby(labels).last().shift(1)
+
+    return residual * previous_market_cap.reindex(
+        index=residual.index, columns=residual.columns
     )
 
 

@@ -88,6 +88,7 @@ class Performance:
         intraday_period: str | None = None,
         progress_bar: bool = True,
         returns_function: Callable[[list[str], str], pd.DataFrame] | None = None,
+        market_cap_function: Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Performance Controller Class.
@@ -110,6 +111,9 @@ class Performance:
             returns_function (Callable[[list[str], str], pd.DataFrame] | None, optional): Returns the returns of
                 tickers outside the Toolkit for a period, such as the style indices of
                 `get_style_analysis`. Defaults to None, which only allows the Toolkit's tickers.
+            market_cap_function (Callable[[], pd.DataFrame] | None, optional): Returns the daily market
+                capitalization of the tickers, as `get_beta_implied_return` values the Residual with.
+                Defaults to None, which leaves the Residual Value empty.
 
         As an example:
 
@@ -160,6 +164,7 @@ class Performance:
         self._intraday_period: str | None = intraday_period
         self._portfolio_weights: dict | None = None
         self._returns_function = returns_function
+        self._market_cap_function = market_cap_function
 
         # Historical Data
         self._historical_data = historical_data
@@ -789,6 +794,20 @@ class Performance:
         the start of the period. With the default daily period every row explains one day's move;
         a monthly or yearly period explains that month or year with the Beta known when it began.
 
+        Three measures put the Residual in context. The Residual Value is the Residual in money: the
+        market value the asset's own move added or took away, the Residual times the market
+        capitalization at the close before the period. The Residual Percentile and the Residual
+        Largest Since measure the Residual against the earlier residuals, as `get_move_significance`
+        does for the return itself: the Percentile is the share of the earlier residuals that were
+        smaller in size and Largest Since the date of the last residual at least as large in the same
+        direction ("the largest stock-specific fall since"), so the whole history counts without
+        returning it.
+
+            - Residual Value = Residual × Market Cap at the previous close
+            - Residual Percentile(t) = Count(|Residual(s)| < |Residual(t)|, s < t) / Count(s < t)
+            - Residual Largest Since(t) = max(s < t : Residual(s) <= Residual(t)) if Residual(t) < 0,
+              and max(s < t : Residual(s) >= Residual(t)) if Residual(t) > 0
+
         See definition: https://en.wikipedia.org/wiki/Single-index_model
 
         Also known as: beta-adjusted return, market-implied move, idiosyncratic return, abnormal return.
@@ -805,8 +824,8 @@ class Performance:
 
         Returns:
             pd.DataFrame: The periods as rows and a MultiIndex of (measure, ticker) as columns, with the
-            measures Beta, Benchmark Return, Implied Return, Actual Return and Residual. All returns are
-            decimals.
+            measures Beta, Benchmark Return, Implied Return, Actual Return, Residual, Residual Value,
+            Residual Percentile and Residual Largest Since (the date as text). All returns are decimals.
 
         Notes:
         - Returns are total returns (Adj Close), the asset's and the benchmark's over the same period.
@@ -817,6 +836,15 @@ class Performance:
           data or a recent listing) has no Beta, so its Implied Return and Residual are empty. Start the
           Toolkit at least `beta_window` trading days before the first period of interest.
         - The Beta is the ordinary least squares Beta of `get_beta`, on the daily returns of the window.
+        - The market cap is that of `get_market_cap` with show_daily=True: the traded split-adjusted Close
+          times the weighted average diluted shares of the latest fiscal period that ended on or before
+          that day, so no shares are used before their period closes. It is in the currency the ticker
+          trades in, and so is the Residual Value. Without shares, as for an ETF or an index, the Residual
+          Value is empty.
+        - The Percentile needs a year of earlier residuals (252 days, 52 weeks or 20 periods otherwise),
+          and Largest Since is empty when no earlier residual was as large, which makes the Residual the
+          largest since the first residual. The residuals start `beta_window` trading days after the
+          Toolkit's start_date, so choose an early start_date for a long history.
 
         As an example:
 
@@ -826,29 +854,54 @@ class Performance:
         toolkit = Toolkit(
             ["NVDA", "KO", "AMD", "TSLA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-06-01",
+            start_date="2022-01-01",
             end_date="2026-11-05",
         )
 
-        toolkit.performance.get_beta_implied_return().loc["2026-11-05"].unstack()
+        toolkit.performance.get_beta_implied_return().loc["2026-11-05"].unstack(sort=False)
         ```
 
         Which returns:
 
-        |                  |    NVDA |      KO |     AMD |    TSLA |
-        |:-----------------|--------:|--------:|--------:|--------:|
-        | Beta             |  1.8757 | -0.2777 |  3.2846 |  2.1039 |
-        | Benchmark Return | -0.0441 | -0.0441 | -0.0441 | -0.0441 |
-        | Implied Return   | -0.0827 |  0.0122 | -0.1448 | -0.0928 |
-        | Actual Return    | -0.0926 | -0.0007 | -0.1726 | -0.1077 |
-        | Residual         | -0.0099 | -0.0129 | -0.0278 | -0.0149 |
+        |                        | NVDA              | KO               | AMD               | TSLA              |
+        |:-----------------------|:------------------|:-----------------|:------------------|:------------------|
+        | Beta                   | 1.8763            | -0.2785          | 3.2862            | 2.1033            |
+        | Benchmark Return       | -0.0441           | -0.0441          | -0.0441           | -0.0441           |
+        | Implied Return         | -0.0827           | 0.0123           | -0.1449           | -0.0927           |
+        | Actual Return          | -0.0926           | -0.0007          | -0.1726           | -0.1077           |
+        | Residual               | -0.0099           | -0.013           | -0.0277           | -0.015            |
+        | Residual Value         | -48381834809.5885 | -5375271284.7669 | -22181273645.0303 | -20387379231.5616 |
+        | Residual Percentile    | 0.4241            | 0.8493           | 0.7588            | 0.4896            |
+        | Residual Largest Since | 2026-11-04        | 2026-10-27       | 2026-11-04        | 2026-11-04        |
         """
+        returns = self._get_column("daily", "Return", within_period=False)
+
         implied_returns = performance_model.get_beta_implied_return(
-            self._get_column("daily", "Return", within_period=False),
+            returns,
             self._get_column("daily", "Return", within_period=False, benchmark=True),
             period,
             beta_window,
         )
+
+        # The market cap is empty (an empty Series) when no ticker has statements.
+        market_cap = self._market_cap_function() if self._market_cap_function else None
+        residual_value = performance_model.get_residual_value(
+            implied_returns["Residual"],
+            (
+                market_cap.reindex(columns=returns.columns).astype(float)
+                if isinstance(market_cap, pd.DataFrame) and not market_cap.empty
+                else pd.DataFrame(np.nan, index=returns.index, columns=returns.columns)
+            ),
+            period,
+        )
+
+        measures = list(implied_returns.columns.get_level_values(0).unique())
+        measures.insert(measures.index("Residual") + 1, "Residual Value")
+
+        implied_returns = pd.concat(
+            [implied_returns, pd.concat({"Residual Value": residual_value}, axis=1)],
+            axis=1,
+        )[pd.MultiIndex.from_product([measures, returns.columns])]
 
         implied_returns = implied_returns.loc[self._start_date : self._end_date]
 

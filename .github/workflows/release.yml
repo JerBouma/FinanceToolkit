@@ -106,7 +106,6 @@ jobs:
       url: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare.outputs.version }}
     permissions:
       contents: write
-      id-token: write # PyPI Trusted Publishing: PyPI accepts this workflow's OIDC token, no API token is stored
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       SHA: ${{ needs.prepare.outputs.sha }}
@@ -123,11 +122,12 @@ jobs:
         with:
           enable-cache: false
 
-      # Trusted Publishing: PyPI trusts this workflow (JerBouma/FinanceToolkit, release.yml, environment
-      # "release") and exchanges its OIDC token for a short-lived upload token. --check-url skips files
-      # PyPI already has, so a re-run doesn't fail on them.
+      # PyPI's API token comes from the PYPI_TOKEN secret, and this job only runs once the "release"
+      # environment approves it. --check-url skips files PyPI already has, so a re-run doesn't fail on them.
       - name: Publish to PyPI
-        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish --trusted-publishing never --check-url https://pypi.org/simple/ dist/*
 
       # The bundle and the MCP Registry point people at this version, so wait until PyPI serves it.
       - name: Wait for the version on PyPI

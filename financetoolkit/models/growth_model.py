@@ -6,8 +6,6 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-# pylint: disable=too-many-locals
-
 
 def get_present_value_of_growth_opportunities(
     cost_of_equity: pd.DataFrame,

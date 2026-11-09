@@ -282,7 +282,7 @@ class Cache:
         if enabled:
             try:
                 self._backend = SQLiteBackend(self._location)
-            except Exception as error:  # pylint: disable=broad-except
+            except Exception as error:
                 # A cache is an optimization, so a database that cannot be opened just disables it.
                 self._enabled = False
 
@@ -319,7 +319,7 @@ class Cache:
                 EVICTION_INTERVAL_SECONDS,
                 excluded_sources=frozenset({policy_model.MCP}),
             )
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             # Eviction is housekeeping, so a failure here is not surfaced.
             logger.debug("Could not evict stale cache entries: %s", error)
             return
@@ -480,7 +480,7 @@ class Cache:
                 ever_covered, fresh_covered, payload = self._backend.read_entity_state(
                     key, entity, minimum_fetched_at
                 )
-            except Exception as error:  # pylint: disable=broad-except
+            except Exception as error:
                 # A read that fails mid-session is a cache miss, not a failed call.
                 logger.debug(
                     "Could not read cached %s.%s for %s: %s",
@@ -514,7 +514,7 @@ class Cache:
                     plan.cached[entity] = frame_model.slice_frame(
                         stored, start, end, date_axis
                     )
-                except Exception as error:  # pylint: disable=broad-except
+                except Exception as error:
                     # An unreadable payload (one in another format, such as a pickle, is never read) is a miss: ask the source for the lot.  # noqa: E501
                     logger.debug(
                         "Could not decode cached %s.%s for %s: %s",
@@ -627,7 +627,7 @@ class Cache:
                 dataset=dataset,
                 compaction_threshold=COVERAGE_COMPACTION_THRESHOLD,
             )
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             # A cache write must never break the call that produced the data.
             logger.debug(
                 "Could not cache %s.%s for %s: %s", source, dataset, entity, error
@@ -683,7 +683,7 @@ class Cache:
                 return None
 
             return serialization_model.decode_object(payload)
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             # Any read failure is reported as a miss, so the caller falls back to the source.
             logger.debug(
                 "Could not read cached %s.%s for %s: %s", source, dataset, entity, error
@@ -723,7 +723,7 @@ class Cache:
                 source=source,
                 dataset=dataset,
             )
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             logger.debug(
                 "Could not cache %s.%s for %s: %s", source, dataset, entity, error
             )
@@ -804,7 +804,7 @@ class Cache:
 
         try:
             return self._backend.get_contents()
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             logger.warning("Could not read the cache contents: %s", error)
 
             return []
@@ -832,7 +832,7 @@ class Cache:
             return self._backend.remove_expired_entries(
                 ttl, source=source, dataset=dataset
             )
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             # Eviction is housekeeping on a timer, so a failure here is not surfaced.
             logger.debug("Could not evict expired cache entries: %s", error)
 

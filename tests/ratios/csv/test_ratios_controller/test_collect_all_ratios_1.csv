@@ -20,6 +20,8 @@ AAPL,Deferred Revenue Ratio,,-0.1405,-0.0337,0.0448
 AAPL,Working Capital Turnover Ratio,,,-6.5727,0.5588
 AAPL,Capex Intensity,,0.1391,-0.1023,0.0515
 AAPL,Capex to Depreciation,,0.486,-0.0184,-0.0134
+AAPL,Asset Growth,,,-0.9403,-1.1
+AAPL,Net Operating Assets,,,-0.0975,-0.0923
 AAPL,Current Ratio,,-0.2119,-0.1816,0.1235
 AAPL,Quick Ratio,,-0.3025,-0.299,0.2617
 AAPL,Cash Ratio,,-0.4215,-0.3716,0.3503
@@ -55,6 +57,7 @@ AAPL,Cash-Based Operating Profitability,,,0.0662,-0.0464
 AAPL,Cash Return on Invested Capital,,,0.2129,-0.0402
 AAPL,Free Cash Flow Conversion,,-0.2317,0.1373,-0.0805
 AAPL,Free Cash Flow to EBITDA,,-0.185,0.1043,-0.0729
+AAPL,Percent Accruals,,0.7562,-1.2662,0.3761
 AAPL,Debt-to-Assets Ratio,,0.0302,-0.0342,-0.1611
 AAPL,Asset Coverage Ratio,,-0.0701,-0.0604,0.21
 AAPL,Debt-to-Equity Ratio,,0.1563,0.2082,-0.3163
@@ -69,6 +72,14 @@ AAPL,Dividend CAPEX Coverage Ratio,,0.0795,0.1742,-0.1102
 AAPL,Debt-to-Capital Ratio,,0.0494,0.0576,-0.1134
 AAPL,Preferred Dividend Coverage Ratio,,,,
 AAPL,Interest Paid to Expense Ratio,,-0.0278,-0.0378,-0.0108
+AAPL,EBITDA Interest Coverage,,0.6885,-0.0202,-0.2817
+AAPL,(EBITDA - CapEx) Interest Coverage,,0.6928,-0.0092,-0.2857
+AAPL,Cash Interest Coverage,,0.5841,0.0265,-0.3069
+AAPL,FFO to Debt,,0.2506,0.2063,0.1624
+AAPL,DCF to Debt,,0.4874,1.9909,0.1621
+AAPL,Degree of Operating Leverage,,,-0.3617,0.2431
+AAPL,Degree of Financial Leverage,,,-0.4427,0.164
+AAPL,Degree of Total Leverage,,,-0.6443,0.4471
 AAPL,Earnings per Share,,0.714,0.0889,0.0034
 AAPL,Revenue per Share,,0.385,0.1135,0.0035
 AAPL,Price-to-Earnings,,-0.2192,-0.328,
@@ -94,8 +105,14 @@ AAPL,Tangible Asset Value,,-0.0344,-0.1968,0.2264
 AAPL,Net Current Asset Value,,-0.333,-0.0889,0.1188
 AAPL,EV-to-Free-Cash-Flow,,0.0275,-0.4005,
 AAPL,Buyback Yield,,-0.0782,0.4876,
-AAPL,Shareholder Yield,,-0.3413,0.4789,
+AAPL,Shareholder Yield,,-0.3413,0.4819,
 AAPL,SBC-Adjusted Free Cash Flow,,0.2782,0.2041,-0.1333
+AAPL,Free Cash Flow Payout Ratio,,-0.1892,-0.144,0.1329
+AAPL,EV-to-Invested-Capital,,-0.0812,-0.27,
+AAPL,Price-to-Tangible-Book,,0.3335,-0.1181,
+AAPL,Net Share Issuance,,,0.2277,0.0
+AAPL,Composite Equity Issuance,,,,
+AAPL,Net External Financing,,,-0.0735,0.0202
 MSFT,Days of Inventory Outstanding,,,0.1736,-0.0691
 MSFT,Days of Sales Outstanding,,,-0.004,0.0566
 MSFT,Operating Cycle,,,0.0266,0.0319
@@ -117,6 +134,8 @@ MSFT,Deferred Revenue Ratio,,-0.0187,-0.07,0.0457
 MSFT,Working Capital Turnover Ratio,,,0.4219,0.1769
 MSFT,Capex Intensity,,0.1361,-0.0179,0.1004
 MSFT,Capex to Depreciation,,0.4624,-0.0639,0.2276
+MSFT,Asset Growth,,,-0.1364,0.3878
+MSFT,Net Operating Assets,,,0.4416,0.166
 MSFT,Current Ratio,,-0.1732,-0.142,-0.0086
 MSFT,Quick Ratio,,-0.1856,-0.1744,-0.0201
 MSFT,Cash Ratio,,-0.2219,-0.2501,-0.0304
@@ -152,6 +171,7 @@ MSFT,Cash-Based Operating Profitability,,,0.0728,-0.0147
 MSFT,Cash Return on Invested Capital,,,0.059,-0.1914
 MSFT,Free Cash Flow Conversion,,-0.1034,-0.0221,-0.0824
 MSFT,Free Cash Flow to EBITDA,,-0.0003,-0.0317,-0.1276
+MSFT,Percent Accruals,,0.3179,0.1125,0.0616
 MSFT,Debt-to-Assets Ratio,,-0.1379,-0.1733,-0.1328
 MSFT,Asset Coverage Ratio,,0.1389,0.1775,0.188
 MSFT,Debt-to-Equity Ratio,,-0.2046,-0.2292,-0.2096
@@ -166,6 +186,14 @@ MSFT,Dividend CAPEX Coverage Ratio,,0.0412,0.0255,-0.1372
 MSFT,Debt-to-Capital Ratio,,-0.1386,-0.1677,-0.1621
 MSFT,Preferred Dividend Coverage Ratio,,,,
 MSFT,Interest Paid to Expense Ratio,,,,
+MSFT,EBITDA Interest Coverage,,0.3706,0.3635,0.0969
+MSFT,(EBITDA - CapEx) Interest Coverage,,0.3386,0.3792,0.0528
+MSFT,Cash Interest Coverage,,,,
+MSFT,FFO to Debt,,,,
+MSFT,DCF to Debt,,0.7948,0.2969,0.2439
+MSFT,Degree of Operating Leverage,,,-0.4127,-0.165
+MSFT,Degree of Financial Leverage,,,-0.1892,-1.0866
+MSFT,Degree of Total Leverage,,,-0.5237,-1.0722
 MSFT,Earnings per Share,,0.3973,0.1979,0.0039
 MSFT,Revenue per Share,,0.1869,0.1902,0.0785
 MSFT,Price-to-Earnings,,0.0821,-0.4047,
@@ -191,5 +219,11 @@ MSFT,Tangible Asset Value,,0.2439,0.0384,0.4703
 MSFT,Net Current Asset Value,,-5.7628,-2.8746,0.2488
 MSFT,EV-to-Free-Cash-Flow,,0.2244,-0.391,
 MSFT,Buyback Yield,,-0.2126,0.71,
-MSFT,Shareholder Yield,,-0.2398,0.6488,
+MSFT,Shareholder Yield,,-0.2353,0.6391,
 MSFT,SBC-Adjusted Free Cash Flow,,0.2517,0.1529,-0.135
+MSFT,Free Cash Flow Payout Ratio,,-0.1201,-0.0543,0.1958
+MSFT,EV-to-Invested-Capital,,0.0083,-0.5433,
+MSFT,Price-to-Tangible-Book,,0.2038,-0.3194,
+MSFT,Net Share Issuance,,,0.1807,0.0147
+MSFT,Composite Equity Issuance,,,,
+MSFT,Net External Financing,,,-0.1479,0.3347

@@ -7,8 +7,6 @@ import pandas as pd
 
 from financetoolkit.options import greeks_model
 
-# pylint: disable=too-many-arguments,too-many-locals
-
 # One option contract covers one hundred shares.
 CONTRACT_SIZE = 100
 

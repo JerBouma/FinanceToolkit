@@ -5,7 +5,6 @@ import pytest
 from financetoolkit.ratios import profitability_model
 
 
-# pylint: disable=missing-function-docstring
 def test_get_gross_margin(recorder):
     recorder.capture(
         profitability_model.get_gross_margin(
@@ -257,3 +256,15 @@ def test_free_cash_flow_conversion_ratios_need_a_positive_base():
     assert conversion.iloc[1:].isna().all()
     assert to_ebitda.iloc[0] == pytest.approx(0.6)
     assert pd.isna(to_ebitda.iloc[1])
+
+
+def test_percent_accruals_scales_by_the_absolute_net_income():
+    result = profitability_model.get_percent_accruals(
+        net_income=pd.Series([100.0, -50.0, 0.0]),
+        operating_cash_flow=pd.Series([130.0, -80.0, 10.0]),
+    )
+
+    assert result.iloc[0] == pytest.approx(-0.3)
+    # With a loss, accruals that make the loss smaller than the cash flow are positive.
+    assert result.iloc[1] == pytest.approx(0.6)
+    assert pd.isna(result.iloc[2])

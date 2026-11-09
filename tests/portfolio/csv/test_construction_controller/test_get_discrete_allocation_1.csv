@@ -1,0 +1,5 @@
+Asset,Price,Shares,Amount,Target Weight,Weight
+AAPL,129.93,11.0,1429.23,0.7,0.7146
+MSFT,239.82,2.0,479.64,0.3,0.2398
+Leftover Cash,,,91.13,0.0,0.0456
+Total,,,2000.0,1.0,1.0

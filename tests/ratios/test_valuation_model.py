@@ -1,9 +1,9 @@
 """Valuation Model Tests""" ""
+import numpy as np
 import pandas as pd
+import pytest
 
 from financetoolkit.ratios import valuation_model
-
-# pylint: disable=missing-function-docstring
 
 
 def test_get_earnings_per_share(recorder):
@@ -194,6 +194,39 @@ def test_get_dividend_payout_ratio(recorder):
     )
 
 
+def test_issuance_measures_are_log_changes():
+    issuance = valuation_model.get_net_share_issuance(
+        shares=pd.Series([110.0, 90.0, 100.0]),
+        beginning_shares=pd.Series([100.0, 100.0, 0.0]),
+    )
+    composite = valuation_model.get_composite_equity_issuance(
+        market_cap=pd.Series([1200.0, 1000.0]),
+        beginning_market_cap=pd.Series([1000.0, 1000.0]),
+        total_return_price=pd.Series([11.0, 11.0]),
+        beginning_total_return_price=pd.Series([10.0, 10.0]),
+    )
+
+    assert issuance.iloc[0] == pytest.approx(np.log(1.1))
+    assert issuance.iloc[1] == pytest.approx(np.log(0.9))
+    assert pd.isna(issuance.iloc[2])
+    # A market cap that grows with the return alone is no issuance; one that lags it is
+    # equity returned (here the whole return paid out).
+    assert composite.iloc[0] == pytest.approx(np.log(1.2) - np.log(1.1))
+    assert composite.iloc[1] == pytest.approx(-np.log(1.1))
+
+
+def test_net_external_financing_takes_the_cash_flow_signs():
+    result = valuation_model.get_net_external_financing(
+        net_stock_issued=pd.Series([-30.0, 10.0]),
+        dividends_paid=pd.Series([-10.0, 0.0]),
+        net_debt_issued=pd.Series([20.0, 5.0]),
+        average_total_assets=pd.Series([200.0, 0.0]),
+    )
+
+    assert result.iloc[0] == pytest.approx(-20 / 200)
+    assert pd.isna(result.iloc[1])
+
+
 def test_get_tangible_asset_value(recorder):
     recorder.capture(
         valuation_model.get_tangible_asset_value(
@@ -211,3 +244,40 @@ def test_get_net_current_asset_value(recorder):
             total_liabilities=pd.Series([50, 30, 80, 20, 50]),
         )
     )
+
+
+def test_free_cash_flow_payout_ratio_needs_a_positive_free_cash_flow():
+    result = valuation_model.get_free_cash_flow_payout_ratio(
+        dividends=pd.Series([-30.0, -30.0]),
+        free_cash_flow=pd.Series([100.0, -10.0]),
+    )
+
+    assert result.iloc[0] == 0.3
+    assert pd.isna(result.iloc[1])
+
+
+def test_ev_to_invested_capital_and_price_to_tangible_book():
+    ev_to_invested_capital = valuation_model.get_ev_to_invested_capital_ratio(
+        enterprise_value=pd.Series([500.0, 500.0]),
+        total_equity=pd.Series([150.0, 10.0]),
+        total_debt=pd.Series([100.0, 10.0]),
+        cash_and_short_term_investments=pd.Series([50.0, 40.0]),
+    )
+    price_to_tangible_book = valuation_model.get_price_to_tangible_book_ratio(
+        market_cap=pd.Series([400.0, 400.0]),
+        total_shareholder_equity=pd.Series([150.0, 150.0]),
+        preferred_stock=pd.Series([10.0, 10.0]),
+        goodwill_and_intangible_assets=pd.Series([40.0, 200.0]),
+    )
+
+    assert ev_to_invested_capital.iloc[0] == 2.5
+    assert pd.isna(ev_to_invested_capital.iloc[1])
+    assert price_to_tangible_book.iloc[0] == 4
+    assert pd.isna(price_to_tangible_book.iloc[1])
+
+
+def test_get_reinvestment_ratio_is_what_is_not_paid_out():
+    result = valuation_model.get_reinvestment_ratio(pd.Series([0.25, 0.0, 1.2]))
+
+    # A payout above earnings means a negative reinvestment.
+    pd.testing.assert_series_equal(result, pd.Series([0.75, 1.0, -0.2]))

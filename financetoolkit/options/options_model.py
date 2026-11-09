@@ -7,11 +7,10 @@ import yfinance as yf
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.economics import cboe_model
+from financetoolkit.options.helpers import validate_numeric_inputs
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()
-
-# pylint: disable=too-many-arguments,too-many-locals
 
 
 def get_option_expiry_dates(ticker: str) -> list[str]:
@@ -462,18 +461,14 @@ def get_monte_carlo_option_price(
         Reference: Boyle, P. P. (1977). "Options: A Monte Carlo Approach." Journal of
         Financial Economics, 4(3), 323-338.
     """
-    for name, value in {
-        "stock_price": stock_price,
-        "strike_price": strike_price,
-        "risk_free_rate": risk_free_rate,
-        "volatility": volatility,
-        "time_to_expiration": time_to_expiration,
-        "dividend_yield": dividend_yield,
-    }.items():
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise TypeError(
-                f"{name} must be a float or int, received {type(value).__name__}."
-            )
+    validate_numeric_inputs(
+        stock_price=stock_price,
+        strike_price=strike_price,
+        risk_free_rate=risk_free_rate,
+        volatility=volatility,
+        time_to_expiration=time_to_expiration,
+        dividend_yield=dividend_yield,
+    )
 
     if not isinstance(simulations, int) or simulations <= 0:
         raise ValueError(

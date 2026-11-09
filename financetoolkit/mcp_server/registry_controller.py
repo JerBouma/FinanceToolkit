@@ -37,6 +37,7 @@ from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thr
 from financetoolkit.mcp_server.coercion_model import (
     accepts_text_only,
     coerce_value,
+    size_limit_problem,
     text_from_parsed_json,
     to_boolean,
     validate_date,
@@ -406,7 +407,9 @@ TRANSACTION_FIELDS = {
     "currency": "Currency",
 }
 REBALANCING_FREQUENCIES = ("none", "monthly", "quarterly", "yearly")
-TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-=^]{0,19}$")
+# A ticker as the sources write it ("AAPL", "ASML.AS", "BTC-USD", "EURUSD=X", "^GSPC"), checked
+# before it becomes part of a web address.
+TICKER_PATTERN = re.compile(r"^\^?[A-Z0-9][A-Z0-9.\-=^]{0,19}$")
 CURRENCY_PATTERN = re.compile(r"^[A-Za-z]{3}$")
 
 
@@ -754,6 +757,7 @@ def _simplify_annotation(ann: Any) -> Any:
     - ``float | range | list | None``    → ``float | None``
     - ``list[str] | str | None``         → ``str | None``
     - ``float | list | dict[str,float]`` → ``float``
+    - ``float | str``                    → ``float | str``
     - ``DataFrame | ndarray | list[list[float]]`` → ``list[list[float]]``
     """
     if ann is inspect.Parameter.empty or ann is None:
@@ -844,6 +848,22 @@ def _simplify_annotation(ann: Any) -> Any:
     ):
         # Built at runtime for the tool schema; ty cannot follow a type held in a variable.
         combined = scalar | list[scalar]  # ty: ignore[invalid-type-form]
+        return combined | None if has_none else combined
+
+    # A number that may also be given per ticker (the weight bounds of the portfolio
+    # optimizers) accepts both, as the indicator does.
+    if scalar in (int, float) and any(
+        typing.get_origin(a) is dict
+        and all(arg in (str, int, float) for arg in typing.get_args(a))
+        for a in args
+    ):
+        combined = scalar | dict[str, scalar]  # ty: ignore[invalid-type-form]
+        return combined | None if has_none else combined
+
+    # A number that may also be a keyword (the Black-Litterman risk_aversion='market')
+    # accepts both, so the keyword is not refused as an unparsable number.
+    if scalar in (int, float) and str in scalars:
+        combined = scalar | str
         return combined | None if has_none else combined
 
     return scalar | None if has_none else scalar
@@ -1153,6 +1173,7 @@ class ToolRegistry:
         max_response_characters: int | None = None,
         full_text_methods: list[str] | None = None,
         tickers_optional: list[str] | None = None,
+        parameter_limits: dict[str, Any] | None = None,
     ) -> None:
         """Initialise the registry with the FastMCP instance and shared subsystems.
 
@@ -1192,6 +1213,10 @@ class ToolRegistry:
             tickers_optional (list[str] | None): Toolkit methods that answer the same for any
                 ticker (market-wide snapshots) and so may be called without tickers.
                 Defaults to None.
+            parameter_limits (dict[str, Any] | None): The most a size parameter may be
+                ("maximums") and the most parameters computed together may multiply to
+                ("products"), see coercion_model.size_limit_problem. Defaults to None (no
+                limits).
         """
         self._mcp = mcp
         self._provider = provider
@@ -1217,6 +1242,7 @@ class ToolRegistry:
         self._max_response_characters = max_response_characters
         self._full_text_methods: frozenset[str] = frozenset(full_text_methods or [])
         self._tickers_optional: frozenset[str] = frozenset(tickers_optional or [])
+        self._parameter_limits: dict[str, Any] = parameter_limits or {}
 
     @staticmethod
     def _resolve_class_map(class_map: dict[str, str]) -> dict[str, type]:
@@ -1335,7 +1361,17 @@ class ToolRegistry:
             ValueError: When a reference names an unknown tool or indicator.
         """
         frames = []
-        for reference in series_model.parse_series_references(references):
+        parsed = series_model.parse_series_references(references)
+        # Each reference collects its own tickers or countries, so together they are held
+        # to the most one call may analyze.
+        if (
+            count := sum(len(reference.entities) for reference in parsed)
+        ) > MAX_ENTITIES:
+            raise ValueError(
+                f"The series name {count} tickers and countries together; at most "
+                f"{MAX_ENTITIES} can be analyzed in one call. Split them over several calls."
+            )
+        for reference in parsed:
             tools = (
                 [reference.tool]
                 if reference.tool
@@ -1362,6 +1398,17 @@ class ToolRegistry:
                 self._inspector.categories.get("ticker", "ticker"),
                 self._inspector.categories.get("toolkit", "toolkit"),
             )
+            if by_ticker and (
+                invalid := [
+                    entity
+                    for entity in reference.entities
+                    if not TICKER_PATTERN.match(entity.upper())
+                ]
+            ):
+                raise ValueError(
+                    f"The series '{reference.text[:80]}' has an invalid ticker: "
+                    f"{invalid[0][:40]!r}."
+                )
             entities = (
                 [entity.upper() for entity in reference.entities]
                 if by_ticker
@@ -1503,8 +1550,8 @@ class ToolRegistry:
                 and f"get_{candidate}" in method_param_names
             ):
                 candidate = f"get_{candidate}"
-            # A near-certain match (get_gordon_growth_model for get_gorden_growth_model, a
-            # spelling the package keeps for compatibility) is used, with a note.
+            # A near-certain match (get_gordon_growth_model for a misspelt get_gorden_growth_model)
+            # is used, with a note.
             indicator_note = None
             if candidate not in method_param_names:
                 near = difflib.get_close_matches(
@@ -1565,6 +1612,14 @@ class ToolRegistry:
                         f"{MAX_ENTITIES} can be analyzed in one call. Split them over "
                         "several calls."
                     )
+            if invalid := [
+                ticker for ticker in tickers or [] if not TICKER_PATTERN.match(ticker)
+            ]:
+                return (
+                    f"`{tool_name}` received an invalid ticker: {invalid[0][:40]!r}. A ticker "
+                    "has at most 20 letters, digits and the characters . - = ^, e.g. 'AAPL', "
+                    "'ASML.AS', 'BTC-USD' or '^GSPC'."
+                )
 
             # A market-wide snapshot (config.yaml tickers_optional) does not depend on the
             # tickers, but the Toolkit it is reached through needs one to be built.
@@ -1671,6 +1726,14 @@ class ToolRegistry:
                 "null",
             ):
                 benchmark_ticker = None
+            elif benchmark_ticker is not None and not TICKER_PATTERN.match(
+                str(benchmark_ticker).strip().upper()
+            ):
+                return (
+                    f"Invalid `benchmark_ticker` for `{tool_name}` (`{method_name}`): "
+                    f"{str(benchmark_ticker)[:40]!r}. Please use a ticker such as 'SPY' or "
+                    "'^GSPC', or 'None' for no benchmark."
+                )
 
             # The Toolkit's own setting, taken off before the method's arguments and passed under
             # its own name, so it never meets a method's own risk_free_rate (options takes the
@@ -1805,6 +1868,21 @@ class ToolRegistry:
                     and method_kwargs.get(pname) in (None, "")
                 ):
                     method_kwargs[pname] = value
+
+            # A call that would simulate or download more than the server can hold is
+            # refused before anything is collected.
+            if size_problem := size_limit_problem(
+                method_kwargs,
+                {
+                    pname: per_method[method_name]
+                    for pname, per_method in parameter_defaults.items()
+                    if method_name in per_method
+                },
+                self._parameter_limits,
+            ):
+                return (
+                    f"Invalid input for `{tool_name}` (`{method_name}`): {size_problem}"
+                )
 
             # An indicator that needs inputs the caller left out is answered with which ones,
             # rather than with the TypeError calling it would raise.

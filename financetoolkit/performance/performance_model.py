@@ -12,6 +12,7 @@ from scipy.stats import linregress
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.performance.helpers import get_newey_west_lags
 from financetoolkit.risk import cvar_model
 from financetoolkit.risk.risk_model import (
     apply_to_stacked_windows,
@@ -22,7 +23,9 @@ from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     by_own_trading_days,
+    drop_non_finite,
     to_period_index,
+    validate_period,
 )
 
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
@@ -33,8 +36,6 @@ MIN_SORTINO_OBSERVATIONS = 2
 
 # The Euler-Mascheroni constant, used by the Deflated Sharpe Ratio.
 EULER_MASCHERONI_CONSTANT = 0.5772156649015329
-
-# pylint: disable=isinstance-second-argument-not-valid-type
 
 
 @by_own_trading_days(compound=True)
@@ -141,9 +142,9 @@ def get_beta(
     ).groupby(groups).sum(min_count=2)
 
     if within_period:
-        return beta.replace([np.inf, -np.inf], np.nan)
+        return drop_non_finite(beta)
 
-    beta = beta.iloc[0].replace([np.inf, -np.inf], np.nan)
+    beta = drop_non_finite(beta.iloc[0])
 
     return beta if isinstance(returns, pd.DataFrame) else float(beta.iloc[0])
 
@@ -1614,7 +1615,7 @@ def get_ulcer_performance_index(
     Returns:
         pd.Series: A Series of Ulcer Performance Index values with time as index and assets as columns.
     """
-    return (excess_returns / ulcer_index).dropna()
+    return (excess_returns / ulcer_index).dropna(how="all")
 
 
 def get_m2_ratio(
@@ -1886,7 +1887,7 @@ def get_calmar_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Calmar ratios with time as index
         and assets as columns.
     """
-    return (returns / maximum_drawdown.abs()).dropna()
+    return (returns / maximum_drawdown.abs()).dropna(how="all")
 
 
 @by_own_trading_days
@@ -1962,7 +1963,7 @@ def get_sterling_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Sterling ratios with time as index
         and assets as columns.
     """
-    return (returns / (average_drawdown.abs() + adjustment)).dropna()
+    return (returns / (average_drawdown.abs() + adjustment)).dropna(how="all")
 
 
 @by_own_trading_days
@@ -2045,7 +2046,7 @@ def get_burke_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Burke ratios with time as index
         and assets as columns.
     """
-    return (excess_returns / burke_drawdown_measure).dropna()
+    return (excess_returns / burke_drawdown_measure).dropna(how="all")
 
 
 def _geometric_mean_return(returns: pd.Series | pd.DataFrame) -> pd.Series | float:
@@ -2299,8 +2300,8 @@ def get_omega_ratio(
     Returns:
         pd.Series | pd.DataFrame: Omega Ratio values as float if returns is a pd.Series,
         otherwise as pd.Series or pd.DataFrame with time as index. Without any return below
-        the minimum acceptable return the ratio is infinite, and without any return away
-        from it NaN.
+        the minimum acceptable return there are no losses to divide by and the ratio is
+        undefined (NaN).
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
@@ -2336,14 +2337,10 @@ def get_omega_ratio(
 
 def _divide_gains_by_losses(gains: float, losses: float) -> float:
     """
-    The Omega ratio from the summed gains and losses: infinite when there are gains and no
-    losses (the sum of no losses is -0.0, which would give minus infinity) and NaN when
-    there are neither.
+    The Omega ratio from the summed gains and losses, NaN without losses (the sum of no
+    losses is -0.0, which would otherwise give minus infinity).
     """
-    if losses > 0:
-        return gains / losses
-
-    return np.inf if gains > 0 else np.nan
+    return gains / losses if losses > 0 else np.nan
 
 
 def get_rolling_omega_ratio(
@@ -2354,9 +2351,8 @@ def get_rolling_omega_ratio(
     """
     Calculate the rolling Omega Ratio of returns.
 
-    A window with gains but no losses has an infinite ratio (inf), like get_omega_ratio
-    over the whole period; a window without gains or losses (all returns equal to the
-    minimum acceptable return) has none (NaN).
+    A window without losses (no return below the minimum acceptable return) has no ratio
+    (NaN), like get_omega_ratio over the whole period.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
@@ -2373,11 +2369,9 @@ def get_rolling_omega_ratio(
         gains = excess_returns.clip(min=0).sum(axis=1)
         losses = (-excess_returns).clip(min=0).sum(axis=1)
 
-        # A window without losses has an infinite ratio, one without gains or losses none.
+        # A window without losses has no ratio.
         with np.errstate(divide="ignore", invalid="ignore"):
-            return np.where(
-                losses > 0, gains / losses, np.where(gains > 0, np.inf, np.nan)
-            )
+            return np.where(losses > 0, gains / losses, np.nan)
 
     return apply_to_stacked_windows(returns, window_size, _omega)
 
@@ -2430,7 +2424,9 @@ def get_gain_to_pain_ratio(
     if isinstance(returns, pd.Series):
         losses = returns[returns < 0].abs().sum()
 
-        return returns.sum() / losses
+        # A period without losses (or without returns) divides by zero, which is inf or NaN.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return returns.sum() / losses
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -2470,9 +2466,9 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
         returns (pd.Series): A Series of returns; missing returns are left out.
 
     Returns:
-        pd.Series: The statistics, indexed by their name. A Profit Factor with gains but
-        no losses is infinite (inf), as for the Omega Ratio; a statistic without the
-        returns it needs (e.g. the Payoff Ratio without losses) is NaN.
+        pd.Series: The statistics, indexed by their name. A statistic without the returns
+        it needs (e.g. the Profit Factor or the Payoff Ratio without losses) is NaN, as
+        for the Omega Ratio.
     """
     returns = returns.dropna()
     wins = returns[returns > 0]
@@ -2483,9 +2479,8 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
     average_win = wins.mean() if len(wins) else np.nan
     average_loss = losses.mean() if len(losses) else np.nan
 
-    # Gains without losses give an infinite ratio, as for the Omega Ratio.
-    no_losses = np.inf if len(wins) else np.nan
-    profit_factor = wins.sum() / abs(losses.sum()) if len(losses) else no_losses
+    # Without losses there is nothing to divide by, as for the Omega Ratio.
+    profit_factor = wins.sum() / abs(losses.sum()) if len(losses) else np.nan
 
     # Streaks: every change of sign (a zero return included) starts a new run.
     signs = np.sign(returns)
@@ -2820,11 +2815,7 @@ def get_returns(
         pd.Series | pd.DataFrame: Return values with time (or `groups`) as the
         index. If cumulative is True, the cumulative return is returned instead.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -3329,7 +3320,7 @@ def get_starr_ratio(
     starr_ratio = excess_returns / abs(conditional_value_at_risk)
 
     if isinstance(starr_ratio, pd.Series | pd.DataFrame):
-        return starr_ratio.dropna()
+        return starr_ratio.dropna(how="all")
 
     return starr_ratio
 
@@ -3383,7 +3374,7 @@ def get_rachev_ratio(
     rachev_ratio = right_tail_expected_shortfall / left_tail_expected_shortfall
 
     if isinstance(rachev_ratio, pd.Series | pd.DataFrame):
-        return rachev_ratio.dropna()
+        return rachev_ratio.dropna(how="all")
 
     return rachev_ratio
 
@@ -3902,3 +3893,489 @@ def get_rolling_morningstar_risk_adjusted_return(
         ),
         raw=True,
     )
+
+
+def get_lo_annualization_factor(
+    autocorrelations: pd.Series | np.ndarray | list[float],
+    periods_per_year: int,
+) -> float:
+    """
+    Calculate Lo's (2002) factor η(q) that turns a Sharpe ratio of one period into a Sharpe
+    ratio of q periods (e.g. a year) when the returns are serially correlated.
+
+    The formula is as follows:
+
+        - η(q) = q / SQRT( q + 2 * SUM_{k=1}^{q-1} (q - k) * ρ_k )
+
+    Where q is `periods_per_year` and ρ_k the autocorrelation of the returns at lag k. The
+    autocorrelations beyond those passed in are taken as 0. Without autocorrelation η(q)
+    equals SQRT(q), the usual annualization factor; positive autocorrelation (e.g. smoothed
+    returns of illiquid assets or hedge funds) makes it smaller, negative autocorrelation
+    larger. When the term under the square root is not positive, the factor is undefined
+    and NaN is returned.
+
+    For more information about the method, see the following paper:
+
+    - Lo, A.W. (2002). "The Statistics of Sharpe Ratios." Financial Analysts Journal,
+    58(4), 36-52, equation 17.
+
+    Args:
+        autocorrelations (pd.Series | np.ndarray | list[float]): The autocorrelations
+        ρ_1, ρ_2, ... of the returns, starting at lag 1.
+        periods_per_year (int): The number of periods q the Sharpe ratio is scaled to.
+
+    Returns:
+        float: The factor η(q).
+    """
+    q = int(periods_per_year)
+    rho = np.asarray(autocorrelations, dtype=float)[: max(q - 1, 0)]
+    k = np.arange(1, len(rho) + 1)
+
+    variance_ratio = q + 2 * np.sum((q - k) * rho)
+
+    return float(q / np.sqrt(variance_ratio)) if variance_ratio > 0 else np.nan
+
+
+def get_lo_sharpe_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+    periods_per_year: float,
+    lags: int | None = None,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the annualized Sharpe ratio of Lo (2002), which corrects the annualization for
+    the serial correlation of the returns.
+
+    The usual annualized Sharpe ratio, SQRT(q) * SR, assumes the returns are independent.
+    When returns are autocorrelated, the variance of a q-period return is no longer q times
+    the variance of a one-period return, and Lo shows the q-period Sharpe ratio becomes:
+
+        - SR(q) = η(q) * SR
+        - η(q) = q / SQRT( q + 2 * SUM_{k=1}^{q-1} (q - k) * ρ_k )
+
+    Where SR is the Sharpe ratio of one period (mean excess return divided by its sample
+    standard deviation, ddof=1), q is `periods_per_year` and ρ_k the sample autocorrelation
+    at lag k (Box-Jenkins estimator). The sample autocorrelations at lags close to the
+    sample size rest on very few pairs, so the sum includes `lags` lags and takes the
+    autocorrelations beyond them as 0. By default `lags` follows the Newey and West (1994)
+    rule floor(4 * (n / 100)^(2/9)), capped at q - 1 (Lo's formula itself).
+
+    The sample autocorrelation is biased towards a negative value: for independent returns
+    its expectation is −(n − k) / (n · (n − 1)) (Moran, 1948), since the deviations from the
+    sample mean sum to zero. Weighted by (q − k) these small biases add up and would raise
+    η(q) above SQRT(q) on short samples (by about 7% for a quarter of daily returns), so each
+    ρ_k is bias corrected with ρ_k + (n − k) / (n · (n − 1)) first. Below 30 observations the
+    standard error of each ρ_k (about 1 / SQRT(n)) is too large for a meaningful η(q), since
+    the (q − k) weights magnify it, and NaN is returned.
+
+    For more information about the method, see the following papers:
+
+    - Lo, A.W. (2002). "The Statistics of Sharpe Ratios." Financial Analysts Journal,
+    58(4), 36-52.
+    - Moran, P.A.P. (1948). "Some Theorems on Time Series: I." Biometrika, 35(3/4),
+    255-260.
+    - Newey, W.K., & West, K.D. (1994). "Automatic Lag Selection in Covariance Matrix
+    Estimation." Review of Economic Studies, 61(4), 631-653.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The excess returns. With a "within
+        period" (period, date) Multi Index, one ratio is calculated per period.
+        periods_per_year (float): The number of return observations in a year (q), e.g.
+        252 for daily and 12 for monthly returns. Rounded to a whole number.
+        lags (int | None, optional): The number of autocorrelation lags in the sum.
+        Defaults to None, the Newey and West (1994) rule.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The annualized Sharpe ratio per period (Multi
+        Index), per column (DataFrame) or a single value (Series), NaN with fewer than 30
+        observations.
+    """
+
+    if isinstance(excess_returns, pd.DataFrame):
+        aggregate = excess_returns
+        if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            aggregate = excess_returns.groupby(level=0)
+
+        return aggregate.agg(
+            lambda series: get_lo_sharpe_ratio(series, periods_per_year, lags)
+        )
+
+    if not isinstance(excess_returns, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    values = excess_returns.dropna().to_numpy(dtype=float)
+    n = len(values)
+
+    # With fewer observations each ρ_k has a standard error of about 1 / SQRT(n) > 0.18,
+    # which the (q − k) weights magnify into an η(q) that is mostly noise.
+    if n < 30:  # noqa: PLR2004
+        return np.nan
+
+    q = int(round(periods_per_year))
+    lags = get_newey_west_lags(n) if lags is None else lags
+    lags = max(0, min(lags, q - 1, n - 2))
+
+    deviation = values - values.mean()
+    variance = np.sum(deviation**2)
+    # The sample autocorrelation of Box and Jenkins: autocovariances over n with the
+    # mean of the whole sample, as in `risk_model.get_autocorrelation`, plus Moran's (1948)
+    # correction of its expectation −(n − k) / (n · (n − 1)) under independence, which
+    # (q − k)-weighted would otherwise push η(q) above SQRT(q) on independent returns.
+    rho = [
+        np.sum(deviation[:-lag] * deviation[lag:]) / variance
+        + (n - lag) / (n * (n - 1))
+        for lag in range(1, lags + 1)
+    ]
+
+    return (values.mean() / values.std(ddof=1)) * get_lo_annualization_factor(rho, q)
+
+
+def get_rolling_lo_sharpe_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    periods_per_year: float,
+    lags: int | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the annualized Sharpe ratio of Lo (2002) over a rolling window, see
+    `get_lo_sharpe_ratio`.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The excess returns.
+        window_size (int): The number of observations in each window.
+        periods_per_year (float): The number of return observations in a year (q).
+        lags (int | None, optional): The number of autocorrelation lags in the sum.
+        Defaults to None, the Newey and West (1994) rule on the window size.
+
+    Returns:
+        pd.Series | pd.DataFrame: The annualized Sharpe ratio at the end of every full window.
+    """
+    return excess_returns.rolling(window_size, min_periods=window_size).apply(
+        lambda window: get_lo_sharpe_ratio(window, periods_per_year, lags)
+    )
+
+
+def get_sharpe_ratio_standard_error(
+    excess_returns: pd.Series | pd.DataFrame,
+    method: str = "iid",
+    lags: int | None = None,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the standard error of the Sharpe ratio estimate, i.e. how far the measured
+    Sharpe ratio may lie from the true one.
+
+    The formulas are as follows, with SR the Sharpe ratio of one period and n the number of
+    observations:
+
+        - "iid": SE = SQRT( (1 + SR^2 / 2) / n ) (Lo, 2002, equation 9, normally and
+          independently distributed returns)
+        - "non_normal": SE = SQRT( (1 − γ₃·SR + ((γ₄ − 1) / 4)·SR^2) / (n − 1) ) (Mertens,
+          2002; Bailey & López de Prado, 2012), independent but skewed and fat-tailed
+          returns, with γ₃ the skewness and γ₄ the non-excess (raw) kurtosis. This is the
+          standard error inside the Probabilistic Sharpe Ratio.
+        - "gmm": SE = SQRT( ∂g/∂θ · Σ · ∂g/∂θ' / n ) (Lo, 2002, Appendix), returns that may
+          also be serially correlated and heteroskedastic. θ = (μ, σ²), g(θ) = μ / σ, so
+          ∂g/∂θ = (1 / σ, −μ / (2σ³)), and Σ is the Newey and West (1987) long-run covariance
+          of the moment conditions (x_t − μ, (x_t − μ)² − σ²) with Bartlett weights over
+          `lags` lags (σ² with 1 / n, as in GMM).
+
+    With independent normal returns the three agree as n grows; with lags=0 the "gmm" and
+    "non_normal" errors differ only by the finite-sample corrections of the moments.
+
+    For more information about the method, see the following papers:
+
+    - Lo, A.W. (2002). "The Statistics of Sharpe Ratios." Financial Analysts Journal,
+    58(4), 36-52.
+    - Mertens, E. (2002). "Comments on Variance of the IID Estimator in Lo (2002)."
+    Working Paper, University of Basel.
+    - Bailey, D.H., & López de Prado, M. (2012). "The Sharpe Ratio Efficient Frontier."
+    Journal of Risk, 15(2), 3-44.
+    - Newey, W.K., & West, K.D. (1987). "A Simple, Positive Semi-Definite,
+    Heteroskedasticity and Autocorrelation Consistent Covariance Matrix." Econometrica,
+    55(3), 703-708.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The excess returns. With a "within
+        period" (period, date) Multi Index, one standard error is calculated per period.
+        method (str, optional): "iid", "non_normal" or "gmm". Defaults to "iid".
+        lags (int | None, optional): The number of lags in the Newey-West covariance, only
+        for method="gmm". Defaults to None, the Newey and West (1994) rule
+        floor(4 * (n / 100)^(2/9)).
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The standard error, on the scale of the Sharpe
+        ratio of one period (not annualized).
+    """
+    if method not in ("iid", "non_normal", "gmm"):
+        raise ValueError("Method must be iid, non_normal or gmm.")
+
+    if isinstance(excess_returns, pd.DataFrame):
+        aggregate = excess_returns
+        if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            aggregate = excess_returns.groupby(level=0)
+
+        return aggregate.agg(
+            lambda series: get_sharpe_ratio_standard_error(series, method, lags)
+        )
+
+    if not isinstance(excess_returns, pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    values = excess_returns.dropna().to_numpy(dtype=float)
+    n = len(values)
+
+    if n < 4:  # noqa: PLR2004
+        return np.nan
+
+    deviation = values - values.mean()
+
+    if method == "iid":
+        sharpe_ratio = values.mean() / values.std(ddof=1)
+
+        return float(np.sqrt((1 + sharpe_ratio**2 / 2) / n))
+
+    if method == "non_normal":
+        sharpe_ratio = values.mean() / values.std(ddof=1)
+        series = pd.Series(values)
+        skewness, kurtosis = series.skew(), series.kurt() + 3
+
+        variance = 1 - skewness * sharpe_ratio + (kurtosis - 1) / 4 * sharpe_ratio**2
+
+        return float(np.sqrt(variance / (n - 1)))
+
+    # GMM: the moment conditions of the mean and the variance, φ_t = (x_t − μ,
+    # (x_t − μ)² − σ²), with their long-run covariance by Newey and West (1987).
+    variance = np.mean(deviation**2)
+    sharpe_ratio = values.mean() / np.sqrt(variance)
+    moments = np.column_stack([deviation, deviation**2 - variance])
+
+    lags = get_newey_west_lags(n) if lags is None else lags
+    lags = max(0, min(lags, n - 1))
+
+    covariance = moments.T @ moments / n
+    for lag in range(1, lags + 1):
+        autocovariance = moments[lag:].T @ moments[:-lag] / n
+        covariance += (1 - lag / (lags + 1)) * (autocovariance + autocovariance.T)
+
+    gradient = np.array([1 / np.sqrt(variance), -values.mean() / (2 * variance**1.5)])
+
+    return float(np.sqrt(gradient @ covariance @ gradient / n))
+
+
+def get_minimum_track_record_length(
+    sharpe_ratio: pd.Series | pd.DataFrame | float,
+    benchmark_sharpe_ratio: float,
+    skewness: pd.Series | pd.DataFrame | float,
+    kurtosis: pd.Series | pd.DataFrame | float,
+    confidence_level: float = 0.95,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Minimum Track Record Length (MinTRL), the number of return observations
+    needed before the measured Sharpe ratio is significantly above a benchmark Sharpe ratio.
+
+    The formula is as follows:
+
+        - MinTRL = 1 + (1 − γ₃·SR + ((γ₄ − 1) / 4)·SR^2) * (Z_α / (SR − SR*))^2
+
+    Where SR is the observed Sharpe ratio of one period, SR* the benchmark Sharpe ratio on
+    the same scale, γ₃ the skewness and γ₄ the non-excess (raw) kurtosis of the returns
+    (3 for a normal distribution) and Z_α the standard normal quantile at the confidence
+    level. It is the n at which the Probabilistic Sharpe Ratio reaches the confidence
+    level: with n = MinTRL observations, PSR(SR*) = confidence_level. When SR does not exceed
+    SR*, no track record is long enough and the result is NaN.
+
+    For more information about the method, see the following paper:
+
+    - Bailey, D.H., & López de Prado, M. (2012). "The Sharpe Ratio Efficient Frontier."
+    Journal of Risk, 15(2), 3-44, equation 11.
+
+    Args:
+        sharpe_ratio (pd.Series | pd.DataFrame | float): The observed Sharpe ratio of one
+        period (not annualized).
+        benchmark_sharpe_ratio (float): The benchmark Sharpe ratio SR* on the same scale.
+        skewness (pd.Series | pd.DataFrame | float): The skewness of the returns.
+        kurtosis (pd.Series | pd.DataFrame | float): The non-excess (raw) kurtosis of the
+        returns, 3 for a normal distribution.
+        confidence_level (float, optional): The confidence level. Defaults to 0.95.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The minimum number of return observations.
+    """
+    if not 0 < confidence_level < 1:
+        raise ValueError("The confidence level must be between 0 and 1.")
+
+    z_score = stats.norm.ppf(confidence_level)
+    difference = sharpe_ratio - benchmark_sharpe_ratio
+
+    minimum_track_record_length = (
+        1
+        + (1 - skewness * sharpe_ratio + ((kurtosis - 1) / 4) * sharpe_ratio**2)
+        * (z_score / difference) ** 2
+    )
+
+    if isinstance(minimum_track_record_length, pd.Series | pd.DataFrame):
+        minimum_track_record_length = minimum_track_record_length.where(difference > 0)
+
+        # The skewness and kurtosis carry no index name, which drops the dates' name.
+        if isinstance(sharpe_ratio, pd.Series | pd.DataFrame):
+            minimum_track_record_length.index.name = sharpe_ratio.index.name
+
+        return minimum_track_record_length
+
+    return minimum_track_record_length if difference > 0 else np.nan
+
+
+def get_co_moment(
+    returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    power: int,
+    method: str,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the standardized co-moment of each asset with the benchmark, the shared part of
+    `get_coskewness` (power 2) and `get_cokurtosis` (power 3):
+
+        - Co-Moment = E[a · b^power] / (SQRT(E[a^2]) · E[b^2]^(power / 2))
+
+    Where b is the demeaned benchmark return and a the demeaned asset return
+    ("standardized") or the residual of the asset's regression on the benchmark
+    ("residual"), over the dates both have a return, with population moments (1 / n).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The asset returns. With a "within period"
+        (period, date) Multi Index, one value is calculated per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
+        power (int): The power of the benchmark deviation, 2 or 3.
+        method (str): "standardized" or "residual".
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The co-moment per period (Multi Index), per
+        column (DataFrame) or a single value (Series).
+    """
+    if method not in ("standardized", "residual"):
+        raise ValueError("Method must be standardized or residual.")
+
+    if not isinstance(returns, pd.DataFrame | pd.Series):
+        raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+    frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
+
+    benchmark = pd.DataFrame(
+        np.repeat(benchmark_returns.to_numpy()[:, None], frame.shape[1], axis=1),
+        index=frame.index,
+        columns=frame.columns,
+    )
+    both = frame.notna() & benchmark.notna()
+    asset, benchmark = frame.where(both), benchmark.where(both)
+
+    within_period = frame.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    groups = frame.index.get_level_values(0) if within_period else np.zeros(len(frame))
+
+    asset = asset - asset.groupby(groups).transform("mean")
+    benchmark = benchmark - benchmark.groupby(groups).transform("mean")
+
+    def expectation(values: pd.DataFrame) -> pd.DataFrame:
+        # Population moments (1 / n) throughout, so the ratio is free of scale; three
+        # shared dates are the least for a third moment.
+        return values.groupby(groups).sum(min_count=3) / values.groupby(groups).count()
+
+    if method == "residual":
+        beta = expectation(asset * benchmark) / expectation(benchmark**2)
+        asset = asset - benchmark * beta.reindex(groups).to_numpy()
+
+    co_moment = expectation(asset * benchmark**power) / (
+        np.sqrt(expectation(asset**2)) * expectation(benchmark**2) ** (power / 2)
+    )
+    co_moment = co_moment.replace([np.inf, -np.inf], np.nan)
+
+    if within_period:
+        return co_moment
+
+    co_moment = co_moment.iloc[0]
+
+    return co_moment if isinstance(returns, pd.DataFrame) else float(co_moment.iloc[0])
+
+
+def get_coskewness(
+    returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    method: str = "standardized",
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the co-skewness of each asset with the benchmark: how the asset's return moves
+    with the squared (large, either way) moves of the market. A negative co-skewness means
+    the asset does worse when the market makes large moves, which adds to the market's
+    downside skewness, and investors demand a premium for holding it.
+
+    The formulas are as follows:
+
+        - "standardized": CoSkewness = E[(r_i − μ_i)(r_m − μ_m)^2] / (σ_i · σ_m^2)
+        - "residual": β_SKD = E[ε_i · ε_m^2] / (SQRT(E[ε_i^2]) · E[ε_m^2]) (Harvey and
+          Siddique, 2000, equation 11)
+
+    Where r_i is the asset return, r_m the benchmark return, ε_m = r_m − μ_m and ε_i the
+    residual of the regression r_i = α + β r_m + ε_i. The residual version removes the part
+    of the asset's return the market explains, so it does not carry the market's own
+    skewness through the beta. The expectations are population moments (1 / n) over the
+    dates both have a return, so σ_i and σ_m use 1 / n as well and the measure does not
+    depend on the scale of the returns.
+
+    For more information about the method, see the following papers:
+
+    - Harvey, C.R., & Siddique, A. (2000). "Conditional Skewness in Asset Pricing Tests."
+    Journal of Finance, 55(3), 1263-1295.
+    - Kraus, A., & Litzenberger, R.H. (1976). "Skewness Preference and the Valuation of
+    Risk Assets." Journal of Finance, 31(4), 1085-1100.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The asset returns. With a "within period"
+        (period, date) Multi Index, one value is calculated per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
+        method (str, optional): "standardized" or "residual". Defaults to "standardized".
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The co-skewness per period (Multi Index), per
+        column (DataFrame) or a single value (Series).
+    """
+    return get_co_moment(returns, benchmark_returns, power=2, method=method)
+
+
+def get_cokurtosis(
+    returns: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series,
+    method: str = "standardized",
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the co-kurtosis of each asset with the benchmark: how the asset's return moves
+    with the cubed moves of the market, i.e. whether it shares the market's extreme moves.
+    A high co-kurtosis means the asset adds to the fat tails of a market portfolio, which
+    Dittmar (2002) shows investors with a preference against kurtosis demand a premium for.
+
+    The formulas are as follows:
+
+        - "standardized": CoKurtosis = E[(r_i − μ_i)(r_m − μ_m)^3] / (σ_i · σ_m^3)
+        - "residual": E[ε_i · ε_m^3] / (SQRT(E[ε_i^2]) · E[ε_m^2]^(3/2))
+
+    Where r_i is the asset return, r_m the benchmark return, ε_m = r_m − μ_m and ε_i the
+    residual of the regression r_i = α + β r_m + ε_i, the residual form Harvey and Siddique
+    (2000) use for co-skewness. For an asset equal to the market the standardized
+    co-kurtosis is the market's (non-excess) kurtosis, 3 for normal returns. The
+    expectations are population moments (1 / n) over the dates both have a return.
+
+    For more information about the method, see the following papers:
+
+    - Dittmar, R.F. (2002). "Nonlinear Pricing Kernels, Kurtosis Preference, and Evidence
+    from the Cross Section of Equity Returns." Journal of Finance, 57(1), 369-403.
+    - Harvey, C.R., & Siddique, A. (2000). "Conditional Skewness in Asset Pricing Tests."
+    Journal of Finance, 55(3), 1263-1295.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The asset returns. With a "within period"
+        (period, date) Multi Index, one value is calculated per period.
+        benchmark_returns (pd.Series): The benchmark returns on the same index.
+        method (str, optional): "standardized" or "residual". Defaults to "standardized".
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The co-kurtosis per period (Multi Index), per
+        column (DataFrame) or a single value (Series).
+    """
+    return get_co_moment(returns, benchmark_returns, power=3, method=method)

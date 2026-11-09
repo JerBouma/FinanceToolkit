@@ -7,8 +7,6 @@ import pandas as pd
 
 from financetoolkit.options import black_scholes_model, svi_model
 
-# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
-
 
 def get_risk_neutral_density(
     stock_price: float,

@@ -121,7 +121,7 @@ def test_handle_errors_decorator_strict_mode_raises():
         test_function()
 
 
-@pytest.mark.parametrize("error", [KeyError, ValueError, AttributeError])
+@pytest.mark.parametrize("error", [KeyError, ValueError])
 def test_handle_errors_decorator_missing_benchmark(error):
     """Test that a metric needing an absent benchmark explains how to set one."""
 
@@ -134,6 +134,22 @@ def test_handle_errors_decorator_missing_benchmark(error):
 
     assert result.empty
     assert "benchmark_ticker" in mock_logger.error.call_args[0][0]
+
+
+def test_handle_errors_decorator_raises_an_attribute_error_about_the_benchmark():
+    """An AttributeError is a defect, also when its message mentions the benchmark."""
+
+    @error_model.handle_errors
+    def get_beta():
+        raise AttributeError("'NoneType' object has no attribute 'Benchmark'")
+
+    with (
+        patch("financetoolkit.utilities.error_model.logger") as mock_logger,
+        pytest.raises(AttributeError),
+    ):
+        get_beta()
+
+    assert "indicates a defect" in mock_logger.error.call_args[0][0]
 
 
 def test_handle_errors_decorator_strict_mode_raises_a_missing_benchmark(monkeypatch):

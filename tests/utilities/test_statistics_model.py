@@ -668,6 +668,77 @@ def test_compound_growth_needs_periods_with_a_yearly_count():
         statistics_model.calculate_growth(daily, lag=1, compound=True, axis="rows")
 
 
+def test_convert_annualized_rate_to_period_compounds_geometrically():
+    assert statistics_model.convert_annualized_rate_to_period(
+        0.1, "quarterly"
+    ) == pytest.approx(1.1**0.25 - 1)
+    assert statistics_model.convert_annualized_rate_to_period(
+        0.1, "yearly"
+    ) == pytest.approx(0.1)
+
+    # Four quarters at the converted rate compound back to the annual rate.
+    quarterly = statistics_model.convert_annualized_rate_to_period(
+        pd.Series([0.04, -0.2]), "quarterly"
+    )
+    assert ((1 + quarterly) ** 4 - 1).tolist() == pytest.approx([0.04, -0.2])
+
+    with pytest.raises(ValueError, match="not valid"):
+        statistics_model.convert_annualized_rate_to_period(0.1, "hourly")
+
+
+def test_calculate_change_over_absolute_base_grows_from_a_negative_base():
+    result = statistics_model.calculate_change_over_absolute_base(
+        pd.Series([-100.0, -50.0, 50.0, 0.0])
+    )
+
+    # (x - prev) / |prev|: a loss that halves is +50%, the swing to a profit +200%.
+    assert result.tolist()[1:] == pytest.approx([0.5, 2.0, -1.0])
+    assert np.isnan(result.iloc[0])
+
+    frame = pd.DataFrame({"2020": [-10.0, 10.0], "2021": [-5.0, 15.0]})
+    pd.testing.assert_frame_equal(
+        statistics_model.calculate_change_over_absolute_base(frame),
+        pd.DataFrame({"2020": [np.nan, np.nan], "2021": [0.5, 0.5]}),
+    )
+    pd.testing.assert_frame_equal(
+        statistics_model.calculate_change_over_absolute_base(frame, axis="rows"),
+        pd.DataFrame({"2020": [np.nan, 2.0], "2021": [np.nan, 4.0]}),
+    )
+
+
+def test_calculate_compound_growth_annualises_and_skips_sign_changes():
+    result = statistics_model.calculate_compound_growth(
+        pd.Series([100.0, 121.0, -5.0, 10.0]), years=2
+    )
+
+    assert result.iloc[1] == pytest.approx(0.1)
+    # No compound rate exists between a profit and a loss.
+    assert result.iloc[[0, 2, 3]].isna().all()
+
+    frame = pd.DataFrame({"2020": [100.0], "2021": [110.0], "2022": [121.0]})
+    two_year = statistics_model.calculate_compound_growth(frame, periods=2, years=2)
+    assert two_year.loc[0, "2022"] == pytest.approx(0.1)
+
+
+def test_bounded_ffill_fills_one_gap_only_inside_the_data():
+    result = statistics_model.bounded_ffill(
+        pd.Series([1.0, np.nan, np.nan, 4.0, np.nan])
+    )
+
+    # One period is carried forward, and never past the last observation.
+    assert result.tolist()[:2] == [1.0, 1.0]
+    assert np.isnan(result.iloc[2])
+    assert result.iloc[3] == 4.0
+    assert np.isnan(result.iloc[4])
+
+    frame = pd.DataFrame(
+        {"2020": [1.0, 1.0], "2021": [np.nan, np.nan], "2022": [3.0, np.nan]}
+    )
+    filled = statistics_model.bounded_ffill(frame)
+    assert filled.loc[0].tolist() == [1.0, 1.0, 3.0]
+    assert np.isnan(filled.loc[1, "2021"])
+
+
 def test_by_own_trading_days_counts_each_columns_own_rows():
     """A row-counting measure counts the rows each column has a value on."""
     from financetoolkit.utilities.statistics_model import by_own_trading_days
@@ -702,3 +773,26 @@ def test_by_own_trading_days_compounds_returns_between_shared_dates():
     assert np.isclose(result.loc[3, "Benchmark"], 1.05**2 - 1)
     assert np.isclose(result.loc[3, "A"], 0.10)
     assert pd.isna(result.loc[2, "A"])
+
+
+def test_drop_non_finite_replaces_infinities_with_nan():
+    assert np.isnan(statistics_model.drop_non_finite(np.inf))
+    assert statistics_model.drop_non_finite(1.5) == 1.5
+    assert statistics_model.drop_non_finite(
+        pd.Series([1.0, np.inf, -np.inf])
+    ).isna().tolist() == [False, True, True]
+
+
+def test_finalize_dataset_reports_a_zero_denominator_as_nan():
+    ratio = pd.DataFrame(
+        [[1.9, np.inf, 2.6, 1.8]], index=["AAPL"], columns=[2019, 2020, 2021, 2022]
+    )
+
+    finalized = statistics_model.finalize_dataset(ratio, None, None, 4)
+    standardized = statistics_model.finalize_dataset(
+        ratio, None, None, 4, standardize=True
+    )
+
+    assert finalized.loc["AAPL"].isna().tolist() == [False, True, False, False]
+    # One undefined period does not turn the whole Z-Score row into NaN.
+    assert standardized.loc["AAPL"].isna().tolist() == [False, True, False, False]

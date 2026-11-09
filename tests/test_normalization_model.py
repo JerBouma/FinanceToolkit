@@ -6,8 +6,6 @@ import pandas as pd
 
 from financetoolkit import normalization_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_convert_financial_statements_empty_format(recorder):
     financial_statements = pd.DataFrame(

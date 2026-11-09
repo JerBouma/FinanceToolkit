@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit import Portfolio, Toolkit
 
-# pylint: disable=protected-access
-
 historical = pd.read_pickle("tests/datasets/portfolio_historical_dataset.pickle")
 benchmark = pd.read_pickle("tests/datasets/portfolio_benchmark_dataset.pickle")
 treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
@@ -50,8 +48,6 @@ portfolio._toolkit._daily_treasury_data = treasury_data
 portfolio._benchmark_toolkit._daily_treasury_data = treasury_data
 portfolio._benchmark_toolkit._daily_risk_free_rate = risk_free_rate
 portfolio._toolkit._daily_risk_free_rate = risk_free_rate
-
-# pylint: disable=missing-function-docstring,protected-access
 
 
 @pytest.fixture(autouse=True)
@@ -238,7 +234,7 @@ def test_a_portfolio_in_two_currencies_is_valued_in_one(monkeypatch):
         rel=1e-3,
     )
     assert float(
-        weighted._monthly_historical_data[("Adj Close", "MSFT")].iloc[-1]
+        weighted._weekly_historical_data[("Adj Close", "MSFT")].iloc[-1]
     ) == pytest.approx(float(prices[("Adj Close", "MSFT")].iloc[-1]) / 100 / 0.75)
 
 
@@ -308,7 +304,7 @@ def test_the_benchmark_is_converted_to_the_currency_of_the_transactions(monkeypa
         (float(adjusted.iloc[400]) / 0.75) / (float(adjusted.iloc[399]) / 0.8) - 1,
         rel=1e-6,
     )
-    assert float(weighted._yearly_benchmark_data["Close"].iloc[-1]) == pytest.approx(
+    assert float(weighted._weekly_benchmark_data["Close"].iloc[-1]) == pytest.approx(
         float(close.iloc[-1]) / 0.75
     )
 

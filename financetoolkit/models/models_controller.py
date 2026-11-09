@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 from collections.abc import Callable
-from functools import cached_property
+from functools import cache, cached_property
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,7 @@ from financetoolkit.helpers import LazyDict
 from financetoolkit.models import (
     altman_model,
     beneish_model,
+    chs_model,
     credit_model,
     damodaran_model,
     dupont_model,
@@ -43,11 +44,16 @@ from financetoolkit.utilities.statistics_model import (
     finalize_dataset,
 )
 
-# pylint: disable=too-many-instance-attributes,too-many-locals,too-many-lines
 # ruff: noqa: E501
 
 
 logger = get_logger()
+
+# The growth rate a company keeps forever when none is given: about the long-run expected
+# inflation in the United States, and below the risk-free rate, which Damodaran (Investment
+# Valuation, chapter 12) sets as the upper limit of a stable growth rate. The reverse DCF and
+# the Monte Carlo valuation use it as their default perpetual growth rate as well.
+LONG_RUN_GROWTH_RATE = 0.025
 
 
 # The models per collection that get_factor_analysis compares across tickers: those with one
@@ -66,6 +72,7 @@ FACTOR_COLLECTIONS = {
         "get_grover_score",
         "get_fulmer_h_score",
         "get_taffler_z_score",
+        "get_campbell_hilscher_szilagyi_score",
         "get_dechow_f_score",
         "get_montier_c_score",
         "get_mohanram_g_score",
@@ -106,6 +113,9 @@ class Models:
         ) = None,
         country_risk_premiums: pd.Series | Callable[[], pd.Series] | None = None,
         period_end_dates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
+        sp500_function: (
+            Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
+        ) = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -117,7 +127,9 @@ class Models:
 
         Args:
             tickers (list[str] | Callable[[], list[str]]): The ticker(s) to use for the models.
-            historical_data (dict[str, pd.DataFrame]): The historical data per period.
+            historical_data (dict[str, pd.DataFrame]): The historical data per period, and
+                under "lookback" the daily data from a year before the start date when
+                available.
             risk_free_rate_data (dict[str, pd.DataFrame]): The risk free rate data per period.
             balance (pd.DataFrame | Callable[[], pd.DataFrame]): The balance sheet data.
             income (pd.DataFrame | Callable[[], pd.DataFrame]): The income statement data.
@@ -136,6 +148,12 @@ class Models:
                 the periods as columns (the filing days with point_in_time). get_factor_analysis
                 applies each period's model values from that day on. Defaults to None, which
                 applies them from the end of the calendar period the column is labelled with.
+            sp500_function (Callable | None, optional): Retrieves the S&P 500 between two
+                dates for get_campbell_hilscher_szilagyi_score: its daily price and total
+                return index (the columns "Price Index" and "Total Return Index", with a
+                DatetimeIndex) and the latest total market value of its companies (a Series
+                with the date as index). Defaults to None, which leaves the excess returns
+                and the relative size NaN.
 
         As an example:
 
@@ -174,6 +192,7 @@ class Models:
         self._peer_function = peer_function
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
+        self._sp500_function = sp500_function
 
         # Historical Data
         self._historical_data = historical_data
@@ -185,17 +204,6 @@ class Models:
                 period, self._historical_data["daily"]
             )
         )
-
-        # Initialization of Model Variables
-        self._dupont_analysis: pd.DataFrame = pd.DataFrame()
-        self._dupont_analysis_growth: pd.DataFrame = pd.DataFrame()
-        self._extended_dupont_analysis: pd.DataFrame = pd.DataFrame()
-        self._extended_dupont_analysis_growth: pd.DataFrame = pd.DataFrame()
-        self._enterprise_value_breakdown: pd.DataFrame = pd.DataFrame()
-        self._enterprise_value_breakdown_growth: pd.DataFrame = pd.DataFrame()
-        self._weighted_average_cost_of_capital: pd.DataFrame = pd.DataFrame()
-        self._weighted_average_cost_of_capital_growth: pd.DataFrame = pd.DataFrame()
-        self._intrinsic_values: pd.DataFrame = pd.DataFrame()
 
     @cached_property
     def _tickers(self) -> list[str]:
@@ -327,7 +335,7 @@ class Models:
         | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
         if trailing:
-            self._dupont_analysis = dupont_model.get_dupont_analysis(
+            dupont_analysis = dupont_model.get_dupont_analysis(
                 self._income_statement.loc[:, "Net Income", :]
                 .T.rolling(trailing)
                 .sum()
@@ -343,7 +351,7 @@ class Models:
                 .T,
             )
         else:
-            self._dupont_analysis = dupont_model.get_dupont_analysis(
+            dupont_analysis = dupont_model.get_dupont_analysis(
                 self._income_statement.loc[:, "Net Income", :],
                 self._income_statement.loc[:, "Revenue", :],
                 self._balance_sheet_statement.loc[:, "Total Assets", :]
@@ -357,49 +365,29 @@ class Models:
             )
 
         if growth:
-            self._dupont_analysis_growth = calculate_growth(
-                dataset=self._dupont_analysis,
+            dupont_analysis = calculate_growth(
+                dataset=dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
-
-        self._dupont_analysis = apply_rounding(
-            self._dupont_analysis, rounding if rounding is not None else self._rounding
-        )
+        else:
+            dupont_analysis = apply_rounding(
+                dupont_analysis, rounding if rounding is not None else self._rounding
+            )
 
         if standardize:
-            standardize_rounding = rounding if rounding is not None else self._rounding
-            if growth:
-                self._dupont_analysis_growth = calculate_standardization(
-                    dataset=self._dupont_analysis_growth.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
-            else:
-                self._dupont_analysis = calculate_standardization(
-                    dataset=self._dupont_analysis.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
+            dupont_analysis = calculate_standardization(
+                dataset=dupont_analysis.loc[:, self._start_date : self._end_date],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
 
         if len(self._tickers) == 1:
-            result = (
-                self._dupont_analysis_growth.droplevel(level=0)
-                if growth
-                else self._dupont_analysis.droplevel(level=0)
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
-            )
+            dupont_analysis = dupont_analysis.droplevel(level=0)
 
-        result = self._dupont_analysis_growth if growth else self._dupont_analysis
         return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
+            dupont_analysis.loc[:, self._start_date : self._end_date], show_columns
         )
 
     @handle_errors
@@ -492,7 +480,7 @@ class Models:
         | Return on Equity        | 0.4708 | 0.4715 | 0.3882 | 0.3713 | 0.3328 |
         """
         if trailing:
-            self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
+            extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
                 operating_income=self._income_statement.loc[:, "Operating Income", :]
                 .T.rolling(trailing)
                 .sum()
@@ -523,7 +511,7 @@ class Models:
                 .T,
             )
         else:
-            self._extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
+            extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
                 operating_income=self._income_statement.loc[:, "Operating Income", :],
                 income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
                 net_income=self._income_statement.loc[:, "Net Income", :],
@@ -543,54 +531,33 @@ class Models:
             )
 
         if growth:
-            self._extended_dupont_analysis_growth = calculate_growth(
-                dataset=self._extended_dupont_analysis,
+            extended_dupont_analysis = calculate_growth(
+                dataset=extended_dupont_analysis,
                 lag=lag,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
-
-        self._extended_dupont_analysis = apply_rounding(
-            self._extended_dupont_analysis,
-            rounding if rounding is not None else self._rounding,
-        )
+        else:
+            extended_dupont_analysis = apply_rounding(
+                extended_dupont_analysis,
+                rounding if rounding is not None else self._rounding,
+            )
 
         if standardize:
-            standardize_rounding = rounding if rounding is not None else self._rounding
-            if growth:
-                self._extended_dupont_analysis_growth = calculate_standardization(
-                    dataset=self._extended_dupont_analysis_growth.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
-            else:
-                self._extended_dupont_analysis = calculate_standardization(
-                    dataset=self._extended_dupont_analysis.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
+            extended_dupont_analysis = calculate_standardization(
+                dataset=extended_dupont_analysis.loc[
+                    :, self._start_date : self._end_date
+                ],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
 
         if len(self._tickers) == 1:
-            result = (
-                self._extended_dupont_analysis_growth.droplevel(level=0)
-                if growth
-                else self._extended_dupont_analysis.droplevel(level=0)
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
-            )
+            extended_dupont_analysis = extended_dupont_analysis.droplevel(level=0)
 
-        result = (
-            self._extended_dupont_analysis_growth
-            if growth
-            else self._extended_dupont_analysis
-        )
         return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
+            extended_dupont_analysis.loc[:, self._start_date : self._end_date],
+            show_columns,
         )
 
     @handle_errors
@@ -702,7 +669,7 @@ class Models:
             .T
         )
 
-        self._enterprise_value_breakdown = enterprise_model.get_enterprise_value_breakdown(
+        enterprise_value_breakdown = enterprise_model.get_enterprise_value_breakdown(
             share_price=share_prices,
             shares_outstanding=average_shares,
             total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
@@ -723,53 +690,32 @@ class Models:
         )
 
         if growth:
-            self._enterprise_value_breakdown_growth = calculate_growth(
-                dataset=self._enterprise_value_breakdown,
+            enterprise_value_breakdown = calculate_growth(
+                dataset=enterprise_value_breakdown,
                 lag=lag,
                 rounding=rounding if rounding is not None else self._rounding,
             )
-
-        self._enterprise_value_breakdown = apply_rounding(
-            self._enterprise_value_breakdown,
-            rounding if rounding is not None else self._rounding,
-        )
+        else:
+            enterprise_value_breakdown = apply_rounding(
+                enterprise_value_breakdown,
+                rounding if rounding is not None else self._rounding,
+            )
 
         if standardize:
-            standardize_rounding = rounding if rounding is not None else self._rounding
-            if growth:
-                self._enterprise_value_breakdown_growth = calculate_standardization(
-                    dataset=self._enterprise_value_breakdown_growth.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
-            else:
-                self._enterprise_value_breakdown = calculate_standardization(
-                    dataset=self._enterprise_value_breakdown.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
+            enterprise_value_breakdown = calculate_standardization(
+                dataset=enterprise_value_breakdown.loc[
+                    :, self._start_date : self._end_date
+                ],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
 
         if len(self._tickers) == 1:
-            result = (
-                self._enterprise_value_breakdown_growth.droplevel(level=0)
-                if growth
-                else self._enterprise_value_breakdown.droplevel(level=0)
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
-            )
+            enterprise_value_breakdown = enterprise_value_breakdown.droplevel(level=0)
 
-        result = (
-            self._enterprise_value_breakdown_growth
-            if growth
-            else self._enterprise_value_breakdown
-        )
         return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
+            enterprise_value_breakdown.loc[:, self._start_date : self._end_date],
+            show_columns,
         )
 
     @handle_errors
@@ -1031,6 +977,98 @@ class Models:
             }
         )
 
+    def _weighted_average_cost_of_capital(
+        self,
+        diluted: bool = True,
+        trailing: int | None = None,
+        market_risk_premium: float | None = None,
+    ) -> pd.DataFrame:
+        """
+        The full results of get_weighted_average_cost_of_capital per ticker and line item,
+        unrounded and for every period of the statements. The valuation models discount with
+        it directly, so that a missing input (such as the benchmark) raises to their own error
+        handling rather than handing them an empty result.
+
+        Args:
+            diluted (bool, optional): Whether to use diluted shares. Defaults to True.
+            trailing (int | None, optional): The trailing period. Defaults to None.
+            market_risk_premium (float | None, optional): The annual equity risk premium.
+                Defaults to None, see get_weighted_average_cost_of_capital.
+
+        Returns:
+            pd.DataFrame: The WACC and its components per ticker (rows) and period (columns).
+        """
+        average_shares = (
+            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
+            if diluted
+            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        )
+
+        years = self._cash_flow_statement.columns
+        begin, end = str(years[0]), str(years[-1])
+
+        share_prices = (
+            self._historical_data["quarterly" if self._quarterly else "yearly"]
+            .loc[begin:end, "Close"][self._tickers]
+            .T
+        )
+
+        risk_free_rate = self._risk_free_rate_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Adj Close"]
+
+        beta = self._beta_per_period(begin, end, trailing)
+
+        benchmark_returns = self._historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ].loc[begin:end, "Return"][self._benchmark_name]
+        # The Cost of Equity covers the span of the flows: a trailing sum of Interest Expense is the cost of debt over that span.  # noqa: E501
+        risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
+            risk_free_rate, benchmark_returns, market_risk_premium, trailing
+        )
+
+        if trailing:
+            return wacc_model.get_weighted_average_cost_of_capital(
+                share_price=share_prices,
+                total_shares_outstanding=average_shares.T.rolling(trailing).mean().T,
+                interest_expense=self._income_statement.loc[:, "Interest Expense", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :]
+                .T.rolling(trailing)
+                .mean()
+                .T,
+                risk_free_rate=risk_free_rate,
+                beta=beta,
+                benchmark_returns=benchmark_returns,
+                income_tax_expense=self._income_statement.loc[
+                    :, "Income Tax Expense", :
+                ]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :]
+                .T.rolling(trailing)
+                .sum()
+                .T,
+            )
+        else:
+            return wacc_model.get_weighted_average_cost_of_capital(
+                share_price=share_prices,
+                total_shares_outstanding=average_shares,
+                interest_expense=self._income_statement.loc[:, "Interest Expense", :],
+                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
+                risk_free_rate=risk_free_rate,
+                beta=beta,
+                benchmark_returns=benchmark_returns,
+                income_tax_expense=self._income_statement.loc[
+                    :, "Income Tax Expense", :
+                ],
+                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
+            )
+
+    @handle_errors
     def get_weighted_average_cost_of_capital(
         self,
         show_full_results: bool = True,
@@ -1124,8 +1162,9 @@ class Models:
         2022-2026. Set `market_risk_premium` to use one premium for every company. Beta is estimated
         from the period's daily returns. With quarterly data the rates are per quarter, the risk-free yield divided by four.
         - With `trailing` set, the Interest Expense is summed over the trailing periods, so the Cost of
-        Debt covers that span, and the risk-free rate and premium of the Cost of Equity are the per-period
-        rates times `trailing`. With quarterly data and trailing=4, every rate is an annual rate.
+        Debt covers that span, the risk-free rate and premium of the Cost of Equity are the per-period
+        rates times `trailing` and the Beta is estimated from the daily returns of the trailing periods.
+        With quarterly data and trailing=4, every rate is an annual rate on a year of daily returns.
         - The Market Value of Debt is approximated as the Total Debt.
         - The Cost of Debt is the Interest Expense divided by the Total Debt at the end of the period
         (the average over the trailing periods with `trailing` set), so debt raised or repaid during the
@@ -1159,162 +1198,45 @@ class Models:
         | TMUS | 0.047  | 0.0437 | 0.0447 | 0.0425 |
         | VZ   | 0.0304 | 0.0406 | 0.036  | 0.0358 |
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
+        weighted_average_cost_of_capital = self._weighted_average_cost_of_capital(
+            diluted=diluted,
+            trailing=trailing,
+            market_risk_premium=market_risk_premium,
         )
-
-        years = self._cash_flow_statement.columns
-        begin, end = str(years[0]), str(years[-1])
-
-        share_prices = (
-            self._historical_data["quarterly" if self._quarterly else "yearly"]
-            .loc[begin:end, "Close"][self._tickers]
-            .T
-        )
-
-        risk_free_rate = self._risk_free_rate_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Adj Close"]
-
-        returns_within = self._within_historical_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Return"][self._tickers]
-        benchmark_returns_within = self._within_historical_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Return"][self._benchmark_name]
-
-        beta = get_beta(returns_within, benchmark_returns_within)
-
-        benchmark_returns = self._historical_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Return"][self._benchmark_name]
-        # The Cost of Equity covers the span of the flows: a trailing sum of Interest Expense is the cost of debt over that span.  # noqa: E501
-        risk_free_rate, benchmark_returns = self._capital_asset_pricing_inputs(
-            risk_free_rate, benchmark_returns, market_risk_premium, trailing
-        )
-
-        if trailing:
-            self._weighted_average_cost_of_capital = (
-                wacc_model.get_weighted_average_cost_of_capital(
-                    share_price=share_prices,
-                    total_shares_outstanding=average_shares.T.rolling(trailing)
-                    .mean()
-                    .T,
-                    interest_expense=self._income_statement.loc[
-                        :, "Interest Expense", :
-                    ]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :]
-                    .T.rolling(trailing)
-                    .mean()
-                    .T,
-                    risk_free_rate=risk_free_rate,
-                    beta=beta,
-                    benchmark_returns=benchmark_returns,
-                    income_tax_expense=self._income_statement.loc[
-                        :, "Income Tax Expense", :
-                    ]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                    income_before_tax=self._income_statement.loc[
-                        :, "Income Before Tax", :
-                    ]
-                    .T.rolling(trailing)
-                    .sum()
-                    .T,
-                )
-            )
-        else:
-            self._weighted_average_cost_of_capital = (
-                wacc_model.get_weighted_average_cost_of_capital(
-                    share_price=share_prices,
-                    total_shares_outstanding=average_shares,
-                    interest_expense=self._income_statement.loc[
-                        :, "Interest Expense", :
-                    ],
-                    total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
-                    risk_free_rate=risk_free_rate,
-                    beta=beta,
-                    benchmark_returns=benchmark_returns,
-                    income_tax_expense=self._income_statement.loc[
-                        :, "Income Tax Expense", :
-                    ],
-                    income_before_tax=self._income_statement.loc[
-                        :, "Income Before Tax", :
-                    ],
-                )
-            )
-
         if growth:
-            self._weighted_average_cost_of_capital_growth = calculate_growth(
-                dataset=self._weighted_average_cost_of_capital,
+            weighted_average_cost_of_capital = calculate_growth(
+                dataset=weighted_average_cost_of_capital,
                 lag=lag,
                 rounding=rounding if rounding is not None else self._rounding,
                 axis="columns",
             )
-
-        self._weighted_average_cost_of_capital = apply_rounding(
-            self._weighted_average_cost_of_capital,
-            rounding if rounding is not None else self._rounding,
-        )
+        else:
+            weighted_average_cost_of_capital = apply_rounding(
+                weighted_average_cost_of_capital,
+                rounding if rounding is not None else self._rounding,
+            )
 
         if standardize:
-            standardize_rounding = rounding if rounding is not None else self._rounding
-            if growth:
-                self._weighted_average_cost_of_capital_growth = (
-                    calculate_standardization(
-                        dataset=self._weighted_average_cost_of_capital_growth.loc[
-                            :, self._start_date : self._end_date
-                        ],
-                        rounding=standardize_rounding,
-                        axis="columns",
-                    )
-                )
-            else:
-                self._weighted_average_cost_of_capital = calculate_standardization(
-                    dataset=self._weighted_average_cost_of_capital.loc[
-                        :, self._start_date : self._end_date
-                    ],
-                    rounding=standardize_rounding,
-                    axis="columns",
-                )
-
-        if len(self._tickers) == 1 and show_full_results:
-            result = (
-                self._weighted_average_cost_of_capital_growth.droplevel(level=0)
-                if growth
-                else self._weighted_average_cost_of_capital.droplevel(level=0)
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
+            weighted_average_cost_of_capital = calculate_standardization(
+                dataset=weighted_average_cost_of_capital.loc[
+                    :, self._start_date : self._end_date
+                ],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
             )
 
-        if show_full_results:
-            result = (
-                self._weighted_average_cost_of_capital_growth
-                if growth
-                else self._weighted_average_cost_of_capital
-            )
-            return filter_columns(
-                result.loc[:, self._start_date : self._end_date], show_columns
-            )
-
-        result = (
-            self._weighted_average_cost_of_capital_growth.loc[
+        if not show_full_results:
+            weighted_average_cost_of_capital = weighted_average_cost_of_capital.loc[
                 :, "Weighted Average Cost of Capital", :
             ]
-            if growth
-            else self._weighted_average_cost_of_capital.loc[
-                :, "Weighted Average Cost of Capital", :
-            ]
-        )
+        elif len(self._tickers) == 1:
+            weighted_average_cost_of_capital = (
+                weighted_average_cost_of_capital.droplevel(level=0)
+            )
+
         return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
+            weighted_average_cost_of_capital.loc[:, self._start_date : self._end_date],
+            show_columns,
         )
 
     @handle_errors
@@ -1468,12 +1390,9 @@ class Models:
 
         # Full precision, so that the EVA is not charged a WACC rounded to the display rounding.
         eva["Weighted Average Cost of Capital"] = (
-            self.get_weighted_average_cost_of_capital(
-                show_full_results=False,
-                trailing=trailing,
-                market_risk_premium=market_risk_premium,
-                rounding=15,
-            )
+            self._weighted_average_cost_of_capital(
+                trailing=trailing, market_risk_premium=market_risk_premium
+            ).loc[:, "Weighted Average Cost of Capital", :]
         )
 
         eva["Economic Value Added"] = eva_model.get_economic_value_added(
@@ -1683,9 +1602,9 @@ class Models:
     @handle_errors
     def get_intrinsic_valuation(
         self,
-        growth_rate: float | list | dict[str, float],
-        perpetual_growth_rate: float | list | dict[str, float],
-        weighted_average_cost_of_capital: float | list | dict[str, float],
+        growth_rate: float | list | dict[str, float] | None = None,
+        perpetual_growth_rate: float | list | dict[str, float] | None = None,
+        weighted_average_cost_of_capital: float | list | dict[str, float] | None = None,
         periods: int = 5,
         cash_flow_type: str = "Free Cash Flow to Firm",
         trailing: int | None = None,
@@ -1729,14 +1648,22 @@ class Models:
         Also known as: DCF, discounted cash flow, fair value, intrinsic value.
 
         Args:
-            growth_rate (float, list or dict): The growth rate to use for the cash flow projections. Can be one number
-            to use for all tickers, or a list or dict that contains a growth rate for each ticker.
-            perpetual_growth_rate (float, list or dict): The perpetual growth rate to use for the terminal value.
-            Can be one number to use for all tickers, or a list or dict that contains a perpetual growth rate for
-            each ticker.
-            weighted_average_cost_of_capital (float, list or dict): The weighted average cost of capital used to
-            discount the projected cash flows and to calculate the terminal value. Can be one number to use for
-            all tickers, or a list or dict that contains a weighted average cost of capital for each ticker.
+            growth_rate (float, list or dict, optional): The growth rate to use for the cash flow projections. Can be
+            one number to use for all tickers, or a list or dict that contains a growth rate for each ticker.
+            Defaults to None, which uses the growth the company's reinvestment supports (Damodaran): the
+            Reinvestment Rate times the Return on Invested Capital, its reinvestment (NOPAT minus the Free Cash
+            Flow to Firm) per year as a share of its invested capital (equity plus debt) over the data up to
+            the period valued: the latest period, or each period with `historical=True`.
+            perpetual_growth_rate (float, list or dict, optional): The perpetual growth rate to use for the
+            terminal value. Can be one number to use for all tickers, or a list or dict that contains a perpetual
+            growth rate for each ticker. Defaults to None, which uses the company's growth (as for growth_rate)
+            kept within 0 and the long-run growth rate of 2.5%, and 2.5% where it has none.
+            weighted_average_cost_of_capital (float, list or dict, optional): The weighted average cost of capital
+            used to discount the projected cash flows and to calculate the terminal value. Can be one number to
+            use for all tickers, or a list or dict that contains a weighted average cost of capital for each
+            ticker. Defaults to None, which uses the Weighted Average Cost of Capital of each company of the
+            period valued, calculated over a year (the last 4 quarters with quarterly data, with a beta of
+            their daily returns).
             periods (int, optional): The number of periods to use for the cash flow projections. Defaults to 5.
             cash_flow_type (str, optional): The type of cash flow to use for the cash flow projections.
             Defaults to "Free Cash Flow to Firm". The other options are "Free Cash Flow" and "Operating
@@ -1763,14 +1690,15 @@ class Models:
         one: with quarterly data the last four quarters are summed. Setting `trailing` with yearly data sums
         several years into one base cash flow, which logs a warning.
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
-        and the valuation is not calculated.
+        and the valuation is not calculated. Within 2 percentage points of it the valuation is calculated
+        with a warning, as a tenth of a percentage point on either rate then moves it by about 5%.
         - The Total Debt, Cash and Cash Equivalents and Short Term Investments are those of the most
         recent period. Short Term Investments are added back with the cash, the same cash and marketable
         securities `get_enterprise_value_breakdown` deducts, and count as 0 when the balance sheet has no
         such row.
         - The Equity Value is divided by the Weighted Average Shares Diluted of the most recent period.
         - With `historical=True` no period uses figures reported after it, so the series shows what this
-        DCF gave at each period end with the same assumptions. A period whose cash flow, cash, debt or
+        DCF gave at each period end, with the growth and WACC known at that period end when they are not given. A period whose cash flow, cash, debt or
         shares are missing is NaN, while the single valuation takes the most recent value of each.
 
         As an example:
@@ -1785,39 +1713,30 @@ class Models:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_intrinsic_valuation(
-            growth_rate=0.08,
-            perpetual_growth_rate=0.025,
-            weighted_average_cost_of_capital=0.09,
-        ).xs("Intrinsic Value", level=1)
+        toolkit.models.get_intrinsic_valuation().xs("Intrinsic Value", level=1)
         ```
 
         Which returns:
 
         |      |   Periods = 5 |
         |:-----|--------------:|
-        | ADBE |       389.526 |
-        | CRM  |       142.64  |
-        | INTU |       304.583 |
+        | ADBE |      212.536  |
+        | CRM  |       67.9382 |
+        | INTU |      173.485  |
 
         And the same valuation for every period with `historical=True`:
 
         ```python
-        toolkit.models.get_intrinsic_valuation(
-            growth_rate=0.08,
-            perpetual_growth_rate=0.025,
-            weighted_average_cost_of_capital=0.09,
-            historical=True,
-        )
+        toolkit.models.get_intrinsic_valuation(historical=True)
         ```
 
         Which returns:
 
-        |      |     2021 |     2022 |    2023 |    2024 |    2025 |
-        |:-----|---------:|---------:|--------:|--------:|--------:|
-        | ADBE | 236.528  | 239.021  | 245.452 | 279.695 | 389.526 |
-        | CRM  |  25.9053 |  23.2663 |  93.958 | 142.64  | nan     |
-        | INTU | 168.842  | 137.273  | 246.42  | 211.482 | 304.583 |
+        |      |     2021 |     2022 |     2023 |     2024 |    2025 |
+        |:-----|---------:|---------:|---------:|---------:|--------:|
+        | ADBE | 132.425  | 112.433  | 102.593  | 130.005  | 212.536 |
+        | CRM  |  18.2502 |  11.8861 |  51.1607 |  67.9382 | nan     |
+        | INTU | 102.101  |  60.4477 |  99.9192 |  97.2924 | 173.485 |
         """
         if cash_flow_type not in [
             "Free Cash Flow to Firm",
@@ -1847,77 +1766,70 @@ class Models:
             else self._cash_flow_statement.loc[:, cash_flow_type, :]
         )
 
-        if isinstance(growth_rate, list):
-            if len(growth_rate) != len(self._tickers):
-                raise ValueError(
-                    "The length of the growth rate list must match the number of tickers."
-                )
-            growth_rate_dict = {
-                ticker: growth_rate[i] for i, ticker in enumerate(self._tickers)
-            }
-        elif isinstance(growth_rate, dict):
-            if len(growth_rate) != len(self._tickers):
-                raise ValueError(
-                    "The length of the growth rate dict must match the number of tickers."
-                )
-            growth_rate_dict = growth_rate
-        else:
-            growth_rate_dict = dict.fromkeys(self._tickers, growth_rate)
-
-        if isinstance(perpetual_growth_rate, list):
-            if len(perpetual_growth_rate) != len(self._tickers):
-                raise ValueError(
-                    "The length of the perpetual growth rate list must match the number of tickers."
-                )
-            perpetual_growth_rate_dict = {
-                ticker: perpetual_growth_rate[i]
-                for i, ticker in enumerate(self._tickers)
-            }
-        elif isinstance(perpetual_growth_rate, dict):
-            if len(perpetual_growth_rate) != len(self._tickers):
-                raise ValueError(
-                    "The length of the perpetual growth rate dict must match the number of tickers."
-                )
-            perpetual_growth_rate_dict = perpetual_growth_rate
-        else:
-            perpetual_growth_rate_dict = dict.fromkeys(
-                self._tickers, perpetual_growth_rate
-            )
-
-        if isinstance(weighted_average_cost_of_capital, list):
-            if len(weighted_average_cost_of_capital) != len(self._tickers):
-                raise ValueError(
-                    "The length of weighted average cost of capital list must match the number of tickers."
-                )
-            wacc_dict = {
-                ticker: weighted_average_cost_of_capital[i]
-                for i, ticker in enumerate(self._tickers)
-            }
-        elif isinstance(weighted_average_cost_of_capital, dict):
-            if len(weighted_average_cost_of_capital) != len(self._tickers):
-                raise ValueError(
-                    "The length of weighted average cost of capital dict must match the number of tickers."
-                )
-            wacc_dict = weighted_average_cost_of_capital
-        else:
-            wacc_dict = dict.fromkeys(self._tickers, weighted_average_cost_of_capital)
+        operating_growth = cache(self._operating_growth)
 
         if historical:
+            # Every period is valued with the rates and growth known at its end.
+            periods_index = cash_flows.columns
             return self._historical_intrinsic_values(
                 cash_flows=cash_flows,
-                growth_rates=growth_rate_dict,
-                perpetual_growth_rates=perpetual_growth_rate_dict,
-                waccs=wacc_dict,
+                growth_rates=helpers.rates_per_period(
+                    growth_rate,
+                    self._tickers,
+                    periods_index,
+                    "growth rate",
+                    operating_growth,
+                ),
+                perpetual_growth_rates=helpers.rates_per_period(
+                    perpetual_growth_rate,
+                    self._tickers,
+                    periods_index,
+                    "perpetual growth rate",
+                    lambda: self._stable_growth(operating_growth()),
+                ),
+                waccs=helpers.rates_per_period(
+                    weighted_average_cost_of_capital,
+                    self._tickers,
+                    periods_index,
+                    "weighted average cost of capital",
+                    self._weighted_average_cost_of_capital_rates,
+                ),
                 periods=periods,
                 trailing=trailing,
                 rounding=rounding,
             )
+
+        growth_rate_dict = helpers.rates_per_ticker(
+            growth_rate,
+            self._tickers,
+            "growth rate",
+            lambda: self._latest(operating_growth()),
+        )
+        perpetual_growth_rate_dict = helpers.rates_per_ticker(
+            perpetual_growth_rate,
+            self._tickers,
+            "perpetual growth rate",
+            lambda: self._stable_growth(self._latest(operating_growth())),
+        )
+        wacc_dict = helpers.rates_per_ticker(
+            weighted_average_cost_of_capital,
+            self._tickers,
+            "weighted average cost of capital",
+            self._latest_weighted_average_cost_of_capital,
+        )
 
         intrinsic_values_dict = {}
         for ticker in self._tickers:
             perpetual_growth_rate_float = perpetual_growth_rate_dict[ticker]
             growth_rate_float = growth_rate_dict[ticker]
             weighted_average_cost_of_capital_float = wacc_dict[ticker]
+            if not helpers.exceeds_growth(
+                ticker,
+                weighted_average_cost_of_capital_float,
+                perpetual_growth_rate_float,
+                "weighted average cost of capital",
+            ):
+                continue
             cash_flow_series = cash_flows.loc[ticker].dropna()
 
             intrinsic_values_dict[ticker] = intrinsic_model.get_intrinsic_value(
@@ -1962,24 +1874,22 @@ class Models:
                 apply_rounding, rounding if rounding is not None else self._rounding
             )
 
-        self._intrinsic_values = pd.concat(intrinsic_values_dict)
-
-        return self._intrinsic_values.loc[:, self._start_date :]
+        return pd.concat(intrinsic_values_dict).loc[:, self._start_date :]
 
     def _historical_intrinsic_values(
         self,
         cash_flows: pd.DataFrame,
-        growth_rates: dict[str, float],
-        perpetual_growth_rates: dict[str, float],
-        waccs: dict[str, float],
+        growth_rates: pd.DataFrame,
+        perpetual_growth_rates: pd.DataFrame,
+        waccs: pd.DataFrame,
         periods: int,
         trailing: int | None,
         rounding: int | None,
     ) -> pd.DataFrame:
         """
         The intrinsic value per share of every period, each from the base cash flow ending
-        in that period and the cash, debt and shares reported at its end, so that no period
-        uses figures reported after it.
+        in that period, the cash, debt and shares reported at its end and the rates of that
+        period (ticker by period frames), so that no period uses figures reported after it.
         """
         cash_flows = cash_flows.reindex(self._tickers)
         base_cash_flows = (
@@ -1996,13 +1906,25 @@ class Models:
         intrinsic_values = pd.DataFrame(
             float("nan"), index=self._tickers, columns=base_cash_flows.columns
         )
+        waccs = waccs.reindex(columns=base_cash_flows.columns)
+        perpetual_growth_rates = perpetual_growth_rates.reindex(
+            columns=base_cash_flows.columns
+        )
+        growth_rates = growth_rates.reindex(columns=base_cash_flows.columns)
+        exceeds = helpers.exceeds_growth_per_period(
+            waccs, perpetual_growth_rates, "weighted average cost of capital"
+        )
         for ticker in self._tickers:
             for period in base_cash_flows.columns:
+                if not exceeds.loc[ticker, period]:
+                    continue
                 inputs = [
                     base_cash_flows.loc[ticker, period],
                     cash.loc[ticker, period],
                     debt.loc[ticker, period],
                     shares.loc[ticker, period],
+                    growth_rates.loc[ticker, period],
+                    waccs.loc[ticker, period],
                 ]
                 if (
                     any(pd.isna(value) for value in inputs)
@@ -2012,9 +1934,13 @@ class Models:
                 intrinsic_values.loc[ticker, period] = (
                     intrinsic_model.get_intrinsic_value(
                         cash_flow=float(base_cash_flows.loc[ticker, period]),
-                        growth_rate=growth_rates[ticker],
-                        perpetual_growth_rate=perpetual_growth_rates[ticker],
-                        weighted_average_cost_of_capital=waccs[ticker],
+                        growth_rate=float(growth_rates.loc[ticker, period]),
+                        perpetual_growth_rate=float(
+                            perpetual_growth_rates.loc[ticker, period]
+                        ),
+                        weighted_average_cost_of_capital=float(
+                            waccs.loc[ticker, period]
+                        ),
                         cash_and_cash_equivalents=float(cash.loc[ticker, period]),
                         total_debt=float(debt.loc[ticker, period]),
                         short_term_investments=float(investments.loc[ticker, period]),
@@ -2394,10 +2320,10 @@ class Models:
         return dividends_per_share
 
     @handle_errors
-    def get_gorden_growth_model(
+    def get_gordon_growth_model(
         self,
-        rate_of_return: float,
-        growth_rate: float,
+        rate_of_return: float | list | dict[str, float] | None = None,
+        growth_rate: float | list | dict[str, float] | None = None,
         project_periods: int = 5,
         rounding: int | None = None,
     ):
@@ -2427,11 +2353,22 @@ class Models:
         or even be suspended. Therefore, the Gordon Growth Model should be used with caution and in conjunction
         with other valuation methods.
 
+        The Rate of Return must exceed the growth rate; periods where it doesn't are left out with a
+        warning. Within 2 percentage points of it the value is calculated with a warning, as a tenth of a
+        percentage point on either rate then moves it by about 5%.
+
         Also known as: Gordon Growth Model, DDM, dividend discount model, GGM.
 
         Args:
-            rate_of_return (float): The required rate of return.
-            growth_rate (float): The growth rate of the dividends.
+            rate_of_return (float, list or dict, optional): The required rate of return, one
+                number, or a list or dict with a rate per ticker. Defaults to None, which uses
+                each company's Cost of Equity of the period valued (the last one for the
+                projections): the CAPM with the equity risk premium of its country and a beta
+                of a year of daily returns, as in `get_weighted_average_cost_of_capital`.
+            growth_rate (float, list or dict, optional): The growth rate of the dividends,
+                which holds forever. Defaults to None, which uses the compound annual growth of
+                the company's Dividends per Share up to the period valued, kept within 0 and the
+                long-run growth rate of 2.5% (2.5% where it has none).
             project_periods (int, optional): The number of years to project the intrinsic value for, beyond the
                 last complete period. Defaults to 5.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -2466,23 +2403,23 @@ class Models:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_gorden_growth_model(rate_of_return=0.08, growth_rate=0.04)
+        toolkit.models.get_gordon_growth_model()
         ```
 
         Which returns:
 
-        |      |      KO |
-        |:-----|--------:|
-        | 2021 | 43.68   |
-        | 2022 | 45.76   |
-        | 2023 | 47.84   |
-        | 2024 | 50.44   |
-        | 2025 | 53.04   |
-        | 2026 | 55.1616 |
-        | 2027 | 57.3681 |
-        | 2028 | 59.6628 |
-        | 2029 | 62.0493 |
-        | 2030 | 64.5313 |
+        |      |       KO |
+        |:-----|---------:|
+        | 2021 | 133.98   |
+        | 2022 |  68.3625 |
+        | 2023 |  59.2227 |
+        | 2024 | 102.938  |
+        | 2025 | 104.472  |
+        | 2026 | 107.084  |
+        | 2027 | 109.761  |
+        | 2028 | 112.505  |
+        | 2029 | 115.318  |
+        | 2030 | 118.201  |
         """
         dividends_per_share = self._annual_dividends_per_share()
 
@@ -2494,46 +2431,73 @@ class Models:
             for distance in range(1, project_periods + 1)
         ]
 
-        gorden_growth_model: dict[str, dict[str, float]] = {}
+        # Every period is valued with the rate and growth known at its end; the projections
+        # with those of the last period.
+        rates = helpers.rates_per_period(
+            rate_of_return,
+            self._tickers,
+            dividends_per_share.index,
+            "rate of return",
+            self._cost_of_equity,
+        )
+        growth_rates = helpers.rates_per_period(
+            growth_rate,
+            self._tickers,
+            dividends_per_share.index,
+            "growth rate",
+            lambda: self._stable_growth(self._dividend_growth()),
+        )
+        exceeds = helpers.exceeds_growth_per_period(
+            rates, growth_rates, "rate of return"
+        )
+
+        gordon_growth_model: dict[str, dict[str, float]] = {}
 
         for ticker in self._tickers:
-            gorden_growth_model[ticker] = {}
+            gordon_growth_model[ticker] = {}
 
             for period in dividends_per_share.index:
-                gorden_growth_model[ticker][period] = (
-                    intrinsic_model.get_gorden_growth_model(
+                if not exceeds.loc[ticker, period]:
+                    continue
+                gordon_growth_model[ticker][period] = (
+                    intrinsic_model.get_gordon_growth_model(
                         dividends_per_share=dividends_per_share.loc[period, ticker],
-                        rate_of_return=rate_of_return,
-                        growth_rate=growth_rate,
+                        rate_of_return=rates.loc[ticker, period],
+                        growth_rate=growth_rates.loc[ticker, period],
                     )
                 )
 
+            rate = rates.loc[ticker, last_known_period]
+            growth = growth_rates.loc[ticker, last_known_period]
+            if not exceeds.loc[ticker, last_known_period]:
+                continue
+
             for distance, period in enumerate(projected_periods, start=1):
-                gorden_growth_model[ticker][period] = (
-                    intrinsic_model.get_gorden_growth_model(
+                gordon_growth_model[ticker][period] = (
+                    intrinsic_model.get_gordon_growth_model(
                         dividends_per_share=dividends_per_share.loc[
                             last_known_period, ticker
                         ]
-                        * (1 + growth_rate) ** distance,
-                        rate_of_return=rate_of_return,
-                        growth_rate=growth_rate,
+                        * (1 + growth) ** distance,
+                        rate_of_return=rate,
+                        growth_rate=growth,
                     )
                 )
 
-        gorden_growth_model_df = pd.DataFrame(gorden_growth_model).dropna(how="all")
+        gordon_growth_model_df = pd.DataFrame(gordon_growth_model).dropna(how="all")
 
-        gorden_growth_model_df = apply_rounding(
-            gorden_growth_model_df, rounding if rounding is not None else self._rounding
+        gordon_growth_model_df = apply_rounding(
+            gordon_growth_model_df, rounding if rounding is not None else self._rounding
         )
 
-        return gorden_growth_model_df.loc[self._start_date :]
+        return gordon_growth_model_df.loc[self._start_date :]
 
     @handle_errors
     def get_two_stage_dividend_discount_model(
         self,
-        rate_of_return: float | list | dict[str, float],
-        high_growth_rate: float | list | dict[str, float],
-        stable_growth_rate: float | list | dict[str, float],
+        rate_of_return: float | list | dict[str, float] | None = None,
+        high_growth_rate: float | list | dict[str, float] | None = None,
+        stable_growth_rate: float | list | dict[str, float] | None = None,
         high_growth_periods: int = 5,
         transition_periods: int = 0,
         rounding: int | None = None,
@@ -2566,16 +2530,21 @@ class Models:
         three-stage dividend discount model.
 
         Args:
-            rate_of_return (float, list or dict): The required rate of return (discount rate)
-            used to discount both phases. Can be one number to use for all tickers, or a list
-            or dict that contains a rate of return for each ticker.
-            high_growth_rate (float, list or dict): The constant growth rate applied to
-            dividends during the explicit high-growth phase. Can be one number to use for all
+            rate_of_return (float, list or dict, optional): The required rate of return
+            (discount rate) used to discount both phases. Can be one number to use for all
+            tickers, or a list or dict that contains a rate of return for each ticker. Defaults
+            to None, which uses the latest Cost of Equity of each company: the CAPM with the
+            equity risk premium of its country, as in `get_weighted_average_cost_of_capital`.
+            high_growth_rate (float, list or dict, optional): The constant growth rate applied
+            to dividends during the explicit high-growth phase. Can be one number to use for all
             tickers, or a list or dict that contains a high growth rate for each ticker.
-            stable_growth_rate (float, list or dict): The perpetual (terminal) growth rate
-            applied to dividends from the end of the high-growth phase onward. Can be one
-            number to use for all tickers, or a list or dict that contains a stable growth
-            rate for each ticker.
+            Defaults to None, which uses the compound annual growth of the company's Dividends
+            per Share up to the latest period.
+            stable_growth_rate (float, list or dict, optional): The perpetual (terminal) growth
+            rate applied to dividends from the end of the high-growth phase onward. Can be one
+            number to use for all tickers, or a list or dict that contains a stable growth rate
+            for each ticker. Defaults to None, which uses the company's dividend growth kept
+            within 0 and the long-run growth rate of 2.5% (2.5% where it has none).
             high_growth_periods (int, optional): The number of years in the explicit
             high-growth phase. Defaults to 5.
             transition_periods (int, optional): The number of years in which the growth rate
@@ -2593,7 +2562,9 @@ class Models:
         - The results are highly dependent on the input. Therefore, think carefully about
         each input parameter to ensure the results are accurate (given your beliefs).
         - The Rate of Return must be greater than the Stable Growth Rate, otherwise the
-        Terminal Value formula divides by a non-positive number.
+        Terminal Value formula divides by a non-positive number. Within 2 percentage points of
+        it the value is calculated with a warning, as a tenth of a percentage point on either
+        rate then moves it by about 5%.
         - The base dividend used for the projection is the annual Dividends Per Share of the last complete
         period for each ticker: the last complete year, or with quarterly data the sum of the last four
         complete quarters, since the rates are annual and each projection period is a year. The current,
@@ -2613,79 +2584,47 @@ class Models:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_two_stage_dividend_discount_model(
-            rate_of_return=0.08,
-            high_growth_rate=0.06,
-            stable_growth_rate=0.03,
-        ).xs("Intrinsic Value", level=1)
+        toolkit.models.get_two_stage_dividend_discount_model().xs(
+            "Intrinsic Value", level=1
+        )
         ```
 
         Which returns:
 
         |     |   High-Growth Periods = 5 |
         |:----|--------------------------:|
-        | JNJ |                  120.743  |
-        | PEP |                  132.078  |
-        | PG  |                   98.1193 |
+        | JNJ |                   295.957 |
+        | PEP |                   294.465 |
+        | PG  |                   200.93  |
         """
         dividends_per_share = self._annual_dividends_per_share()
 
-        if isinstance(rate_of_return, list):
-            if len(rate_of_return) != len(self._tickers):
-                raise ValueError(
-                    "The length of the rate of return list must match the number of tickers."
-                )
-            rate_of_return_dict = {
-                ticker: rate_of_return[i] for i, ticker in enumerate(self._tickers)
-            }
-        elif isinstance(rate_of_return, dict):
-            if len(rate_of_return) != len(self._tickers):
-                raise ValueError(
-                    "The length of the rate of return dict must match the number of tickers."
-                )
-            rate_of_return_dict = rate_of_return
-        else:
-            rate_of_return_dict = dict.fromkeys(self._tickers, rate_of_return)
-
-        if isinstance(high_growth_rate, list):
-            if len(high_growth_rate) != len(self._tickers):
-                raise ValueError(
-                    "The length of the high growth rate list must match the number of tickers."
-                )
-            high_growth_rate_dict = {
-                ticker: high_growth_rate[i] for i, ticker in enumerate(self._tickers)
-            }
-        elif isinstance(high_growth_rate, dict):
-            if len(high_growth_rate) != len(self._tickers):
-                raise ValueError(
-                    "The length of the high growth rate dict must match the number of tickers."
-                )
-            high_growth_rate_dict = high_growth_rate
-        else:
-            high_growth_rate_dict = dict.fromkeys(self._tickers, high_growth_rate)
-
-        if isinstance(stable_growth_rate, list):
-            if len(stable_growth_rate) != len(self._tickers):
-                raise ValueError(
-                    "The length of the stable growth rate list must match the number of tickers."
-                )
-            stable_growth_rate_dict = {
-                ticker: stable_growth_rate[i] for i, ticker in enumerate(self._tickers)
-            }
-        elif isinstance(stable_growth_rate, dict):
-            if len(stable_growth_rate) != len(self._tickers):
-                raise ValueError(
-                    "The length of the stable growth rate dict must match the number of tickers."
-                )
-            stable_growth_rate_dict = stable_growth_rate
-        else:
-            stable_growth_rate_dict = dict.fromkeys(self._tickers, stable_growth_rate)
+        dividend_growth = cache(lambda: self._latest(self._dividend_growth()))
+        rate_of_return_dict = helpers.rates_per_ticker(
+            rate_of_return, self._tickers, "rate of return", self._latest_cost_of_equity
+        )
+        high_growth_rate_dict = helpers.rates_per_ticker(
+            high_growth_rate, self._tickers, "high growth rate", dividend_growth
+        )
+        stable_growth_rate_dict = helpers.rates_per_ticker(
+            stable_growth_rate,
+            self._tickers,
+            "stable growth rate",
+            lambda: self._stable_growth(dividend_growth()),
+        )
 
         two_stage_ddm_dict = {}
         for ticker in self._tickers:
             rate_of_return_float = rate_of_return_dict[ticker]
             high_growth_rate_float = high_growth_rate_dict[ticker]
             stable_growth_rate_float = stable_growth_rate_dict[ticker]
+            if not helpers.exceeds_growth(
+                ticker,
+                rate_of_return_float,
+                stable_growth_rate_float,
+                "rate of return",
+            ):
+                continue
             dividends_per_share_series = dividends_per_share[ticker].dropna()
             base_dividend = (
                 dividends_per_share_series.iloc[-1]
@@ -2714,9 +2653,9 @@ class Models:
     @handle_errors
     def get_h_model(
         self,
-        rate_of_return: float,
-        high_growth_rate: float,
-        stable_growth_rate: float,
+        rate_of_return: float | list | dict[str, float] | None = None,
+        high_growth_rate: float | list | dict[str, float] | None = None,
+        stable_growth_rate: float | list | dict[str, float] | None = None,
         high_growth_periods: int = 10,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -2742,12 +2681,18 @@ class Models:
         Also known as: H-Model, Fuller-Hsia model, H model dividend discount model.
 
         Args:
-            rate_of_return (float): The required rate of return, which must be greater than
-                the stable growth rate.
-            high_growth_rate (float): The growth rate of the dividends at the start of the
-                decline.
-            stable_growth_rate (float): The growth rate the decline ends at, which holds
-                forever after it.
+            rate_of_return (float, list or dict, optional): The required rate of return, which
+                must be greater than the stable growth rate; one number, or a list or dict with a
+                rate per ticker. Defaults to None, which uses each company's Cost of Equity of
+                the period valued: the CAPM with the equity risk premium of its country, as in
+                `get_weighted_average_cost_of_capital`.
+            high_growth_rate (float, list or dict, optional): The growth rate of the dividends
+                at the start of the decline. Defaults to None, which uses the compound annual
+                growth of the company's Dividends per Share up to the period valued.
+            stable_growth_rate (float, list or dict, optional): The growth rate the decline ends
+                at, which holds forever after it. Defaults to None, which uses the company's
+                dividend growth up to the period valued, kept within 0 and the long-run growth
+                rate of 2.5% (2.5% where it has none).
             high_growth_periods (int, optional): The number of years over which the growth
                 rate declines from the high to the stable rate. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -2760,7 +2705,9 @@ class Models:
 
         Notes:
         - The results depend heavily on the inputs, in particular the high growth rate and
-        how long it lasts.
+        how long it lasts. A rate of return within 2 percentage points of the stable growth
+        rate is valued with a warning, as a tenth of a percentage point on either rate then
+        moves the value by about 5%.
         - The H-Model is close to the exact value of a linearly declining growth rate when
         the high-growth period is short or the gap between the growth rates is small, and
         overstates it as either grows.
@@ -2783,29 +2730,68 @@ class Models:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_h_model(
-            rate_of_return=0.08, high_growth_rate=0.08, stable_growth_rate=0.03
-        )
+        toolkit.models.get_h_model()
         ```
 
         Which returns:
 
-        |      |     KO |     PEP |
-        |:-----|-------:|--------:|
-        | 2021 | 43.008 | 108.736 |
-        | 2022 | 45.056 | 115.84  |
-        | 2023 | 47.104 | 126.592 |
-        | 2024 | 49.664 | 136.448 |
-        | 2025 | 52.224 | 143.936 |
+        |      |       KO |     PEP |
+        |:-----|---------:|--------:|
+        | 2022 |  75.9054 | 210.913 |
+        | 2023 |  65.4444 | 203.503 |
+        | 2024 | 115.057  | 382.112 |
+        | 2025 | 117.078  | 291.965 |
         """
         dividends_per_share = self._annual_dividends_per_share()
 
-        h_model = intrinsic_model.get_h_model(
-            dividends_per_share=dividends_per_share.reindex(columns=self._tickers),
-            rate_of_return=rate_of_return,
-            high_growth_rate=high_growth_rate,
-            stable_growth_rate=stable_growth_rate,
-            high_growth_periods=high_growth_periods,
+        # Every period is valued with the rates and growth known at its end.
+        periods = dividends_per_share.index
+        dividend_growth = cache(self._dividend_growth)
+        rates = helpers.rates_per_period(
+            rate_of_return,
+            self._tickers,
+            periods,
+            "rate of return",
+            self._cost_of_equity,
+        )
+        high_growth_rates = helpers.rates_per_period(
+            high_growth_rate,
+            self._tickers,
+            periods,
+            "high growth rate",
+            dividend_growth,
+        )
+        stable_growth_rates = helpers.rates_per_period(
+            stable_growth_rate,
+            self._tickers,
+            periods,
+            "stable growth rate",
+            lambda: self._stable_growth(dividend_growth()),
+        )
+        exceeds = helpers.exceeds_growth_per_period(
+            rates, stable_growth_rates, "rate of return"
+        )
+
+        dividends_per_share = dividends_per_share.reindex(columns=self._tickers)
+        h_model = pd.DataFrame(
+            {
+                ticker: {
+                    period: (
+                        intrinsic_model.get_h_model(
+                            dividends_per_share=dividends_per_share.loc[period, ticker],
+                            rate_of_return=rates.loc[ticker, period],
+                            high_growth_rate=high_growth_rates.loc[ticker, period],
+                            stable_growth_rate=stable_growth_rates.loc[ticker, period],
+                            high_growth_periods=high_growth_periods,
+                        )
+                        if exceeds.loc[ticker, period]
+                        else float("nan")
+                    )
+                    for period in periods
+                }
+                for ticker in self._tickers
+            },
+            index=periods,
         ).dropna(how="all")
         h_model.index.name = None
 
@@ -2818,7 +2804,7 @@ class Models:
     @handle_errors
     def get_justified_multiples(
         self,
-        rate_of_return: float,
+        rate_of_return: float | list | dict[str, float] | None = None,
         growth_rate: float | None = None,
         diluted: bool = True,
         trailing: int | None = None,
@@ -2846,10 +2832,14 @@ class Models:
         Also known as: justified P/E, justified P/B, fundamental P/E, warranted multiples.
 
         Args:
-            rate_of_return (float): The required rate of return on equity.
+            rate_of_return (float, list or dict, optional): The required rate of return on
+                equity, one number, or a list or dict with a rate per ticker. Defaults to None,
+                which uses each company's Cost of Equity of each period: the CAPM with the equity
+                risk premium of its country, as in `get_weighted_average_cost_of_capital`.
             growth_rate (float | None, optional): The constant growth rate of the earnings,
                 dividends and book value. Defaults to None, which uses the sustainable growth
-                rate of each period.
+                rate of each period kept within 0 and the long-run growth rate of 2.5%, as a
+                growth rate that holds forever can't exceed the growth of the economy.
             diluted (bool, optional): Whether to use the diluted share count for the actual
                 multiples. Defaults to True.
             trailing (int | None, optional): Sum the flows over this many periods and measure
@@ -2890,7 +2880,7 @@ class Models:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_justified_multiples(rate_of_return=0.08, growth_rate=0.04).loc["KO"]
+        toolkit.models.get_justified_multiples().loc["KO"]
         ```
 
         Which returns:
@@ -2899,10 +2889,10 @@ class Models:
         |:------------------------|--------:|--------:|--------:|--------:|--------:|
         | Payout Ratio            |  0.7422 |  0.7982 |  0.7422 |  0.7863 |  0.6698 |
         | Return on Equity        |  0.4591 |  0.3838 |  0.4149 |  0.3869 |  0.497  |
-        | Growth Rate             |  0.04   |  0.04   |  0.04   |  0.04   |  0.04   |
-        | Justified Trailing P/E  | 19.2971 | 20.752  | 19.2974 | 20.4434 | 17.4147 |
-        | Justified Leading P/E   | 18.5549 | 19.9539 | 18.5552 | 19.6571 | 16.7449 |
-        | Justified P/B           | 10.4769 |  8.5957 |  9.3713 |  8.6716 | 11.4251 |
+        | Growth Rate             |  0.025  |  0.025  |  0.025  |  0.025  |  0.025  |
+        | Justified Trailing P/E  | 59.1899 | 31.0022 | 23.8889 | 41.721  | 34.3015 |
+        | Justified Leading P/E   | 57.7463 | 30.2461 | 23.3062 | 40.7035 | 33.4648 |
+        | Justified P/B           | 33.7732 | 13.5978 | 12.2419 | 18.7325 | 23.5827 |
         | Price-to-Earnings Ratio | 26.2994 | 28.9985 | 23.8657 | 25.2999 | 23.0046 |
         | Price-to-Book Ratio     | 11.1732 | 11.4791 |  9.8569 | 10.8209 |  9.3731 |
         """
@@ -2912,14 +2902,25 @@ class Models:
         return_on_equity, payout_ratio = self._return_on_equity_and_payout(trailing)
         return_on_equity = return_on_equity.reindex(self._tickers)
         payout_ratio = payout_ratio.reindex(self._tickers)
+        # Every period uses the rate of return of that period.
+        rate_of_return = helpers.rates_per_period(
+            rate_of_return,
+            self._tickers,
+            payout_ratio.columns,
+            "rate of return",
+            self._cost_of_equity,
+        )
 
         if growth_rate is None:
+            # A growth rate kept forever: the sustainable growth rate of the period, kept
+            # within 0 and the long-run growth rate like every stable growth rate of the
+            # valuations.
             growth = growth_model.get_sustainable_growth_rate(
                 return_on_equity=return_on_equity,
                 retention_ratio=valuation_model.get_reinvestment_ratio(
                     dividend_payout_ratio=payout_ratio
                 ),
-            )
+            ).clip(lower=0, upper=LONG_RUN_GROWTH_RATE)
         else:
             growth = pd.DataFrame(
                 growth_rate,
@@ -3011,7 +3012,8 @@ class Models:
         the market risk premium, by default the equity risk premium of the company's country
         (see `market_risk_premium`). It covers the span of the Net Income: a
         quarter with quarterly data, and the per-period rate times `trailing` when the Net Income
-        is a trailing sum (an annual rate for trailing twelve months, trailing=4 with quarterly data).
+        is a trailing sum (an annual rate for trailing twelve months, trailing=4 with quarterly data),
+        with the Beta estimated from the daily returns of the same trailing periods.
         - The Book Value of Equity is the Total Shareholder Equity minus Preferred Stock at the
         beginning of the period (the previous period's closing balance, or that of `trailing` periods
         back with `trailing` set), the capital the shareholders had invested while the Net Income was
@@ -3065,14 +3067,7 @@ class Models:
             "quarterly" if self._quarterly else "yearly"
         ].loc[begin:end, "Adj Close"]
 
-        returns_within = self._within_historical_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Return"][self._tickers]
-        benchmark_returns_within = self._within_historical_data[
-            "quarterly" if self._quarterly else "yearly"
-        ].loc[begin:end, "Return"][self._benchmark_name]
-
-        beta = get_beta(returns_within, benchmark_returns_within)
+        beta = self._beta_per_period(begin, end, trailing)
 
         benchmark_returns = self._historical_data[
             "quarterly" if self._quarterly else "yearly"
@@ -3183,7 +3178,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
                 which shows all columns.
 
@@ -3233,6 +3230,10 @@ class Models:
         | NFLX |  2.379  |  2.8961 |  3.3806 |  4.3943 | 5.2949 |
         | UBER | -2.0375 | -3.3028 | -1.6181 | -0.0662 | 1.0641 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         if model not in altman_model.ALTMAN_COEFFICIENTS:
             raise ValueError(
                 f"Invalid model {model!r}. Please choose from: "
@@ -3460,7 +3461,9 @@ class Models:
         Also known as: Piotroski F-score, financial strength, quality score.
 
         Args:
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all columns
                 will be shown. Defaults to None.
 
@@ -3493,6 +3496,10 @@ class Models:
         | GM   |      6 |      6 |      7 |      5 |
         | TSLA |      8 |      3 |      4 |      5 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         piotroski_score = {}
 
         # Every change-based criterion compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the signal.  # noqa: E501
@@ -3742,7 +3749,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -3790,6 +3799,10 @@ class Models:
         | DIS   | -2.5143 | -2.5357 | -2.6392 | -2.6963 | -2.595  |
         | NFLX  | -1.6697 | -1.3345 | -2.5628 | -2.3319 | -2.1611 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         beneish_m_score = {}
 
         # Every index compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the score.  # noqa: E501
@@ -4004,7 +4017,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4035,8 +4050,9 @@ class Models:
         - Ohlson, James A. "Financial Ratios and the Probabilistic Prediction of Bankruptcy." Journal of
         Accounting Research, Vol. 18, No. 1, 1980, pp. 109-131.
 
-        Note that the first period is NaN because the Change in Net Income and Negative Income
-        Indicator components require a prior period to compare against.
+        Note that the first year is NaN because the Change in Net Income and Negative Income
+        Indicator components require a prior year to compare against. On quarterly data both
+        compare with the same quarter a year earlier.
 
         As an example:
 
@@ -4061,6 +4077,10 @@ class Models:
         | NCLH | -4.4192 | -4.1038 | -5.0639 | -5.269  | -4.9984 |
         | RCL  | -4.9997 | -5.0496 | -6.2194 | -6.3642 | -6.6839 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         ohlson_o_score = {}
 
         current_assets = (
@@ -4160,15 +4180,21 @@ class Models:
             )
         )
 
+        # Ohlson defines both terms on the last two years, so quarterly data is compared with the
+        # same quarter a year earlier, as Piotroski and Beneish do.
+        comparison_lag = 4 if self._quarterly else 1
+
         ohlson_o_score["Negative Income Indicator"] = (
             ohlson_model.get_negative_income_indicator(
                 net_income=net_income,
+                lag=comparison_lag,
             )
         )
 
         ohlson_o_score["Change in Net Income"] = (
             ohlson_model.get_change_in_net_income_ratio(
                 net_income=net_income,
+                lag=comparison_lag,
             )
         )
 
@@ -4261,7 +4287,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4304,6 +4332,10 @@ class Models:
         | DAL | 1.017  | 0.7425 | 0.2026 | -0.0177 | -0.3885 |
         | UAL | 1.0493 | 0.7082 | 0.4288 |  0.1763 |  0.0073 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         zmijewski_score = {}
 
         current_assets = (
@@ -4444,7 +4476,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4485,6 +4519,10 @@ class Models:
         | KSS | 1.2226 | 0.5896 | 0.809  | 0.6373 | 0.759  |
         | M   | 1.2937 | 1.1721 | 0.7495 | 0.9653 | 1.015  |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         springate_score = {}
 
         current_assets = (
@@ -4630,7 +4668,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4673,6 +4713,10 @@ class Models:
         | GM   | 0.2379 | 0.2474 | 0.2157 | 0.2846 |  0.1825 |
         | STLA | 0.477  | 0.5941 | 0.5796 | 0.2001 | -0.3018 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         grover_score = {}
 
         current_assets = (
@@ -4805,7 +4849,9 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
+                yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4857,6 +4903,10 @@ class Models:
         | DIS   | 10.8945 | 11.5241 | 12.0105 | 12.4096 | 12.7101 |
         | FOXA  | 10.9776 | 11.0388 | 10.9996 | 11.0274 | 11.8441 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         fulmer_h_score = {}
 
         current_assets = (
@@ -5109,7 +5159,8 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation: flows are
-                summed and balances averaged over it. Defaults to None.
+                summed and balances averaged over it. Defaults to None, which is 4 on quarterly data (a
+                trailing twelve months), as the score was estimated on yearly statements.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -5156,6 +5207,10 @@ class Models:
         | KSS |   0.4845 | 5.7852 | -0.0302 | 2.4432 | 0.1935 |
         | M   | -11.3244 | 3.8969 |  3.4676 | 0.2883 | 2.4301 |
         """
+        # The score was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
         taffler_score = {}
 
         def balance_item(item: str) -> pd.DataFrame:
@@ -5321,18 +5376,9 @@ class Models:
         | 2025   | 230.98  | nan      | 119.94   |
         """
         # Full precision, so that the rounding of the display does not move the no-growth value.
-        wacc_components = self.get_weighted_average_cost_of_capital(
-            show_full_results=True,
-            trailing=trailing,
-            market_risk_premium=market_risk_premium,
-            rounding=15,
-        )
-        # With a single ticker the full results come without the ticker level.
-        cost_of_equity = (
-            wacc_components.loc[["Cost of Equity"]].set_axis(self._tickers)
-            if len(self._tickers) == 1
-            else wacc_components.xs("Cost of Equity", level=1)
-        )
+        cost_of_equity = self._weighted_average_cost_of_capital(
+            trailing=trailing, market_risk_premium=market_risk_premium
+        ).xs("Cost of Equity", level=1)
 
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -5977,43 +6023,156 @@ class Models:
         prices = self._historical_data["daily"]["Close"][ticker].dropna()
         return float(prices.iloc[-1]) if not prices.empty else float("nan")
 
-    def _per_ticker(
-        self, value: float | dict[str, float] | None, name: str
-    ) -> dict[str, float | None]:
-        """A rate that is one number for every ticker or a number per ticker."""
-        if isinstance(value, dict):
-            missing = [ticker for ticker in self._tickers if ticker not in value]
-            if missing:
-                raise ValueError(f"No {name} given for: {', '.join(missing)}.")
-            return {ticker: float(value[ticker]) for ticker in self._tickers}
-        return dict.fromkeys(self._tickers, None if value is None else float(value))
+    def _latest(self, frame: pd.DataFrame) -> pd.Series:
+        """The latest value of each ticker (rows) of a ticker by period frame."""
+        return frame.T.ffill().iloc[-1] if not frame.empty else pd.Series(dtype=float)
 
-    def _resolve_wacc(
-        self, weighted_average_cost_of_capital: float | dict[str, float] | None
-    ) -> dict[str, float]:
+    def _beta_per_period(
+        self, begin: str, end: str, trailing: int | None
+    ) -> pd.DataFrame:
         """
-        The discount rate per ticker: as given, otherwise the latest calculated WACC. The WACC
-        is a yearly rate, so on quarterly data its flows (such as the interest expense) are
-        summed over four quarters, whatever the trailing of the valued cash flows.
+        The Beta of each period (rows) and ticker (columns) from the daily returns within it,
+        for the Cost of Equity. With `trailing` set, a period's Beta covers the daily returns
+        of the trailing periods, the span of the rest of the Cost of Equity: a quarter's 63
+        days give an unstable Beta, a year a usable one.
         """
-        rates = self._per_ticker(
-            weighted_average_cost_of_capital, "weighted average cost of capital"
+        returns_within = self._within_historical_data[
+            "quarterly" if self._quarterly else "yearly"
+        ]["Return"][list(dict.fromkeys([*self._tickers, self._benchmark_name]))]
+        if trailing:
+            returns_within = helpers.trailing_within_periods(returns_within, trailing)
+        returns_within = returns_within.loc[begin:end]
+
+        return get_beta(
+            returns_within[self._tickers], returns_within[self._benchmark_name]
         )
-        if any(rate is None for rate in rates.values()):
-            calculated = self.get_weighted_average_cost_of_capital(
-                show_full_results=False, trailing=4 if self._quarterly else None
+
+    def _latest_weighted_average_cost_of_capital(self) -> pd.Series:
+        """The latest WACC per ticker, for the valuations of today."""
+        return self._latest(self._weighted_average_cost_of_capital_rates())
+
+    def _latest_cost_of_equity(self) -> pd.Series:
+        """The latest Cost of Equity per ticker, for the valuations of today."""
+        return self._latest(self._cost_of_equity())
+
+    def _weighted_average_cost_of_capital_rates(self) -> pd.DataFrame:
+        """
+        The WACC per ticker (rows) and period (columns), the discount rate of the valuations
+        when none is given. The WACC is a yearly rate, so on quarterly data it covers four
+        quarters (interest expense and a beta of a year of daily returns), whatever the
+        trailing of the valued cash flows.
+        """
+        return (
+            self._weighted_average_cost_of_capital(
+                trailing=4 if self._quarterly else None
             )
-            for ticker in self._tickers:
-                if rates[ticker] is None:
-                    history = (
-                        calculated.loc[ticker].dropna()
-                        if ticker in calculated.index
-                        else pd.Series(dtype=float)
-                    )
-                    rates[ticker] = (
-                        float(history.iloc[-1]) if not history.empty else float("nan")
-                    )
-        return rates  # type: ignore[return-value]
+            .loc[:, "Weighted Average Cost of Capital", :]
+            .reindex(self._tickers)
+        )
+
+    def _cost_of_equity(self) -> pd.DataFrame:
+        """
+        The Cost of Equity per ticker (rows) and period (columns), the required return of the
+        dividend discount models and justified multiples when none is given: the CAPM with
+        each company's country equity risk premium and a beta of a year of daily returns, as
+        in `get_weighted_average_cost_of_capital`.
+        """
+        return (
+            self._weighted_average_cost_of_capital(
+                trailing=4 if self._quarterly else None
+            )
+            .xs("Cost of Equity", level=1)
+            .reindex(self._tickers)
+        )
+
+    def _dividend_growth(self) -> pd.DataFrame:
+        """
+        The compound annual growth of each company's Dividends per Share from its first year
+        with a dividend up to each period (columns), the high growth rate of the dividend
+        discount models when none is given. Each period only uses the dividends up to it. NaN
+        until a company has paid dividends for more than a year.
+        """
+        dividends = self._annual_dividends_per_share().where(lambda frame: frame > 0)
+        periods_per_year = 4 if self._quarterly else 1
+        growth = {}
+        for ticker in self._tickers:
+            history = (
+                dividends[ticker].dropna()
+                if ticker in dividends
+                else pd.Series(dtype=float)
+            )
+            if history.empty:
+                continue
+            years = pd.Series(
+                [
+                    (period.ordinal - history.index[0].ordinal) / periods_per_year
+                    for period in history.index
+                ],
+                index=history.index,
+            )
+            growth[ticker] = ((history / history.iloc[0]) ** (1 / years) - 1).where(
+                years >= 1
+            )
+        return pd.DataFrame(growth, index=dividends.index).T.reindex(self._tickers)
+
+    def _operating_growth(self) -> pd.DataFrame:
+        """
+        The growth of each company's operating income that its reinvestment supports, the
+        growth rate of the discounted cash flow valuations when none is given (Damodaran,
+        Investment Valuation, chapter 11): Reinvestment Rate x Return on Invested Capital,
+        which equals the reinvestment per year as a share of the invested capital.
+
+        - Reinvestment = NOPAT - Free Cash Flow to Firm (the capital expenditure above the
+          depreciation and amortization, plus the increase in working capital)
+        - Growth = Sum of Reinvestment / Number of Years / Average Invested Capital, with the
+          Invested Capital the Total Shareholder Equity plus the Total Debt, as in the Return
+          on Invested Capital
+
+        Reinvestment is lumpy, so each period (column) takes it over all the periods up to
+        and including it, from at least a year of data; it never uses later periods. A company
+        that reinvests less than its depreciation has a negative growth.
+        """
+        components = self.get_free_cash_flow_to_firm(rounding=15)
+        # Without the cash flow items (an empty result) no company has a growth of its own.
+        if components.empty:
+            return pd.DataFrame(index=self._tickers, dtype=float)
+        nopat = components.xs("Net Operating Profit After Taxes", level=1)
+        free_cash_flow = components.xs("Free Cash Flow to Firm", level=1)
+        reinvestment = (nopat - free_cash_flow).reindex(self._tickers).T
+        invested_capital = (
+            (
+                self._rows(self._balance_sheet_statement, "Total Shareholder Equity")
+                + self._rows(self._balance_sheet_statement, "Total Debt")
+            )
+            .reindex(self._tickers)
+            .T.reindex(reinvestment.index)
+        )
+
+        periods_per_year = 4 if self._quarterly else 1
+        years = reinvestment.notna().cumsum() / periods_per_year
+        total_reinvestment = reinvestment.fillna(0).cumsum()
+        return (
+            (total_reinvestment / years / invested_capital.expanding().mean())
+            .where(years >= 1)
+            .T
+        )
+
+    def _stable_growth(
+        self, company_growth: pd.Series | pd.DataFrame
+    ) -> pd.Series | pd.DataFrame:
+        """
+        The growth rate a company keeps forever when none is given: its own growth, kept
+        within 0 and the long-run growth rate, and the long-run rate where it has none. A
+        stable growth rate can't exceed the growth of the economy, for which the risk-free
+        rate is the upper limit (Damodaran, Investment Valuation, chapter 12); the long-run
+        rate stays well below it. A company that shrinks today is not assumed to shrink
+        forever, so the stable rate is at least 0.
+        """
+        return (
+            company_growth.reindex(self._tickers)
+            .clip(lower=0, upper=LONG_RUN_GROWTH_RATE)
+            .fillna(LONG_RUN_GROWTH_RATE)
+        )
 
     def _combine(self, results: dict[str, pd.DataFrame]) -> pd.DataFrame:
         """Per-period results as ticker and metric (rows) by period (columns)."""
@@ -6122,7 +6281,7 @@ class Models:
     @handle_errors
     def get_reverse_discounted_cash_flow(
         self,
-        perpetual_growth_rate: float | dict[str, float] = 0.025,
+        perpetual_growth_rate: float | dict[str, float] = LONG_RUN_GROWTH_RATE,
         weighted_average_cost_of_capital: float | dict[str, float] | None = None,
         periods: int = 5,
         cash_flow_type: str = "Free Cash Flow to Firm",
@@ -6154,7 +6313,8 @@ class Models:
 
         Args:
             perpetual_growth_rate (float | dict[str, float], optional): The growth after the
-                projection periods, one number or a number per ticker. Defaults to 0.025.
+                projection periods, one number or a number per ticker. Defaults to the
+                long-run growth rate of 2.5%.
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
                 The discount rate, one number or a number per ticker. Defaults to None,
                 which uses the latest Weighted Average Cost of Capital of each company,
@@ -6210,15 +6370,22 @@ class Models:
         |:-----|--------------:|------------:|-----------------------------------:|------------------------:|----------------------:|-------------------------:|
         | AAPL |        271.86 | 8.62639e+10 |                               0.09 |                   0.025 |                0.308  |                   0.0545 |
         | MSFT |        483.62 | 7.0121e+10  |                               0.09 |                   0.025 |                0.333  |                   0.1183 |
-        | NVDA |        186.5  | 9.15284e+10 |                               0.09 |                   0.025 |                0.3182 |                   0.8976 |
+        | NVDA |        186.5  | 5.98933e+10 |                               0.09 |                   0.025 |                0.4454 |                   1.0031 |
         """
-        perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
+        perpetual = helpers.rates_per_ticker(
+            perpetual_growth_rate, self._tickers, "perpetual growth rate"
+        )
         # The projection periods and the growth rates are yearly, so a quarterly cash flow is
         # summed into a year rather than projected as if it were one.
         if trailing is None and self._quarterly:
             trailing = 4
         periods_per_year = 4 if self._quarterly else 1
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
+        wacc = helpers.rates_per_ticker(
+            weighted_average_cost_of_capital,
+            self._tickers,
+            "weighted average cost of capital",
+            self._latest_weighted_average_cost_of_capital,
+        )
         cash_flows = self._valuation_cash_flows(cash_flow_type, trailing)
 
         rows = {}
@@ -6352,7 +6519,12 @@ class Models:
         # year (a trailing twelve months) before the margin is applied to the revenue.
         if trailing is None and self._quarterly:
             trailing = 4
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
+        wacc = helpers.rates_per_ticker(
+            weighted_average_cost_of_capital,
+            self._tickers,
+            "weighted average cost of capital",
+            self._latest_weighted_average_cost_of_capital,
+        )
 
         # On the calendar periods, so that the steps below count calendar periods.
         revenue, operating_income, taxes, income_before_tax = (
@@ -6413,9 +6585,9 @@ class Models:
     @handle_errors
     def get_monte_carlo_intrinsic_valuation(
         self,
-        growth_rate: float | dict[str, float],
+        growth_rate: float | dict[str, float] | None = None,
         growth_rate_volatility: float = 0.02,
-        perpetual_growth_rate: float | dict[str, float] = 0.025,
+        perpetual_growth_rate: float | dict[str, float] | None = None,
         perpetual_growth_rate_volatility: float = 0.005,
         weighted_average_cost_of_capital: float | dict[str, float] | None = None,
         weighted_average_cost_of_capital_volatility: float = 0.01,
@@ -6446,12 +6618,15 @@ class Models:
         Also known as: Monte Carlo DCF, probabilistic valuation, DCF simulation.
 
         Args:
-            growth_rate (float | dict[str, float]): The expected yearly growth over the
-                projection periods, one number or a number per ticker.
+            growth_rate (float | dict[str, float] | None, optional): The expected yearly
+                growth over the projection periods, one number or a number per ticker. Defaults
+                to None, which uses the growth the company's reinvestment supports, as in
+                `get_intrinsic_valuation`.
             growth_rate_volatility (float, optional): The standard deviation of the growth
                 rate. Defaults to 0.02.
-            perpetual_growth_rate (float | dict[str, float], optional): The expected growth
-                after the projection periods. Defaults to 0.025.
+            perpetual_growth_rate (float | dict[str, float] | None, optional): The expected
+                growth after the projection periods. Defaults to None, which uses the company's
+                growth kept within 0 and the long-run growth rate of 2.5% (2.5% where it has none).
             perpetual_growth_rate_volatility (float, optional): Its standard deviation.
                 Defaults to 0.005.
             weighted_average_cost_of_capital (float | dict[str, float] | None, optional):
@@ -6495,24 +6670,35 @@ class Models:
             end_date="2025-12-31",
         )
 
-        toolkit.models.get_monte_carlo_intrinsic_valuation(
-            growth_rate=0.08, weighted_average_cost_of_capital=0.09
-        )
+        toolkit.models.get_monte_carlo_intrinsic_valuation()
         ```
 
         Which returns:
 
-        |      |    Mean |   Standard Deviation |   5th Percentile |   25th Percentile |   50th Percentile |   75th Percentile |   95th Percentile |   Share Price |   Probability Undervalued |
-        |:-----|--------:|---------------------:|-----------------:|------------------:|------------------:|------------------:|------------------:|--------------:|--------------------------:|
-        | AAPL | 113.466 |              24.52   |          82.0179 |           96.6542 |           109.564 |           125.871 |           158.283 |        271.86 |                    0.0004 |
-        | MSFT | 182.735 |              40.0623 |         131.353  |          155.267  |           176.361 |           203.002 |           255.96  |        483.62 |                    0.0002 |
+        |      |     Mean |   Standard Deviation |   5th Percentile |   25th Percentile |   50th Percentile |   75th Percentile |   95th Percentile |   Share Price |   Probability Undervalued |
+        |:-----|---------:|---------------------:|-----------------:|------------------:|------------------:|------------------:|------------------:|--------------:|--------------------------:|
+        | AAPL |  82.5131 |              16.2376 |          60.9873 |           71.2762 |           80.2102 |           91.0734 |            112.25 |        271.86 |                    0      |
+        | MSFT | 201.173  |              54.5108 |         137.44   |          165.612  |          191.216  |          225.004  |            297.14 |        483.62 |                    0.0025 |
         """
-        growth = self._per_ticker(growth_rate, "growth rate")
-        perpetual = self._per_ticker(perpetual_growth_rate, "perpetual growth rate")
+        operating_growth = cache(lambda: self._latest(self._operating_growth()))
+        growth = helpers.rates_per_ticker(
+            growth_rate, self._tickers, "growth rate", operating_growth
+        )
+        perpetual = helpers.rates_per_ticker(
+            perpetual_growth_rate,
+            self._tickers,
+            "perpetual growth rate",
+            lambda: self._stable_growth(operating_growth()),
+        )
         # The growth rates are yearly, so a quarterly cash flow is summed into a year.
         if trailing is None and self._quarterly:
             trailing = 4
-        wacc = self._resolve_wacc(weighted_average_cost_of_capital)
+        wacc = helpers.rates_per_ticker(
+            weighted_average_cost_of_capital,
+            self._tickers,
+            "weighted average cost of capital",
+            self._latest_weighted_average_cost_of_capital,
+        )
         cash_flows = self._valuation_cash_flows(cash_flow_type, trailing)
 
         rows = {}
@@ -6710,6 +6896,308 @@ class Models:
 
         return filter_columns(
             merton.loc[:, self._start_date : self._end_date], show_columns
+        )
+
+    @handle_errors
+    def get_campbell_hilscher_szilagyi_score(
+        self,
+        rounding: int | None = None,
+        show_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the probability of failure of Campbell, Hilscher and Szilagyi (2008), a
+        logit model that combines accounting figures with market data to predict failure: a
+        bankruptcy filing, a delisting or a D (default) rating. It measures profitability
+        and leverage against the market value of the assets rather than the book value, and
+        adds the excess return of the shares, their volatility, the company's size, its
+        cash, its market-to-book ratio and its share price. In the paper it predicts failure
+        better than Shumway's (2001) model and than the Merton distance to default.
+
+        The model is the 12-month-ahead logit of Table IV, column (3), of the paper:
+
+            - LPFD = -9.164 - 20.264 NIMTAAVG + 1.416 TLMTA - 7.129 EXRETAVG + 1.411 SIGMA
+              - 0.045 RSIZE - 2.132 CASHMTA + 0.075 MB - 0.058 PRICE
+            - Failure Probability = 1 / (1 + e^(-LPFD))
+
+        with:
+
+            - MTA = Market Value of Equity + Total Liabilities (the market value of total
+              assets)
+            - NIMTA = Quarterly Net Income / MTA, and NIMTAAVG its average over four quarters
+              with weights that halve every quarter: (1 - φ³) / (1 - φ¹²) × (NIMTA(t) +
+              φ³ NIMTA(t-1) + φ⁶ NIMTA(t-2) + φ⁹ NIMTA(t-3)), φ = 2^(-1/3)
+            - EXRET = ln(1 + Return) - ln(1 + S&P 500 Return) per month, and EXRETAVG its
+              average over twelve months: (1 - φ) / (1 - φ¹²) × (EXRET(t) + φ EXRET(t-1) +
+              ... + φ¹¹ EXRET(t-11))
+            - TLMTA = Total Liabilities / MTA
+            - CASHMTA = Cash and Short Term Investments / MTA
+            - MB = Market Value of Equity / Adjusted Book Equity, where Adjusted Book Equity =
+              Book Equity + 0.1 × (Market Value of Equity - Book Equity) (Cohen, Polk and
+              Vuolteenaho, 2003), and a value that is still not positive becomes 1
+            - SIGMA = sqrt(252 / (N - 1) × Σ r²), the annualized volatility around zero of
+              the N daily returns of the three months before, NaN with fewer than five
+              non-zero returns
+            - RSIZE = ln(Market Value of Equity / Total Market Value of the S&P 500)
+            - PRICE = ln(min(Share Price, 15))
+
+        Book Equity is Total Shareholder Equity plus Deferred Tax Liabilities minus Preferred
+        Stock (Davis, Fama and French, 2000), the latter two counted as zero when not
+        reported. The market value of equity is the closing price times the diluted
+        weighted average shares, the returns are total returns (Adj Close) against the S&P
+        500 total return index (^SP500TR), and every market variable is measured on the day
+        each period's figures apply from (the fiscal period end, or the filing day with
+        point_in_time): no market data after that day is used.
+
+        The probability is that of failing in the month 12 months ahead, given that the
+        company survives until then. It is a monthly probability, not the probability of
+        failing within a year. For comparison, between 0.4% and 3.7% of the companies in the
+        paper's sample failed per year from 1983 to 2003 (Table I).
+
+        Also known as: CHS model, failure probability, distress risk, default probability, LPFD.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
+                all periods.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the eight variables as they enter the model,
+            the CHS Score (LPFD) and the Failure Probability (a decimal).
+
+        Notes:
+            - Winsorization: the paper winsorizes every variable at the 5th and 95th
+              percentiles of the monthly cross-section of all US companies, which a
+              calculation per company cannot repeat. Each variable (NIMTA per quarter, EXRET
+              per month) is clipped instead to the range the winsorized variables span in
+              the paper's full sample (Table II, minimum and maximum): NIMTA -0.069 to 0.028,
+              TLMTA 0.036 to 0.923, EXRET -0.243 to 0.218, RSIZE -13.568 to -6.773, SIGMA
+              0.153 to 1.353, CASHMTA 0.002 to 0.358, MB 0.358 to 6.471 and PRICE -0.065 to
+              2.708. The variables are shown clipped, as they enter the score; a company
+              larger than about 0.1% of the S&P 500 has the largest RSIZE the paper used.
+            - RSIZE: the total market value of the S&P 500 is the sum of the latest market
+              capitalizations of its current companies (FinancialModelingPrep, each company
+              once), scaled back to each date with the S&P 500 price index (^GSPC). This
+              holds the companies and share counts of the latest date: changes in the index
+              membership and share counts that S&P offsets with its divisor are not
+              followed, and the index weighs float-adjusted shares while the total counts all
+              shares. As RSIZE enters with a coefficient of -0.045, an error of 5% in the
+              total moves the score by about 0.002. Without an API key that has access to
+              the constituents, RSIZE and the probability are NaN.
+            - On yearly statements NIMTAAVG is a quarter of the yearly net income over the
+              market value of total assets at the year end, equal weights for the four
+              quarters instead of weights that halve every quarter; on quarterly statements
+              it is calculated as in the paper. A missing quarter or month leaves the average
+              NaN where the paper fills it with the cross-sectional mean.
+            - PRICE uses the split-adjusted closing price, so for a company that split its
+              shares (or reverse-split them) after the period, the price differs from the
+              price traded then by the split ratio, which matters only below $15.
+            - The paper lags the accounting figures by two months so they are known; set
+              point_in_time on the Toolkit to measure on the filing day instead of the
+              fiscal period end.
+            - The coefficients were estimated on US companies from 1963 to 2003 with the S&P
+              500 as the market. For a company listed in another currency, its market value
+              is compared with the dollar total of the S&P 500, which moves RSIZE by the log
+              of the exchange rate (about 0.004 on the score for the euro).
+
+        References:
+        - Campbell, J.Y., Hilscher, J. and Szilagyi, J. (2008). "In Search of Distress Risk."
+          The Journal of Finance, 63(6), 2899-2939.
+        - Cohen, R.B., Polk, C. and Vuolteenaho, T. (2003). "The Value Spread." The Journal
+          of Finance, 58(2), 609-641.
+        - Davis, J.L., Fama, E.F. and French, K.R. (2000). "Characteristics, Covariances, and
+          Average Returns: 1929 to 1997." The Journal of Finance, 55(1), 389-406.
+        - Shumway, T. (2001). "Forecasting Bankruptcy More Accurately: A Simple Hazard
+          Model." The Journal of Business, 74(1), 101-124.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_campbell_hilscher_szilagyi_score().loc["F"]
+        ```
+
+        Which returns:
+
+        |                                        |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:---------------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | Net Income to Market Assets (NIMTAAVG) |  0.0153 | -0.0019 |  0.0039 |  0.0052 | -0.0067 |
+        | Liabilities to Market Assets (TLMTA)   |  0.7133 |  0.82   |  0.8239 |  0.8579 |  0.8291 |
+        | Excess Return (EXRETAVG)               |  0.0573 | -0.0308 | -0.007  | -0.037  |  0.015  |
+        | Volatility (SIGMA)                     |  0.4477 |  0.4187 |  0.4069 |  0.3133 |  0.3746 |
+        | Relative Size (RSIZE)                  | -6.773  | -6.773  | -6.7827 | -7.2053 | -7.0859 |
+        | Cash to Market Assets (CASHMTA)        |  0.1697 |  0.1699 |  0.1436 |  0.1369 |  0.126  |
+        | Market to Book (MB)                    |  1.567  |  1.0379 |  1.1113 |  0.8788 |  1.3456 |
+        | Log Price (PRICE)                      |  2.708  |  2.4536 |  2.5006 |  2.2925 |  2.5741 |
+        | CHS Score                              | -8.3383 | -7.2758 | -7.5146 | -7.3842 | -7.4308 |
+        | Failure Probability                    |  0.0002 |  0.0007 |  0.0005 |  0.0006 |  0.0006 |
+        """
+        balance = self._balance_sheet_statement
+        periods = balance.columns
+        tickers = self._tickers
+
+        dates = self._period_end_dates
+        if dates is None or dates.empty:
+            dates = pd.DataFrame(
+                {
+                    period: period.to_timestamp(how="end").normalize()
+                    for period in periods
+                },
+                index=tickers,
+            )
+        dates = dates.reindex(index=tickers, columns=periods).apply(pd.to_datetime)
+
+        # The daily data from a year before the start date, so that the excess returns of
+        # the first periods have their twelve months.
+        daily = self._historical_data.get("lookback")
+        if daily is None or daily.empty:
+            daily = self._historical_data["daily"]
+        close = daily["Close"].reindex(columns=tickers)
+        close.index = close.index.to_timestamp()
+        adjusted_close = daily["Adj Close"].reindex(columns=tickers)
+        adjusted_close.index = adjusted_close.index.to_timestamp()
+        daily_returns = daily["Return"].reindex(columns=tickers)
+        daily_returns.index = daily_returns.index.to_timestamp()
+
+        # The S&P 500 over the prices' dates and up to today, as its total market value is
+        # known for the latest date only.
+        index_data, latest_market_value = (
+            self._sp500_function(
+                close.index.min().strftime("%Y-%m-%d"),
+                pd.Timestamp.today().strftime("%Y-%m-%d"),
+            )
+            if self._sp500_function is not None and not close.empty
+            else (pd.DataFrame(), pd.Series(dtype=float))
+        )
+        price_index = index_data.get("Price Index", pd.Series(dtype=float))
+        total_return_index = index_data.get(
+            "Total Return Index", pd.Series(dtype=float)
+        )
+        index_market_value = chs_model.get_index_market_value(
+            price_index, latest_market_value
+        )
+        if index_market_value.dropna().empty:
+            logger.warning(
+                "The total market value of the S&P 500 (its constituents and their market "
+                "capitalizations from FinancialModelingPrep) is not available, so the "
+                "relative size (RSIZE) and the failure probability are NaN."
+            )
+
+        price = helpers.values_on_or_before(close, dates)
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        market_equity = price * shares.reindex(index=tickers, columns=periods)
+        total_liabilities = self._rows(balance, "Total Liabilities")
+        market_total_assets = chs_model.get_market_total_assets(
+            market_equity, total_liabilities
+        )
+        book_equity = (
+            self._rows(balance, "Total Shareholder Equity")
+            + self._rows(balance, "Deferred Tax Liabilities").fillna(0)
+            - self._rows(balance, "Preferred Stock").fillna(0)
+        )
+
+        # NIMTA is a quarterly figure: a yearly net income counts as four equal quarters.
+        net_income = self._rows(self._income_statement, "Net Income")
+        quarterly_net_income = net_income if self._quarterly else net_income / 4
+        net_income_to_market_total_assets = chs_model.get_winsorized_variable(
+            self._calendar(quarterly_net_income / market_total_assets), "NIMTA"
+        )
+        net_income_average = (
+            chs_model.get_geometric_average(
+                [net_income_to_market_total_assets.T.shift(lag).T for lag in range(4)],
+                chs_model.MONTHLY_DECAY**3,
+            ).reindex(columns=periods)
+            if self._quarterly
+            else net_income_to_market_total_assets.reindex(columns=periods)
+        )
+
+        monthly_excess_returns = chs_model.get_monthly_log_excess_returns(
+            adjusted_close,
+            total_return_index.dropna(),
+            dates,
+        )
+        excess_return_average = chs_model.get_geometric_average(
+            [
+                chs_model.get_winsorized_variable(excess_return, "EXRET")
+                for excess_return in monthly_excess_returns
+            ],
+            chs_model.MONTHLY_DECAY,
+        )
+
+        index_value = helpers.values_on_or_before(
+            pd.DataFrame(
+                {ticker: index_market_value for ticker in tickers},
+                index=index_market_value.index,
+            ),
+            dates,
+        )
+
+        variables = {
+            "NIMTAAVG": net_income_average,
+            "TLMTA": chs_model.get_winsorized_variable(
+                total_liabilities / market_total_assets, "TLMTA"
+            ),
+            "EXRETAVG": excess_return_average,
+            "SIGMA": chs_model.get_winsorized_variable(
+                chs_model.get_sigma(daily_returns, dates), "SIGMA"
+            ),
+            "RSIZE": chs_model.get_winsorized_variable(
+                chs_model.get_relative_size(market_equity, index_value), "RSIZE"
+            ),
+            "CASHMTA": chs_model.get_winsorized_variable(
+                self._rows(balance, "Cash and Short Term Investments")
+                / market_total_assets,
+                "CASHMTA",
+            ),
+            "MB": chs_model.get_winsorized_variable(
+                market_equity
+                / chs_model.get_adjusted_book_equity(book_equity, market_equity),
+                "MB",
+            ),
+            "PRICE": chs_model.get_winsorized_variable(
+                chs_model.get_log_price(price), "PRICE"
+            ),
+        }
+
+        chs_score = chs_model.get_chs_score(
+            net_income_to_market_total_assets_average=variables["NIMTAAVG"],
+            total_liabilities_to_market_total_assets=variables["TLMTA"],
+            excess_return_average=variables["EXRETAVG"],
+            sigma=variables["SIGMA"],
+            relative_size=variables["RSIZE"],
+            cash_to_market_total_assets=variables["CASHMTA"],
+            market_to_book=variables["MB"],
+            log_price=variables["PRICE"],
+        )
+
+        results = {
+            "Net Income to Market Assets (NIMTAAVG)": variables["NIMTAAVG"],
+            "Liabilities to Market Assets (TLMTA)": variables["TLMTA"],
+            "Excess Return (EXRETAVG)": variables["EXRETAVG"],
+            "Volatility (SIGMA)": variables["SIGMA"],
+            "Relative Size (RSIZE)": variables["RSIZE"],
+            "Cash to Market Assets (CASHMTA)": variables["CASHMTA"],
+            "Market to Book (MB)": variables["MB"],
+            "Log Price (PRICE)": variables["PRICE"],
+            "CHS Score": chs_score,
+            "Failure Probability": chs_model.get_chs_failure_probability(chs_score),
+        }
+
+        chs = self._combine(
+            {name: frame.astype(float) for name, frame in results.items()}
+        ).dropna(axis=1, how="all")
+        chs = apply_rounding(chs, rounding if rounding is not None else self._rounding)
+
+        return filter_columns(
+            chs.loc[:, self._start_date : self._end_date], show_columns
         )
 
     @handle_errors

@@ -15,7 +15,6 @@ from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-# pylint: disable=comparison-with-itself,too-many-locals
 
 # Period to pandas frequency, shared so every period calculation agrees.
 PERIOD_TRANSLATION = {
@@ -23,6 +22,21 @@ PERIOD_TRANSLATION = {
     "monthly": "M",
     "quarterly": "Q",
     "yearly": "Y",
+}
+
+# The periods "within period" calculations group observations by. The intraday period maps
+# each intraday interval to the period its bars are grouped in; the daily period nests the
+# intraday bars of a single day, so it is only available when intraday data was fetched.
+WITHIN_PERIOD_TRANSLATION: dict[str, str | dict[str, str]] = {
+    "intraday": {
+        "1min": "h",
+        "5min": "h",
+        "15min": "D",
+        "30min": "D",
+        "1hour": "D",
+    },
+    "daily": "D",
+    **PERIOD_TRANSLATION,
 }
 
 # Scales a daily Variance or Volatility by the trading days in a period.
@@ -102,6 +116,59 @@ EURO_AREA_MEMBERS = frozenset(
         "Spain",
     }
 )
+
+
+def validate_period(period: str) -> None:
+    """
+    Raises when a period is not one of the periods returns and prices are grouped by.
+
+    Args:
+        period (str): The period, weekly, monthly, quarterly or yearly.
+
+    Raises:
+        ValueError: If the period is not weekly, monthly, quarterly or yearly.
+    """
+    if period not in PERIOD_TRANSLATION:
+        raise ValueError(
+            f"Period {period} is not valid. It should be either "
+            "weekly, monthly, quarterly or yearly."
+        )
+
+
+def newey_west_long_run_variance(residuals: np.ndarray, lags: int) -> float:
+    """
+    Newey-West (1987) HAC long-run variance estimator with Bartlett kernel weights, for an
+    already-demeaned series. It corrects the KPSS and Phillips-Perron statistics and the
+    Diebold-Mariano loss differential for serial correlation.
+
+    - lambda^2 = gamma_0 + 2 * SUM_{l=1}^{lags} (1 - l / (lags + 1)) * gamma_l
+
+    where gamma_l is the l-th sample autocovariance of `residuals`.
+
+    For more information about the method, see the following paper:
+
+    - Newey, W.K. and West, K.D. (1987). "A Simple, Positive Semi-Definite,
+    Heteroskedasticity and Autocorrelation Consistent Covariance Matrix."
+    Econometrica, 55(3), 703-708.
+
+    Args:
+        residuals (np.ndarray): The demeaned series.
+        lags (int): The number of autocovariances weighted in.
+
+    Returns:
+        float: The long-run variance.
+    """
+    number_of_observations = len(residuals)
+    variance = float(np.sum(residuals**2) / number_of_observations)
+
+    for lag in range(1, lags + 1):
+        weight = 1 - lag / (lags + 1)
+        autocovariance = (
+            np.sum(residuals[lag:] * residuals[:-lag]) / number_of_observations
+        )
+        variance += 2 * weight * autocovariance
+
+    return variance
 
 
 def euro_area_hint(countries: Iterable[object], dataset: pd.DataFrame) -> str:
@@ -205,11 +272,11 @@ def finalize_dataset(
 ) -> pd.Series | pd.DataFrame:
     """
     Shared post-processing for every Finance Toolkit metric, used across the Ratios,
-    Risk, Performance, Models, Technicals, Economics and Fixed Income modules: optional
-    rolling-window smoothing, optional trailing-window summation, growth conversion,
-    Z-Score standardization (applied on top of the growth values when growth is also
-    requested), rounding, date range slicing, optional dropping of all-NaN rows and
-    optional country filtering.
+    Risk, Performance, Models, Technicals, Economics and Fixed Income modules: replacing
+    infinities (from a zero denominator) with NaN, optional rolling-window smoothing,
+    optional trailing-window summation, growth conversion, Z-Score standardization
+    (applied on top of the growth values when growth is also requested), rounding, date
+    range slicing, optional dropping of all-NaN rows and optional country filtering.
 
     Growth is computed on the full dataset before the date range is applied, since it
     needs history from before the display window to calculate the correct value for the
@@ -261,6 +328,11 @@ def finalize_dataset(
     """
     # Explicitly compare to None so that rounding=0 is honoured rather than treated as "not supplied", and so that rounding=None disables rounding altogether.  # noqa: E501
     rounding = rounding if rounding is not None else default_rounding
+
+    # A zero denominator (no equity, no drawdown, no losses, a beta of 0) leaves the
+    # metric undefined: NaN like any other missing value, also so that one such period
+    # does not turn the growth or Z-Scores of the whole series into NaN.
+    dataset = drop_non_finite(dataset)
 
     if rolling:
         dataset = dataset.rolling(window=rolling).mean()
@@ -811,12 +883,10 @@ def calculate_growth(
                 new_index, axis=1
             )
 
-        return apply_rounding(
-            drop_infinite_growth(dataset_lag.astype(np.float64)), rounding
-        )
+        return apply_rounding(drop_non_finite(dataset_lag.astype(np.float64)), rounding)
 
     return apply_rounding(
-        drop_infinite_growth(change(dataset, lag, axis)),
+        drop_non_finite(change(dataset, lag, axis)),
         rounding,
     )
 
@@ -914,17 +984,27 @@ def calculate_compound_growth(
     return ratio ** (1 / years) - 1
 
 
-def drop_infinite_growth(growth: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+def drop_non_finite(
+    values: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
     """
-    Growth from a value of 0 is undefined, not infinite, so it is reported as missing.
+    Replace positive and negative infinities with NaN.
+
+    A division by zero (growth from a value of 0, a ratio with a zero denominator) or the
+    logarithm of zero is undefined, not infinite, so it is reported as missing. An infinity
+    would otherwise pass through every later step: one infinite value turns the mean and
+    standard deviation of a Z-Score into NaN for the whole series.
 
     Args:
-        growth (pd.Series | pd.DataFrame): The growth values.
+        values (float | pd.Series | pd.DataFrame): The values to clean.
 
     Returns:
-        pd.Series | pd.DataFrame: The growth values with infinities replaced by NaN.
+        float | pd.Series | pd.DataFrame: The values with any infinity replaced by NaN.
     """
-    return growth.replace([np.inf, -np.inf], np.nan)
+    if isinstance(values, pd.Series | pd.DataFrame):
+        return values.replace([np.inf, -np.inf], np.nan)
+
+    return values if np.isfinite(values) else np.nan
 
 
 def calculate_standardization(

@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.risk import market_liquidity_model
 
-# pylint: disable=missing-function-docstring
-
 ROLL_SPREAD_RECOVERY_TOLERANCE = 0.05
 
 

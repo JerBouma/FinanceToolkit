@@ -12,7 +12,6 @@ from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
 
-# pylint: disable=too-many-instance-attributes,too-many-arguments
 # The examples' output tables are wider than the line length.
 # ruff: noqa: E501
 
@@ -194,11 +193,6 @@ class ETF:
             by=weightings.columns[0], ascending=False, kind="stable"
         )
 
-    def _round(self, data: pd.DataFrame, rounding: int | None) -> pd.DataFrame:
-        return apply_rounding(
-            data, rounding if rounding is not None else self._rounding
-        )
-
     def get_holdings(
         self,
         overwrite: bool = False,
@@ -279,7 +273,9 @@ class ETF:
                 .reindex(holdings.index.get_level_values(0).unique(), level=0)
             )
 
-        holdings = self._round(holdings, rounding)
+        holdings = apply_rounding(
+            holdings, rounding if rounding is not None else self._rounding
+        )
 
         if len(self._tickers) == 1 and not holdings.empty:
             return filter_columns(holdings.loc[self._tickers[0]], show_columns)
@@ -774,7 +770,9 @@ class ETF:
                 results[fund] = etf_model.get_tracking(
                     returns[fund], returns[BENCHMARK_TICKER], PERIODS_PER_YEAR[period]
                 )
-        return self._round(pd.DataFrame(results), rounding)
+        return apply_rounding(
+            pd.DataFrame(results), rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_concentration(self, rounding: int | None = None) -> pd.DataFrame:
@@ -827,7 +825,9 @@ class ETF:
         numeric = concentration.drop(index="Largest Holding").apply(
             pd.to_numeric, errors="coerce"
         )
-        numeric = self._round(numeric, rounding)
+        numeric = apply_rounding(
+            numeric, rounding if rounding is not None else self._rounding
+        )
         return pd.concat([numeric, concentration.loc[["Largest Holding"]]]).reindex(
             concentration.index
         )
@@ -867,7 +867,10 @@ class ETF:
         | VTI  | 0.8911 | 0.4994 | 1.0005 | 0.071  |
         | SCHD | 0.0764 | 0.0516 | 0.071  | 1      |
         """
-        return self._round(etf_model.get_overlap(self._weights()), rounding)
+        return apply_rounding(
+            etf_model.get_overlap(self._weights()),
+            rounding if rounding is not None else self._rounding,
+        )
 
     @handle_errors
     def get_active_share(self, rounding: int | None = None) -> pd.DataFrame:
@@ -926,7 +929,10 @@ class ETF:
         | SCHD | 0.9238 | 0.945  | 0      | 1      |
         | MGK  | 0.4784 | 0.3822 | 1      | 0      |
         """
-        return self._round(etf_model.get_active_share(self._weights()), rounding)
+        return apply_rounding(
+            etf_model.get_active_share(self._weights()),
+            rounding if rounding is not None else self._rounding,
+        )
 
     @handle_errors
     def get_look_through_valuation(
@@ -1004,7 +1010,9 @@ class ETF:
                 for fund, fund_weights in weights.items()
             }
         )
-        return self._round(valuation, rounding)
+        return apply_rounding(
+            valuation, rounding if rounding is not None else self._rounding
+        )
 
     @handle_errors
     def get_liquidity(self, rounding: int | None = None) -> pd.DataFrame:
@@ -1085,7 +1093,9 @@ class ETF:
                 ),
             }
         liquidity = pd.DataFrame(liquidity)
-        rounded = self._round(liquidity, rounding)
+        rounded = apply_rounding(
+            liquidity, rounding if rounding is not None else self._rounding
+        )
         if rounding is None:
             # A price impact of a fraction of a basis point matters, so the Toolkit's
             # rounding would turn it into zero.
@@ -1343,7 +1353,9 @@ class ETF:
             else:
                 tables[fund] = self._contribution_table(table, fund_return, level)
 
-        result = self._round(pd.concat(tables), rounding)
+        result = apply_rounding(
+            pd.concat(tables), rounding if rounding is not None else self._rounding
+        )
         if len(tables) == 1:
             return result.loc[next(iter(tables))]
         return result
@@ -1351,7 +1363,7 @@ class ETF:
     @handle_errors
     def get_return_excluding(
         self,
-        exclude: str | list[str],
+        exclude: str | list[str] | None = None,
         holdings: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -1376,8 +1388,10 @@ class ETF:
         holdings, ex-sector return.
 
         Args:
-            exclude (str | list[str]): The holdings (tickers, e.g. "NVDA") and sectors (e.g.
-                "Technology", as the companies' profiles name them) to leave out.
+            exclude (str | list[str] | None, optional): The holdings (tickers, e.g. "NVDA") and
+                sectors (e.g. "Technology", as the companies' profiles name them) to leave out.
+                Defaults to None, which leaves out the largest holding of each fund (by its
+                weight at the start of the period), the single stock that moves the fund most.
             holdings (int | None, optional): The number of largest holdings (by weight) to
                 price, one request each; the rest counts towards the rest of the fund.
                 Defaults to None, which prices every holding with a symbol.
@@ -1415,36 +1429,44 @@ class ETF:
         | Excluded Contribution  | -0.0077 | -0.0077 |
         | Return Excluding       | -0.002  | -0.0685 |
         """
-        names = [exclude] if isinstance(exclude, str) else list(exclude)
-        wanted = {name.strip().upper() for name in names if name and name.strip()}
-        if not wanted:
-            raise ValueError("Name at least one holding or sector to exclude.")
+        wanted: set[str] | None = None
+        if exclude is not None:
+            names = [exclude] if isinstance(exclude, str) else list(exclude)
+            wanted = {name.strip().upper() for name in names if name and name.strip()}
+            if not wanted:
+                raise ValueError("Name at least one holding or sector to exclude.")
 
         contributions = self._contributions(holdings, index=None)
         priced = sorted(
             {asset for table, _, _ in contributions.values() for asset in table.index}
         )
         sectors = pd.Series(dtype=object)
-        if wanted - {asset.upper() for asset in priced}:
+        if wanted is not None and wanted - {asset.upper() for asset in priced}:
             # Not every name is a holding, so the others are matched against the sectors.
             if self._sector_function is None:
                 raise ValueError(
                     "The sectors of the holdings are not available for this Toolkit."
                 )
             sectors = self._sector_function(priced)
-        known = {asset.upper() for asset in priced} | set(
-            sectors.dropna().astype(str).str.upper()
-        )
-        if wanted - known:
-            logger.warning(
-                "%s is not a priced holding or a sector of these funds and is not excluded.",
-                ", ".join(sorted(wanted - known)),
+            known = {asset.upper() for asset in priced} | set(
+                sectors.dropna().astype(str).str.upper()
             )
+            if wanted - known:
+                logger.warning(
+                    "%s is not a priced holding or a sector of these funds and is not excluded.",
+                    ", ".join(sorted(wanted - known)),
+                )
 
         result = {}
         for fund, (table, fund_return, _) in contributions.items():
             sector = sectors.reindex(table.index).fillna("").astype(str).str.upper()
-            excluded = table.index.str.upper().isin(wanted) | sector.isin(wanted)
+            # Without names, each fund leaves out its own largest holding.
+            names_out = (
+                wanted
+                if wanted is not None
+                else {str(table["Start Weight"].idxmax()).upper()}
+            )
+            excluded = table.index.str.upper().isin(names_out) | sector.isin(names_out)
             rest = table.loc[~excluded]
             result[fund] = {
                 "Return": fund_return,
@@ -1465,4 +1487,6 @@ class ETF:
                     else float("nan")
                 ),
             }
-        return self._round(pd.DataFrame(result), rounding)
+        return apply_rounding(
+            pd.DataFrame(result), rounding if rounding is not None else self._rounding
+        )

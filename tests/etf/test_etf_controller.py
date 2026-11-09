@@ -6,8 +6,6 @@ import pytest
 
 from financetoolkit.etf.etf_controller import ETF
 
-# pylint: disable=missing-function-docstring
-
 
 @pytest.fixture(name="etf")
 def fixture_etf():
@@ -486,3 +484,12 @@ def test_contributions_per_sector_and_without_a_sector(index_fund):
     assert excluding.loc["Excluded Weight", "FND"] == pytest.approx(0.5)
     assert excluding.loc["Return Excluding", "FND"] == pytest.approx(-0.2)
     assert excluding.loc["Priced Holdings Return", "FND"] == pytest.approx(-0.03 / 0.9)
+
+
+def test_return_excluding_defaults_to_the_largest_holding(index_fund):
+    etf, _ = index_fund
+    excluding = etf.get_return_excluding(rounding=8)
+
+    # X is the largest holding at the start (0.5 against Y's 0.4).
+    pd.testing.assert_frame_equal(excluding, etf.get_return_excluding("X", rounding=8))
+    assert excluding.loc["Excluded Weight", "FND"] == pytest.approx(0.5)

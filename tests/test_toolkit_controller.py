@@ -13,9 +13,6 @@ risk_free_rate = pd.read_pickle("tests/datasets/risk_free_rate.pickle")
 treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
 
 
-# pylint: disable=missing-function-docstring
-
-
 def test_toolkit_balance(recorder):
     toolkit = Toolkit(
         tickers=["AAPL", "MSFT"],
@@ -724,7 +721,7 @@ def test_point_in_time_leaves_out_periods_filed_after_the_end_date():
     pd.testing.assert_frame_equal(may, regular.loc[may.index])
 
 
-def test_statistics_come_from_the_balance_sheet_getter(monkeypatch):
+def test_statistics_come_from_the_balance_sheet_getter(monkeypatch, known_fmp_plan):
     toolkit = Toolkit(
         tickers=["AAPL"],
         api_key="KEY",
@@ -764,7 +761,7 @@ def test_quarterly_lookback_covers_a_trailing_year_and_its_growth():
     assert lookback > pd.Timestamp("2022-09-30")
 
 
-def test_statistics_are_shown_from_the_start_date(monkeypatch):
+def test_statistics_are_shown_from_the_start_date(monkeypatch, known_fmp_plan):
     toolkit = Toolkit(
         tickers=["AAPL", "MSFT"],
         api_key="KEY",
@@ -902,6 +899,102 @@ def test_daily_ratios_use_periods_that_ended_before_the_start_date(monkeypatch):
     # The daily dividend yield has its full year of dividends on the start date.
     dividend_yield = toolkit.ratios.get_dividend_yield(show_daily=True)
     assert dividend_yield.loc["2022-06-01", ["AAPL", "MSFT"]].notna().all()
+
+
+def test_supplied_historical_data_is_sorted_and_indexed_by_dates():
+    reference = _custom_toolkit().performance.get_sharpe_ratio()
+
+    shuffled = historical_dataset.sample(frac=1, random_state=0)
+    timestamps = historical_dataset.copy()
+    timestamps.index = timestamps.index.to_timestamp()
+    strings = historical_dataset.copy()
+    strings.index = strings.index.astype(str)
+
+    for historical in (shuffled, timestamps, strings):
+        toolkit = _custom_toolkit(historical=historical)
+        assert isinstance(toolkit._daily_historical_data.index, pd.PeriodIndex)
+        assert toolkit._daily_historical_data.index.is_monotonic_increasing
+        pd.testing.assert_frame_equal(toolkit.performance.get_sharpe_ratio(), reference)
+
+    # The caller's frame is left as it was.
+    assert not shuffled.index.is_monotonic_increasing
+
+
+def test_supplied_historical_data_counts_a_repeated_date_once(caplog):
+    repeated = pd.concat([historical_dataset, historical_dataset.iloc[100:110]])
+
+    toolkit = _custom_toolkit(historical=repeated)
+
+    assert not toolkit._daily_historical_data.index.has_duplicates
+    assert "more than once" in caplog.text
+    pd.testing.assert_frame_equal(
+        toolkit.performance.get_sharpe_ratio(),
+        _custom_toolkit().performance.get_sharpe_ratio(),
+    )
+
+
+def test_supplied_historical_data_without_returns_gets_them_per_ticker():
+    prices = historical_dataset.drop(columns=["Return", "Cumulative Return"], level=0)
+    # MSFT starts later, so its returns start from its own first price.
+    prices.loc[:"2020-06-30", (slice(None), "MSFT")] = float("nan")
+
+    historical = _custom_toolkit(historical=prices)._daily_historical_data
+
+    assert {"Return", "Cumulative Return"} <= set(historical.columns.unique(level=0))
+    assert historical.columns.unique(level=1).tolist() == ["AAPL", "MSFT", "Benchmark"]
+    expected = historical_dataset["Adj Close"]["AAPL"].pct_change()
+    pd.testing.assert_series_equal(
+        historical["Return"]["AAPL"].iloc[1:],
+        expected.iloc[1:],
+        check_names=False,
+        check_index_type=False,
+    )
+    assert historical.loc[:"2020-06-30", ("Return", "MSFT")].isna().all()
+    assert historical[("Return", "MSFT")].notna().sum() > 0
+
+
+@pytest.mark.parametrize(
+    "historical, message",
+    [
+        (historical_dataset.xs("AAPL", level=1, axis=1), "two column levels"),
+        (historical_dataset.reset_index(drop=True), "needs dates as its index"),
+        (
+            historical_dataset.set_axis(
+                ["not a date"] * len(historical_dataset), axis=0
+            ),
+            "could not be read as dates",
+        ),
+        (
+            historical_dataset.drop(
+                columns=["Adj Close", "Return", "Cumulative Return"], level=0
+            ),
+            "needs an Adj Close column",
+        ),
+    ],
+)
+def test_unusable_historical_data_is_refused(historical, message):
+    with pytest.raises(ValueError, match=message):
+        _custom_toolkit(historical=historical)
+
+
+@pytest.mark.parametrize(
+    "balance, message",
+    [
+        (balance_dataset.loc["AAPL"], "two index levels"),
+        (
+            pd.concat([balance_dataset, balance_dataset.iloc[:2]]),
+            "line items more than once",
+        ),
+        (
+            pd.concat([balance_dataset, balance_dataset.iloc[:, :1]], axis=1),
+            "periods more than once",
+        ),
+        (balance_dataset.set_axis(["a", "b", "c", "d"], axis=1), "could not be read"),
+    ],
+)
+def test_unusable_statements_are_refused(balance, message):
+    with pytest.raises(ValueError, match=message):
+        _custom_toolkit(balance=balance)
 
 
 def test_rounding_applies_to_the_results_not_to_the_data():

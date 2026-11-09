@@ -1,7 +1,5 @@
 """Yahoo Finance Model Tests"""
 
-# pylint: disable=missing-function-docstring
-
 import time
 
 import pytest
@@ -123,7 +121,11 @@ def test_the_yahoo_period_end_dates_are_the_fiscal_period_ends(monkeypatch, quar
             return apple_balance_sheet()
 
     monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
-    monkeypatch.setattr(yfinance_model, "get_reported_currency", lambda _: "USD")
+    monkeypatch.setattr(
+        yfinance_model,
+        "get_company_information",
+        lambda _: {"financialCurrency": "USD", "lastFiscalYearEnd": ""},
+    )
 
     statement = yfinance_model.get_financial_statement(
         "AAPL", statement="balance", quarter=quarter
@@ -173,7 +175,11 @@ def test_a_yahoo_statement_without_period_end_dates_leaves_the_statistic_out(
 ):
     import pandas as pd
 
-    monkeypatch.setattr(yfinance_model, "get_reported_currency", lambda _: "USD")
+    monkeypatch.setattr(
+        yfinance_model,
+        "get_company_information",
+        lambda _: {"financialCurrency": "USD", "lastFiscalYearEnd": ""},
+    )
     periods = pd.PeriodIndex(["2023", "2022"], freq="Y")
 
     statistics = yfinance_model.get_statistics_statement(
@@ -187,7 +193,11 @@ def test_a_yahoo_statement_without_period_end_dates_leaves_the_statistic_out(
     assert statistics.index.tolist() == ["financialCurrency"]
 
     # Without a reporting currency the period end dates still make a statistics statement.
-    monkeypatch.setattr(yfinance_model, "get_reported_currency", lambda _: "")
+    monkeypatch.setattr(
+        yfinance_model,
+        "get_company_information",
+        lambda _: {"financialCurrency": "", "lastFiscalYearEnd": ""},
+    )
     statement = pd.DataFrame(
         {periods[0]: ["2023-09-30"], periods[1]: ["2022-09-24"]},
         index=["periodEndDate"],
@@ -256,3 +266,97 @@ def test_prices_come_unrepaired_without_the_repair_extra(monkeypatch):
 
     assert repairs == [True, False]
     assert not data.empty
+
+
+def test_a_52_53_week_company_is_labelled_and_dated_as_from_fmp(monkeypatch):
+    import pandas as pd
+
+    from financetoolkit import normalization_model
+    from financetoolkit.helpers import (
+        convert_period_end_dates_to_calendar_periods,
+        determine_availability_dates,
+        determine_period_end_dates,
+    )
+
+    # Yahoo Finance reports Home Depot's quarters ending 4 May, 3 August, 2 November 2025
+    # and 1 February 2026 at the end of the month before.
+    yahoo_dates = ["2026-01-31", "2025-10-31", "2025-07-31", "2025-04-30"]
+    fmp_dates = ["2026-02-01", "2025-11-02", "2025-08-03", "2025-05-04"]
+
+    class FakeTicker:
+        def __init__(self, ticker):
+            self.ticker = ticker
+
+        def get_income_stmt(self, freq):  # noqa: ARG002
+            return pd.DataFrame(
+                {pd.Timestamp(date): [1.0] for date in yahoo_dates},
+                index=["TotalRevenue"],
+            )
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(
+        yfinance_model,
+        "get_company_information",
+        lambda _: {"financialCurrency": "USD", "lastFiscalYearEnd": "2026-02-01"},
+    )
+
+    statement = yfinance_model.get_financial_statement(
+        "HD", statement="income", quarter=True
+    )
+    fmp_labels = convert_period_end_dates_to_calendar_periods(
+        pd.to_datetime(fmp_dates), quarter=True
+    )
+
+    assert list(statement.columns) == list(fmp_labels)
+    assert [str(period) for period in statement.columns] == [
+        "2025Q4",
+        "2025Q3",
+        "2025Q2",
+        "2025Q1",
+    ]
+
+    statistics = yfinance_model.get_statistics_statement(
+        "HD", periods=statement.columns, financial_statement=statement
+    )
+
+    # The quarter ending in the month the fiscal year ends closes the fiscal year.
+    assert statistics.loc["period"].tolist() == ["Q4", "Q3", "Q2", "Q1"]
+
+    normalized = normalization_model.convert_financial_statements(
+        financial_statements=pd.concat({"HD": statistics}, axis=0),
+        statement_format=normalization_model.read_normalization_file("statistics_yf"),
+        adjust_financial_statements=False,
+    )
+    period_ends = determine_period_end_dates(
+        periods=normalized.columns,
+        tickers=["HD"],
+        quarter=True,
+        statistics_statement=normalized,
+    )
+    availability = determine_availability_dates(
+        period_ends, statistics_statement=normalized, quarter=True
+    )
+
+    # The fourth quarter gets the annual reporting deadline, as with FMP's Q4.
+    assert (availability - period_ends).loc["HD"].dt.days.tolist() == [90, 90, 90, 120]
+
+
+def test_a_yearly_yahoo_statement_is_a_full_fiscal_year(monkeypatch):
+    import pandas as pd
+
+    monkeypatch.setattr(
+        yfinance_model,
+        "get_company_information",
+        lambda _: {"financialCurrency": "USD", "lastFiscalYearEnd": "2025-09-27"},
+    )
+    periods = pd.PeriodIndex(["2025", "2024"], freq="Y")
+    statement = pd.DataFrame(
+        {periods[0]: ["2025-09-30"], periods[1]: ["2024-09-30"]},
+        index=["periodEndDate"],
+    )
+
+    statistics = yfinance_model.get_statistics_statement(
+        "AAPL", periods=periods, financial_statement=statement
+    )
+
+    assert statistics.loc["period"].tolist() == ["FY", "FY"]

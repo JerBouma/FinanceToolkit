@@ -10,8 +10,6 @@ from financetoolkit.econometrics import (
     state_space_model,
 )
 
-# pylint: disable=missing-function-docstring
-
 INDEX = pd.period_range("2015-01-01", periods=1500, freq="D")
 
 

@@ -15,14 +15,13 @@ from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     apply_rounding,
+    drop_non_finite,
     to_period_index,
+    validate_period,
 )
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-locals,unsubscriptable-object,too-many-lines
-
-TREASURY_LIMIT = 90
 
 INTERVAL_STR = {
     "1min": "min",
@@ -211,7 +210,7 @@ def _adjustment_changed(cached_data: pd.DataFrame, new_data: pd.DataFrame) -> bo
 
         cached = pd.to_numeric(cached_data.loc[shared, column], errors="coerce")
         new = pd.to_numeric(new_data.loc[shared, column], errors="coerce")
-        relative_change = (new / cached - 1).replace([np.inf, -np.inf], np.nan).dropna()
+        relative_change = drop_non_finite(new / cached - 1).dropna()
 
         if not relative_change.empty and (
             abs(relative_change.median()) > ADJUSTMENT_TOLERANCE
@@ -234,7 +233,7 @@ def get_historical_data(
     divide_ohlc_by: int | float | None = None,
     rounding: int | None = None,
     sleep_timer: bool = True,
-    show_ticker_seperation: bool = True,
+    show_ticker_separation: bool = True,
     show_errors: bool = False,
     log_message: str = "Obtaining historical data",
     user_subscription: str = "Free",
@@ -274,7 +273,7 @@ def get_historical_data(
         rounding (int, optional): The number of decimal places to round the data to. Defaults to None.
         sleep_timer (bool, optional): A boolean representing whether to introduce a sleep timer to prevent
         rate limit errors. Defaults to True.
-        show_ticker_seperation (bool, optional): A boolean representing whether to show which tickers
+        show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
         acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
         show_errors (bool, optional): A boolean representing whether to show errors. Defaults to True.
         log_message (str, optional): A string representing the message to show in the log output.
@@ -713,7 +712,7 @@ def get_historical_data(
             user_subscription=user_subscription,
         )
 
-    if fmp_tickers and yf_tickers and show_ticker_seperation:
+    if fmp_tickers and yf_tickers and show_ticker_separation:
         logger.info(
             "Acquired historical data from FinancialModelingPrep for: %s",
             ", ".join(fmp_tickers),
@@ -887,11 +886,7 @@ def convert_daily_to_other_period(
         Close, Adj Close, Volume, Return, Cumulative Return and, when present, Dividends)
         as the first level and the ticker symbol(s) as the second level.
     """
-    if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     period_str = PERIOD_TRANSLATION[period]
 
@@ -932,11 +927,11 @@ def convert_daily_to_other_period(
     ).set_names(daily_historical_data.columns.names)
 
     if "Return" in period_historical_data:
-        period_historical_data["Return"] = (
+        period_historical_data["Return"] = drop_non_finite(
             period_historical_data[return_column]
             / period_historical_data[return_column].shift()
             - 1
-        ).replace([np.inf, -np.inf], np.nan)
+        )
 
     if "Cumulative Return" in period_historical_data:
         if start:
@@ -1000,11 +995,7 @@ def calculate_period_average(
         pd.DataFrame: The average per period, indexed by the periods and with the columns of
         daily_data that were averaged.
     """
-    if period not in PERIOD_TRANSLATION:
-        raise ValueError(
-            f"Period {period} is not valid. It should be either "
-            "weekly, monthly, quarterly or yearly."
-        )
+    validate_period(period)
 
     if columns is not None:
         daily_data = daily_data.loc[

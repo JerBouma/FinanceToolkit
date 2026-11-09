@@ -6,8 +6,6 @@ from scipy import stats as spstats
 
 from financetoolkit.risk import backtesting_model
 
-# pylint: disable=missing-function-docstring
-
 SIGNIFICANCE_LEVEL = 0.05
 
 

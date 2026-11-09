@@ -448,7 +448,7 @@ The three US funds and SMH largely hold the same companies, with SOXX and SMH sh
 
 ## Building a Diversified Portfolio
 
-A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, minimum CVaR, Black-Litterman, maximum diversification, minimum tracking error and growth optimal (Kelly) weights, the efficient frontier, risk contributions, stress tests and attribution. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
+A fund spreads the risk over the sector, but the sector still moves as one. The [portfolio](https://www.jeroenbouma.com/projects/financetoolkit/docs/portfolio-optimization) module builds portfolios from the tickers of any Toolkit: minimum variance, maximum Sharpe ratio, mean-variance, risk parity, Hierarchical Risk Parity, Hierarchical Equal Risk Contribution, Nested Clustered Optimization, minimum CVaR, minimum drawdown, maximum Omega and CVaR ratio, Black-Litterman, maximum diversification, minimum tracking error and growth optimal (Kelly) weights, the efficient frontier, risk contributions, stress tests and attribution. Below the semiconductor fund is combined with health care (XLV), energy (XLE), long-term Treasuries (TLT) and gold (GLD):
 
 ```python
 # Initialize the Toolkit for funds across sectors and asset classes from 2021 to 2025
@@ -699,6 +699,8 @@ The recommended solution is to tell Python to trust your company's root certific
 Alternatively, if your company's root certificate is already installed in your operating system (which is usually the case on managed Windows and macOS computers), the `truststore` package lets Python use the operating system's certificates directly. Install it with `pip install truststore` and run `import truststore; truststore.inject_into_ssl()` at the start of your script.
 
 If none of this is possible, you can accept the risk and allow requests with an API key to be sent without verification by setting `FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL=1` in the same way as above. Only do so on a network you trust: the connection is then encrypted to whoever answers it, which may not be the website you think you are talking to, and your API key is readable to them.
+
+To go the other way and never send a request without verification, not even one without an API key, set `FINANCETOOLKIT_ALLOW_UNVERIFIED_SSL=0`. A hosted MCP server (the `sse` or `streamable-http` transport) does this by default, since the data it retrieves reaches every user through its cache.
 
 > **Are you part of FinancialModelingPrep?**
 

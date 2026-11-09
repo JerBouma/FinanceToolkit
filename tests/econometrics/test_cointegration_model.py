@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.econometrics import cointegration_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_engle_granger_cointegration_independent(recorder):
     rng = np.random.default_rng(2)

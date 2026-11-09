@@ -8,8 +8,6 @@ import pytest
 from financetoolkit.cache.cache_controller import clear_active_cache
 from financetoolkit.fixedincome import fiscaldata_model
 
-# pylint: disable=missing-function-docstring
-
 
 @pytest.fixture(autouse=True)
 def isolate_from_the_active_cache():

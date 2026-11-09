@@ -8,6 +8,7 @@ from urllib.parse import quote
 import numpy as np
 import pandas as pd
 
+from financetoolkit import currencies_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
@@ -285,6 +286,10 @@ COUNTRY_CURRENCIES = {
     "AU": "AUD",
     "NZ": "NZD",
 }
+
+# Exchanges that trade in another currency than their country's: the London International
+# Order Book (IOB) lists depositary receipts in US dollars.
+EXCHANGE_CURRENCIES = {"IOB": "USD"}
 
 
 def _to_country_code(country: str | None) -> str | None:
@@ -651,7 +656,11 @@ def _add_market_cap_in_dollars(
             exchanges["exchange"], exchanges["countryCode"], strict=False
         )
     }
-    listings["Currency"] = listings["Exchange Code"].map(exchange_currencies)
+    listings["Currency"] = (
+        listings["Exchange Code"]
+        .map(EXCHANGE_CURRENCIES)
+        .fillna(listings["Exchange Code"].map(exchange_currencies))
+    )
     # Whether a listing trades in the company's own country, which marks its home listing.
     exchange_countries = dict(
         zip(exchanges["exchange"], exchanges["countryCode"], strict=False)
@@ -1145,14 +1154,14 @@ def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.Data
     # The "symbol/available-commodities" path was retired and answers with an empty list, which then raised a KeyError on the missing columns further down.  # noqa: E501
     url = f"https://financialmodelingprep.com/stable/commodities-list?apikey={api_key}"
 
-    commody_list = get_cached_financial_data(
+    commodity_list = get_cached_financial_data(
         url=url, user_subscription=user_subscription
     )
 
-    if commody_list.empty:
-        return commody_list
+    if commodity_list.empty:
+        return commodity_list
 
-    commody_list = commody_list.rename(
+    commodity_list = commodity_list.rename(
         columns={
             "symbol": "Symbol",
             "name": "Name",
@@ -1162,9 +1171,9 @@ def get_commodity_list(api_key: str, user_subscription: str = "Free") -> pd.Data
         }
     )
 
-    commody_list = commody_list.set_index("Symbol").sort_index()
+    commodity_list = commodity_list.set_index("Symbol").sort_index()
 
-    return commody_list
+    return commodity_list
 
 
 def get_etf_list(api_key: str, user_subscription: str = "Free") -> pd.DataFrame:
@@ -2430,38 +2439,127 @@ def _format_mergers_acquisitions(mergers_acquisitions: pd.DataFrame) -> pd.DataF
     return mergers_acquisitions
 
 
+# The earnings calendar returns at most this many releases per request, keeping the latest
+# dates, so a range that reaches it is asked for again in two halves.
+EARNINGS_CALENDAR_LIMIT = 4000
+
+# The number of symbols asked for in one batch quote request.
+QUOTE_BATCH_SIZE = 1000
+
+# The exchanges that quote prices in a minor unit (London in pence, Johannesburg in cents,
+# Tel Aviv in agorot) while their market caps are in the major one. The batch quote has no
+# currency, so the unit follows from the exchange, as the company profile reports it.
+MINOR_UNIT_EXCHANGES = {"LSE": "GBp", "JNB": "ZAc", "TLV": "ILA"}
+
+# The words that set a depositary receipt's name apart from its company's, such as
+# "Tata Steel Limited Sponsored GDR".
+DEPOSITARY_WORDS = re.compile(r"\b(?:sponsored|unsponsored|adr|gdr|ads)\b")
+
+# Legal forms written out in some listings' names and abbreviated in others, such as
+# "Vodafone Group Public Limited Company" and "Vodafone Group Plc".
+LEGAL_FORMS = {
+    r"\bpublic limited company\b": "plc",
+    r"\baktiengesellschaft\b": "ag",
+    r"\bkommanditgesellschaft auf aktien\b": "kgaa",
+    r"\bcorporation\b": "corp",
+    r"\bincorporated\b": "inc",
+    r"\blimited\b": "ltd",
+    r"\bcompany\b": "co",
+}
+
+
 def get_earnings_calendar(
     api_key: str,
     start_date: str | None = None,
     end_date: str | None = None,
+    min_market_cap: float | None = None,
+    country: str | None = None,
+    exchange: str | None = None,
+    primary_only: bool = False,
+    sort_by: str = "date",
     user_subscription: str = "Free",
 ) -> pd.DataFrame:
     """
     Get the earnings releases of all companies in a date range, with the reported and
-    estimated earnings per share and revenue.
+    estimated earnings per share and revenue, the company name, the exchange of each
+    listing and the company's market capitalisation in US dollars.
+
+    The calendar holds every listing of a company (Cisco in New York, Frankfurt and Hong
+    Kong). A company's primary listing is its most traded one (price times volume in US
+    dollars, with prices in pence, South African cents or agorot taken in pounds, rand or
+    shekels), and every listing of a company is given the market cap of that listing:
+    the market cap of a depositary receipt or a secondary listing is often far off. The
+    listings of one company are those with the same name, so share classes with names of
+    their own (such as "Alphabet Inc." and "Alphabet Inc. Class C") count as separate
+    companies, each with its own primary listing.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with.
-        end_date (str, optional): The end date to filter data with.
+        start_date (str, optional): The start date to filter data with. Defaults to today, or
+            to seven days before the end date when only that is given.
+        end_date (str, optional): The end date to filter data with. Defaults to seven days
+            after the start date.
+        min_market_cap (float, optional): The minimum market cap in US dollars. Releases
+            without a market cap are left out. Defaults to None.
+        country (str, optional): The country of the company, as a two-letter code ("DE") or
+            a name ("Germany"), looked up with the company screener, which returns at most
+            10,000 listings, largest first. Defaults to None.
+        exchange (str, optional): The exchange code of the listing, such as "NASDAQ" or
+            "XETRA". Defaults to None.
+        primary_only (bool, optional): Whether to keep only the primary listing of each
+            company. Defaults to False.
+        sort_by (str, optional): "date" to sort by date and symbol, or "market_cap" to put
+            the largest companies first. Defaults to "date".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
 
     Returns:
         pd.DataFrame: DataFrame of the earnings releases, indexed by symbol.
     """
-    url = f"https://financialmodelingprep.com/stable/earnings-calendar?apikey={api_key}"
+    if sort_by not in {"date", "market_cap"}:
+        raise ValueError(f"sort_by must be 'date' or 'market_cap', not '{sort_by}'.")
 
-    if start_date:
-        url += f"&from={start_date}"
-    if end_date:
-        url += f"&to={end_date}"
+    # The endpoint answers without a range with the past weeks, so a range is always sent.
+    week = pd.Timedelta(days=7)
+    if start_date is None:
+        start_date = (
+            f"{pd.Timestamp(end_date) - week:%Y-%m-%d}"
+            if end_date
+            else f"{pd.Timestamp.today():%Y-%m-%d}"
+        )
+    if end_date is None:
+        end_date = f"{pd.Timestamp(start_date) + week:%Y-%m-%d}"
 
-    earnings_calendar = get_cached_financial_data(
-        url=url, user_subscription=user_subscription
-    )
+    # A range that returns the maximum number of releases is cut at its earliest dates, so
+    # it is asked for in two halves until each fits.
+    releases = []
+    ranges = [(pd.Timestamp(start_date), pd.Timestamp(end_date))]
+    while ranges:
+        start, end = ranges.pop()
+        response = get_cached_financial_data(
+            url=(
+                "https://financialmodelingprep.com/stable/earnings-calendar"
+                f"?from={start:%Y-%m-%d}&to={end:%Y-%m-%d}&apikey={api_key}"
+            ),
+            user_subscription=user_subscription,
+        )
+        if len(response) >= EARNINGS_CALENDAR_LIMIT and start < end:
+            middle = (start + (end - start) / 2).normalize()
+            ranges += [(start, middle), (middle + pd.Timedelta(days=1), end)]
+            continue
+        if len(response) >= EARNINGS_CALENDAR_LIMIT:
+            logger.warning(
+                "The earnings calendar holds more than %s releases on %s, so some are missing.",
+                EARNINGS_CALENDAR_LIMIT,
+                f"{start:%Y-%m-%d}",
+            )
+        releases.append(response)
 
-    if earnings_calendar.empty:
-        return earnings_calendar
+    releases = [response for response in releases if not response.empty]
+
+    if not releases:
+        return pd.DataFrame()
+
+    earnings_calendar = pd.concat(releases).drop_duplicates(["symbol", "date"])
 
     earnings_calendar = earnings_calendar.rename(
         columns={
@@ -2473,11 +2571,151 @@ def get_earnings_calendar(
             "revenueEstimated": "Estimated Revenue",
             "lastUpdated": "Last Updated",
         }
+    ).set_index("Symbol")
+    earnings_calendar["Date"] = pd.to_datetime(earnings_calendar["Date"])
+
+    symbols = list(dict.fromkeys(earnings_calendar.index))
+    quotes = pd.concat(
+        [
+            get_cached_financial_data(
+                url=(
+                    "https://financialmodelingprep.com/stable/batch-quote?symbols="
+                    f"{','.join(symbols[i : i + QUOTE_BATCH_SIZE])}&apikey={api_key}"
+                ),
+                user_subscription=user_subscription,
+            )
+            for i in range(0, len(symbols), QUOTE_BATCH_SIZE)
+        ]
     )
 
-    earnings_calendar = earnings_calendar.sort_values(["Date", "Symbol"])
+    if quotes.empty or not {"symbol", "name", "exchange", "marketCap"}.issubset(
+        quotes.columns
+    ):
+        logger.warning(
+            "The quotes of the listings could not be retrieved, so the releases have no "
+            "name, exchange or market cap."
+        )
+        listings = pd.DataFrame(
+            index=pd.Index(symbols),
+            columns=["Name", "Exchange Code", "Market Cap", "Volume", "Price"],
+        )
+    else:
+        quotes = quotes.drop_duplicates("symbol").set_index("symbol")
+        listings = pd.DataFrame(
+            {
+                "Name": quotes["name"],
+                "Exchange Code": quotes["exchange"],
+                "Market Cap": quotes["marketCap"],
+                "Volume": quotes.get("volume"),
+                "Price": quotes.get("price"),
+            }
+        ).reindex(symbols)
 
-    return earnings_calendar.set_index("Symbol")
+    listings = _add_market_cap_in_dollars(listings, api_key, user_subscription)
+    if "Market Cap (USD)" not in listings.columns:
+        listings["Market Cap (USD)"] = np.nan
+    rates = listings["Market Cap (USD)"] / listings["Market Cap"]
+
+    # The listings of one company share its name, apart from accents, punctuation and the
+    # depositary receipt words; the most traded of them is its primary listing.
+    company = (
+        listings["Name"]
+        .astype("string")
+        .str.normalize("NFKD")
+        .str.encode("ascii", "ignore")
+        .str.decode("ascii")
+        .str.casefold()
+        .str.replace(DEPOSITARY_WORDS, "", regex=True)
+        .replace(LEGAL_FORMS, regex=True)
+        .str.replace(r"[^a-z0-9]", "", regex=True)
+        .fillna(pd.Series(listings.index, index=listings.index))
+    )
+    # The price of a listing quoted in a minor unit is converted to the major unit its
+    # market cap, and so its exchange rate, is in: a price in pence is 100 times too large.
+    minor_units = (
+        listings["Exchange Code"]
+        .map(
+            {
+                exchange: currencies_model.MINOR_CURRENCY_UNITS[currency][1]
+                for exchange, currency in MINOR_UNIT_EXCHANGES.items()
+            }
+        )
+        .fillna(1)
+    )
+    traded_value = (
+        listings["Price"] / minor_units * listings["Volume"] * rates
+    ).astype(float)
+    primary_listings = (
+        traded_value.fillna(-1).groupby(company).idxmax()
+        if not company.empty
+        else pd.Series(dtype=object)
+    )
+    listings["Primary"] = listings.index.isin(primary_listings.to_numpy())
+    listings["Market Cap (USD)"] = company.map(
+        listings["Market Cap (USD)"]
+        .reindex(primary_listings.to_numpy())
+        .set_axis(primary_listings.index)
+    )
+
+    earnings_calendar = earnings_calendar.join(
+        listings[["Name", "Exchange Code", "Market Cap (USD)", "Primary"]]
+    )
+
+    if min_market_cap is not None:
+        earnings_calendar = earnings_calendar[
+            earnings_calendar["Market Cap (USD)"] >= min_market_cap
+        ]
+    if country is not None:
+        # The screener knows each listing's company country, also for a listing abroad (a
+        # German company's depositary receipt in New York is German).
+        companies = get_stock_screener(
+            api_key=api_key,
+            market_cap_higher=(
+                int(min_market_cap * MARKET_CAP_BOUND_MARGIN)
+                if min_market_cap is not None
+                else None
+            ),
+            country=country,
+            limit=MAXIMUM_SCREENER_LIMIT,
+            user_subscription=user_subscription,
+        )
+        earnings_calendar = earnings_calendar[
+            earnings_calendar.index.isin(companies.index)
+        ]
+    if exchange is not None:
+        earnings_calendar = earnings_calendar[
+            earnings_calendar["Exchange Code"].astype(str).str.upper()
+            == exchange.upper()
+        ]
+    if primary_only:
+        earnings_calendar = earnings_calendar[earnings_calendar["Primary"]]
+
+    earnings_calendar = earnings_calendar.reset_index()
+    earnings_calendar = (
+        earnings_calendar.sort_values(
+            ["Market Cap (USD)", "Date", "Symbol"],
+            ascending=[False, True, True],
+            na_position="last",
+        )
+        if sort_by == "market_cap"
+        else earnings_calendar.sort_values(["Date", "Symbol"])
+    )
+
+    columns = [
+        "Symbol",
+        "Date",
+        "Name",
+        "Exchange Code",
+        "Market Cap (USD)",
+        "EPS",
+        "Estimated EPS",
+        "Revenue",
+        "Estimated Revenue",
+        "Last Updated",
+    ]
+    return earnings_calendar[
+        [column for column in columns if column in earnings_calendar.columns]
+    ].set_index("Symbol")
 
 
 def get_sec_filings_8k(

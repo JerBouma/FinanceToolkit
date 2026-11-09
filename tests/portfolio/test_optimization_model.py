@@ -1,5 +1,7 @@
 """Portfolio Optimization Model Tests"""
 
+import itertools
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -110,13 +112,13 @@ def test_minimum_cvar_lowers_the_tail_loss():
 
 def test_black_litterman_without_views_returns_the_implied_returns():
     market = pd.Series([0.4, 0.3, 0.2, 0.1], index=ASSETS)
-    result = optimization_model.get_black_litterman_returns(COVARIANCE, market)
+    result, _ = optimization_model.get_black_litterman_returns(COVARIANCE, market)
 
     assert np.allclose(result["Implied Return"], 2.5 * COVARIANCE @ market)
     assert np.allclose(result["Implied Return"], result["Black-Litterman Return"])
 
     # A confident view pulls the return almost all the way to it.
-    confident = optimization_model.get_black_litterman_returns(
+    confident, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE, market, views={"D": 0.2}, view_confidences={"D": 0.999}
     )
     assert confident.loc["D", "Black-Litterman Return"] == pytest.approx(0.2, abs=1e-3)
@@ -290,8 +292,8 @@ def test_hierarchical_risk_parity_clusters_on_the_distance_of_distances():
 
 def test_black_litterman_returns_are_total_returns():
     market = pd.Series([0.4, 0.3, 0.2, 0.1], index=ASSETS)
-    excess = optimization_model.get_black_litterman_returns(COVARIANCE, market)
-    total = optimization_model.get_black_litterman_returns(
+    excess, _ = optimization_model.get_black_litterman_returns(COVARIANCE, market)
+    total, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE, market, risk_free_rate=0.03
     )
     assert np.allclose(total["Implied Return"], 2.5 * COVARIANCE @ market + 0.03)
@@ -302,10 +304,10 @@ def test_black_litterman_returns_are_total_returns():
     # A relative view compares two total returns, so the risk free rate shifts every
     # posterior return by the same amount and the weights stay the same.
     relative = {"A-B": 0.02, "C-D": -0.01}
-    without = optimization_model.get_black_litterman_returns(
+    without, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE, market, views=relative
     )
-    with_rate = optimization_model.get_black_litterman_returns(
+    with_rate, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE, market, views=relative, risk_free_rate=0.03
     )
     assert np.allclose(
@@ -332,7 +334,7 @@ def test_black_litterman_returns_are_total_returns():
     )
 
     # An absolute view is a total return: a confident view of 20% lands on 20%.
-    confident = optimization_model.get_black_litterman_returns(
+    confident, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE,
         market,
         views={"D": 0.2},
@@ -364,8 +366,8 @@ def test_black_litterman_reads_hyphenated_tickers_and_singular_covariances():
 
     relative = optimization_model.get_black_litterman_returns(
         covariance, weights, views={"BRK-B-C": 0.02}
-    )["Black-Litterman Return"]
-    implied = optimization_model.get_black_litterman_returns(covariance, weights)[
+    )[0]["Black-Litterman Return"]
+    implied = optimization_model.get_black_litterman_returns(covariance, weights)[0][
         "Implied Return"
     ]
 
@@ -375,7 +377,7 @@ def test_black_litterman_reads_hyphenated_tickers_and_singular_covariances():
     duplicate = pd.DataFrame(0.04, index=["X", "Y"], columns=["X", "Y"])
     posterior = optimization_model.get_black_litterman_returns(
         duplicate, pd.Series({"X": 0.5, "Y": 0.5}), views={"X": 0.1}
-    )["Black-Litterman Return"]
+    )[0]["Black-Litterman Return"]
 
     assert np.isfinite(posterior).all()
     with pytest.raises(ValueError, match="view confidences"):
@@ -662,3 +664,1529 @@ def test_fractional_kelly_scales_the_weights():
         optimization_model.get_growth_optimal_weights(
             returns, returns.mean(), returns.cov(), fraction=0
         )
+
+
+SECTORS = pd.DataFrame(
+    {"Sector": {"A": "Tech", "B": "Tech", "C": "Energy", "D": "Health", "E": "Health"}}
+)
+
+
+def _long_short_returns() -> pd.DataFrame:
+    """
+    The reference returns with a sixth asset F, a noisy 1.5 times A, which the minimum
+    variance and minimum CVaR portfolios short heavily (to -0.62 and -0.60) to hedge A
+    when nothing limits the gross exposure.
+    """
+    returns, _ = _reference_returns()
+    returns["F"] = 1.5 * returns["A"] + np.random.default_rng(7).normal(0, 0.004, 500)
+    return returns
+
+
+def test_per_asset_and_sector_bounds_match_pyportfolioopt_and_skfolio():
+    returns, _ = _reference_returns()
+    annual_returns, annual_covariance = returns.mean() * 252, returns.cov() * 252
+
+    minimum_variance = optimization_model.get_minimum_variance_weights(
+        returns.cov(),
+        minimum_weight={"E": 0.25},
+        maximum_weight={"A": 0.1},
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.25), "Health": (0.3, 0.5)}},
+    )
+    maximum_sharpe = optimization_model.get_maximum_sharpe_weights(
+        annual_returns,
+        annual_covariance,
+        maximum_weight=0.35,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.3)}},
+    )
+    target = optimization_model.get_mean_variance_weights(
+        annual_returns,
+        annual_covariance,
+        target_return=0.13,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Energy": (0, 0.2)}},
+    )
+
+    # PyPortfolioOpt 1.6.0: EfficientFrontier(weight_bounds=...) with
+    # add_sector_constraints and min_volatility / max_sharpe / efficient_return(0.13);
+    # skfolio 1.12.7's MeanRisk with groups and linear constraints agrees to 1e-5.
+    np.testing.assert_allclose(
+        minimum_variance,
+        [0.1, 0.15, 0.25, 0.0448636906, 0.4551363094],
+        atol=1e-8,
+    )
+    np.testing.assert_allclose(
+        maximum_sharpe,
+        [0.1674405078, 0.1325594922, 0.2564393052, 0.0935606948, 0.35],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        target, [0.0076735036, 0.1560877896, 0.2, 0.0104458498, 0.625792857], atol=1e-6
+    )
+
+
+def test_sector_bounds_match_skfolio_for_diversification_cvar_and_tracking_error():
+    returns, benchmark = _reference_returns()
+    with_benchmark = returns.assign(BM=benchmark)
+
+    diversification = optimization_model.get_maximum_diversification_weights(
+        returns.cov(),
+        maximum_weight=0.3,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.3)}},
+    )
+    cvar = optimization_model.get_minimum_cvar_weights(
+        returns,
+        minimum_weight=-0.2,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.5)}},
+        gross_exposure=1.4,
+    )
+    tracking = optimization_model.get_minimum_tracking_error_weights(
+        with_benchmark.mean() * 252,
+        with_benchmark.cov() * 252,
+        "BM",
+        minimum_weight={"E": 0.25},
+        maximum_weight=0.3,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Tech": (0, 0.3)}},
+    )
+
+    # skfolio 1.12.7's MaximumDiversification and MeanRisk(risk_measure=CVAR) with
+    # groups and linear constraints; its interior point solver stops a little earlier for
+    # the diversification ratio (1.4914861269 against 1.4914861812 here). The tracking
+    # error is the same problem solved with cvxpy.
+    np.testing.assert_allclose(
+        diversification,
+        [0.1749702229, 0.1250296936, 0.2048636223, 0.1951365259, 0.3],
+        atol=1e-4,
+    )
+    assert optimization_model.get_diversification_ratio(
+        diversification, returns.cov()
+    ) == pytest.approx(1.4914861812, abs=1e-9)
+    np.testing.assert_allclose(
+        cvar,
+        [0.1827515508, 0.1679373687, 0.1443273254, 0.0412642027, 0.4637195524],
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        tracking,
+        [0.1497636622, 0.1502363378, 0.2233589641, 0.2266410359, 0.25],
+        atol=1e-7,
+    )
+
+
+def test_gross_exposure_limits_long_short_portfolios_as_skfolio_and_cvxpy_do():
+    returns = _long_short_returns()
+    annual_returns, annual_covariance = returns.mean() * 252, returns.cov() * 252
+
+    unlimited = optimization_model.get_minimum_variance_weights(
+        annual_covariance, minimum_weight=-1
+    )
+    minimum_variance = optimization_model.get_minimum_variance_weights(
+        annual_covariance, minimum_weight=-1, gross_exposure=1.3
+    )
+    cvar = optimization_model.get_minimum_cvar_weights(
+        returns, minimum_weight=-1, gross_exposure=1.3
+    )
+    sharpe = optimization_model.get_maximum_sharpe_weights(
+        annual_returns, annual_covariance, minimum_weight=-0.5, gross_exposure=1.3
+    )
+    neutral = optimization_model.get_mean_variance_weights(
+        annual_returns,
+        annual_covariance,
+        minimum_weight=-1,
+        net_exposure=0,
+        gross_exposure=1,
+    )
+
+    # skfolio 1.12.7's MeanRisk with max_short=0.15 (a gross exposure of 1.3 at a net
+    # exposure of 1) for the variance and CVaR; cvxpy with norm1(w) <= 1.3 (and the
+    # Charnes-Cooper form of the Sharpe ratio) for the others.
+    assert unlimited.abs().sum() == pytest.approx(2.2343162, abs=1e-6)
+    np.testing.assert_allclose(
+        minimum_variance,
+        [0.439570321, 0.1226283763, 0.0838146256, 0.078221562, 0.4257651151, -0.15],
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        cvar,
+        [0.3975681407, 0.1223904634, 0.1081521135, 0.0645047478, 0.4573845342, -0.15],
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        sharpe,
+        [0.3619640418, 0.118044775, 0.1571807769, 0.0410120287, 0.4717983776, -0.15],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        neutral, [0.411418575, 0, 0.088581425, 0, 0, -0.5], atol=1e-7
+    )
+    for weights, net in ((minimum_variance, 1), (cvar, 1), (sharpe, 1), (neutral, 0)):
+        assert weights.sum() == pytest.approx(net, abs=1e-8)
+        assert weights.abs().sum() <= (1 if net == 0 else 1.3) + 1e-8
+
+
+def test_the_efficient_frontier_keeps_the_constraints_at_every_point():
+    returns = _long_short_returns()
+    frontier = optimization_model.get_efficient_frontier(
+        returns.mean() * 252,
+        returns.cov() * 252,
+        points=5,
+        minimum_weight=-0.3,
+        gross_exposure=1.4,
+    )
+    sectors = optimization_model.get_efficient_frontier(
+        returns.mean() * 252,
+        returns.cov() * 252,
+        points=5,
+        maximum_weight=0.4,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Health": (0.3, 0.5)}},
+    )
+    weights = frontier[list("ABCDEF")]
+
+    assert np.allclose(weights.sum(axis=1), 1)
+    assert (weights.abs().sum(axis=1) <= 1.4 + 1e-8).all()
+    assert weights.abs().sum(axis=1).iloc[-1] == pytest.approx(1.4)
+    assert frontier["Expected Return"].is_monotonic_increasing
+    health = sectors[["D", "E"]].sum(axis=1)
+    assert health.between(0.3 - 1e-8, 0.5 + 1e-8).all()
+
+
+def test_risk_parity_bounds_match_skfolio_risk_budgeting():
+    returns, _ = _reference_returns()
+    covariance = returns.cov()
+    capped = optimization_model.get_risk_parity_weights(
+        covariance,
+        maximum_weight=0.22,
+        groups=SECTORS,
+        group_bounds={"Sector": {"Health": (0, 0.4)}},
+    )
+    floored = optimization_model.get_risk_parity_weights(
+        covariance, minimum_weight={"D": 0.25}
+    )
+    loose = optimization_model.get_risk_parity_weights(covariance, maximum_weight=0.9)
+
+    # skfolio 1.12.7's RiskBudgeting(risk_measure=VARIANCE) with the same bounds and
+    # groups. Its interior point solver stops earlier: with the floor on D, its weights
+    # give -b'ln(w) + ln(w'Σw) / 2, the objective at the optimal scale, of -2.9605365172
+    # against -2.9605365614 here.
+    np.testing.assert_allclose(
+        capped,
+        [0.2199997309, 0.1964004269, 0.1836015084, 0.179998356, 0.2199999778],
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        floored,
+        [0.1862257787, 0.1622669699, 0.1517504428, 0.2500000607, 0.2497567478],
+        atol=5e-5,
+    )
+    objective = -0.2 * np.log(floored).sum() + 0.5 * np.log(
+        floored @ covariance @ floored
+    )
+    assert objective == pytest.approx(-2.9605365614, abs=1e-9)
+    # Bounds that don't bind leave the equal risk contributions.
+    np.testing.assert_allclose(
+        loose, optimization_model.get_risk_parity_weights(covariance), atol=1e-6
+    )
+    with pytest.raises(ValueError, match="long positions only"):
+        optimization_model.get_risk_parity_weights(covariance, minimum_weight=-0.1)
+
+
+def test_hierarchical_risk_parity_bounds_move_the_splits_as_skfolio_does():
+    returns, _ = _reference_returns()
+    covariance = returns.cov()
+    bounded = optimization_model.get_hierarchical_risk_parity_weights(
+        covariance, minimum_weight=0.15, maximum_weight=0.3
+    )
+    unbounded = optimization_model.get_hierarchical_risk_parity_weights(covariance)
+    capped = optimization_model.get_hierarchical_risk_parity_weights(
+        covariance, maximum_weight={"E": 0.2}
+    )
+
+    # skfolio 1.12.7's HierarchicalRiskParity(min_weights=0.15, max_weights=0.3) with
+    # single linkage. It clusters on the correlation distance itself, which orders B, C
+    # and D differently, so with E capped only A (which takes E's excess in both) and E
+    # are compared.
+    np.testing.assert_allclose(bounded, [0.25, 0.15, 0.15, 0.15, 0.3], atol=1e-10)
+    assert capped["E"] == pytest.approx(0.2)
+    assert capped["A"] == pytest.approx(0.4207855551, abs=1e-9)
+    np.testing.assert_allclose(capped[["B", "C", "D"]], unbounded[["B", "C", "D"]])
+    with pytest.raises(ValueError, match="long positions only"):
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, minimum_weight=-0.1
+        )
+
+
+@pytest.mark.parametrize(
+    ("constraints", "message"),
+    [
+        ({"minimum_weight": 0.3}, "cannot sum to one"),
+        (
+            {"minimum_weight": {"A": 0.5}, "maximum_weight": {"A": 0.4}},
+            "above the maximum",
+        ),
+        ({"minimum_weight": {"Z": 0.1}}, "not in the portfolio: Z"),
+        (
+            {
+                "maximum_weight": 0.3,
+                "groups": SECTORS,
+                "group_bounds": {"Sector": {"Tech": (0.7, 1)}},
+            },
+            "No weights meet all the constraints together",
+        ),
+        (
+            {"groups": SECTORS, "group_bounds": {"Sector": {"Retail": (0, 1)}}},
+            "No asset has the Sector 'Retail'; the assets have Energy, Health, Tech",
+        ),
+        (
+            {"groups": SECTORS, "group_bounds": {"Country": {"US": (0, 1)}}},
+            "no Country",
+        ),
+        (
+            {"groups": SECTORS, "group_bounds": {"Sector": {"Tech": (0.5, 0.4)}}},
+            "above its maximum",
+        ),
+        (
+            {"groups": SECTORS, "group_bounds": {"Sector": {"Tech": 0.4}}},
+            "pair",
+        ),
+        ({"minimum_weight": -1, "gross_exposure": 0.5}, "cannot hold a net exposure"),
+    ],
+)
+def test_constraints_no_portfolio_can_meet_are_refused_clearly(constraints, message):
+    returns, _ = _reference_returns()
+    with pytest.raises(ValueError, match=message):
+        optimization_model.get_minimum_variance_weights(returns.cov(), **constraints)
+
+
+def test_a_gross_exposure_adds_absolute_weights_only_with_short_positions():
+    assets = pd.Index(list("ABC"))
+    long_only = optimization_model.get_weight_constraints(assets, gross_exposure=1.5)
+    long_short = optimization_model.get_weight_constraints(
+        assets, minimum_weight=-0.5, gross_exposure=1.5
+    )
+
+    assert len(long_only.bounds) == 3  # noqa: PLR2004
+    assert len(long_short.bounds) == 6  # noqa: PLR2004
+    # t_i >= |w_i| for each asset and their sum at most the gross exposure.
+    assert long_short.inequality.shape == (7, 6)
+    assert long_short.upper[-1] == 1.5  # noqa: PLR2004
+
+
+def test_expected_returns_match_pyportfolioopt_and_riskfolio():
+    returns, benchmark = _reference_returns()
+
+    def estimate(method, **kwargs):
+        return optimization_model.get_expected_returns(
+            returns, 252, method, **kwargs
+        ).to_numpy()
+
+    assert np.allclose(estimate("mean"), returns.mean() * 252)
+    # PyPortfolioOpt ema_historical_return(span=60, compounding=False).
+    assert np.allclose(
+        estimate("exponential", span=60),
+        [0.4248258365, 0.3784078348, 0.9053789584, 0.4968557113, 0.672913352],
+    )
+    # PyPortfolioOpt capm_return(risk_free_rate=0.02, compounding=False).
+    assert np.allclose(
+        estimate("capm", benchmark_returns=benchmark, risk_free_rate=0.02),
+        [0.0863760324, 0.1009805469, 0.1085805934, 0.1087109621, 0.060395485],
+    )
+    # Jorion (1986) with Σ = S (T - 1) / (T - N - 2), written out. Riskfolio-Lib's
+    # mean_vector(method="BS", target="b2") uses S itself and gives
+    # [0.1208729336, 0.1210211013, 0.121169269, 0.1209470175, 0.1210951851].
+    periods, assets = returns.shape
+    average = returns.mean().to_numpy()
+    inverse = np.linalg.inv(
+        returns.cov().to_numpy() * (periods - 1) / (periods - assets - 2)
+    )
+    ones = np.ones(assets)
+    target = ones @ inverse @ average / (ones @ inverse @ ones)
+    deviation = average - target
+    phi = (assets + 2) / (assets + 2 + periods * deviation @ inverse @ deviation)
+    assert np.allclose(
+        estimate("james_stein"), ((1 - phi) * average + phi * target) * 252
+    )
+    with pytest.raises(ValueError, match="more periods"):
+        optimization_model.get_expected_returns(returns.iloc[:7], 252, "james_stein")
+
+
+def test_james_stein_leaves_equal_averages_and_shrinks_dispersed_ones():
+    returns, _ = _reference_returns()
+    equal = returns - returns.mean() + 0.0004
+    assert np.allclose(
+        optimization_model.get_expected_returns(equal, 252, "james_stein"), 0.0004 * 252
+    )
+
+    shrunk = optimization_model.get_expected_returns(returns, 252, "james_stein")
+    assert shrunk.std() < (returns.mean() * 252).std()
+
+
+def test_capm_returns_need_a_benchmark_and_unknown_estimators_are_refused():
+    returns, _ = _reference_returns()
+    with pytest.raises(ValueError, match="benchmark"):
+        optimization_model.get_expected_returns(returns, 252, "capm")
+    with pytest.raises(ValueError, match="must be one of"):
+        optimization_model.get_expected_returns(returns, 252, "median")
+
+
+CURRENT = pd.Series({"A": 0.4, "B": 0.3, "C": 0.2, "D": 0.1})
+
+
+def test_a_maximum_turnover_limits_the_trades_from_the_current_weights():
+    returns, _ = _reference_returns()
+    covariance = returns.cov() * 252
+    free = optimization_model.get_minimum_variance_weights(covariance)
+    capped = optimization_model.get_minimum_variance_weights(
+        covariance, current_weights=CURRENT, maximum_turnover=0.2
+    )
+    current = CURRENT.reindex(covariance.index).fillna(0)
+
+    assert np.abs(free - current).sum() > 0.2  # noqa: PLR2004
+    assert np.abs(capped - current).sum() == pytest.approx(0.2, abs=1e-7)
+    assert capped @ covariance @ capped < current @ covariance @ current
+    # No turnover keeps the current weights, a wide limit gives the free optimum.
+    assert np.allclose(
+        optimization_model.get_minimum_variance_weights(
+            covariance, current_weights=CURRENT, maximum_turnover=0
+        ),
+        current,
+        atol=1e-7,
+    )
+    assert np.allclose(
+        optimization_model.get_minimum_variance_weights(
+            covariance, current_weights=CURRENT, maximum_turnover=2
+        ),
+        free,
+        atol=1e-5,
+    )
+
+
+def test_a_turnover_limit_works_next_to_a_gross_exposure_limit():
+    returns, _ = _reference_returns()
+    weights = optimization_model.get_minimum_cvar_weights(
+        returns,
+        minimum_weight=-0.5,
+        gross_exposure=1.4,
+        current_weights=CURRENT,
+        maximum_turnover=0.5,
+    )
+    current = CURRENT.reindex(returns.columns).fillna(0)
+
+    assert weights.sum() == pytest.approx(1)
+    assert np.abs(weights).sum() <= 1.4 + 1e-7  # noqa: PLR2004
+    assert np.abs(weights - current).sum() <= 0.5 + 1e-7  # noqa: PLR2004
+
+
+def test_transaction_costs_match_pyportfolioopt_and_skfolio():
+    returns, _ = _reference_returns()
+    expected_returns, covariance = (
+        optimization_model.get_expected_returns_and_covariance(returns, 252)
+    )
+    # PyPortfolioOpt max_quadratic_utility(risk_aversion=2.5) with transaction_cost(k=0.01).
+    assert np.allclose(
+        optimization_model.get_mean_variance_weights(
+            expected_returns,
+            covariance,
+            current_weights=CURRENT,
+            transaction_cost=0.01,
+        ),
+        [0.104088, 0.194714, 0.2, 0.049088, 0.45211],
+        atol=1e-4,
+    )
+    # skfolio MeanRisk(MAXIMIZE_RATIO, transaction_costs=0.01 / 252, risk_free_rate=0.02 / 252)
+    # on the daily returns, the same problem per day.
+    assert np.allclose(
+        optimization_model.get_maximum_sharpe_weights(
+            expected_returns,
+            covariance,
+            0.02,
+            current_weights=CURRENT,
+            transaction_cost=0.01,
+        ),
+        [0.148652, 0.156373, 0.2, 0.047757, 0.447217],
+        atol=1e-4,
+    )
+
+
+def test_a_high_transaction_cost_keeps_the_current_weights():
+    expected_returns, covariance = EXPECTED_RETURNS, COVARIANCE
+    weights = optimization_model.get_mean_variance_weights(
+        expected_returns, covariance, current_weights=CURRENT, transaction_cost=10
+    )
+    assert np.allclose(weights, CURRENT.reindex(ASSETS), atol=1e-7)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        ({"maximum_turnover": 0.2}, "needs the current weights"),
+        ({"transaction_cost": 0.01}, "needs the current weights"),
+        (
+            {"current_weights": CURRENT, "transaction_cost": -0.01},
+            "cannot be negative",
+        ),
+        ({"current_weights": CURRENT, "maximum_turnover": -1}, "cannot be negative"),
+        ({"current_weights": pd.Series({"Z": 1.0})}, "not in the portfolio"),
+    ],
+)
+def test_turnover_and_cost_arguments_are_checked(arguments, message):
+    with pytest.raises(ValueError, match=message):
+        optimization_model.get_maximum_sharpe_weights(
+            EXPECTED_RETURNS, COVARIANCE, **arguments
+        )
+
+
+def test_a_transaction_cost_cannot_be_combined_with_a_target_return():
+    with pytest.raises(ValueError, match="target return"):
+        optimization_model.get_mean_variance_weights(
+            EXPECTED_RETURNS,
+            COVARIANCE,
+            target_return=0.08,
+            current_weights=CURRENT,
+            transaction_cost=0.01,
+        )
+
+
+def test_expected_shortfall_contributions_match_riskfolio_and_add_up():
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+    contributions = optimization_model.get_expected_shortfall_contributions(
+        weights, returns, 0.95
+    )
+    portfolio = returns @ weights
+    shortfall = -portfolio[portfolio <= portfolio.quantile(0.05)].mean()
+
+    # Riskfolio-Lib Risk_Contribution(rm="CVaR", alpha=0.05); 25 tail periods, so its
+    # Rockafellar-Uryasev CVaR equals the average of the tail.
+    assert np.allclose(
+        contributions["Risk Contribution"],
+        [0.0069948866, 0.0060393695, 0.0041596864, 0.0036566954, 0.0008148678],
+    )
+    assert contributions["Risk Contribution"].sum() == pytest.approx(shortfall)
+    assert contributions["Percentage Contribution"].sum() == pytest.approx(1)
+
+
+def test_an_asset_that_gains_in_the_portfolios_worst_periods_contributes_negatively():
+    returns, _ = _reference_returns()
+    returns["H"] = -returns["A"]
+    weights = pd.Series([0.5, 0.1, 0.1, 0.1, 0.1, 0.1], index=returns.columns)
+    contributions = optimization_model.get_expected_shortfall_contributions(
+        weights, returns
+    )
+    assert contributions.loc["H", "Risk Contribution"] < 0
+
+
+def test_diversification_metrics():
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+    metrics = optimization_model.get_diversification_metrics(weights, returns.cov())
+    # skfolio Portfolio.diversification and effective_number_assets.
+    assert metrics["Diversification Ratio"] == pytest.approx(1.4213985072385122)
+    assert metrics["Effective Number of Assets"] == pytest.approx(4.444444444444445)
+    assert metrics["Herfindahl-Hirschman Index"] == pytest.approx(0.225)
+
+    # Uncorrelated assets with the same variance: N bets and a ratio of √N.
+    independent = pd.DataFrame(np.eye(4) * 0.04, index=ASSETS, columns=ASSETS)
+    equal = pd.Series(0.25, index=ASSETS)
+    metrics = optimization_model.get_diversification_metrics(equal, independent)
+    assert metrics["Effective Number of Bets"] == pytest.approx(4)
+    assert metrics["Diversification Ratio"] == pytest.approx(2)
+
+    # Perfectly correlated assets are one bet, however many there are.
+    common = pd.DataFrame(np.full((4, 4), 0.04), index=ASSETS, columns=ASSETS)
+    metrics = optimization_model.get_diversification_metrics(equal, common)
+    assert metrics["Effective Number of Bets"] == pytest.approx(1)
+    assert metrics["Effective Number of Assets"] == pytest.approx(4)
+
+
+def test_capm_expected_returns_use_the_periods_the_benchmark_has():
+    returns, benchmark = _reference_returns()
+    gaps = benchmark.copy()
+    gaps.iloc[::40] = np.nan
+
+    estimate = optimization_model.get_expected_returns(
+        returns, 252, "capm", benchmark_returns=gaps, risk_free_rate=0.02
+    )
+    shared = returns.loc[gaps.dropna().index]
+    expected = optimization_model.get_expected_returns(
+        shared, 252, "capm", benchmark_returns=gaps.dropna(), risk_free_rate=0.02
+    )
+
+    pd.testing.assert_series_equal(estimate, expected)
+
+
+def test_effective_number_of_bets_stays_a_distribution_without_a_positive_covariance():
+    covariance = pd.DataFrame(
+        [[0.04, 0.05, 0.0], [0.05, 0.04, 0.0], [0.0, 0.0, 0.09]],
+        index=list("ABC"),
+        columns=list("ABC"),
+    )
+    weights = pd.Series([0.4, 0.3, 0.3], index=list("ABC"))
+
+    bets = optimization_model.get_diversification_metrics(weights, covariance)[
+        "Effective Number of Bets"
+    ]
+
+    # The eigenvalue -0.01 is clipped and the shares of the others sum to one.
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance.to_numpy())
+    shares = np.clip(eigenvalues, 0, None) * (eigenvectors.T @ weights.to_numpy()) ** 2
+    shares = shares[shares > 0] / shares.sum()
+    assert bets == pytest.approx(np.exp(-np.sum(shares * np.log(shares))))
+    assert 1 <= bets <= 3  # noqa: PLR2004
+
+
+def _block_returns() -> pd.DataFrame:
+    """
+    Ten assets in three blocks that share a factor, so that the clusterings have
+    something to find. The reference values below come from skfolio 1.12.7 and
+    Riskfolio-Lib 7.4.1 run on these same returns.
+    """
+    rng = np.random.default_rng(11)
+    factors = rng.normal(0, 0.01, size=(750, 3))
+    block = [0, 0, 0, 0, 1, 1, 1, 2, 2, 2]
+    volatility = [0.008, 0.01, 0.012, 0.009, 0.015, 0.011, 0.013, 0.006, 0.007, 0.02]
+    data = np.column_stack(
+        [
+            factors[:, factor] + rng.normal(0, noise, 750)
+            for factor, noise in zip(block, volatility, strict=True)
+        ]
+    )
+    data = data - data.mean(axis=0) + rng.uniform(0.02, 0.2, 10) / 252
+    return pd.DataFrame(data, columns=[f"X{i}" for i in range(10)])
+
+
+def test_hierarchical_clusters_match_skfolio():
+    covariance = _block_returns().cov()
+
+    # skfolio's HierarchicalClustering(linkage_method=WARD, max_clusters=k).labels_. On its
+    # own, the two-order difference of the pooled dispersion finds the three blocks;
+    # skfolio's sum of average distances picks six clusters ([0, 0, 0, 0, 1, 2, 3, 4, 4, 5]).
+    _, chosen = optimization_model.get_hierarchical_clusters(covariance)
+    _, three = optimization_model.get_hierarchical_clusters(covariance, clusters=3)
+
+    assert three.tolist() == [0, 0, 0, 0, 1, 1, 1, 2, 2, 2]
+    assert chosen.tolist() == three.tolist()
+    with pytest.raises(ValueError, match="linkage"):
+        optimization_model.get_hierarchical_clusters(covariance, "centroid")
+    with pytest.raises(ValueError, match="clusters"):
+        optimization_model.get_hierarchical_clusters(covariance, clusters=11)
+
+
+def test_hierarchical_equal_risk_contribution_matches_skfolio_and_riskfolio():
+    covariance = _block_returns().cov() * 252
+
+    # Six clusters is what skfolio chooses on its own; the pooled dispersion finds the
+    # three blocks.
+    chosen = optimization_model.get_hierarchical_equal_risk_contribution_weights(
+        covariance, clusters=6
+    )
+    three = optimization_model.get_hierarchical_equal_risk_contribution_weights(
+        covariance, clusters=3
+    )
+    capped = optimization_model.get_hierarchical_equal_risk_contribution_weights(
+        covariance, clusters=6, maximum_weight=0.15
+    )
+    pd.testing.assert_series_equal(
+        optimization_model.get_hierarchical_equal_risk_contribution_weights(covariance),
+        three,
+    )
+
+    # skfolio's HierarchicalEqualRiskContribution(risk_measure=VARIANCE); with three
+    # clusters Riskfolio-Lib's HCPortfolio(model="HERC", rm="MV", linkage="ward", k=3)
+    # gives the same weights to 1e-16.
+    np.testing.assert_allclose(
+        chosen,
+        [
+            0.2518486089,
+            0.22575452,
+            0.1909375395,
+            0.249568167,
+            0.0044208511,
+            0.0067831161,
+            0.023761549,
+            0.0200429267,
+            0.0170281206,
+            0.009854601,
+        ],
+        atol=1e-10,
+    )
+    np.testing.assert_allclose(
+        three,
+        [
+            0.1881299712,
+            0.1686377841,
+            0.1426296296,
+            0.1864264896,
+            0.0385146146,
+            0.0590947521,
+            0.0494522318,
+            0.0782115486,
+            0.0664471664,
+            0.0224558121,
+        ],
+        atol=1e-10,
+    )
+    # skfolio moves weights outside the bounds to the closest weights in relative terms.
+    np.testing.assert_allclose(
+        capped,
+        [
+            0.15,
+            0.15,
+            0.15,
+            0.15,
+            0.0088102317,
+            0.0171164659,
+            0.1499999369,
+            0.1102613985,
+            0.0821473183,
+            0.0316646433,
+        ],
+        atol=1e-6,
+    )
+
+
+def test_hierarchical_equal_risk_contribution_takes_group_bounds():
+    covariance = _block_returns().cov() * 252
+    groups = pd.DataFrame({"Sector": ["A"] * 4 + ["B"] * 6}, index=covariance.index)
+    weights = optimization_model.get_hierarchical_equal_risk_contribution_weights(
+        covariance, groups=groups, group_bounds={"Sector": {"A": (0, 0.5)}}
+    )
+
+    assert weights.sum() == pytest.approx(1)
+    assert weights.iloc[:4].sum() == pytest.approx(0.5)
+    with pytest.raises(ValueError, match="long positions"):
+        optimization_model.get_hierarchical_equal_risk_contribution_weights(
+            covariance, minimum_weight=-0.1
+        )
+
+
+def test_nested_clustered_optimization_matches_riskfolio():
+    returns = _block_returns()
+    expected_returns, covariance = returns.mean() * 252, returns.cov() * 252
+
+    # Riskfolio-Lib's HCPortfolio(model="NCO", linkage="ward", k=3) with obj="MinRisk",
+    # "Sharpe" and "ERC" (rm="MV"); skfolio's NestedClustersOptimization with MeanRisk
+    # inner and outer estimators (cv="ignore") agrees to 3e-5.
+    for objective, reference in (
+        (
+            "minimum_variance",
+            [
+                0.103786947,
+                0.0787445765,
+                0.0590616196,
+                0.1004225063,
+                0.0667527316,
+                0.1353947092,
+                0.1058806144,
+                0.2135579758,
+                0.121171711,
+                0.0152266085,
+            ],
+        ),
+        (
+            "maximum_sharpe",
+            [0, 0.3034288499, 0, 0.0569662472, 0, 0.1339948997, 0.1326428203]
+            + [0.3729671813, 0, 0],
+        ),
+        (
+            "risk_parity",
+            [
+                0.08905631,
+                0.0852055904,
+                0.08090702,
+                0.0883902433,
+                0.0968755781,
+                0.1172192353,
+                0.1100548923,
+                0.1300465961,
+                0.1230500477,
+                0.0791944868,
+            ],
+        ),
+    ):
+        weights = optimization_model.get_nested_clustered_optimization_weights(
+            expected_returns, covariance, objective, clusters=3
+        )
+        np.testing.assert_allclose(weights, reference, atol=1e-5)
+
+    with pytest.raises(ValueError, match="objective"):
+        optimization_model.get_nested_clustered_optimization_weights(
+            expected_returns, covariance, "maximum_return"
+        )
+
+
+def test_minimum_drawdown_weights_match_riskfolio_skfolio_and_pyportfolioopt():
+    returns, _ = _reference_returns()
+
+    # Riskfolio-Lib's Portfolio.optimization(obj="MinRisk", rm="CDaR" / "MDD" / "ADD");
+    # skfolio's MeanRisk with the same risk measures and PyPortfolioOpt's
+    # EfficientCDaR.min_cdar() agree to 2e-8.
+    for measure, reference in (
+        ("cdar", [0.1150271505, 0.0, 0.1997221787, 0.3666460814, 0.3186045893]),
+        (
+            "maximum",
+            [0.0892092877, 0.0163364947, 0.2007031949, 0.3143927637, 0.379358259],
+        ),
+        ("average", [0.19197741, 0.0, 0.2161228913, 0.2844472116, 0.3074524871]),
+    ):
+        weights = optimization_model.get_minimum_drawdown_weights(returns, measure)
+        np.testing.assert_allclose(weights, reference, atol=1e-6)
+
+    with pytest.raises(ValueError, match="measure"):
+        optimization_model.get_minimum_drawdown_weights(returns, "ulcer")
+
+
+def test_the_cdar_of_the_minimum_cdar_portfolio_is_its_objective():
+    returns, _ = _reference_returns()
+    weights = optimization_model.get_minimum_drawdown_weights(returns)
+    drawdowns = optimization_model.get_drawdowns(returns @ weights)
+    cdar = optimization_model.get_expected_tail_loss(drawdowns, 0.95)
+
+    # Every other portfolio, e.g. equal weights, has a higher CDaR.
+    equal = optimization_model.get_drawdowns(returns.mean(axis=1))
+    assert cdar < optimization_model.get_expected_tail_loss(equal, 0.95)
+    # 500 periods at 95%: the average of exactly the 25 largest drawdowns.
+    assert cdar == pytest.approx(drawdowns.nlargest(25).mean())
+
+
+def test_expected_tail_loss_counts_a_fraction_of_the_boundary_loss():
+    losses = np.arange(1, 11, dtype=float)
+
+    # The worst 15% of ten losses: 10 in full and half of 9.
+    assert optimization_model.get_expected_tail_loss(losses, 0.85) == pytest.approx(
+        (10 + 0.5 * 9) / 1.5
+    )
+    assert optimization_model.get_expected_tail_loss(losses, 0.8) == pytest.approx(9.5)
+
+
+def test_maximum_omega_and_cvar_ratio_match_riskfolio_and_skfolio():
+    returns, _ = _reference_returns()
+
+    # Riskfolio-Lib's Portfolio.optimization(obj="Sharpe", rm="FLPM") maximizes
+    # (Ω - 1) and obj="Sharpe", rm="CVaR" the CVaR ratio, with rf as the threshold;
+    # skfolio's MeanRisk(MAXIMIZE_RATIO, risk_measure=CVAR) agrees to 3e-8.
+    np.testing.assert_allclose(
+        optimization_model.get_maximum_omega_weights(returns),
+        [0.1456205976, 0.1248614985, 0.2238105684, 0.0084553791, 0.4972519564],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_maximum_omega_weights(returns, 1e-4),
+        [0.1182706293, 0.0962259967, 0.253212229, 0, 0.5322911102],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_maximum_cvar_ratio_weights(returns),
+        [0.1228439116, 0.1886678274, 0.2194983203, 0, 0.4689899363],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_maximum_cvar_ratio_weights(returns, 0.95, 1e-4),
+        [0.1160064356, 0.1761774468, 0.2405297615, 0, 0.4672863516],
+        atol=1e-6,
+    )
+
+
+def test_ratio_optimizers_need_a_return_above_the_threshold_and_take_constraints():
+    returns, _ = _reference_returns()
+    with pytest.raises(ValueError, match="minimum acceptable return"):
+        optimization_model.get_maximum_omega_weights(returns, 0.01)
+    with pytest.raises(ValueError, match="risk free rate"):
+        optimization_model.get_maximum_cvar_ratio_weights(returns, 0.95, 0.01)
+
+    for optimizer in (
+        optimization_model.get_maximum_omega_weights,
+        optimization_model.get_maximum_cvar_ratio_weights,
+        optimization_model.get_minimum_drawdown_weights,
+    ):
+        weights = optimizer(
+            _long_short_returns(),
+            minimum_weight=-0.3,
+            maximum_weight={"E": 0.25},
+            groups=SECTORS.reindex(list("ABCDEF")),
+            group_bounds={"Sector": {"Tech": (0, 0.4)}},
+            gross_exposure=1.3,
+        )
+        assert weights.sum() == pytest.approx(1)
+        assert weights.abs().sum() <= 1.3 + 1e-7
+        assert weights["E"] <= 0.25 + 1e-7
+        assert weights[["A", "B"]].sum() <= 0.4 + 1e-7
+        assert (weights >= -0.3 - 1e-7).all()
+
+
+def test_nested_clustered_maximum_sharpe_holds_minimum_variance_in_a_cluster_below_the_risk_free_rate():
+    returns = _block_returns()
+    covariance = returns.cov() * 252
+    expected_returns = returns.mean() * 252
+    # The third block earns less than the risk free rate.
+    expected_returns.iloc[7:] = 0.001
+
+    # The cluster has no maximum Sharpe portfolio of its own; it holds its minimum
+    # variance portfolio and the step across the clusters gives it no weight.
+    weights = optimization_model.get_nested_clustered_optimization_weights(
+        expected_returns, covariance, "maximum_sharpe", 0.01, clusters=3
+    )
+
+    assert weights.sum() == pytest.approx(1)
+    assert (weights >= 0).all()
+    assert weights.iloc[7:].sum() == pytest.approx(0, abs=1e-8)
+    for clusters in (1, 3):
+        with pytest.raises(ValueError, match="No asset has an expected return"):
+            optimization_model.get_nested_clustered_optimization_weights(
+                expected_returns * 0,
+                covariance,
+                "maximum_sharpe",
+                0.01,
+                clusters=clusters,
+            )
+
+
+def test_minimum_drawdown_refuses_the_empty_market_neutral_portfolio():
+    returns = _block_returns()
+    with pytest.raises(ValueError, match="Holding nothing"):
+        optimization_model.get_minimum_drawdown_weights(
+            returns, minimum_weight=-1.0, net_exposure=0.0, gross_exposure=1.0
+        )
+
+
+CURRENT_FIVE = pd.Series([0.4, 0.3, 0.1, 0.1, 0.1], index=list("ABCDE"))
+
+
+def test_the_drawdown_and_ratio_optimizers_limit_the_turnover():
+    returns, _ = _reference_returns()
+
+    # The same problems written out in cvxpy 1.7 (Clarabel), with the turnover
+    # Σ |w_i - w0_i| ≤ L, and for the ratios Σ |y_i - κ w0_i| ≤ L κ; they agree to 3e-7.
+    references = {
+        (optimization_model.get_minimum_drawdown_weights, 0.1): [
+            0.4,
+            0.25,
+            0.15,
+            0.1,
+            0.1,
+        ],
+        (optimization_model.get_maximum_cvar_ratio_weights, 0.1): [
+            0.35,
+            0.3,
+            0.1,
+            0.1,
+            0.15,
+        ],
+        (optimization_model.get_maximum_cvar_ratio_weights, 0.3): [
+            0.2894037749,
+            0.2605962251,
+            0.1,
+            0.1,
+            0.25,
+        ],
+        (optimization_model.get_maximum_omega_weights, 0.1): [
+            0.358543048,
+            0.291456952,
+            0.1,
+            0.1,
+            0.15,
+        ],
+        (optimization_model.get_maximum_omega_weights, 0.3): [
+            0.2926110051,
+            0.2573889949,
+            0.1,
+            0.1,
+            0.25,
+        ],
+    }
+    for (optimizer, turnover), reference in references.items():
+        weights = optimizer(
+            returns, current_weights=CURRENT_FIVE, maximum_turnover=turnover
+        )
+        np.testing.assert_allclose(weights, reference, atol=1e-6)
+        assert (weights - CURRENT_FIVE).abs().sum() <= turnover + 1e-8
+
+    maximum = optimization_model.get_minimum_drawdown_weights(
+        returns, "maximum", current_weights=CURRENT_FIVE, maximum_turnover=0.1
+    )
+    np.testing.assert_allclose(maximum, [0.4, 0.25, 0.15, 0.1, 0.1], atol=1e-6)
+
+
+def test_the_ratio_optimizers_take_expected_returns():
+    returns, _ = _reference_returns()
+    expected = pd.Series([0.0006, 0.0002, 0.0004, 0.0005, 0.0001], index=list("ABCDE"))
+
+    # Riskfolio-Lib 7.4.1 optimization(obj="Sharpe", rm="FLPM" / "CVaR") with port.mu
+    # set to these expected returns.
+    np.testing.assert_allclose(
+        optimization_model.get_maximum_omega_weights(
+            returns, expected_returns=expected
+        ),
+        [0.6338427083, 0, 0.1340901416, 0.23206715, 0],
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        optimization_model.get_maximum_cvar_ratio_weights(
+            returns, expected_returns=expected
+        ),
+        [0.5991221747, 0, 0.1482425477, 0.2526352776, 0],
+        atol=1e-6,
+    )
+    with pytest.raises(ValueError, match="every asset"):
+        optimization_model.get_maximum_omega_weights(
+            returns, expected_returns=expected.drop("E")
+        )
+
+
+def test_expected_shortfall_contributions_count_a_fraction_of_the_boundary_period():
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+
+    # Riskfolio-Lib Risk_Contribution(rm="CVaR"), with tails of 22.5 and 13.5 periods.
+    for confidence_level, reference in (
+        (0.955, [0.0071414198, 0.006284051, 0.0043148177, 0.0035652219, 0.0007657886]),
+        (0.973, [0.0079713688, 0.0068635433, 0.0046414049, 0.0035747537, 0.0009117271]),
+    ):
+        contributions = optimization_model.get_expected_shortfall_contributions(
+            weights, returns, confidence_level
+        )
+        np.testing.assert_allclose(
+            contributions["Risk Contribution"], reference, atol=1e-9
+        )
+        assert contributions["Risk Contribution"].sum() == pytest.approx(
+            optimization_model.get_expected_tail_loss(
+                -(returns @ weights), confidence_level
+            )
+        )
+
+
+def test_tail_probabilities_sum_to_one_with_a_fraction_on_the_boundary():
+    losses = np.array([3.0, 10.0, 1.0, 9.0, 5.0])
+    probabilities = optimization_model.get_tail_probabilities(losses, 0.5)
+
+    # 2.5 periods: 10 and 9 in full and half of 5.
+    np.testing.assert_allclose(probabilities, [0, 0.4, 0, 0.4, 0.2])
+    assert probabilities.sum() == pytest.approx(1)
+    # A tail shorter than a period is the largest loss.
+    assert optimization_model.get_expected_tail_loss(losses, 0.99) == pytest.approx(10)
+    with pytest.raises(ValueError, match="confidence level"):
+        optimization_model.get_tail_probabilities(losses, 1)
+
+
+def test_resampled_efficient_weights_average_the_optimizer_over_the_draws():
+    returns, _ = _reference_returns()
+    expected, covariance = returns.mean() * 252, returns.cov() * 252
+
+    # Every draw solved by Riskfolio-Lib 7.4.1 (MinRisk, MV) or cvxpy (the risk
+    # aversion utility) on the same draws, numpy's multivariate_normal(method="eigh")
+    # and integers for the bootstrap with default_rng(7), and averaged.
+    for objective, resampling, reference in (
+        (
+            "minimum_variance",
+            "parametric",
+            [0.229921588, 0.1330852067, 0.0955409025, 0.0806252357, 0.460827067],
+        ),
+        (
+            "minimum_variance",
+            "bootstrap",
+            [0.2305472472, 0.1338746262, 0.0980794088, 0.0806223961, 0.4568763219],
+        ),
+        (
+            "mean_variance",
+            "parametric",
+            [0.1483744711, 0.2223718445, 0.1965154474, 0.1280152188, 0.3047230183],
+        ),
+    ):
+        draws = optimization_model.get_resampled_efficient_weights(
+            returns, expected, covariance, 252, objective, 200, resampling, 7
+        )
+        assert len(draws) == 200  # noqa: PLR2004
+        np.testing.assert_allclose(draws.mean(), reference, atol=1e-5)
+
+    # The draws match numpy's multivariate normal draws for the same seed, from the
+    # same matrix (the sign of an eigenvector, and so the draws, can flip with the last
+    # digit).
+    generator = np.random.default_rng(3)
+    sample = generator.multivariate_normal(
+        expected / 252, covariance / 252, size=len(returns), method="eigh"
+    )
+    first = optimization_model.get_resampled_efficient_weights(
+        returns, expected, covariance, 252, "minimum_variance", 1, seed=3
+    )
+    np.testing.assert_allclose(
+        first.iloc[0],
+        optimization_model.get_minimum_variance_weights(
+            pd.DataFrame(
+                np.cov(sample, rowvar=False) * 252,
+                index=list("ABCDE"),
+                columns=list("ABCDE"),
+            )
+        ),
+        atol=1e-6,
+    )
+
+
+def test_resampled_efficient_weights_leave_out_draws_without_a_solution():
+    returns, _ = _reference_returns()
+    expected, covariance = returns.mean() * 252, returns.cov() * 252
+
+    # With a risk free rate near the expected returns, some draws have no asset above
+    # it and no maximum Sharpe ratio portfolio.
+    draws = optimization_model.get_resampled_efficient_weights(
+        returns, expected, covariance, 252, resamples=100, risk_free_rate=0.12
+    )
+    assert 0 < len(draws) < 100  # noqa: PLR2004
+    np.testing.assert_allclose(draws.sum(axis=1), 1, atol=1e-8)
+    assert (draws >= -1e-10).all().all()
+
+    capped = optimization_model.get_resampled_efficient_weights(
+        returns, expected, covariance, 252, resamples=50, maximum_weight=0.3
+    )
+    assert (capped.mean() <= 0.3 + 1e-8).all()
+
+    with pytest.raises(ValueError, match="None of the"):
+        optimization_model.get_resampled_efficient_weights(
+            returns, expected, covariance, 252, resamples=5, risk_free_rate=10
+        )
+    with pytest.raises(ValueError, match="objective"):
+        optimization_model.get_resampled_efficient_weights(
+            returns, expected, covariance, 252, "maximum_return"
+        )
+    with pytest.raises(ValueError, match="resampling"):
+        optimization_model.get_resampled_efficient_weights(
+            returns, expected, covariance, 252, resampling="jackknife"
+        )
+
+
+def test_resampled_efficient_weights_settle_as_the_draws_grow():
+    returns, _ = _reference_returns()
+    expected, covariance = returns.mean() * 252, returns.cov() * 252
+
+    # The spread of the average over seeds falls with the number of draws, about as
+    # 1 / √S.
+    def spread(resamples):
+        return np.std(
+            [
+                optimization_model.get_resampled_efficient_weights(
+                    returns, expected, covariance, 252, resamples=resamples, seed=seed
+                )
+                .mean()
+                .to_numpy()
+                for seed in range(8)
+            ],
+            axis=0,
+        ).max()
+
+    assert spread(100) < spread(10) / 2
+
+
+def test_market_neutral_ratio_portfolios_start_away_from_zero():
+    rng = np.random.default_rng(3)
+    volatility = rng.uniform(0.1, 0.4, 6)
+    samples = (
+        rng.normal(size=(500, 6))
+        @ np.linalg.cholesky(np.eye(6) * 0.5 + 0.5).T
+        * volatility
+        / np.sqrt(252)
+    )
+    assets = [f"A{number}" for number in range(6)]
+    covariance = pd.DataFrame(samples, columns=assets).cov() * 252
+    expected_returns = pd.Series(rng.uniform(-0.05, 0.2, 6), index=assets)
+    neutral = {
+        "minimum_weight": -0.5,
+        "maximum_weight": 0.5,
+        "net_exposure": 0.0,
+        "gross_exposure": 1.0,
+    }
+    sigma = covariance.to_numpy()
+
+    sharpe = optimization_model.get_maximum_sharpe_weights(
+        expected_returns, covariance, **neutral
+    )
+    diversification = optimization_model.get_maximum_diversification_weights(
+        covariance, **neutral
+    )
+
+    # An independent SLSQP over the split w = w⁺ − w⁻ with Σ (w⁺ + w⁻) ≤ 1, from several
+    # random starts, reaches the same Sharpe ratio of 1.2915.
+    assert (sharpe @ expected_returns) / np.sqrt(
+        sharpe @ sigma @ sharpe
+    ) == pytest.approx(1.2915407, abs=1e-5)
+    for weights in (sharpe, diversification):
+        assert weights.sum() == pytest.approx(0, abs=1e-8)
+        assert weights.abs().sum() <= 1 + 1e-8
+        assert weights.abs().sum() > 0.5
+
+    # The lowest risk at a net exposure of 0 is holding nothing.
+    assert (
+        optimization_model.get_minimum_variance_weights(covariance, **neutral) == 0
+    ).all()
+    frontier = optimization_model.get_efficient_frontier(
+        expected_returns, covariance, points=4, **neutral
+    )
+    assert (frontier.loc[1, assets] == 0).all()
+    assert np.isnan(frontier.loc[1, "Sharpe Ratio"])
+    assert frontier.loc[2:, "Sharpe Ratio"].notna().all()
+
+
+@pytest.mark.parametrize("net_exposure", [0.0, -0.5])
+def test_a_net_exposure_of_zero_or_below_needs_short_positions(net_exposure):
+    covariance = pd.DataFrame(np.eye(3) * 0.04, index=list("ABC"), columns=list("ABC"))
+
+    with pytest.raises(ValueError, match="needs short positions"):
+        optimization_model.get_minimum_variance_weights(
+            covariance, net_exposure=net_exposure
+        )
+
+
+@pytest.mark.parametrize("risk_measure", ["semideviation", "mad", "cdar"])
+def test_historical_risk_contributions_add_up_to_the_measure(risk_measure):
+    returns, _ = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+    contributions = optimization_model.get_historical_risk_contributions(
+        weights, returns, risk_measure
+    )
+    portfolio = returns @ weights
+    measure = {
+        "semideviation": np.sqrt((portfolio.clip(upper=0) ** 2).mean()),
+        "mad": (portfolio - portfolio.mean()).abs().mean(),
+        "cdar": optimization_model.get_expected_tail_loss(
+            optimization_model.get_drawdowns(portfolio), 0.95
+        ),
+    }[risk_measure]
+    assert contributions["Risk Contribution"].sum() == pytest.approx(measure)
+    assert contributions["Percentage Contribution"].sum() == pytest.approx(1)
+
+    # The marginal contributions are the derivatives of the measure.
+    def value(vector):
+        return optimization_model.get_historical_risk_contributions(
+            pd.Series(vector, index=returns.columns), returns, risk_measure
+        )["Risk Contribution"].sum()
+
+    step = 1e-7
+    for position, asset in enumerate(returns.columns):
+        shift = np.eye(len(weights))[position] * step
+        derivative = (value(weights + shift) - value(weights - shift)) / (2 * step)
+        assert contributions.loc[asset, "Marginal Contribution"] == pytest.approx(
+            derivative, abs=1e-7
+        )
+
+
+def test_historical_risk_contributions_refuse_an_unknown_measure():
+    returns, _ = _reference_returns()
+    with pytest.raises(ValueError, match="risk measure"):
+        optimization_model.get_historical_risk_contributions(
+            pd.Series(0.2, index=returns.columns), returns, "variance"
+        )
+
+
+def test_discrete_allocation_finds_the_closest_whole_shares():
+    weights = pd.Series([0.5, 0.3, 0.2], index=["A", "B", "C"])
+    prices = pd.Series([129.93, 239.82, 57.4], index=["A", "B", "C"])
+    integer = optimization_model.get_discrete_allocation(weights, prices, 3000)
+    greedy = optimization_model.get_discrete_allocation(
+        weights, prices, 3000, method="greedy"
+    )
+
+    def deviation(table):
+        amounts = table["Amount"]
+        return (weights * 3000 - amounts.drop("Leftover Cash")).abs().sum() + amounts[
+            "Leftover Cash"
+        ]
+
+    # Every allocation within the budget, tried one by one.
+    target = weights * 3000
+    best = min(
+        np.abs(target - np.array(shares) * prices).sum()
+        + 3000
+        - np.array(shares) @ prices
+        for shares in itertools.product(
+            *[range(int(amount // price) + 3) for amount, price in zip(target, prices)]
+        )
+        if np.array(shares) @ prices <= 3000  # noqa: PLR2004
+    )
+    assert deviation(integer) == pytest.approx(best)
+    assert deviation(greedy) >= deviation(integer) - 1e-9
+    for table in (integer, greedy):
+        assert table["Amount"].sum() == pytest.approx(3000)
+        assert table.loc["Leftover Cash", "Amount"] >= 0
+        assert (table["Shares"].dropna() % 1 == 0).all()
+
+
+def test_discrete_allocation_holds_short_weights_as_short_shares():
+    weights = pd.Series([1.3, -0.3], index=["A", "B"])
+    prices = pd.Series([129.93, 239.82], index=["A", "B"])
+    for method in ("integer", "greedy"):
+        table = optimization_model.get_discrete_allocation(
+            weights, prices, 5000, method=method
+        )
+        assert table.loc["A", "Shares"] > 0
+        assert table.loc["B", "Shares"] < 0
+        assert table.loc["Leftover Cash", "Amount"] >= 0
+        assert table["Amount"].sum() == pytest.approx(5000)
+
+
+def test_discrete_allocation_needs_a_price_for_every_asset():
+    with pytest.raises(ValueError, match="no price"):
+        optimization_model.get_discrete_allocation(
+            pd.Series([0.5, 0.5], index=["A", "B"]),
+            pd.Series([10.0, np.nan], index=["A", "B"]),
+        )
+
+
+def test_portfolio_risk_metrics_use_the_risk_and_performance_formulas():
+    returns, benchmark = _reference_returns()
+    weights = pd.Series([0.3, 0.25, 0.2, 0.15, 0.1], index=returns.columns)
+    portfolio = returns @ weights
+    metrics = optimization_model.get_portfolio_risk_metrics(
+        pd.DataFrame({"Portfolio": portfolio, "Benchmark": benchmark}), 252, 0.02
+    )["Portfolio"]
+    excess = portfolio - 0.02 / 252
+    assert metrics["Annualized Return"] == pytest.approx(
+        (1 + portfolio).prod() ** (252 / 500) - 1
+    )
+    assert metrics["Annualized Volatility"] == pytest.approx(
+        portfolio.std() * np.sqrt(252)
+    )
+    assert metrics["Sharpe Ratio"] == pytest.approx(
+        excess.mean() / excess.std() * np.sqrt(252)
+    )
+    assert metrics["Sortino Ratio"] == pytest.approx(
+        excess.mean() / np.sqrt((excess.clip(upper=0) ** 2).mean()) * np.sqrt(252)
+    )
+    wealth = (1 + portfolio).cumprod()
+    assert metrics["Maximum Drawdown"] == pytest.approx(
+        (wealth / wealth.cummax().clip(lower=1) - 1).min()
+    )
+    assert metrics["Value at Risk"] == pytest.approx(portfolio.quantile(0.05))
+    assert metrics["Conditional Value at Risk"] == pytest.approx(
+        portfolio[portfolio <= portfolio.quantile(0.05)].mean()
+    )
+
+
+def _factor_returns(periods: int = 500) -> tuple[pd.DataFrame, pd.Series]:
+    """Seeded returns of four assets driven by one market factor."""
+    rng = np.random.default_rng(1)
+    market = pd.Series(rng.normal(0, 0.01, periods))
+    returns = pd.DataFrame(
+        market.to_numpy()[:, None] * np.array([0.3, 1.5, 2.5, 0.1])
+        + rng.normal(0, 0.01, (periods, 4)),
+        columns=ASSETS,
+    )
+    return returns, market
+
+
+def test_ledoit_wolf_constant_correlation_follows_the_paper():
+    returns, _ = _factor_returns()
+    y = returns.to_numpy() - returns.to_numpy().mean(axis=0)
+    periods, count = y.shape
+    sample = y.T @ y / periods
+    sd = np.sqrt(np.diag(sample))
+    r_bar = (
+        2
+        / (count * (count - 1))
+        * sum(
+            sample[i, j] / (sd[i] * sd[j])
+            for i in range(count)
+            for j in range(i + 1, count)
+        )
+    )
+    target = r_bar * np.outer(sd, sd)
+    np.fill_diagonal(target, np.diag(sample))
+    pi = np.array(
+        [
+            [np.mean((y[:, i] * y[:, j] - sample[i, j]) ** 2) for j in range(count)]
+            for i in range(count)
+        ]
+    )
+
+    def theta(i, j):
+        return np.mean(
+            (y[:, i] ** 2 - sample[i, i]) * (y[:, i] * y[:, j] - sample[i, j])
+        )
+
+    rho = np.trace(pi) + sum(
+        r_bar
+        / 2
+        * (
+            np.sqrt(sample[j, j] / sample[i, i]) * theta(i, j)
+            + np.sqrt(sample[i, i] / sample[j, j]) * theta(j, i)
+        )
+        for i in range(count)
+        for j in range(count)
+        if i != j
+    )
+    gamma = np.sum((target - sample) ** 2)
+    intensity = max(0, min((pi.sum() - rho) / gamma / periods, 1))
+
+    covariance, shrinkage = (
+        optimization_model.get_ledoit_wolf_constant_correlation_covariance(returns)
+    )
+
+    assert 0 < shrinkage < 1
+    assert shrinkage == pytest.approx(intensity, rel=1e-10)
+    assert np.allclose(
+        covariance, intensity * target + (1 - intensity) * sample, atol=1e-15
+    )
+
+
+def test_ledoit_wolf_single_factor_follows_the_paper():
+    returns, market = _factor_returns()
+    y = returns.to_numpy() - returns.to_numpy().mean(axis=0)
+    m = market.to_numpy() - market.mean()
+    periods, count = y.shape
+    sample = y.T @ y / periods
+    s_m = y.T @ m / periods
+    s_mm = m @ m / periods
+    target = np.outer(s_m, s_m) / s_mm
+    np.fill_diagonal(target, np.diag(sample))
+    pi = np.array(
+        [
+            [np.mean((y[:, i] * y[:, j] - sample[i, j]) ** 2) for j in range(count)]
+            for i in range(count)
+        ]
+    )
+    # r_ij of Ledoit and Wolf (2003), averaged over the periods.
+    rho = np.trace(pi) + sum(
+        np.mean(
+            (s_m[j] * s_mm * y[:, i] + s_m[i] * s_mm * y[:, j] - s_m[i] * s_m[j] * m)
+            * m
+            * y[:, i]
+            * y[:, j]
+            / s_mm**2
+            - target[i, j] * sample[i, j]
+        )
+        for i in range(count)
+        for j in range(count)
+        if i != j
+    )
+    gamma = np.sum((target - sample) ** 2)
+    intensity = max(0, min((pi.sum() - rho) / gamma / periods, 1))
+
+    covariance, shrinkage = optimization_model.get_ledoit_wolf_single_factor_covariance(
+        returns, market
+    )
+
+    assert 0 < shrinkage < 1
+    assert shrinkage == pytest.approx(intensity, rel=1e-10)
+    assert np.allclose(
+        covariance, intensity * target + (1 - intensity) * sample, atol=1e-15
+    )
+
+    # The dispatch annualizes it and needs the benchmark.
+    _, annual = optimization_model.get_expected_returns_and_covariance(
+        returns, 252, "ledoit_wolf_single_factor", benchmark_returns=market
+    )
+    assert np.allclose(annual, covariance * 252)
+    with pytest.raises(ValueError, match="benchmark"):
+        optimization_model.get_expected_returns_and_covariance(
+            returns, 252, "ledoit_wolf_single_factor"
+        )
+
+
+def test_target_volatility_gives_the_frontier_portfolio_at_that_risk():
+    weights = optimization_model.get_mean_variance_weights(
+        EXPECTED_RETURNS, COVARIANCE, target_volatility=0.15
+    )
+    assert np.sqrt(weights @ COVARIANCE @ weights) == pytest.approx(0.15, abs=1e-7)
+
+    # The same portfolio as the lowest variance one at its expected return.
+    at_return = optimization_model.get_mean_variance_weights(
+        EXPECTED_RETURNS, COVARIANCE, target_return=float(weights @ EXPECTED_RETURNS)
+    )
+    assert np.allclose(weights, at_return, atol=1e-5)
+
+    # Above the volatility of the highest return portfolio the target does not bind.
+    highest = optimization_model.get_mean_variance_weights(
+        EXPECTED_RETURNS, COVARIANCE, target_volatility=0.5
+    )
+    assert highest["B"] == pytest.approx(1)
+
+    lowest = optimization_model.get_minimum_variance_weights(COVARIANCE)
+    lowest_volatility = float(np.sqrt(lowest @ COVARIANCE @ lowest))
+    with pytest.raises(ValueError, match="below the lowest volatility"):
+        optimization_model.get_mean_variance_weights(
+            EXPECTED_RETURNS, COVARIANCE, target_volatility=lowest_volatility - 0.01
+        )
+    with pytest.raises(ValueError, match="not both"):
+        optimization_model.get_mean_variance_weights(
+            EXPECTED_RETURNS, COVARIANCE, target_return=0.1, target_volatility=0.15
+        )
+
+
+def test_codependence_sets_the_correlation_that_is_clustered():
+    returns, _ = _factor_returns(200)
+    covariance = returns.cov()
+
+    pearson = optimization_model.get_codependence(returns, covariance)
+    spearman = optimization_model.get_codependence(returns, covariance, "spearman")
+    kendall = optimization_model.get_codependence(returns, covariance, "kendall")
+
+    assert np.allclose(pearson, returns.corr())
+    # Spearman's correlation is the Pearson correlation of the ranks.
+    assert np.allclose(spearman, returns.rank().corr())
+    # Kendall's tau from its concordant and discordant pairs (no ties here).
+    a, b = returns["A"].to_numpy(), returns["B"].to_numpy()
+    signs = np.sign(a[:, None] - a[None, :]) * np.sign(b[:, None] - b[None, :])
+    assert kendall.loc["A", "B"] == pytest.approx(signs.sum() / (len(a) * (len(a) - 1)))
+    with pytest.raises(ValueError, match="codependence"):
+        optimization_model.get_codependence(returns, covariance, "distance")
+
+    # The Pearson correlation of the covariance is the default of the clustering.
+    assert np.allclose(
+        optimization_model.get_hierarchical_risk_parity_weights(covariance),
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, correlation=pearson
+        ),
+    )
+    # A correlation that pairs A with B and C with D, where the returns pair A with D
+    # and B with C, changes the clusters and the weights.
+    swapped = pd.DataFrame(
+        [[1, 0.9, 0, 0], [0.9, 1, 0, 0], [0, 0, 1, 0.9], [0, 0, 0.9, 1]],
+        index=ASSETS,
+        columns=ASSETS,
+    )
+    _, natural = optimization_model.get_hierarchical_clusters(covariance, "ward", 2)
+    _, labels = optimization_model.get_hierarchical_clusters(
+        covariance, "ward", 2, swapped
+    )
+    assert natural[0] == natural[3] and natural[1] == natural[2]
+    assert labels[0] == labels[1] and labels[2] == labels[3]
+    assert not np.allclose(
+        optimization_model.get_hierarchical_risk_parity_weights(covariance),
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, correlation=swapped
+        ),
+    )
+
+
+def test_black_litterman_posterior_covariance_follows_he_and_litterman():
+    market = pd.Series([0.4, 0.3, 0.2, 0.1], index=ASSETS)
+    tau = 0.05
+    sigma = COVARIANCE.to_numpy()
+
+    _, without = optimization_model.get_black_litterman_returns(
+        COVARIANCE, market, tau=tau
+    )
+    assert np.allclose(without, (1 + tau) * sigma)
+
+    views = {"A": 0.1, "B-C": 0.02}
+    _, posterior = optimization_model.get_black_litterman_returns(
+        COVARIANCE, market, views=views, tau=tau
+    )
+    p = np.array([[1, 0, 0, 0], [0, 1, -1, 0]])
+    omega = np.diag(np.diag(tau * p @ sigma @ p.T))
+    remaining = np.linalg.inv(
+        np.linalg.inv(tau * sigma) + p.T @ np.linalg.inv(omega) @ p
+    )
+    assert np.allclose(posterior, sigma + remaining)
+
+
+def test_market_implied_risk_aversion():
+    benchmark = pd.Series([0.01, -0.005, 0.02, 0.0, 0.004, -0.01])
+    expected = (benchmark.mean() * 12 - 0.02) / (benchmark.var(ddof=1) * 12)
+
+    assert optimization_model.get_market_implied_risk_aversion(
+        benchmark, 12, 0.02
+    ) == pytest.approx(expected)
+    with pytest.raises(ValueError, match="no positive risk aversion"):
+        optimization_model.get_market_implied_risk_aversion(benchmark, 12, 0.5)

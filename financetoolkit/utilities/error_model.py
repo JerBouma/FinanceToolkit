@@ -13,8 +13,6 @@ from financetoolkit.utilities import logger_model
 logger = logger_model.get_logger()
 
 
-# pylint: disable=comparison-with-itself,too-many-locals,protected-access
-
 # Set FINANCETOOLKIT_STRICT_ERRORS to 1 (or true/yes/on) to make every failure inside a metric raise instead of being reported and returned as an empty Series; this is what a test suite or a scheduled job should run with, since it turns a quietly missing number into an immediate, traceable failure.  # noqa: E501
 STRICT_ERRORS_ENVIRONMENT_VARIABLE = "FINANCETOOLKIT_STRICT_ERRORS"
 
@@ -180,9 +178,11 @@ def handle_errors(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except (KeyError, ValueError, AttributeError) as error:
-            # Metrics relative to a benchmark fail on its absence, which is a setting
-            # rather than missing data or a defect, so the fix is reported instead.
+        except (KeyError, ValueError) as error:
+            # Metrics relative to a benchmark fail on its absence (a KeyError on the
+            # Benchmark column or a ValueError naming it), which is a setting rather than
+            # missing data or a defect, so the fix is reported instead. An AttributeError
+            # is a defect even when it mentions the benchmark, so it is raised below.
             if "Benchmark" not in str(error) or use_strict_errors():
                 return _report_failure(func, args, error)
 

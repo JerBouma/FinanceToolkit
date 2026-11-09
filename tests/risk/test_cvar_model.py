@@ -7,8 +7,6 @@ from scipy import integrate, stats
 
 from financetoolkit.risk import cvar_model, var_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_cvar_historic(recorder):
     recorder.capture(

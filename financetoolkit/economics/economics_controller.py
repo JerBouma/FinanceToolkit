@@ -15,12 +15,15 @@ from financetoolkit import fmp_model, helpers, historical_model
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
 from financetoolkit.economics import (
+    bea_model,
     bis_model,
     bls_model,
     boe_model,
     boj_model,
     cboe_model,
+    census_model,
     dnb_model,
+    dol_model,
     ecb_model,
     eex_model,
     esrb_model,
@@ -29,6 +32,7 @@ from financetoolkit.economics import (
     frb_model,
     fred_model,
     freddie_mac_model,
+    futures_model,
     gmdb_model,
     ibge_model,
     imf_model,
@@ -50,6 +54,7 @@ from financetoolkit.economics.helpers import (
     check_period_type,
     combine_sources,
     extend_with_recent,
+    get_exchange_business_days,
     resample_to_period,
     to_gmdb_country_names,
     validate_period,
@@ -76,8 +81,6 @@ ASSET_CLASS_PROXIES = {
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
-# pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 
@@ -113,9 +116,10 @@ class Economics:
                 indicator is published at: daily, then weekly, monthly, quarterly and yearly. Methods
                 without a period argument return the frequency their source publishes. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
-            fred_api_key (str, optional): A FRED API key used to retrieve US-specific labor market and
-                real-activity indicators (e.g. Nonfarm Payrolls, Initial Jobless Claims, Retail Sales).
-                Obtain a free key at https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set
+            fred_api_key (str, optional): A FRED API key. The US labor market and real-activity
+                indicators (e.g. Nonfarm Payrolls, Initial Jobless Claims, Retail Sales) come from their
+                publishers without it and from FRED with it, which gives Nonfarm Payrolls the history
+                from 1939 instead of the last three years. Obtain a free key at https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set
                 via the FRED_API_KEY environment variable. Defaults to the value of FRED_API_KEY if set,
                 otherwise an empty string.
             allow_stale_oecd_cache (bool, optional): the OECD API enforces a hard rate limit (60
@@ -297,22 +301,6 @@ class Economics:
             )
 
         return f"{prefixes[level]}{variable}"
-
-    def _require_fred_api_key(self) -> None:
-        if not self._fred_api_key:
-            logger.warning(
-                "No FRED API key found. This indicator is sourced from FRED (Federal "
-                "Reserve Economic Data) and requires a key to access — registration is "
-                "entirely free and takes about a minute at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html. Once you have one, "
-                "pass it via the fred_api_key argument or set the FRED_API_KEY "
-                "environment variable."
-            )
-            raise ValueError(
-                "A FRED API key is required to retrieve this indicator. Obtain a free key at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
-                "fred_api_key argument or set the FRED_API_KEY environment variable."
-            )
 
     @staticmethod
     def _combine_sources_for(
@@ -526,13 +514,13 @@ class Economics:
         Database (GMDB), so they always come from it. For more information see:
         https://www.globalmacrodata.com/documentation.html
 
-        Also known as: GDP, national income, economic growth.
+        Also known as: GDP, national income, economic growth, real GDP, real GDP in USD, cross-country comparable GDP.
 
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             inflation_adjusted (bool, optional): Whether to return the inflation adjusted data. Defaults to False.
             gmdb_source (bool | None, optional): Whether to retrieve the data from the GMDB. Defaults to None, which falls back to the gmdb_source set on the Economics class (True by default).
-            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. With inflation_adjusted=True, real GDP in US dollars. Always from the GMDB. Defaults to False.
+            usd (bool, optional): Whether to return the values in millions of US dollars, converted by the Global Macro Database, instead of millions of national currency, which makes levels comparable across countries. With inflation_adjusted=True, real GDP in millions of US dollars at constant 2015 prices, converted at the 2015 market exchange rate (not at purchasing power parities), so its growth equals the growth of real GDP in the national currency. Always from the GMDB. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -833,104 +821,6 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Gross Domestic Product Deflator",
-            countries=countries,
-            rolling=rolling,
-            trailing=trailing,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="rows",
-            row_slice=True,
-        )
-
-    @handle_errors
-    def get_real_gross_domestic_product_usd(
-        self,
-        countries: list[str] | str | None = None,
-        rolling: int | None = None,
-        trailing: int | None = None,
-        growth: bool = False,
-        lag: int = 1,
-        standardize: bool = False,
-        rounding: int | None = None,
-        gmdb_forecasts: bool = False,
-    ):
-        """
-        Get the Real Gross Domestic Product expressed in cross-country comparable US Dollars
-        for a variety of countries over time from the Global Macro Database (GMDB). This is the
-        inflation-adjusted GDP of a country converted into US Dollars, which makes it possible to
-        directly compare the economic output of countries that use different currencies without
-        having to perform the currency conversion or inflation adjustment yourself.
-
-        The values are in millions of US dollars at constant 2015 prices, so the 18295020 for
-        the United States in 2015 is a real GDP of 18.3 trillion dollars. The real GDP in the
-        national currency is converted at the 2015 market exchange rate against the dollar,
-        not at purchasing power parities, so a country's level reflects its 2015 exchange
-        rate and its growth equals the growth of its real GDP in its own currency.
-
-        Data comes from the Global Macro Database (GMDB), further information about the
-        variable can be found within https://www.globalmacrodata.com/documentation.html
-
-        Also known as: real GDP in USD, cross-country comparable GDP.
-
-        Args:
-            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
-            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
-            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
-            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
-            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
-                combined with growth=True, standardizes the growth values instead of the raw
-                values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
-            gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
-                Database projects, from the IMF's World Economic Outlook, up to five years
-                ahead. Only applies to data from the Global Macro Database. Defaults to
-                False, which ends a series with its last observation.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the Real Gross Domestic Product in US Dollars
-
-        As an example:
-
-        ```python
-        from financetoolkit import Economics
-
-        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
-
-        economics.get_real_gross_domestic_product_usd(countries=['United States', 'Japan', 'Germany'])
-        ```
-
-        Which returns:
-
-        |      |   United States |       Japan |     Germany |
-        |:-----|----------------:|------------:|------------:|
-        | 2015 |     1.8295e+07  | 4.53311e+06 | 3.41986e+06 |
-        | 2016 |     1.86279e+07 | 4.56506e+06 | 3.49293e+06 |
-        | 2017 |     1.90857e+07 | 4.63917e+06 | 3.60121e+06 |
-        | 2018 |     1.96519e+07 | 4.67787e+06 | 3.64259e+06 |
-        | 2019 |     2.01596e+07 | 4.66344e+06 | 3.67938e+06 |
-        | 2020 |     1.974e+07   | 4.46369e+06 | 3.51432e+06 |
-        | 2021 |     2.09545e+07 | 4.62279e+06 | 3.65016e+06 |
-        | 2022 |     2.14834e+07 | 4.68435e+06 | 3.719e+06   |
-        | 2023 |     2.21138e+07 | 4.71811e+06 | 3.69391e+06 |
-        | 2024 |     2.27315e+07 | 4.71016e+06 | 3.67648e+06 |
-        | 2025 |     2.32103e+07 | 4.75982e+06 | 3.68916e+06 |
-        """
-
-        real_gross_domestic_product_usd = (
-            gmdb_model.get_real_gross_domestic_product_usd(
-                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
-            )
-        )
-
-        return finalize_dataset(
-            dataset=real_gross_domestic_product_usd,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            indicator_name="Real Gross Domestic Product (USD)",
             countries=countries,
             rolling=rolling,
             trailing=trailing,
@@ -3506,7 +3396,7 @@ class Economics:
         | 2024 |          0.2944 |   0.2732 |  0.3215 |
         | 2025 |          0.2944 |   0.2732 |  0.3215 |
         """
-        trust_in_government = oecd_model.get_trust_in_goverment(
+        trust_in_government = oecd_model.get_trust_in_government(
             start_date=self._start_date, end_date=self._end_date
         )
 
@@ -7065,7 +6955,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get Total Nonfarm Payroll Employment for the United States from the Bureau of
-        Labor Statistics (via FRED).
+        Labor Statistics.
 
         Nonfarm Payrolls is the headline monthly employment report and one of the most
         closely watched real-activity indicators in macroeconomics: it counts the
@@ -7080,8 +6970,10 @@ class Economics:
         adjusted, so 156857 means 156.857 million jobs -- not the monthly change that the
         headline "jobs added" number refers to. Use growth=True for that change.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        Without a FRED API key the data comes from the Bureau of Labor Statistics' keyless
+        API, which gives the same figures but only for about the last three years. The
+        full history, from 1939, comes from FRED when a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class).
 
         See definition: https://fred.stlouisfed.org/series/PAYEMS
 
@@ -7127,11 +7019,28 @@ class Economics:
         | 2025-11-01 |          158449 |
         | 2025-12-01 |          158432 |
         """
-        self._require_fred_api_key()
-
-        nonfarm_payrolls = fred_model.get_nonfarm_payrolls(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        nonfarm_payrolls = (
+            fred_model.get_nonfarm_payrolls(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else bls_model.get_nonfarm_payrolls()
         )
+
+        if (
+            not self._fred_api_key
+            and not nonfarm_payrolls.empty
+            and nonfarm_payrolls.index.min().to_timestamp()
+            > pd.Timestamp(self._start_date)
+        ):
+            logger.warning(
+                "Without a FRED API key, nonfarm payrolls start in %s: the keyless BLS API "
+                "only returns about the last three years. Set a FRED API key for the "
+                "history from 1939.",
+                nonfarm_payrolls.index.min().strftime("%Y-%m"),
+            )
 
         return finalize_dataset(
             dataset=nonfarm_payrolls,
@@ -7160,7 +7069,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get weekly Initial Claims for Unemployment Insurance for the United States
-        from the Department of Labor (via FRED).
+        from the Department of Labor.
 
         Initial Jobless Claims counts the number of individuals filing for
         unemployment insurance for the first time in a given week. Because it is
@@ -7169,8 +7078,9 @@ class Economics:
         one of the most timely leading indicators of labor-market deterioration and a
         core component of the Conference Board's Leading Economic Index.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from the Department of Labor's weekly claims report
+        directly, which gives the same figures, although FRED adds the latest weeks before the report includes them. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/ICSA
 
@@ -7199,7 +7109,6 @@ class Economics:
 
         economics = Economics(
             start_date='2020-01-01',
-            fred_api_key='FRED_API_KEY',
             end_date="2025-12-31",
         )
 
@@ -7216,10 +7125,14 @@ class Economics:
         | 2025-12-20 |          215000 |
         | 2025-12-27 |          203000 |
         """
-        self._require_fred_api_key()
-
-        initial_jobless_claims = fred_model.get_initial_jobless_claims(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        initial_jobless_claims = (
+            fred_model.get_initial_jobless_claims(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else dol_model.get_initial_jobless_claims()
         )
 
         return finalize_dataset(
@@ -7249,7 +7162,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get Advance Retail Sales (Retail and Food Services) for the United States from
-        the Census Bureau (via FRED).
+        the Census Bureau.
 
         Retail Sales measures nominal spending at retail and food-service
         establishments. Since Personal Consumption Expenditures make up roughly
@@ -7261,8 +7174,9 @@ class Economics:
         retail trade and food services. It is nominal, so growth=True mixes volume and price
         changes together; compare against the Consumer Price Index to separate the two.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from the Census Bureau
+        directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/RSAFS
 
@@ -7291,7 +7205,6 @@ class Economics:
 
         economics = Economics(
             start_date='2020-01-01',
-            fred_api_key='FRED_API_KEY',
             end_date="2025-12-31",
         )
 
@@ -7302,16 +7215,20 @@ class Economics:
 
         | Date       |   United States |
         |:-----------|----------------:|
-        | 2025-08-01 |          700218 |
-        | 2025-09-01 |          701453 |
+        | 2025-08-01 |          700407 |
+        | 2025-09-01 |          700948 |
         | 2025-10-01 |          700790 |
         | 2025-11-01 |          705453 |
         | 2025-12-01 |          706264 |
         """
-        self._require_fred_api_key()
-
-        retail_sales = fred_model.get_retail_sales(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        retail_sales = (
+            fred_model.get_retail_sales(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else census_model.get_retail_sales()
         )
 
         return finalize_dataset(
@@ -7432,7 +7349,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get Housing Starts (Total New Privately-Owned Housing Units Started) for the
-        United States from the Census Bureau (via FRED).
+        United States from the Census Bureau.
 
         Housing Starts counts the number of new residential construction projects
         that have begun in a given month. Residential investment is one of the most
@@ -7441,8 +7358,9 @@ class Economics:
         turns up before a recovery), making Housing Starts one of the ten components
         of the Conference Board's Leading Economic Index.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from the Census Bureau
+        directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/HOUST
 
@@ -7471,7 +7389,6 @@ class Economics:
 
         economics = Economics(
             start_date='2020-01-01',
-            fred_api_key='FRED_API_KEY',
             end_date="2025-12-31",
         )
 
@@ -7488,10 +7405,14 @@ class Economics:
         | 2025-11-01 |            1319 |
         | 2025-12-01 |            1378 |
         """
-        self._require_fred_api_key()
-
-        housing_starts = fred_model.get_housing_starts(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        housing_starts = (
+            fred_model.get_housing_starts(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else census_model.get_housing_starts()
         )
 
         return finalize_dataset(
@@ -7521,7 +7442,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Get Real Personal Income Excluding Current Transfer Receipts for the United
-        States from the Bureau of Economic Analysis (via FRED).
+        States from the Bureau of Economic Analysis.
 
         This is the exact series (not a proxy) the NBER's Business Cycle Dating
         Committee uses as one of its four primary coincident indicators for dating
@@ -7534,8 +7455,9 @@ class Economics:
         activity rather than the fiscal cushioning that automatically increases
         during a downturn.
 
-        Requires a free FRED API key, see the `fred_api_key` parameter of the
-        `Economics` class.
+        No API key is needed: without a FRED API key the data comes from the Bureau of Economic Analysis
+        directly, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/W875RX1
 
@@ -7565,7 +7487,6 @@ class Economics:
 
         economics = Economics(
             start_date='2020-01-01',
-            fred_api_key='FRED_API_KEY',
             end_date="2025-12-31",
         )
 
@@ -7582,10 +7503,14 @@ class Economics:
         | 2025-11-01 |         16960.6 |
         | 2025-12-01 |         16943.8 |
         """
-        self._require_fred_api_key()
-
-        real_personal_income = fred_model.get_real_personal_income(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise.
+        real_personal_income = (
+            fred_model.get_real_personal_income(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else bea_model.get_real_personal_income()
         )
 
         return finalize_dataset(
@@ -9945,7 +9870,7 @@ class Economics:
             start=start_date,
             end=self._end_date,
             fill_nan=False,
-            show_ticker_seperation=False,
+            show_ticker_separation=False,
             cache=self._cache,
         )
 
@@ -9976,18 +9901,114 @@ class Economics:
             dropna=True,
         )
 
+    def _get_commodity_curves(
+        self,
+        commodity: str | list[str] | None,
+        contracts: int,
+        generic: bool,
+        start_date: str,
+    ) -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
+        """
+        Collects the forward curve of each commodity with the contract behind every price:
+        the listed contracts as columns, or, with generic, the positions on the curve of
+        each day (see futures_model.get_generic_curve).
+
+        Yahoo Finance drops a contract once it expires, so every expired month of the
+        commodity's listing cycle (for gold and silver the active cycle, which the generic
+        series rolls through) that it does not return is added as a contract without
+        prices, with its last trading day from the contract specification: the positions
+        after it stay right and its own is NaN. A month that has not expired and is not
+        returned is left out: Yahoo Finance carries the other gold and silver months only
+        shortly before delivery.
+
+        Returns:
+            dict[str, tuple[pd.DataFrame, pd.DataFrame]]: Per commodity the prices and the
+            delivery month of the contract behind each of them.
+        """
+        names = (
+            [name.strip() for name in commodity.split(",") if name.strip()]
+            if isinstance(commodity, str)
+            else list(commodity or yfinance_model.COMMODITY_TICKERS)
+        )
+        curves: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {}
+
+        for name in names:
+            forward_curve = yfinance_model.get_commodity_forward_curve(
+                name, start_date, self._end_date, contracts
+            )
+
+            if forward_curve.empty:
+                continue
+
+            if not generic:
+                labels = pd.DataFrame(
+                    [forward_curve.columns.to_list()] * len(forward_curve),
+                    index=forward_curve.index,
+                    columns=forward_curve.columns,
+                )
+                curves[name] = (forward_curve, labels)
+                continue
+
+            first_month = pd.Period(start_date, freq="M")
+            last_month = pd.Period(max(forward_curve.columns), freq="M")
+            # Crude oil and natural gas stop trading in the month before delivery.
+            business_days = get_exchange_business_days(
+                (pd.Timestamp(start_date) + pd.DateOffset(months=-2)).strftime(
+                    "%Y-%m-%d"
+                ),
+                (pd.Timestamp(f"{last_month}-01") + pd.DateOffset(months=2)).strftime(
+                    "%Y-%m-%d"
+                ),
+            )
+            rule = futures_model.LAST_TRADING_DAY_RULES[name]
+            last_trading_days = pd.Series(
+                {
+                    str(month): futures_model.get_last_trading_day(
+                        rule, month, business_days
+                    )
+                    for month in pd.period_range(first_month, last_month, freq="M")
+                    if month.month in futures_model.CONTRACT_MONTHS[name]
+                    or str(month) in forward_curve.columns
+                }
+            )
+            today = pd.Timestamp.today().normalize()
+            # Only the months of the active cycle are added back: a placeholder has no first
+            # price, so it counts as listed on every date and an off-cycle month would take a
+            # position on dates before it traded.
+            active_months = futures_model.ACTIVE_MONTHS.get(
+                name, futures_model.CONTRACT_MONTHS[name]
+            )
+            expired = [
+                label
+                for label, last_trading_day in last_trading_days.items()
+                if last_trading_day < today
+                and label not in forward_curve.columns
+                and pd.Period(label, freq="M").month in active_months
+            ]
+            forward_curve = forward_curve.reindex(
+                columns=sorted([*forward_curve.columns, *expired])
+            )
+            curves[name] = futures_model.get_generic_curve(
+                forward_curve, last_trading_days, contracts
+            )
+
+        return curves
+
     @handle_errors
     def get_commodity_forward_curve(
         self,
-        commodity: str,
+        commodity: str | list[str] | None = None,
         contracts: int = 12,
+        generic: bool = False,
         rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
     ) -> pd.DataFrame:
         """
         Get the forward/futures curve for a commodity from Yahoo Finance -- the
-        historical daily closing price of each of the nearest `contracts` dated futures
-        contracts from the current month on (e.g. Crude Oil's December 2026, January 2027,
-        ... contracts), rather than a single flat continuous/spot price.
+        historical daily closing (settlement) price of each of the nearest `contracts`
+        dated futures contracts from the current month on (e.g. Crude Oil's December 2026,
+        January 2027, ... contracts), rather than a single flat continuous/spot price.
 
         This is what a Schwartz-Smith (2000) two-factor commodity price model needs
         to back out the convenience-yield term structure under the risk-neutral (Q)
@@ -10000,15 +10021,47 @@ class Economics:
         contract and, late in the month, the next month's). Those months are skipped and
         later months are tried instead, until `contracts` contracts are found.
 
-        Also known as: futures term structure, forward curve.
+        By default the columns are the contracts listed today, so a past date shows how
+        those contracts traded then, not the curve as it stood that day. With
+        generic=True the columns are the positions on each day's curve instead:
+        the front (the nearest contract that has not expired on that day), +1, +2 and so on,
+        rolling to the next contract the day after the front's last trading day (the
+        generic or nearby series, CL1, CL2, ... in Bloomberg notation). A position is a
+        rank on the curve, not a constant maturity: the front's time to expiry shortens
+        each day and jumps at the roll, as no price is interpolated. The last trading days
+        follow the CME Group contract specifications on the US exchange calendar.
+
+        Yahoo Finance only publishes the contracts that still trade: a contract's history
+        disappears once it expires, and no free source publishes it (FinancialModelingPrep
+        has the continuous front contract only). On a past date the positions of the
+        contracts that have expired since are therefore NaN rather than filled with
+        another contract: for crude oil on 2026-09-15 the front (October 2026) and +1
+        (November 2026) are NaN and +2 is the December 2026 contract. The further back the
+        date, the more positions are NaN, until none is left about `contracts` months back.
+
+        With growth=True the change is that of each column over `lag` trading days: of a
+        contract, or with generic of a position, which compares two contracts
+        across a roll.
+
+        Also known as: futures term structure, forward curve, generic futures, nearby
+        futures.
 
         Args:
-            commodity (str): The commodity to retrieve the curve for. One of "Crude
-                Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn", "Wheat" or
-                "Soybeans".
+            commodity (str | list[str] | None, optional): The commodity, or a list of
+                them, to retrieve the curve for: "Crude Oil", "Natural Gas", "Gold",
+                "Silver", "Copper", "Corn", "Wheat" or "Soybeans". Defaults to None, which
+                retrieves every one of them.
             contracts (int, optional): The number of contracts to return, the nearest
-                listed ones from the current month on. Defaults to 12.
+                listed ones from the current month on, or with generic the
+                number of positions (the front included). Defaults to 12.
+            generic (bool, optional): Whether the columns are the positions on
+                each day's curve (Front, +1, +2, ...) instead of the contracts listed
+                today. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            growth (bool, optional): Whether to return the change of each column instead
+                of the price. Defaults to False.
+            lag (int | list[int], optional): The number of trading days to calculate the
+                change over. Defaults to 1.
 
         Raises:
             ValueError: If `commodity` is not one of the supported names.
@@ -10016,42 +10069,175 @@ class Economics:
         Returns:
             pd.DataFrame: A DataFrame indexed by date, with one column per contract
             labeled by its delivery month (e.g. "2026-12"), containing that
-            contract's daily closing price over its trading life. Columns are NaN
-            outside the date range the contract actually traded in.
+            contract's daily closing price over its trading life, or with
+            generic one column per position ("Front", "+1", ...). Columns are NaN
+            outside the date range the contract actually traded in. With a list of
+            commodities (or none given), the columns are the commodity and the contract.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2026-01-01', end_date='2026-08-01')
+        economics = Economics(start_date='2026-10-13', end_date='2026-10-23')
 
-        economics.get_commodity_forward_curve("Crude Oil", contracts=6)
+        economics.get_commodity_forward_curve(
+            "Crude Oil", contracts=4, generic=True
+        )
         ```
 
         Which returns:
 
-        | Date       |   2026-11 |   2026-12 |   2027-01 |   2027-02 |   2027-03 |
-        |:-----------|----------:|----------:|----------:|----------:|----------:|
-        | 2026-07-27 |     78.17 |     76.53 |     75.31 |     74.34 |     73.56 |
-        | 2026-07-28 |     75.33 |     73.85 |     72.74 |     71.86 |     71.16 |
-        | 2026-07-29 |     79.68 |     77.74 |     76.28 |     75.13 |     74.22 |
-        | 2026-07-30 |     78.19 |     76.12 |     74.65 |     73.56 |     72.72 |
-        | 2026-07-31 |     78.65 |     76.44 |     74.88 |     73.74 |     72.88 |
+        | Date       |   Front |     +1 |    +2 |    +3 |
+        |:-----------|--------:|-------:|------:|------:|
+        | 2026-10-13 |  nan    |  93.17 | 92.23 | 91.15 |
+        | 2026-10-14 |  nan    |  93.9  | 92.83 | 91.53 |
+        | 2026-10-15 |  nan    |  96.5  | 94.89 | 93.02 |
+        | 2026-10-16 |  nan    |  99.02 | 97.44 | 95.48 |
+        | 2026-10-19 |  nan    |  98.54 | 96.67 | 94.69 |
+        | 2026-10-20 |  nan    |  97.82 | 96.02 | 94.05 |
+        | 2026-10-21 |   97.15 |  95.46 | 93.71 | 91.99 |
+        | 2026-10-22 |   99.47 |  97.52 | 95.35 | 93.08 |
+        | 2026-10-23 |  103.27 | 100.94 | 98.36 | 95.68 |
         """
-        commodity_forward_curve = yfinance_model.get_commodity_forward_curve(
-            commodity, self._start_date, self._end_date, contracts
+        start_date = (
+            buffered_start_date(self._start_date, "daily")
+            if growth
+            else self._start_date
         )
+        curves = self._get_commodity_curves(commodity, contracts, generic, start_date)
 
-        return finalize_dataset(
-            dataset=commodity_forward_curve,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            rounding=rounding,
-            axis="rows",
-            row_slice=True,
-        )
+        # Each commodity's changes are taken over its own trading days.
+        commodity_forward_curve = {
+            name: finalize_dataset(
+                dataset=prices,
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                growth=growth,
+                lag=lag,
+                rounding=rounding,
+                axis="rows",
+                row_slice=True,
+                dropna=generic,
+            )
+            for name, (prices, _) in curves.items()
+        }
+
+        if isinstance(commodity, str) and "," not in commodity:
+            return commodity_forward_curve.get(commodity.strip(), pd.DataFrame())
+
+        return pd.concat(commodity_forward_curve, axis=1)
+
+    @handle_errors
+    def get_commodity_term_structure(
+        self,
+        commodity: str | list[str] | None = None,
+        generic: bool = True,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the term structure of a commodity futures curve per day: the front contract,
+        the 12-month calendar spread between the front and the last contract of the
+        12-month strip that starts with it (in price and in percent), the annualised roll
+        yield and whether the curve is in backwardation, contango or flat.
+
+        The far contract is the furthest one delivering less than 12 months after the
+        front: for a December 2026 front of a monthly listed commodity (crude oil, natural
+        gas, the metals) the November 2027 contract, 11 months later, and for corn's
+        December 2026 front the September 2027 contract, 9 months later.
+
+        The formulas are as follows:
+
+            Spread = Front - Far
+            Slope = Far / Front - 1
+            Roll Yield = ln(Front / Far) x 12 / Months
+
+        The spread follows the exchange quote of a calendar spread, nearby minus deferred,
+        so it is positive in backwardation, and its widest backwardation is its maximum.
+        The slope is the percentage the far contract lies above the front (negative in
+        backwardation). The roll yield is the annualised log basis of Fama and French
+        (1987) and Szymanowska, De Roon, Nijman and Van den Goorbergh (2014): the
+        continuously compounded yearly return a long position earns from the shape of the
+        curve alone, positive in backwardation and negative in contango, with Months the
+        months between both delivery months.
+
+        By default the front of each day is the nearest contract that had not expired on
+        that day (see get_commodity_forward_curve with generic=True), so the
+        spread is a time series of the curve as it stood each day. Yahoo Finance drops a
+        contract once it expires, so on the days whose front has expired since, Front, the
+        Spread, Slope and Roll Yield are NaN while Front Contract names the contract.
+        generic=False instead takes today's front and far contract on every day
+        (e.g. December 2026 against November 2027 for crude oil): a fixed calendar spread
+        with its full history.
+
+        Also known as: calendar spread, roll yield, carry, basis, backwardation, contango.
+
+        Args:
+            commodity (str | list[str] | None, optional): The commodity, or a list of
+                them: "Crude Oil", "Natural Gas", "Gold", "Silver", "Copper", "Corn",
+                "Wheat" or "Soybeans". Defaults to None, which retrieves every one of them.
+            generic (bool, optional): Whether the front and far contract are
+                those of each day's curve, instead of today's. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Raises:
+            ValueError: If `commodity` is not one of the supported names.
+
+        Returns:
+            pd.DataFrame: Per date the Front Contract and Far Contract (delivery months),
+            their prices Front and Far, the Months between them, the Spread, Slope and Roll
+            Yield (decimals) and the Structure ("Backwardation", "Contango" or "Flat" when
+            the front and far contract trade at the same price). With a list
+            of commodities (or none given), the columns are the commodity and the field.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-10-26', end_date='2026-11-06')
+
+        economics.get_commodity_term_structure("Crude Oil")
+        ```
+
+        Which returns:
+
+        | Date       | Front Contract   |   Front | Far Contract   |   Far |   Months |   Spread |   Slope |   Roll Yield | Structure     |
+        |:-----------|:-----------------|--------:|:---------------|------:|---------:|---------:|--------:|-------------:|:--------------|
+        | 2026-10-26 | 2026-12          |  101.76 | 2027-11        | 81.98 |       11 |    19.78 | -0.1944 |       0.2358 | Backwardation |
+        | 2026-10-27 | 2026-12          |   99.9  | 2027-11        | 82.07 |       11 |    17.83 | -0.1785 |       0.2145 | Backwardation |
+        | 2026-10-28 | 2026-12          |  102.78 | 2027-11        | 83.15 |       11 |    19.63 | -0.191  |       0.2312 | Backwardation |
+        | 2026-10-29 | 2026-12          |  102    | 2027-11        | 82.54 |       11 |    19.46 | -0.1908 |       0.2309 | Backwardation |
+        | 2026-10-30 | 2026-12          |  104.12 | 2027-11        | 83.01 |       11 |    21.11 | -0.2027 |       0.2472 | Backwardation |
+        | 2026-11-02 | 2026-12          |   96.46 | 2027-11        | 80.05 |       11 |    16.41 | -0.1701 |       0.2034 | Backwardation |
+        | 2026-11-03 | 2026-12          |   96.09 | 2027-11        | 80.31 |       11 |    15.78 | -0.1642 |       0.1957 | Backwardation |
+        | 2026-11-04 | 2026-12          |   88.12 | 2027-11        | 75.32 |       11 |    12.8  | -0.1453 |       0.1712 | Backwardation |
+        | 2026-11-05 | 2026-12          |   90.52 | 2027-11        | 75.11 |       11 |    15.41 | -0.1702 |       0.2036 | Backwardation |
+        | 2026-11-06 | 2026-12          |   90.83 | 2027-11        | 76.42 |       11 |    14.41 | -0.1586 |       0.1884 | Backwardation |
+        """
+        curves = self._get_commodity_curves(commodity, 12, generic, self._start_date)
+
+        term_structures = {}
+
+        for name, (prices, labels) in curves.items():
+            term_structure = futures_model.get_term_structure(prices, labels)
+            term_structures[name] = finalize_dataset(
+                dataset=term_structure[
+                    term_structure[["Front", "Far"]].notna().any(axis=1)
+                ],
+                start_date=self._start_date,
+                end_date=self._end_date,
+                default_rounding=self._rounding,
+                rounding=rounding,
+                axis="rows",
+                row_slice=True,
+            )
+
+        if isinstance(commodity, str) and "," not in commodity:
+            return term_structures.get(commodity.strip(), pd.DataFrame())
+
+        return pd.concat(term_structures, axis=1)
 
     @handle_errors
     def get_life_table(
@@ -10252,19 +10438,6 @@ class Economics:
             row_slice=True,
         )
 
-    def _require_api_key(self) -> None:
-        """Warns and raises when a FinancialModelingPrep method is used without a key."""
-        if not self._api_key:
-            logger.warning(
-                "No FinancialModelingPrep API key found. The economic calendar and the market "
-                "risk premium require a key to access, obtain one (with 15% off) at "
-                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
-            )
-            raise ValueError(
-                "A FinancialModelingPrep API key is required for this data. Obtain one at "
-                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
-            )
-
     @handle_errors
     def get_economic_calendar(
         self,
@@ -10347,7 +10520,7 @@ class Economics:
         | 2026-09-04 12:30:00 | United States | Non Farm Payrolls (Aug)     |     21     |     56     |  162     |
         | 2026-09-04 12:30:00 | United States | Unemployment Rate (Aug)     |      0.041 |      0.041 |    0.041 |
         """
-        self._require_api_key()
+        helpers.require_api_key(self._api_key, "the economic calendar")
 
         return economics_fmp_model.get_economic_calendar(
             api_key=self._api_key,
@@ -10407,7 +10580,7 @@ class Economics:
         | Brazil        | South America |                 0.0324 |                      0.0747 |
         | India         | Asia          |                 0.0285 |                      0.0708 |
         """
-        self._require_api_key()
+        helpers.require_api_key(self._api_key, "the market risk premium")
 
         # Published per country rather than per ticker, so it is one cache entry, the
         # same one Toolkit.get_market_risk_premium uses.

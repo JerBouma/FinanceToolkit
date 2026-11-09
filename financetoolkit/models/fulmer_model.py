@@ -5,32 +5,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-# pylint: disable=too-many-arguments,too-many-positional-arguments
-
-
-def _drop_non_finite(
-    values: float | pd.Series | pd.DataFrame,
-) -> float | pd.Series | pd.DataFrame:
-    """
-    Replace positive and negative infinities with NaN.
-
-    The two logarithmic components of the Fulmer H-Score are undefined for a number of
-    perfectly ordinary inputs — a company with no Interest Expense, or one whose intangible
-    assets exceed its total assets — and NumPy signals those as an infinity rather than as a
-    missing value. An infinity would propagate straight through the weighted sum and render
-    the entire H-Score (and any growth, rounding or standardization applied to it) infinite,
-    so it is treated as missing data instead.
-
-    Args:
-        values (float | pd.Series | pd.DataFrame): The values to clean.
-
-    Returns:
-        float | pd.Series | pd.DataFrame: The values with any infinity replaced by NaN.
-    """
-    if isinstance(values, pd.Series | pd.DataFrame):
-        return values.replace([np.inf, -np.inf], np.nan)
-
-    return np.nan if not np.isfinite(values) else values
+from financetoolkit.utilities.statistics_model import drop_non_finite
 
 
 def get_retained_earnings_to_total_assets_ratio(
@@ -55,7 +30,7 @@ def get_retained_earnings_to_total_assets_ratio(
         float | pd.Series | pd.DataFrame: The Retained Earnings to Total Assets Ratio.
     """
 
-    return retained_earnings / total_assets
+    return drop_non_finite(retained_earnings / total_assets)
 
 
 def get_sales_to_total_assets_ratio(
@@ -79,7 +54,7 @@ def get_sales_to_total_assets_ratio(
         float | pd.Series | pd.DataFrame: The Sales to Total Assets Ratio.
     """
 
-    return sales / total_assets
+    return drop_non_finite(sales / total_assets)
 
 
 def get_ebt_to_equity_ratio(
@@ -102,7 +77,7 @@ def get_ebt_to_equity_ratio(
         float | pd.Series | pd.DataFrame: The EBT to Equity Ratio.
     """
 
-    return ebt / total_equity
+    return drop_non_finite(ebt / total_equity)
 
 
 def get_cash_flow_to_total_liabilities_ratio(
@@ -127,7 +102,7 @@ def get_cash_flow_to_total_liabilities_ratio(
         float | pd.Series | pd.DataFrame: The Cash Flow to Total Liabilities Ratio.
     """
 
-    return cash_flow / total_liabilities
+    return drop_non_finite(cash_flow / total_liabilities)
 
 
 def get_debt_to_total_assets_ratio(
@@ -155,7 +130,7 @@ def get_debt_to_total_assets_ratio(
     lowers the H-Score.
     """
 
-    return total_debt / total_assets
+    return drop_non_finite(total_debt / total_assets)
 
 
 def get_current_liabilities_to_total_assets_ratio(
@@ -179,7 +154,7 @@ def get_current_liabilities_to_total_assets_ratio(
         float | pd.Series | pd.DataFrame: The Current Liabilities to Total Assets Ratio.
     """
 
-    return current_liabilities / total_assets
+    return drop_non_finite(current_liabilities / total_assets)
 
 
 def get_tangible_total_assets(
@@ -242,9 +217,9 @@ def get_log_of_tangible_total_assets(
     # np.log keeps the pandas container at runtime, but the ufunc stubs describe an
     # ndarray; the ufunc fast path of `.apply` produces the same values with a typed result.
     if isinstance(tangible_total_assets, pd.Series | pd.DataFrame):
-        return _drop_non_finite(tangible_total_assets.apply(np.log))
+        return drop_non_finite(tangible_total_assets.apply(np.log))
 
-    return _drop_non_finite(float(np.log(tangible_total_assets)))
+    return drop_non_finite(float(np.log(tangible_total_assets)))
 
 
 def get_working_capital_to_total_liabilities_ratio(
@@ -269,7 +244,7 @@ def get_working_capital_to_total_liabilities_ratio(
         float | pd.Series | pd.DataFrame: The Working Capital to Total Liabilities Ratio.
     """
 
-    return working_capital / total_liabilities
+    return drop_non_finite(working_capital / total_liabilities)
 
 
 def get_log_of_ebit_to_interest_expense_ratio(
@@ -302,7 +277,7 @@ def get_log_of_ebit_to_interest_expense_ratio(
     - See `get_log_of_tangible_total_assets` for the log base used (natural logarithm).
     """
 
-    return _drop_non_finite(np.log(ebit / interest_expense))
+    return drop_non_finite(np.log(ebit / interest_expense))
 
 
 def get_fulmer_h_score(

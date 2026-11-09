@@ -13,8 +13,6 @@ from financetoolkit.models import damodaran_model
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
-# pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 # Displays messages, warnings and errors when the Finance Toolkit hits issues.
@@ -1322,7 +1320,7 @@ class Discovery:
 
     def search_stock_news(
         self,
-        symbols: str | list[str],
+        symbols: str | list[str] | None = None,
         pages: int = 1,
         limit: int = 100,
         start_date: str | None = None,
@@ -1334,8 +1332,9 @@ class Discovery:
         Also known as: ticker news search, company news lookup.
 
         Args:
-            symbols (str | list[str]): One or more ticker symbols, e.g. "AAPL" or
-                ["AAPL", "MSFT"].
+            symbols (str | list[str] | None, optional): One or more ticker symbols, e.g. "AAPL" or
+                ["AAPL", "MSFT"]. Defaults to None, which returns the latest articles of every
+                symbol, as `get_stock_news` does.
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
@@ -1371,6 +1370,11 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        if symbols is None:
+            return self.get_stock_news(
+                pages=pages, limit=limit, start_date=start_date, end_date=end_date
+            )
+
         stock_news = discovery_model.search_stock_news(
             api_key=self._api_key,
             symbols=symbols,
@@ -1385,7 +1389,7 @@ class Discovery:
 
     def search_press_releases(
         self,
-        symbols: str | list[str],
+        symbols: str | list[str] | None = None,
         pages: int = 1,
         limit: int = 100,
         start_date: str | None = None,
@@ -1397,8 +1401,9 @@ class Discovery:
         Also known as: press release search, corporate announcement lookup.
 
         Args:
-            symbols (str | list[str]): One or more ticker symbols, e.g. "AAPL" or
-                ["AAPL", "MSFT"].
+            symbols (str | list[str] | None, optional): One or more ticker symbols, e.g. "AAPL" or
+                ["AAPL", "MSFT"]. Defaults to None, which returns the latest press releases of
+                every company, as `get_press_releases` does.
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
@@ -1431,6 +1436,11 @@ class Discovery:
             start_date=start_date, end_date=end_date, limit=limit, pages=pages
         )
 
+        if symbols is None:
+            return self.get_press_releases(
+                pages=pages, limit=limit, start_date=start_date, end_date=end_date
+            )
+
         press_releases = discovery_model.search_press_releases(
             api_key=self._api_key,
             symbols=symbols,
@@ -1445,7 +1455,7 @@ class Discovery:
 
     def search_crypto_news(
         self,
-        symbols: str | list[str],
+        symbols: str | list[str] | None = None,
         pages: int = 1,
         limit: int = 100,
         start_date: str | None = None,
@@ -1457,8 +1467,9 @@ class Discovery:
         Also known as: crypto news search, coin news lookup.
 
         Args:
-            symbols (str | list[str]): One or more crypto symbols, e.g. "BTCUSD" or
-                ["BTCUSD", "ETHUSD"].
+            symbols (str | list[str] | None, optional): One or more crypto symbols, e.g. "BTCUSD" or
+                ["BTCUSD", "ETHUSD"]. Defaults to None, which uses Bitcoin and Ether (BTCUSD and
+                ETHUSD), the two largest cryptocurrencies by market value.
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
@@ -1496,7 +1507,7 @@ class Discovery:
 
         crypto_news = discovery_model.search_crypto_news(
             api_key=self._api_key,
-            symbols=symbols,
+            symbols=symbols if symbols is not None else ["BTCUSD", "ETHUSD"],
             limit=limit,
             pages=pages,
             start_date=start_date,
@@ -1508,7 +1519,7 @@ class Discovery:
 
     def search_forex_news(
         self,
-        symbols: str | list[str],
+        symbols: str | list[str] | None = None,
         pages: int = 1,
         limit: int = 100,
         start_date: str | None = None,
@@ -1520,8 +1531,9 @@ class Discovery:
         Also known as: forex news search, currency pair news lookup.
 
         Args:
-            symbols (str | list[str]): One or more forex pairs, e.g. "EURUSD" or
-                ["EURUSD", "GBPUSD"].
+            symbols (str | list[str] | None, optional): One or more forex pairs, e.g. "EURUSD" or
+                ["EURUSD", "GBPUSD"]. Defaults to None, which uses the seven major pairs: EURUSD,
+                USDJPY, GBPUSD, USDCHF, AUDUSD, USDCAD and NZDUSD.
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
@@ -1559,7 +1571,19 @@ class Discovery:
 
         forex_news = discovery_model.search_forex_news(
             api_key=self._api_key,
-            symbols=symbols,
+            symbols=(
+                symbols
+                if symbols is not None
+                else [
+                    "EURUSD",
+                    "USDJPY",
+                    "GBPUSD",
+                    "USDCHF",
+                    "AUDUSD",
+                    "USDCAD",
+                    "NZDUSD",
+                ]
+            ),
             limit=limit,
             pages=pages,
             start_date=start_date,
@@ -2201,25 +2225,63 @@ class Discovery:
         return mergers_acquisitions
 
     def get_earnings_calendar(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        min_market_cap: float | None = None,
+        country: str | None = None,
+        exchange: str | None = None,
+        primary_only: bool = False,
+        sort_by: str = "date",
     ) -> pd.DataFrame:
         """
         Returns the earnings releases of all companies in a date range: the reported and
-        estimated earnings per share (EPS) and revenue. Upcoming releases only have the
-        estimates, so this also shows which companies report in the coming days. This is
-        the market-wide counterpart of Toolkit.get_earnings_calendar, which covers the
-        tickers of a Toolkit instance over their full history.
+        estimated earnings per share (EPS) and revenue, with the company name, the exchange
+        of the listing and the company's market capitalisation in US dollars.
+        Upcoming releases only have the estimates, so this also shows which companies
+        report in the coming days. This is the market-wide counterpart of
+        Toolkit.get_earnings_calendar, which covers the tickers of a Toolkit instance over
+        their full history.
+
+        A week holds thousands of releases, most of them small companies, and every listing
+        of a company appears (Cisco in New York, Frankfurt and Hong Kong). To see the
+        largest reporters, keep the primary listing of each company (its most traded one)
+        with `primary_only=True` and sort by market cap with `sort_by="market_cap"`, or set
+        a `min_market_cap`. Every listing of a company has the market cap of its primary
+        listing, since the one reported for a depositary receipt or a secondary listing is
+        often far off. The country filter uses the country of the company, so it also keeps
+        a company's listings abroad.
+
+        The EPS and revenue figures are in the currency the source reports them in for each
+        listing, which is the reporting currency for some listings and the trading currency
+        for others (Richemont's estimated revenue is in euros in Zurich and in US dollars
+        for its depositary receipt), so they are not converted or used for ranking.
 
         Note that the date range is limited to a maximum of 90 days.
 
         Also known as: earnings season, earnings release dates, upcoming earnings.
 
         Args:
-            start_date (str, optional): The start date to filter data with.
-            end_date (str, optional): The end date to filter data with.
+            start_date (str, optional): The start date to filter data with. Defaults to today,
+                or to seven days before the end date when only that is given.
+            end_date (str, optional): The end date to filter data with. Defaults to seven days
+                after the start date.
+            min_market_cap (float, optional): The minimum market cap in US dollars, such as
+                10e9 for ten billion. Releases without a market cap are left out. Defaults to
+                None.
+            country (str, optional): The country of the company, as a two-letter code ("DE")
+                or a name ("Germany"). It is looked up with the company screener, which returns
+                at most 10,000 listings, largest first, so for the United States without a
+                min_market_cap the smallest companies can be missing. Defaults to None.
+            exchange (str, optional): The exchange code of the listing, such as "NASDAQ" or
+                "XETRA". Defaults to None.
+            primary_only (bool, optional): Whether to keep only the primary listing (the most
+                traded one) of each company. Defaults to False.
+            sort_by (str, optional): "date" to sort by date and symbol, or "market_cap" to put
+                the largest companies first. Defaults to "date".
 
         Returns:
-            pd.DataFrame: A dataframe with the earnings releases, sorted by date.
+            pd.DataFrame: A dataframe with the earnings releases.
 
         As an example:
 
@@ -2228,20 +2290,22 @@ class Discovery:
 
         discovery = Discovery(api_key="FINANCIAL_MODELING_PREP_KEY")
 
-        earnings_calendar = discovery.get_earnings_calendar(start_date="2026-10-01", end_date="2026-10-03")
+        earnings_calendar = discovery.get_earnings_calendar(
+            start_date="2026-11-09", end_date="2026-11-13", primary_only=True, sort_by="market_cap"
+        )
 
-        earnings_calendar.head()
+        earnings_calendar[["Date", "Name", "Exchange Code", "Market Cap (USD)", "Estimated EPS"]].head()
         ```
 
         Which returns:
 
-        | Symbol    | Date                |     EPS |   Estimated EPS |       Revenue |   Estimated Revenue | Last Updated   |
-        |:----------|:--------------------|--------:|----------------:|--------------:|--------------------:|:---------------|
-        | 000270.KS | 2026-10-01 00:00:00 | 5550.38 |        5378.62  |   3.08555e+13 |         3.18109e+13 | 2026-10-24     |
-        | 032350.KS | 2026-10-01 00:00:00 | 1718    |        1718     |   2.12223e+11 |         2.1315e+11  | 2026-10-24     |
-        | 0ENN.L    | 2026-10-01 00:00:00 |  nan    |           3.09  | nan           |         1.51e+09    | 2026-10-24     |
-        | 0JZS.L    | 2026-10-01 00:00:00 |    0.86 |           0.755 |   2.0248e+09  |         1.97614e+09 | 2026-10-24     |
-        | 0OHK.L    | 2026-10-01 00:00:00 |   10    |          11.1   |   7.2503e+09  |         7.10111e+09 | 2026-10-24     |
+        | Symbol   | Date                | Name                                 | Exchange Code   |   Market Cap (USD) |   Estimated EPS |
+        |:---------|:--------------------|:-------------------------------------|:----------------|-------------------:|----------------:|
+        | CSCO     | 2026-11-12 00:00:00 | Cisco Systems, Inc.                  | NASDAQ          |        3.70012e+11 |            1.32 |
+        | AMAT     | 2026-11-12 00:00:00 | Applied Materials, Inc.              | NASDAQ          |        2.64042e+11 |            4.06 |
+        | 8306.T   | 2026-11-13 00:00:00 | Mitsubishi UFJ Financial Group, Inc. | JPX             |        2.29059e+11 |           67.1  |
+        | SIE.DE   | 2026-11-12 00:00:00 | Siemens AG                           | XETRA           |        2.23956e+11 |            2.86 |
+        | ALV.DE   | 2026-11-12 00:00:00 | Allianz SE                           | XETRA           |        1.91145e+11 |            8.82 |
         """
         _validate_arguments(start_date=start_date, end_date=end_date)
 
@@ -2249,6 +2313,11 @@ class Discovery:
             api_key=self._api_key,
             start_date=start_date,
             end_date=end_date,
+            min_market_cap=min_market_cap,
+            country=country,
+            exchange=exchange,
+            primary_only=primary_only,
+            sort_by=sort_by,
             user_subscription=self._fmp_plan,
         )
 

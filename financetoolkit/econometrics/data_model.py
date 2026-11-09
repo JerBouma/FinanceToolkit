@@ -7,6 +7,8 @@ import datetime
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import drop_non_finite
+
 # The periods the Econometrics methods take, with the pandas frequency of each.
 PERIODS = {"weekly": "W-SUN", "monthly": "M", "quarterly": "Q-DEC", "yearly": "Y-DEC"}
 
@@ -190,9 +192,7 @@ def get_changes(levels: pd.DataFrame, changes: str | None) -> pd.DataFrame:
         if changes == "percentage":
             # Dividing by the absolute previous value keeps the sign of the change when
             # the base is negative (a loss shrinking from -10 to -5 is an increase).
-            return (observed.diff() / observed.shift().abs()).replace(
-                [np.inf, -np.inf], np.nan
-            )
+            return drop_non_finite(observed.diff() / observed.shift().abs())
         if changes == "log":
             return np.log(observed.where(observed > 0)).diff()
         return observed.diff()

@@ -295,8 +295,10 @@ def test_excess_bond_premium_is_parsed_into_decimals(monkeypatch):
 def test_credit_methods_need_a_fred_key_and_valid_arguments():
     from financetoolkit import FixedIncome
 
+    # The Moody's yields are only on FRED; the HQM curve also comes from the Treasury.
     without_key = FixedIncome(fred_api_key="")
-    assert without_key.get_hqm_corporate_bond_yield_curve().empty
+    assert without_key.get_moodys_corporate_bond_yields().empty
+    assert without_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty
 
     with_key = FixedIncome(fred_api_key="key")
     assert with_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty

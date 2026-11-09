@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 
+import numpy as np
 import pandas as pd
 
 
@@ -611,6 +612,125 @@ def get_shareholder_yield(
     return dividend_yield + buyback_yield
 
 
+def get_net_share_issuance(
+    shares: pd.Series | pd.DataFrame, beginning_shares: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the net share issuance of Pontiff and Woodgate (2008): the log change in
+    the split-adjusted number of shares. It is positive for a net issuer of shares and
+    negative for a company that buys back more shares than it issues.
+
+    The formula is as follows:
+
+        Net Share Issuance = ln(Shares / Beginning Shares)
+
+    The shares must be adjusted for splits, so that only issuance and repurchases move
+    them. A number of shares of zero or less at either end gives NaN.
+
+    Also known as: share issuance, ISSUE, change in shares outstanding.
+
+    Args:
+        shares (float or pd.Series): Split-adjusted number of shares at the end of the window.
+        beginning_shares (float or pd.Series): Split-adjusted number of shares at the
+            start of the window.
+
+    Returns:
+        float | pd.Series: The net share issuance value.
+    """
+    return np.log(
+        shares.where(shares > 0) / beginning_shares.where(beginning_shares > 0)
+    )
+
+
+def get_composite_equity_issuance(
+    market_cap: pd.Series | pd.DataFrame,
+    beginning_market_cap: pd.Series | pd.DataFrame,
+    total_return_price: pd.Series | pd.DataFrame,
+    beginning_total_return_price: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the composite equity issuance of Daniel and Titman (2006): the part of
+    the growth in market capitalization that the stock return does not explain. It
+    captures every way equity is issued or retired (seasoned offerings, employee
+    stock, stock-financed acquisitions, buybacks and dividends), and companies that
+    issue predict lower returns.
+
+    The formula is as follows:
+
+        Composite Equity Issuance = ln(Market Cap / Beginning Market Cap)
+            - ln(Total Return Price / Beginning Total Return Price)
+
+    The second term is the log total return over the window (dividends reinvested), so
+    a company that pays dividends without issuing shares has a negative value. A value
+    of zero or less in either ratio gives NaN.
+
+    Also known as: CEI, iota, composite share issuance.
+
+    Args:
+        market_cap (float or pd.Series): Market capitalization at the end of the window.
+        beginning_market_cap (float or pd.Series): Market capitalization at the start of
+            the window.
+        total_return_price (float or pd.Series): Price adjusted for dividends and splits
+            at the end of the window.
+        beginning_total_return_price (float or pd.Series): Price adjusted for dividends
+            and splits at the start of the window.
+
+    Returns:
+        float | pd.Series: The composite equity issuance value.
+    """
+    market_cap_growth = market_cap / beginning_market_cap
+    total_return = total_return_price / beginning_total_return_price
+
+    return np.log(market_cap_growth.where(market_cap_growth > 0)) - np.log(
+        total_return.where(total_return > 0)
+    )
+
+
+def get_net_external_financing(
+    net_stock_issued: pd.Series | pd.DataFrame,
+    dividends_paid: pd.Series | pd.DataFrame,
+    net_debt_issued: pd.Series | pd.DataFrame,
+    average_total_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the net external financing of Bradshaw, Richardson and Sloan (2006): the
+    cash a company raises from (or returns to) shareholders and lenders, relative to
+    its average total assets. Companies that raise the most external financing earn
+    the lowest returns afterwards.
+
+    The formula is as follows:
+
+        Net External Financing = (Net Equity Financing + Net Debt Financing)
+            / Average Total Assets
+
+        Net Equity Financing = Net Stock Issued + Dividends Paid
+        Net Debt Financing = Net Debt Issued
+
+    The flows carry the signs of the cash flow statement: stock repurchases and
+    dividends are negative outflows, so the net equity financing is the stock issued
+    minus the stock repurchased minus the dividends paid. Average total assets of zero
+    or less give NaN.
+
+    Also known as: XFIN, ΔXFIN, net financing.
+
+    Args:
+        net_stock_issued (float or pd.Series): Common and preferred stock issued minus
+            repurchased, as reported in the Cash Flow Statement.
+        dividends_paid (float or pd.Series): Common and preferred dividends paid, as
+            reported (negative) in the Cash Flow Statement.
+        net_debt_issued (float or pd.Series): Long and short term debt issued minus
+            repaid, as reported in the Cash Flow Statement.
+        average_total_assets (float or pd.Series): Average of the total assets at the
+            start and the end of the window.
+
+    Returns:
+        float | pd.Series: The net external financing value.
+    """
+    return (net_stock_issued + dividends_paid + net_debt_issued) / (
+        average_total_assets.where(average_total_assets > 0)
+    )
+
+
 def get_sbc_adjusted_free_cash_flow(
     free_cash_flow: pd.Series | pd.DataFrame,
     stock_based_compensation: pd.Series | pd.DataFrame,
@@ -634,3 +754,108 @@ def get_sbc_adjusted_free_cash_flow(
         float | pd.Series: The SBC-adjusted free cash flow value.
     """
     return free_cash_flow - stock_based_compensation
+
+
+def get_free_cash_flow_payout_ratio(
+    dividends: pd.Series | pd.DataFrame, free_cash_flow: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the free cash flow payout ratio, the share of free cash flow paid out as
+    dividends.
+
+    The formula is as follows:
+
+        Free Cash Flow Payout Ratio = |Dividends Paid| / Free Cash Flow
+
+    Dividends are reported as a negative cash outflow, so their magnitude is used. With
+    a free cash flow of zero or less the ratio has no meaning, so those periods are NaN.
+
+    Also known as: FCF payout ratio, dividends to free cash flow, cash dividend payout ratio.
+
+    Args:
+        dividends (float or pd.Series): Dividends paid by the company.
+        free_cash_flow (float or pd.Series): Free cash flow of the company.
+
+    Returns:
+        float | pd.Series: The free cash flow payout ratio, NaN where the free cash flow is
+            zero or negative.
+    """
+    return abs(dividends) / free_cash_flow.where(free_cash_flow > 0)
+
+
+def get_ev_to_invested_capital_ratio(
+    enterprise_value: pd.Series | pd.DataFrame,
+    total_equity: pd.Series | pd.DataFrame,
+    total_debt: pd.Series | pd.DataFrame,
+    cash_and_short_term_investments: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the enterprise value to invested capital ratio, the market value of the
+    operations against the capital invested in them.
+
+    The formula is as follows (Koller, Goedhart and Wessels):
+
+        Invested Capital = Total Equity + Total Debt - Cash and Short Term Investments
+
+        EV to Invested Capital = Enterprise Value / Invested Capital
+
+    The invested capital is taken from the financing side, with the same items as the
+    enterprise value: the equity includes minority interest and preferred stock, and the
+    cash and short-term investments are deducted from both. An invested capital of zero
+    or less gives NaN.
+
+    Also known as: EV/IC, enterprise value to invested capital, market-to-book of the firm.
+
+    Args:
+        enterprise_value (float or pd.Series): Enterprise value of the company.
+        total_equity (float or pd.Series): Total equity, including minority interest.
+        total_debt (float or pd.Series): Total debt of the company.
+        cash_and_short_term_investments (float or pd.Series): Cash, cash equivalents and
+            short-term investments.
+
+    Returns:
+        float | pd.Series: The EV to invested capital value, NaN where the invested capital
+            is zero or negative.
+    """
+    invested_capital = total_equity + total_debt - cash_and_short_term_investments
+
+    return enterprise_value / invested_capital.where(invested_capital > 0)
+
+
+def get_price_to_tangible_book_ratio(
+    market_cap: pd.Series | pd.DataFrame,
+    total_shareholder_equity: pd.Series | pd.DataFrame,
+    preferred_stock: pd.Series | pd.DataFrame,
+    goodwill_and_intangible_assets: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the price to tangible book ratio, the market value of the common equity
+    against its book value without goodwill and other intangible assets.
+
+    The formula is as follows (CFA Institute):
+
+        Tangible Book Value = Total Shareholder Equity - Preferred Stock - Goodwill and
+            Intangible Assets
+
+        Price to Tangible Book = Market Capitalization / Tangible Book Value
+
+    A tangible book value of zero or less gives NaN, as the ratio has no meaning then.
+
+    Also known as: P/TBV, price to tangible book value, price to tangible equity.
+
+    Args:
+        market_cap (float or pd.Series): Market capitalization of the company.
+        total_shareholder_equity (float or pd.Series): Shareholders' equity, without
+            minority interest.
+        preferred_stock (float or pd.Series): Preferred stock of the company.
+        goodwill_and_intangible_assets (float or pd.Series): Goodwill and intangible assets.
+
+    Returns:
+        float | pd.Series: The price to tangible book value, NaN where the tangible book
+            value is zero or negative.
+    """
+    tangible_book_value = (
+        total_shareholder_equity - preferred_stock - goodwill_and_intangible_assets
+    )
+
+    return market_cap / tangible_book_value.where(tangible_book_value > 0)

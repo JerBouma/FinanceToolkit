@@ -8,6 +8,7 @@ import inspect
 import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from decimal import ROUND_HALF_UP, Decimal
 from functools import wraps
 from typing import Any
 
@@ -16,7 +17,11 @@ import pandas as pd
 
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
-from financetoolkit.utilities.statistics_model import apply_rounding, bounded_ffill
+from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
+    bounded_ffill,
+    drop_non_finite,
+)
 
 logger = logger_model.get_logger()
 
@@ -135,6 +140,34 @@ def run_in_parallel(
     return results
 
 
+# A 52/53-week fiscal period ends on a fixed weekday, at most five days past the month end it stands for (Home Depot's quarter ending 5 May 2019 is its February to April quarter), so a period ending in the first five days of a month belongs to the month before. Periods ending later in a month are left in it: Costco's 12-week quarter ending 7 May 2023 follows one ending 12 February 2023.  # noqa: E501
+MONTH_END_OVERRUN_DAYS = 5
+
+
+def determine_period_end_months(
+    period_end_dates: pd.DatetimeIndex | pd.Series,
+) -> pd.PeriodIndex:
+    """
+    Determines the month each fiscal period ends in. A period ending in the first five days
+    of a month counts as ending in the month before: a 52/53-week fiscal period ends on a fixed
+    weekday a few days past the month end it stands for (Home Depot's quarter ending 3
+    August 2025 is its May to July quarter), and Yahoo Finance reports such a period at the
+    end of that month (31 July 2025).
+
+    Args:
+        period_end_dates (pd.DatetimeIndex | pd.Series): the final day of each fiscal
+            reporting period, as reported by the data provider.
+
+    Returns:
+        pd.PeriodIndex: the month each period ends in, at monthly frequency.
+    """
+    end_dates = pd.DatetimeIndex(pd.to_datetime(pd.Series(period_end_dates).to_numpy()))
+
+    return end_dates.to_period("M") - (end_dates.day <= MONTH_END_OVERRUN_DAYS).astype(
+        int
+    )
+
+
 def convert_period_end_dates_to_calendar_periods(
     period_end_dates: pd.DatetimeIndex | pd.Series,
     quarter: bool,
@@ -165,6 +198,15 @@ def convert_period_end_dates_to_calendar_periods(
     quarterly outputs of the same company consistent with one another: NVIDIA's fiscal
     2024 is labelled 2023 and its four quarters are labelled 2023Q1 through 2023Q4.
 
+    A period ending in the first five days of a month is treated as ending in the month
+    before (see determine_period_end_months). Companies with a 52/53-week fiscal year end
+    their periods on a fixed weekday, up to a few days past a month end: Home Depot's
+    quarter ending 3 August 2025 covers May to July and Western Digital's fiscal year
+    ending 1 July 2022 covers July 2021 to June 2022. Yahoo Finance reports such periods at
+    the end of the month before (31 July 2025 and 30 June 2022), FinancialModelingPrep at
+    their actual last day, and both are labelled alike. Without this, two consecutive
+    quarters (ending 2 August and 1 November) would share one calendar quarter.
+
     Args:
         period_end_dates (pd.DatetimeIndex | pd.Series): the final day of each fiscal
             reporting period, as reported by the data provider.
@@ -179,18 +221,18 @@ def convert_period_end_dates_to_calendar_periods(
         pd.PeriodIndex: the calendar periods to label the reporting periods with, at
         yearly frequency when quarter is False and quarterly frequency when True.
     """
-    end_dates = pd.DatetimeIndex(pd.to_datetime(pd.Series(period_end_dates).to_numpy()))
+    end_months = determine_period_end_months(period_end_dates)
 
     if quarter:
-        fiscal_periods = end_dates.to_period("Q")
+        fiscal_periods = end_months.asfreq("Q")
         # The calendar quarter holding the middle month of the fiscal quarter.
-        calendar_periods = (end_dates.to_period("M") - 1).asfreq("Q")
+        calendar_periods = (end_months - 1).asfreq("Q")
     else:
-        fiscal_periods = end_dates.to_period("Y")
+        fiscal_periods = end_months.asfreq("Y")
         # A fiscal year ending before June is labelled with the previous calendar
         # year; shifting back five months lands January to May in that year and
         # leaves June to December where they are.
-        calendar_periods = (end_dates.to_period("M") - 5).asfreq("Y")
+        calendar_periods = (end_months - 5).asfreq("Y")
 
     shifted_mask = calendar_periods != fiscal_periods
 
@@ -239,10 +281,12 @@ def determine_period_end_dates(
     period apply from its end) and what currency translation needs (the closing rate on the
     period end and the average rate over the fiscal period, IAS 21.39-40).
 
-    The date is taken from the Period End Date statistic, which FinancialModelingPrep
-    statements carry. When it is not available (another source, an older cache or a dataset
-    supplied to the Toolkit), the latest date the period can end on given its label is used,
-    so that figures are never applied before the period ended:
+    The date is taken from the Period End Date statistic, which FinancialModelingPrep and
+    Yahoo Finance statements carry. When it is not available (an older cache or a dataset
+    supplied to the Toolkit), the end of the last month the period can end in given its label
+    is used, so that figures are not applied before the period ended (a 52/53-week period
+    ending in the first five days of the next month counts as ending in that month, see
+    convert_period_end_dates_to_calendar_periods):
 
         - A label that was not moved from its fiscal period ends at the end of the labelled
           period (31 December for a year, the last day of the quarter for a quarter).
@@ -490,10 +534,8 @@ def enrich_historical_data(
 
     # A price of 0, such as a faulty bar or a futures contract settling at 0, has no
     # return from or to it, and an infinite return would carry into every cumulative one.
-    historical_data["Return"] = (
-        bounded_ffill(historical_data[return_column])
-        .pct_change()
-        .replace([np.inf, -np.inf], np.nan)
+    historical_data["Return"] = drop_non_finite(
+        bounded_ffill(historical_data[return_column]).pct_change()
     )
 
     historical_data["Cumulative Return"] = 1
@@ -511,6 +553,113 @@ def enrich_historical_data(
     historical_data.loc[start:end, "Cumulative Return"] = (
         1.0 + adjusted_return.fillna(0)
     ).cumprod()
+
+    return historical_data
+
+
+def prepare_supplied_historical_data(
+    historical_data: pd.DataFrame,
+    start: str | None = None,
+    end: str | None = None,
+) -> pd.DataFrame:
+    """
+    Checks historical data passed to the Toolkit and brings it into the shape the
+    retrieved data has, so that every calculation can rely on it:
+
+        - The columns have two levels: the field (Open, High, Low, Close, Adj Close, Volume,
+          Dividends, Return, Cumulative Return) and the ticker.
+        - The dates become a daily PeriodIndex named Date, sorted from old to new. Dates or
+          date strings are converted, a PeriodIndex is kept as it is.
+        - A date that occurs more than once keeps its last row, with a warning, as a repeated
+          day would otherwise count twice in every average, sum and volatility.
+        - Without a Return or Cumulative Return column, both are calculated per ticker from
+          Adj Close, as for retrieved data (see enrich_historical_data). Supplied returns are
+          used as given.
+
+    The supplied frame itself is not changed.
+
+    Args:
+        historical_data (pd.DataFrame): The historical data passed to the Toolkit.
+        start (str, optional): The start date of the Toolkit, from which the Cumulative
+            Return starts at 1. Defaults to None.
+        end (str, optional): The end date of the Toolkit. Defaults to None.
+
+    Returns:
+        pd.DataFrame: The checked historical data.
+
+    Raises:
+        ValueError: If the columns do not have the field and ticker levels, the index does not
+            hold dates, or the returns cannot be calculated because Adj Close is missing.
+    """
+    if (
+        not isinstance(historical_data.columns, pd.MultiIndex)
+        or historical_data.columns.nlevels != 2  # noqa: PLR2004
+    ):
+        raise ValueError(
+            "The historical data needs two column levels: the field (such as Close and Adj Close) "
+            "and the ticker, e.g. ('Adj Close', 'AAPL'). For one ticker, pd.concat({'AAPL': data}, "
+            "axis=1).swaplevel(axis=1) adds the ticker level."
+        )
+
+    index = historical_data.index
+
+    if not isinstance(index, pd.PeriodIndex):
+        # Integer positions would be read as nanoseconds since 1970 rather than rejected.
+        if pd.api.types.is_numeric_dtype(index):
+            raise ValueError(
+                "The historical data needs dates as its index, found numbers instead. Set the "
+                "date column as the index, e.g. data.set_index('Date')."
+            )
+        try:
+            index = pd.DatetimeIndex(pd.to_datetime(index)).to_period("D")
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"The index of the historical data could not be read as dates: {error}"
+            ) from error
+
+    historical_data = historical_data.set_axis(index.rename("Date"), axis=0)
+
+    if not historical_data.index.is_monotonic_increasing:
+        historical_data = historical_data.sort_index()
+
+    duplicated = historical_data.index.duplicated(keep="last")
+
+    if duplicated.any():
+        logger.warning(
+            "The historical data holds %s dates more than once (first: %s). The last row of each "
+            "is used.",
+            historical_data.index[duplicated].nunique(),
+            historical_data.index[duplicated][0],
+        )
+        historical_data = historical_data[~duplicated]
+
+    fields = historical_data.columns.unique(level=0)
+
+    if "Return" not in fields or "Cumulative Return" not in fields:
+        if "Adj Close" not in fields:
+            raise ValueError(
+                "The historical data needs an Adj Close column to calculate the Return and "
+                "Cumulative Return from, or both of those columns."
+            )
+
+        tickers = historical_data.columns.unique(level=1)
+        enriched = pd.concat(
+            {
+                ticker: enrich_historical_data(
+                    historical_data.xs(ticker, level=1, axis=1).copy(), start, end
+                )
+                for ticker in tickers
+            },
+            axis=1,
+        ).swaplevel(axis=1)
+        historical_data = enriched[
+            [
+                (field, ticker)
+                for field in enriched.columns.unique(level=0)
+                for ticker in tickers
+                if (field, ticker) in enriched.columns
+            ]
+        ]
 
     return historical_data
 
@@ -569,6 +718,28 @@ class LazyDict(dict):
             return self[key]
         except KeyError:
             return default
+
+
+def round_half_up(value: float | str | Decimal, decimals: int) -> float:
+    """
+    Rounds a number to a number of decimals with a half rounded up (away from zero), as
+    statistical agencies round their published figures. Python's round() rounds a half to
+    even and works on the binary float, so 0.125 and 2.675 would not round up.
+
+    Args:
+        value (float | str | Decimal): The number, a missing value is returned as is.
+        decimals (int): The number of decimals to round to.
+
+    Returns:
+        float: The rounded number.
+    """
+    if not isinstance(value, str | Decimal) and pd.isna(value):
+        return value
+
+    # str gives the shortest decimal that is the float, so 2.675 rounds as 2.675.
+    number = value if isinstance(value, Decimal) else Decimal(str(value))
+
+    return float(number.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
 
 
 def handle_portfolio(func):
@@ -677,3 +848,83 @@ def handle_portfolio(func):
         return result
 
     return wrapper
+
+
+def split_values(values: Iterable | str | float | None) -> list:
+    """
+    Splits values given as one comma-separated string (as the MCP server passes a list),
+    as a list or as a single number into a list. Text is stripped of surrounding spaces,
+    and empty text and None are left out; other values, such as numbers, are kept as they
+    are.
+
+    Args:
+        values (Iterable | str | float | None): The values, a comma-separated string, a
+            single value or None.
+
+    Returns:
+        list: The values, empty when none are given.
+    """
+    if values is None:
+        return []
+    if isinstance(values, str):
+        values = values.split(",")
+    elif not isinstance(values, Iterable):
+        values = [values]
+
+    return [
+        value.strip() if isinstance(value, str) else value
+        for value in values
+        if value is not None and (not isinstance(value, str) or value.strip())
+    ]
+
+
+def require_api_key(api_key: str | None, data: str) -> None:
+    """
+    Warns and raises when data from FinancialModelingPrep is requested without an API key.
+
+    Args:
+        api_key (str | None): The FinancialModelingPrep API key.
+        data (str): The data that needs the key, completing "required to retrieve ...".
+
+    Raises:
+        ValueError: When no key is given.
+    """
+    if not api_key:
+        logger.warning(
+            "No FinancialModelingPrep API key found. Retrieving %s requires a key, obtain "
+            "one (with 15%% off) at https://www.jeroenbouma.com/fmp and pass it via the "
+            "api_key argument.",
+            data,
+        )
+        raise ValueError(
+            f"A FinancialModelingPrep API key is required to retrieve {data}. Obtain one at "
+            "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
+        )
+
+
+def require_fred_api_key(fred_api_key: str | None, data: str) -> None:
+    """
+    Warns and raises when data from FRED (Federal Reserve Economic Data) is requested
+    without an API key.
+
+    Args:
+        fred_api_key (str | None): The FRED API key.
+        data (str): The data that needs the key, completing "required to retrieve ...".
+
+    Raises:
+        ValueError: When no key is given.
+    """
+    if not fred_api_key:
+        logger.warning(
+            "No FRED API key found. %s is sourced from FRED (Federal Reserve Economic Data) "
+            "and requires a key to access — registration is entirely free and takes about a "
+            "minute at https://fred.stlouisfed.org/docs/api/api_key.html. Once you have one, "
+            "pass it via the fred_api_key argument or set the FRED_API_KEY environment "
+            "variable.",
+            data[0].upper() + data[1:],
+        )
+        raise ValueError(
+            f"A FRED API key is required to retrieve {data}. Obtain a free key at "
+            "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
+            "fred_api_key argument or set the FRED_API_KEY environment variable."
+        )

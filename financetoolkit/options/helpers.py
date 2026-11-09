@@ -12,7 +12,11 @@ from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-locals
+
+# The most strike prices per ticker: every one is priced for each expiration (and in a
+# binomial model has a tree of its own), so a grid of a high share price in small steps
+# would not fit in memory.
+MAX_STRIKES = 10_000
 
 
 def define_strike_prices(
@@ -34,19 +38,41 @@ def define_strike_prices(
         strike_price_range (float): the strike price range.
 
     Returns:
-        dict: a dictionary of strike prices for each ticker.
+        dict: a dictionary of strike prices for each ticker, without the tickers that have no
+        price.
     """
+    if strike_price_range < 0 or strike_step_size < 0:
+        raise ValueError(
+            "The strike price range and the strike step size must be positive."
+        )
+    if strike_price_range > 1:
+        raise ValueError("The strike price range must be between 0 and 1.")
+    if strike_step_size == 0:
+        raise ValueError("The strike step size must be greater than 0.")
+
     strike_prices_per_ticker = {}
 
     for ticker in tickers:
-        if strike_price_range < 0 or strike_step_size < 0:
-            raise ValueError(
-                "The strike price range and the strike step size must be positive."
+        # A ticker without a price on the date (not listed yet, delisted or suspended) has
+        # no strikes around it, and is left out rather than failing the other tickers.
+        if pd.isna(stock_price.get(ticker)):
+            logger.warning(
+                "%s has no price on %s, so it is left out of the option values.",
+                ticker,
+                stock_price.name,
             )
-        if strike_price_range > 1:
-            raise ValueError("The strike price range must be between 0 and 1.")
-        if strike_step_size == 0:
-            raise ValueError("The strike step size must be greater than 0.")
+            continue
+        if (
+            strike_count := 2
+            * strike_price_range
+            * float(stock_price.loc[ticker])
+            / strike_step_size
+        ) > MAX_STRIKES:
+            raise ValueError(
+                f"The strike prices of {ticker} would be about {strike_count:,.0f} prices; at "
+                f"most {MAX_STRIKES:,} can be calculated. Please use a larger "
+                "strike_step_size or a smaller strike_price_range."
+            )
 
         if strike_price_range == 0:
             strike_prices_per_ticker[ticker] = [
@@ -161,7 +187,7 @@ def create_binomial_tree_dataframe(
 
 
 def create_stock_simulation_dataframe(
-    stock_simulation_dictonary: dict[str, pd.DataFrame],
+    stock_simulation_dictionary: dict[str, pd.DataFrame],
     start_date: str | pd.Period,
     time_to_expiration: float,
 ):
@@ -170,7 +196,7 @@ def create_stock_simulation_dataframe(
     over time (the time of expiration).
 
     Args:
-        stock_simulation_dictonary (dict[str, pd.DataFrame]): the simulated stock prices
+        stock_simulation_dictionary (dict[str, pd.DataFrame]): the simulated stock prices
         per ticker, one DataFrame of price paths per ticker.
         start_date (str | pd.Period): the date the simulation starts from, which labels
         the first column.
@@ -180,7 +206,7 @@ def create_stock_simulation_dataframe(
         pd.DataFrame: the DataFrame that correctly displays the simulated stock prices for
         each ticker over time.
     """
-    stock_simulation_dataframe = pd.concat(stock_simulation_dictonary)
+    stock_simulation_dataframe = pd.concat(stock_simulation_dictionary)
 
     start_date_string = pd.to_datetime(str(start_date))
     end_date_string = pd.to_datetime(
@@ -323,3 +349,32 @@ def evaluate_on_grid(
         strike: {time: float(values[row, column]) for column, time in enumerate(times)}
         for row, strike in enumerate(strikes)
     }
+
+
+def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:
+    """
+    Raises a TypeError for an option input that is not a number. A boolean is not taken as a
+    number, even though Python counts it as an int.
+
+    Args:
+        arrays (bool, optional): Whether an np.ndarray or pd.Series is accepted as well, for
+            the formulas that price a whole range of inputs at once. An input of None (an
+            optional input left out) is then skipped. Defaults to False.
+        **kwargs: The inputs to validate, keyed by argument name.
+
+    Raises:
+        TypeError: If any of the inputs is not a float or int (or, with arrays=True, an
+            np.ndarray or pd.Series).
+    """
+    for name, value in kwargs.items():
+        if arrays and value is None:
+            continue
+        if not isinstance(
+            value, (int, float, np.ndarray, pd.Series) if arrays else (int, float)
+        ) or isinstance(value, bool):
+            raise TypeError(
+                f"{name} must be a float, int, np.ndarray or pd.Series, "
+                f"received {type(value).__name__}."
+                if arrays
+                else f"{name} must be a float or int, received {type(value).__name__}."
+            )

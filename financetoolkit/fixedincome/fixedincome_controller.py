@@ -44,6 +44,7 @@ from financetoolkit.fixedincome import (
     fmp_model,
     fred_model,
     helpers as fixedincome_helpers,
+    hqm_model,
     norgesbank_model,
     rba_model,
     riksbank_model,
@@ -84,23 +85,6 @@ MATURITY_UNITS: dict[str, tuple[int, int]] = {
     "M": (1, 12),
     "Y": (1, 1),
 }
-
-
-def _split_values(values: list | tuple | str | None) -> list | None:
-    """
-    Splits a comma-separated string, as the MCP server passes a list, into its values.
-
-    Args:
-        values (list | tuple | str | None): The values or a comma-separated string.
-
-    Returns:
-        list | None: The values, or None when none are given.
-    """
-    if values is None:
-        return None
-    if isinstance(values, str):
-        return [value.strip() for value in values.split(",") if value.strip()]
-    return list(values)
 
 
 def _maturity_in_months(label: str) -> float:
@@ -265,15 +249,13 @@ def _maturities(
     if maturities is None:
         maturities = default
     elif isinstance(maturities, str):
-        maturities = _split_values(maturities) or []
+        maturities = helpers.split_values(maturities)
     elif isinstance(maturities, int | float):
         maturities = [maturities]
 
     return [_maturity_key(maturity) for maturity in maturities]
 
 
-# pylint: disable=too-many-instance-attributes,too-few-public-methods,too-many-lines,
-# pylint: disable=too-many-locals,line-too-long,too-many-public-methods
 # ruff: noqa: E501
 
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
@@ -455,35 +437,6 @@ class FixedIncome:
         # Published once here so the FRED, ECB and Fed free functions read it back.
         set_active_cache(self._cache)
 
-    def _require_fred_api_key(self) -> None:
-        if not self._fred_api_key:
-            logger.warning(
-                "No FRED API key found. ICE BofA bond index data is sourced from FRED "
-                "(Federal Reserve Economic Data) and requires a key to access — "
-                "registration is entirely free and takes about a minute at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html. Once you have one, "
-                "pass it via the fred_api_key argument or set the FRED_API_KEY "
-                "environment variable."
-            )
-            raise ValueError(
-                "A FRED API key is required to retrieve ICE BofA data. Obtain a free key at "
-                "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
-                "fred_api_key argument or set the FRED_API_KEY environment variable."
-            )
-
-    def _require_api_key(self) -> None:
-        if not self._api_key:
-            logger.warning(
-                "No FinancialModelingPrep API key found. Treasury par yield curve rates "
-                "require a key to access, obtain one (with 15% off) at "
-                "https://www.jeroenbouma.com/fmp and pass it via the api_key argument."
-            )
-            raise ValueError(
-                "A FinancialModelingPrep API key is required to retrieve Treasury rates. "
-                "Obtain one at https://www.jeroenbouma.com/fmp and pass it via the "
-                "api_key argument."
-            )
-
     def _select_bonds(
         self,
         bonds: list[str] | str | None,
@@ -518,7 +471,7 @@ class FixedIncome:
             Issuer, Security Type, Coupon, Maturity, Price, Price Date, Years to Maturity
             and Yield to Maturity, unrounded.
         """
-        identifiers = [value.upper() for value in _split_values(bonds) or []]
+        identifiers = [value.upper() for value in helpers.split_values(bonds)]
         treasury_ids = [
             cusip
             for value in identifiers
@@ -1565,11 +1518,10 @@ class FixedIncome:
         | 912797VF1 | 2027-06-10 |                217 | 97.57   |           0.0403 |                  0.0418 |
         | 912797WJ2 | 2027-09-30 |                329 | 96.2827 |           0.0407 |                  0.0424 |
         """
-        identifiers = _split_values(bonds)
         bills = self.get_treasury_securities(
             date=date,
             security_type="Bill",
-            bonds=identifiers,
+            bonds=bonds,
             rounding=10,
         )
         if not isinstance(bills, pd.DataFrame) or bills.empty:
@@ -2790,7 +2742,7 @@ class FixedIncome:
                 if not isinstance(label, str) or label.replace(".", "", 1).isdigit()
                 else label
             )
-            for label in _split_values(maturities) or []
+            for label in helpers.split_values(maturities)
         ] or None
 
         fits = {}
@@ -3356,7 +3308,7 @@ class FixedIncome:
         )
 
         if security_type is not None:
-            requested = _split_values(security_type) or []
+            requested = helpers.split_values(security_type)
             types = {kind.lower(): kind for kind in TREASURY_SECURITY_TYPES}
             if unknown := [kind for kind in requested if kind.lower() not in types]:
                 raise ValueError(
@@ -3524,11 +3476,11 @@ class FixedIncome:
         | US037833EH93 |   0.014  | 2028-08-05 |   94.67 |              0.046  |              1.6896 |     0.0019 |
         | US037833FD70 |   0.0465 | 2028-11-09 |   99.95 |              0.0468 |              1.8564 |     0.0022 |
         """
-        self._require_api_key()
+        helpers.require_api_key(self._api_key, "the bond universe")
 
         # The bonds asked for, before the name is reused for the table of bonds.
-        identifiers = {value.upper() for value in _split_values(bonds) or []}
-        funds = [fund.upper() for fund in (_split_values(etfs) or BOND_FUNDS)]
+        identifiers = {value.upper() for value in helpers.split_values(bonds)}
+        funds = [fund.upper() for fund in (helpers.split_values(etfs) or BOND_FUNDS)]
         holdings, missing = toolkit_fmp_model.get_etf_holdings(funds, self._api_key)
         if missing:
             logger.warning("No holdings were found for %s.", ", ".join(missing))
@@ -3626,7 +3578,7 @@ class FixedIncome:
                 | bonds["CUSIP"].astype(str).str.upper().isin(identifiers)
             ]
         if issuer is not None:
-            names = [name.upper() for name in _split_values(issuer) or []]
+            names = [name.upper() for name in helpers.split_values(issuer)]
             bonds = bonds[
                 bonds["Issuer"]
                 .str.upper()
@@ -3782,7 +3734,7 @@ class FixedIncome:
         requested_types = None
         if security_type is not None:
             types = {kind.lower(): kind for kind in TREASURY_PRICE_TYPES}
-            requested = _split_values(security_type) or []
+            requested = helpers.split_values(security_type)
             if unknown := [kind for kind in requested if kind.lower() not in types]:
                 raise ValueError(
                     f"The security type {', '.join(unknown)} does not exist. Choose from "
@@ -3796,7 +3748,7 @@ class FixedIncome:
         if bonds is not None:
             cusips = [
                 fixedincome_helpers.treasury_cusip(value.upper()) or value.upper()
-                for value in _split_values(bonds) or []
+                for value in helpers.split_values(bonds)
             ]
             prices = prices[prices["CUSIP"].isin(cusips)]
         if prices.empty:
@@ -3911,7 +3863,7 @@ class FixedIncome:
         | 2024-01-12 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0126 |      0.0112 |
         | 2024-01-15 |      0.0074 |      0.0094 |      0.0107 |       0.0128 |        0.0125 |      0.0111 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         option_adjusted_spread = (
             fred_model.get_maturity_option_adjusted_spread(
@@ -4004,7 +3956,7 @@ class FixedIncome:
         | 2024-01-12 |   0.0451 |   0.0467 |   0.0502 |   0.0534 |   0.0613 |   0.0753 |   0.1338 |
         | 2024-01-15 |   0.0451 |   0.0467 |   0.0501 |   0.0533 |   0.0611 |   0.0751 |   0.1328 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         effective_yield = (
             fred_model.get_maturity_effective_yield(
@@ -4091,7 +4043,7 @@ class FixedIncome:
         | 2024-01-12 |     1922.1  |     2498.89 |      812.41 |       585.2  |       4213.47 |     4338.43 |
         | 2024-01-15 |     1922.67 |     2499.76 |      812.67 |       585.41 |       4215.34 |     4340.24 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         total_return = (
             fred_model.get_maturity_total_return(
@@ -4179,7 +4131,7 @@ class FixedIncome:
         | 2024-01-12 |   0.0453 |   0.0468 |   0.0499 |   0.0537 |   0.0642 |   0.0786 |   0.1335 |
         | 2024-01-15 |   0.0452 |   0.0468 |   0.0498 |   0.0537 |   0.064  |   0.0784 |   0.1325 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         yield_to_worst = (
             fred_model.get_maturity_yield_to_worst(
@@ -4225,8 +4177,11 @@ class FixedIncome:
         years, comparable to the Treasury par yield curve (see `get_treasury_rates`). Every
         value is the average over the month.
 
-        The data comes from FRED, which republishes the Treasury's curve, so a free FRED API
-        key is required. The rates are returned as decimal fractions (0.0558 for 5.58%).
+        No API key is needed: without a FRED API key the curve comes from the Treasury's own
+        HQM files, which gives the same figures. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `FixedIncome` class), it comes from FRED, which
+        republishes the Treasury's curve. The rates are returned as decimal fractions (0.0558
+        for 5.58%), semi-annual bond-equivalent as the Treasury publishes them.
 
         See definition: https://home.treasury.gov/data/treasury-coupon-issues-and-corporate-bond-yield-curves
 
@@ -4267,13 +4222,19 @@ class FixedIncome:
         | 2026-07 | 0.0433 | 0.0488 | 0.0545 | 0.0643 | 0.0677 |
         | 2026-08 | 0.0431 | 0.0497 | 0.0558 | 0.0665 | 0.0702 |
         """
-        self._require_fred_api_key()
         if rate not in ("spot", "par"):
             raise ValueError(f"The rate must be 'spot' or 'par', not {rate!r}.")
 
-        hqm_curve = fred_model.get_hqm_corporate_bond_yield_curve(
-            rate, self._start_date, self._end_date, self._fred_api_key
-        )
+        # FRED republishes the Treasury's curve, so it is used when a key is set and the
+        # Treasury's files otherwise.
+        if self._fred_api_key:
+            hqm_curve = fred_model.get_hqm_corporate_bond_yield_curve(
+                rate, self._start_date, self._end_date, self._fred_api_key
+            )
+        elif rate == "spot":
+            hqm_curve = hqm_model.get_hqm_spot_rates(self._start_date, self._end_date)
+        else:
+            hqm_curve = hqm_model.get_hqm_par_yields()
 
         return finalize_dataset(
             dataset=hqm_curve,
@@ -4299,14 +4260,14 @@ class FixedIncome:
         """
         Computes the credit spread of high quality US corporate bonds per maturity: the
         Treasury's High Quality Market (HQM) corporate par yield minus the Treasury constant
-        maturity yield, at 2, 5, 10 and 30 years, monthly from 1984. Both legs are par
+        maturity yield, at 2, 5, 10 and 30 years, monthly. Both legs are par
         yields averaged over the month, so they are directly comparable. The spread is what
         investors demand for the default and liquidity risk of investment grade companies,
         and its shape across maturities, usually wider for longer maturities, shows how that
         compensation grows with time.
 
         Unlike the ICE BofA option-adjusted spreads (see `get_ice_bofa_option_adjusted_spread`),
-        of which FRED only carries the last three years, this spread covers four decades, long
+        of which FRED only carries the last three years, this spread covers decades, long
         enough to calibrate how credit spreads behave through several business cycles.
 
         The formula is as follows:
@@ -4314,8 +4275,14 @@ class FixedIncome:
         - HQM Spread (maturity) = HQM Corporate Par Yield (maturity) - Treasury Constant Maturity Yield (maturity),
           both monthly averages, for 2, 5, 10 and 30 years
 
-        The data comes from FRED, so a free FRED API key is required. The spreads are returned
-        as decimal fractions (0.0079 for 0.79 percentage points).
+        No API key is needed: without a FRED API key both legs come from the Treasury, the HQM
+        par yields from its HQM files and the Treasury yields as the monthly averages of its
+        daily par yield curve, rounded to two decimals in percent as the Federal Reserve's H.15
+        release publishes them. That curve starts in 1990 and has no 30-year yield from
+        February 2002 to February 2006, so the keyless spread starts in 1990 and leaves those
+        30-year months empty. When a FRED API key is set (see the `fred_api_key` parameter of
+        the `FixedIncome` class), the Treasury yields are FRED's constant maturity series, from
+        1984. The spreads are returned as decimal fractions (0.0079 for 0.79 percentage points).
 
         Also known as: corporate credit spread curve, credit spread term structure,
         investment grade spread.
@@ -4352,10 +4319,15 @@ class FixedIncome:
         | 2026-07 | 0.0035 | 0.0053 | 0.0075 | 0.0092 |
         | 2026-08 | 0.0036 | 0.0056 | 0.0079 | 0.0095 |
         """
-        self._require_fred_api_key()
-
-        hqm_spread = fred_model.get_hqm_corporate_bond_spread(
-            self._start_date, self._end_date, self._fred_api_key
+        # FRED carries both legs, so it is used when a key is set and the Treasury otherwise.
+        hqm_spread = (
+            fred_model.get_hqm_corporate_bond_spread(
+                self._start_date, self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else hqm_model.get_hqm_corporate_bond_spread(
+                self._start_date, self._end_date
+            )
         )
 
         return finalize_dataset(
@@ -4522,7 +4494,7 @@ class FixedIncome:
         )
 
         if "United States" in requested and not self._fred_api_key:
-            self._require_fred_api_key()
+            helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
 
         if unavailable := [country for country in requested if country not in sources]:
             logger.warning(
@@ -4913,10 +4885,11 @@ class FixedIncome:
         | CCC      |   0.132  |        0.22   |                   0.1975 |                   0.4831 |                   0.6671 |                    0.8892 |
         """
         horizons = [
-            float(horizon) for horizon in _split_values(horizons) or [1, 3, 5, 10]
+            float(horizon)
+            for horizon in helpers.split_values(horizons) or [1, 3, 5, 10]
         ]
 
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
         start_date = (
             datetime.strptime(self._end_date, "%Y-%m-%d") - timedelta(days=31)
         ).strftime("%Y-%m-%d")
@@ -4930,7 +4903,7 @@ class FixedIncome:
         # The FRED spreads arrive as decimals (0.0077 for 77 basis points), the unit the model takes.
         spread_series = option_adjusted_spread.iloc[-1].dropna()
         if ratings is not None:
-            requested = [rating.upper() for rating in _split_values(ratings) or []]
+            requested = [rating.upper() for rating in helpers.split_values(ratings)]
             if unknown := [
                 rating for rating in requested if rating not in spread_series.index
             ]:
@@ -5032,7 +5005,7 @@ class FixedIncome:
         | 2026-07 | 0.0116 | 0.0159 |      0.0043 |
         | 2026-08 | 0.012  | 0.0164 |      0.0044 |
         """
-        self._require_fred_api_key()
+        helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
         period = validate_period(
             period, ["daily", "weekly", "monthly"], "Moody's corporate bond yield"
         )

@@ -10,8 +10,6 @@ import pandas as pd
 import statsmodels.api as sm
 from statsmodels.tools.sm_exceptions import IterationLimitWarning
 
-# pylint: disable=too-many-instance-attributes,too-many-locals,too-many-arguments
-
 TWO_DIMENSIONAL = 2
 COV_TYPES = ("nonrobust", "HC0", "HC1", "HC2", "HC3", "cluster", "HAC")
 # The subset of statsmodels' cov_type literals this module exposes; typed so the

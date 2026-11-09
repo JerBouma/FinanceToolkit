@@ -1,5 +1,4 @@
 """Performance Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 
 import copy
 from functools import partial
@@ -194,6 +193,61 @@ def test_get_sharpe_ratio_deflated(recorder, performance_module):
     fewer_trials = deflated(n_trials=1)
     more_trials = deflated(n_trials=50)
     assert (more_trials.fillna(0) <= fewer_trials.fillna(0) + 1e-9).all().all()
+
+
+def test_get_sharpe_ratio_lo(recorder, performance_module):
+    lo = partial(performance_module.get_sharpe_ratio, method="lo")
+
+    recorder.capture(lo())
+    recorder.capture(lo(period="quarterly", lags=3))
+    recorder.capture(lo(period="monthly", rolling=36))
+    # Rolling windows below 30 observations have no ratio.
+    assert lo(period="monthly", rolling=12).isna().all().all()
+
+    # Without autocorrelation lags, Lo's factor is SQRT(q) and the ratio the annualized one.
+    pd.testing.assert_frame_equal(
+        lo(lags=0, rounding=8),
+        performance_module.get_sharpe_ratio(annualize=True, rounding=8),
+    )
+
+
+def test_get_sharpe_ratio_standard_error(recorder, performance_module):
+    recorder.capture(performance_module.get_sharpe_ratio_standard_error())
+    recorder.capture(
+        performance_module.get_sharpe_ratio_standard_error(method="non_normal")
+    )
+    recorder.capture(
+        performance_module.get_sharpe_ratio_standard_error(
+            period="quarterly", method="gmm"
+        )
+    )
+    assert performance_module.get_sharpe_ratio_standard_error(method="other").empty
+
+
+def test_get_minimum_track_record_length(recorder, performance_module):
+    recorder.capture(performance_module.get_minimum_track_record_length())
+    recorder.capture(
+        performance_module.get_minimum_track_record_length(
+            period="quarterly", confidence_level=0.9
+        )
+    )
+    recorder.capture(
+        performance_module.get_minimum_track_record_length(
+            period="monthly", rolling=12, benchmark_sharpe_ratio=-0.1
+        )
+    )
+
+
+def test_get_coskewness(recorder, performance_module):
+    recorder.capture(performance_module.get_coskewness())
+    recorder.capture(performance_module.get_coskewness(method="residual"))
+    recorder.capture(performance_module.get_coskewness(period="quarterly"))
+
+
+def test_get_cokurtosis(recorder, performance_module):
+    recorder.capture(performance_module.get_cokurtosis())
+    recorder.capture(performance_module.get_cokurtosis(method="residual"))
+    recorder.capture(performance_module.get_cokurtosis(period="quarterly"))
 
 
 def test_get_sortino_ratio(recorder, performance_module):
@@ -550,4 +604,183 @@ def test_morningstar_measures_need_a_yearly_or_quarterly_period(performance_modu
     with pytest.raises(ValueError, match="yearly or quarterly"):
         performance_module._get_morningstar_risk_adjusted_return(
             2, "monthly", True, None
+        )
+
+
+def _toolkit_with_historical(historical):
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical,
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+
+    return toolkit
+
+
+DRAWDOWN_AND_TAIL_RATIOS = [
+    "get_ulcer_performance_index",
+    "get_calmar_ratio",
+    "get_sterling_ratio",
+    "get_burke_ratio",
+    "get_starr_ratio",
+    "get_rachev_ratio",
+]
+
+
+def test_a_later_listed_ticker_keeps_the_periods_of_the_others(performance_module):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    before_listing = historical.index < pd.Period("2021-06-01", "D")
+    msft_columns = [column for column in historical.columns if column[1] == "MSFT"]
+    historical.loc[before_listing, msft_columns] = np.nan
+    later_listed = _toolkit_with_historical(historical).performance
+
+    for method in DRAWDOWN_AND_TAIL_RATIOS:
+        result = getattr(later_listed, method)()
+        reference = getattr(performance_module, method)()
+
+        # AAPL's data is unchanged, so neither are its ratios, also before MSFT lists.
+        pd.testing.assert_series_equal(result["AAPL"], reference["AAPL"], obj=method)
+        assert result.loc[:"2020", "MSFT"].isna().all(), method
+
+
+def test_a_constant_price_gives_nan_instead_of_dropping_other_tickers(
+    performance_module,
+):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    for column in ["Open", "High", "Low", "Close", "Adj Close"]:
+        historical[(column, "MSFT")] = 100.0
+    historical[("Return", "MSFT")] = 0.0
+    historical[("Cumulative Return", "MSFT")] = 1.0
+    constant = _toolkit_with_historical(historical).performance
+
+    calmar = constant.get_calmar_ratio()
+    pd.testing.assert_series_equal(
+        calmar["AAPL"], performance_module.get_calmar_ratio()["AAPL"]
+    )
+    # No drawdown and no return: 0 / 0 is undefined.
+    assert calmar["MSFT"].isna().all()
+    # A beta of 0 leaves the Treynor ratio undefined, not minus infinity.
+    assert constant.get_treynor_ratio()["MSFT"].isna().all()
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_calmar_ratio",
+        "get_burke_ratio",
+        "get_ulcer_performance_index",
+        "get_sortino_ratio",
+        "get_omega_ratio",
+        "get_gain_to_pain_ratio",
+    ],
+)
+def test_weeks_without_a_drawdown_or_a_loss_are_nan_not_infinite(
+    performance_module, method
+):
+    result = getattr(performance_module, method)(period="weekly")
+
+    assert not np.isinf(result.to_numpy(dtype=float)).any()
+    assert result.notna().any().all()
+
+
+def _daily_returns_in(performance_module, ticker: str, year: str) -> pd.Series:
+    """The daily returns of one ticker within one calendar year."""
+    daily = performance_module._historical_data["daily"]["Return"][ticker]
+    return daily[daily.index.year == int(year)]
+
+
+def _year_return(performance_module, ticker: str, year: str) -> float:
+    return performance_module._historical_data["yearly"]["Return"].loc[year, ticker]
+
+
+def _drawdowns(returns: pd.Series) -> pd.Series:
+    wealth = (1 + returns.fillna(0)).cumprod()
+    return wealth / wealth.cummax().clip(lower=1) - 1
+
+
+def test_get_calmar_ratio_divides_the_year_by_its_maximum_drawdown(
+    performance_module,
+):
+    result = performance_module.get_calmar_ratio(rounding=None)
+    drawdowns = _drawdowns(_daily_returns_in(performance_module, "AAPL", "2021"))
+
+    assert result.loc["2021", "AAPL"] == pytest.approx(
+        _year_return(performance_module, "AAPL", "2021") / abs(drawdowns.min()),
+        abs=5e-5,
+    )
+
+
+def test_get_sterling_ratio_divides_the_year_by_its_adjusted_average_drawdown(
+    performance_module,
+):
+    drawdowns = _drawdowns(_daily_returns_in(performance_module, "MSFT", "2022"))
+    year_return = _year_return(performance_module, "MSFT", "2022")
+
+    for adjustment in (0.1, 0.0):
+        result = performance_module.get_sterling_ratio(
+            adjustment=adjustment, rounding=None
+        )
+        assert result.loc["2022", "MSFT"] == pytest.approx(
+            year_return / (abs(drawdowns[drawdowns < 0].mean()) + adjustment),
+            abs=5e-5,
+        )
+
+
+def test_get_burke_ratio_has_the_sign_of_the_excess_return(performance_module):
+    result = performance_module.get_burke_ratio(rounding=None)
+    excess_return = performance_module.get_excess_return(period="yearly")
+
+    assert not result.empty
+    common = result.index.intersection(excess_return.index)
+    assert (
+        (
+            np.sign(result.loc[common, ["AAPL", "MSFT"]])
+            == np.sign(excess_return.loc[common, ["AAPL", "MSFT"]])
+        )
+        .all()
+        .all()
+    )
+
+
+def test_get_kappa_ratio_scales_the_mean_excess_return_by_the_partial_moment(
+    performance_module,
+):
+    within = performance_module._get_column(
+        "yearly", "Excess Return", within_period=True
+    )
+    excess = within.loc["2021", "AAPL"]
+
+    for order in (2, 3):
+        result = performance_module.get_kappa_ratio(order=order, rounding=None)
+        lower_partial_moment = (excess.clip(upper=0).abs() ** order).mean()
+
+        assert result.loc["2021", "AAPL"] == pytest.approx(
+            excess.mean() / lower_partial_moment ** (1 / order), abs=5e-5
+        )
+
+
+def test_get_covariance_matrix_is_symmetric_with_the_variances_on_the_diagonal(
+    performance_module,
+):
+    result = performance_module.get_covariance_matrix(period="monthly", rounding=10)
+    monthly = performance_module._historical_data["monthly"]["Return"].loc[
+        performance_module._start_date : performance_module._end_date
+    ]
+
+    pd.testing.assert_frame_equal(result, result.T)
+    for ticker in result.columns:
+        assert result.loc[ticker, ticker] == pytest.approx(
+            monthly[ticker].var(), abs=1e-9
         )

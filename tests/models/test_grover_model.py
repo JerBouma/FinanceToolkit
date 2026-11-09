@@ -4,8 +4,6 @@ import pytest
 
 from financetoolkit.models import grover_model
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_working_capital_to_total_assets_ratio(recorder):
     recorder.capture(

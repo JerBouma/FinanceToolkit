@@ -6,12 +6,12 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-# pylint: disable=too-many-locals
-
-
 # The most time steps of a tree: the tree is returned as a table of steps by steps, so its size
 # grows with the square of the steps.
 MAX_TIMESTEPS = 1_000
+# The most time steps whose paths are listed one by one (show_unique_combinations=False):
+# there are 2 ** timesteps of them, 65,536 at 16 steps.
+MAX_PATH_TIMESTEPS = 16
 
 
 def calculate_up_and_down_movements(volatility: float, time_delta: float):
@@ -100,6 +100,13 @@ def calculate_stock_prices(
         raise ValueError(
             "The up and down movement are equal, which happens when the volatility or the "
             "time to expiration is zero. The tree cannot be constructed in that case."
+        )
+
+    if not show_unique_combinations and period_length > MAX_PATH_TIMESTEPS:
+        raise ValueError(
+            f"Listing every path of {period_length:,} time steps gives 2^{period_length} "
+            f"paths; use at most {MAX_PATH_TIMESTEPS} time steps, or "
+            "show_unique_combinations=True for the distinct prices per step."
         )
 
     if show_unique_combinations:

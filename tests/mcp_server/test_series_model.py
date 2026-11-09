@@ -9,8 +9,6 @@ import pytest
 from financetoolkit.mcp_server import mcp_controller, series_model
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 
-# pylint: disable=missing-function-docstring
-
 
 def test_references_are_parsed():
     references = series_model.parse_series_references(

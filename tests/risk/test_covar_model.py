@@ -5,8 +5,6 @@ import pandas as pd
 
 from financetoolkit.risk import covar_model
 
-# pylint: disable=missing-function-docstring
-
 QUANTILE_REGRESSION_TOLERANCE = 0.2
 CRASH_PROBABILITY = 0.05
 TAIL_LINKED_SLOPE_MINIMUM = 0.2

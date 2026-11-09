@@ -6,8 +6,6 @@ import pytest
 from financetoolkit.technicals import breadth_model
 from tests.technical.sample_prices import sample_prices
 
-# pylint: disable=missing-function-docstring
-
 
 def test_get_mcclellan_oscillator(recorder):
     prices = sample_prices()

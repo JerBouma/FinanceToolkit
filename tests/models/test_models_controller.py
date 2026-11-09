@@ -1,5 +1,4 @@
 """Models Controller Tests""" ""
-# pylint: disable=missing-function-docstring
 import pandas as pd
 
 
@@ -52,12 +51,12 @@ def test_get_intrinsic_valuation(recorder, models_module):
     )
 
 
-def test_get_gorden_growth_model(recorder, models_module):
+def test_get_gordon_growth_model(recorder, models_module):
     recorder.capture(
-        models_module.get_gorden_growth_model(rate_of_return=0.1, growth_rate=0.09)
+        models_module.get_gordon_growth_model(rate_of_return=0.1, growth_rate=0.09)
     )
     recorder.capture(
-        models_module.get_gorden_growth_model(
+        models_module.get_gordon_growth_model(
             rate_of_return=0.2, growth_rate=0.1, project_periods=10
         )
     )
@@ -247,22 +246,34 @@ def test_cost_of_equity_follows_trailing(models_module):
     import pandas as pd
 
     # A trailing sum of two years of Net Income or Interest Expense is charged the Cost of
-    # Equity of two years, in residual income and in the WACC (and so EVA and PVGO).
-    single = models_module.get_residual_income(rounding=10).xs(
+    # Equity of two years, in residual income and in the WACC (and so EVA and PVGO). Without
+    # a premium the Cost of Equity is the risk-free rate, which doubles.
+    single = models_module.get_residual_income(rounding=10, market_risk_premium=0).xs(
         "Cost of Equity", level=1
     )
-    double = models_module.get_residual_income(rounding=10, trailing=2).xs(
-        "Cost of Equity", level=1
-    )
+    double = models_module.get_residual_income(
+        rounding=10, trailing=2, market_risk_premium=0
+    ).xs("Cost of Equity", level=1)
     pd.testing.assert_frame_equal(double, 2 * single, rtol=1e-6)
 
-    wacc_single = models_module.get_weighted_average_cost_of_capital(rounding=10).xs(
-        "Cost of Equity", level=1
-    )
+    wacc_single = models_module.get_weighted_average_cost_of_capital(
+        rounding=10, market_risk_premium=0
+    ).xs("Cost of Equity", level=1)
     wacc_double = models_module.get_weighted_average_cost_of_capital(
-        rounding=10, trailing=2
+        rounding=10, trailing=2, market_risk_premium=0
     ).xs("Cost of Equity", level=1)
     pd.testing.assert_frame_equal(wacc_double, 2 * wacc_single, rtol=1e-6)
+
+    # With a premium, both use the same Beta of the two years of daily returns.
+    pd.testing.assert_frame_equal(
+        models_module.get_residual_income(rounding=10, trailing=2).xs(
+            "Cost of Equity", level=1
+        ),
+        models_module.get_weighted_average_cost_of_capital(rounding=10, trailing=2).xs(
+            "Cost of Equity", level=1
+        ),
+        rtol=1e-6,
+    )
 
 
 def test_intrinsic_valuation_discounts_the_free_cash_flow_to_firm(models_module):
@@ -502,7 +513,7 @@ def test_quarterly_dividend_discount_models_use_an_annual_dividend(
     annual_dividend = quarterly_dividends.rolling(4).sum().iloc[-1]
     last_quarter = quarterly_dividends.index[-1]
 
-    gordon = models_module.get_gorden_growth_model(
+    gordon = models_module.get_gordon_growth_model(
         rate_of_return=0.08, growth_rate=0.03, project_periods=2, rounding=10
     )
     # The last complete quarter is valued off the trailing four quarters of dividends.
@@ -637,7 +648,9 @@ def test_piotroski_score_compares_quarters_year_over_year(models_module, monkeyp
             )
 
     _use_quarterly_statements(models_module, monkeypatch)
-    quarterly = models_module.get_piotroski_score()
+    # trailing=1 scores single quarters (the default sums four), so the criteria can be
+    # recomputed from the quarterly statements as they are.
+    quarterly = models_module.get_piotroski_score(trailing=1)
     balance = models_module._balance_sheet_statement
     income = models_module._income_statement
     current_ratio = (
@@ -703,7 +716,7 @@ def test_beneish_m_score_compares_quarters_year_over_year(models_module, monkeyp
     )
 
     _use_quarterly_statements(models_module, monkeypatch)
-    quarterly = models_module.get_beneish_m_score(rounding=10)
+    quarterly = models_module.get_beneish_m_score(rounding=10, trailing=1)
     revenue = models_module._income_statement.loc[:, "Revenue", :]
     expected = (revenue / revenue.shift(4, axis=1)).round(10)
 
@@ -716,6 +729,25 @@ def test_beneish_m_score_compares_quarters_year_over_year(models_module, monkeyp
     m_score = quarterly.xs("Beneish M-Score", level=1)
     assert m_score.loc[:, : revenue.columns[3]].isna().all().all()
     assert m_score.loc[:, revenue.columns[4] :].notna().all().all()
+
+
+def test_ohlson_o_score_compares_quarters_year_over_year(models_module, monkeypatch):
+    import pandas as pd
+
+    _use_quarterly_statements(models_module, monkeypatch)
+    quarterly = models_module.get_ohlson_o_score(rounding=10, trailing=1)
+    net_income = models_module._income_statement.loc[:, "Net Income", :]
+    prior = net_income.shift(4, axis=1)
+    expected = ((net_income - prior) / (net_income.abs() + prior.abs())).round(10)
+
+    pd.testing.assert_frame_equal(
+        quarterly.xs("Change in Net Income", level=1),
+        expected.loc[:, quarterly.columns],
+        check_names=False,
+    )
+    # Without a prior year the loss indicator is unknown, not 0.
+    indicator = quarterly.xs("Negative Income Indicator", level=1)
+    assert indicator.loc[:, : net_income.columns[3]].isna().all().all()
 
 
 def test_get_reverse_discounted_cash_flow(recorder, models_module):
@@ -1018,11 +1050,16 @@ def test_default_wacc_covers_a_year():
     models = synthetic_models(growing_company())
     requested = []
 
-    def weighted_average_cost_of_capital(show_full_results=True, trailing=None):
+    def weighted_average_cost_of_capital(trailing=None, **kwargs):  # noqa: ARG001
         requested.append(trailing)
-        return pd.DataFrame({"2023Q4": [0.09]}, index=["A"])
+        return pd.DataFrame(
+            {"2023Q4": [0.09]},
+            index=pd.MultiIndex.from_tuples(
+                [("A", "Weighted Average Cost of Capital")]
+            ),
+        )
 
-    models.get_weighted_average_cost_of_capital = weighted_average_cost_of_capital
+    models._weighted_average_cost_of_capital = weighted_average_cost_of_capital
 
     models.get_earnings_power_value()
     models.get_reverse_discounted_cash_flow()
@@ -1501,3 +1538,125 @@ def test_historical_intrinsic_valuation_ends_at_the_single_valuation(models_modu
 def test_get_return_decomposition(recorder, models_module):
     recorder.capture(models_module.get_return_decomposition())
     recorder.capture(models_module.get_return_decomposition(logarithmic=True))
+
+
+def test_default_growth_uses_no_later_periods(models_module):
+    import pandas as pd
+    import pytest
+
+    growth = models_module._operating_growth()
+    components = models_module.get_free_cash_flow_to_firm(rounding=15)
+    reinvestment = (
+        components.xs("Net Operating Profit After Taxes", level=1)
+        - components.xs("Free Cash Flow to Firm", level=1)
+    ).loc["AAPL"]
+    invested_capital = (
+        models_module._rows(
+            models_module._balance_sheet_statement, "Total Shareholder Equity"
+        )
+        + models_module._rows(models_module._balance_sheet_statement, "Total Debt")
+    ).loc["AAPL"]
+
+    # Each period's growth only uses the reinvestment and capital up to that period.
+    period = growth.columns[2]
+    up_to = reinvestment.loc[:period].dropna()
+    expected = (
+        up_to.sum()
+        / len(up_to)
+        / invested_capital.reindex(reinvestment.index).loc[:period].mean()
+    )
+    assert growth.loc["AAPL", period] == pytest.approx(expected)
+
+    # The stable growth stays within 0 and the long-run rate.
+    stable = models_module._stable_growth(
+        pd.DataFrame([[-0.1, 0.01, 0.2, float("nan")]], index=["AAPL"])
+    ).loc["AAPL"]
+    assert stable.tolist()[:4] == pytest.approx([0, 0.01, 0.025, 0.025])
+
+
+def _models_without_benchmark():
+    from financetoolkit import Toolkit  # noqa: PLC0415
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle").drop(
+            columns="Benchmark", level=1
+        ),
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        benchmark_ticker=None,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    return toolkit.models
+
+
+def test_the_wacc_without_a_benchmark_is_reported_like_the_models_using_it(caplog):
+    models = _models_without_benchmark()
+
+    for metric in (
+        models.get_weighted_average_cost_of_capital,
+        models.get_economic_value_added,
+        models.get_present_value_of_growth_opportunities,
+    ):
+        caplog.clear()
+        assert metric().empty
+        assert (
+            f"benchmark_ticker in the Toolkit class to calculate {metric.__name__}"
+            in (caplog.text)
+        )
+
+
+def test_the_wacc_keeps_no_results_between_calls(models_module):
+    plain = models_module.get_weighted_average_cost_of_capital()
+
+    models_module.get_weighted_average_cost_of_capital(growth=True, standardize=True)
+
+    pd.testing.assert_frame_equal(
+        models_module.get_weighted_average_cost_of_capital(), plain
+    )
+    assert not hasattr(models_module, "_weighted_average_cost_of_capital_growth")
+
+
+def test_distress_scores_sum_a_year_of_quarters_by_default(models_module, monkeypatch):
+    import pandas as pd
+
+    _use_quarterly_statements(models_module, monkeypatch)
+
+    # The scores were estimated on yearly statements, so quarterly data is a trailing year.
+    for method in [
+        models_module.get_altman_z_score,
+        models_module.get_taffler_z_score,
+        models_module.get_ohlson_o_score,
+        models_module.get_springate_score,
+    ]:
+        pd.testing.assert_frame_equal(method(), method(trailing=4))
+
+
+def test_get_campbell_hilscher_szilagyi_score(recorder, models_module, monkeypatch):
+    # The S&P 500 offline: the benchmark of the pickled prices as both its price and its
+    # total return index, and a total market value of 30 trillion on the last day.
+    benchmark = models_module._historical_data["daily"]["Adj Close"]["Benchmark"]
+    benchmark.index = benchmark.index.to_timestamp()
+
+    def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:  # noqa: ARG001
+        index_data = pd.DataFrame(
+            {"Price Index": benchmark, "Total Return Index": benchmark}
+        )
+        return index_data, pd.Series({benchmark.index[-1]: 3e13})
+
+    monkeypatch.setattr(models_module, "_sp500_function", sp500)
+    recorder.capture(models_module.get_campbell_hilscher_szilagyi_score())
+    recorder.capture(models_module.get_campbell_hilscher_szilagyi_score(rounding=2))
+
+    # Without the S&P 500, the relative size and the probability are NaN.
+    monkeypatch.setattr(models_module, "_sp500_function", None)
+    result = models_module.get_campbell_hilscher_szilagyi_score()
+    assert result.xs("Failure Probability", level=1).isna().all().all()

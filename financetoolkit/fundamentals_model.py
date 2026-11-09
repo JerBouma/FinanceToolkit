@@ -13,8 +13,6 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = logger_model.get_logger()
 
-# pylint: disable=too-many-locals
-
 
 def collect_financial_statements(
     tickers: str | list[str],

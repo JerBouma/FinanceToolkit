@@ -1,7 +1,5 @@
 """Discovery Model Tests"""
 
-# pylint: disable=missing-function-docstring
-
 import pandas as pd
 import pytest
 
@@ -535,3 +533,296 @@ def test_the_members_before_the_log_starts_are_not_guessed(monkeypatch):
         discovery_model.get_index_constituents(
             api_key="KEY", index="S&P 500", date="2000-01-01"
         )
+
+
+def test_get_sectors_performance_returns_decimals_by_day(monkeypatch):
+    requested: list[str] = []
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        requested.append(url)
+        if "sector=Technology" in url:
+            return pd.DataFrame(
+                {
+                    "date": ["2024-01-03", "2024-01-02"],
+                    "sector": "Technology",
+                    "averageChange": [-1.5, 2.0],
+                }
+            )
+        if "sector=Energy" in url:
+            return pd.DataFrame(
+                {"date": ["2024-01-02"], "sector": "Energy", "averageChange": [0.25]}
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    result = discovery_model.get_sectors_performance(
+        "key", start_date="2024-01-01", end_date="2024-01-31"
+    )
+
+    # One request per sector, each over the requested range (some endpoints answer
+    # with old data without one), and the changes are percentages turned into decimals.
+    assert len(requested) == len(discovery_model.FMP_SECTORS)
+    assert all("&from=2024-01-01&to=2024-01-31" in url for url in requested)
+    assert list(result.columns) == ["Energy", "Technology"]
+    assert [str(day) for day in result.index] == ["2024-01-02", "2024-01-03"]
+    assert result.loc["2024-01-02", "Technology"] == pytest.approx(0.02)
+    assert result.loc["2024-01-03", "Technology"] == pytest.approx(-0.015)
+    assert result.loc["2024-01-02", "Energy"] == pytest.approx(0.0025)
+    assert pd.isna(result.loc["2024-01-03", "Energy"])
+
+
+def test_get_sectors_performance_without_any_data_is_empty(monkeypatch):
+    monkeypatch.setattr(
+        discovery_model,
+        "get_cached_financial_data",
+        lambda url, user_subscription="Free": pd.DataFrame(),  # noqa: ARG005
+    )
+
+    assert discovery_model.get_sectors_performance("key").empty
+
+
+@pytest.mark.parametrize(
+    ("function", "endpoint", "row"),
+    [
+        (
+            "get_crypto_list",
+            "cryptocurrency-list",
+            {"symbol": "BTCUSD", "name": "Bitcoin", "exchange": "CCC"},
+        ),
+        (
+            "get_index_list",
+            "index-list",
+            {
+                "symbol": "^GSPC",
+                "name": "S&P 500",
+                "currency": "USD",
+                "exchange": "SNP",
+            },
+        ),
+    ],
+)
+def test_instrument_lists_are_indexed_by_symbol(monkeypatch, function, endpoint, row):
+    requested: list[str] = []
+
+    def fake(url, user_subscription="Free"):  # noqa: ARG001
+        requested.append(url)
+        return pd.DataFrame([row, {**row, "symbol": "AAA", "name": "First"}])
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    result = getattr(discovery_model, function)("key")
+
+    assert f"/stable/{endpoint}?" in requested[0]
+    assert result.index.name == "Symbol"
+    assert list(result.index) == sorted(["AAA", row["symbol"]])
+    assert result.loc[row["symbol"], "Name"] == row["name"]
+    assert result.loc[row["symbol"], "Exchange"] == row["exchange"]
+
+
+def _calendar_responses(monkeypatch, releases_per_range=None):
+    """Answer the earnings calendar, quote, exchange and screener endpoints offline."""
+    requested: list[str] = []
+    releases = pd.DataFrame(
+        {
+            "symbol": ["CSCO", "CIS.DE", "SIE.DE", "SIEGY", "TINY"],
+            "date": [
+                "2026-11-12",
+                "2026-11-12",
+                "2026-11-12",
+                "2026-11-12",
+                "2026-11-11",
+            ],
+            "epsEstimated": [1.32, 1.19, 2.86, 1.43, 0.1],
+            "revenueEstimated": [18.1e9, 16.2e9, 23.2e9, 26.1e9, 1e6],
+        }
+    )
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        requested.append(url)
+
+        if "/earnings-calendar" in url:
+            if releases_per_range is not None:
+                return releases_per_range(url)
+            return releases
+        if "/batch-quote" in url and "EURUSD" in url:
+            return pd.DataFrame({"symbol": ["EURUSD"], "price": [1.1]})
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["CSCO", "CIS.DE", "SIE.DE", "SIEGY", "TINY"],
+                    "name": [
+                        "Cisco Systems, Inc.",
+                        "Cisco Systems, Inc.",
+                        "Siemens Aktiengesellschaft",
+                        "Siemens AG Sponsored ADR",
+                        "Tiny Corp.",
+                    ],
+                    "exchange": ["NASDAQ", "XETRA", "XETRA", "OTC", "NASDAQ"],
+                    # The depositary receipt reports a market cap far off the company's.
+                    "marketCap": [370e9, 340e9, 200e9, 900e9, 50e6],
+                    "price": [93.0, 80.0, 250.0, 125.0, 2.0],
+                    "volume": [20e6, 1e4, 1e6, 1e5, 1e5],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {
+                    "exchange": ["NASDAQ", "XETRA", "OTC"],
+                    "countryCode": ["US", "DE", "US"],
+                }
+            )
+        if "/company-screener" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["SIE.DE", "SIEGY"],
+                    "companyName": "Siemens AG",
+                    "marketCap": [200e9, 220e9],
+                    "exchangeShortName": ["XETRA", "OTC"],
+                    "country": "DE",
+                }
+            )
+
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    return requested
+
+
+def test_the_earnings_calendar_ranks_companies_by_their_primary_listing(monkeypatch):
+    _calendar_responses(monkeypatch)
+
+    calendar = discovery_model.get_earnings_calendar(
+        "KEY", "2026-11-09", "2026-11-13", primary_only=True, sort_by="market_cap"
+    )
+
+    # One row per company, its most traded listing, largest first.
+    assert list(calendar.index) == ["CSCO", "SIE.DE", "TINY"]
+    # The depositary receipt's market cap is not the company's.
+    assert calendar.loc["SIE.DE", "Market Cap (USD)"] == pytest.approx(220e9)
+
+
+def test_every_listing_has_the_market_cap_of_the_primary_listing(monkeypatch):
+    _calendar_responses(monkeypatch)
+
+    calendar = discovery_model.get_earnings_calendar("KEY", "2026-11-09", "2026-11-13")
+
+    assert list(calendar.index) == ["TINY", "CIS.DE", "CSCO", "SIE.DE", "SIEGY"]
+    assert calendar.loc["CIS.DE", "Market Cap (USD)"] == pytest.approx(370e9)
+    assert calendar.loc["SIEGY", "Market Cap (USD)"] == pytest.approx(220e9)
+
+
+def test_the_earnings_calendar_filters_by_size_country_and_exchange(monkeypatch):
+    _calendar_responses(monkeypatch)
+
+    def symbols(**filters):
+        return set(
+            discovery_model.get_earnings_calendar(
+                "KEY", "2026-11-09", "2026-11-13", **filters
+            ).index
+        )
+
+    assert symbols(min_market_cap=1e9) == {"CSCO", "CIS.DE", "SIE.DE", "SIEGY"}
+    # The country of the company, so a German company's listing abroad is kept.
+    assert symbols(country="Germany") == {"SIE.DE", "SIEGY"}
+    assert symbols(exchange="xetra") == {"CIS.DE", "SIE.DE"}
+
+
+def test_the_earnings_calendar_splits_a_range_that_reaches_the_limit(monkeypatch):
+    def releases(url):
+        start = url.split("from=")[1][:10]
+        end = url.split("to=")[1][:10]
+        days = pd.date_range(start, end)
+        if len(days) == 5:
+            # The whole week reaches the limit and keeps only its latest releases.
+            return pd.DataFrame(
+                {
+                    "symbol": [
+                        f"X{i}" for i in range(discovery_model.EARNINGS_CALENDAR_LIMIT)
+                    ],
+                    "date": end,
+                }
+            )
+        return pd.DataFrame(
+            {
+                "symbol": [f"S{day:%d}" for day in days],
+                "date": [f"{day:%Y-%m-%d}" for day in days],
+            }
+        )
+
+    requested = _calendar_responses(monkeypatch, releases)
+
+    calendar = discovery_model.get_earnings_calendar("KEY", "2026-11-09", "2026-11-13")
+
+    ranges = [url for url in requested if "/earnings-calendar" in url]
+    assert len(ranges) == 3
+    assert sorted(calendar.index) == ["S09", "S10", "S11", "S12", "S13"]
+
+
+def test_the_earnings_calendar_always_asks_for_a_range(monkeypatch):
+    requested = _calendar_responses(monkeypatch)
+
+    discovery_model.get_earnings_calendar("KEY", end_date="2026-11-13")
+
+    assert "from=2026-11-06&to=2026-11-13" in requested[0]
+
+
+def test_the_earnings_calendar_takes_prices_in_pence_in_pounds(monkeypatch):
+    # London quotes in pence while its market caps are in pounds: BHP's price of 2,993
+    # pence is 29.93 pounds, so Sydney, not London, is its most traded listing.
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "/earnings-calendar" in url:
+            return pd.DataFrame(
+                {"symbol": ["BHP.L", "BHP.AX"], "date": ["2026-11-12", "2026-11-12"]}
+            )
+        if "/batch-quote" in url and "GBPUSD" in url:
+            return pd.DataFrame({"symbol": ["AUDUSD", "GBPUSD"], "price": [0.65, 1.3]})
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["BHP.L", "BHP.AX"],
+                    "name": ["BHP Group Limited", "BHP Group Limited"],
+                    "exchange": ["LSE", "ASX"],
+                    "marketCap": [152e9, 293e9],
+                    "price": [2993.0, 57.62],
+                    "volume": [3.06e6, 10.57e6],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {"exchange": ["LSE", "ASX"], "countryCode": ["UK", "AU"]}
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    calendar = discovery_model.get_earnings_calendar(
+        "KEY", "2026-11-09", "2026-11-13", primary_only=True
+    )
+
+    assert list(calendar.index) == ["BHP.AX"]
+    assert calendar.loc["BHP.AX", "Market Cap (USD)"] == pytest.approx(293e9 * 0.65)
+
+
+def test_the_international_order_book_trades_in_dollars(monkeypatch):
+    # IOB is a London exchange, but its depositary receipts trade in US dollars.
+    def fake(url, user_subscription):  # noqa: ARG001
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {"exchange": ["IOB", "LSE"], "countryCode": ["UK", "UK"]}
+            )
+        if "/batch-quote" in url:
+            return pd.DataFrame({"symbol": ["GBPUSD"], "price": [1.3]})
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+    listings = pd.DataFrame(
+        {"Exchange Code": ["IOB", "LSE"], "Market Cap": [300e9, 10e9]},
+        index=["SMSN.IL", "VOD.L"],
+    )
+
+    listings = discovery_model._add_market_cap_in_dollars(listings, "KEY", "Premium")
+
+    assert listings["Currency"].tolist() == ["USD", "GBP"]
+    assert listings["Market Cap (USD)"].tolist() == pytest.approx([300e9, 13e9])

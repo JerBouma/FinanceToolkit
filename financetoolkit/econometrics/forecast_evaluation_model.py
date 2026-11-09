@@ -10,32 +10,9 @@ from scipy import stats
 from statsmodels.tools.eval_measures import meanabs, rmse
 
 from financetoolkit.risk import risk_model
+from financetoolkit.utilities.statistics_model import newey_west_long_run_variance
 
 MINIMUM_OBSERVATIONS_FOR_DM_TEST = 3
-
-
-def _newey_west_long_run_variance(residuals: np.ndarray, lags: int) -> float:
-    """
-    Newey-West (1987) HAC long-run variance estimator with Bartlett kernel weights,
-    for an already-demeaned series. See `unitroot_model._newey_west_long_run_variance`
-    for the same estimator used to correct the KPSS and Phillips-Perron test
-    statistics for serial correlation -- this is the loss-differential analogue,
-    needed here because `get_diebold_mariano_test`'s loss differential series is
-    itself typically serially correlated for multi-step-ahead (`h > 1`) forecasts.
-
-    - lambda^2 = gamma_0 + 2 * SUM_{l=1}^{lags} (1 - l / (lags + 1)) * gamma_l
-    """
-    number_of_observations = len(residuals)
-    variance = float(np.sum(residuals**2) / number_of_observations)
-
-    for lag in range(1, lags + 1):
-        weight = 1 - lag / (lags + 1)
-        autocovariance = (
-            np.sum(residuals[lag:] * residuals[:-lag]) / number_of_observations
-        )
-        variance += 2 * weight * autocovariance
-
-    return variance
 
 
 def get_diebold_mariano_test(
@@ -160,7 +137,7 @@ def get_diebold_mariano_test(
         d_bar = d.mean()
 
         lags = max(horizon - 1, 0)
-        long_run_variance = _newey_west_long_run_variance(d - d_bar, lags)
+        long_run_variance = newey_west_long_run_variance(d - d_bar, lags)
 
         if long_run_variance <= 0:
             return pd.Series(

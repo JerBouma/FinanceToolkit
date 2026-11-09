@@ -124,6 +124,10 @@ def slice_frame(
     the caller. Labels that cannot be parsed as dates are kept, which matters for
     statement frames that carry non-date columns alongside the reporting periods.
 
+    A period is kept when it overlaps the window, as a fresh request truncates it: a
+    start date of 31 December 2014 keeps the year 2014. A cached frame is then the same
+    as the one a fresh request returns, so no answer depends on what the cache holds.
+
     Args:
         data (pd.DataFrame | pd.Series): The frame to slice.
         start (str | date | None): Inclusive start of the window. None leaves it open.
@@ -147,9 +151,14 @@ def slice_frame(
         # is not a date.
         keep = vectorised.isna()
         within = np.ones(len(axis), dtype=bool)
+        last_days = (
+            axis.to_timestamp(how="end").normalize()
+            if isinstance(axis, pd.PeriodIndex)
+            else vectorised
+        )
 
         if start_date is not None:
-            within &= vectorised >= pd.Timestamp(start_date)
+            within &= last_days >= pd.Timestamp(start_date)
         if end_date is not None:
             within &= vectorised <= pd.Timestamp(end_date)
 
@@ -167,7 +176,8 @@ def slice_frame(
             mask.append(True)
             continue
 
-        within_start = start_date is None or label_date >= start_date
+        last_day = label.end_time.date() if isinstance(label, pd.Period) else label_date
+        within_start = start_date is None or last_day >= start_date
         within_end = end_date is None or label_date <= end_date
         mask.append(within_start and within_end)
 

@@ -11,7 +11,7 @@ from financetoolkit.cache.coverage_model import normalize_date
 
 
 def slice_label_by_label(data, start, end, date_axis=0):
-    """Slice the way the cache did before slicing was vectorised, as the reference."""
+    """Slice label by label as the reference: a period is kept when it overlaps the window."""
     axis = frame_model.get_date_axis(data, date_axis)
     start_date, end_date = normalize_date(start), normalize_date(end)
     mask = []
@@ -21,8 +21,9 @@ def slice_label_by_label(data, start, end, date_axis=0):
             mask.append(True)
             continue
 
-        label_date = normalize_date(label)
-        mask.append(start_date <= label_date <= end_date)
+        first_day = normalize_date(label)
+        last_day = label.end_time.date() if isinstance(label, pd.Period) else first_day
+        mask.append(last_day >= start_date and first_day <= end_date)
 
     return data.loc[mask] if date_axis == 0 else data.loc[:, mask]
 
@@ -163,3 +164,15 @@ def test_tidy_date_axis_drops_a_row_that_is_no_date_among_dates():
     assert isinstance(result.index, pd.PeriodIndex)
     assert result["Close"].tolist() == [1.0, 2.0]
     assert result.loc["2019-12-31":"2020-01-02"].shape == (2, 1)
+
+
+def test_slice_frame_keeps_a_period_that_overlaps_the_start():
+    """Test that a period ending on or after the start is kept, as a fresh request truncates it."""
+    data = pd.DataFrame([[1, 2, 3]], columns=pd.period_range("2014", "2016", freq="Y"))
+
+    result = frame_model.slice_frame(data, "2014-12-31", "2016-12-31", date_axis=1)
+
+    pd.testing.assert_frame_equal(
+        result, data.truncate(before="2014-12-31", after="2016-12-31", axis=1)
+    )
+    assert list(result.columns) == list(data.columns)

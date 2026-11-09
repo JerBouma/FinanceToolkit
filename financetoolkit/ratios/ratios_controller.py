@@ -8594,7 +8594,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Asset Coverage Ratio = [(Total Assets - Intangible Assets) -
+        - Asset Coverage Ratio = [(Total Assets - Goodwill and Intangible Assets) -
           (Total Current Liabilities - Short Term Debt)] / Total Debt
 
         Args:
@@ -8649,7 +8649,9 @@ class Ratios:
                     self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
                 ),
                 self._mean_trailing(
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :],
+                    self._balance_sheet_statement.loc[
+                        :, "Goodwill and Intangible Assets", :
+                    ],
                     trailing,
                 ),
                 self._mean_trailing(
@@ -8668,7 +8670,9 @@ class Ratios:
         else:
             asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
                 self._balance_sheet_statement.loc[:, "Total Assets", :],
-                self._balance_sheet_statement.loc[:, "Intangible Assets", :],
+                self._balance_sheet_statement.loc[
+                    :, "Goodwill and Intangible Assets", :
+                ],
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
                 self._balance_sheet_statement.loc[:, "Short Term Debt", :],
                 self._balance_sheet_statement.loc[:, "Total Debt", :],

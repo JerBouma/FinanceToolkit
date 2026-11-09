@@ -1582,3 +1582,22 @@ def test_a_custom_ratio_with_a_zero_denominator_is_nan(ratios_module):
 
     values = custom_ratios.xs("Revenue over Nothing", level=1)
     assert values.isna().all().all()
+
+
+def test_asset_coverage_ratio_deducts_goodwill_with_the_other_intangibles(
+    ratios_module,
+):
+    # Microsoft's fixture carries separate, nonzero goodwill and other intangible assets.
+    # Subtracting only the "Intangible Assets" row would leave the goodwill in the asset
+    # base and give 5.0648 for 2023 (4.6597 for the trailing two-period average).
+    balance = ratios_module._balance_sheet_statement.loc["MSFT"]
+    assert (balance.loc["Goodwill"] > 0).all()
+
+    assert ratios_module.get_asset_coverage_ratio().loc["MSFT"].tolist() == [
+        pytest.approx(value, abs=1e-4) for value in [2.5685, 2.8872, 3.1612, 3.9327]
+    ]
+    assert ratios_module.get_asset_coverage_ratio(trailing=2).loc[
+        "MSFT"
+    ].dropna().tolist() == [
+        pytest.approx(value, abs=1e-4) for value in [2.7242, 3.0173, 3.5428]
+    ]

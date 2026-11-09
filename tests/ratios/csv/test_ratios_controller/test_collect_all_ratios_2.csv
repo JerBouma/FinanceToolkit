@@ -521,9 +521,9 @@ MSFT,Percent Accruals,Lag 3,,,,0.4319
 MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1379,-0.1733,-0.1328
 MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2874,-0.2831
 MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.382
-MSFT,Asset Coverage Ratio,Lag 1,,0.1389,0.1775,0.188
-MSFT,Asset Coverage Ratio,Lag 2,,,0.341,0.3988
-MSFT,Asset Coverage Ratio,Lag 3,,,,0.5932
+MSFT,Asset Coverage Ratio,Lag 1,,0.1241,0.0949,0.2441
+MSFT,Asset Coverage Ratio,Lag 2,,,0.2308,0.3621
+MSFT,Asset Coverage Ratio,Lag 3,,,,0.5311
 MSFT,Debt-to-Equity Ratio,Lag 1,,-0.2046,-0.2292,-0.2096
 MSFT,Debt-to-Equity Ratio,Lag 2,,,-0.3869,-0.3907
 MSFT,Debt-to-Equity Ratio,Lag 3,,,,-0.5154

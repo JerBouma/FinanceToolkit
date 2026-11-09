@@ -12,7 +12,7 @@ import pandas as pd
 from financetoolkit.cache import policy_model, ticker_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estimates
-from financetoolkit.helpers import handle_portfolio
+from financetoolkit.helpers import get_goodwill_and_intangible_assets, handle_portfolio
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
@@ -6456,9 +6456,9 @@ class Ratios:
                         trailing,
                     ),
                     self._mean_trailing(
-                        self._balance_sheet_statement.loc[
-                            :, "Goodwill and Intangible Assets", :
-                        ],
+                        get_goodwill_and_intangible_assets(
+                            self._balance_sheet_statement
+                        ),
                         trailing,
                     ),
                 )
@@ -6471,9 +6471,7 @@ class Ratios:
                     .T.rolling(2)
                     .mean()
                     .T,
-                    self._balance_sheet_statement.loc[
-                        :, "Goodwill and Intangible Assets", :
-                    ]
+                    get_goodwill_and_intangible_assets(self._balance_sheet_statement)
                     .T.rolling(2)
                     .mean()
                     .T,
@@ -8594,7 +8592,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Asset Coverage Ratio = [(Total Assets - Intangible Assets) -
+        - Asset Coverage Ratio = [(Total Assets - Goodwill - Intangible Assets) -
           (Total Current Liabilities - Short Term Debt)] / Total Debt
 
         Args:
@@ -8639,19 +8637,20 @@ class Ratios:
 
         |     |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:----|-------:|-------:|-------:|-------:|-------:|
-        | KMI | 1.9926 | 2.0029 | 2.0193 | 2.0582 | 2.1545 |
-        | OKE | 1.5362 | 1.6077 | 1.8371 | 1.7765 | 1.8112 |
-        | WMB | 1.5739 | 1.6223 | 1.6147 | 1.649  | 1.6245 |
+        | KMI | 1.4053 | 1.3851 | 1.4027 | 1.4371 | 1.5344 |
+        | OKE | 1.4978 | 1.5692 | 1.6095 | 1.526  | 1.5656 |
+        | WMB | 1.5739 | 1.6223 | 1.5972 | 1.6317 | 1.6245 |
         """
+        intangible_assets = get_goodwill_and_intangible_assets(
+            self._balance_sheet_statement
+        )
+
         if trailing:
             asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
                 self._mean_trailing(
                     self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
                 ),
-                self._mean_trailing(
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :],
-                    trailing,
-                ),
+                self._mean_trailing(intangible_assets, trailing),
                 self._mean_trailing(
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
@@ -8668,7 +8667,7 @@ class Ratios:
         else:
             asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
                 self._balance_sheet_statement.loc[:, "Total Assets", :],
-                self._balance_sheet_statement.loc[:, "Intangible Assets", :],
+                intangible_assets,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
                 self._balance_sheet_statement.loc[:, "Short Term Debt", :],
                 self._balance_sheet_statement.loc[:, "Total Debt", :],
@@ -14308,9 +14307,7 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
             ),
             self._mean_trailing(
-                self._balance_sheet_statement.loc[
-                    :, "Goodwill and Intangible Assets", :
-                ],
+                get_goodwill_and_intangible_assets(self._balance_sheet_statement),
                 trailing,
             ),
         )
@@ -15314,9 +15311,7 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Preferred Stock", :], trailing
             ),
             "goodwill_and_intangible_assets": self._mean_trailing(
-                self._balance_sheet_statement.loc[
-                    :, "Goodwill and Intangible Assets", :
-                ],
+                get_goodwill_and_intangible_assets(self._balance_sheet_statement),
                 trailing,
             ),
         }
@@ -15827,9 +15822,9 @@ class Ratios:
         Which returns:
         |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:---------------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_price_to_earnings_ratio', '12 Months') |    0.0495 |                  0.2919 |                 0.1697 |        1.7636 |    0.0807 |           0.5648 |            108 |             0.0842 |              0.0896 |                 0.95   |
-        | ('get_price_to_book_ratio', '12 Months')     |    0.1156 |                  0.2966 |                 0.3898 |        4.0507 |    0.0001 |           0.6759 |            108 |             0.1691 |              0.0501 |                 0.978  |
-        | ('get_return_on_equity', '12 Months')        |    0.0425 |                  0.355  |                 0.1198 |        1.1976 |    0.2339 |           0.5    |            100 |             0.065  |              0.0517 |                 0.9671 |
+        | ('get_price_to_earnings_ratio', '12 Months') |    0.0505 |                  0.2917 |                 0.173  |        1.7981 |    0.075  |           0.5741 |            108 |             0.0854 |              0.0872 |                 0.9499 |
+        | ('get_price_to_book_ratio', '12 Months')     |    0.1163 |                  0.2959 |                 0.393  |        4.0845 |    0.0001 |           0.6759 |            108 |             0.1699 |              0.0476 |                 0.978  |
+        | ('get_return_on_equity', '12 Months')        |    0.0423 |                  0.3551 |                 0.1191 |        1.1915 |    0.2363 |           0.5    |            100 |             0.065  |              0.0517 |                 0.9671 |
         """
         factors = factor_model.get_daily_factors(
             self,

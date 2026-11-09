@@ -64,7 +64,7 @@ def get_wealth_and_peak(
 
     The path starts from a wealth of 1 before the first return, so the peak is never
     below 1: a loss on the first day of the window is a drawdown from the starting
-    wealth, as in Magdon-Ismail & Atiya (2004) and the empyrical package, rather than
+    wealth, as in Magdon-Ismail & Atiya (2004), rather than
     the peak it would otherwise set. This matters most within a period, where every
     period's first return is a real one.
 
@@ -1058,9 +1058,8 @@ def get_drawdown_table(returns: pd.DataFrame, top: int = 5) -> pd.DataFrame:
     `get_max_drawdown_duration` (To Trough) and `get_max_drawdown_recovery_time`
     (To Recovery). The same lengths in calendar days are the differences between the
     dates (the last day of each period), and in years those days divided by 365.25.
-    The dates follow pyfolio's `gen_drawdown_table` (peak, valley and recovery dates);
-    QuantStats' `drawdown_details` and ffn instead start at the first day below the peak
-    and count calendar days.
+    Each drawdown is dated by its peak, valley and recovery, so it starts on the peak
+    rather than on the first day below it.
 
     Args:
         returns (pd.DataFrame): The returns, one column per asset.

@@ -679,8 +679,8 @@ class Performance:
         OLS Betas of the tickers in the same period, so it depends on which tickers are passed. A single
         ticker gets a prior mean of 1 (the market's Beta) with a variance of 0.25.
         - The upside and downside Betas show asymmetric market exposure: a stock with a downside Beta above
-        its upside Beta falls harder in down markets than it rises in up markets. They follow empyrical's
-        up_alpha_beta and down_alpha_beta, which pick the observations by the benchmark's direction.
+        its upside Beta falls harder in down markets than it rises in up markets. The benchmark's direction
+        picks the observations: upside uses the periods the benchmark rose, downside those it fell.
         - Every estimator needs at least three observations in a period (Dimson: more than the number of
         slopes plus one), otherwise the period is NaN.
 
@@ -4506,7 +4506,7 @@ class Performance:
         asset.
 
         The discrete form is Kelly's (1956) bet: a probability of winning and a ratio of the
-        average win to the average loss, as the QuantStats package calculates it from returns.
+        average win to the average loss, calculated from the returns.
         The continuous form is Thorp's (2006) for returns that are close to normally
         distributed: the average excess return over the risk free rate divided by the
         variance of the excess returns. Since investors rarely bet the full Kelly amount,
@@ -4661,15 +4661,12 @@ class Performance:
         - Recovery Factor = Cumulative Return / |Maximum Drawdown|
         - Common Sense Ratio = Profit Factor x Tail Ratio (95th / 5th percentile)
 
-        The definitions follow the QuantStats package, except that the Recovery Factor compounds
-        the returns into the cumulative return and keeps its sign (QuantStats takes the absolute
-        value of the summed returns), so a history that lost money does not appear to recover.
+        The Recovery Factor compounds the returns into the cumulative return and keeps its sign,
+        so a history that lost money does not appear to recover.
 
         For more information, see the following sources:
 
         - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd ed., McGraw-Hill.
-        - Aroussi, R. "QuantStats: Portfolio analytics for quants."
-        https://github.com/ranaroussi/quantstats
 
         Args:
             period (str, optional): The period of the returns over the whole history, or with

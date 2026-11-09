@@ -1856,8 +1856,8 @@ class Risk:
         weekly or longer periods), and Length (Years) is Length (Days) in years of 365.25 days. Calendar time
         compares assets on exchanges with other holidays, and reads as the time an investor waited.
 
-        The dates follow pyfolio's drawdown table (peak, valley and recovery dates). QuantStats and ffn
-        instead start a drawdown at the first period below the peak and count calendar days. The deepest
+        Each drawdown is dated by its peak, valley and recovery, so it starts on the peak rather than on
+        the first period below it. The deepest
         drawdown matches `get_maximum_drawdown`, `get_maximum_drawdown_duration` (To Trough) and
         `get_maximum_drawdown_recovery_time` (To Recovery).
 

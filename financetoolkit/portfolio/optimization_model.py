@@ -599,6 +599,171 @@ def get_oracle_approximating_shrinkage_covariance(
     return _shrink_to_identity(sample, shrinkage, returns.columns), shrinkage
 
 
+def get_ledoit_wolf_constant_correlation_covariance(
+    returns: pd.DataFrame,
+) -> tuple[pd.DataFrame, float]:
+    """
+    The Ledoit-Wolf shrinkage estimator of the covariance matrix with the constant
+    correlation target: the sample covariance S pulled towards the matrix F that keeps
+    every sample variance and sets every correlation to the average sample correlation,
+    f_ii = s_ii and f_ij = r̄ √(s_ii s_jj) with r̄ = 2 / (N (N - 1)) Σ_(i<j) r_ij. Unlike
+    the scaled identity, the target keeps each asset's own variance and the general level
+    of co-movement between assets, so it shrinks only what is noisy: the differences
+    between the correlations.
+
+    The shrinkage intensity is the one of the paper that minimizes the expected squared
+    (Frobenius) distance to the true covariance matrix, δ = max(0, min(κ / T, 1)) with
+    κ = (π - ρ) / γ, where, for the T demeaned returns y_t,
+
+    - π = Σ_ij (1 / T) Σ_t (y_it y_jt - s_ij)², the variance of the sample covariances,
+    - ρ = Σ_i π_ii + Σ_(i≠j) (r̄ / 2) (√(s_jj / s_ii) ϑ_ii,ij + √(s_ii / s_jj) ϑ_jj,ij), with
+      ϑ_ii,ij = (1 / T) Σ_t (y_it² - s_ii)(y_it y_jt - s_ij), their covariance with the
+      target, and
+    - γ = Σ_ij (f_ij - s_ij)², the squared distance between the target and S.
+
+    The estimate is (1 - δ) S + δ F, with S the maximum likelihood sample covariance
+    (divided by T, as in the paper).
+
+    See Ledoit, O. and Wolf, M. (2004), "Honey, I Shrunk the Sample Covariance Matrix",
+    The Journal of Portfolio Management, 30(4), 110-119.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+
+    Returns:
+        tuple[pd.DataFrame, float]: The covariance matrix per period and the shrinkage
+            intensity between 0 (the sample covariance) and 1 (the constant correlation
+            target).
+    """
+    values = returns.to_numpy(dtype=float)
+    centered = values - values.mean(axis=0)
+    periods, assets = centered.shape
+    if assets < 2:  # noqa: PLR2004
+        raise ValueError("The constant correlation target needs at least two assets.")
+    sample = centered.T @ centered / periods
+    variance = np.diag(sample)
+    if np.any(variance <= 0):
+        raise ValueError("Every asset needs returns that vary.")
+    volatility = np.sqrt(variance)
+    correlation = sample / np.outer(volatility, volatility)
+    average_correlation = (correlation.sum() - assets) / (assets * (assets - 1))
+    target = average_correlation * np.outer(volatility, volatility)
+    np.fill_diagonal(target, variance)
+
+    squared = centered**2
+    # pi_ij, the variance of each sample covariance, and theta_ii,ij, the covariance of
+    # the sample variance of i with the sample covariance of i and j.
+    pi = squared.T @ squared / periods - sample**2
+    theta = (centered**3).T @ centered / periods - variance[:, None] * sample
+    np.fill_diagonal(theta, 0)
+    rho = np.trace(pi) + average_correlation * np.sum(
+        np.outer(1 / volatility, volatility) * theta
+    )
+    gamma = np.sum((target - sample) ** 2)
+    shrinkage = (
+        0.0 if gamma == 0 else max(0.0, min((pi.sum() - rho) / gamma / periods, 1.0))
+    )
+
+    return (
+        pd.DataFrame(
+            (1 - shrinkage) * sample + shrinkage * target,
+            index=returns.columns,
+            columns=returns.columns,
+        ),
+        shrinkage,
+    )
+
+
+def get_ledoit_wolf_single_factor_covariance(
+    returns: pd.DataFrame, benchmark_returns: pd.Series
+) -> tuple[pd.DataFrame, float]:
+    """
+    The Ledoit-Wolf shrinkage estimator of the covariance matrix with the single factor
+    target: the sample covariance S pulled towards the covariance matrix F that the market
+    model implies, with the benchmark as the market. Each asset's return is β_i r_m plus
+    a residual that is unrelated to the other assets, so f_ij = s_im s_jm / s_mm off the
+    diagonal (β_i β_j σ²_m, with s_im the sample covariance of asset i and the benchmark and
+    s_mm the sample variance of the benchmark) and f_ii = s_ii on it. The target holds only
+    2N + 1 parameters, so it is estimated precisely, and S adds what the factor leaves out.
+
+    The shrinkage intensity is the one of the paper that minimizes the expected squared
+    (Frobenius) distance to the true covariance matrix, δ = max(0, min(κ / T, 1)) with
+    κ = (π - ρ) / γ, where, for the T demeaned returns y_t of the assets and m_t of the
+    benchmark,
+
+    - π = Σ_ij (1 / T) Σ_t (y_it y_jt - s_ij)², the variance of the sample covariances,
+    - ρ = Σ_i π_ii + Σ_(i≠j) (1 / T) Σ_t [(s_jm s_mm y_it + s_im s_mm y_jt - s_im s_jm m_t)
+      m_t y_it y_jt / s_mm² - f_ij s_ij], their covariance with the target, and
+    - γ = Σ_ij (f_ij - s_ij)², the squared distance between the target and S.
+
+    The estimate is (1 - δ) S + δ F, with S the maximum likelihood sample covariance
+    (divided by T, as in the paper). The paper uses the value-weighted market of its
+    stocks; here the factor is the benchmark, on the periods the benchmark and the assets
+    share.
+
+    See Ledoit, O. and Wolf, M. (2003), "Improved Estimation of the Covariance Matrix of
+    Stock Returns with an Application to Portfolio Selection", Journal of Empirical
+    Finance, 10(5), 603-621.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        benchmark_returns (pd.Series): The returns per period of the benchmark, the
+            factor of the target.
+
+    Returns:
+        tuple[pd.DataFrame, float]: The covariance matrix per period and the shrinkage
+            intensity between 0 (the sample covariance) and 1 (the single factor target).
+    """
+    market = benchmark_returns.reindex(returns.index).dropna()
+    if len(market) < 2:  # noqa: PLR2004
+        raise ValueError(
+            "The single factor target needs the returns of a benchmark on the same "
+            "periods as the assets."
+        )
+    values = returns.loc[market.index].to_numpy(dtype=float)
+    centered = values - values.mean(axis=0)
+    factor = market.to_numpy(dtype=float) - market.mean()
+    periods = len(centered)
+    sample = centered.T @ centered / periods
+    covariance_market = centered.T @ factor / periods
+    variance_market = float(factor @ factor / periods)
+    if variance_market <= 0:
+        raise ValueError("The benchmark's returns have no variance.")
+    target = np.outer(covariance_market, covariance_market) / variance_market
+    np.fill_diagonal(target, np.diag(sample))
+
+    squared = centered**2
+    pi = squared.T @ squared / periods - sample**2
+    # The covariance of the target with S off the diagonal, the paper's r_ij averaged
+    # over the periods: two terms in which one asset's covariance with the factor is
+    # estimated with the other asset, and one in which both are.
+    scaled = centered * factor[:, None]
+    first = (squared.T @ scaled / periods - covariance_market[:, None] * sample) * (
+        covariance_market[None, :] / variance_market
+    )
+    third = (scaled.T @ scaled / periods - variance_market * sample) * (
+        np.outer(covariance_market, covariance_market) / variance_market**2
+    )
+    off_diagonal = first + first.T - third
+    np.fill_diagonal(off_diagonal, 0)
+    rho = np.trace(pi) + off_diagonal.sum()
+    gamma = np.sum((target - sample) ** 2)
+    shrinkage = (
+        0.0 if gamma == 0 else max(0.0, min((pi.sum() - rho) / gamma / periods, 1.0))
+    )
+
+    return (
+        pd.DataFrame(
+            (1 - shrinkage) * sample + shrinkage * target,
+            index=returns.columns,
+            columns=returns.columns,
+        ),
+        shrinkage,
+    )
+
+
 def get_semicovariance(returns: pd.DataFrame, threshold: float = 0.0) -> pd.DataFrame:
     """
     The semicovariance matrix: the co-movement of the returns below a threshold, each
@@ -735,6 +900,8 @@ def get_denoised_covariance(returns: pd.DataFrame) -> tuple[pd.DataFrame, int]:
 COVARIANCE_METHODS = (
     "sample",
     "ledoit_wolf",
+    "ledoit_wolf_constant_correlation",
+    "ledoit_wolf_single_factor",
     "oas",
     "semicovariance",
     "exponential",
@@ -864,8 +1031,11 @@ def get_expected_returns_and_covariance(
         returns (pd.DataFrame): The returns per period, one column per asset.
         periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
         covariance (str, optional): The estimator of the covariance matrix: "sample"
-            (ddof=1), "ledoit_wolf", "oas", "semicovariance" (below a zero return),
-            "exponential" or "denoised" (Marčenko-Pastur). Defaults to "sample".
+            (ddof=1), "ledoit_wolf" (towards the scaled identity),
+            "ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor" (towards the
+            covariance the benchmark as a single factor implies), "oas", "semicovariance"
+            (below a zero return), "exponential" or "denoised" (Marčenko-Pastur).
+            Defaults to "sample".
         covariance_span (int, optional): The span in periods of the "exponential"
             covariance. Defaults to 180.
         expected_returns (str, optional): The estimator of the expected returns: "mean",
@@ -873,7 +1043,8 @@ def get_expected_returns_and_covariance(
         expected_returns_span (int, optional): The span in periods of the "exponential"
             expected returns. Defaults to 180.
         benchmark_returns (pd.Series | None, optional): The returns per period of the
-            market, for the "capm" expected returns. Defaults to None.
+            market, for the "capm" expected returns and the "ledoit_wolf_single_factor"
+            covariance. Defaults to None.
         risk_free_rate (float, optional): The annualized risk free rate, for the "capm"
             expected returns. Defaults to 0.
 
@@ -889,6 +1060,14 @@ def get_expected_returns_and_covariance(
         matrix = returns.cov()
     elif covariance == "ledoit_wolf":
         matrix, _ = get_ledoit_wolf_covariance(returns)
+    elif covariance == "ledoit_wolf_constant_correlation":
+        matrix, _ = get_ledoit_wolf_constant_correlation_covariance(returns)
+    elif covariance == "ledoit_wolf_single_factor":
+        if benchmark_returns is None:
+            raise ValueError(
+                "The single factor covariance needs the returns of a benchmark."
+            )
+        matrix, _ = get_ledoit_wolf_single_factor_covariance(returns, benchmark_returns)
     elif covariance == "oas":
         matrix, _ = get_oracle_approximating_shrinkage_covariance(returns)
     elif covariance == "semicovariance":
@@ -1120,21 +1299,32 @@ def get_mean_variance_weights(
     current_weights: pd.Series | None = None,
     maximum_turnover: float | None = None,
     transaction_cost: float = 0.0,
+    target_volatility: float | None = None,
 ) -> pd.Series:
     """
     A mean-variance efficient portfolio (Markowitz, 1952). With a target return, the
-    portfolio with the lowest variance that expects that return; otherwise the portfolio
-    that maximizes the expected return minus half the risk aversion times the variance.
-    A transaction cost c lowers the expected return by c Σ |w_i - w0_i|, so the utility
-    maximized is w'μ - c Σ d_i - (λ/2) w'Σw with d_i ≥ |w_i - w0_i|.
+    portfolio with the lowest variance that expects that return. With a target
+    volatility σ*, the portfolio with the highest expected return whose volatility is at
+    most σ*: max w'μ subject to w'Σw ≤ σ*², the same efficient frontier approached from
+    the risk side (Merton, 1972). Otherwise the portfolio that maximizes the expected
+    return minus half the risk aversion times the variance. A transaction cost c lowers
+    the expected return by c Σ |w_i - w0_i|, so the utility maximized is
+    w'μ - c Σ d_i - (λ/2) w'Σw with d_i ≥ |w_i - w0_i|, and with a target volatility the
+    return maximized is w'μ - c Σ d_i.
+
+    See Markowitz, H. (1952), "Portfolio Selection", The Journal of Finance, 7(1), 77-91,
+    and Merton, R. C. (1972), "An Analytic Derivation of the Efficient Portfolio
+    Frontier", Journal of Financial and Quantitative Analysis, 7(4), 1851-1872.
 
     Args:
         expected_returns (pd.Series): The annualized expected return per asset.
         covariance (pd.DataFrame): The annualized covariance matrix.
         target_return (float | None, optional): The annualized return the portfolio must
-            expect. Defaults to None, which uses the risk aversion instead.
+            expect. Defaults to None, which uses the target volatility or the risk
+            aversion instead.
         risk_aversion (float, optional): The trade-off between return and variance; higher
-            values give less risky portfolios. Defaults to 2.5.
+            values give less risky portfolios. Not used with a target return or target
+            volatility. Defaults to 2.5.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0); a negative value allows
             a short position. Defaults to 0.
@@ -1158,10 +1348,20 @@ def get_mean_variance_weights(
             current weights, e.g. 0.001 for 10 basis points, subtracted once from the
             annualized expected return, which spreads it over a year of holding the
             portfolio. Needs current weights. Defaults to 0.
+        target_volatility (float | None, optional): The highest annualized volatility
+            √(w'Σw) of the portfolio, e.g. 0.15 for 15%; it must lie at or above the
+            volatility of the minimum variance portfolio within the constraints. Cannot
+            be combined with a target return. Defaults to None, which uses the target
+            return or the risk aversion instead.
 
     Returns:
         pd.Series: The weight per asset.
     """
+    if target_return is not None and target_volatility is not None:
+        raise ValueError(
+            "A portfolio takes a target return or a target volatility, not both: the "
+            "one fixes the other on the efficient frontier."
+        )
     mu = expected_returns.to_numpy()
     sigma = covariance.to_numpy()
     constraints = get_weight_constraints(
@@ -1193,6 +1393,41 @@ def get_mean_variance_weights(
             lambda w: 2 * sigma @ w,
             constraints,
             [_target_return(mu, target_return)],
+        )
+    elif target_volatility is not None:
+        if target_volatility <= 0:
+            raise ValueError("The target volatility must be positive.")
+        lowest = _solve(lambda w: w @ sigma @ w, lambda w: 2 * sigma @ w, constraints)
+        lowest_volatility = float(np.sqrt(lowest @ sigma @ lowest))
+        if target_volatility < lowest_volatility - 1e-9:
+            raise ValueError(
+                f"A target volatility of {target_volatility:.4f} is below the lowest "
+                f"volatility a portfolio within the constraints can have "
+                f"({lowest_volatility:.4f})."
+            )
+        costs = _trading_costs(constraints, transaction_cost)
+        count = constraints.assets
+
+        def return_gradient(x):
+            slope = costs.copy()
+            slope[:count] -= mu
+            return slope
+
+        weights = _solve(
+            lambda x: -(x[:count] @ mu) + costs @ x,
+            return_gradient,
+            constraints,
+            # The variance budget sigma*^2 - w'Sigma w >= 0, with a target that falls
+            # short of the lowest volatility only by rounding raised to it.
+            [
+                {
+                    "type": "ineq",
+                    "fun": lambda w: max(target_volatility, lowest_volatility) ** 2
+                    - w @ sigma @ w,
+                    "jac": lambda w: -2 * sigma @ w,
+                }
+            ],
+            all_variables=True,
         )
     else:
         costs = _trading_costs(constraints, transaction_cost)
@@ -1474,11 +1709,63 @@ def get_risk_parity_weights(
     return _as_series(result.x / result.x.sum(), covariance.index)
 
 
+CODEPENDENCE_METHODS = ("pearson", "spearman", "kendall")
+
+
+def get_codependence(
+    returns: pd.DataFrame, covariance: pd.DataFrame, method: str = "pearson"
+) -> pd.DataFrame:
+    """
+    The correlation matrix the hierarchical clustering of the assets works on, through
+    the correlation distance d = √((1 - ρ) / 2) (Mantegna, 1999; López de Prado, 2016).
+
+    - "pearson": the linear correlation ρ_ij = σ_ij / (σ_i σ_j) of the covariance matrix,
+      so a shrinkage or denoised covariance estimator also shapes the clusters.
+    - "spearman": the rank correlation of Spearman (1904), the Pearson correlation of the
+      ranks of the returns, 1 - 6 Σ d_t² / (T (T² - 1)) without ties, with d_t the
+      difference between the ranks of the two assets' returns in period t.
+    - "kendall": the rank correlation τ_b of Kendall (1938, 1945), (n_c - n_d) /
+      √((n_0 - n_1)(n_0 - n_2)), with n_c and n_d the concordant and discordant pairs of
+      periods, n_0 = T (T - 1) / 2 and n_1, n_2 the pairs tied in either asset.
+
+    The rank correlations depend only on the order of the returns, so a few extreme
+    returns do not dominate them, and they capture any monotonic co-movement rather than
+    a linear one only. They are taken from the returns themselves, whatever the
+    covariance estimator.
+
+    See Spearman, C. (1904), "The Proof and Measurement of Association between Two
+    Things", The American Journal of Psychology, 15(1), 72-101, Kendall, M. G. (1938),
+    "A New Measure of Rank Correlation", Biometrika, 30(1/2), 81-93, and Mantegna, R. N.
+    (1999), "Hierarchical Structure in Financial Markets", The European Physical Journal
+    B, 11(1), 193-197.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        covariance (pd.DataFrame): The covariance matrix of the assets, for "pearson".
+        method (str, optional): "pearson", "spearman" or "kendall". Defaults to
+            "pearson".
+
+    Returns:
+        pd.DataFrame: The correlation matrix, in the order of the covariance matrix.
+    """
+    if method not in CODEPENDENCE_METHODS:
+        raise ValueError(
+            f"The codependence must be one of {', '.join(CODEPENDENCE_METHODS)}, not "
+            f"'{method}'."
+        )
+    if method == "pearson":
+        volatility = np.sqrt(np.diag(covariance.to_numpy()))
+        return covariance / np.outer(volatility, volatility)
+    return returns[covariance.index].corr(method=method)
+
+
 def get_hierarchical_risk_parity_weights(
     covariance: pd.DataFrame,
     linkage_method: str = "single",
     minimum_weight: float | dict[str, float] = 0.0,
     maximum_weight: float | dict[str, float] = 1.0,
+    correlation: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Hierarchical Risk Parity (López de Prado, 2016): the assets are clustered on their
@@ -1507,6 +1794,9 @@ def get_hierarchical_risk_parity_weights(
             asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
         maximum_weight (float | dict[str, float], optional): The highest weight of every
             asset, or per asset ({"AAPL": 0.3}, the others 1). Defaults to 1.
+        correlation (pd.DataFrame | None, optional): The correlation matrix the assets
+            are clustered on, e.g. a rank correlation from get_codependence. Defaults to
+            None, the correlation matrix of the covariance matrix.
 
     Returns:
         pd.Series: The weight per asset.
@@ -1528,13 +1818,20 @@ def get_hierarchical_risk_parity_weights(
             "Hierarchical Risk Parity holds long positions only; the minimum weight "
             "cannot be negative."
         )
-    volatility = np.sqrt(np.diag(covariance.to_numpy()))
-    correlation = covariance / np.outer(volatility, volatility)
+    if correlation is None:
+        volatility = np.sqrt(np.diag(covariance.to_numpy()))
+        correlation = covariance / np.outer(volatility, volatility)
 
     # The correlation distance of López de Prado, sqrt((1 - rho) / 2), and the Euclidean
     # distance between its columns that the paper clusters on (its code passes the square
     # matrix to linkage, which reads the rows as observations and does exactly this).
-    distance = np.sqrt(np.clip((1 - correlation.to_numpy()) / 2, 0, None))
+    distance = np.sqrt(
+        np.clip(
+            (1 - correlation.loc[covariance.index, covariance.index].to_numpy()) / 2,
+            0,
+            None,
+        )
+    )
     np.fill_diagonal(distance, 0)
     order = leaves_list(linkage(pdist(distance), method=linkage_method))
     # The bisection works on positions in numpy: label lookups in pandas took most of
@@ -1582,7 +1879,10 @@ LINKAGE_METHODS = ("single", "complete", "average", "ward")
 
 
 def get_hierarchical_clusters(
-    covariance: pd.DataFrame, linkage_method: str = "ward", clusters: int | None = None
+    covariance: pd.DataFrame,
+    linkage_method: str = "ward",
+    clusters: int | None = None,
+    correlation: pd.DataFrame | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Cluster the assets on their correlations: a hierarchical clustering on the
@@ -1610,6 +1910,9 @@ def get_hierarchical_clusters(
             "single", "complete", "average" or "ward". Defaults to "ward".
         clusters (int | None, optional): The number of clusters. Defaults to None, chosen
             by the two-order difference of the gap statistic.
+        correlation (pd.DataFrame | None, optional): The correlation matrix the assets
+            are clustered on, e.g. a rank correlation from get_codependence. Defaults to
+            None, the correlation matrix of the covariance matrix.
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The linkage matrix of the clustering and the
@@ -1626,9 +1929,16 @@ def get_hierarchical_clusters(
     if clusters is not None and not 1 <= clusters <= count:
         raise ValueError(f"The number of clusters must lie between 1 and {count}.")
 
-    volatility = np.sqrt(np.diag(covariance.to_numpy()))
-    correlation = covariance.to_numpy() / np.outer(volatility, volatility)
-    distance = np.sqrt(np.clip((1 - correlation) / 2, 0, None))
+    if correlation is None:
+        volatility = np.sqrt(np.diag(covariance.to_numpy()))
+        correlation = covariance / np.outer(volatility, volatility)
+    distance = np.sqrt(
+        np.clip(
+            (1 - correlation.loc[covariance.index, covariance.index].to_numpy()) / 2,
+            0,
+            None,
+        )
+    )
     np.fill_diagonal(distance, 0)
     matrix = linkage(squareform(distance, checks=False), method=linkage_method)
 
@@ -1669,6 +1979,7 @@ def get_hierarchical_equal_risk_contribution_weights(
     maximum_weight: float | dict[str, float] = 1.0,
     groups: pd.DataFrame | None = None,
     group_bounds: dict[str, dict[str, tuple[float, float]]] | None = None,
+    correlation: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Hierarchical Equal Risk Contribution (Raffinot, 2018): the assets are clustered on
@@ -1703,6 +2014,9 @@ def get_hierarchical_equal_risk_contribution_weights(
         group_bounds (dict[str, dict[str, tuple[float, float]]] | None, optional): Per
             classification in groups, the minimum and maximum total weight per group,
             e.g. {"Sector": {"Technology": (0, 0.4)}}. Defaults to None.
+        correlation (pd.DataFrame | None, optional): The correlation matrix the assets
+            are clustered on, e.g. a rank correlation from get_codependence. Defaults to
+            None, the correlation matrix of the covariance matrix.
 
     Returns:
         pd.Series: The weight per asset.
@@ -1716,7 +2030,9 @@ def get_hierarchical_equal_risk_contribution_weights(
             "Hierarchical Equal Risk Contribution holds long positions only; the minimum "
             "weight cannot be negative."
         )
-    matrix, labels = get_hierarchical_clusters(covariance, linkage_method, clusters)
+    matrix, labels = get_hierarchical_clusters(
+        covariance, linkage_method, clusters, correlation
+    )
     sigma = covariance.to_numpy()
 
     members = [np.flatnonzero(labels == label) for label in range(labels.max() + 1)]
@@ -1777,6 +2093,7 @@ def get_nested_clustered_optimization_weights(
     risk_free_rate: float = 0.0,
     linkage_method: str = "ward",
     clusters: int | None = None,
+    correlation: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Nested Clustered Optimization (López de Prado, 2019): the assets are clustered on
@@ -1809,6 +2126,9 @@ def get_nested_clustered_optimization_weights(
             "single", "complete", "average" or "ward". Defaults to "ward".
         clusters (int | None, optional): The number of clusters. Defaults to None, chosen
             by the two-order difference of the gap statistic.
+        correlation (pd.DataFrame | None, optional): The correlation matrix the assets
+            are clustered on, e.g. a rank correlation from get_codependence. Defaults to
+            None, the correlation matrix of the covariance matrix.
 
     Returns:
         pd.Series: The weight per asset.
@@ -1834,7 +2154,9 @@ def get_nested_clustered_optimization_weights(
             "No asset has an expected return above the risk free rate, so there is no "
             "maximum Sharpe ratio portfolio."
         )
-    _, labels = get_hierarchical_clusters(covariance, linkage_method, clusters)
+    _, labels = get_hierarchical_clusters(
+        covariance, linkage_method, clusters, correlation
+    )
     within = pd.DataFrame(0.0, index=covariance.index, columns=np.unique(labels))
     for label in within.columns:
         assets = covariance.index[labels == label]
@@ -3058,9 +3380,10 @@ def get_black_litterman_returns(
     risk_aversion: float = 2.5,
     tau: float = 0.05,
     risk_free_rate: float = 0.0,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    The Black-Litterman expected returns (Black and Litterman, 1992), as total returns.
+    The Black-Litterman expected returns (Black and Litterman, 1992), as total returns,
+    and their posterior covariance matrix.
     The prior is the return the market implies through its weights: the excess return
     Π = δΣw at which holding the market is optimal (He and Litterman, 1999), plus the risk
     free rate. Views move it towards the investor's expectations in proportion to their
@@ -3071,6 +3394,12 @@ def get_black_litterman_returns(
     between 0 and 1 scales it to Ω_k = (1 - c) / c × τ p_k'Σp_k, the closed form of
     Idzorek's (2005) confidence method derived by Walters (2014): a confidence of 0.5 keeps
     the uncertainty and one close to 1 moves the return all the way to the view.
+
+    The posterior covariance matrix is Σ + M (He and Litterman, 1999): the covariance of
+    the returns plus M = ((τΣ)⁻¹ + P'Ω⁻¹P)⁻¹, the uncertainty that remains in the
+    Black-Litterman returns, computed as τΣ - τΣP'(PτΣP' + Ω)⁻¹PτΣ so that neither Σ nor
+    Ω is inverted. Without views M = τΣ and the posterior covariance is (1 + τ) Σ; every
+    view lowers M in its direction, a certain view to zero.
 
     References:
         - Black, F. and Litterman, R. (1992). "Global Portfolio Optimization." Financial
@@ -3098,8 +3427,9 @@ def get_black_litterman_returns(
             to 0.
 
     Returns:
-        pd.DataFrame: The Implied Return and the Black-Litterman Return per asset, both
-        annualized total returns.
+        tuple[pd.DataFrame, pd.DataFrame]: The Implied Return and the Black-Litterman
+            Return per asset, both annualized total returns, and the annualized posterior
+            covariance matrix Σ + M.
     """
     assets = covariance.index
     sigma = covariance.to_numpy()
@@ -3113,6 +3443,8 @@ def get_black_litterman_returns(
     # risk free rate cancels out of it.
     implied = risk_aversion * sigma @ weights + risk_free_rate
     posterior = implied
+    tau_sigma = tau * sigma
+    uncertainty_left = tau_sigma
 
     unmatched = set(view_confidences or {}) - set(views or {})
     if unmatched:
@@ -3163,18 +3495,71 @@ def get_black_litterman_returns(
         # The posterior Π + τΣP'(PτΣP' + Ω)^-1 (Q - PΠ), the same as the textbook
         # ((τΣ)^-1 + P'Ω^-1 P)^-1 ((τΣ)^-1 Π + P'Ω^-1 Q) but without inverting Σ or Ω, so
         # duplicate or collinear assets (a singular covariance) and certain views work.
-        tau_sigma = tau * sigma
         try:
-            adjustment = np.linalg.solve(p @ tau_sigma @ p.T + omega, q - p @ implied)
+            solved = np.linalg.solve(
+                p @ tau_sigma @ p.T + omega,
+                np.column_stack([q - p @ implied, p @ tau_sigma]),
+            )
         except np.linalg.LinAlgError as error:
             raise ValueError(
                 "The views contradict or repeat each other, so they cannot be combined."
             ) from error
-        posterior = implied + tau_sigma @ p.T @ adjustment
+        posterior = implied + tau_sigma @ p.T @ solved[:, 0]
+        uncertainty_left = tau_sigma - tau_sigma @ p.T @ solved[:, 1:]
 
-    return pd.DataFrame(
-        {"Implied Return": implied, "Black-Litterman Return": posterior}, index=assets
+    return (
+        pd.DataFrame(
+            {"Implied Return": implied, "Black-Litterman Return": posterior},
+            index=assets,
+        ),
+        pd.DataFrame(sigma + uncertainty_left, index=assets, columns=assets),
     )
+
+
+def get_market_implied_risk_aversion(
+    benchmark_returns: pd.Series, periods_per_year: int, risk_free_rate: float = 0.0
+) -> float:
+    """
+    The risk aversion of the market, the excess return it earns per unit of variance:
+    δ = (E[r_m] - r_f) / σ²_m. A representative investor who holds the market is
+    indifferent to the next unit of risk at exactly this δ, which makes it the risk
+    aversion that the market implied returns Π = δΣw_mkt of Black and Litterman
+    (1992) are consistent with.
+
+    E[r_m] is the average return per period of the benchmark times the number of periods
+    in a year (arithmetic, not compounded) and σ²_m its variance per period (ddof=1)
+    times the same number, so δ is the same at every frequency up to estimation error.
+
+    See Black, F. and Litterman, R. (1992), "Global Portfolio Optimization", Financial
+    Analysts Journal, 48(5), 28-43, and Walters, J. (2014), "The Black-Litterman Model in
+    Detail", https://ssrn.com/abstract=1314585.
+
+    Args:
+        benchmark_returns (pd.Series): The returns per period of the benchmark.
+        periods_per_year (int): The number of periods in a year, e.g. 252 for daily data.
+        risk_free_rate (float, optional): The annualized risk free rate. Defaults to 0.
+
+    Returns:
+        float: The risk aversion δ of the market.
+    """
+    market = benchmark_returns.dropna()
+    if len(market) < 2:  # noqa: PLR2004
+        raise ValueError(
+            "The market risk aversion needs at least two benchmark returns."
+        )
+    variance = float(market.var()) * periods_per_year
+    if variance <= 0:
+        raise ValueError("The benchmark's returns have no variance.")
+    risk_aversion = (
+        float(market.mean()) * periods_per_year - risk_free_rate
+    ) / variance
+    if risk_aversion <= 0:
+        raise ValueError(
+            f"The benchmark earned {float(market.mean()) * periods_per_year:.4f} a year, "
+            f"no more than the risk free rate of {risk_free_rate:.4f}, so it implies no "
+            "positive risk aversion; pass a number instead."
+        )
+    return risk_aversion
 
 
 def get_risk_contributions(

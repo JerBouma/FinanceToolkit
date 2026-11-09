@@ -791,6 +791,35 @@ class Econometrics:
 
         return tickers
 
+    @staticmethod
+    def _get_spreads(levels: pd.DataFrame, spread_over: str | None) -> pd.DataFrame:
+        """
+        Every series of `levels` minus the `spread_over` series (matched without regard to
+        case), named "<series> - <spread_over>", or `levels` itself without `spread_over` --
+        shared by the methods that measure a level, so a spread of two series (producer over
+        consumer price inflation) is measured like any series. A date either series misses is
+        NaN, which the per-series methods leave out.
+        """
+        if spread_over is None:
+            return levels
+
+        names = {str(name).lower(): name for name in levels.columns}
+        if str(spread_over).lower() not in names:
+            raise ValueError(
+                f"The spread_over series '{spread_over}' is not one of the series: "
+                f"{', '.join(str(name) for name in levels.columns)}."
+            )
+        base = names[str(spread_over).lower()]
+        others = levels.drop(columns=[base])
+        if others.empty:
+            raise ValueError(
+                "A spread needs a second series next to the spread_over series."
+            )
+
+        spreads = others.sub(levels[base], axis=0)
+        spreads.columns = [f"{name} - {base}" for name in others.columns]
+        return spreads
+
     def _filter_benchmark(
         self, data: pd.DataFrame, include_benchmark: bool
     ) -> pd.DataFrame:
@@ -6913,6 +6942,7 @@ class Econometrics:
         self,
         period: str | None = None,
         column: str = "Close",
+        spread_over: str | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -6951,6 +6981,10 @@ class Econometrics:
                 series is compared month by month.
             column (str, optional): The historical data column to measure. Defaults to "Close", the
                 traded close of the tickers and the series themselves with data=.
+            spread_over (str | None, optional): The name of a series to subtract from every
+                other series, so the spreads over it are measured instead (named "<series> -
+                <spread_over>"), e.g. producer price inflation over consumer price inflation.
+                Defaults to None, which measures the series themselves.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -7000,9 +7034,12 @@ class Econometrics:
         | Lowest Since  | 2026-09-30      | 2026-08-31 | 2026-06-30 |
         """
         period = period if period else "daily"
-        levels = self._filter_benchmark(
-            self._get_series_column(period, column),
-            include_benchmark=include_benchmark,
+        levels = self._get_spreads(
+            self._filter_benchmark(
+                self._get_series_column(period, column),
+                include_benchmark=include_benchmark,
+            ),
+            spread_over,
         )
 
         level_significance = pd.DataFrame(
@@ -7014,4 +7051,133 @@ class Econometrics:
 
         return apply_rounding(
             level_significance, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_streaks(
+        self,
+        period: str | None = None,
+        column: str = "Close",
+        spread_over: str | None = None,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the streak every series is on: whether its latest value is positive,
+        negative or zero, since when it has been without a break and how long that is, the
+        run before it, and the longest earlier run of the same sign.
+
+        Where `get_level_significance` measures how unusual the latest level is, this measures
+        how long a series has been on one side of zero, which is the question for inflation,
+        growth and spreads: producer prices that fell year over year for 41 months in a row, a
+        spread between two series that turned positive after three years, or a yield curve
+        that has been inverted since a given month. With column="Return" it measures the
+        changes instead: a price that rose for eight days in a row, or with
+        `Econometrics(data=..., changes="difference")` an unemployment rate that rose for six
+        months in a row. Through the Toolkit it measures the prices of the tickers; with
+        `Econometrics(data=...)` any series, such as the economic calendar of `Economics`
+        with as_series=True, its inflation rates or the yield curves of `FixedIncome`.
+
+        A run is a stretch of consecutive observations with the same sign (positive, negative
+        or zero), counted in observations: months for a monthly series. The current run is the
+        one the latest observation belongs to, the previous run the one just before it and the
+        longest earlier run the longest run of the current sign before the current one (the
+        most recent of them when several are as long).
+
+        Also known as: streak, run length, consecutive months, months in a row, how long has
+        it been negative, first positive since.
+
+        Args:
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
+                yearly); the weekly to yearly periods take the last value of each period. Defaults to
+                None, which is "daily": the series at the dates they are observed, so a monthly
+                series is counted month by month.
+            column (str, optional): The historical data column to measure. Defaults to "Close", the
+                traded close of the tickers and the series themselves with data=; "Return" measures
+                their changes.
+            spread_over (str | None, optional): The name of a series to subtract from every
+                other series, so the streaks of the spreads over it are measured instead (named
+                "<series> - <spread_over>"), e.g. producer price inflation over consumer price
+                inflation. Defaults to None, which measures the series themselves.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
+                Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: Per series the Start Date and number of Observations of its history,
+            the Latest Date and Latest Value, the Sign of the current run with its Run Start and
+            Run Length, the Previous Sign, Previous Run Start, Previous Run End and Previous Run
+            Length, and the Longest Earlier Run Start, End and Length. The dates are text (the
+            dates of the observations, or the periods, e.g. 2022-10 with period="monthly"), the
+            lengths are numbers of observations and a run that does not exist is NaN.
+
+        Notes:
+        - The runs are counted within the history, which starts at the start date of the data:
+          a run that began before it is counted from the first observation, which the Run Start
+          or Previous Run Start then equals.
+        - A value of exactly zero is a run of its own, so it ends a positive or negative run.
+        - Each series uses its own history, and the latest value is the last observation up to
+          the end date, which Latest Date shows.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics, Econometrics
+
+        economics = Economics(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        prices = economics.get_economic_calendar(
+            start_date="2021-06-01",
+            end_date="2026-11-09",
+            countries="China",
+            events="Producer Price Index YoY,Inflation Rate YoY",
+            impact="All",
+            as_series=True,
+        )
+
+        econometrics = Econometrics(
+            data=prices["China"][["Producer Price Index YoY", "Inflation Rate YoY"]]
+        )
+
+        econometrics.get_streaks(period="monthly").T
+        ```
+
+        Which returns:
+
+        |                            | Producer Price Index YoY   | Inflation Rate YoY   |
+        |:---------------------------|:---------------------------|:---------------------|
+        | Start Date                 | 2021-05                    | 2021-05              |
+        | Observations               | 66                         | 66                   |
+        | Latest Date                | 2026-10                    | 2026-10              |
+        | Latest Value               | 0.057                      | 0.007                |
+        | Sign                       | Positive                   | Positive             |
+        | Run Start                  | 2026-03                    | 2025-10              |
+        | Run Length                 | 8                          | 13                   |
+        | Previous Sign              | Negative                   | Negative             |
+        | Previous Run Start         | 2022-10                    | 2025-08              |
+        | Previous Run End           | 2026-02                    | 2025-09              |
+        | Previous Run Length        | 41                         | 2                    |
+        | Longest Earlier Run Start  | 2021-05                    | 2021-05              |
+        | Longest Earlier Run End    | 2022-09                    | 2023-05              |
+        | Longest Earlier Run Length | 17                         | 25                   |
+        """
+        period = period if period else "daily"
+        levels = self._get_spreads(
+            self._filter_benchmark(
+                self._get_series_column(period, column),
+                include_benchmark=include_benchmark,
+            ),
+            spread_over,
+        )
+
+        streaks = pd.DataFrame(
+            {
+                series: diagnostics_model.get_streaks(levels[series])
+                for series in levels.columns
+            }
+        ).T.infer_objects()
+
+        return apply_rounding(
+            streaks, rounding if rounding is not None else self._rounding
         )

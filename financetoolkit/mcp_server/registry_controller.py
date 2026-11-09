@@ -1434,10 +1434,15 @@ class ToolRegistry:
                 "quarterly": quarterly,
                 "benchmark_ticker": benchmark_ticker,
             }
-            result = None
-            if period and "period" in self._inspector.get_method_param_names(
+            parameters = self._inspector.get_method_param_names(
                 self._module_class_map.get(module), reference.indicator
-            ):
+            )
+            # An indicator that lists records (the economic calendar's releases) is asked
+            # for them as series by the period they cover.
+            if "as_series" in parameters:
+                arguments["as_series"] = True
+            result = None
+            if period and "period" in parameters:
                 result = self._provider.call_method(**arguments, period=period)
             # An indicator that is not published at the period (a monthly series asked for
             # weekly) is read at its own frequency instead, which the analysis resamples.

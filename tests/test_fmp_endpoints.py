@@ -1539,3 +1539,139 @@ def test_price_targets_without_any_published_target_have_no_latest_date(response
 
     assert pd.isna(measures.loc["Latest Target Date", "NVDA"])
     assert pd.isna(measures.loc["Days Since Latest Target", "NVDA"])
+
+
+@pytest.mark.parametrize(
+    ("event", "release", "expected_event", "expected_period"),
+    [
+        (
+            "Producer Price Index YoY (Oct)",
+            "2026-11-09",
+            "Producer Price Index YoY",
+            "2026-10",
+        ),
+        # A December figure released in January belongs to the previous year.
+        ("Inflation Rate YoY (Dec)", "2026-01-09", "Inflation Rate YoY", "2025-12"),
+        # A flash estimate released in the month it covers keeps the year.
+        ("Inflation Rate YoY (Oct)", "2026-10-31", "Inflation Rate YoY", "2026-10"),
+        ("GDP Growth Rate QoQ (Q4)", "2026-02-14", "GDP Growth Rate QoQ", "2025Q4"),
+        ("GDP Growth Rate QoQ (Q3)", "2026-10-29", "GDP Growth Rate QoQ", "2026Q3"),
+        (
+            "Continuing Jobless Claims (Dec/27)",
+            "2027-01-08",
+            "Continuing Jobless Claims",
+            "2026-12-27",
+        ),
+        ("Budget (2026)", "2026-10-01", "Budget", "2026"),
+        (
+            "Fixed Asset Investment (YTD) YoY (Jul)",
+            "2026-08-15",
+            "Fixed Asset Investment (YTD) YoY",
+            "2026-07",
+        ),
+        # Without a period the release covers its own day.
+        (
+            "Interest Rate Decision",
+            "2026-10-29 13:15",
+            "Interest Rate Decision",
+            "2026-10-29",
+        ),
+    ],
+)
+def test_economic_calendar_reference_periods(
+    event, release, expected_event, expected_period
+):
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    name, period = economics_fmp_model.get_reference_period(
+        event, pd.Timestamp(release)
+    )
+
+    assert name == expected_event
+    assert str(period) == expected_period
+
+
+def test_economic_calendar_as_series():
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    releases = pd.DataFrame(
+        [
+            ("2022-05-11 01:30", "China", "Inflation Rate YoY (Apr)", 0.018, 0.021),
+            (
+                "2022-07-09 01:30",
+                "China",
+                "Producer Price Index YoY (Jun)",
+                0.060,
+                0.061,
+            ),
+            (
+                "2026-01-09 01:30",
+                "China",
+                "Producer Price Index YoY (Dec)",
+                -0.020,
+                -0.019,
+            ),
+            (
+                "2026-10-14 01:30",
+                "China",
+                "Producer Price Index YoY (Sep)",
+                0.045,
+                0.050,
+            ),
+            ("2026-10-31 09:00", "Germany", "Inflation Rate YoY (Oct)", 0.027, 0.028),
+            ("2026-11-09 01:30", "China", "Inflation Rate YoY (Oct)", 0.008, 0.007),
+            (
+                "2026-11-09 01:30",
+                "China",
+                "Producer Price Index YoY (Oct)",
+                0.053,
+                0.057,
+            ),
+            # The final figure after the flash estimate, and a release still to come.
+            ("2026-11-12 07:00", "Germany", "Inflation Rate YoY (Oct)", 0.028, 0.029),
+            ("2026-12-09 01:30", "China", "Producer Price Index YoY (Nov)", 0.06, None),
+        ],
+        columns=["Date", "Country", "Event", "Estimate", "Actual"],
+    )
+    releases["Date"] = pd.to_datetime(releases["Date"])
+    series = economics_fmp_model.get_economic_calendar_series(
+        releases.set_index("Date")
+    )
+
+    assert isinstance(series.index, pd.PeriodIndex) and series.index.freqstr == "M"
+    assert series.columns.names == ["Country", "Event"]
+    ppi = series[("China", "Producer Price Index YoY")]
+    cpi = series[("China", "Inflation Rate YoY")]
+    assert ppi["2026-10"] == pytest.approx(0.057)
+    assert ppi["2026-09"] == pytest.approx(0.050)
+    assert ppi["2022-06"] == pytest.approx(0.061)
+    assert ppi["2025-12"] == pytest.approx(-0.019)
+    assert cpi["2026-10"] == pytest.approx(0.007)
+    assert cpi["2022-04"] == pytest.approx(0.021)
+    # The latest release of a period is kept; the estimate of the next one is there already.
+    assert series.loc["2026-10", ("Germany", "Inflation Rate YoY")] == pytest.approx(
+        0.029
+    )
+    assert pd.isna(ppi["2026-11"])
+    assert series.loc[
+        "2026-11", ("China", "Producer Price Index YoY Estimate")
+    ] == pytest.approx(0.06)
+
+    # Events of different frequencies are placed on the last day of their periods.
+    quarterly = pd.DataFrame(
+        {
+            "Country": ["China", "China"],
+            "Event": ["GDP Growth Rate YoY (Q3)", "Inflation Rate YoY (Oct)"],
+            "Estimate": [None, None],
+            "Actual": [0.048, 0.007],
+        },
+        index=pd.to_datetime(["2026-10-20", "2026-11-09"]),
+    )
+    mixed = economics_fmp_model.get_economic_calendar_series(quarterly)
+    assert [str(period) for period in mixed.index] == ["2026-09-30", "2026-10-31"]
+    assert list(mixed.columns.get_level_values("Event")) == [
+        "GDP Growth Rate YoY",
+        "Inflation Rate YoY",
+    ]
+
+    assert economics_fmp_model.get_economic_calendar_series(pd.DataFrame()).empty

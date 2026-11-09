@@ -1601,3 +1601,23 @@ def test_asset_coverage_ratio_deducts_goodwill_with_the_other_intangibles(
     ].dropna().tolist() == [
         pytest.approx(value, abs=1e-4) for value in [2.7242, 3.0173, 3.5428]
     ]
+
+
+def test_asset_coverage_ratio_does_not_need_the_combined_intangibles_row(
+    ratios_module, monkeypatch
+):
+    expected = ratios_module.get_asset_coverage_ratio()
+    expected_trailing = ratios_module.get_asset_coverage_ratio(trailing=2)
+
+    # A provider can return goodwill and the other intangible assets without the row
+    # that combines them. Selected separately, the two give the same ratio without it.
+    balance = ratios_module._balance_sheet_statement.copy()
+    combined_row = balance.index.get_level_values(1) == "Goodwill and Intangible Assets"
+    assert combined_row.any()
+    balance.loc[combined_row] = np.nan
+    monkeypatch.setattr(ratios_module, "_balance_sheet_statement", balance)
+
+    pd.testing.assert_frame_equal(ratios_module.get_asset_coverage_ratio(), expected)
+    pd.testing.assert_frame_equal(
+        ratios_module.get_asset_coverage_ratio(trailing=2), expected_trailing
+    )

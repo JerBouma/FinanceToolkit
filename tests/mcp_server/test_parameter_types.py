@@ -215,3 +215,22 @@ def test_an_unknown_risk_free_rate_is_refused(captured):
 
     assert "13w, 5y, 10y, 30y" in text
     assert not captured
+
+
+@pytest.mark.parametrize(
+    ("risk_aversion", "expected"), [(3, 3), ("3", 3), ("market", "market")]
+)
+def test_the_black_litterman_risk_aversion_is_a_number_or_market(
+    schemas, captured, risk_aversion, expected
+):
+    assert types_of(schemas["portfolio"]["risk_aversion"]) == {"number", "string"}
+    call(
+        "portfolio",
+        {
+            "indicator": "get_black_litterman_weights",
+            "tickers": "AAPL,MSFT",
+            "risk_aversion": risk_aversion,
+        },
+    )
+
+    assert captured[-1]["risk_aversion"] == expected

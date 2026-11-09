@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit.portfolio import optimization_model
 from financetoolkit.portfolio.construction_controller import PortfolioConstruction
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
@@ -430,7 +431,16 @@ def test_brinson_attribution_keeps_an_asset_closed_on_the_first_day(test_toolkit
 )
 @pytest.mark.parametrize(
     "covariance",
-    ["sample", "ledoit_wolf", "oas", "semicovariance", "exponential", "denoised"],
+    [
+        "sample",
+        "ledoit_wolf",
+        "ledoit_wolf_constant_correlation",
+        "ledoit_wolf_single_factor",
+        "oas",
+        "semicovariance",
+        "exponential",
+        "denoised",
+    ],
 )
 def test_the_optimizers_take_a_covariance_estimator(
     portfolio_module, method, covariance
@@ -854,3 +864,88 @@ def test_get_discrete_allocation(recorder, portfolio_module):
 
 def test_get_discrete_allocation_invalid_method(portfolio_module):
     assert portfolio_module.get_discrete_allocation(method="round").empty
+
+
+def test_the_ledoit_wolf_targets_shrink_the_sample_covariance(portfolio_module):
+    # With two assets the constant correlation target is the sample covariance itself.
+    returns = portfolio_module._get_returns("daily", include_benchmark=True)
+    benchmark = portfolio_module._get_benchmark_returns("daily")
+    sample = returns.cov(ddof=0).to_numpy() * 252
+
+    for covariance in ("ledoit_wolf_constant_correlation", "ledoit_wolf_single_factor"):
+        _, _, matrix, _ = portfolio_module._get_inputs(
+            "daily", True, covariance=covariance
+        )
+        # The targets keep every variance, so only the covariances move.
+        assert np.allclose(np.diag(matrix), np.diag(sample))
+        assert not np.allclose(matrix, sample)
+
+    _, factor = optimization_model.get_ledoit_wolf_single_factor_covariance(
+        returns, benchmark
+    )
+    assert 0 < factor <= 1
+
+
+def test_get_mean_variance_weights_with_a_target_volatility(portfolio_module):
+    table = portfolio_module.get_mean_variance_weights(
+        target_volatility=0.35, rounding=10
+    )
+    assert table.loc["Portfolio", "Volatility"] == pytest.approx(0.35, abs=1e-6)
+    assert table.loc["Portfolio", "Weight"] == pytest.approx(1)
+
+    # A target below the lowest volatility, or with a target return, is refused.
+    assert portfolio_module.get_mean_variance_weights(target_volatility=0.01).empty
+    assert portfolio_module.get_mean_variance_weights(
+        target_return=0.25, target_volatility=0.35
+    ).empty
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "get_hierarchical_risk_parity_weights",
+        "get_hierarchical_equal_risk_contribution_weights",
+        "get_nested_clustered_optimization_weights",
+    ],
+)
+def test_the_clustering_optimizers_take_a_codependence(portfolio_module, method):
+    default = getattr(portfolio_module, method)(include_benchmark=True)
+    pearson = getattr(portfolio_module, method)(
+        codependence="pearson", include_benchmark=True
+    )
+    pd.testing.assert_frame_equal(default, pearson)
+
+    for codependence in ("spearman", "kendall"):
+        weights = getattr(portfolio_module, method)(
+            codependence=codependence, include_benchmark=True
+        )["Weight"]
+        assert weights.drop("Portfolio").sum() == pytest.approx(1, abs=1e-4)
+
+    assert getattr(portfolio_module, method)(codependence="distance").empty
+
+
+def test_black_litterman_with_the_market_risk_aversion(portfolio_module):
+    market = {"AAPL": 2.0, "MSFT": 1.5}
+    table = portfolio_module.get_black_litterman_weights(
+        market_weights=market, risk_aversion="market", rounding=10
+    )
+    returns, _, covariance, risk_free_rate = portfolio_module._get_inputs(
+        "daily", False
+    )
+    benchmark = portfolio_module._get_benchmark_returns("daily").reindex(returns.index)
+    delta = (benchmark.mean() * 252 - risk_free_rate) / (benchmark.var() * 252)
+    weights = pd.Series(market) / sum(market.values())
+
+    assert np.allclose(
+        table["Implied Return"],
+        delta * covariance @ weights + risk_free_rate,
+    )
+    # Without views the weights are the market weights, and the posterior volatility is
+    # that of (1 + tau) times the covariance.
+    assert np.allclose(table["Weight"], weights, atol=1e-5)
+    assert np.allclose(
+        table["Posterior Volatility"], np.sqrt(1.05 * np.diag(covariance))
+    )
+    assert portfolio_module.get_black_litterman_weights(
+        market_weights=market, risk_aversion="equilibrium"
+    ).empty

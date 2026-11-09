@@ -4,6 +4,7 @@
 
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -594,3 +595,32 @@ def test_a_fiscal_year_ending_in_the_first_days_of_june_belongs_to_the_previous_
     )
 
     assert [str(label) for label in labels] == ["2022", "2023"]
+
+
+def test_goodwill_and_intangible_assets_fall_back_on_the_separate_rows():
+    """
+    The combined row is used where it is reported; elsewhere goodwill and the other
+    intangibles are added up with a missing one counting as zero, and only a period
+    without any of the three is NaN.
+    """
+    nan = np.nan
+    periods = ["2021", "2022", "2023", "2024"]
+    rows = {
+        ("A", "Goodwill and Intangible Assets"): [100, nan, nan, nan],
+        ("A", "Goodwill"): [60, 70, nan, nan],
+        ("A", "Intangible Assets"): [40, 20, 15, nan],
+        ("B", "Goodwill and Intangible Assets"): [nan, nan, nan, 0],
+        ("B", "Goodwill"): [5, nan, 3, nan],
+        ("B", "Intangible Assets"): [nan, nan, 2, nan],
+    }
+    balance_sheet = pd.DataFrame.from_dict(rows, orient="index", columns=periods)
+    balance_sheet.index = pd.MultiIndex.from_tuples(balance_sheet.index)
+
+    result = helpers.get_goodwill_and_intangible_assets(balance_sheet)
+
+    assert result.loc["A"].tolist()[:3] == [100, 90, 15]
+    assert np.isnan(result.loc["A", "2024"])
+    assert result.loc["B", "2021"] == 5
+    assert np.isnan(result.loc["B", "2022"])
+    assert result.loc["B", "2023"] == 5
+    assert result.loc["B", "2024"] == 0

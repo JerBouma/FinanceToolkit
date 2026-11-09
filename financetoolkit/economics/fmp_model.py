@@ -250,6 +250,139 @@ def get_economic_calendar(
     ).set_index("Date")
 
 
+# The period a release covers is the last bracket of its event name: a month "(Oct)", a
+# quarter "(Q3)", a week ending on a day "(Oct/10)" or a year "(2026)".
+REFERENCE_PERIOD_PATTERN = re.compile(
+    r"^(?P<event>.*?)\s*\((?:(?P<month>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+    r"(?:/(?P<day>\d{1,2}))?|Q(?P<quarter>[1-4])|(?P<year>(?:19|20)\d{2}))\)\s*$"
+)
+MONTHS = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
+
+
+def get_reference_period(event: str, release: pd.Timestamp) -> tuple[str, pd.Period]:
+    """
+    Reads the event and the period a release covers from the event name of the economic
+    calendar, e.g. "Producer Price Index YoY (Oct)" released on 2026-11-09 is the
+    Producer Price Index YoY of October 2026.
+
+    The name only gives the month or quarter, so the year is the year of the release, or
+    the year before when the period starts after the release month: a December figure
+    released in January belongs to the previous year, as does a fourth quarter released
+    in February. A name without a period (an interest rate decision) covers the day of
+    its release.
+
+    Args:
+        event (str): The event name, e.g. "GDP Growth Rate QoQ (Q3)".
+        release (pd.Timestamp): The release date.
+
+    Returns:
+        tuple[str, pd.Period]: The event without its period and the period it covers:
+        monthly, quarterly, yearly or daily (the week of a weekly release ends on its day).
+    """
+    match = REFERENCE_PERIOD_PATTERN.match(event)
+
+    if match is None:
+        return event.strip(), pd.Period(release, freq="D")
+
+    name = match["event"]
+
+    if match["year"]:
+        return name, pd.Period(int(match["year"]), freq="Y")
+
+    if match["quarter"]:
+        first_month = 3 * int(match["quarter"]) - 2
+        year = release.year - (first_month > release.month)
+        return name, pd.Period(year=year, quarter=int(match["quarter"]), freq="Q")
+
+    month = MONTHS.index(match["month"]) + 1
+
+    if match["day"]:
+        day = int(match["day"])
+        year = release.year - ((month, day) > (release.month, release.day))
+        return name, pd.Period(year=year, month=month, day=day, freq="D")
+
+    return name, pd.Period(
+        year=release.year - (month > release.month), month=month, freq="M"
+    )
+
+
+def get_economic_calendar_series(economic_calendar: pd.DataFrame) -> pd.DataFrame:
+    """
+    Arranges the releases of the economic calendar as time series: the Actual value of
+    every event by the period it covers, with a column per country and event, and the
+    consensus Estimate next to it ("<event> Estimate").
+
+    The period is read from the event name (see get_reference_period). Several releases
+    of the same period, such as a flash estimate followed by the final figure, keep the
+    latest value that was published; a release still to come has its Estimate and no
+    Actual yet.
+
+    Args:
+        economic_calendar (pd.DataFrame): The releases as get_economic_calendar returns
+            them, indexed by release date with Country, Event, Estimate and Actual columns.
+
+    Returns:
+        pd.DataFrame: The values by period, with (Country, Event) columns. The index is a
+        PeriodIndex at the frequency of the events (monthly for most), or daily, at the
+        last day of each period, when events of different frequencies are combined.
+    """
+    if economic_calendar.empty:
+        return pd.DataFrame()
+
+    references = [
+        get_reference_period(str(event), release)
+        for event, release in zip(
+            economic_calendar["Event"], economic_calendar.index, strict=True
+        )
+    ]
+    periods = [period for _, period in references]
+
+    # Monthly, quarterly and yearly periods cannot share an index, so a mix of them is
+    # placed on the last day of each period.
+    if len({period.freqstr for period in periods}) > 1:
+        periods = [period.asfreq("D", how="end") for period in periods]
+
+    releases = pd.DataFrame(
+        {
+            "Country": economic_calendar["Country"].to_numpy(),
+            "Event": [event for event, _ in references],
+            "Period": pd.PeriodIndex(periods),
+            "Actual": pd.to_numeric(economic_calendar["Actual"]).to_numpy(),
+            "Estimate": pd.to_numeric(economic_calendar["Estimate"]).to_numpy(),
+        }
+    )
+
+    # The calendar is in order of release, so the last value of a period is its latest
+    # (the last one published: a release still to come has no Actual yet).
+    latest = releases.groupby(["Country", "Event", "Period"], sort=False).last()
+
+    actual = latest["Actual"].unstack(["Country", "Event"])
+    estimate = latest["Estimate"].unstack(["Country", "Event"])
+    estimate.columns = pd.MultiIndex.from_tuples(
+        [(country, f"{event} Estimate") for country, event in estimate.columns]
+    )
+
+    series = pd.concat([actual, estimate.dropna(axis=1, how="all")], axis=1)
+    series = series[sorted(series.columns)].sort_index()
+    series.index.name = None
+    series.columns.names = ["Country", "Event"]
+
+    return series
+
+
 # The end-of-day endpoint returns at most 5,000 rows per request, so an index history is
 # requested in windows of fifteen years (around 3,800 trading days).
 INDEX_HISTORY_WINDOW_YEARS = 15

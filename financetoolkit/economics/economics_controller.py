@@ -10447,6 +10447,7 @@ class Economics:
         currencies: str | list[str] | None = None,
         impact: str | list[str] | None = None,
         events: str | list[str] | None = None,
+        as_series: bool = False,
     ) -> pd.DataFrame:
         """
         Returns the scheduled releases of economic data for every country, such as
@@ -10466,6 +10467,21 @@ class Economics:
         in other units, such as thousands of jobs or index points, keep their values, as do
         survey levels such as PMIs and confidence indices, which the calendar sometimes
         labels "%" as well.
+
+        With as_series=True the releases become time series: the Actual value of every
+        event by the period it covers, with a column per country and event and the
+        consensus Estimate next to it ("<event> Estimate"). The calendar only names the
+        period in the event, e.g. "Producer Price Index YoY (Oct)", so the period is read
+        from it: a month, a quarter "(Q3)", the day a weekly figure ends "(Oct/10)", a year
+        "(2026)" or, for an event without one (an interest rate decision), the day of the
+        release. The year is that of the release, or the year before when the period starts
+        after the release month (a December figure released in January). Several releases of
+        the same period, such as a flash estimate and the final figure, keep the latest one
+        published. The index is monthly for monthly events, quarterly for quarterly ones and
+        daily, at the last day of each period, when events of different frequencies are
+        combined. The series can be analysed further with `Econometrics(data=...)`, e.g. how
+        unusual the latest value is (get_level_significance) or how long it has been above or
+        below zero (get_streaks).
 
         Without a start_date and end_date the dates this Economics instance was created
         with are used, and without those the last 90 days. The endpoint returns at most 90
@@ -10489,9 +10505,13 @@ class Economics:
             events (str | list[str], optional): Parts of event names to keep, matched without
                 regard to case, e.g. "PMI" for every purchasing managers' index or ["CPI",
                 "Unemployment"]. Defaults to None, which keeps every event.
+            as_series (bool, optional): Whether to return the Actual and Estimate of every
+                event as time series by the period they cover, with (Country, Event) columns,
+                instead of the releases by date. Defaults to False.
 
         Returns:
-            pd.DataFrame: The economic data releases, indexed by date.
+            pd.DataFrame: The economic data releases, indexed by date, or with as_series=True
+            the values of every event by the period they cover.
 
         As an example:
 
@@ -10522,7 +10542,7 @@ class Economics:
         """
         helpers.require_api_key(self._api_key, "the economic calendar")
 
-        return economics_fmp_model.get_economic_calendar(
+        economic_calendar = economics_fmp_model.get_economic_calendar(
             api_key=self._api_key,
             start_date=start_date or self._requested_start_date,
             end_date=end_date or self._requested_end_date,
@@ -10531,6 +10551,11 @@ class Economics:
             impact=impact,
             events=events,
         )
+
+        if as_series:
+            return economics_fmp_model.get_economic_calendar_series(economic_calendar)
+
+        return economic_calendar
 
     @handle_errors
     def get_market_risk_premium(self) -> pd.DataFrame:

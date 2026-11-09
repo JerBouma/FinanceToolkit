@@ -757,6 +757,7 @@ def _simplify_annotation(ann: Any) -> Any:
     - ``float | range | list | None``    → ``float | None``
     - ``list[str] | str | None``         → ``str | None``
     - ``float | list | dict[str,float]`` → ``float``
+    - ``float | str``                    → ``float | str``
     - ``DataFrame | ndarray | list[list[float]]`` → ``list[list[float]]``
     """
     if ann is inspect.Parameter.empty or ann is None:
@@ -857,6 +858,12 @@ def _simplify_annotation(ann: Any) -> Any:
         for a in args
     ):
         combined = scalar | dict[str, scalar]  # ty: ignore[invalid-type-form]
+        return combined | None if has_none else combined
+
+    # A number that may also be a keyword (the Black-Litterman risk_aversion='market')
+    # accepts both, so the keyword is not refused as an unparsable number.
+    if scalar in (int, float) and str in scalars:
+        combined = scalar | str
         return combined | None if has_none else combined
 
     return scalar | None if has_none else scalar

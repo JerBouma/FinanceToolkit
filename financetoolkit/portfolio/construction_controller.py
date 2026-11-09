@@ -218,6 +218,7 @@ class PortfolioConstruction:
                 (
                     self._get_benchmark_returns(period)
                     if expected_returns == "capm"
+                    or covariance == "ledoit_wolf_single_factor"
                     else None
                 ),
                 risk_free_rate,
@@ -457,13 +458,17 @@ class PortfolioConstruction:
                 estimated from (daily, weekly, monthly, quarterly or yearly). Defaults to
                 "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -619,13 +624,17 @@ class PortfolioConstruction:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -769,40 +778,51 @@ class PortfolioConstruction:
         current_weights: dict[str, float] | None = None,
         maximum_turnover: float | None = None,
         transaction_cost: float = 0.0,
+        target_volatility: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of a mean-variance efficient portfolio. With a target return,
-        it is the portfolio with the lowest volatility that expects that return. Without
-        one, it is the portfolio that maximizes the investor's utility, the expected return
-        minus half the risk aversion times the variance: w'μ - (λ/2) w'Σw.
+        it is the portfolio with the lowest volatility that expects that return. With a
+        target volatility σ*, it is the portfolio with the highest expected return whose
+        annualized volatility is at most σ*: max w'μ subject to w'Σw ≤ σ*². Without
+        either, it is the portfolio that maximizes the investor's utility, the expected
+        return minus half the risk aversion times the variance: w'μ - (λ/2) w'Σw.
 
         A risk aversion of 2 to 4 is typical; 2.5 is the value commonly used for the
         market as a whole.
 
-        For more information, see the following paper:
+        For more information, see the following papers:
 
         - Markowitz, H. (1952). "Portfolio Selection." The Journal of Finance, 7(1), 77-91.
+        - Merton, R. C. (1972). "An Analytic Derivation of the Efficient Portfolio
+          Frontier." Journal of Financial and Quantitative Analysis, 7(4), 1851-1872.
 
         Also known as: Markowitz portfolio, efficient portfolio, quadratic utility
         portfolio.
 
         Args:
             target_return (float | None, optional): The annualized return the portfolio must
-                expect, e.g. 0.12 for 12%. Defaults to None, which uses the risk aversion.
+                expect, e.g. 0.12 for 12%. Defaults to None, which uses the target
+                volatility or the risk aversion.
             risk_aversion (float, optional): The investor's risk aversion λ; higher values
-                give less risky portfolios. Defaults to 2.5.
+                give less risky portfolios. Not used with a target return or target
+                volatility. Defaults to 2.5.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -846,6 +866,11 @@ class PortfolioConstruction:
             transaction_cost (float, optional): The cost per unit of weight traded
                 from the current weights, e.g. 0.001 for 10 basis points, subtracted once
                 from the portfolio's annualized expected return. Defaults to 0.
+            target_volatility (float | None, optional): The highest annualized volatility
+                of the portfolio (the volatility per period times the square root of the
+                number of periods in a year), e.g. 0.15 for 15%. Cannot be combined with
+                a target return. Defaults to None, which uses the target return or the
+                risk aversion.
             include_benchmark (bool, optional): Whether to include the benchmark as an
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -858,6 +883,12 @@ class PortfolioConstruction:
         Notes:
         - A target return outside what the assets can reach within the constraints
           raises an error that states the reachable range.
+        - A target volatility below that of the minimum variance portfolio within the
+          constraints raises an error that states that volatility. Above the volatility
+          of the highest return portfolio the target does not bind, and that portfolio
+          is returned.
+        - A target return and a target volatility together are refused: on the efficient
+          frontier the one fixes the other.
 
         As an example:
 
@@ -916,6 +947,7 @@ class PortfolioConstruction:
             current_weights=current,
             maximum_turnover=maximum_turnover,
             transaction_cost=transaction_cost,
+            target_volatility=target_volatility,
         )
         table = self._weights_table(
             weights, expected, covariance_matrix, risk_free_rate, rounding
@@ -959,13 +991,17 @@ class PortfolioConstruction:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1116,13 +1152,17 @@ class PortfolioConstruction:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1203,6 +1243,7 @@ class PortfolioConstruction:
     def get_hierarchical_risk_parity_weights(
         self,
         linkage_method: str = "single",
+        codependence: str = "pearson",
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
@@ -1235,16 +1276,26 @@ class PortfolioConstruction:
             linkage_method (str, optional): The linkage of the hierarchical clustering:
                 "single", "complete", "average" or "ward". Defaults to "single", as in the
                 paper.
+            codependence (str, optional): The correlation the assets are clustered on,
+                through the distance √((1 - ρ) / 2): "pearson" (the linear correlation of
+                the covariance matrix), "spearman" (the rank correlation of the returns,
+                Spearman, 1904) or "kendall" (the rank correlation τ_b of the returns,
+                Kendall, 1938). The rank correlations depend only on the order of the
+                returns, so a few extreme returns weigh less. Defaults to "pearson".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1295,11 +1346,17 @@ class PortfolioConstruction:
         | XOM       |   0.4201 |            0.2911 |       0.2702 |         0.9524 |              0.6006 |
         | Portfolio |   1      |            0.2073 |       0.1569 |         1.1059 |              1      |
         """
-        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+        returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
         weights = optimization_model.get_hierarchical_risk_parity_weights(
-            covariance_matrix, linkage_method, minimum_weight, maximum_weight
+            covariance_matrix,
+            linkage_method,
+            minimum_weight,
+            maximum_weight,
+            optimization_model.get_codependence(
+                returns, covariance_matrix, codependence
+            ),
         )
         return self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
@@ -1310,6 +1367,7 @@ class PortfolioConstruction:
         self,
         linkage_method: str = "ward",
         clusters: int | None = None,
+        codependence: str = "pearson",
         period: str = "daily",
         covariance: str = "sample",
         covariance_span: int = 180,
@@ -1351,17 +1409,27 @@ class PortfolioConstruction:
                 paper.
             clusters (int | None, optional): The number of clusters. Defaults to None,
                 chosen by the two-order difference of the gap statistic.
+            codependence (str, optional): The correlation the assets are clustered on,
+                through the distance √((1 - ρ) / 2): "pearson" (the linear correlation of
+                the covariance matrix), "spearman" (the rank correlation of the returns,
+                Spearman, 1904) or "kendall" (the rank correlation τ_b of the returns,
+                Kendall, 1938). The rank correlations depend only on the order of the
+                returns, so a few extreme returns weigh less. Defaults to "pearson".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
-            covariance (str, optional): The estimator of the covariance matrix, which also
-                gives the correlations that are clustered: "sample" (ddof=1),
-                "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the clusters when there are many assets compared to the number
-                of periods. Defaults to "sample".
+            covariance (str, optional): The estimator of the covariance matrix, which
+                also gives the correlations that are clustered: "sample" (ddof=1),
+                "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf, 2004),
+                "ledoit_wolf_constant_correlation" (towards the average correlation,
+                Ledoit and Wolf, 2004), "ledoit_wolf_single_factor" (towards the
+                covariance that the benchmark as a single factor implies, Ledoit and
+                Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the clusters
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1422,8 +1490,11 @@ class PortfolioConstruction:
         | XOM       |   0.1014 |       0.2702 |         0.9524 |              0.0523 |         3 |
         | Portfolio |   1      |       0.1715 |         0.8592 |              1      |       nan |
         """
-        _, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
+        returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
+        )
+        correlation = optimization_model.get_codependence(
+            returns, covariance_matrix, codependence
         )
         weights = optimization_model.get_hierarchical_equal_risk_contribution_weights(
             covariance_matrix,
@@ -1436,12 +1507,13 @@ class PortfolioConstruction:
                 sector_bounds,
                 country_bounds,
             ),
+            correlation=correlation,
         )
         table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
         _, labels = optimization_model.get_hierarchical_clusters(
-            covariance_matrix, linkage_method, clusters
+            covariance_matrix, linkage_method, clusters, correlation
         )
         table["Cluster"] = pd.Series(labels + 1, index=covariance_matrix.index)
         return table
@@ -1452,6 +1524,7 @@ class PortfolioConstruction:
         objective: str = "minimum_variance",
         linkage_method: str = "ward",
         clusters: int | None = None,
+        codependence: str = "pearson",
         period: str = "daily",
         covariance: str = "denoised",
         covariance_span: int = 180,
@@ -1493,15 +1566,26 @@ class PortfolioConstruction:
                 "single", "complete", "average" or "ward". Defaults to "ward".
             clusters (int | None, optional): The number of clusters. Defaults to None,
                 chosen by the two-order difference of the gap statistic.
+            codependence (str, optional): The correlation the assets are clustered on,
+                through the distance √((1 - ρ) / 2): "pearson" (the linear correlation of
+                the covariance matrix), "spearman" (the rank correlation of the returns,
+                Spearman, 1904) or "kendall" (the rank correlation τ_b of the returns,
+                Kendall, 1938). The rank correlations depend only on the order of the
+                returns, so a few extreme returns weigh less. Defaults to "pearson".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
-            covariance (str, optional): The estimator of the covariance matrix, which also
-                gives the correlations that are clustered: "denoised" (the eigenvalues of
-                the correlation matrix that random returns could produce averaged, Laloux
-                et al., 2000), "sample" (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004),
-                "oas" (Chen et al., 2010), "semicovariance" (the co-movement below a zero
-                return, Estrada, 2007) or "exponential" (recent periods weigh most,
-                RiskMetrics). Defaults to "denoised", as in the paper.
+            covariance (str, optional): The estimator of the covariance matrix, which
+                also gives the correlations that are clustered: "denoised" (the
+                eigenvalues of the correlation matrix that random returns could produce
+                averaged, Laloux et al., 2000), "sample" (ddof=1), "ledoit_wolf"
+                (towards the scaled identity, Ledoit and Wolf, 2004),
+                "ledoit_wolf_constant_correlation" (towards the average correlation,
+                Ledoit and Wolf, 2004), "ledoit_wolf_single_factor" (towards the
+                covariance that the benchmark as a single factor implies, Ledoit and
+                Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007) or "exponential" (recent
+                periods weigh most, RiskMetrics). Defaults to "denoised", as in the
+                paper.
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1563,13 +1647,16 @@ class PortfolioConstruction:
         | XOM       |   0.1782 |       0.2702 |         0.9524 |              0.1782 |         2 |
         | Portfolio |   1      |       0.1366 |         0.9061 |              1      |       nan |
         """
-        _, expected, covariance_matrix, risk_free_rate = self._get_inputs(
+        returns, expected, covariance_matrix, risk_free_rate = self._get_inputs(
             period,
             include_benchmark,
             covariance,
             covariance_span,
             expected_returns,
             expected_returns_span,
+        )
+        correlation = optimization_model.get_codependence(
+            returns, covariance_matrix, codependence
         )
         weights = optimization_model.get_nested_clustered_optimization_weights(
             expected,
@@ -1578,12 +1665,13 @@ class PortfolioConstruction:
             risk_free_rate,
             linkage_method,
             clusters,
+            correlation,
         )
         table = self._weights_table(
             weights, expected, covariance_matrix, risk_free_rate, rounding
         )
         _, labels = optimization_model.get_hierarchical_clusters(
-            covariance_matrix, linkage_method, clusters
+            covariance_matrix, linkage_method, clusters, correlation
         )
         table["Cluster"] = pd.Series(labels + 1, index=covariance_matrix.index)
         return table
@@ -1608,13 +1696,17 @@ class PortfolioConstruction:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2341,13 +2433,17 @@ class PortfolioConstruction:
                 estimated from (daily, weekly, monthly, quarterly or yearly). Defaults to
                 "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2505,13 +2601,17 @@ class PortfolioConstruction:
                 "tracking_error".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
-            covariance (str, optional): The estimator of the covariance matrix of the assets
-                and the benchmark: "sample" (ddof=1), "ledoit_wolf" (Ledoit and Wolf,
-                2004), "oas" (Chen et al., 2010), "semicovariance" (the co-movement below a
-                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
-                RiskMetrics) or "denoised" (the eigenvalues of the correlation matrix that
-                random returns could produce averaged, Laloux et al., 2000). Defaults to
-                "sample".
+            covariance (str, optional): The estimator of the covariance matrix of the
+                assets and the benchmark: "sample" (ddof=1), "ledoit_wolf" (towards the
+                scaled identity, Ledoit and Wolf, 2004),
+                "ledoit_wolf_constant_correlation" (towards the average correlation,
+                Ledoit and Wolf, 2004), "ledoit_wolf_single_factor" (towards the
+                covariance that the benchmark as a single factor implies, Ledoit and
+                Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2714,11 +2814,15 @@ class PortfolioConstruction:
                 Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix, used by
                 the "approximate" method and for the volatility and risk contributions:
-                "sample" (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et
-                al., 2010), "semicovariance" (the co-movement below a zero return, Estrada,
-                2007), "exponential" (recent periods weigh most, RiskMetrics) or "denoised"
-                (the eigenvalues of the correlation matrix that random returns could
-                produce averaged, Laloux et al., 2000). Defaults to "sample".
+                "sample" (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit
+                and Wolf, 2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2921,11 +3025,15 @@ class PortfolioConstruction:
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix the
                 "parametric" draws come from and the table reports: "sample" (ddof=1),
-                "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). Defaults to "sample".
+                "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf, 2004),
+                "ledoit_wolf_constant_correlation" (towards the average correlation,
+                Ledoit and Wolf, 2004), "ledoit_wolf_single_factor" (towards the
+                covariance that the benchmark as a single factor implies, Ledoit and
+                Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -3071,7 +3179,7 @@ class PortfolioConstruction:
         views: dict[str, float] | None = None,
         view_confidences: dict[str, float] | None = None,
         market_weights: dict[str, float] | None = None,
-        risk_aversion: float = 2.5,
+        risk_aversion: float | str = 2.5,
         tau: float = 0.05,
         period: str = "daily",
         covariance: str = "sample",
@@ -3103,6 +3211,17 @@ class PortfolioConstruction:
         amount and leaves the weights unchanged; an absolute view is compared with the
         implied total return, so there it matters.
 
+        The risk aversion is 2.5 by default, the value He and Litterman (1999) use for the
+        world market, or the one the benchmark implies with risk_aversion="market":
+        δ = (E[r_m] - r_f) / σ²_m, the benchmark's annualized average excess return over
+        its annualized variance on the same periods as the assets.
+
+        The Posterior Volatility is the square root of the diagonal of the posterior
+        covariance matrix Σ + M (He and Litterman, 1999), with M = ((τΣ)⁻¹ + P'Ω⁻¹P)⁻¹
+        the uncertainty that remains in the Black-Litterman returns: the volatility to
+        expect for each asset once the estimation error of its return is counted too.
+        The weights use Σ itself, so that without views they are the market weights.
+
         For more information, see the following papers:
 
         - Black, F. and Litterman, R. (1992). "Global Portfolio Optimization." Financial
@@ -3125,20 +3244,27 @@ class PortfolioConstruction:
                 variance of the view scaled by tau.
             market_weights (dict[str, float] | None, optional): The market weight per asset.
                 Defaults to None, which uses the market capitalizations of the assets.
-            risk_aversion (float, optional): The risk aversion δ of the market. Defaults to
+            risk_aversion (float | str, optional): The risk aversion δ of the market, or
+                "market" for the one the benchmark implies, (E[r_m] - r_f) / σ²_m, with
+                the benchmark's arithmetic average return and variance (ddof=1) per
+                period both annualized by the number of periods in a year. Defaults to
                 2.5.
             tau (float, optional): The uncertainty of the implied returns relative to the
                 covariance matrix. Defaults to 0.05.
             period (str, optional): The frequency of the returns the covariance matrix is
                 estimated from. Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -3166,7 +3292,12 @@ class PortfolioConstruction:
 
         Returns:
             pd.DataFrame: Per asset its Market Weight, Implied Return, Black-Litterman Return
-            (both annualized total returns) and the resulting Weight.
+            (both annualized total returns), Posterior Volatility (annualized) and the
+            resulting Weight.
+
+        Notes:
+        - risk_aversion="market" is refused when the benchmark earned no more than the
+          risk free rate over the period, as that implies no positive risk aversion.
 
         As an example:
 
@@ -3187,17 +3318,31 @@ class PortfolioConstruction:
 
         Which returns:
 
-        |      |   Market Weight |   Implied Return |   Black-Litterman Return |   Weight |
-        |:-----|----------------:|-----------------:|-------------------------:|---------:|
-        | AAPL |          0.4899 |           0.1752 |                   0.1769 |   0.4738 |
-        | MSFT |          0.376  |           0.1531 |                   0.155  |   0.3729 |
-        | JNJ  |          0.0614 |           0.0509 |                   0.052  |   0.0145 |
-        | XOM  |          0.0727 |           0.0709 |                   0.0853 |   0.1387 |
+        |      |   Market Weight |   Implied Return |   Black-Litterman Return |   Posterior Volatility |   Weight |
+        |:-----|----------------:|-----------------:|-------------------------:|-----------------------:|---------:|
+        | AAPL |          0.4861 |           0.1751 |                   0.1772 |                 0.2846 |   0.4727 |
+        | MSFT |          0.3834 |           0.1538 |                   0.1556 |                 0.2631 |   0.3768 |
+        | JNJ  |          0.0647 |           0.0511 |                   0.0522 |                 0.1714 |   0.016  |
+        | XOM  |          0.0658 |           0.0697 |                   0.0847 |                 0.2736 |   0.1345 |
         """
-        _, _, covariance_matrix, risk_free_rate = self._get_inputs(
+        returns, _, covariance_matrix, risk_free_rate = self._get_inputs(
             period, False, covariance, covariance_span
         )
         assets = covariance_matrix.index.tolist()
+
+        if risk_aversion == "market":
+            benchmark = self._get_benchmark_returns(period)
+            if benchmark is None:
+                raise ValueError("The market risk aversion needs a benchmark.")
+            risk_aversion = optimization_model.get_market_implied_risk_aversion(
+                benchmark.reindex(returns.index),
+                PERIODS_PER_YEAR[period],
+                risk_free_rate,
+            )
+        elif isinstance(risk_aversion, str):
+            raise ValueError(
+                f"The risk aversion must be a number or 'market', not '{risk_aversion}'."
+            )
 
         if market_weights is not None:
             market = pd.Series(market_weights, dtype=float).reindex(assets)
@@ -3212,17 +3357,19 @@ class PortfolioConstruction:
                 f"No market weight for {missing}; pass market_weights explicitly."
             )
 
-        returns = optimization_model.get_black_litterman_returns(
-            covariance_matrix,
-            market,
-            views=views,
-            view_confidences=view_confidences,
-            risk_aversion=risk_aversion,
-            tau=tau,
-            risk_free_rate=risk_free_rate,
+        black_litterman, posterior_covariance = (
+            optimization_model.get_black_litterman_returns(
+                covariance_matrix,
+                market,
+                views=views,
+                view_confidences=view_confidences,
+                risk_aversion=risk_aversion,
+                tau=tau,
+                risk_free_rate=risk_free_rate,
+            )
         )
         weights = optimization_model.get_mean_variance_weights(
-            returns["Black-Litterman Return"],
+            black_litterman["Black-Litterman Return"],
             covariance_matrix,
             risk_aversion=risk_aversion,
             **self._get_constraints(
@@ -3236,7 +3383,17 @@ class PortfolioConstruction:
             gross_exposure=gross_exposure,
         )
         table = pd.concat(
-            [(market / market.sum()).rename("Market Weight"), returns, weights], axis=1
+            [
+                (market / market.sum()).rename("Market Weight"),
+                black_litterman,
+                pd.Series(
+                    np.sqrt(np.diag(posterior_covariance)),
+                    index=posterior_covariance.index,
+                    name="Posterior Volatility",
+                ),
+                weights,
+            ],
+            axis=1,
         )
         return self._round(table, rounding)
 
@@ -3293,13 +3450,17 @@ class PortfolioConstruction:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -3408,13 +3569,17 @@ class PortfolioConstruction:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -3533,13 +3698,17 @@ class PortfolioConstruction:
             maximum_turnover (float | None, optional): The highest turnover of a
                 rebalancing, e.g. 0.2. Defaults to None, no limit.
             covariance (str, optional): The estimator of the covariance matrix: "sample"
-                (ddof=1), "ledoit_wolf" (Ledoit and Wolf, 2004), "oas" (Chen et al., 2010),
-                "semicovariance" (the co-movement below a zero return, Estrada, 2007),
-                "exponential" (recent periods weigh most, RiskMetrics) or "denoised" (the
-                eigenvalues of the correlation matrix that random returns could produce
-                averaged, Laloux et al., 2000). The shrinkage and denoised estimators
-                stabilize the weights when there are many assets compared to the number of
-                periods. Defaults to "sample".
+                (ddof=1), "ledoit_wolf" (towards the scaled identity, Ledoit and Wolf,
+                2004), "ledoit_wolf_constant_correlation" (towards the average
+                correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
+                (towards the covariance that the benchmark as a single factor implies,
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
+                co-movement below a zero return, Estrada, 2007), "exponential" (recent
+                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
+                correlation matrix that random returns could produce averaged, Laloux et
+                al., 2000). The shrinkage and denoised estimators stabilize the weights
+                when there are many assets compared to the number of periods. Defaults
+                to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -3637,6 +3806,8 @@ class PortfolioConstruction:
         benchmark = self._get_benchmark_returns("daily")
         if expected_returns == "capm" and benchmark is None:
             raise ValueError("The CAPM expected returns need a benchmark.")
+        if covariance == "ledoit_wolf_single_factor" and benchmark is None:
+            raise ValueError("The single factor covariance needs a benchmark.")
         periods_per_year = PERIODS_PER_YEAR["daily"]
         # The portfolios earn every day's return: a day on which only some markets traded
         # is a 0% return for the others, whose next return covers both days. A day on
@@ -3663,7 +3834,12 @@ class PortfolioConstruction:
                         covariance_span,
                         expected_returns,
                         expected_returns_span,
-                        benchmark if expected_returns == "capm" else None,
+                        (
+                            benchmark
+                            if expected_returns == "capm"
+                            or covariance == "ledoit_wolf_single_factor"
+                            else None
+                        ),
                         risk_free_rate,
                     ),
                 )

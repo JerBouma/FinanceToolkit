@@ -110,13 +110,13 @@ def test_minimum_cvar_lowers_the_tail_loss():
 
 def test_black_litterman_without_views_returns_the_implied_returns():
     market = pd.Series([0.4, 0.3, 0.2, 0.1], index=ASSETS)
-    result = optimization_model.get_black_litterman_returns(COVARIANCE, market)
+    result, _ = optimization_model.get_black_litterman_returns(COVARIANCE, market)
 
     assert np.allclose(result["Implied Return"], 2.5 * COVARIANCE @ market)
     assert np.allclose(result["Implied Return"], result["Black-Litterman Return"])
 
     # A confident view pulls the return almost all the way to it.
-    confident = optimization_model.get_black_litterman_returns(
+    confident, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE, market, views={"D": 0.2}, view_confidences={"D": 0.999}
     )
     assert confident.loc["D", "Black-Litterman Return"] == pytest.approx(0.2, abs=1e-3)
@@ -290,8 +290,8 @@ def test_hierarchical_risk_parity_clusters_on_the_distance_of_distances():
 
 def test_black_litterman_returns_are_total_returns():
     market = pd.Series([0.4, 0.3, 0.2, 0.1], index=ASSETS)
-    excess = optimization_model.get_black_litterman_returns(COVARIANCE, market)
-    total = optimization_model.get_black_litterman_returns(
+    excess, _ = optimization_model.get_black_litterman_returns(COVARIANCE, market)
+    total, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE, market, risk_free_rate=0.03
     )
     assert np.allclose(total["Implied Return"], 2.5 * COVARIANCE @ market + 0.03)
@@ -302,10 +302,10 @@ def test_black_litterman_returns_are_total_returns():
     # A relative view compares two total returns, so the risk free rate shifts every
     # posterior return by the same amount and the weights stay the same.
     relative = {"A-B": 0.02, "C-D": -0.01}
-    without = optimization_model.get_black_litterman_returns(
+    without, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE, market, views=relative
     )
-    with_rate = optimization_model.get_black_litterman_returns(
+    with_rate, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE, market, views=relative, risk_free_rate=0.03
     )
     assert np.allclose(
@@ -332,7 +332,7 @@ def test_black_litterman_returns_are_total_returns():
     )
 
     # An absolute view is a total return: a confident view of 20% lands on 20%.
-    confident = optimization_model.get_black_litterman_returns(
+    confident, _ = optimization_model.get_black_litterman_returns(
         COVARIANCE,
         market,
         views={"D": 0.2},
@@ -364,8 +364,8 @@ def test_black_litterman_reads_hyphenated_tickers_and_singular_covariances():
 
     relative = optimization_model.get_black_litterman_returns(
         covariance, weights, views={"BRK-B-C": 0.02}
-    )["Black-Litterman Return"]
-    implied = optimization_model.get_black_litterman_returns(covariance, weights)[
+    )[0]["Black-Litterman Return"]
+    implied = optimization_model.get_black_litterman_returns(covariance, weights)[0][
         "Implied Return"
     ]
 
@@ -375,7 +375,7 @@ def test_black_litterman_reads_hyphenated_tickers_and_singular_covariances():
     duplicate = pd.DataFrame(0.04, index=["X", "Y"], columns=["X", "Y"])
     posterior = optimization_model.get_black_litterman_returns(
         duplicate, pd.Series({"X": 0.5, "Y": 0.5}), views={"X": 0.1}
-    )["Black-Litterman Return"]
+    )[0]["Black-Litterman Return"]
 
     assert np.isfinite(posterior).all()
     with pytest.raises(ValueError, match="view confidences"):
@@ -1834,3 +1834,232 @@ def test_a_net_exposure_of_zero_or_below_needs_short_positions(net_exposure):
         optimization_model.get_minimum_variance_weights(
             covariance, net_exposure=net_exposure
         )
+
+
+def _factor_returns(periods: int = 500) -> tuple[pd.DataFrame, pd.Series]:
+    """Seeded returns of four assets driven by one market factor."""
+    rng = np.random.default_rng(1)
+    market = pd.Series(rng.normal(0, 0.01, periods))
+    returns = pd.DataFrame(
+        market.to_numpy()[:, None] * np.array([0.3, 1.5, 2.5, 0.1])
+        + rng.normal(0, 0.01, (periods, 4)),
+        columns=ASSETS,
+    )
+    return returns, market
+
+
+def test_ledoit_wolf_constant_correlation_follows_the_paper():
+    returns, _ = _factor_returns()
+    y = returns.to_numpy() - returns.to_numpy().mean(axis=0)
+    periods, count = y.shape
+    sample = y.T @ y / periods
+    sd = np.sqrt(np.diag(sample))
+    r_bar = (
+        2
+        / (count * (count - 1))
+        * sum(
+            sample[i, j] / (sd[i] * sd[j])
+            for i in range(count)
+            for j in range(i + 1, count)
+        )
+    )
+    target = r_bar * np.outer(sd, sd)
+    np.fill_diagonal(target, np.diag(sample))
+    pi = np.array(
+        [
+            [np.mean((y[:, i] * y[:, j] - sample[i, j]) ** 2) for j in range(count)]
+            for i in range(count)
+        ]
+    )
+
+    def theta(i, j):
+        return np.mean(
+            (y[:, i] ** 2 - sample[i, i]) * (y[:, i] * y[:, j] - sample[i, j])
+        )
+
+    rho = np.trace(pi) + sum(
+        r_bar
+        / 2
+        * (
+            np.sqrt(sample[j, j] / sample[i, i]) * theta(i, j)
+            + np.sqrt(sample[i, i] / sample[j, j]) * theta(j, i)
+        )
+        for i in range(count)
+        for j in range(count)
+        if i != j
+    )
+    gamma = np.sum((target - sample) ** 2)
+    intensity = max(0, min((pi.sum() - rho) / gamma / periods, 1))
+
+    covariance, shrinkage = (
+        optimization_model.get_ledoit_wolf_constant_correlation_covariance(returns)
+    )
+
+    assert 0 < shrinkage < 1
+    assert shrinkage == pytest.approx(intensity, rel=1e-10)
+    assert np.allclose(
+        covariance, intensity * target + (1 - intensity) * sample, atol=1e-15
+    )
+
+
+def test_ledoit_wolf_single_factor_follows_the_paper():
+    returns, market = _factor_returns()
+    y = returns.to_numpy() - returns.to_numpy().mean(axis=0)
+    m = market.to_numpy() - market.mean()
+    periods, count = y.shape
+    sample = y.T @ y / periods
+    s_m = y.T @ m / periods
+    s_mm = m @ m / periods
+    target = np.outer(s_m, s_m) / s_mm
+    np.fill_diagonal(target, np.diag(sample))
+    pi = np.array(
+        [
+            [np.mean((y[:, i] * y[:, j] - sample[i, j]) ** 2) for j in range(count)]
+            for i in range(count)
+        ]
+    )
+    # r_ij of Ledoit and Wolf (2003), averaged over the periods.
+    rho = np.trace(pi) + sum(
+        np.mean(
+            (s_m[j] * s_mm * y[:, i] + s_m[i] * s_mm * y[:, j] - s_m[i] * s_m[j] * m)
+            * m
+            * y[:, i]
+            * y[:, j]
+            / s_mm**2
+            - target[i, j] * sample[i, j]
+        )
+        for i in range(count)
+        for j in range(count)
+        if i != j
+    )
+    gamma = np.sum((target - sample) ** 2)
+    intensity = max(0, min((pi.sum() - rho) / gamma / periods, 1))
+
+    covariance, shrinkage = optimization_model.get_ledoit_wolf_single_factor_covariance(
+        returns, market
+    )
+
+    assert 0 < shrinkage < 1
+    assert shrinkage == pytest.approx(intensity, rel=1e-10)
+    assert np.allclose(
+        covariance, intensity * target + (1 - intensity) * sample, atol=1e-15
+    )
+
+    # The dispatch annualizes it and needs the benchmark.
+    _, annual = optimization_model.get_expected_returns_and_covariance(
+        returns, 252, "ledoit_wolf_single_factor", benchmark_returns=market
+    )
+    assert np.allclose(annual, covariance * 252)
+    with pytest.raises(ValueError, match="benchmark"):
+        optimization_model.get_expected_returns_and_covariance(
+            returns, 252, "ledoit_wolf_single_factor"
+        )
+
+
+def test_target_volatility_gives_the_frontier_portfolio_at_that_risk():
+    weights = optimization_model.get_mean_variance_weights(
+        EXPECTED_RETURNS, COVARIANCE, target_volatility=0.15
+    )
+    assert np.sqrt(weights @ COVARIANCE @ weights) == pytest.approx(0.15, abs=1e-7)
+
+    # The same portfolio as the lowest variance one at its expected return.
+    at_return = optimization_model.get_mean_variance_weights(
+        EXPECTED_RETURNS, COVARIANCE, target_return=float(weights @ EXPECTED_RETURNS)
+    )
+    assert np.allclose(weights, at_return, atol=1e-5)
+
+    # Above the volatility of the highest return portfolio the target does not bind.
+    highest = optimization_model.get_mean_variance_weights(
+        EXPECTED_RETURNS, COVARIANCE, target_volatility=0.5
+    )
+    assert highest["B"] == pytest.approx(1)
+
+    lowest = optimization_model.get_minimum_variance_weights(COVARIANCE)
+    lowest_volatility = float(np.sqrt(lowest @ COVARIANCE @ lowest))
+    with pytest.raises(ValueError, match="below the lowest volatility"):
+        optimization_model.get_mean_variance_weights(
+            EXPECTED_RETURNS, COVARIANCE, target_volatility=lowest_volatility - 0.01
+        )
+    with pytest.raises(ValueError, match="not both"):
+        optimization_model.get_mean_variance_weights(
+            EXPECTED_RETURNS, COVARIANCE, target_return=0.1, target_volatility=0.15
+        )
+
+
+def test_codependence_sets_the_correlation_that_is_clustered():
+    returns, _ = _factor_returns(200)
+    covariance = returns.cov()
+
+    pearson = optimization_model.get_codependence(returns, covariance)
+    spearman = optimization_model.get_codependence(returns, covariance, "spearman")
+    kendall = optimization_model.get_codependence(returns, covariance, "kendall")
+
+    assert np.allclose(pearson, returns.corr())
+    # Spearman's correlation is the Pearson correlation of the ranks.
+    assert np.allclose(spearman, returns.rank().corr())
+    # Kendall's tau from its concordant and discordant pairs (no ties here).
+    a, b = returns["A"].to_numpy(), returns["B"].to_numpy()
+    signs = np.sign(a[:, None] - a[None, :]) * np.sign(b[:, None] - b[None, :])
+    assert kendall.loc["A", "B"] == pytest.approx(signs.sum() / (len(a) * (len(a) - 1)))
+    with pytest.raises(ValueError, match="codependence"):
+        optimization_model.get_codependence(returns, covariance, "distance")
+
+    # The Pearson correlation of the covariance is the default of the clustering.
+    assert np.allclose(
+        optimization_model.get_hierarchical_risk_parity_weights(covariance),
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, correlation=pearson
+        ),
+    )
+    # A correlation that pairs A with B and C with D, where the returns pair A with D
+    # and B with C, changes the clusters and the weights.
+    swapped = pd.DataFrame(
+        [[1, 0.9, 0, 0], [0.9, 1, 0, 0], [0, 0, 1, 0.9], [0, 0, 0.9, 1]],
+        index=ASSETS,
+        columns=ASSETS,
+    )
+    _, natural = optimization_model.get_hierarchical_clusters(covariance, "ward", 2)
+    _, labels = optimization_model.get_hierarchical_clusters(
+        covariance, "ward", 2, swapped
+    )
+    assert natural[0] == natural[3] and natural[1] == natural[2]
+    assert labels[0] == labels[1] and labels[2] == labels[3]
+    assert not np.allclose(
+        optimization_model.get_hierarchical_risk_parity_weights(covariance),
+        optimization_model.get_hierarchical_risk_parity_weights(
+            covariance, correlation=swapped
+        ),
+    )
+
+
+def test_black_litterman_posterior_covariance_follows_he_and_litterman():
+    market = pd.Series([0.4, 0.3, 0.2, 0.1], index=ASSETS)
+    tau = 0.05
+    sigma = COVARIANCE.to_numpy()
+
+    _, without = optimization_model.get_black_litterman_returns(
+        COVARIANCE, market, tau=tau
+    )
+    assert np.allclose(without, (1 + tau) * sigma)
+
+    views = {"A": 0.1, "B-C": 0.02}
+    _, posterior = optimization_model.get_black_litterman_returns(
+        COVARIANCE, market, views=views, tau=tau
+    )
+    p = np.array([[1, 0, 0, 0], [0, 1, -1, 0]])
+    omega = np.diag(np.diag(tau * p @ sigma @ p.T))
+    remaining = np.linalg.inv(
+        np.linalg.inv(tau * sigma) + p.T @ np.linalg.inv(omega) @ p
+    )
+    assert np.allclose(posterior, sigma + remaining)
+
+
+def test_market_implied_risk_aversion():
+    benchmark = pd.Series([0.01, -0.005, 0.02, 0.0, 0.004, -0.01])
+    expected = (benchmark.mean() * 12 - 0.02) / (benchmark.var(ddof=1) * 12)
+
+    assert optimization_model.get_market_implied_risk_aversion(
+        benchmark, 12, 0.02
+    ) == pytest.approx(expected)
+    with pytest.raises(ValueError, match="no positive risk aversion"):
+        optimization_model.get_market_implied_risk_aversion(benchmark, 12, 0.5)

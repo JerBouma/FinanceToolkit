@@ -23,6 +23,7 @@ from financetoolkit.ratios import (
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities import factor_model, logger_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
@@ -161,6 +162,7 @@ FACTOR_COLLECTIONS["all"] = [
 # ruff: noqa: E501
 
 
+@track_sources
 class Ratios:
     """
     The Ratios Module contains over 50+ ratios that can be used to analyse companies.

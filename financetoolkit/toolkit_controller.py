@@ -72,6 +72,7 @@ from financetoolkit.normalization_model import (
 )
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
 
 if TYPE_CHECKING:
@@ -137,6 +138,7 @@ API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
 
+@track_sources
 class Toolkit:
     """
     The Finance Toolkit is an open-source toolkit in which

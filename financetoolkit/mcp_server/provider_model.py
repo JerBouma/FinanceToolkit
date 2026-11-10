@@ -34,6 +34,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
 from financetoolkit.portfolio.portfolio_controller import Portfolio
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import collect_sources, record_source
 
 logger = get_logger()
 
@@ -360,6 +361,12 @@ class ToolkitProvider:
                             cached_messages.loc[kinds == "input", "Message"].astype(str)
                         )
                     )
+                # The sources of the call that produced it, as nothing is retrieved now.
+                if cached_messages is not None and "Kind" in cached_messages.columns:
+                    for source in cached_messages.loc[
+                        cached_messages["Kind"] == "source", "Message"
+                    ].astype(str):
+                        record_source(source)
                 return cached
 
         logger.info(
@@ -368,86 +375,92 @@ class ToolkitProvider:
         call_messages = current_call_messages()
         first_message = len(call_messages) if call_messages is not None else 0
 
-        if category == "ticker":
-            # Functionality reached through a sub-module property (ratios, models, options).
-            if not tickers:
-                raise ValueError(
-                    f"'{method_name}' requires one or more ticker symbols. "
-                    "Provide them via the `tickers` parameter."
+        # The sources the answer's data comes from (see sources_model.track_sources).
+        with collect_sources() as call_sources:
+            if category == "ticker":
+                # Functionality reached through a sub-module property (ratios, models, options).
+                if not tickers:
+                    raise ValueError(
+                        f"'{method_name}' requires one or more ticker symbols. "
+                        "Provide them via the `tickers` parameter."
+                    )
+                result = self.call_sub_module_functionality(
+                    module_name=module_name,
+                    method_name=method_name,
+                    tickers=tickers,
+                    start_date=start_date,
+                    end_date=end_date,
+                    quarterly=quarterly,
+                    benchmark_ticker=benchmark_ticker,
+                    toolkit_risk_free_rate=toolkit_risk_free_rate,
+                    toolkit_basket=toolkit_basket,
+                    api_key=effective_key,
+                    fred_api_key=effective_fred_key,
+                    **method_kwargs,
                 )
-            result = self.call_sub_module_functionality(
-                module_name=module_name,
-                method_name=method_name,
-                tickers=tickers,
-                start_date=start_date,
-                end_date=end_date,
-                quarterly=quarterly,
-                benchmark_ticker=benchmark_ticker,
-                toolkit_risk_free_rate=toolkit_risk_free_rate,
-                toolkit_basket=toolkit_basket,
-                api_key=effective_key,
-                fred_api_key=effective_fred_key,
-                **method_kwargs,
-            )
-        elif category == "toolkit":
-            # Functionality on the Toolkit class itself rather than a sub-module property.
-            if not tickers:
-                raise ValueError(
-                    f"'{method_name}' requires one or more ticker symbols. "
-                    "Provide them via the `tickers` parameter."
+            elif category == "toolkit":
+                # Functionality on the Toolkit class itself rather than a sub-module property.
+                if not tickers:
+                    raise ValueError(
+                        f"'{method_name}' requires one or more ticker symbols. "
+                        "Provide them via the `tickers` parameter."
+                    )
+                result = self.call_toolkit_functionality(
+                    method_name=method_name,
+                    tickers=tickers,
+                    start_date=start_date,
+                    end_date=end_date,
+                    quarterly=quarterly,
+                    benchmark_ticker=benchmark_ticker,
+                    toolkit_risk_free_rate=toolkit_risk_free_rate,
+                    toolkit_basket=toolkit_basket,
+                    api_key=effective_key,
+                    fred_api_key=effective_fred_key,
+                    **method_kwargs,
                 )
-            result = self.call_toolkit_functionality(
-                method_name=method_name,
-                tickers=tickers,
-                start_date=start_date,
-                end_date=end_date,
-                quarterly=quarterly,
-                benchmark_ticker=benchmark_ticker,
-                toolkit_risk_free_rate=toolkit_risk_free_rate,
-                toolkit_basket=toolkit_basket,
-                api_key=effective_key,
-                fred_api_key=effective_fred_key,
-                **method_kwargs,
-            )
-        elif category == "standalone":
-            # Module such as Economics or FixedIncome, initialised without the Toolkit.
-            result = self.call_standalone_module_functionality(
-                module_name=module_name,
-                method_name=method_name,
-                start_date=start_date,
-                end_date=end_date,
-                quarterly=quarterly,
-                countries=countries,
-                api_key=effective_key,
-                fred_api_key=effective_fred_key,
-                **method_kwargs,
-            )
-        elif category == "portfolio":
-            # A Portfolio of the caller's transactions, holdings, weights or a preset.
-            result = self.call_portfolio_functionality(
-                method_name=method_name,
-                portfolio=portfolio or {},
-                start_date=start_date,
-                benchmark_ticker=benchmark_ticker,
-                api_key=effective_key,
-                **method_kwargs,
-            )
-        elif category == "discovery":
-            # Also initialisable with the Toolkit, but needs nothing beyond the API key.
-            instance = Discovery(
-                api_key=effective_key, use_cached_data=self._use_cached_data
-            )
-            method = getattr(instance, method_name)
-            # The calendars and filings take a range, passed on only when one is given.
-            accepted = inspect.signature(method).parameters
-            for name, value in (("start_date", start_date), ("end_date", end_date)):
-                if value and name in accepted:
-                    method_kwargs[name] = value
-            result = method(**method_kwargs)
-        else:
-            raise ValueError(
-                f"Unknown category '{category}' for module '{module_name}'"
-            )
+            elif category == "standalone":
+                # Module such as Economics or FixedIncome, initialised without the Toolkit.
+                result = self.call_standalone_module_functionality(
+                    module_name=module_name,
+                    method_name=method_name,
+                    start_date=start_date,
+                    end_date=end_date,
+                    quarterly=quarterly,
+                    countries=countries,
+                    api_key=effective_key,
+                    fred_api_key=effective_fred_key,
+                    **method_kwargs,
+                )
+            elif category == "portfolio":
+                # A Portfolio of the caller's transactions, holdings, weights or a preset.
+                result = self.call_portfolio_functionality(
+                    method_name=method_name,
+                    portfolio=portfolio or {},
+                    start_date=start_date,
+                    benchmark_ticker=benchmark_ticker,
+                    api_key=effective_key,
+                    **method_kwargs,
+                )
+            elif category == "discovery":
+                # Also initialisable with the Toolkit, but needs nothing beyond the API key.
+                instance = Discovery(
+                    api_key=effective_key, use_cached_data=self._use_cached_data
+                )
+                method = getattr(instance, method_name)
+                # The calendars and filings take a range, passed on only when one is given.
+                accepted = inspect.signature(method).parameters
+                for name, value in (("start_date", start_date), ("end_date", end_date)):
+                    if value and name in accepted:
+                        method_kwargs[name] = value
+                result = method(**method_kwargs)
+            else:
+                raise ValueError(
+                    f"Unknown category '{category}' for module '{module_name}'"
+                )
+
+        # Passed on to the tool call's own collection, and kept with a cached answer.
+        for source in call_sources:
+            record_source(source)
 
         # An option chain carries its expiration date as an attribute, which no answer
         # would show; as a column it does, also from the cache.
@@ -493,16 +506,18 @@ class ToolkitProvider:
                 call_messages[first_message:] if call_messages is not None else []
             )
             inputs = call_input_info()
-            if warnings or inputs:
+            sources = sorted(call_sources)
+            if warnings or inputs or sources:
                 self._cache.set(
                     source=MCP_CACHE_SOURCE,
                     dataset=MCP_CACHE_MESSAGES_DATASET,
                     entity=f"{module_name}.{method_name}",
                     data=pd.DataFrame(
                         {
-                            "Message": [*warnings, *inputs],
+                            "Message": [*warnings, *inputs, *sources],
                             "Kind": ["warning"] * len(warnings)
-                            + ["input"] * len(inputs),
+                            + ["input"] * len(inputs)
+                            + ["source"] * len(sources),
                         }
                     ),
                     parameters=cache_params,

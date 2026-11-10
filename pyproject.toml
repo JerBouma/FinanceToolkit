@@ -188,7 +188,7 @@ missing-union-attribute = "ignore"
 no-matching-overload = "ignore"
 
 [tool.codespell]
-ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund,aer,ois,ihs,hims,ist,sie,acn,sive'
+ignore-words-list = 'ore,te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund,aer,ois,ihs,hims,ist,sie,acn,sive'
 skip = '*.json,./.git,pyproject.toml,poetry.lock'
 
 [tool.pytest.ini_options]

@@ -18,6 +18,7 @@ from financetoolkit.technicals import (
 )
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     PERIODS_PER_YEAR,
@@ -113,6 +114,7 @@ FACTOR_PRICE_DIFFERENCES = (
 # ruff: noqa: E501
 
 
+@track_sources
 class Technicals:
     """
     The Technicals Module contains 50+ Technical Indicators that can

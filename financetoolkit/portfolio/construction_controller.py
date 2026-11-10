@@ -14,6 +14,7 @@ from financetoolkit.portfolio import (
 )
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
 
 logger = get_logger()
@@ -58,6 +59,7 @@ WEIGHT_SUM_TOLERANCE = 1e-6
 # ruff: noqa: E501
 
 
+@track_sources
 class PortfolioConstruction:
     """
     The Portfolio Construction module builds and examines portfolios from the assets of a

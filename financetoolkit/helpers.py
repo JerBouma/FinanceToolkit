@@ -985,3 +985,35 @@ def add_basket_total(
     )
 
     return pd.concat([statement, total])
+
+
+def deflate_with_price_index(
+    values: pd.DataFrame, price_index: pd.Series
+) -> pd.DataFrame:
+    """
+    Expresses monthly values in the money of one month, the latest month of a price index
+    such as the consumer price index, so that values from decades apart can be compared in
+    real terms ("in September 2026 dollars").
+
+    The formula is as follows:
+
+    - Real Value (t) = Nominal Value (t) * Price Index (latest month) / Price Index (t)
+
+    A month after the latest month of the price index, which statistics offices publish a few
+    weeks late, keeps its nominal value: it is in the money of that latest month already but
+    for the inflation since. A month before the first month of the price index has no real
+    value.
+
+    Args:
+        values (pd.DataFrame): The nominal values, with months (a PeriodIndex) as index.
+        price_index (pd.Series): The price index, with months (a PeriodIndex) as index.
+
+    Returns:
+        pd.DataFrame: The values in the money of the latest month of the price index.
+    """
+    price_index = price_index.dropna()
+    monthly = price_index.reindex(values.index)
+    # Months after the latest month of the price index take that month's level.
+    monthly = monthly.where(values.index <= price_index.index[-1], price_index.iloc[-1])
+
+    return values.mul(price_index.iloc[-1] / monthly, axis=0)

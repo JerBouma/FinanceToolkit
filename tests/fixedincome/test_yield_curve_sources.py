@@ -302,7 +302,7 @@ def test_credit_methods_need_a_fred_key_and_valid_arguments():
 
     with_key = FixedIncome(fred_api_key="key")
     assert with_key.get_hqm_corporate_bond_yield_curve(rate="forward").empty
-    assert with_key.get_moodys_corporate_bond_yields(period="yearly").empty
+    assert with_key.get_moodys_corporate_bond_yields(period="hourly").empty
 
 
 def test_bundesbank_breakeven_inflation_is_interpolated_to_constant_maturities(

@@ -263,3 +263,8 @@ def test_the_basket_reaches_the_toolkit(captured, given, expected):
     assert captured[-1]["toolkit_basket"] is expected
     # A Toolkit setting, never an argument of the ratio itself.
     assert "basket" not in captured[-1]
+
+
+def test_econometrics_passes_deflate_with_to_its_series(schemas):
+    assert "deflate_with" in schemas["econometrics"]
+    assert "deflate_with" not in schemas["performance"]

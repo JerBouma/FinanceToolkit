@@ -508,6 +508,9 @@ def test_get_beta_implied_return(performance_module):
             "Implied Return",
             "Actual Return",
             "Residual",
+            "Residual Value",
+            "Residual Percentile",
+            "Residual Largest Since",
         ]
         explained = result.dropna(subset=[("Beta", result["Beta"].columns[0])])
         assert not explained.empty
@@ -784,3 +787,49 @@ def test_get_covariance_matrix_is_symmetric_with_the_variances_on_the_diagonal(
         assert result.loc[ticker, ticker] == pytest.approx(
             monthly[ticker].var(), abs=1e-9
         )
+
+
+def test_get_beta_implied_return_values_the_residual_at_the_previous_close(
+    performance_module, ratios_module
+):
+    daily = performance_module.get_beta_implied_return(beta_window=60, rounding=10)
+    market_cap = ratios_module.get_market_cap(show_daily=True, rounding=10)
+
+    # The Residual times the market cap of the trading day before, never the same day's.
+    previous = market_cap.shift(1).reindex(daily.index)
+    expected = daily["Residual"] * previous[daily["Residual"].columns]
+    valued = expected.notna()
+    assert valued.to_numpy().any()
+    # The Residual is rounded to 10 decimals here, which on a market cap of about 2e12
+    # leaves differences of a few hundred.
+    assert daily["Residual Value"][valued].to_numpy() == pytest.approx(
+        expected[valued].to_numpy(), rel=1e-8, abs=1e3, nan_ok=True
+    )
+
+    # The significance of the Residual is get_move_significance on the residuals alone.
+    from financetoolkit.risk import risk_model
+
+    for ticker in daily["Residual"].columns:
+        significance = risk_model.get_move_significance(
+            daily[("Residual", ticker)], window=252
+        )
+        assert daily[("Residual Percentile", ticker)].to_numpy() == pytest.approx(
+            significance["Percentile"].to_numpy(), abs=1e-9, nan_ok=True
+        )
+        pd.testing.assert_series_equal(
+            daily[("Residual Largest Since", ticker)],
+            significance["Largest Since"],
+            check_names=False,
+        )
+
+
+def test_get_beta_implied_return_without_a_market_cap(performance_module):
+    performance = copy.copy(performance_module)
+    performance._market_cap_function = None
+    performance._data_cache = {}
+
+    result = performance.get_beta_implied_return(beta_window=60)
+
+    # Without shares (an ETF, an index) the value is empty, never 0.
+    assert result["Residual Value"].isna().all().all()
+    assert result["Residual"].notna().any().any()

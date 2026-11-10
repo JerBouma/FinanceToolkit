@@ -380,3 +380,29 @@ def test_get_level_significance_compares_with_a_level():
         ]
     )
     assert "Level" not in diagnostics_model.get_level_significance(levels)
+
+
+def test_window_change_by_year_ranks_the_same_months_of_every_year():
+    months = pd.period_range("2021-01", "2024-06", freq="M")
+    values = pd.Series(100.0, index=months)
+    values[pd.Period("2021-10", "M")] = 105
+    values[pd.Period("2022-10", "M")] = 103
+    values[pd.Period("2023-10", "M")] = 104
+
+    window = diagnostics_model.get_window_change_by_year(values, 2, 10)
+
+    assert window["Change"].tolist()[:3] == pytest.approx([0.05, 0.03, 0.04])
+    assert window["Rank"].tolist()[:3] == [1, 3, 2]
+    # 2023's 4% is the largest since 2021; 2021 has no earlier year as large.
+    assert pd.isna(window.loc[2021, "Largest Since"])
+    assert window.loc[2023, "Largest Since"] == 2021
+    # October 2024 is not there yet.
+    assert pd.isna(window.loc[2024, "Change"])
+
+    # A window over the turn of the year is labelled by the year it ends.
+    turn = diagnostics_model.get_window_change_by_year(values, 11, 2)
+    assert turn.index.tolist() == [2021, 2022, 2023, 2024]
+    assert pd.isna(turn.loc[2021, "Change"])
+
+    with pytest.raises(ValueError, match="between 1 and 12"):
+        diagnostics_model.get_window_change_by_year(values, 0, 10)

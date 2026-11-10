@@ -59,6 +59,7 @@ from financetoolkit.economics.helpers import (
     get_exchange_business_days,
     resample_to_period,
     to_gmdb_country_names,
+    validate_consumer_price_measure,
     validate_period,
 )
 from financetoolkit.fixedincome import (
@@ -349,7 +350,10 @@ class Economics:
         return combined
 
     def _get_monthly_price_data(
-        self, measure: str, countries: list[str] | str | None = None
+        self,
+        measure: str,
+        countries: list[str] | str | None = None,
+        component: str = "all",
     ) -> pd.DataFrame:
         """
         Combines the monthly consumer prices of every country from its most current source.
@@ -363,11 +367,21 @@ class Economics:
         source with the most recent month. None of them need an API key, and none have the
         tight request limit of the OECD API.
 
+        The BIS republishes the US index of the Bureau of Labor Statistics (BLS), rebased
+        to 2010 = 100, a few days after its release, so the months the BLS has published
+        since are added to it: the index chained on with the BLS changes, the inflation
+        rate as the BLS computes it.
+
+        The core index and the components come from Eurostat (all but shelter) and, for
+        the United States, from the BLS, through FRED when a FRED API key is set.
+
         Args:
             measure (str): "inflation_rate" for the annual rate of change or
                 "consumer_price_index" for the index itself.
             countries (list[str] | str | None, optional): The requested countries, so the
                 sources of other countries are not retrieved. Defaults to None.
+            component (str, optional): "all", "core", "energy", "food", "goods",
+                "services" or "shelter". Defaults to "all".
 
         Returns:
             pd.DataFrame: One column per country, indexed by month.
@@ -376,46 +390,139 @@ class Economics:
         start_date = buffered_start_date(self._start_date, "monthly")
         end_date = self._end_date
 
-        if measure == "inflation_rate":
+        eurostat_prices = (
+            eurostat_model.get_inflation_rate
+            if measure == "inflation_rate"
+            else eurostat_model.get_consumer_price_index
+        )
+
+        if component != "all":
             return self._combine_sources_for(
                 [
                     (
-                        lambda: eurostat_model.get_inflation_rate(start_date, end_date),
-                        None,
-                    ),
-                    (ons_model.get_inflation_rate, "United Kingdom"),
-                    (sbj_model.get_inflation_rate, "Japan"),
-                    (
-                        lambda: bis_model.get_consumer_prices(
-                            measure, start_date, end_date
+                        lambda: (
+                            eurostat_prices(start_date, end_date, component)
+                            if component in eurostat_model.HICP_AGGREGATES
+                            else pd.DataFrame()
                         ),
                         None,
                     ),
-                    # Around a hundred further countries the BIS does not cover.
-                    (lambda: imf_model.get_inflation_rate(start_date, end_date), None),
+                    (
+                        lambda: self._get_united_states_consumer_prices(
+                            measure, component
+                        ),
+                        "United States",
+                    ),
                 ],
                 countries,
             )
 
-        return self._combine_sources_for(
-            [
+        inflation = measure == "inflation_rate"
+        sources = [
+            (lambda: eurostat_prices(start_date, end_date), None),
+            (
                 (
-                    lambda: eurostat_model.get_consumer_price_index(
-                        start_date, end_date
-                    ),
-                    None,
+                    ons_model.get_inflation_rate
+                    if inflation
+                    else ons_model.get_consumer_price_index
                 ),
-                (ons_model.get_consumer_price_index, "United Kingdom"),
-                (sbj_model.get_consumer_price_index, "Japan"),
+                "United Kingdom",
+            ),
+            (
                 (
-                    lambda: bis_model.get_consumer_prices(
-                        measure, start_date, end_date
-                    ),
-                    None,
+                    sbj_model.get_inflation_rate
+                    if inflation
+                    else sbj_model.get_consumer_price_index
                 ),
-            ],
-            countries,
-        )
+                "Japan",
+            ),
+            (
+                lambda: bis_model.get_consumer_prices(measure, start_date, end_date),
+                None,
+            ),
+        ]
+
+        if inflation:
+            # Around a hundred further countries the BIS does not cover.
+            sources.append(
+                (lambda: imf_model.get_inflation_rate(start_date, end_date), None)
+            )
+
+        prices = self._combine_sources_for(sources, countries)
+
+        if "United States" not in prices.columns:
+            return prices
+
+        recent = self._get_united_states_consumer_prices(measure, "all")
+        history = prices["United States"].dropna()
+        shared = history.index.intersection(recent.dropna().index)
+
+        if measure == "consumer_price_index" and not shared.empty:
+            # Rebased to the BIS's 2010 = 100 on the latest month both have.
+            recent = (
+                recent * history[shared[-1]] / recent.loc[shared[-1], "United States"]
+            )
+
+        return extend_with_recent(prices, recent, "United States")
+
+    def _get_united_states_consumer_prices(
+        self, measure: str, component: str
+    ) -> pd.DataFrame:
+        """
+        Retrieves the US Consumer Price Index for All Urban Consumers (CPI-U), not
+        seasonally adjusted, or its annual rate of change. All items come from the keyless
+        BLS API (about the last three years, for the months it publishes before the BIS);
+        the core index and the components from FRED when a FRED API key is set, for the
+        full history, and from the BLS otherwise.
+
+        Args:
+            measure (str): "inflation_rate" or "consumer_price_index".
+            component (str): "all", "core", "energy", "food", "goods", "services" or
+                "shelter".
+
+        Returns:
+            pd.DataFrame: A single "United States" column indexed by month.
+        """
+        if component != "all" and self._fred_api_key:
+            index = fred_model.get_price_index(
+                f"consumer_{component}",
+                # Two years before the start, for the annual rate of change of the first
+                # months and room for growth and rolling.
+                buffered_start_date(self._start_date, "monthly"),
+                self._end_date,
+                self._fred_api_key,
+            )
+        else:
+            index = bls_model.get_consumer_price_index()
+            index = (
+                index[[component]].rename(columns={component: "United States"})
+                if component in index.columns
+                else pd.DataFrame()
+            )
+
+            if (
+                component != "all"
+                and not index.empty
+                and index.index[0] > pd.Period(self._start_date, freq="M")
+            ):
+                logger.warning(
+                    "Without a FRED API key, the US %s consumer price index starts in %s: "
+                    "the keyless BLS API only returns about the last three years. Set a "
+                    "FRED API key for the full history.",
+                    component,
+                    index.index[0].strftime("%Y-%m"),
+                )
+
+        if measure == "inflation_rate" and not index.empty:
+            # Every month in the index, so a month the BLS did not publish (October 2025)
+            # leaves its rate and the one a year later empty rather than compare the
+            # wrong months.
+            index = index.reindex(
+                pd.period_range(index.index[0], index.index[-1], freq="M")
+            )
+            return index.pct_change(12, fill_method=None)
+
+        return index
 
     def _get_monthly_industrial_prices(
         self, measure: str, countries: list[str] | str | None = None
@@ -3548,6 +3655,7 @@ class Economics:
         countries: list[str] | str | None = None,
         period: str | None = None,
         oecd_source: bool = False,
+        measure: str = "all",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -3573,10 +3681,23 @@ class Economics:
         every other country (2010 = 100). The base year differs between countries, so
         compare the changes rather than the levels.
 
+        The measure parameter selects the core index (all items less energy and food;
+        Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
+        includes alcohol and tobacco, the BLS does not), goods, services and, for the United
+        States, shelter. These are monthly, from Eurostat (the euro area and the European
+        Economic Area) and the Bureau of Labor Statistics for the United States (CPI-U, not
+        seasonally adjusted, 1982-84 = 100; the full history through FRED when a FRED API
+        key is set, the last three years otherwise). Other countries have all items only.
+
+        The US index of the BIS is the BLS's CPI-U rebased to 2010 = 100, which the BIS
+        publishes a few days after the BLS. The months the BLS has published since are
+        added to it, so a release appears the same day.
+
         Further information about the Global Macro Database (GMDB) variable can be found
         within https://www.globalmacrodata.com/documentation.html
 
-        Also known as: CPI, cost of living index.
+        Also known as: CPI, cost of living index, core CPI, CPI components, energy prices,
+        food prices, shelter costs.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
@@ -3586,6 +3707,10 @@ class Economics:
                 with `oecd_source=True` when the Economics class was initialized with quarterly=True).
             oecd_source (bool, optional): Whether to get the data from the OECD instead of the
                 Global Macro Database (GMDB). Defaults to False.
+            measure (str, optional): "all" for all items, "core" for all items less food and
+                energy, or a component: "energy", "food", "goods", "services" or "shelter"
+                (United States only). Other measures than "all" are monthly, without
+                oecd_source. Defaults to "all".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -3642,9 +3767,11 @@ class Economics:
                 "consumer price index (quarterly data needs oecd_source=True)",
             )
 
+        measure = validate_consumer_price_measure(measure, period, oecd_source)
+
         if not oecd_source and period.lower() == "monthly":
             consumer_price_index = self._get_monthly_price_data(
-                "consumer_price_index", countries
+                "consumer_price_index", countries, measure
             )
         elif oecd_source:
             consumer_price_index = oecd_model.get_consumer_price_index(
@@ -3682,6 +3809,7 @@ class Economics:
         self,
         countries: list[str] | str | None = None,
         period: str | None = None,
+        measure: str = "all",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -3710,6 +3838,18 @@ class Economics:
         India and Brazil, and the IMF for around a hundred more, all republishing the
         national consumer price indices.
 
+        The measure parameter selects the inflation of the core index (all items less energy and food;
+        Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
+        includes alcohol and tobacco, the BLS does not), goods, services and, for the United
+        States, shelter. These are monthly, from Eurostat (the euro area and the European
+        Economic Area) and the Bureau of Labor Statistics for the United States (CPI-U, not
+        seasonally adjusted, 1982-84 = 100; the full history through FRED when a FRED API
+        key is set, the last three years otherwise). Other countries have all items only.
+
+        The US index of the BIS is the BLS's CPI-U rebased to 2010 = 100, which the BIS
+        publishes a few days after the BLS. The months the BLS has published since are
+        added to it, so a release appears the same day.
+
         The result is a decimal fraction (0.041166 for 4.1166%), like every other rate in the
         Finance Toolkit.
 
@@ -3728,12 +3868,16 @@ class Economics:
         figures are the harmonised index (HICP), which differs from national CPIs, for
         example in leaving out the costs of owner-occupied housing.
 
-        Also known as: CPI-based inflation, price increases, consumer prices.
+        Also known as: CPI-based inflation, price increases, consumer prices, core
+        inflation, energy inflation, food inflation, services inflation, shelter inflation.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly or the annual data.
                 Defaults to None, which is the monthly data.
+            measure (str, optional): "all" for all items, "core" for all items less food and
+                energy, or a component: "energy", "food", "goods", "services" or "shelter"
+                (United States only). Other measures than "all" are monthly. Defaults to "all".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -3779,9 +3923,12 @@ class Economics:
             ["monthly", "yearly"],
             "inflation rate",
         )
+        measure = validate_consumer_price_measure(measure, period)
 
         if period == "monthly":
-            inflation_rate = self._get_monthly_price_data("inflation_rate", countries)
+            inflation_rate = self._get_monthly_price_data(
+                "inflation_rate", countries, measure
+            )
         else:
 
             inflation_rate = gmdb_model.get_inflation_rate(

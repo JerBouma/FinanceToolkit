@@ -541,6 +541,52 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
     return period
 
 
+CONSUMER_PRICE_MEASURES = [
+    "all",
+    "core",
+    "energy",
+    "food",
+    "goods",
+    "services",
+    "shelter",
+]
+
+
+def validate_consumer_price_measure(
+    measure: str, period: str, oecd_source: bool = False
+) -> str:
+    """
+    Normalises the measure of a consumer price indicator and checks that it exists for the
+    requested data: the core index and the components are monthly and not from the OECD.
+
+    Args:
+        measure (str): The requested measure, e.g. "core".
+        period (str): The period of the request.
+        oecd_source (bool): Whether the OECD is the source. Defaults to False.
+
+    Returns:
+        str: The measure in lower case.
+
+    Raises:
+        ValueError: When the measure does not exist, or not at that period or source.
+    """
+    measure = measure.lower()
+
+    if measure not in CONSUMER_PRICE_MEASURES:
+        raise ValueError(
+            f"The measure '{measure}' does not exist. Choose from "
+            f"{', '.join(repr(option) for option in CONSUMER_PRICE_MEASURES)}."
+        )
+
+    if measure != "all" and (period.lower() != "monthly" or oecd_source):
+        raise ValueError(
+            f"The measure '{measure}' is monthly only, without oecd_source. Use "
+            "period='monthly'."
+        )
+
+    return measure
+
+
 def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
     Converts a daily series to a weekly, monthly, quarterly or yearly one by taking the

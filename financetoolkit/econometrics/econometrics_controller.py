@@ -7089,6 +7089,121 @@ class Econometrics:
         )
 
     @handle_errors
+    def get_window_change_by_year(
+        self,
+        from_month: int = 1,
+        to_month: int = 12,
+        column: str = "Close",
+        spread_over: str | None = None,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the change of every series over the same months of every year, such as
+        February to October, with the rank of every year's change and the last earlier year
+        with a change at least as large ("the largest since").
+
+        Where `get_level_significance` measures one window, from the start date to the
+        latest value, this compares the same window across years: "US consumer prices rose
+        3.3% from February to October, the most since 2022" is the Change, Rank and Largest
+        Since of the latest year. Through the Toolkit it measures the prices of the tickers
+        (a seasonal pattern, such as the return from May to October); with
+        `Econometrics(data=...)` any series, such as the consumer price indices of
+        `Economics`.
+
+        The formula is as follows:
+
+        - Change (y) = (x(to_month, y) - x(from_month, y)) / |x(from_month, y)|
+        - Rank (y) = the position of Change (y) among the changes of every year, 1 for the largest
+        - Largest Since (y) = the last year s < y with Change (s) >= Change (y)
+
+        Where x(m, y) is the value of month m in year y, the last value of the month for a
+        daily series. A window that ends in an earlier month than it starts (November to
+        February) runs into the next year and is labelled by the year it ends; the same
+        month for both gives the change over twelve months. A year without the value of
+        either month has no change, so the current year is empty until its last month is
+        published. Largest Since is NaN when no earlier year had a change as large.
+
+        Also known as: same period each year, seasonal change, year-to-date comparison,
+        change from February to October, largest since, fastest since, seasonality.
+
+        Args:
+            from_month (int, optional): The month the window starts, 1 (January) to 12
+                (December). Defaults to 1.
+            to_month (int, optional): The month the window ends, 1 to 12. Defaults to 12,
+                which with from_month=1 is the change from January to December.
+            column (str, optional): The historical data column to measure. Defaults to
+                "Close", the traded close of the tickers and the series themselves with data=.
+            spread_over (str | None, optional): The name of a series to subtract from every
+                other series, so the spreads over it are measured instead. Defaults to None.
+            include_benchmark (bool, optional): Whether to include "Benchmark" among the
+                assets. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class (4 unless set
+                otherwise).
+
+        Returns:
+            pd.DataFrame: Per year (rows) and series the Start Value, End Value, Change
+            (decimal), Rank and Largest Since (columns, a level per series).
+
+        Notes:
+        - The ranks and "largest since" depend on the history: start the data early enough,
+          as a year before the start date is not compared.
+        - The change uses the levels, so the series should be an index or a price, not a
+          rate: the change in an inflation rate is a relative change of a rate.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics, Econometrics
+
+        economics = Economics(start_date='2019-01-01', end_date='2026-10-31')
+
+        consumer_price_index = economics.get_consumer_price_index(
+            countries=['United States', 'Euro Area']
+        )
+
+        econometrics = Econometrics(data=consumer_price_index)
+
+        econometrics.get_window_change_by_year(from_month=2, to_month=10)['United States']
+        ```
+
+        Which returns:
+
+        |   Year |   Start Value |   End Value |   Change |   Rank |   Largest Since |
+        |-------:|--------------:|------------:|---------:|-------:|----------------:|
+        |   2019 |       115.923 |     118.019 |   0.0181 |      5 |             nan |
+        |   2020 |       118.629 |     119.414 |   0.0066 |      7 |            2019 |
+        |   2021 |       120.618 |     126.843 |   0.0516 |      1 |             nan |
+        |   2022 |       130.112 |     136.668 |   0.0504 |      2 |            2021 |
+        |   2023 |       137.965 |     141.098 |   0.0227 |      4 |            2022 |
+        |   2024 |       142.315 |     144.763 |   0.0172 |      6 |            2023 |
+        |   2025 |       146.331 |     nan     | nan      |    nan |             nan |
+        |   2026 |       149.863 |     154.782 |   0.0328 |      3 |            2022 |
+        """
+        levels = self._get_spreads(
+            self._filter_benchmark(
+                self._get_series_column("monthly", column),
+                include_benchmark=include_benchmark,
+            ),
+            spread_over,
+        )
+
+        window_change = pd.concat(
+            {
+                series: diagnostics_model.get_window_change_by_year(
+                    levels[series], from_month, to_month
+                )
+                for series in levels.columns
+            },
+            axis=1,
+        )
+
+        return apply_rounding(
+            window_change, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
     def get_streaks(
         self,
         period: str | None = None,

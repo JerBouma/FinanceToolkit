@@ -89,19 +89,20 @@ def get_request(
     url: str,
     timeout: int = 60,
     extra_headers: dict | None = None,
-    data: dict | None = None,
+    data: dict | str | None = None,
 ) -> requests.Response:
     """
     Make an HTTP GET request with automatic SSL fallback for corporate proxies
-    and environments with self-signed certificates, or a POST of form fields for a
-    source that only answers a submitted form.
+    and environments with self-signed certificates, or a POST of form fields (or a
+    prepared body, such as JSON) for a source that only answers a submitted request.
 
     Args:
         url (str): The URL to request.
         timeout (int): Request timeout in seconds.
         extra_headers (dict | None): Additional headers merged on top of the default HEADERS,
             e.g. {"Authorization": "Bearer <token>"}. Defaults to None.
-        data (dict | None): Form fields to POST instead of a GET. Defaults to None.
+        data (dict | str | None): Form fields, or a prepared body with its Content-Type in
+            extra_headers, to POST instead of a GET. Defaults to None.
 
     Returns:
         requests.Response: The HTTP response object.

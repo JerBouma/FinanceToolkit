@@ -609,6 +609,81 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
     )
 
 
+def get_window_change_by_year(
+    levels: pd.Series, from_month: int, to_month: int
+) -> pd.DataFrame:
+    """
+    Calculate the change of a series over the same months of every year, such as February
+    to October, with the rank of every year's change and the last earlier year with a
+    change at least as large ("the largest since").
+
+    The formula is as follows:
+
+    - Change (y) = (x(to_month, y) - x(from_month, y)) / |x(from_month, y)|
+    - Rank (y) = the position of Change (y) among the changes of every year, 1 for the largest
+    - Largest Since (y) = the last year s < y with Change (s) >= Change (y)
+
+    Where x(m, y) is the value of month m in year y. A window that ends in an earlier month
+    than it starts (November to February) runs into the next year and is labelled by the
+    year it ends; the same month for both is the change over twelve months. A year without
+    the value of either month has no change, so the current year is empty until its last
+    month is published. Largest Since is NaN when no earlier year had a change as large,
+    which makes the change the largest of the history up to that year.
+
+    Args:
+        levels (pd.Series): The monthly values of a single series, indexed by a monthly
+            PeriodIndex; missing values are left out.
+        from_month (int): The month the window starts, 1 (January) to 12 (December).
+        to_month (int): The month the window ends, 1 to 12.
+
+    Returns:
+        pd.DataFrame: Per year the Start Value, End Value, Change (decimal), Rank and
+        Largest Since.
+
+    Raises:
+        ValueError: When a month is not between 1 and 12.
+    """
+    if not (1 <= from_month <= 12 and 1 <= to_month <= 12):  # noqa: PLR2004
+        raise ValueError("from_month and to_month must be between 1 and 12.")
+
+    observed = levels.dropna()
+    months = observed.index.month
+
+    start = observed[months == from_month]
+    end = observed[months == to_month]
+
+    # A window that ends in an earlier month than it starts ends in the next year.
+    start.index = start.index.year + int(to_month <= from_month)
+    end.index = end.index.year
+
+    window = pd.DataFrame({"Start Value": start, "End Value": end}).sort_index()
+    window["Change"] = (window["End Value"] - window["Start Value"]) / window[
+        "Start Value"
+    ].abs().replace(0, np.nan)
+    window["Rank"] = window["Change"].rank(ascending=False, method="min")
+
+    changes = window["Change"].to_numpy()
+    years = window.index.to_numpy()
+    window["Largest Since"] = [
+        (
+            next(
+                (
+                    years[earlier]
+                    for earlier in range(position - 1, -1, -1)
+                    if changes[earlier] >= change
+                ),
+                np.nan,
+            )
+            if not np.isnan(change)
+            else np.nan
+        )
+        for position, change in enumerate(changes)
+    ]
+    window.index.name = "Year"
+
+    return window
+
+
 def get_streaks(levels: pd.Series) -> pd.Series:
     """
     Calculate the streak a series is on: the sign of its latest value, since when the series

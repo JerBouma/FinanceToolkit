@@ -1675,3 +1675,69 @@ def test_economic_calendar_as_series():
     ]
 
     assert economics_fmp_model.get_economic_calendar_series(pd.DataFrame()).empty
+
+
+def test_calendar_series_keep_a_joint_january_and_february_release_once():
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    releases = pd.DataFrame(
+        [
+            # The same release listed for January and February.
+            ("2020-03-07 03:00", "Imports YoY (Jan)", "Medium", -0.040),
+            ("2020-03-07 03:07", "Imports YoY (Feb)", "Medium", -0.040),
+            # The dollar balance as January, the yuan figure as a low-impact February.
+            ("2024-03-07 03:00", "Balance of Trade (Jan)", "High", 125.16),
+            ("2024-03-07 03:00", "Balance of Trade (Feb)", "Low", 890.86),
+            ("2024-04-12 03:00", "Balance of Trade (Mar)", "High", 58.55),
+            # A release without a period, of an event that has one elsewhere.
+            ("2020-02-07 02:00", "Imports YoY", "Medium", -0.015),
+            ("2020-04-14 03:00", "Imports YoY (Mar)", "Medium", -0.009),
+            # Two months caught up on one day, with their own values.
+            ("2025-12-05 13:30", "Retail Sales MoM (Sep)", "High", 0.002),
+            ("2025-12-05 13:30", "Retail Sales MoM (Oct)", "High", 0.004),
+            # A joint release still to come.
+            ("2027-03-07 03:00", "Exports YoY (Jan)", "High", None),
+            ("2027-03-07 03:00", "Exports YoY (Feb)", "High", None),
+        ],
+        columns=["Date", "Event", "Impact", "Actual"],
+    ).assign(Country="China", Estimate=None)
+    releases["Date"] = pd.to_datetime(releases["Date"])
+
+    series = economics_fmp_model.get_economic_calendar_series(
+        releases.set_index("Date")
+    )
+
+    assert series.index.freqstr == "M"
+    assert not series.index.duplicated().any()
+    imports = series[("China", "Imports YoY")]
+    balance = series[("China", "Balance of Trade")]
+    assert imports["2020-02"] == pytest.approx(-0.040)
+    assert pd.isna(imports.get("2020-01"))
+    assert balance["2024-02"] == pytest.approx(125.16)
+    assert pd.isna(balance.get("2024-01"))
+    retail = series[("China", "Retail Sales MoM")]
+    assert retail["2025-09"] == pytest.approx(0.002)
+    assert retail["2025-10"] == pytest.approx(0.004)
+
+
+def test_futures_are_quoted_under_the_commodity_symbol(responses):
+    canned, requested = responses
+    canned["quote"] = [{"symbol": "BZUSD", "name": "Brent Crude Oil", "price": 91.79}]
+
+    quote, no_data = fmp_model.get_quote(["BZ=F"], api_key="K")
+
+    # Requested as BZUSD, returned under the ticker as given.
+    assert "symbol=BZUSD&" in requested[0]
+    assert quote.loc["Price", "BZ=F"] == pytest.approx(91.79)
+    assert no_data == []
+
+    fmp_model.get_intraday_data(
+        "CL=F", api_key="K", start="2026-11-09", end="2026-11-10"
+    )
+    assert "symbol=CLUSD&" in requested[-1]
+
+    # A future quoted in US cents keeps that unit, and one without a commodity symbol
+    # (Dutch TTF gas) is requested as it is.
+    assert fmp_model.FUTURES_SYMBOLS["KC=F"] == "KCUSX"
+    fmp_model.get_quote(["TTF=F"], api_key="K")
+    assert "symbol=TTF=F&" in requested[-1]

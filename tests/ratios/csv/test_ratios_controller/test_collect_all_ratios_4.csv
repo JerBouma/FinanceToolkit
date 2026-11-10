@@ -19,6 +19,7 @@ AAPL,SBC to Revenue Ratio,,,-0.0304,0.148
 AAPL,Deferred Revenue Ratio,,,-0.0811,0.0098
 AAPL,Working Capital Turnover Ratio,,,-7.1371,0.5357
 AAPL,Capex Intensity,,,0.0,-0.0279
+AAPL,Net Capital Expenditure,,,0.8492,-0.6067
 AAPL,Capex to Depreciation,,,0.1822,-0.0161
 AAPL,Asset Growth,,,,-0.9495
 AAPL,Net Operating Assets,,,-0.0975,-0.0923
@@ -133,6 +134,7 @@ MSFT,SBC to Revenue Ratio,,,0.0136,0.121
 MSFT,Deferred Revenue Ratio,,,-0.0465,-0.0101
 MSFT,Working Capital Turnover Ratio,,,0.4196,0.2328
 MSFT,Capex Intensity,,,0.0483,0.0436
+MSFT,Net Capital Expenditure,,,0.5855,0.2892
 MSFT,Capex to Depreciation,,,0.1557,0.0784
 MSFT,Asset Growth,,,,0.1115
 MSFT,Net Operating Assets,,,0.4416,0.166

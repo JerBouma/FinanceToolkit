@@ -23,6 +23,7 @@ from financetoolkit.ratios import (
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities import factor_model, logger_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
@@ -148,6 +149,7 @@ FACTOR_COLLECTIONS = {
         "get_working_capital_turnover_ratio",
         "get_capex_intensity",
         "get_capex_to_depreciation_ratio",
+        "get_net_capital_expenditure",
         "get_asset_growth",
         "get_net_operating_assets",
     ],
@@ -160,6 +162,7 @@ FACTOR_COLLECTIONS["all"] = [
 # ruff: noqa: E501
 
 
+@track_sources
 class Ratios:
     """
     The Ratios Module contains over 50+ ratios that can be used to analyse companies.
@@ -184,6 +187,8 @@ class Ratios:
         user_subscription: str = "Free",
         analyst_estimates_cache: dict | None = None,
         period_end_dates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
+        currency_function: Callable[[], pd.Series] | None = None,
+        gross_domestic_product_function: Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -229,6 +234,15 @@ class Ratios:
                 point_in_time). Daily ratios (show_daily=True) apply each period's figures from that
                 day on. Defaults to None, which applies them from the end of the calendar period the
                 column is labelled with.
+            currency_function (Callable[[], pd.Series], optional): A function without arguments
+                that returns the currency each ticker is listed in, which the market cap of a
+                basket checks before summing. Defaults to None, which leaves the currencies
+                unchecked.
+            gross_domestic_product_function (Callable[[], pd.DataFrame], optional): A function
+                without arguments that returns the annual nominal Gross Domestic Product in
+                millions of US dollars, with the years as index and the countries as columns,
+                for the market cap to GDP ratio. Defaults to None, which leaves that ratio
+                unavailable.
 
         As an example:
 
@@ -278,6 +292,8 @@ class Ratios:
         self._income_source = income
         self._cash_source = cash
         self._period_end_dates_source = period_end_dates
+        self._currency_function = currency_function
+        self._gross_domestic_product_function = gross_domestic_product_function
         self._historical = historical
         self._api_key: str = api_key
         self._sleep_timer: bool = sleep_timer
@@ -442,6 +458,70 @@ class Ratios:
             .reindex(columns=self._tickers_without_portfolio)
             .T
         )
+
+    def _add_basket_market_cap(
+        self, market_cap: pd.DataFrame, show_daily: bool, share: bool = False
+    ) -> pd.DataFrame:
+        """
+        Sets the market cap of the Total of a basket to the sum of those of the tickers, as
+        the Total has no shares or share price of its own, so that the ratios of the Total
+        built on the market cap use it. With share, each ticker becomes its share of that sum
+        (also without a basket).
+
+        Args:
+            market_cap (pd.DataFrame): The market caps, with the tickers as index and the
+                periods as columns, or the dates as index and the tickers as columns with
+                show_daily.
+            show_daily (bool): Whether the market caps are daily.
+            share (bool, optional): Whether to return each ticker's share of the sum instead.
+                Defaults to False.
+
+        Returns:
+            pd.DataFrame: The market caps (or shares) with the Total.
+        """
+        if "Total" not in self._tickers and not share:
+            return market_cap
+
+        self._get_basket_currency()
+
+        # The model takes the dates (or periods) as index, as the daily market caps have.
+        market_cap = valuation_model.get_basket_market_cap(
+            (market_cap if show_daily else market_cap.T).drop(
+                columns="Total", errors="ignore"
+            ),
+            share=share,
+        )
+        return market_cap if show_daily else market_cap.T
+
+    def _get_basket_currency(self) -> str | None:
+        """
+        Returns the one currency the tickers are listed in, so that their market caps can be
+        summed.
+
+        Returns:
+            str | None: The currency, or None when the currencies are unknown.
+
+        Raises:
+            ValueError: When the tickers are listed in different currencies.
+        """
+        if self._currency_function is None:
+            return None
+
+        currencies = (
+            self._currency_function().reindex(self._tickers_without_portfolio).dropna()
+        )
+
+        if len(set(currencies)) > 1:
+            listed = ", ".join(
+                f"{ticker} ({currency})" for ticker, currency in currencies.items()
+            )
+            raise ValueError(
+                "The market caps of a basket are summed in one currency, but the tickers are "
+                f"listed in different currencies: {listed}. Choose tickers listed in the same "
+                "currency."
+            )
+
+        return currencies.iloc[0] if not currencies.empty else None
 
     def _get_cash_and_short_term_investments(self) -> pd.DataFrame:
         """
@@ -981,29 +1061,32 @@ class Ratios:
 
         Which returns:
 
-        |                                      |     2021 |     2022 |     2023 |     2024 |     2025 |
-        |:-------------------------------------|---------:|---------:|---------:|---------:|---------:|
-        | Days of Inventory Outstanding        |   9.1181 |   9.4097 |   9.6109 |  11.814  |  10.7405 |
-        | Days of Sales Outstanding            |  21.1517 |  25.2057 |  27.4699 |  29.3645 |  32.0949 |
-        | Operating Cycle                      |  30.2698 |  34.6154 |  37.0808 |  41.1785 |  42.8354 |
-        | Days of Accounts Payable Outstanding |  83.1683 |  97.0504 | 108.003  | 114.15   | 114.657  |
-        | Cash Conversion Cycle                | -52.8985 | -62.435  | -70.9225 | -72.9716 | -71.8218 |
-        | Cash Conversion Efficiency           |   0.2844 |   0.3098 |   0.2884 |   0.3024 |   0.2679 |
-        | Receivables Turnover                 |  17.2563 |  14.4808 |  13.2873 |  12.43   |  11.3725 |
-        | Inventory Turnover Ratio             |  40.0303 |  38.7899 |  37.9777 |  30.8955 |  33.9834 |
-        | Accounts Payable Turnover Ratio      |   4.3887 |   3.7609 |   3.3795 |   3.1975 |   3.1834 |
-        | SGA-to-Revenue Ratio                 |   0.0601 |   0.0636 |   0.065  |   0.0667 |   0.0663 |
-        | Fixed Asset Turnover                 |   7.7125 |   7.7273 |   7.1702 |   7.091  |   7.1167 |
-        | Asset Turnover Ratio                 |   1.0841 |   1.1206 |   1.0868 |   1.0899 |   1.1493 |
-        | Operating Ratio                      |   0.7022 |   0.6971 |   0.7018 |   0.6849 |   0.6803 |
-        | R&D Intensity Ratio                  |   0.0599 |   0.0666 |   0.078  |   0.0802 |   0.083  |
-        | S&M to Revenue Ratio                 |   0      |   0      |   0      |   0.0477 |   0.0469 |
-        | G&A to Revenue Ratio                 |   0      |   0      |   0      |   0.0191 |   0.0194 |
-        | SBC to Revenue Ratio                 |   0.0216 |   0.0229 |   0.0283 |   0.0299 |   0.0309 |
-        | Deferred Revenue Ratio               |   0.0208 |   0.0201 |   0.021  |   0.0211 |   0.0218 |
-        | Working Capital Turnover Ratio       |  15.346  | -85.519  | -37.7268 | -31.0999 | -20.2615 |
-        | Capex Intensity                      |   0.0303 |   0.0272 |   0.0286 |   0.0242 |   0.0306 |
-        | Capex to Depreciation                |   0.9824 |   0.9643 |   0.9514 |   0.8254 |   1.0869 |
+        |                                      |       2021 |       2022 |      2023 |        2024 |        2025 |
+        |:-------------------------------------|-----------:|-----------:|----------:|------------:|------------:|
+        | Days of Inventory Outstanding        |   9.1181   |   9.4097   |   9.6109  |  11.814     |  10.7405    |
+        | Days of Sales Outstanding            |  21.1517   |  25.2057   |  27.4699  |  29.3645    |  32.0949    |
+        | Operating Cycle                      |  30.2698   |  34.6154   |  37.0808  |  41.1785    |  42.8354    |
+        | Days of Accounts Payable Outstanding |  83.1683   |  97.0504   | 108.003   | 114.15      | 114.657     |
+        | Cash Conversion Cycle                | -52.8985   | -62.435    | -70.9225  | -72.9716    | -71.8218    |
+        | Cash Conversion Efficiency           |   0.2844   |   0.3098   |   0.2884  |   0.3024    |   0.2679    |
+        | Receivables Turnover                 |  17.2563   |  14.4808   |  13.2873  |  12.43      |  11.3725    |
+        | Inventory Turnover Ratio             |  40.0303   |  38.7899   |  37.9777  |  30.8955    |  33.9834    |
+        | Accounts Payable Turnover Ratio      |   4.3887   |   3.7609   |   3.3795  |   3.1975    |   3.1834    |
+        | SGA-to-Revenue Ratio                 |   0.0601   |   0.0636   |   0.065   |   0.0667    |   0.0663    |
+        | Fixed Asset Turnover                 |   7.7125   |   7.7273   |   7.1702  |   7.091     |   7.1167    |
+        | Asset Turnover Ratio                 |   1.0841   |   1.1206   |   1.0868  |   1.0899    |   1.1493    |
+        | Operating Ratio                      |   0.7022   |   0.6971   |   0.7018  |   0.6849    |   0.6803    |
+        | R&D Intensity Ratio                  |   0.0599   |   0.0666   |   0.078   |   0.0802    |   0.083     |
+        | S&M to Revenue Ratio                 |   0        |   0        |   0       |   0.0477    |   0.0469    |
+        | G&A to Revenue Ratio                 |   0        |   0        |   0       |   0.0191    |   0.0194    |
+        | SBC to Revenue Ratio                 |   0.0216   |   0.0229   |   0.0283  |   0.0299    |   0.0309    |
+        | Deferred Revenue Ratio               |   0.0208   |   0.0201   |   0.021   |   0.0211    |   0.0218    |
+        | Working Capital Turnover Ratio       |  15.346    | -85.519    | -37.7268  | -31.0999    | -20.2615    |
+        | Capex Intensity                      |   0.0303   |   0.0272   |   0.0286  |   0.0242    |   0.0306    |
+        | Net Capital Expenditure              |  -1.99e+08 |  -3.96e+08 |  -5.6e+08 |  -1.998e+09 |   1.017e+09 |
+        | Capex to Depreciation                |   0.9824   |   0.9643   |   0.9514  |   0.8254    |   1.0869    |
+        | Asset Growth                         |   0.0837   |   0.005    |  -0.0005  |   0.0352    |  -0.0157    |
+        | Net Operating Assets                 |   0.3865   |   0.3488   |   0.3166  |   0.2791    |   0.3225    |
         """
         self._load_statements()
 
@@ -1068,6 +1151,9 @@ class Ratios:
         )
         efficiency_ratios_dict["Capex Intensity"] = self.get_capex_intensity(
             trailing=trailing
+        )
+        efficiency_ratios_dict["Net Capital Expenditure"] = (
+            self.get_net_capital_expenditure(trailing=trailing)
         )
         efficiency_ratios_dict["Capex to Depreciation"] = (
             self.get_capex_to_depreciation_ratio(trailing=trailing)
@@ -3441,7 +3527,8 @@ class Ratios:
         around 1 that it is maintaining them, and a ratio persistently below 1 that it is
         underinvesting, which flatters the free cash flow for a while but erodes the
         business. Damodaran's net capital expenditure (capital expenditure minus
-        depreciation) is the same comparison as a difference. Acquisitions are not capital
+        depreciation, see get_net_capital_expenditure) is the same comparison as a
+        difference. Acquisitions are not capital
         expenditure, so a company that grows by buying others can show a low ratio while
         its assets grow.
 
@@ -3516,6 +3603,115 @@ class Ratios:
 
         return finalize_dataset(
             dataset=capex_to_depreciation,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_capital_expenditure(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the net capital expenditure, what a company invests in its assets beyond
+        what wears off them.
+
+        Depreciation and amortization approximate the investment needed to keep the asset
+        base as it is, so the capital expenditure above it is the investment in growth.
+        Damodaran's net capital expenditure is this difference, which with the change in
+        working capital makes up the reinvestment of a company. It is the same comparison as
+        the capex to depreciation ratio (see get_capex_to_depreciation_ratio), as an amount:
+        a ratio of 3 says that capex is three times depreciation, the net capital expenditure
+        how much money that is. A negative value means the company invests less than its
+        assets depreciate. Acquisitions are not capital expenditure, so a company that grows
+        by buying others can show a low or negative value while its assets grow.
+
+        The formula is as follows:
+
+        - Net Capital Expenditure = |Capital Expenditure| - Depreciation and Amortization
+
+        Capital expenditure is reported as a negative cash outflow, so its magnitude is used.
+
+        Also known as: net capex, net investment, growth capex, capex minus depreciation.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (cash flow statement
+                items) over. E.g. 4 with quarterly data gives the trailing twelve months (TTM)
+                and 3 with annual data a three-year cumulative figure. Defaults to None, which
+                uses single-period flows.
+
+        Returns:
+            pd.DataFrame: Net capital expenditure values.
+
+        Notes:
+        - Damodaran, A., "Investment Valuation," 3rd edition, Wiley, 2012 (net capital
+        expenditure and reinvestment).
+        - Depreciation and amortization include the amortization of acquired intangibles,
+        which is no wear of the assets that capital expenditure replaces, so the net capital
+        expenditure is low for companies with large acquired intangibles.
+        - If `growth` is set to True, the method calculates the growth of the values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MSFT", "AMZN", "GOOGL", "META"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+            basket=True,
+        )
+
+        toolkit.ratios.get_net_capital_expenditure()
+        ```
+
+        Which returns:
+
+        |       |       2021 |       2022 |       2023 |        2024 |        2025 |
+        |:------|-----------:|-----------:|-----------:|------------:|------------:|
+        | AMZN  | 2.662e+10  | 2.1724e+10 | 4.066e+09  | 3.0204e+10  | 6.6063e+10  |
+        | GOOGL | 1.2199e+10 | 1.801e+10  | 2.0305e+10 | 3.7224e+10  | 7.0311e+10  |
+        | META  | 1.06e+10   | 2.2745e+10 | 1.6088e+10 | 2.1758e+10  | 5.1075e+10  |
+        | MSFT  | 8.936e+09  | 9.426e+09  | 1.4246e+10 | 2.219e+10   | 3.0398e+10  |
+        | Total | 5.8355e+10 | 7.1905e+10 | 5.4705e+10 | 1.11376e+11 | 2.17847e+11 |
+        TABLE
+        """
+        net_capital_expenditure = efficiency_model.get_net_capital_expenditure(
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+            ),
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
+                trailing,
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=net_capital_expenditure,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -9267,7 +9463,9 @@ class Ratios:
             )
 
         # The market cap uses the close at the end of the period (or on the day), not an average.
-        market_cap = valuation_model.get_market_cap(share_prices, average_shares)
+        market_cap = self._add_basket_market_cap(
+            valuation_model.get_market_cap(share_prices, average_shares), show_daily
+        )
 
         free_cash_flow_yield = solvency_model.get_free_cash_flow_yield(
             free_cash_flow, market_cap
@@ -13332,6 +13530,7 @@ class Ratios:
         self,
         show_daily: bool = False,
         diluted: bool = True,
+        share: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -13359,7 +13558,19 @@ class Ratios:
         come from the fiscal year. With show_daily, each day uses the shares of the latest
         period that has ended.
 
-        Also known as: market capitalization.
+        When the Toolkit analyses the tickers as a basket (Toolkit(basket=True)), a "Total" row
+        (a column with show_daily) adds up their market caps, for example to compare a group of
+        companies with a country (see get_market_cap_to_gdp). The total of a period is left
+        empty when a ticker has no market cap in it, as the sum of the others would understate
+        the basket. With share, each ticker is its share of that total (a decimal, the Total is
+        1). Market caps are summed in the currency the tickers are listed in, so a basket of
+        tickers listed in different currencies is refused.
+
+        - Basket Market Capitalization = Sum of the Market Capitalizations of the Tickers
+        - Share of the Basket = Market Capitalization / Basket Market Capitalization
+
+        Also known as: market capitalization, basket market cap, aggregate market value,
+        market cap weight.
 
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
@@ -13367,6 +13578,8 @@ class Ratios:
                 that day (also when it ended before the start date), so no figures are used before
                 their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            share (bool, optional): Whether to return each ticker's share of the total market cap
+                of the tickers instead of its market cap, with the "Total" as 1. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -13378,7 +13591,7 @@ class Ratios:
                 values. Defaults to False.
 
         Returns:
-            pd.DataFrame: Market capitalization values.
+            pd.DataFrame: Market capitalization values, or each ticker's share of the total.
 
         As an example:
 
@@ -13386,10 +13599,11 @@ class Ratios:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["NVDA", "AAPL", "MSFT"],
+            ["AAPL", "MSFT", "GOOGL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
+            basket=True,
         )
 
         toolkit.ratios.get_market_cap()
@@ -13397,11 +13611,12 @@ class Ratios:
 
         Which returns:
 
-        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
-        |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
-        | MSFT | 2.55872e+12 | 1.80824e+12 | 2.80977e+12 | 3.14818e+12 | 3.61022e+12 |
-        | NVDA | 7.45569e+11 | 3.66373e+11 | 1.23508e+12 | 3.33093e+12 | 4.57186e+12 |
+        |       |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:------|------------:|------------:|------------:|------------:|------------:|
+        | AAPL  | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | GOOGL | 1.96322e+12 | 1.16102e+12 | 1.77714e+12 | 2.35622e+12 | 3.82799e+12 |
+        | MSFT  | 2.55872e+12 | 1.80824e+12 | 2.80977e+12 | 3.14818e+12 | 3.61022e+12 |
+        | Total | 7.51665e+12 | 5.09048e+12 | 7.6313e+12  | 9.3629e+12  | 1.15174e+13 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -13426,8 +13641,153 @@ class Ratios:
 
         market_cap = valuation_model.get_market_cap(share_prices, average_shares)
 
+        market_cap = self._add_basket_market_cap(market_cap, show_daily, share=share)
+
         return finalize_dataset(
             dataset=market_cap,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows" if show_daily else "columns",
+            row_slice=show_daily,
+        )
+
+    @handle_errors
+    def get_market_cap_to_gdp(
+        self,
+        country: str = "United States",
+        show_daily: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+    ):
+        """
+        Calculates the market capitalization to Gross Domestic Product (GDP) ratio of the tickers
+        as one basket: their total market cap divided by a country's nominal GDP in US dollars.
+
+        This is the Buffett indicator, which Warren Buffett called "probably the best single
+        measure of where valuations stand at any given moment" (Fortune, 2001): the value of a
+        country's whole stock market against the annual output of its economy. Its classic form
+        divides the total US market (the Wilshire 5000) by US GDP, which is why the United States
+        is the default country. A basket of tickers is a part of a market, so its ratio is the
+        market value of that basket as a share of an economy's annual output, for example the
+        largest technology companies against the GDP of China. Market cap is a stock (a value at
+        a moment) and GDP a flow (the output of a year), so the ratio compares a value with a
+        year of income rather than two values.
+
+        The formula is as follows:
+
+        - Market Cap to GDP = Basket Market Capitalization / Nominal GDP (last complete year)
+
+        The basket market cap is the sum of the market caps of the tickers, as get_market_cap
+        returns it for a basket Toolkit (the traded close times the weighted average diluted shares),
+        so the tickers must be listed in US dollars. The GDP is the nominal GDP in current US
+        dollars of the Global Macro Database. GDP is annual and comes without publication dates,
+        so each date (or period) is divided by the GDP of the calendar year before the year it
+        falls in, the last complete year: the close of 9 November 2026 by the GDP of 2025, the
+        2025 value by the GDP of 2024. The first estimate of a year is published in the first
+        months of the next year, so in those months the ratio uses a GDP that was about to be
+        published.
+
+        Also known as: Buffett indicator, market cap to GDP, stock market capitalization to GDP,
+        basket market cap to GDP.
+
+        Args:
+            country (str, optional): The country whose GDP the basket is divided by, as named in
+                toolkit.economics.get_gross_domestic_product. Defaults to "United States".
+            show_daily (bool, optional): Whether to show daily values: the close of each trading
+                day against the shares of the latest period that has ended and the GDP of the
+                last complete year. Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+
+        Returns:
+            pd.DataFrame: The market cap to GDP ratio with the country as row (as column with
+            show_daily).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "AVGO", "TSM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2026-11-06",
+        )
+
+        toolkit.ratios.get_market_cap_to_gdp(country="China", show_daily=True).tail()
+        ```
+
+        Which returns:
+
+        | Date       |   China |
+        |:-----------|--------:|
+        | 2026-11-02 |  1.0252 |
+        | 2026-11-03 |  1.0458 |
+        | 2026-11-04 |  1.0621 |
+        | 2026-11-05 |  1.0009 |
+        | 2026-11-06 |  1.0132 |
+        """
+        currency = self._get_basket_currency()
+
+        if currency not in (None, "USD"):
+            raise ValueError(
+                f"The GDP is in US dollars, but the tickers are listed in {currency}. Choose "
+                "tickers listed in US dollars."
+            )
+
+        if self._gross_domestic_product_function is None:
+            raise ValueError(
+                "The market cap to GDP ratio needs the Gross Domestic Product, which the "
+                "Toolkit provides (toolkit.ratios)."
+            )
+
+        # Millions of US dollars, as the GDP is published, to US dollars.
+        gross_domestic_product = self._gross_domestic_product_function() * 1_000_000
+
+        if country not in gross_domestic_product.columns:
+            raise ValueError(
+                f"There is no GDP in US dollars for {country}. Choose a country as named in "
+                "toolkit.economics.get_gross_domestic_product(usd=True)."
+            )
+
+        market_cap = self.get_market_cap(
+            show_daily=show_daily, diluted=diluted, rounding=None
+        )
+
+        if market_cap.empty:
+            raise ValueError("There is no market cap for the tickers.")
+
+        # The market caps by date, with their Total (already there for a basket Toolkit).
+        market_cap = market_cap if show_daily else market_cap.T
+        if "Total" not in market_cap.columns:
+            market_cap = valuation_model.get_basket_market_cap(market_cap)
+        basket_market_cap = market_cap["Total"]
+
+        market_cap_to_gdp = valuation_model.get_market_cap_to_gdp(
+            basket_market_cap, gross_domestic_product[[country]]
+        )
+
+        return finalize_dataset(
+            dataset=market_cap_to_gdp if show_daily else market_cap_to_gdp.T,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

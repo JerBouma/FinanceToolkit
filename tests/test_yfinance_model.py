@@ -360,3 +360,63 @@ def test_a_yearly_yahoo_statement_is_a_full_fiscal_year(monkeypatch):
     )
 
     assert statistics.loc["period"].tolist() == ["FY", "FY"]
+
+
+def test_futures_without_daily_bars_are_built_from_hourly_bars(monkeypatch):
+    import pandas as pd
+
+    intervals = []
+
+    class FakeTicker:
+        def __init__(self, ticker):
+            pass
+
+        def history(self, interval, **kwargs):  # noqa: ARG002
+            intervals.append(interval)
+            if interval == "1d":
+                # Only the latest bar, as Yahoo Finance answers for TTF=F.
+                return pd.DataFrame(
+                    {
+                        "Open": 87.0,
+                        "High": 87.0,
+                        "Low": 81.0,
+                        "Close": [82.33],
+                        "Volume": 1,
+                    },
+                    index=pd.DatetimeIndex(["2026-11-09"], tz="America/New_York"),
+                )
+            return pd.DataFrame(
+                {
+                    "Open": [31.0, 31.5, 32.0, 43.0, 44.0],
+                    "High": [31.6, 32.1, 32.2, 44.0, 45.0],
+                    "Low": [30.9, 31.4, 31.9, 42.9, 43.5],
+                    "Close": [31.5, 32.0, 31.975, 44.0, 43.45],
+                    "Volume": [10, 20, 30, 40, 50],
+                },
+                index=pd.DatetimeIndex(
+                    [
+                        "2026-02-27 03:00",
+                        "2026-02-27 09:00",
+                        "2026-02-27 11:00",
+                        "2026-03-02 03:00",
+                        "2026-03-02 11:00",
+                    ],
+                    tz="America/New_York",
+                ),
+            )
+
+    monkeypatch.setattr(yfinance_model.yf, "Ticker", FakeTicker)
+
+    data = yfinance_model.get_historical_data(
+        "TTF=F", start="2026-02-27", end="2026-03-02"
+    )
+
+    assert intervals == ["1d", "1h"]
+    # A bar per exchange day: the first open, the highest high, the lowest low, the last
+    # trade as the close and the volume summed.
+    assert list(data.index.astype(str)) == ["2026-02-27", "2026-03-02"]
+    assert list(data["Close"]) == [31.975, 43.45]
+    assert list(data["Open"]) == [31.0, 43.0]
+    assert list(data["High"]) == [32.2, 45.0]
+    assert list(data["Low"]) == [30.9, 42.9]
+    assert list(data["Volume"]) == [60, 90]

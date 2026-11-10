@@ -21,6 +21,7 @@ from financetoolkit.risk.risk_model import (
     get_wealth_and_peak,
 )
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.sources_model import record_url
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     PERIODS_PER_YEAR,
@@ -723,6 +724,7 @@ def download_factor_file(url: str) -> bytes:
     downloaded = _factor_files.get(url)
 
     if downloaded and time.monotonic() - downloaded[0] < FACTOR_FILE_LIFETIME_SECONDS:
+        record_url(url)
         return downloaded[1]
 
     content = get_request(url, timeout=10).content

@@ -281,3 +281,39 @@ def test_get_reinvestment_ratio_is_what_is_not_paid_out():
 
     # A payout above earnings means a negative reinvestment.
     pd.testing.assert_series_equal(result, pd.Series([0.75, 1.0, -0.2]))
+
+
+def test_get_basket_market_cap_totals_and_shares():
+    market_cap = pd.DataFrame(
+        {"A": [300.0, 200.0, np.nan], "B": [100.0, 200.0, 50.0]},
+        index=pd.period_range("2021", "2023", freq="Y"),
+    )
+
+    basket = valuation_model.get_basket_market_cap(market_cap)
+    share = valuation_model.get_basket_market_cap(market_cap, share=True)
+
+    # A year without the market cap of one of the companies has no total.
+    assert basket["Total"].tolist()[:2] == [400.0, 400.0]
+    assert pd.isna(basket["Total"].iloc[2])
+    assert share.iloc[0].tolist() == [0.75, 0.25, 1.0]
+    assert share.iloc[2].isna().all()
+
+
+def test_get_market_cap_to_gdp_uses_the_year_before():
+    gross_domestic_product = pd.DataFrame(
+        {"Country": [100.0, 200.0]}, index=pd.period_range("2024", "2025", freq="Y")
+    )
+    daily = pd.Series(
+        [300.0, 400.0, 500.0],
+        index=pd.PeriodIndex(["2025-12-31", "2026-01-02", "2027-01-04"], freq="D"),
+    )
+    yearly = pd.Series([300.0], index=pd.period_range("2025", "2025", freq="Y"))
+
+    result = valuation_model.get_market_cap_to_gdp(daily, gross_domestic_product)
+
+    # 2025 is divided by the 2024 GDP and 2026 by the 2025 GDP; 2026 isn't there for 2027.
+    assert result["Country"].tolist()[:2] == [3.0, 2.0]
+    assert pd.isna(result["Country"].iloc[2])
+    assert valuation_model.get_market_cap_to_gdp(yearly, gross_domestic_product).iloc[
+        0, 0
+    ] == pytest.approx(3.0)

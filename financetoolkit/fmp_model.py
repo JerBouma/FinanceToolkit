@@ -25,6 +25,7 @@ from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.sources_model import record_source
 
 logger = logger_model.get_logger()
 
@@ -65,6 +66,57 @@ def determine_retry_delay(attempt: int) -> float:
     delay = min(RETRY_BASE_DELAY_SECONDS * 2**attempt, RETRY_MAX_DELAY_SECONDS)
 
     return delay * (1 + random.uniform(0, 0.5))  # noqa: S311
+
+
+# The continuous front-month futures of Yahoo Finance (BZ=F) and the commodity symbols
+# FinancialModelingPrep carries them under (BZUSD), in the same unit: USD, or US cents (USX)
+# for the grains, softs and livestock, as Yahoo Finance quotes them. Quotes and intraday bars
+# exist only at FinancialModelingPrep, so these are requested under its symbol. The daily
+# history keeps Yahoo Finance's own series of the ticker, which rolls to the next contract
+# on other days than FinancialModelingPrep does, so the two differ around a roll (Brent on
+# 31 March 2026: 118.35 against 103.97) and agree in between. Futures without a symbol here,
+# such as Dutch TTF gas (TTF=F), have no quote or intraday bars.
+FUTURES_SYMBOLS: dict[str, str] = {
+    "ALI=F": "ALIUSD",
+    "BZ=F": "BZUSD",
+    "CC=F": "CCUSD",
+    "CL=F": "CLUSD",
+    "CT=F": "CTUSX",
+    "DC=F": "DCUSD",
+    "ES=F": "ESUSD",
+    "GC=F": "GCUSD",
+    "GF=F": "GFUSX",
+    "HE=F": "HEUSX",
+    "HG=F": "HGUSD",
+    "HO=F": "HOUSD",
+    "KC=F": "KCUSX",
+    "KE=F": "KEUSX",
+    "LBR=F": "LBUSD",
+    "LE=F": "LEUSX",
+    "MGC=F": "MGCUSD",
+    "NG=F": "NGUSD",
+    "NQ=F": "NQUSD",
+    "OJ=F": "OJUSX",
+    "PA=F": "PAUSD",
+    "PL=F": "PLUSD",
+    "RB=F": "RBUSD",
+    "RTY=F": "RTYUSD",
+    "SB=F": "SBUSX",
+    "SI=F": "SIUSD",
+    "SIL=F": "SILUSD",
+    "YM=F": "YMUSD",
+    "ZB=F": "ZBUSD",
+    "ZC=F": "ZCUSX",
+    "ZF=F": "ZFUSD",
+    "ZL=F": "ZLUSX",
+    "ZM=F": "ZMUSD",
+    "ZN=F": "ZNUSD",
+    "ZO=F": "ZOUSX",
+    "ZQ=F": "ZQUSD",
+    "ZR=F": "ZRUSD",
+    "ZS=F": "ZSUSX",
+    "ZT=F": "ZTUSD",
+}
 
 
 # The symbol or symbols parameter runs up to the next parameter (an "&" followed by a name
@@ -551,6 +603,7 @@ def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
         older = pd.Series(dtype=float)
 
     if not older.empty:
+        record_source(policy_model.YAHOO_FINANCE)
         older.index = pd.DatetimeIndex(older.index).tz_localize(None).to_period("D")
         older = older[older.index < first_payment]
 
@@ -877,7 +930,8 @@ def get_intraday_data(
 
     historical_data_url = (
         f"https://financialmodelingprep.com/stable/historical-chart/{interval}"
-        f"?symbol={ticker}&from={start_date_string}&to={end_date_string}&apikey={api_key}"
+        f"?symbol={FUTURES_SYMBOLS.get(ticker.upper(), ticker)}&from={start_date_string}"
+        f"&to={end_date_string}&apikey={api_key}"
     )
 
     try:
@@ -1509,7 +1563,10 @@ def get_quote(
     """
 
     def worker(ticker):
-        url = f"https://financialmodelingprep.com/stable/quote?symbol={ticker}&apikey={api_key}"
+        url = (
+            "https://financialmodelingprep.com/stable/quote"
+            f"?symbol={FUTURES_SYMBOLS.get(ticker.upper(), ticker)}&apikey={api_key}"
+        )
         quote_data = get_financial_data(url=url, user_subscription=user_subscription)
 
         if quote_data.empty:

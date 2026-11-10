@@ -541,6 +541,38 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
     return period
 
 
+def change_over_periods(
+    data: pd.DataFrame | pd.Series, periods: int
+) -> pd.DataFrame | pd.Series:
+    """
+    The relative change over a number of periods (12 months, 4 quarters) on consecutive
+    periods: a period a source skipped becomes empty first, so the change compares the
+    same period a year earlier rather than the row that many places back, and the skipped
+    period and the one a year after it are empty.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The values, indexed by a monthly, quarterly or
+            yearly PeriodIndex.
+        periods (int): The number of periods to compare with, e.g. 12 for monthly data.
+
+    Returns:
+        pd.DataFrame | pd.Series: The change as a decimal, on consecutive periods.
+    """
+    if data.empty:
+        return data
+
+    consecutive = data.reindex(
+        pd.period_range(
+            data.index.min(),
+            data.index.max(),
+            freq=data.index.freq,
+            name=data.index.name,
+        )
+    )
+
+    return consecutive.pct_change(periods, fill_method=None)
+
+
 CONSUMER_PRICE_MEASURES = [
     "all",
     "core",

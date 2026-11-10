@@ -516,6 +516,7 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
     The formula is as follows:
 
     - Percentile = (Count(x(s) < x(T)) + 0.5 * Count(x(s) = x(T))) / Count(s), over s < T
+    - Rank = 1 + Count(x(s) > x(T)), over s < T: 1 for the highest of the history
     - Highest Since = the last date s < T with x(s) >= x(T)
     - Lowest Since = the last date s < T with x(s) <= x(T)
     - Change Since Start = (x(T) - x(0)) / |x(0)|
@@ -556,7 +557,7 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
     Returns:
         pd.Series: The Start Date, Start Value, Observations, Latest Date, Latest Value, Change
         Since Start (a decimal), Multiple Since Start, Annualised Change (a decimal),
-        Percentile, Highest Since, Lowest Since, Highest, Highest Date, Change From Highest (a
+        Percentile, Rank, Highest Since, Lowest Since, Highest, Highest Date, Change From Highest (a
         decimal), Lowest, Lowest Date, Change From Lowest (a decimal), Largest Drawdown (a
         decimal), Drawdown Peak Date, Drawdown Trough Date and Recovery Date, and with a level
         the Level, First Above Level and Above Level Since, the dates as text.
@@ -646,6 +647,8 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
                 if len(earlier)
                 else np.nan
             ),
+            # 1 for the highest of the history; equal earlier values share the rank.
+            "Rank": int(np.sum(earlier > latest)) + 1,
             "Highest Since": labels[as_high[-1]] if as_high.size else np.nan,
             "Lowest Since": labels[as_low[-1]] if as_low.size else np.nan,
             "Highest": highest,

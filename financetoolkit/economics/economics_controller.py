@@ -53,6 +53,7 @@ from financetoolkit.economics import (
 from financetoolkit.economics.helpers import (
     average_monthly_index,
     buffered_start_date,
+    change_over_periods,
     check_period_type,
     combine_sources,
     extend_with_recent,
@@ -513,14 +514,10 @@ class Economics:
                     index.index[0].strftime("%Y-%m"),
                 )
 
-        if measure == "inflation_rate" and not index.empty:
-            # Every month in the index, so a month the BLS did not publish (October 2025)
-            # leaves its rate and the one a year later empty rather than compare the
-            # wrong months.
-            index = index.reindex(
-                pd.period_range(index.index[0], index.index[-1], freq="M")
-            )
-            return index.pct_change(12, fill_method=None)
+        if measure == "inflation_rate":
+            # A month the BLS did not publish (October 2025) leaves its rate and the one a
+            # year later empty rather than compare the wrong months.
+            return change_over_periods(index, 12)
 
         return index
 
@@ -8399,7 +8396,7 @@ class Economics:
         index = bis_model.get_commercial_property_prices(
             buffered_start_date(self._start_date, "monthly"), self._end_date
         )
-        commercial_real_estate_prices = index.pct_change(4, fill_method=None)
+        commercial_real_estate_prices = change_over_periods(index, 4)
 
         if self._fred_api_key:
             united_states = fred_model.get_commercial_real_estate_prices(
@@ -11182,7 +11179,15 @@ class Economics:
         "Change %" column, so an unemployment rate of 4.1% is returned as 0.041. Releases
         in other units, such as thousands of jobs or index points, keep their values, as do
         survey levels such as PMIs and confidence indices, which the calendar sometimes
-        labels "%" as well.
+        labels "%" as well. The "Currency" column is the currency of the market a release
+        concerns, not the unit of its value: China's balance of trade is in US dollars
+        while its row shows CNY (the yuan figure is the separate "Balance of Trade Yuan").
+        The "Previous" value is the source's own and can differ from the Actual of the
+        release before it, e.g. after a revision.
+
+        The calendar comes from FinancialModelingPrep and starts in 2013 for most
+        countries; the first release of a series is the first period of its as_series
+        answer.
 
         With as_series=True the releases become time series: the Actual value of every
         event by the period it covers, with a column per country and event and the
@@ -11193,7 +11198,11 @@ class Economics:
         release. The year is that of the release, or the year before when the period starts
         after the release month (a December figure released in January). Several releases of
         the same period, such as a flash estimate and the final figure, keep the latest one
-        published. The index is monthly for monthly events, quarterly for quarterly ones and
+        published. A figure published for two consecutive periods on the same day, such as
+        China's January and February trade figures, is one release of both and is kept once,
+        under the later period (February), leaving January empty; a release without a
+        period, of an event that otherwise has one, is left out. The index is monthly for
+        monthly events, quarterly for quarterly ones and
         daily, at the last day of each period, when events of different frequencies are
         combined. The series can be analysed further with `Econometrics(data=...)`, e.g. how
         unusual the latest value is (get_level_significance) or how long it has been above or

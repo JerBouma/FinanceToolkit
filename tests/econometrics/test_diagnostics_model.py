@@ -441,3 +441,11 @@ def test_streaks_count_runs_above_and_below_a_level():
     assert streaks["Run Length"] == 1
     assert streaks["Previous Sign"] == "Below Level"
     assert streaks["Longest Earlier Run Length"] == 3
+
+
+def test_level_significance_ranks_the_latest_value():
+    months = pd.period_range("2026-01", "2026-06", freq="M")
+    values = pd.Series([0.3, 0.5, 0.1, 0.5, 0.2, 0.4], index=months)
+
+    # Two earlier months were higher.
+    assert diagnostics_model.get_level_significance(values)["Rank"] == 3

@@ -6949,7 +6949,8 @@ class Econometrics:
         """
         Calculate how unusual the latest value of every series is: its percentile in the series'
         own history and the last dates the series was at least as high ("the highest since") and at
-        least as low ("the lowest since"), next to its change since the first observation.
+        least as low ("the lowest since"), next to its change since the first observation and the
+        highest and lowest values of the range with their dates and the change from them.
 
         Where `get_move_significance` (Risk) measures how unusual a move is, this measures how
         unusual a level is, which is the question for rates and macroeconomic series: a 10-year
@@ -6965,6 +6966,8 @@ class Econometrics:
         - Highest Since = the last date s < T with x(s) >= x(T)
         - Lowest Since = the last date s < T with x(s) <= x(T)
         - Change Since Start = (x(T) - x(0)) / |x(0)|
+        - Change From Highest = (x(T) - max(x)) / |max(x)|
+        - Change From Lowest = (x(T) - min(x)) / |min(x)|
 
         Where x(T) is the latest value of a series, x(0) its first observation and s runs over its
         earlier observations. An
@@ -6975,11 +6978,16 @@ class Econometrics:
         the latest observation in the range, so the start and end date choose the two dates to
         compare (housing starts from January 2021 to their latest month with period="monthly");
         it is relative to the absolute first value, so a rise from a negative value is positive,
-        and NaN when the first value is zero.
+        and NaN when the first value is zero. The Highest and Lowest are the peak and trough of
+        the range, the latest value included, with the first dates they were reached, so the
+        start date works as the anchor of an event window: the rise from the start to the peak,
+        the date of the peak and the fall from it to the latest value. The changes from them
+        are relative to their absolute values, and NaN when they are zero.
 
         Also known as: highest since, lowest since, record high, multi-year high, level
         percentile, historical percentile, how unusual is the latest value, change since,
-        change between two dates, cumulative change.
+        change between two dates, cumulative change, event window, peak, trough, drawdown
+        from the peak, change from the high, change from the low.
 
         Args:
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -7002,9 +7010,10 @@ class Econometrics:
         Returns:
             pd.DataFrame: Per series the Start Date, Start Value and number of Observations of its
             history, the Latest Date and Latest Value, the Change Since Start (decimal), the
-            Percentile (decimal) and the Highest Since and Lowest Since dates (as text: the dates
-            of the observations, e.g. 2002-05-31 for a monthly series, or the periods, e.g.
-            2002-05 with period="monthly").
+            Percentile (decimal), the Highest Since and Lowest Since dates, and the Highest and
+            Lowest with their Highest Date and Lowest Date and the Change From Highest and Change
+            From Lowest (decimals). The dates are text: the dates of the observations, e.g.
+            2002-05-31 for a monthly series, or the periods, e.g. 2002-05 with period="monthly".
 
         Notes:
         - The answer depends on the history it is measured against: the history starts at the start
@@ -7033,17 +7042,23 @@ class Econometrics:
 
         Which returns:
 
-        |                    | United States   | Germany    | Japan      |
-        |:-------------------|:----------------|:-----------|:-----------|
-        | Start Date         | 2000-01-31      | 2000-01-31 | 2000-01-31 |
-        | Start Value        | 0.0666          | 0.0554     | 0.0169     |
-        | Observations       | 322             | 322        | 322        |
-        | Latest Date        | 2026-10-31      | 2026-10-31 | 2026-10-31 |
-        | Latest Value       | 0.0513          | 0.0342     | 0.0276     |
-        | Change Since Start | -0.2297         | -0.3827    | 0.6331     |
-        | Percentile         | 0.9377          | 0.6854     | 0.9907     |
-        | Highest Since      | 2002-05-31      | 2026-09-30 | 2026-09-30 |
-        | Lowest Since       | 2026-09-30      | 2026-08-31 | 2026-06-30 |
+        |                     | United States   | Germany    | Japan      |
+        |:--------------------|:----------------|:-----------|:-----------|
+        | Start Date          | 2000-01-31      | 2000-01-31 | 2000-01-31 |
+        | Start Value         | 0.0666          | 0.0554     | 0.0169     |
+        | Observations        | 322             | 322        | 322        |
+        | Latest Date         | 2026-10-31      | 2026-10-31 | 2026-10-31 |
+        | Latest Value        | 0.0513          | 0.0342     | 0.0276     |
+        | Change Since Start  | -0.2297         | -0.3827    | 0.6331     |
+        | Percentile          | 0.9377          | 0.6854     | 0.9907     |
+        | Highest Since       | 2002-05-31      | 2026-09-30 | 2026-09-30 |
+        | Lowest Since        | 2026-09-30      | 2026-08-31 | 2026-06-30 |
+        | Highest             | 0.0666          | 0.0554     | 0.0305     |
+        | Highest Date        | 2000-01-31      | 2000-01-31 | 2026-09-30 |
+        | Change From Highest | -0.2297         | -0.3827    | -0.0951    |
+        | Lowest              | 0.0062          | -0.0065    | -0.0028    |
+        | Lowest Date         | 2020-07-31      | 2019-08-31 | 2019-08-31 |
+        | Change From Lowest  | 7.2742          | 6.2615     | 10.8571    |
         """
         period = period if period else "daily"
         levels = self._get_spreads(

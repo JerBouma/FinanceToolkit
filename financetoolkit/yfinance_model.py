@@ -414,6 +414,45 @@ def get_historical_data(
                 **history_parameters, repair=False
             )
 
+        if (
+            interval == "1d"
+            and ticker.upper().endswith("=F")
+            and len(historical_data) <= 1
+            and (end_date - start_date).days > 1
+        ):
+            # Yahoo Finance answers the daily (and weekly, monthly) history of some continuous futures, such as Dutch TTF gas (TTF=F), with the latest bar only, while it keeps their hourly bars for the last 730 days. The days are rebuilt from those bars, in the exchange's time zone, so the close is the last trade of the day rather than the settlement price.  # noqa: E501
+            hourly_data = yf.Ticker(ticker).history(
+                start=max(start_date, datetime.now() - timedelta(days=729)).strftime(
+                    "%Y-%m-%d"
+                ),
+                end=end_date_string,
+                interval="1h",
+                auto_adjust=False,
+                repair=False,
+            )
+
+            if len(hourly_data) > len(historical_data):
+                logger.warning(
+                    "Yahoo Finance has no daily history of %s, so its days are built from the "
+                    "hourly bars of the last 730 days: the close is the last trade of each day "
+                    "rather than the settlement price.",
+                    ticker,
+                )
+                historical_data = (
+                    hourly_data.groupby(hourly_data.index.date)
+                    .agg(
+                        {
+                            "Open": "first",
+                            "High": "max",
+                            "Low": "min",
+                            "Close": "last",
+                            "Volume": "sum",
+                        }
+                    )
+                    .dropna(subset=["Close"])
+                )
+                historical_data.index = pd.DatetimeIndex(historical_data.index)
+
         # Columns can occasionally be duplicated, so they are checked and dropped.
         historical_data = historical_data.loc[:, ~historical_data.columns.duplicated()]
 

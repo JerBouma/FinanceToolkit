@@ -324,3 +324,39 @@ def test_get_level_significance_change_since_start():
         pd.Series([0.0, 0.01, 0.02], index=months)
     )
     assert pd.isna(zero["Change Since Start"])
+
+
+def test_get_level_significance_highest_and_lowest():
+    days = pd.period_range("2026-02-27", periods=5, freq="D")
+
+    # Brent from the close before the war: the peak, its date and the fall from it.
+    brent = diagnostics_model.get_level_significance(
+        pd.Series([72.48, 118.35, np.nan, 71.57, 92.17], index=days)
+    )
+    assert brent["Highest"] == pytest.approx(118.35)
+    assert brent["Highest Date"] == "2026-02-28"
+    assert brent["Change From Highest"] == pytest.approx(92.17 / 118.35 - 1)
+    assert brent["Lowest"] == pytest.approx(71.57)
+    assert brent["Lowest Date"] == "2026-03-02"
+    assert brent["Change From Lowest"] == pytest.approx(92.17 / 71.57 - 1)
+
+    # The latest value counts: at a new peak the change from the highest is zero, and of
+    # equal values the first date is the one reached first.
+    peak = diagnostics_model.get_level_significance(
+        pd.Series([1.0, 3.0, 2.0, 3.0, 3.0], index=days)
+    )
+    assert peak["Change From Highest"] == 0
+    assert peak["Highest Date"] == "2026-02-28"
+
+    # A spread that went from negative to positive: changes relative to the absolute level,
+    # NaN where the level is zero.
+    spread = diagnostics_model.get_level_significance(
+        pd.Series([-0.02, 0.0, -0.01, 0.01, 0.005], index=days)
+    )
+    assert spread["Change From Lowest"] == pytest.approx((0.005 + 0.02) / 0.02)
+    assert spread["Change From Highest"] == pytest.approx(-0.5)
+
+    zero = diagnostics_model.get_level_significance(
+        pd.Series([0.0, -1.0, -0.5, -0.2, -0.1], index=days)
+    )
+    assert pd.isna(zero["Change From Highest"])

@@ -510,7 +510,8 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
     """
     Calculate how unusual the latest value of a series is compared with its own history: the
     percentile of the latest value among the earlier values, the last dates the series was
-    at least as high and at least as low, and its change since the first observation.
+    at least as high and at least as low, its change since the first observation, and the
+    highest and lowest values of the range with their dates and the change from them.
 
     The formula is as follows:
 
@@ -518,6 +519,8 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
     - Highest Since = the last date s < T with x(s) >= x(T)
     - Lowest Since = the last date s < T with x(s) <= x(T)
     - Change Since Start = (x(T) - x(0)) / |x(0)|
+    - Change From Highest = (x(T) - max(x)) / |max(x)|
+    - Change From Lowest = (x(T) - min(x)) / |min(x)|
 
     Where x(T) is the latest value and s runs over every earlier observation. The percentile counts
     an earlier value equal to the latest one as half, the percentile rank, so a rate that has been
@@ -525,14 +528,19 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
     is NaN when no earlier value was as high, which makes the latest value the highest of the
     history, and Lowest Since likewise. x(0) is the first observation; the change is relative to
     its absolute value, so a series that rises from a negative value has a positive change, and
-    it is NaN when the first observation is zero.
+    it is NaN when the first observation is zero. max(x) and min(x) run over every observation,
+    the latest included, so the Highest equals the Latest Value when the series is at its peak and
+    its change from it is 0. The Highest Date and Lowest Date are the first dates the series
+    reached them; the changes from them are NaN when they are zero.
 
     Args:
         levels (pd.Series): The values of a single series by date; missing values are left out.
 
     Returns:
         pd.Series: The Start Date, Start Value, Observations, Latest Date, Latest Value, Change
-        Since Start (a decimal), Percentile, Highest Since and Lowest Since, the dates as text.
+        Since Start (a decimal), Percentile, Highest Since, Lowest Since, Highest, Highest Date,
+        Change From Highest (a decimal), Lowest, Lowest Date and Change From Lowest (a decimal),
+        the dates as text.
     """
     observed = levels.dropna()
 
@@ -540,8 +548,11 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
         raise ValueError("The series has no observations.")
 
     labels = observed.index.astype(str)
-    earlier = observed.to_numpy(dtype=float)[:-1]
+    values = observed.to_numpy(dtype=float)
+    earlier = values[:-1]
     first = float(observed.iloc[0])
+    highest = float(values.max())
+    lowest = float(values.min())
     latest = float(observed.iloc[-1])
 
     as_high = np.flatnonzero(earlier >= latest)
@@ -563,6 +574,14 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
             ),
             "Highest Since": labels[as_high[-1]] if as_high.size else np.nan,
             "Lowest Since": labels[as_low[-1]] if as_low.size else np.nan,
+            "Highest": highest,
+            "Highest Date": labels[int(np.argmax(values))],
+            "Change From Highest": (
+                (latest - highest) / abs(highest) if highest else np.nan
+            ),
+            "Lowest": lowest,
+            "Lowest Date": labels[int(np.argmin(values))],
+            "Change From Lowest": (latest - lowest) / abs(lowest) if lowest else np.nan,
         },
         dtype=object,
     )

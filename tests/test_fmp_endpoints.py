@@ -1675,3 +1675,26 @@ def test_economic_calendar_as_series():
     ]
 
     assert economics_fmp_model.get_economic_calendar_series(pd.DataFrame()).empty
+
+
+def test_futures_are_quoted_under_the_commodity_symbol(responses):
+    canned, requested = responses
+    canned["quote"] = [{"symbol": "BZUSD", "name": "Brent Crude Oil", "price": 91.79}]
+
+    quote, no_data = fmp_model.get_quote(["BZ=F"], api_key="K")
+
+    # Requested as BZUSD, returned under the ticker as given.
+    assert "symbol=BZUSD&" in requested[0]
+    assert quote.loc["Price", "BZ=F"] == pytest.approx(91.79)
+    assert no_data == []
+
+    fmp_model.get_intraday_data(
+        "CL=F", api_key="K", start="2026-11-09", end="2026-11-10"
+    )
+    assert "symbol=CLUSD&" in requested[-1]
+
+    # A future quoted in US cents keeps that unit, and one without a commodity symbol
+    # (Dutch TTF gas) is requested as it is.
+    assert fmp_model.FUTURES_SYMBOLS["KC=F"] == "KCUSX"
+    fmp_model.get_quote(["TTF=F"], api_key="K")
+    assert "symbol=TTF=F&" in requested[-1]

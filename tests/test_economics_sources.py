@@ -1,5 +1,7 @@
 """Offline tests for the keyless high-frequency Economics sources."""
 
+import json
+
 import pandas as pd
 import pytest
 import requests
@@ -442,11 +444,12 @@ def test_bls_unemployment_is_parsed_into_decimals(monkeypatch):
         "Results": {
             "series": [
                 {
+                    "seriesID": "LNS14000000",
                     "data": [
                         {"year": "2026", "period": "M09", "value": "4.2"},
                         {"year": "2026", "period": "M13", "value": "4.1"},
                         {"year": "2026", "period": "M08", "value": "4.1"},
-                    ]
+                    ],
                 }
             ]
         },
@@ -1250,7 +1253,12 @@ def test_bls_nonfarm_payrolls_are_dated_on_the_first_of_the_month(monkeypatch):
     payload = {
         "status": "REQUEST_SUCCEEDED",
         "Results": {
-            "series": [{"data": [{"year": "2026", "period": "M09", "value": "159540"}]}]
+            "series": [
+                {
+                    "seriesID": "CES0000000001",
+                    "data": [{"year": "2026", "period": "M09", "value": "159540"}],
+                }
+            ]
         },
     }
     monkeypatch.setattr(
@@ -1611,3 +1619,37 @@ def test_commodity_prices_are_selected_and_deflated(monkeypatch):
     assert real["Gold"].tolist() == pytest.approx(
         [110.0, 110.0 * 110 / 105, 120.0, 130.0]
     )
+
+
+def test_bls_consumer_prices_come_in_one_request(monkeypatch):
+    from financetoolkit.economics import bls_model
+
+    requests_sent = []
+
+    def respond(url, **kwargs):
+        requests_sent.append(json.loads(kwargs["data"]))
+        return FakeResponse(
+            {
+                "status": "REQUEST_SUCCEEDED",
+                "Results": {
+                    "series": [
+                        {
+                            "seriesID": series,
+                            "data": [
+                                {"year": "2026", "period": "M10", "value": "337.511"},
+                                {"year": "2026", "period": "M09", "value": "336.940"},
+                            ],
+                        }
+                        for series in requests_sent[-1]["seriesid"]
+                    ]
+                },
+            }
+        )
+
+    monkeypatch.setattr(bls_model, "get_request", respond)
+
+    prices = bls_model.get_consumer_price_index()
+
+    assert len(requests_sent) == 1
+    assert list(prices.columns) == list(bls_model.CONSUMER_PRICE_SERIES)
+    assert prices.loc[pd.Period("2026-10", "M"), "core"] == pytest.approx(337.511)

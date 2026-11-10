@@ -7,6 +7,7 @@ import pandas as pd
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
 from financetoolkit.utilities.requests_model import HEADERS, SESSION, get_request
+from financetoolkit.utilities.sources_model import record_url
 
 # The NGFS climate scenarios are hosted by IIASA, whose database answers anonymous users
 # with a guest token. Phase 5 is the vintage of November 2024; a new phase is published as
@@ -105,6 +106,7 @@ def _post(path: str, body: dict) -> list:
         timeout=180,
     )
     response.raise_for_status()
+    record_url(BASE_URL)
 
     return response.json()
 

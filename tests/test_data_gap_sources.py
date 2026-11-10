@@ -617,3 +617,47 @@ def test_real_interest_rate_is_monthly_with_the_policy_rate(monkeypatch):
     )
 
     assert economics.get_real_interest_rate(rate_type="overnight").empty
+
+
+def test_us_consumer_prices_add_the_bls_months_after_the_bis(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import bls_model
+
+    months = pd.period_range("2025-08", "2026-09", freq="M")
+    # The BIS republishes the BLS index on 2010 = 100, about 0.4578 of the BLS level.
+    bls_months = pd.period_range("2025-08", "2026-10", freq="M").delete(2)
+    bls_level = pd.Series(range(len(bls_months)), index=bls_months) + 320.0
+    monkeypatch.setattr(
+        Economics,
+        "_combine_sources_for",
+        lambda self, sources, countries: pd.DataFrame(
+            {"United States": (bls_level.reindex(months) * 0.4578).round(4)},
+            index=months,
+        ),
+    )
+    monkeypatch.setattr(
+        bls_model,
+        "get_consumer_price_index",
+        lambda: pd.DataFrame({"all": bls_level, "core": bls_level + 5}),
+    )
+
+    economics = Economics(start_date="2025-08-01", end_date="2026-10-31")
+    index = economics.get_consumer_price_index(countries="United States")
+
+    # October 2026 is chained on with the BLS change from September.
+    assert index.loc[pd.Period("2026-10", "M"), "United States"] == pytest.approx(
+        bls_level.iloc[-1] * 0.4578, abs=1e-3
+    )
+
+    core = economics._get_united_states_consumer_prices("inflation_rate", "core")
+    # October 2025 was not published, so October 2026 has no annual rate rather than
+    # one against September 2025.
+    assert pd.isna(core.loc[pd.Period("2026-10", "M"), "United States"])
+    assert core.loc[pd.Period("2026-09", "M"), "United States"] == pytest.approx(
+        (bls_level[pd.Period("2026-09", "M")] + 5)
+        / (bls_level[pd.Period("2025-09", "M")] + 5)
+        - 1
+    )
+
+    assert economics.get_inflation_rate(measure="core", period="yearly").empty
+    assert economics.get_consumer_price_index(measure="rent").empty

@@ -254,6 +254,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{STATISTICS_BUREAU_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY),
     # The keyless BLS API allows 25 requests a day, so the latest releases are fetched once.
     f"{BUREAU_OF_LABOR_STATISTICS}.series": CachePolicy(ttl_seconds=DAY),
+    # The consumer prices are one request for every measure, kept for six hours so the
+    # month a release publishes appears the same day.
+    f"{BUREAU_OF_LABOR_STATISTICS}.consumer_prices": CachePolicy(ttl_seconds=DAY // 4),
     # A past year of the Treasury yield curve is final; only the current year changes.
     f"{US_TREASURY}.par_yield_curve": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.par_yield_curve_year": CachePolicy(ttl_seconds=30 * DAY),

@@ -203,3 +203,23 @@ def test_european_central_bank_rates_take_the_rate_at_the_end_of_each_period(
     assert fixedincome.get_european_central_bank_rates(
         rate="deposit", period="hourly"
     ).empty
+
+
+def test_moodys_yields_average_the_months_of_complete_years(monkeypatch):
+    months = pd.period_range("2024-01", "2025-06", freq="M")
+    monkeypatch.setattr(
+        fixedincome_controller.fred_model,
+        "get_moodys_corporate_bond_yields",
+        lambda frequency, start, end, key: pd.DataFrame(
+            {"Aaa": [0.05] * 12 + [0.06] * 6, "Baa": [0.06] * 18}, index=months
+        ),
+    )
+
+    fixedincome = fixedincome_controller.FixedIncome(
+        start_date="2024-01-01", end_date="2025-06-30", fred_api_key="key"
+    )
+    yearly = fixedincome.get_moodys_corporate_bond_yields(period="yearly")
+
+    assert yearly.loc[pd.Period("2024", "Y"), "Aaa"] == pytest.approx(0.05)
+    # 2025 is not complete yet.
+    assert yearly.loc[pd.Period("2025", "Y")].isna().all()

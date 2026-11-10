@@ -36,9 +36,19 @@ def _get_fred_series(
 
 
 # FRED's copies of the BLS price indices, not seasonally adjusted: the Producer Price
-# Index for final demand (from November 2009) and the export and import price indices of
-# all commodities (from 1983 and 1982).
-PRICE_INDEX_SERIES = {"producer": "PPIFID", "export": "IQ", "import": "IR"}
+# Index for final demand (from November 2009), the export and import price indices of
+# all commodities (from 1983 and 1982) and the CPI-U components (from 1913 to 1957).
+PRICE_INDEX_SERIES = {
+    "producer": "PPIFID",
+    "export": "IQ",
+    "import": "IR",
+    "consumer_core": "CPILFENS",
+    "consumer_energy": "CPIENGNS",
+    "consumer_food": "CPIUFDNS",
+    "consumer_goods": "CUUR0000SAC",
+    "consumer_services": "CUUR0000SAS",
+    "consumer_shelter": "CUUR0000SAH1",
+}
 
 
 def get_price_index(
@@ -46,13 +56,16 @@ def get_price_index(
 ) -> pd.DataFrame:
     """
     Retrieves the full history of a US price index from FRED, which republishes the BLS
-    series: the Producer Price Index for final demand (PPIFID) or the export or import
-    price index of all commodities (IQ and IR), not seasonally adjusted.
+    series: the Producer Price Index for final demand (PPIFID), the export or import
+    price index of all commodities (IQ and IR), or a component of the Consumer Price
+    Index (CPILFENS for the core index, CPIENGNS, CPIUFDNS, CUUR0000SAC, CUUR0000SAS
+    and CUUR0000SAH1), not seasonally adjusted.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
     Args:
-        measure (str): "producer", "export" or "import".
+        measure (str): "producer", "export", "import", or "consumer_" followed by "core",
+            "energy", "food", "goods", "services" or "shelter".
         start_date (str): Start date in YYYY-MM-DD format.
         end_date (str): End date in YYYY-MM-DD format.
         api_key (str): FRED API key.

@@ -283,7 +283,22 @@ def collect_eurostat_data(
     )
 
 
-def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
+# The HICP special aggregates per measure: all items, the core index (all items
+# excluding energy, food, alcohol and tobacco), energy, food including alcohol and
+# tobacco, goods and services.
+HICP_AGGREGATES = {
+    "all": "TOTAL",
+    "core": "TOT_X_NRG_FOOD",
+    "energy": "NRG",
+    "food": "FOOD",
+    "goods": "GD",
+    "services": "SERV",
+}
+
+
+def get_inflation_rate(
+    start_date: str, end_date: str, measure: str = "all"
+) -> pd.DataFrame:
     """
     Retrieves the monthly annual rate of change of the Harmonised Index of Consumer
     Prices (HICP) for the euro area and the countries of the European Economic Area.
@@ -295,6 +310,7 @@ def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
     Args:
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
+        measure (str): The aggregate, a key of HICP_AGGREGATES. Defaults to "all".
 
     Returns:
         pd.DataFrame: The annual inflation rate as a decimal (0.038 for 3.8%), indexed by
@@ -302,8 +318,8 @@ def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
     inflation_rate = collect_eurostat_data(
         HICP_DATASET,
-        {"freq": "M", "unit": "RCH_A", "coicop18": "TOTAL"},
-        "HICP annual inflation rate",
+        {"freq": "M", "unit": "RCH_A", "coicop18": HICP_AGGREGATES[measure]},
+        f"HICP annual inflation rate ({measure})",
         start_date,
         end_date,
     )
@@ -312,7 +328,9 @@ def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
     return inflation_rate / 100
 
 
-def get_consumer_price_index(start_date: str, end_date: str) -> pd.DataFrame:
+def get_consumer_price_index(
+    start_date: str, end_date: str, measure: str = "all"
+) -> pd.DataFrame:
     """
     Retrieves the monthly Harmonised Index of Consumer Prices (HICP) for the euro area
     and the countries of the European Economic Area, with 2015 = 100.
@@ -320,14 +338,15 @@ def get_consumer_price_index(start_date: str, end_date: str) -> pd.DataFrame:
     Args:
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
+        measure (str): The aggregate, a key of HICP_AGGREGATES. Defaults to "all".
 
     Returns:
-        pd.DataFrame: The all-items index, indexed by month with a column per country.
+        pd.DataFrame: The index, indexed by month with a column per country.
     """
     return collect_eurostat_data(
         HICP_DATASET,
-        {"freq": "M", "unit": "I15", "coicop18": "TOTAL"},
-        "HICP index",
+        {"freq": "M", "unit": "I15", "coicop18": HICP_AGGREGATES[measure]},
+        f"HICP index ({measure})",
         start_date,
         end_date,
     )

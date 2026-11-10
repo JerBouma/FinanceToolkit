@@ -53,12 +53,15 @@ from financetoolkit.economics import (
 from financetoolkit.economics.helpers import (
     average_monthly_index,
     buffered_start_date,
+    change_over_periods,
     check_period_type,
+    choose_sources,
     combine_sources,
     extend_with_recent,
     get_exchange_business_days,
     resample_to_period,
     to_gmdb_country_names,
+    validate_consumer_price_measure,
     validate_period,
 )
 from financetoolkit.fixedincome import (
@@ -69,6 +72,11 @@ from financetoolkit.fixedincome import (
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import (
+    collect_sources,
+    record_source,
+    track_sources,
+)
 from financetoolkit.utilities.statistics_model import euro_area_hint, finalize_dataset
 
 logger = get_logger()
@@ -90,6 +98,7 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 # ruff: noqa: E501
 
 
+@track_sources
 class Economics:
     """
     The Economics module contains methods to retrieve economic data from the OECD.
@@ -337,10 +346,26 @@ class Economics:
             for fetch, only_country in sources
             if only_country is None or requested is None or only_country in requested
         ]
-        frames = helpers.run_in_parallel(
-            lambda fetch: fetch(), [(fetch,) for fetch in needed]
+
+        def fetch_with_sources(
+            fetch: Callable[[], pd.DataFrame],
+        ) -> tuple[pd.DataFrame, set[str]]:
+            # Held back until it is known which source each country is taken from.
+            with collect_sources() as fetched:
+                frame = fetch()
+            return frame, fetched
+
+        retrieved = helpers.run_in_parallel(
+            fetch_with_sources, [(fetch,) for fetch in needed]
         )
+        frames = [frame for frame, _ in retrieved]
         combined = combine_sources(frames)
+
+        # Only the sources a requested country is taken from are named with the answer.
+        for country, position in choose_sources(frames).items():
+            if requested is None or country in requested:
+                for source in retrieved[position][1]:
+                    record_source(source)
 
         # A source's own index name (such as "Effective Date") is not kept, as it was not
         # when every source was combined.
@@ -349,7 +374,10 @@ class Economics:
         return combined
 
     def _get_monthly_price_data(
-        self, measure: str, countries: list[str] | str | None = None
+        self,
+        measure: str,
+        countries: list[str] | str | None = None,
+        component: str = "all",
     ) -> pd.DataFrame:
         """
         Combines the monthly consumer prices of every country from its most current source.
@@ -363,11 +391,21 @@ class Economics:
         source with the most recent month. None of them need an API key, and none have the
         tight request limit of the OECD API.
 
+        The BIS republishes the US index of the Bureau of Labor Statistics (BLS), rebased
+        to 2010 = 100, a few days after its release, so the months the BLS has published
+        since are added to it: the index chained on with the BLS changes, the inflation
+        rate as the BLS computes it.
+
+        The core index and the components come from Eurostat (all but shelter) and, for
+        the United States, from the BLS, through FRED when a FRED API key is set.
+
         Args:
             measure (str): "inflation_rate" for the annual rate of change or
                 "consumer_price_index" for the index itself.
             countries (list[str] | str | None, optional): The requested countries, so the
                 sources of other countries are not retrieved. Defaults to None.
+            component (str, optional): "all", "core", "energy", "food", "goods",
+                "services" or "shelter". Defaults to "all".
 
         Returns:
             pd.DataFrame: One column per country, indexed by month.
@@ -376,46 +414,136 @@ class Economics:
         start_date = buffered_start_date(self._start_date, "monthly")
         end_date = self._end_date
 
-        if measure == "inflation_rate":
+        eurostat_prices = (
+            eurostat_model.get_inflation_rate
+            if measure == "inflation_rate"
+            else eurostat_model.get_consumer_price_index
+        )
+
+        if component != "all":
             return self._combine_sources_for(
                 [
                     (
-                        lambda: eurostat_model.get_inflation_rate(start_date, end_date),
-                        None,
-                    ),
-                    (ons_model.get_inflation_rate, "United Kingdom"),
-                    (sbj_model.get_inflation_rate, "Japan"),
-                    (
-                        lambda: bis_model.get_consumer_prices(
-                            measure, start_date, end_date
+                        lambda: (
+                            eurostat_prices(start_date, end_date, component)
+                            if component in eurostat_model.HICP_AGGREGATES
+                            else pd.DataFrame()
                         ),
                         None,
                     ),
-                    # Around a hundred further countries the BIS does not cover.
-                    (lambda: imf_model.get_inflation_rate(start_date, end_date), None),
+                    (
+                        lambda: self._get_united_states_consumer_prices(
+                            measure, component
+                        ),
+                        "United States",
+                    ),
                 ],
                 countries,
             )
 
-        return self._combine_sources_for(
-            [
+        inflation = measure == "inflation_rate"
+        sources = [
+            (lambda: eurostat_prices(start_date, end_date), None),
+            (
                 (
-                    lambda: eurostat_model.get_consumer_price_index(
-                        start_date, end_date
-                    ),
-                    None,
+                    ons_model.get_inflation_rate
+                    if inflation
+                    else ons_model.get_consumer_price_index
                 ),
-                (ons_model.get_consumer_price_index, "United Kingdom"),
-                (sbj_model.get_consumer_price_index, "Japan"),
+                "United Kingdom",
+            ),
+            (
                 (
-                    lambda: bis_model.get_consumer_prices(
-                        measure, start_date, end_date
-                    ),
-                    None,
+                    sbj_model.get_inflation_rate
+                    if inflation
+                    else sbj_model.get_consumer_price_index
                 ),
-            ],
-            countries,
-        )
+                "Japan",
+            ),
+            (
+                lambda: bis_model.get_consumer_prices(measure, start_date, end_date),
+                None,
+            ),
+        ]
+
+        if inflation:
+            # Around a hundred further countries the BIS does not cover.
+            sources.append(
+                (lambda: imf_model.get_inflation_rate(start_date, end_date), None)
+            )
+
+        prices = self._combine_sources_for(sources, countries)
+
+        if "United States" not in prices.columns:
+            return prices
+
+        with collect_sources() as recent_sources:
+            recent = self._get_united_states_consumer_prices(measure, "all")
+        history = prices["United States"].dropna()
+        shared = history.index.intersection(recent.dropna().index)
+
+        if measure == "consumer_price_index" and not shared.empty:
+            # Rebased to the BIS's 2010 = 100 on the latest month both have.
+            recent = (
+                recent * history[shared[-1]] / recent.loc[shared[-1], "United States"]
+            )
+
+        return extend_with_recent(prices, recent, "United States", recent_sources)
+
+    def _get_united_states_consumer_prices(
+        self, measure: str, component: str
+    ) -> pd.DataFrame:
+        """
+        Retrieves the US Consumer Price Index for All Urban Consumers (CPI-U), not
+        seasonally adjusted, or its annual rate of change. All items come from the keyless
+        BLS API (about the last three years, for the months it publishes before the BIS);
+        the core index and the components from FRED when a FRED API key is set, for the
+        full history, and from the BLS otherwise.
+
+        Args:
+            measure (str): "inflation_rate" or "consumer_price_index".
+            component (str): "all", "core", "energy", "food", "goods", "services" or
+                "shelter".
+
+        Returns:
+            pd.DataFrame: A single "United States" column indexed by month.
+        """
+        if component != "all" and self._fred_api_key:
+            index = fred_model.get_price_index(
+                f"consumer_{component}",
+                # Two years before the start, for the annual rate of change of the first
+                # months and room for growth and rolling.
+                buffered_start_date(self._start_date, "monthly"),
+                self._end_date,
+                self._fred_api_key,
+            )
+        else:
+            index = bls_model.get_consumer_price_index()
+            index = (
+                index[[component]].rename(columns={component: "United States"})
+                if component in index.columns
+                else pd.DataFrame()
+            )
+
+            if (
+                component != "all"
+                and not index.empty
+                and index.index[0] > pd.Period(self._start_date, freq="M")
+            ):
+                logger.warning(
+                    "Without a FRED API key, the US %s consumer price index starts in %s: "
+                    "the keyless BLS API only returns about the last three years. Set a "
+                    "FRED API key for the full history.",
+                    component,
+                    index.index[0].strftime("%Y-%m"),
+                )
+
+        if measure == "inflation_rate":
+            # A month the BLS did not publish (October 2025) leaves its rate and the one a
+            # year later empty rather than compare the wrong months.
+            return change_over_periods(index, 12)
+
+        return index
 
     def _get_monthly_industrial_prices(
         self, measure: str, countries: list[str] | str | None = None
@@ -553,15 +681,35 @@ class Economics:
                 continue
 
             # A month of overlap, on which both publishers have to agree.
-            recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
+            with collect_sources() as recent_sources:
+                recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
             recent = recent[
                 (recent.index <= pd.Period(self._end_date, freq="D"))
                 # Business days, like the BIS series (the ECB lists every calendar day).
                 & ~recent.index.dayofweek.isin([5, 6])
             ]
-            policy_rate = extend_with_recent(policy_rate, recent, country)
+            policy_rate = extend_with_recent(
+                policy_rate, recent, country, recent_sources
+            )
 
         return policy_rate
+
+    def _get_oecd_unemployment_rate_with_bls(self) -> pd.DataFrame:
+        """
+        The OECD's monthly unemployment rates, with the US extended by the months the BLS
+        has published since (see extend_with_recent).
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by month.
+        """
+        history = oecd_model.get_unemployment_rate(
+            period="monthly", start_date=self._start_date, end_date=self._end_date
+        )
+
+        with collect_sources() as recent_sources:
+            recent = bls_model.get_unemployment_rate()
+
+        return extend_with_recent(history, recent, "United States", recent_sources)
 
     def _get_daily_long_term_interest_rate(
         self, countries: list[str] | str | None = None
@@ -3548,6 +3696,7 @@ class Economics:
         countries: list[str] | str | None = None,
         period: str | None = None,
         oecd_source: bool = False,
+        measure: str = "all",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -3573,10 +3722,23 @@ class Economics:
         every other country (2010 = 100). The base year differs between countries, so
         compare the changes rather than the levels.
 
+        The measure parameter selects the core index (all items less energy and food;
+        Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
+        includes alcohol and tobacco, the BLS does not), goods, services and, for the United
+        States, shelter. These are monthly, from Eurostat (the euro area and the European
+        Economic Area) and the Bureau of Labor Statistics for the United States (CPI-U, not
+        seasonally adjusted, 1982-84 = 100; the full history through FRED when a FRED API
+        key is set, the last three years otherwise). Other countries have all items only.
+
+        The US index of the BIS is the BLS's CPI-U rebased to 2010 = 100, which the BIS
+        publishes a few days after the BLS. The months the BLS has published since are
+        added to it, so a release appears the same day.
+
         Further information about the Global Macro Database (GMDB) variable can be found
         within https://www.globalmacrodata.com/documentation.html
 
-        Also known as: CPI, cost of living index.
+        Also known as: CPI, cost of living index, core CPI, CPI components, energy prices,
+        food prices, shelter costs.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
@@ -3586,6 +3748,10 @@ class Economics:
                 with `oecd_source=True` when the Economics class was initialized with quarterly=True).
             oecd_source (bool, optional): Whether to get the data from the OECD instead of the
                 Global Macro Database (GMDB). Defaults to False.
+            measure (str, optional): "all" for all items, "core" for all items less food and
+                energy, or a component: "energy", "food", "goods", "services" or "shelter"
+                (United States only). Other measures than "all" are monthly, without
+                oecd_source. Defaults to "all".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -3642,9 +3808,11 @@ class Economics:
                 "consumer price index (quarterly data needs oecd_source=True)",
             )
 
+        measure = validate_consumer_price_measure(measure, period, oecd_source)
+
         if not oecd_source and period.lower() == "monthly":
             consumer_price_index = self._get_monthly_price_data(
-                "consumer_price_index", countries
+                "consumer_price_index", countries, measure
             )
         elif oecd_source:
             consumer_price_index = oecd_model.get_consumer_price_index(
@@ -3682,6 +3850,7 @@ class Economics:
         self,
         countries: list[str] | str | None = None,
         period: str | None = None,
+        measure: str = "all",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -3710,6 +3879,18 @@ class Economics:
         India and Brazil, and the IMF for around a hundred more, all republishing the
         national consumer price indices.
 
+        The measure parameter selects the inflation of the core index (all items less energy and food;
+        Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
+        includes alcohol and tobacco, the BLS does not), goods, services and, for the United
+        States, shelter. These are monthly, from Eurostat (the euro area and the European
+        Economic Area) and the Bureau of Labor Statistics for the United States (CPI-U, not
+        seasonally adjusted, 1982-84 = 100; the full history through FRED when a FRED API
+        key is set, the last three years otherwise). Other countries have all items only.
+
+        The US index of the BIS is the BLS's CPI-U rebased to 2010 = 100, which the BIS
+        publishes a few days after the BLS. The months the BLS has published since are
+        added to it, so a release appears the same day.
+
         The result is a decimal fraction (0.041166 for 4.1166%), like every other rate in the
         Finance Toolkit.
 
@@ -3728,12 +3909,16 @@ class Economics:
         figures are the harmonised index (HICP), which differs from national CPIs, for
         example in leaving out the costs of owner-occupied housing.
 
-        Also known as: CPI-based inflation, price increases, consumer prices.
+        Also known as: CPI-based inflation, price increases, consumer prices, core
+        inflation, energy inflation, food inflation, services inflation, shelter inflation.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly or the annual data.
                 Defaults to None, which is the monthly data.
+            measure (str, optional): "all" for all items, "core" for all items less food and
+                energy, or a component: "energy", "food", "goods", "services" or "shelter"
+                (United States only). Other measures than "all" are monthly. Defaults to "all".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -3779,9 +3964,12 @@ class Economics:
             ["monthly", "yearly"],
             "inflation rate",
         )
+        measure = validate_consumer_price_measure(measure, period)
 
         if period == "monthly":
-            inflation_rate = self._get_monthly_price_data("inflation_rate", countries)
+            inflation_rate = self._get_monthly_price_data(
+                "inflation_rate", countries, measure
+            )
         else:
 
             inflation_rate = gmdb_model.get_inflation_rate(
@@ -6585,18 +6773,7 @@ class Economics:
                     (ibge_model.get_unemployment_rate, "Brazil"),
                     # The OECD republishes the BLS figure a month later, so the US is
                     # extended with the months the BLS already has.
-                    (
-                        lambda: extend_with_recent(
-                            oecd_model.get_unemployment_rate(
-                                period="monthly",
-                                start_date=self._start_date,
-                                end_date=self._end_date,
-                            ),
-                            bls_model.get_unemployment_rate(),
-                            "United States",
-                        ),
-                        None,
-                    ),
+                    (self._get_oecd_unemployment_rate_with_bls, None),
                 ],
                 countries,
             )
@@ -8252,7 +8429,7 @@ class Economics:
         index = bis_model.get_commercial_property_prices(
             buffered_start_date(self._start_date, "monthly"), self._end_date
         )
-        commercial_real_estate_prices = index.pct_change(4, fill_method=None)
+        commercial_real_estate_prices = change_over_periods(index, 4)
 
         if self._fred_api_key:
             united_states = fred_model.get_commercial_real_estate_prices(
@@ -11035,7 +11212,15 @@ class Economics:
         "Change %" column, so an unemployment rate of 4.1% is returned as 0.041. Releases
         in other units, such as thousands of jobs or index points, keep their values, as do
         survey levels such as PMIs and confidence indices, which the calendar sometimes
-        labels "%" as well.
+        labels "%" as well. The "Currency" column is the currency of the market a release
+        concerns, not the unit of its value: China's balance of trade is in US dollars
+        while its row shows CNY (the yuan figure is the separate "Balance of Trade Yuan").
+        The "Previous" value is the source's own and can differ from the Actual of the
+        release before it, e.g. after a revision.
+
+        The calendar comes from FinancialModelingPrep and starts in 2013 for most
+        countries; the first release of a series is the first period of its as_series
+        answer.
 
         With as_series=True the releases become time series: the Actual value of every
         event by the period it covers, with a column per country and event and the
@@ -11046,7 +11231,11 @@ class Economics:
         release. The year is that of the release, or the year before when the period starts
         after the release month (a December figure released in January). Several releases of
         the same period, such as a flash estimate and the final figure, keep the latest one
-        published. The index is monthly for monthly events, quarterly for quarterly ones and
+        published. A figure published for two consecutive periods on the same day, such as
+        China's January and February trade figures, is one release of both and is kept once,
+        under the later period (February), leaving January empty; a release without a
+        period, of an event that otherwise has one, is left out. The index is monthly for
+        monthly events, quarterly for quarterly ones and
         daily, at the last day of each period, when events of different frequencies are
         combined. The series can be analysed further with `Econometrics(data=...)`, e.g. how
         unusual the latest value is (get_level_significance) or how long it has been above or

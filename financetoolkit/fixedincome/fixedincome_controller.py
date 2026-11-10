@@ -27,6 +27,7 @@ from financetoolkit.economics import (
     treasury_model,
 )
 from financetoolkit.economics.helpers import (
+    average_monthly_index,
     buffered_start_date,
     resample_to_period,
     validate_period,
@@ -57,6 +58,7 @@ from financetoolkit.fixedincome import (
 )
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = logger_model.get_logger()
@@ -338,6 +340,7 @@ DURATION_TYPES = {
 }
 
 
+@track_sources
 class FixedIncome:
     """
     The Fixed income module contains methods to obtain data related to Central Banks, yield curves, credit
@@ -5114,8 +5117,10 @@ class FixedIncome:
         spread, credit spread.
 
         Args:
-            period (str, optional): Whether to return the daily, weekly or monthly data.
-                Defaults to "daily".
+            period (str, optional): Whether to return the daily, weekly, monthly, quarterly or
+                yearly data. Weekly takes the last day of every week; quarterly and yearly
+                average the monthly averages of the complete quarters and years. Defaults to
+                "daily".
             spread (bool, optional): Whether to return the spreads over the 10-year Treasury
                 yield instead of the yields. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -5152,9 +5157,12 @@ class FixedIncome:
         """
         helpers.require_fred_api_key(self._fred_api_key, "ICE BofA data")
         period = validate_period(
-            period, ["daily", "weekly", "monthly"], "Moody's corporate bond yield"
+            period,
+            ["daily", "weekly", "monthly", "quarterly", "yearly"],
+            "Moody's corporate bond yield",
         )
-        frequency = "monthly" if period == "monthly" else "daily"
+        # Quarters and years average the monthly averages, which reach back to 1919.
+        frequency = "daily" if period in ("daily", "weekly") else "monthly"
 
         moodys = (
             fred_model.get_moodys_corporate_bond_spreads(
@@ -5168,6 +5176,8 @@ class FixedIncome:
 
         if period == "weekly":
             moodys = resample_to_period(moodys, "weekly")
+        elif period in ("quarterly", "yearly"):
+            moodys = average_monthly_index(moodys, period)
 
         return finalize_dataset(
             dataset=moodys,

@@ -624,3 +624,26 @@ def test_goodwill_and_intangible_assets_fall_back_on_the_separate_rows():
     assert np.isnan(result.loc["B", "2022"])
     assert result.loc["B", "2023"] == 5
     assert result.loc["B", "2024"] == 0
+
+
+def test_add_basket_total_sums_the_tickers_per_item():
+    statement = pd.DataFrame(
+        {
+            "2023": [10.0, 2.0, 5.0, 30.0, 4.0, np.nan],
+            "2024": [12.0, 2.0, 6.0, 33.0, 4.0, 7.0],
+        },
+        index=pd.MultiIndex.from_product(
+            [["AAPL", "MSFT"], ["Revenue", "EPS", "Capex"]]
+        ),
+    )
+
+    result = helpers.add_basket_total(statement, ["AAPL", "MSFT"], not_summed=["EPS"])
+
+    # The tickers stay as they are and the Total follows them.
+    pd.testing.assert_frame_equal(result.loc[["AAPL", "MSFT"]], statement)
+    assert result.loc["Total"].index.tolist() == ["Revenue", "EPS", "Capex"]
+    assert result.loc[("Total", "Revenue")].tolist() == [40.0, 45.0]
+    # A per-share figure does not add up, and a missing value leaves the Total empty.
+    assert result.loc[("Total", "EPS")].isna().all()
+    assert np.isnan(result.loc[("Total", "Capex"), "2023"])
+    assert result.loc[("Total", "Capex"), "2024"] == 13.0

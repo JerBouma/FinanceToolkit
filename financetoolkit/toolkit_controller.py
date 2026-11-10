@@ -55,6 +55,7 @@ from financetoolkit.fmp_model import (
 from financetoolkit.fundamentals_model import collect_financial_statements
 from financetoolkit.helpers import (
     LazyDict,
+    add_basket_total,
     determine_availability_dates,
     determine_period_end_dates,
     prepare_supplied_historical_data,
@@ -172,6 +173,7 @@ class Toolkit:
         fred_api_key: str = FRED_API_KEY,
         allow_stale_oecd_cache: bool = True,
         point_in_time: bool = False,
+        basket: bool = False,
     ):
         """
         Initializes a Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
@@ -248,6 +250,27 @@ class Toolkit:
             would have seen them: the statements leave out the periods filed after end_date and daily ratios
             apply a period's figures from its filing day instead of from its period end. See "Point in time"
             below. Defaults to False.
+            basket (bool): Analyse the tickers as one basket as well: a company named "Total" is added
+            whose financial statements are the sums of those of the tickers, so every ratio and model is
+            also calculated for the group as a whole (on the summed figures, not as an average of the
+            ratios) and the market cap of the Total is the sum of theirs. See "Basket" below. Defaults
+            to False.
+
+        Basket:
+
+            With basket=True, the financial statements get a "Total" next to the tickers: each line
+            item of each period is the sum of that item over the tickers, so the capital expenditure of
+            the Total is the combined capital expenditure of the group. The ratios and models read these
+            statements, so they return the Total as well, calculated on the summed figures: the capex
+            coverage ratio of the Total is the combined operating cash flow over the combined capital
+            expenditure, which weighs each company by its size. A figure of the Total is left empty for
+            a period in which a ticker has no value for it, as the sum of the others would understate the
+            group. Per-share figures and share counts (EPS, Weighted Average Shares) do not add up across
+            companies and stay empty, and so do the ratios built on them (P/E, EPS growth); ratios built
+            on the market cap (EV/EBITDA, free cash flow yield) use the summed market cap of the tickers.
+            The figures are only summed when they are in one currency (the currency of the historical
+            data with convert_currency, otherwise the reported currency); for tickers in different
+            currencies no Total is added and a warning says so.
 
         Fiscal periods and calendar periods:
 
@@ -373,6 +396,7 @@ class Toolkit:
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
+        self._basket = basket
 
         self._cache = cache_controller.resolve_cache(use_cached_data)
         self._use_cached_data = self._cache.enabled
@@ -589,6 +613,13 @@ class Toolkit:
             else self._fmp_plan != "Free"
         )
 
+        # Supplied statements get the Total of a basket as they are, without a currency check.
+        self._balance_sheet_statement = self._add_basket_total(
+            self._balance_sheet_statement
+        )
+        self._income_statement = self._add_basket_total(self._income_statement)
+        self._cash_flow_statement = self._add_basket_total(self._cash_flow_statement)
+
         # Initialization of Risk Free Rate
         self._daily_risk_free_rate: pd.DataFrame = pd.DataFrame()
         self._weekly_risk_free_rate: pd.DataFrame = pd.DataFrame()
@@ -705,7 +736,7 @@ class Toolkit:
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
             # The daily ratios use the prices from before the start date as well.
             historical=LazyDict(
-                lambda key: (
+                lambda key: self._with_basket_prices(
                     self._get_module_historical_data(period)
                     if key == "period"
                     else self._get_lookback_historical_data(key)
@@ -887,7 +918,7 @@ class Toolkit:
             # "lookback" is the daily data from a year before the start date, for the
             # models that measure returns over the year before a period end.
             historical_data=LazyDict(
-                lambda key: (
+                lambda key: self._with_basket_prices(
                     self._get_lookback_historical_data("daily")
                     if key == "lookback"
                     else self._get_module_historical_data(key)
@@ -1597,6 +1628,100 @@ class Toolkit:
             allow_stale_oecd_cache=self._allow_stale_oecd_cache,
             cache=self._cache,
             api_key=self._api_key,
+        )
+
+    def _add_basket_total(self, statement: pd.DataFrame) -> pd.DataFrame:
+        """
+        Adds the "Total" of the tickers to a financial statement when the Toolkit analyses them
+        as a basket, see helpers.add_basket_total.
+
+        The figures are summed in the currency they are in: the currency of the historical data
+        when the statements are converted to it, otherwise the reported currency. When the tickers
+        are in different currencies, no Total is added.
+
+        Args:
+            statement (pd.DataFrame): The financial statement of the tickers.
+
+        Returns:
+            pd.DataFrame: The financial statement, with the Total when the Toolkit has basket=True.
+        """
+        if not self._basket or statement.empty:
+            return statement
+
+        tickers = [
+            ticker
+            for ticker in statement.index.unique(level=0)
+            if ticker not in ("Portfolio", "Total")
+        ]
+        if len(tickers) < 2:  # noqa: PLR2004
+            logger.warning(
+                "A basket adds up two or more tickers, so no Total is added for %s.",
+                ", ".join(tickers),
+            )
+            return statement
+
+        if self._convert_currency and not self._statement_currencies.empty:
+            currencies = self._get_listing_currencies().reindex(tickers)
+        elif not self._statistics_statement.empty:
+            reported = self._statistics_statement.xs(
+                "Reported Currency", axis=0, level=1
+            ).reindex(tickers)
+            # The latest currency each ticker reported in.
+            currencies = reported.T.ffill().iloc[-1]
+        else:
+            currencies = pd.Series(dtype=object)
+
+        if len(set(currencies.dropna())) > 1:
+            listed = ", ".join(
+                f"{ticker} ({currency})" for ticker, currency in currencies.items()
+            )
+            logger.warning(
+                "The figures of a basket are summed in one currency, but the tickers are in "
+                "different currencies: %s. No Total is added; set convert_currency=True to "
+                "convert the statements to the currency of the historical data.",
+                listed,
+            )
+            return statement
+
+        return add_basket_total(
+            statement,
+            tickers,
+            not_summed=[
+                "EPS",
+                "EPS Diluted",
+                "Weighted Average Shares",
+                "Weighted Average Shares Diluted",
+            ],
+        )
+
+    def _with_basket_prices(self, historical_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Adds the Total of a basket to the historical data without prices, for the Ratios and
+        Models modules, which calculate the Total like a ticker. A basket has no share price,
+        so its per-share ratios and the models that value a share are NaN, while the ratios
+        built on the market cap use the summed market cap of the tickers.
+
+        Args:
+            historical_data (pd.DataFrame): The historical data, with the columns and the
+                tickers as its column levels.
+
+        Returns:
+            pd.DataFrame: The historical data, with an empty Total for a basket.
+        """
+        if (
+            not self._basket
+            or historical_data.empty
+            or "Total" in historical_data.columns.get_level_values(1)
+        ):
+            return historical_data
+
+        return historical_data.reindex(
+            columns=pd.MultiIndex.from_product(
+                [
+                    historical_data.columns.get_level_values(0).unique(),
+                    [*historical_data.columns.get_level_values(1).unique(), "Total"],
+                ]
+            )
         )
 
     def _get_listing_currencies(self) -> pd.Series:
@@ -5718,8 +5843,8 @@ class Toolkit:
                         financial_statement_name="balance sheet statement",
                     )
 
-            self._balance_sheet_statement = self._remove_unfiled_periods(
-                self._balance_sheet_statement
+            self._balance_sheet_statement = self._add_basket_total(
+                self._remove_unfiled_periods(self._balance_sheet_statement)
             )
 
         if self._remove_invalid_tickers:
@@ -5925,8 +6050,8 @@ class Toolkit:
                         financial_statement_name="income statement",
                     )
 
-            self._income_statement = self._remove_unfiled_periods(
-                self._income_statement
+            self._income_statement = self._add_basket_total(
+                self._remove_unfiled_periods(self._income_statement)
             )
 
         if self._remove_invalid_tickers:
@@ -6157,8 +6282,8 @@ class Toolkit:
                         },
                     )
 
-            self._cash_flow_statement = self._remove_unfiled_periods(
-                self._cash_flow_statement
+            self._cash_flow_statement = self._add_basket_total(
+                self._remove_unfiled_periods(self._cash_flow_statement)
             )
 
         if self._remove_invalid_tickers:

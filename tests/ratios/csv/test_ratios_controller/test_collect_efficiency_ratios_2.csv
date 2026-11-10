@@ -59,6 +59,9 @@ AAPL,Working Capital Turnover Ratio,Lag 3,,,,
 AAPL,Capex Intensity,Lag 1,,0.1391,-0.1023,0.0515
 AAPL,Capex Intensity,Lag 2,,,0.0226,-0.0561
 AAPL,Capex Intensity,Lag 3,,,,0.0752
+AAPL,Net Capital Expenditure,Lag 1,,0.9469,-0.9899,-0.4141
+AAPL,Net Capital Expenditure,Lag 2,,,0.8943,-1.8141
+AAPL,Net Capital Expenditure,Lag 3,,,,0.8505
 AAPL,Capex to Depreciation,Lag 1,,0.486,-0.0184,-0.0134
 AAPL,Capex to Depreciation,Lag 2,,,0.4586,-0.0316
 AAPL,Capex to Depreciation,Lag 3,,,,0.4391
@@ -128,6 +131,9 @@ MSFT,Working Capital Turnover Ratio,Lag 3,,,,
 MSFT,Capex Intensity,Lag 1,,0.1361,-0.0179,0.1004
 MSFT,Capex Intensity,Lag 2,,,0.1157,0.0807
 MSFT,Capex Intensity,Lag 3,,,,0.2278
+MSFT,Net Capital Expenditure,Lag 1,,2.3784,0.0548,0.5114
+MSFT,Net Capital Expenditure,Lag 2,,,2.5637,0.5942
+MSFT,Net Capital Expenditure,Lag 3,,,,4.386
 MSFT,Capex to Depreciation,Lag 1,,0.4624,-0.0639,0.2276
 MSFT,Capex to Depreciation,Lag 2,,,0.3689,0.1491
 MSFT,Capex to Depreciation,Lag 3,,,,0.6805

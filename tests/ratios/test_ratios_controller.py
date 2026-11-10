@@ -1623,17 +1623,19 @@ def test_asset_coverage_ratio_does_not_need_the_combined_intangibles_row(
     )
 
 
-def test_get_market_cap_basket(recorder, ratios_module, monkeypatch):
-    monkeypatch.setattr(
-        ratios_module,
-        "_currency_function",
-        lambda: pd.Series({"AAPL": "USD", "MSFT": "USD"}),
-    )
+def test_get_market_cap_basket(recorder, ratios_module, basket_toolkit, monkeypatch):
+    basket_ratios = basket_toolkit.ratios
+    for module in (ratios_module, basket_ratios):
+        monkeypatch.setattr(
+            module,
+            "_currency_function",
+            lambda: pd.Series({"AAPL": "USD", "MSFT": "USD"}),
+        )
 
     market_cap = ratios_module.get_market_cap(rounding=None)
-    basket = ratios_module.get_market_cap(basket=True, rounding=None)
+    basket = basket_ratios.get_market_cap(rounding=None)
     share = ratios_module.get_market_cap(share=True)
-    daily_basket = ratios_module.get_market_cap(show_daily=True, basket=True)
+    daily_basket = basket_ratios.get_market_cap(show_daily=True)
 
     # The Total adds up the tickers and each share is a part of it.
     pd.testing.assert_series_equal(
@@ -1650,15 +1652,20 @@ def test_get_market_cap_basket(recorder, ratios_module, monkeypatch):
     recorder.capture(daily_basket.tail(5))
 
 
-def test_get_market_cap_basket_refuses_mixed_currencies(ratios_module, monkeypatch):
-    monkeypatch.setattr(
-        ratios_module,
-        "_currency_function",
-        lambda: pd.Series({"AAPL": "USD", "MSFT": "EUR"}),
-    )
+def test_get_market_cap_basket_refuses_mixed_currencies(
+    ratios_module, basket_toolkit, monkeypatch
+):
+    basket_ratios = basket_toolkit.ratios
+    for module in (ratios_module, basket_ratios):
+        monkeypatch.setattr(
+            module,
+            "_currency_function",
+            lambda: pd.Series({"AAPL": "USD", "MSFT": "EUR"}),
+        )
 
     # Market caps in different currencies can't be summed.
-    assert ratios_module.get_market_cap(basket=True).empty
+    assert basket_ratios.get_market_cap().empty
+    assert ratios_module.get_market_cap(share=True).empty
     assert ratios_module.get_market_cap_to_gdp().empty
     assert not ratios_module.get_market_cap().empty
 
@@ -1683,7 +1690,7 @@ def test_get_market_cap_to_gdp(recorder, ratios_module, monkeypatch):
         lambda: gross_domestic_product,
     )
 
-    basket = ratios_module.get_market_cap(basket=True, rounding=None).loc["Total"]
+    basket = ratios_module.get_market_cap(rounding=None).sum(axis=0, skipna=False)
     market_cap_to_gdp = ratios_module.get_market_cap_to_gdp(rounding=None)
     daily = ratios_module.get_market_cap_to_gdp(country="China", show_daily=True)
 
@@ -1697,3 +1704,54 @@ def test_get_market_cap_to_gdp(recorder, ratios_module, monkeypatch):
 
     recorder.capture(market_cap_to_gdp)
     recorder.capture(daily.tail(5))
+
+
+def test_basket_ratios_are_calculated_on_the_summed_statements(
+    recorder, ratios_module, basket_toolkit
+):
+    basket_ratios = basket_toolkit.ratios
+    cash_flow = basket_toolkit.get_cash_flow_statement(rounding=None)
+    coverage = basket_ratios.get_capex_coverage_ratio(rounding=None)
+
+    # The Total is a company of its own: its ratio is the ratio of the summed figures,
+    # not an average of the ratios of the tickers.
+    pd.testing.assert_series_equal(
+        coverage.loc["Total"],
+        cash_flow.loc[("Total", "Operating Cash Flow")]
+        / cash_flow.loc[("Total", "Capital Expenditure")].abs(),
+        check_names=False,
+    )
+    # The tickers themselves are not affected by the basket.
+    pd.testing.assert_frame_equal(
+        coverage.drop(index="Total"),
+        ratios_module.get_capex_coverage_ratio(rounding=None),
+    )
+    pd.testing.assert_frame_equal(
+        basket_ratios.collect_all_ratios(rounding=None).drop(index="Total", level=0),
+        ratios_module.collect_all_ratios(rounding=None),
+    )
+
+    # Per-share ratios have no Total, the ratios built on the market cap use the summed one.
+    assert basket_ratios.get_earnings_per_share().loc["Total"].isna().all()
+    assert basket_ratios.get_ev_to_ebitda_ratio().loc["Total"].notna().any()
+
+    recorder.capture(coverage)
+    recorder.capture(basket_ratios.get_free_cash_flow_yield())
+
+
+def test_get_net_capital_expenditure(recorder, ratios_module):
+    net_capital_expenditure = ratios_module.get_net_capital_expenditure(rounding=None)
+    cash_flow = ratios_module._cash_flow_statement
+
+    expected = (
+        cash_flow.loc[:, "Capital Expenditure", :].abs()
+        - cash_flow.loc[:, "Depreciation and Amortization", :]
+    )
+    pd.testing.assert_frame_equal(
+        net_capital_expenditure,
+        expected.loc[:, net_capital_expenditure.columns],
+        check_names=False,
+    )
+
+    recorder.capture(net_capital_expenditure)
+    recorder.capture(ratios_module.get_net_capital_expenditure(trailing=2))

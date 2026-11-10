@@ -303,3 +303,24 @@ def test_get_streaks_zeros_ties_and_single_runs():
 
     with pytest.raises(ValueError, match="no observations"):
         diagnostics_model.get_streaks(pd.Series([np.nan], index=days[:1]))
+
+
+def test_get_level_significance_change_since_start():
+    months = pd.period_range("2021-01", periods=3, freq="M")
+
+    # US housing starts from January 2021 to their latest month.
+    starts = diagnostics_model.get_level_significance(
+        pd.Series([1624.0, 1500.0, 1221.0], index=months)
+    )
+    assert starts["Start Value"] == 1624  # noqa: PLR2004
+    assert starts["Change Since Start"] == pytest.approx(1221 / 1624 - 1)
+
+    # A rise from a negative value is positive; from zero there is no relative change.
+    negative = diagnostics_model.get_level_significance(
+        pd.Series([-0.02, 0.0, 0.01], index=months)
+    )
+    assert negative["Change Since Start"] == pytest.approx(1.5)
+    zero = diagnostics_model.get_level_significance(
+        pd.Series([0.0, 0.01, 0.02], index=months)
+    )
+    assert pd.isna(zero["Change Since Start"])

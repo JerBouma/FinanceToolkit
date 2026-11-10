@@ -107,3 +107,65 @@ def test_maturity_in_years_reads_days_and_weeks():
     assert fixedincome_controller._maturity_in_years("6M") == 0.5
     with pytest.raises(ValueError):
         fixedincome_controller._maturity_in_years("ten years")
+
+
+@pytest.fixture
+def weekly_mortgage_rates(monkeypatch):
+    """The 30-year mortgage rate of three survey dates, read without a FRED API key."""
+    from financetoolkit.economics import freddie_mac_model
+
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    dates = pd.PeriodIndex(["2021-01-07", "2023-10-26", "2026-11-05"], freq="D")
+    monkeypatch.setattr(
+        freddie_mac_model,
+        "get_mortgage_rate_30_year",
+        lambda: pd.DataFrame({"United States": [0.0265, 0.0779, 0.0718]}, index=dates),
+    )
+    return fixedincome_controller.FixedIncome(
+        start_date="2021-01-01",
+        end_date="2026-11-06",
+        rounding=None,
+        use_cached_data=False,
+    )
+
+
+def test_get_loan_payment_follows_the_mortgage_rate(weekly_mortgage_rates):
+    payments = weekly_mortgage_rates.get_loan_payment()
+
+    assert list(payments.columns) == [
+        "Rate",
+        "Payment",
+        "Total Interest",
+        "First Payment Interest",
+    ]
+    assert payments["Payment"].iloc[0] == pytest.approx(1611.8552, abs=1e-4)
+    assert payments["Payment"].iloc[-1] == pytest.approx(2709.7393, abs=1e-4)
+    assert payments["Total Interest"].iloc[-1] == pytest.approx(575_506.16, abs=0.01)
+    assert payments["First Payment Interest"].iloc[0] == pytest.approx(
+        883.3333, abs=1e-4
+    )
+
+
+def test_get_affordable_loan_keeps_the_first_payment(weekly_mortgage_rates):
+    affordable = weekly_mortgage_rates.get_affordable_loan()
+
+    assert affordable["Affordable Loan"].iloc[0] == pytest.approx(400_000)
+    assert affordable["Affordable Loan"].iloc[-1] == pytest.approx(237_935.09, abs=0.01)
+    assert affordable["Change"].iloc[-1] == pytest.approx(237_935.09 / 400_000 - 1)
+
+    # A payment of its own is carried at every rate.
+    own = weekly_mortgage_rates.get_affordable_loan(payment=2000)
+    assert (own["Payment"] == 2000).all()  # noqa: PLR2004
+
+
+def test_get_amortization_schedule_reads_the_rate_of_a_date(weekly_mortgage_rates):
+    latest = weekly_mortgage_rates.get_amortization_schedule()
+    assert latest["Rate"].iloc[0] == 0.0718  # noqa: PLR2004
+    assert latest["Interest"].iloc[0] == pytest.approx(2393.3333, abs=1e-4)
+
+    # A date between two surveys reads the last survey before it.
+    earlier = weekly_mortgage_rates.get_amortization_schedule(date="2023-11-01")
+    assert earlier["Rate"].iloc[0] == 0.0779  # noqa: PLR2004
+
+    # Before the first survey there is no rate, which comes back empty.
+    assert weekly_mortgage_rates.get_amortization_schedule(date="2020-12-31").empty

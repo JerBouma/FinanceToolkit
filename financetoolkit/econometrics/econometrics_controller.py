@@ -6949,7 +6949,7 @@ class Econometrics:
         """
         Calculate how unusual the latest value of every series is: its percentile in the series'
         own history and the last dates the series was at least as high ("the highest since") and at
-        least as low ("the lowest since").
+        least as low ("the lowest since"), next to its change since the first observation.
 
         Where `get_move_significance` (Risk) measures how unusual a move is, this measures how
         unusual a level is, which is the question for rates and macroeconomic series: a 10-year
@@ -6964,15 +6964,22 @@ class Econometrics:
         - Percentile = (Count(x(s) < x(T)) + 0.5 * Count(x(s) = x(T))) / Count(s), over s < T
         - Highest Since = the last date s < T with x(s) >= x(T)
         - Lowest Since = the last date s < T with x(s) <= x(T)
+        - Change Since Start = (x(T) - x(0)) / |x(0)|
 
-        Where x(T) is the latest value of a series and s runs over its earlier observations. An
+        Where x(T) is the latest value of a series, x(0) its first observation and s runs over its
+        earlier observations. An
         earlier value equal to the latest one counts as half (the percentile rank), so a policy
         rate that has not changed for years sits in the middle of its own ties. Highest Since is
         NaN when no earlier value was as high, which makes the latest value the highest of the
-        history; Lowest Since likewise.
+        history; Lowest Since likewise. The Change Since Start is the change between the first and
+        the latest observation in the range, so the start and end date choose the two dates to
+        compare (housing starts from January 2021 to their latest month with period="monthly");
+        it is relative to the absolute first value, so a rise from a negative value is positive,
+        and NaN when the first value is zero.
 
         Also known as: highest since, lowest since, record high, multi-year high, level
-        percentile, historical percentile, how unusual is the latest value.
+        percentile, historical percentile, how unusual is the latest value, change since,
+        change between two dates, cumulative change.
 
         Args:
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -6984,17 +6991,20 @@ class Econometrics:
             spread_over (str | None, optional): The name of a series to subtract from every
                 other series, so the spreads over it are measured instead (named "<series> -
                 <spread_over>"), e.g. producer price inflation over consumer price inflation.
-                Defaults to None, which measures the series themselves.
+                The spread exists on the dates both series have, so with period="daily" a weekly
+                series minus a daily one is measured on the weekly dates. Defaults to None, which
+                measures the series themselves.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
 
         Returns:
-            pd.DataFrame: Per series the Start Date and number of Observations of its history,
-            the Latest Date and Latest Value, the Percentile (decimal) and the Highest Since and
-            Lowest Since dates (as text: the dates of the observations, e.g. 2002-05-31 for a
-            monthly series, or the periods, e.g. 2002-05 with period="monthly").
+            pd.DataFrame: Per series the Start Date, Start Value and number of Observations of its
+            history, the Latest Date and Latest Value, the Change Since Start (decimal), the
+            Percentile (decimal) and the Highest Since and Lowest Since dates (as text: the dates
+            of the observations, e.g. 2002-05-31 for a monthly series, or the periods, e.g.
+            2002-05 with period="monthly").
 
         Notes:
         - The answer depends on the history it is measured against: the history starts at the start
@@ -7023,15 +7033,17 @@ class Econometrics:
 
         Which returns:
 
-        |               | United States   | Germany    | Japan      |
-        |:--------------|:----------------|:-----------|:-----------|
-        | Start Date    | 2000-01-31      | 2000-01-31 | 2000-01-31 |
-        | Observations  | 322             | 322        | 322        |
-        | Latest Date   | 2026-10-31      | 2026-10-31 | 2026-10-31 |
-        | Latest Value  | 0.0513          | 0.0342     | 0.0276     |
-        | Percentile    | 0.9377          | 0.6854     | 0.9907     |
-        | Highest Since | 2002-05-31      | 2026-09-30 | 2026-09-30 |
-        | Lowest Since  | 2026-09-30      | 2026-08-31 | 2026-06-30 |
+        |                    | United States   | Germany    | Japan      |
+        |:-------------------|:----------------|:-----------|:-----------|
+        | Start Date         | 2000-01-31      | 2000-01-31 | 2000-01-31 |
+        | Start Value        | 0.0666          | 0.0554     | 0.0169     |
+        | Observations       | 322             | 322        | 322        |
+        | Latest Date        | 2026-10-31      | 2026-10-31 | 2026-10-31 |
+        | Latest Value       | 0.0513          | 0.0342     | 0.0276     |
+        | Change Since Start | -0.2297         | -0.3827    | 0.6331     |
+        | Percentile         | 0.9377          | 0.6854     | 0.9907     |
+        | Highest Since      | 2002-05-31      | 2026-09-30 | 2026-09-30 |
+        | Lowest Since       | 2026-09-30      | 2026-08-31 | 2026-06-30 |
         """
         period = period if period else "daily"
         levels = self._get_spreads(
@@ -7098,7 +7110,9 @@ class Econometrics:
             spread_over (str | None, optional): The name of a series to subtract from every
                 other series, so the streaks of the spreads over it are measured instead (named
                 "<series> - <spread_over>"), e.g. producer price inflation over consumer price
-                inflation. Defaults to None, which measures the series themselves.
+                inflation. The spread exists on the dates both series have, so with
+                period="daily" a weekly series minus a daily one is measured on the weekly dates.
+                Defaults to None, which measures the series themselves.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.

@@ -509,27 +509,30 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
 def get_level_significance(levels: pd.Series) -> pd.Series:
     """
     Calculate how unusual the latest value of a series is compared with its own history: the
-    percentile of the latest value among the earlier values and the last dates the series was
-    at least as high and at least as low.
+    percentile of the latest value among the earlier values, the last dates the series was
+    at least as high and at least as low, and its change since the first observation.
 
     The formula is as follows:
 
     - Percentile = (Count(x(s) < x(T)) + 0.5 * Count(x(s) = x(T))) / Count(s), over s < T
     - Highest Since = the last date s < T with x(s) >= x(T)
     - Lowest Since = the last date s < T with x(s) <= x(T)
+    - Change Since Start = (x(T) - x(0)) / |x(0)|
 
     Where x(T) is the latest value and s runs over every earlier observation. The percentile counts
     an earlier value equal to the latest one as half, the percentile rank, so a rate that has been
     unchanged for years is in the middle of its own ties rather than at their bottom. Highest Since
     is NaN when no earlier value was as high, which makes the latest value the highest of the
-    history, and Lowest Since likewise.
+    history, and Lowest Since likewise. x(0) is the first observation; the change is relative to
+    its absolute value, so a series that rises from a negative value has a positive change, and
+    it is NaN when the first observation is zero.
 
     Args:
         levels (pd.Series): The values of a single series by date; missing values are left out.
 
     Returns:
-        pd.Series: The Start Date, Observations, Latest Date, Latest Value, Percentile, Highest
-        Since and Lowest Since, the dates as text.
+        pd.Series: The Start Date, Start Value, Observations, Latest Date, Latest Value, Change
+        Since Start (a decimal), Percentile, Highest Since and Lowest Since, the dates as text.
     """
     observed = levels.dropna()
 
@@ -538,6 +541,7 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
 
     labels = observed.index.astype(str)
     earlier = observed.to_numpy(dtype=float)[:-1]
+    first = float(observed.iloc[0])
     latest = float(observed.iloc[-1])
 
     as_high = np.flatnonzero(earlier >= latest)
@@ -546,9 +550,11 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
     return pd.Series(
         {
             "Start Date": labels[0],
+            "Start Value": first,
             "Observations": len(observed),
             "Latest Date": labels[-1],
             "Latest Value": latest,
+            "Change Since Start": (latest - first) / abs(first) if first else np.nan,
             "Percentile": (
                 (np.sum(earlier < latest) + 0.5 * np.sum(earlier == latest))
                 / len(earlier)

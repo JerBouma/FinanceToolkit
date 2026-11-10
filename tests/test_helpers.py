@@ -624,3 +624,33 @@ def test_goodwill_and_intangible_assets_fall_back_on_the_separate_rows():
     assert np.isnan(result.loc["B", "2022"])
     assert result.loc["B", "2023"] == 5
     assert result.loc["B", "2024"] == 0
+
+
+def test_deflate_with_price_index_uses_the_latest_month_as_base():
+    months = pd.period_range("2024-01", "2024-04", freq="M")
+    values = pd.DataFrame({"Gold": [100.0, 100.0, 100.0, 100.0]}, index=months)
+    price_index = pd.Series([50.0, np.nan, 100.0], index=months[[0, 1, 2]])
+
+    real = helpers.deflate_with_price_index(values, price_index)
+
+    # January's prices were worth twice as much in March money; a month the index skipped
+    # has no real value and a month after its latest keeps its nominal value.
+    assert real["Gold"].iloc[0] == 200.0
+    assert np.isnan(real["Gold"].iloc[1])
+    assert real["Gold"].iloc[2:].tolist() == [100.0, 100.0]
+
+
+def test_change_over_periods_compares_the_same_period_a_year_earlier():
+    from financetoolkit.economics.helpers import change_over_periods
+
+    months = pd.period_range("2024-01", "2025-12", freq="M").delete(21)
+    index = pd.DataFrame({"Japan": range(100, 100 + len(months))}, index=months)
+
+    change = change_over_periods(index, 12)
+
+    # October 2025 is missing: it and the month a year later are not compared with
+    # whichever row is twelve places back.
+    assert pd.isna(change.loc[pd.Period("2025-10", "M"), "Japan"])
+    assert change.loc[pd.Period("2025-11", "M"), "Japan"] == pytest.approx(
+        121 / 110 - 1
+    )

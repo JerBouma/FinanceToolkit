@@ -998,3 +998,19 @@ def test_get_wald_test_takes_lists(econometrics_module):
 
     assert not from_lists.empty
     pd.testing.assert_series_equal(from_lists, from_arrays)
+
+
+def test_level_significance_measures_the_ratio_of_two_series():
+    from financetoolkit import Econometrics
+
+    months = pd.period_range("2026-01", "2026-06", freq="M")
+    data = pd.DataFrame(
+        {"Exports": [10.0, 12, 14, 16, 18, 20], "GDP": [100.0] * 6}, index=months
+    )
+
+    significance = Econometrics(data=data).get_level_significance(
+        spread_over="GDP", ratio=True
+    )
+
+    assert significance.index.tolist() == ["Exports / GDP"]
+    assert significance.loc["Exports / GDP", "Latest Value"] == pytest.approx(0.2)

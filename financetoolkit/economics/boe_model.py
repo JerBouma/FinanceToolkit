@@ -38,6 +38,8 @@ YIELD_CURVE_SERIES = {"IUDSNPY": "5Y", "IUDMNPY": "10Y", "IUDLNPY": "20Y"}
 SERIES = {
     # Sterling Overnight Index Average (SONIA), daily.
     "overnight_rate": "IUDSOIA",
+    # Bank Rate, the Bank of England's policy rate, daily.
+    "bank_rate": "IUDBEDR",
 }
 
 COUNTRY = "United Kingdom"
@@ -172,6 +174,16 @@ def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
         pd.DataFrame: The rate as a decimal, indexed by day.
     """
     return collect_boe_series(SERIES["overnight_rate"], "SONIA", start_date, end_date)
+
+
+def get_bank_rate(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the daily Bank Rate, the policy rate of the Bank of England.
+
+    Returns:
+        pd.DataFrame: The rate as a decimal, indexed by day.
+    """
+    return collect_boe_series(SERIES["bank_rate"], "Bank Rate", start_date, end_date)
 
 
 YIELD_CURVE_URL = (

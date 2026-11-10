@@ -234,3 +234,8 @@ def test_the_black_litterman_risk_aversion_is_a_number_or_market(
     )
 
     assert captured[-1]["risk_aversion"] == expected
+
+
+def test_econometrics_passes_deflate_with_to_its_series(schemas):
+    assert "deflate_with" in schemas["econometrics"]
+    assert "deflate_with" not in schemas["performance"]

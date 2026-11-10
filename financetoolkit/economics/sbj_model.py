@@ -9,7 +9,7 @@ import pandas as pd
 import requests
 
 from financetoolkit.cache import policy_model
-from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.economics.helpers import change_over_periods, collect_cached_data
 from financetoolkit.utilities.requests_model import get_request
 
 BASE_URL = "https://www.stat.go.jp/data/cpi/"
@@ -165,4 +165,4 @@ def get_inflation_rate() -> pd.DataFrame:
     """
     consumer_price_index = get_consumer_price_index()
 
-    return consumer_price_index.pct_change(12, fill_method=None).dropna()
+    return change_over_periods(consumer_price_index, 12).dropna(how="all")

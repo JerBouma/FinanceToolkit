@@ -26,6 +26,7 @@ from financetoolkit.risk.helpers import as_float, determine_within_historical_da
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIODS_PER_YEAR,
     apply_rounding,
@@ -133,6 +134,7 @@ def _get_out_of_sample_estimates(
     return pd.DataFrame(estimates, index=returns.index, columns=returns.columns)
 
 
+@track_sources
 class Risk:
     """
     The Risk module is meant to calculate important risk metrics such

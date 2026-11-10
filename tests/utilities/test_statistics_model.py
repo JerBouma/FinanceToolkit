@@ -796,3 +796,42 @@ def test_finalize_dataset_reports_a_zero_denominator_as_nan():
     assert finalized.loc["AAPL"].isna().tolist() == [False, True, False, False]
     # One undefined period does not turn the whole Z-Score row into NaN.
     assert standardized.loc["AAPL"].isna().tolist() == [False, True, False, False]
+
+
+def test_finalize_dataset_keeps_a_skipped_period_as_an_empty_row():
+    dataset = pd.DataFrame(
+        {"United States": [100.0, 101.0, 103.0, 104.0]},
+        index=pd.PeriodIndex(["2025-08", "2025-09", "2025-11", "2025-12"], freq="M"),
+    )
+
+    levels = statistics_model.finalize_dataset(
+        dataset,
+        start_date=None,
+        end_date=None,
+        axis="rows",
+        row_slice=True,
+        dropna=True,
+        default_rounding=None,
+    )
+    growth = statistics_model.finalize_dataset(
+        dataset,
+        start_date=None,
+        end_date=None,
+        axis="rows",
+        row_slice=True,
+        dropna=True,
+        growth=True,
+        default_rounding=4,
+    )
+
+    # October is shown as missing, and November is not compared with September.
+    assert levels.index.astype(str).tolist() == [
+        "2025-08",
+        "2025-09",
+        "2025-10",
+        "2025-11",
+        "2025-12",
+    ]
+    assert np.isnan(levels.loc["2025-10", "United States"])
+    assert np.isnan(growth.loc["2025-11", "United States"])
+    assert growth.loc["2025-12", "United States"] == pytest.approx(0.0097, abs=1e-4)

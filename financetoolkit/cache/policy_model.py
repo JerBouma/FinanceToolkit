@@ -41,6 +41,7 @@ NORGES_BANK = "NorgesBank"
 EIOPA = "EIOPA"
 INTERNATIONAL_MONETARY_FUND = "IMF"
 SHILLER = "Shiller"
+WORLD_BANK = "WorldBank"
 CBOE = "Cboe"
 STOXX = "STOXX"
 RESERVE_BANK_OF_AUSTRALIA = "ReserveBankOfAustralia"
@@ -253,6 +254,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{STATISTICS_BUREAU_OF_JAPAN}.series": CachePolicy(ttl_seconds=DAY),
     # The keyless BLS API allows 25 requests a day, so the latest releases are fetched once.
     f"{BUREAU_OF_LABOR_STATISTICS}.series": CachePolicy(ttl_seconds=DAY),
+    # The consumer prices are one request for every measure, kept for six hours so the
+    # month a release publishes appears the same day.
+    f"{BUREAU_OF_LABOR_STATISTICS}.consumer_prices": CachePolicy(ttl_seconds=DAY // 4),
     # A past year of the Treasury yield curve is final; only the current year changes.
     f"{US_TREASURY}.par_yield_curve": CachePolicy(ttl_seconds=DAY),
     f"{US_TREASURY}.par_yield_curve_year": CachePolicy(ttl_seconds=30 * DAY),
@@ -288,6 +292,8 @@ POLICIES: dict[str, CachePolicy] = {
     f"{INTERNATIONAL_MONETARY_FUND}.codelist": CachePolicy(ttl_seconds=30 * DAY),
     # Updated about once a month.
     f"{SHILLER}.stock_market_data": CachePolicy(ttl_seconds=7 * DAY),
+    # The Pink Sheet is updated in the first days of every month.
+    f"{WORLD_BANK}.commodity_prices": CachePolicy(ttl_seconds=7 * DAY),
     # Index histories published whole, one file per index, updated after every close.
     f"{CBOE}.index": CachePolicy(ttl_seconds=DAY),
     f"{CBOE}.option_chain": CachePolicy(ttl_seconds=900),

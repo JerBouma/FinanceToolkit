@@ -37,6 +37,7 @@ from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
@@ -88,6 +89,7 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["scores"] + [
 ]
 
 
+@track_sources
 class Models:
     """
     The Models module is meant to execute well-known models such

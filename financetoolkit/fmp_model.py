@@ -25,6 +25,7 @@ from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.sources_model import record_source
 
 logger = logger_model.get_logger()
 
@@ -602,6 +603,7 @@ def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
         older = pd.Series(dtype=float)
 
     if not older.empty:
+        record_source(policy_model.YAHOO_FINANCE)
         older.index = pd.DatetimeIndex(older.index).tz_localize(None).to_period("D")
         older = older[older.index < first_payment]
 

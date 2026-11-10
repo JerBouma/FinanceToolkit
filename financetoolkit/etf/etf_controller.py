@@ -10,6 +10,7 @@ from financetoolkit.etf import etf_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
 
 # The examples' output tables are wider than the line length.
@@ -51,6 +52,7 @@ def _major_currency(currency: object) -> tuple[str | None, float]:
     return currency.upper(), 1.0
 
 
+@track_sources
 class ETF:
     """
     The ETF module analyzes exchange traded funds (and other funds): what they hold, what they

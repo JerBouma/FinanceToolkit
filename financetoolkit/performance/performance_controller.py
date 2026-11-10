@@ -26,6 +26,7 @@ from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     PERIODS_PER_YEAR,
@@ -69,6 +70,7 @@ FACTOR_COLLECTIONS = {
 STYLE_TICKERS = ["IWD", "IWF", "IWN", "IWO", "AGG", "BIL"]
 
 
+@track_sources
 class Performance:
     """
     The Performance module is meant to calculate important performance metrics such

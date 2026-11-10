@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 
 from financetoolkit.cache.request_model import CREDENTIAL_PARAMETERS, redact_credentials
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.sources_model import record_url
 
 logger = logger_model.get_logger()
 
@@ -122,10 +123,15 @@ def get_request(
 
     def send(verify: bool | str) -> requests.Response:
         if data is None:
-            return SESSION.get(url, headers=headers, timeout=timeout, verify=verify)
-        return SESSION.post(
-            url, data=data, headers=headers, timeout=timeout, verify=verify
-        )
+            response = SESSION.get(url, headers=headers, timeout=timeout, verify=verify)
+        else:
+            response = SESSION.post(
+                url, data=data, headers=headers, timeout=timeout, verify=verify
+            )
+        # Only an answer counts: a source that fails is not one the data came from.
+        if response.ok:
+            record_url(url)
+        return response
 
     try:
         response = send(verify=True)

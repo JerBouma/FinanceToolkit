@@ -18,6 +18,7 @@ from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.currencies_model import to_yahoo_finance_symbol
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.sources_model import record_source
 
 logger = logger_model.get_logger()
 
@@ -106,6 +107,9 @@ def get_financial_statement(
         # yfinance only hands back a dict when asked with as_dict=True, which never
         # happens here; treating anything else as "no data" keeps the fallback path.
         return pd.DataFrame()
+
+    if not financial_statement.empty:
+        record_source(policy_model.YAHOO_FINANCE)
 
     if financial_statement.empty:
         error_code = (
@@ -267,6 +271,7 @@ def get_company_information(ticker: str) -> dict[str, str]:
         fiscal year end, each an empty string when Yahoo Finance does not report it.
     """
     if ticker in COMPANY_INFORMATION_CACHE:
+        record_source(policy_model.YAHOO_FINANCE)
         return COMPANY_INFORMATION_CACHE[ticker]
 
     cache = get_active_cache()
@@ -296,6 +301,7 @@ def get_company_information(ticker: str) -> dict[str, str]:
         error_model.report_request_failure()
         return {"financialCurrency": "", "lastFiscalYearEnd": ""}
 
+    record_source(policy_model.YAHOO_FINANCE)
     fiscal_year_end = information.get("lastFiscalYearEnd")
 
     company_information = {
@@ -475,6 +481,8 @@ def get_historical_data(
     if historical_data.empty:
         # No prices in the range, such as before the listing.
         return pd.DataFrame()
+
+    record_source(policy_model.YAHOO_FINANCE)
 
     if historical_data.loc[start:end].empty:
         logger.warning(

@@ -32,6 +32,7 @@ from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = get_logger()
@@ -43,6 +44,7 @@ logger = get_logger()
 BENCHMARK_TICKER = "Benchmark"
 
 
+@track_sources
 class Econometrics:
     """
     The Econometrics module is meant to test the statistical properties of a price
@@ -6972,6 +6974,7 @@ class Econometrics:
         The formula is as follows:
 
         - Percentile = (Count(x(s) < x(T)) + 0.5 * Count(x(s) = x(T))) / Count(s), over s < T
+        - Rank = 1 + Count(x(s) > x(T)), over s < T: 1 for the highest of the history
         - Highest Since = the last date s < T with x(s) >= x(T)
         - Lowest Since = the last date s < T with x(s) <= x(T)
         - Change Since Start = (x(T) - x(0)) / |x(0)|
@@ -7033,7 +7036,8 @@ class Econometrics:
             pd.DataFrame: Per series the Start Date, Start Value and number of Observations of its
             history, the Latest Date and Latest Value, the Change Since Start (decimal), the
             Multiple Since Start and Annualised Change (decimal, the compound annual rate, NaN
-            unless both values are positive), the Percentile (decimal), the Highest Since and
+            unless both values are positive), the Percentile (decimal), the Rank (1 for the
+            highest of the history: "the 3rd highest since" the Start Date), the Highest Since and
             Lowest Since dates, the Highest and Lowest with their Highest Date and Lowest Date
             and the Change From Highest and Change From Lowest (decimals), and the Largest
             Drawdown (decimal) with its Drawdown Peak Date, Drawdown Trough Date and Recovery
@@ -7078,6 +7082,7 @@ class Econometrics:
         | Multiple Since Start | 0.7703          | 0.6173     | 1.6331     |
         | Annualised Change    | -0.0097         | -0.0179    | 0.0185     |
         | Percentile           | 0.9377          | 0.6854     | 0.9907     |
+        | Rank                 | 21              | 102        | 4          |
         | Highest Since        | 2002-05-31      | 2026-09-30 | 2026-09-30 |
         | Lowest Since         | 2026-09-30      | 2026-08-31 | 2026-06-30 |
         | Highest              | 0.0666          | 0.0554     | 0.0305     |

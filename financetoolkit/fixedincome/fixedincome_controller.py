@@ -58,6 +58,7 @@ from financetoolkit.fixedincome import (
 )
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = logger_model.get_logger()
@@ -339,6 +340,7 @@ DURATION_TYPES = {
 }
 
 
+@track_sources
 class FixedIncome:
     """
     The Fixed income module contains methods to obtain data related to Central Banks, yield curves, credit

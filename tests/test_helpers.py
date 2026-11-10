@@ -638,3 +638,19 @@ def test_deflate_with_price_index_uses_the_latest_month_as_base():
     assert real["Gold"].iloc[0] == 200.0
     assert np.isnan(real["Gold"].iloc[1])
     assert real["Gold"].iloc[2:].tolist() == [100.0, 100.0]
+
+
+def test_change_over_periods_compares_the_same_period_a_year_earlier():
+    from financetoolkit.economics.helpers import change_over_periods
+
+    months = pd.period_range("2024-01", "2025-12", freq="M").delete(21)
+    index = pd.DataFrame({"Japan": range(100, 100 + len(months))}, index=months)
+
+    change = change_over_periods(index, 12)
+
+    # October 2025 is missing: it and the month a year later are not compared with
+    # whichever row is twelve places back.
+    assert pd.isna(change.loc[pd.Period("2025-10", "M"), "Japan"])
+    assert change.loc[pd.Period("2025-11", "M"), "Japan"] == pytest.approx(
+        121 / 110 - 1
+    )

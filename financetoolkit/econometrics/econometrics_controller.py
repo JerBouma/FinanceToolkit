@@ -32,6 +32,7 @@ from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = get_logger()
@@ -43,6 +44,7 @@ logger = get_logger()
 BENCHMARK_TICKER = "Benchmark"
 
 
+@track_sources
 class Econometrics:
     """
     The Econometrics module is meant to test the statistical properties of a price
@@ -792,10 +794,13 @@ class Econometrics:
         return tickers
 
     @staticmethod
-    def _get_spreads(levels: pd.DataFrame, spread_over: str | None) -> pd.DataFrame:
+    def _get_spreads(
+        levels: pd.DataFrame, spread_over: str | None, ratio: bool = False
+    ) -> pd.DataFrame:
         """
         Every series of `levels` minus the `spread_over` series (matched without regard to
-        case), named "<series> - <spread_over>", or `levels` itself without `spread_over` --
+        case), named "<series> - <spread_over>", or divided by it with `ratio`, named
+        "<series> / <spread_over>", or `levels` itself without `spread_over` --
         shared by the methods that measure a level, so a spread of two series (producer over
         consumer price inflation) is measured like any series. A date either series misses is
         NaN, which the per-series methods leave out.
@@ -816,8 +821,12 @@ class Econometrics:
                 "A spread needs a second series next to the spread_over series."
             )
 
-        spreads = others.sub(levels[base], axis=0)
-        spreads.columns = [f"{name} - {base}" for name in others.columns]
+        if ratio:
+            spreads = others.div(levels[base].replace(0, np.nan), axis=0)
+            spreads.columns = [f"{name} / {base}" for name in others.columns]
+        else:
+            spreads = others.sub(levels[base], axis=0)
+            spreads.columns = [f"{name} - {base}" for name in others.columns]
         return spreads
 
     def _filter_benchmark(
@@ -6943,6 +6952,7 @@ class Econometrics:
         period: str | None = None,
         column: str = "Close",
         spread_over: str | None = None,
+        ratio: bool = False,
         include_benchmark: bool = False,
         level: float | None = None,
         rounding: int | None = None,
@@ -6964,11 +6974,16 @@ class Econometrics:
         The formula is as follows:
 
         - Percentile = (Count(x(s) < x(T)) + 0.5 * Count(x(s) = x(T))) / Count(s), over s < T
+        - Rank = 1 + Count(x(s) > x(T)), over s < T: 1 for the highest of the history
         - Highest Since = the last date s < T with x(s) >= x(T)
         - Lowest Since = the last date s < T with x(s) <= x(T)
         - Change Since Start = (x(T) - x(0)) / |x(0)|
         - Change From Highest = (x(T) - max(x)) / |max(x)|
         - Change From Lowest = (x(T) - min(x)) / |min(x)|
+        - Multiple Since Start = x(T) / x(0)
+        - Annualised Change = (x(T) / x(0)) ^ (1 / years) - 1, years between the two dates
+        - Largest Drawdown = min over t of (x(t) - max(x(s), s <= t)) / |max(x(s), s <= t)|
+        - Recovery Date = the first date after the trough with x >= the peak before it
 
         Where x(T) is the latest value of a series, x(0) its first observation and s runs over its
         earlier observations. An
@@ -6988,7 +7003,8 @@ class Econometrics:
         Also known as: highest since, lowest since, record high, multi-year high, level
         percentile, historical percentile, how unusual is the latest value, change since,
         change between two dates, cumulative change, event window, peak, trough, drawdown
-        from the peak, change from the high, change from the low.
+        from the peak, change from the high, change from the low, multiple, compound annual
+        growth rate (CAGR), annualised change, peak to trough, time to recover the peak.
 
         Args:
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -7003,6 +7019,9 @@ class Econometrics:
                 The spread exists on the dates both series have, so with period="daily" a weekly
                 series minus a daily one is measured on the weekly dates. Defaults to None, which
                 measures the series themselves.
+            ratio (bool, optional): Whether to divide every other series by the spread_over
+                series instead of subtracting it (named "<series> / <spread_over>"), e.g.
+                exports over GDP or one country's yield over another's. Defaults to False.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             level (float | None, optional): A level to compare every series with, such as an
@@ -7016,9 +7035,13 @@ class Econometrics:
         Returns:
             pd.DataFrame: Per series the Start Date, Start Value and number of Observations of its
             history, the Latest Date and Latest Value, the Change Since Start (decimal), the
-            Percentile (decimal), the Highest Since and Lowest Since dates, and the Highest and
-            Lowest with their Highest Date and Lowest Date and the Change From Highest and Change
-            From Lowest (decimals). The dates are text: the dates of the observations, e.g.
+            Multiple Since Start and Annualised Change (decimal, the compound annual rate, NaN
+            unless both values are positive), the Percentile (decimal), the Rank (1 for the
+            highest of the history: "the 3rd highest since" the Start Date), the Highest Since and
+            Lowest Since dates, the Highest and Lowest with their Highest Date and Lowest Date
+            and the Change From Highest and Change From Lowest (decimals), and the Largest
+            Drawdown (decimal) with its Drawdown Peak Date, Drawdown Trough Date and Recovery
+            Date (NaN while it has not recovered). The dates are text: the dates of the observations, e.g.
             2002-05-31 for a monthly series, or the periods, e.g. 2002-05 with period="monthly".
 
         Notes:
@@ -7048,23 +7071,30 @@ class Econometrics:
 
         Which returns:
 
-        |                     | United States   | Germany    | Japan      |
-        |:--------------------|:----------------|:-----------|:-----------|
-        | Start Date          | 2000-01-31      | 2000-01-31 | 2000-01-31 |
-        | Start Value         | 0.0666          | 0.0554     | 0.0169     |
-        | Observations        | 322             | 322        | 322        |
-        | Latest Date         | 2026-10-31      | 2026-10-31 | 2026-10-31 |
-        | Latest Value        | 0.0513          | 0.0342     | 0.0276     |
-        | Change Since Start  | -0.2297         | -0.3827    | 0.6331     |
-        | Percentile          | 0.9377          | 0.6854     | 0.9907     |
-        | Highest Since       | 2002-05-31      | 2026-09-30 | 2026-09-30 |
-        | Lowest Since        | 2026-09-30      | 2026-08-31 | 2026-06-30 |
-        | Highest             | 0.0666          | 0.0554     | 0.0305     |
-        | Highest Date        | 2000-01-31      | 2000-01-31 | 2026-09-30 |
-        | Change From Highest | -0.2297         | -0.3827    | -0.0951    |
-        | Lowest              | 0.0062          | -0.0065    | -0.0028    |
-        | Lowest Date         | 2020-07-31      | 2019-08-31 | 2019-08-31 |
-        | Change From Lowest  | 7.2742          | 6.2615     | 10.8571    |
+        |                      | United States   | Germany    | Japan      |
+        |:---------------------|:----------------|:-----------|:-----------|
+        | Start Date           | 2000-01-31      | 2000-01-31 | 2000-01-31 |
+        | Start Value          | 0.0666          | 0.0554     | 0.0169     |
+        | Observations         | 322             | 322        | 322        |
+        | Latest Date          | 2026-10-31      | 2026-10-31 | 2026-10-31 |
+        | Latest Value         | 0.0513          | 0.0342     | 0.0276     |
+        | Change Since Start   | -0.2297         | -0.3827    | 0.6331     |
+        | Multiple Since Start | 0.7703          | 0.6173     | 1.6331     |
+        | Annualised Change    | -0.0097         | -0.0179    | 0.0185     |
+        | Percentile           | 0.9377          | 0.6854     | 0.9907     |
+        | Rank                 | 21              | 102        | 4          |
+        | Highest Since        | 2002-05-31      | 2026-09-30 | 2026-09-30 |
+        | Lowest Since         | 2026-09-30      | 2026-08-31 | 2026-06-30 |
+        | Highest              | 0.0666          | 0.0554     | 0.0305     |
+        | Highest Date         | 2000-01-31      | 2000-01-31 | 2026-09-30 |
+        | Change From Highest  | -0.2297         | -0.3827    | -0.0951    |
+        | Lowest               | 0.0062          | -0.0065    | -0.0028    |
+        | Lowest Date          | 2020-07-31      | 2019-08-31 | 2019-08-31 |
+        | Change From Lowest   | 7.2742          | 6.2615     | 10.8571    |
+        | Largest Drawdown     | -0.9069         | -1.1173    | -1.1429    |
+        | Drawdown Peak Date   | 2000-01-31      | 2000-01-31 | 2006-04-30 |
+        | Drawdown Trough Date | 2020-07-31      | 2019-08-31 | 2019-08-31 |
+        | Recovery Date        | nan             | nan        | 2025-12-31 |
         """
         period = period if period else "daily"
         levels = self._get_spreads(
@@ -7073,6 +7103,7 @@ class Econometrics:
                 include_benchmark=include_benchmark,
             ),
             spread_over,
+            ratio,
         )
 
         level_significance = pd.DataFrame(
@@ -7095,6 +7126,7 @@ class Econometrics:
         to_month: int = 12,
         column: str = "Close",
         spread_over: str | None = None,
+        ratio: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -7136,6 +7168,9 @@ class Econometrics:
                 "Close", the traded close of the tickers and the series themselves with data=.
             spread_over (str | None, optional): The name of a series to subtract from every
                 other series, so the spreads over it are measured instead. Defaults to None.
+            ratio (bool, optional): Whether to divide every other series by the spread_over
+                series instead of subtracting it (named "<series> / <spread_over>"). Defaults
+                to False.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
                 assets. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -7187,6 +7222,7 @@ class Econometrics:
                 include_benchmark=include_benchmark,
             ),
             spread_over,
+            ratio,
         )
 
         window_change = pd.concat(
@@ -7209,6 +7245,8 @@ class Econometrics:
         period: str | None = None,
         column: str = "Close",
         spread_over: str | None = None,
+        ratio: bool = False,
+        level: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
     ) -> pd.DataFrame:
@@ -7251,6 +7289,13 @@ class Econometrics:
                 inflation. The spread exists on the dates both series have, so with
                 period="daily" a weekly series minus a daily one is measured on the weekly dates.
                 Defaults to None, which measures the series themselves.
+            ratio (bool, optional): Whether to divide every other series by the spread_over
+                series instead of subtracting it (named "<series> / <spread_over>"). Defaults
+                to False.
+            level (float | None, optional): The level the runs are measured against, so the
+                runs are above or below it ("27 years below 2%") with the signs "Above Level",
+                "Below Level" and "At Level". Defaults to None, which is zero: the sign of the
+                values.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
@@ -7321,11 +7366,12 @@ class Econometrics:
                 include_benchmark=include_benchmark,
             ),
             spread_over,
+            ratio,
         )
 
         streaks = pd.DataFrame(
             {
-                series: diagnostics_model.get_streaks(levels[series])
+                series: diagnostics_model.get_streaks(levels[series], level=level)
                 for series in levels.columns
             }
         ).T.infer_objects()

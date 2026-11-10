@@ -319,6 +319,46 @@ def get_reference_period(event: str, release: pd.Timestamp) -> tuple[str, pd.Per
     )
 
 
+IMPACT_RANK = {"low": 1, "medium": 2, "high": 3}
+
+
+def _merge_joint_releases(releases: pd.DataFrame) -> pd.DataFrame:
+    """
+    Merges a release the calendar lists for two consecutive periods on the same day into
+    one, under the later period: China publishes its January and February figures
+    together and the calendar shows them as a January and a February row, sometimes with
+    the same value twice and sometimes with the yuan figure under a lower impact. Two
+    periods published the same day with different values and the same impact (two months
+    caught up after a delay) are kept apart.
+
+    Args:
+        releases (pd.DataFrame): The releases with Country, Event, Period, Day, Impact and
+            Actual columns, in order of release.
+
+    Returns:
+        pd.DataFrame: The releases with each joint release kept once.
+    """
+    keep = pd.Series(True, index=releases.index)
+    periods = releases["Period"].copy()
+
+    for _, same_day in releases.groupby(["Country", "Event", "Day"], sort=False):
+        distinct = sorted(set(same_day["Period"]))
+        if len(distinct) != 2 or distinct[1] != distinct[0] + 1:  # noqa: PLR2004
+            continue
+
+        actual = same_day["Actual"].dropna().to_numpy()
+        impact = same_day["Impact"].to_numpy()
+        if actual.size and (actual != actual[0]).any() and (impact == impact[0]).all():
+            continue
+
+        chosen = same_day["Impact"][::-1].idxmax()
+        keep[same_day.index] = False
+        keep[chosen] = True
+        periods[chosen] = distinct[1]
+
+    return releases.assign(Period=periods)[keep]
+
+
 def get_economic_calendar_series(economic_calendar: pd.DataFrame) -> pd.DataFrame:
     """
     Arranges the releases of the economic calendar as time series: the Actual value of
@@ -329,6 +369,15 @@ def get_economic_calendar_series(economic_calendar: pd.DataFrame) -> pd.DataFram
     of the same period, such as a flash estimate followed by the final figure, keep the
     latest value that was published; a release still to come has its Estimate and no
     Actual yet.
+
+    The calendar repeats some releases, which would otherwise end up as separate values:
+
+    - A figure published for two consecutive periods on the same day, with the same value
+      or under a lower impact, is one release of both periods together, such as China's
+      January and February trade figures. It is kept once, under the later period
+      (February), from its highest-impact row; the earlier period stays empty.
+    - A release without a period in its name, of an event that otherwise has one, is left
+      out, as the period it covers is unknown.
 
     Args:
         economic_calendar (pd.DataFrame): The releases as get_economic_calendar returns
@@ -348,22 +397,45 @@ def get_economic_calendar_series(economic_calendar: pd.DataFrame) -> pd.DataFram
             economic_calendar["Event"], economic_calendar.index, strict=True
         )
     ]
-    periods = [period for _, period in references]
-
-    # Monthly, quarterly and yearly periods cannot share an index, so a mix of them is
-    # placed on the last day of each period.
-    if len({period.freqstr for period in periods}) > 1:
-        periods = [period.asfreq("D", how="end") for period in periods]
 
     releases = pd.DataFrame(
         {
             "Country": economic_calendar["Country"].to_numpy(),
             "Event": [event for event, _ in references],
-            "Period": pd.PeriodIndex(periods),
+            "Period": [period for _, period in references],
+            "Named": [
+                REFERENCE_PERIOD_PATTERN.match(str(event)) is not None
+                for event in economic_calendar["Event"]
+            ],
+            "Day": economic_calendar.index.normalize(),
+            "Impact": (
+                economic_calendar["Impact"]
+                .fillna("")
+                .str.lower()
+                .map(IMPACT_RANK)
+                .fillna(0)
+                .to_numpy()
+                if "Impact" in economic_calendar.columns
+                else 0
+            ),
             "Actual": pd.to_numeric(economic_calendar["Actual"]).to_numpy(),
             "Estimate": pd.to_numeric(economic_calendar["Estimate"]).to_numpy(),
         }
     )
+
+    # A release without a period, of an event that otherwise has one, covers an
+    # unknown period.
+    has_named = releases.groupby(["Country", "Event"])["Named"].transform("any")
+    releases = releases[releases["Named"] | ~has_named]
+
+    releases = _merge_joint_releases(releases)
+
+    periods = list(releases["Period"])
+    # Monthly, quarterly and yearly periods cannot share an index, so a mix of them is
+    # placed on the last day of each period.
+    if len({period.freqstr for period in periods}) > 1:
+        periods = [period.asfreq("D", how="end") for period in periods]
+    releases = releases.assign(Period=pd.PeriodIndex(periods))
 
     # The calendar is in order of release, so the last value of a period is its latest
     # (the last one published: a release still to come has no Actual yet).

@@ -53,7 +53,9 @@ from financetoolkit.economics import (
 from financetoolkit.economics.helpers import (
     average_monthly_index,
     buffered_start_date,
+    change_over_periods,
     check_period_type,
+    choose_sources,
     combine_sources,
     extend_with_recent,
     get_exchange_business_days,
@@ -70,6 +72,11 @@ from financetoolkit.fixedincome import (
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import (
+    collect_sources,
+    record_source,
+    track_sources,
+)
 from financetoolkit.utilities.statistics_model import euro_area_hint, finalize_dataset
 
 logger = get_logger()
@@ -91,6 +98,7 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 # ruff: noqa: E501
 
 
+@track_sources
 class Economics:
     """
     The Economics module contains methods to retrieve economic data from the OECD.
@@ -338,10 +346,26 @@ class Economics:
             for fetch, only_country in sources
             if only_country is None or requested is None or only_country in requested
         ]
-        frames = helpers.run_in_parallel(
-            lambda fetch: fetch(), [(fetch,) for fetch in needed]
+
+        def fetch_with_sources(
+            fetch: Callable[[], pd.DataFrame],
+        ) -> tuple[pd.DataFrame, set[str]]:
+            # Held back until it is known which source each country is taken from.
+            with collect_sources() as fetched:
+                frame = fetch()
+            return frame, fetched
+
+        retrieved = helpers.run_in_parallel(
+            fetch_with_sources, [(fetch,) for fetch in needed]
         )
+        frames = [frame for frame, _ in retrieved]
         combined = combine_sources(frames)
+
+        # Only the sources a requested country is taken from are named with the answer.
+        for country, position in choose_sources(frames).items():
+            if requested is None or country in requested:
+                for source in retrieved[position][1]:
+                    record_source(source)
 
         # A source's own index name (such as "Effective Date") is not kept, as it was not
         # when every source was combined.
@@ -453,7 +477,8 @@ class Economics:
         if "United States" not in prices.columns:
             return prices
 
-        recent = self._get_united_states_consumer_prices(measure, "all")
+        with collect_sources() as recent_sources:
+            recent = self._get_united_states_consumer_prices(measure, "all")
         history = prices["United States"].dropna()
         shared = history.index.intersection(recent.dropna().index)
 
@@ -463,7 +488,7 @@ class Economics:
                 recent * history[shared[-1]] / recent.loc[shared[-1], "United States"]
             )
 
-        return extend_with_recent(prices, recent, "United States")
+        return extend_with_recent(prices, recent, "United States", recent_sources)
 
     def _get_united_states_consumer_prices(
         self, measure: str, component: str
@@ -513,14 +538,10 @@ class Economics:
                     index.index[0].strftime("%Y-%m"),
                 )
 
-        if measure == "inflation_rate" and not index.empty:
-            # Every month in the index, so a month the BLS did not publish (October 2025)
-            # leaves its rate and the one a year later empty rather than compare the
-            # wrong months.
-            index = index.reindex(
-                pd.period_range(index.index[0], index.index[-1], freq="M")
-            )
-            return index.pct_change(12, fill_method=None)
+        if measure == "inflation_rate":
+            # A month the BLS did not publish (October 2025) leaves its rate and the one a
+            # year later empty rather than compare the wrong months.
+            return change_over_periods(index, 12)
 
         return index
 
@@ -660,15 +681,35 @@ class Economics:
                 continue
 
             # A month of overlap, on which both publishers have to agree.
-            recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
+            with collect_sources() as recent_sources:
+                recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
             recent = recent[
                 (recent.index <= pd.Period(self._end_date, freq="D"))
                 # Business days, like the BIS series (the ECB lists every calendar day).
                 & ~recent.index.dayofweek.isin([5, 6])
             ]
-            policy_rate = extend_with_recent(policy_rate, recent, country)
+            policy_rate = extend_with_recent(
+                policy_rate, recent, country, recent_sources
+            )
 
         return policy_rate
+
+    def _get_oecd_unemployment_rate_with_bls(self) -> pd.DataFrame:
+        """
+        The OECD's monthly unemployment rates, with the US extended by the months the BLS
+        has published since (see extend_with_recent).
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by month.
+        """
+        history = oecd_model.get_unemployment_rate(
+            period="monthly", start_date=self._start_date, end_date=self._end_date
+        )
+
+        with collect_sources() as recent_sources:
+            recent = bls_model.get_unemployment_rate()
+
+        return extend_with_recent(history, recent, "United States", recent_sources)
 
     def _get_daily_long_term_interest_rate(
         self, countries: list[str] | str | None = None
@@ -6732,18 +6773,7 @@ class Economics:
                     (ibge_model.get_unemployment_rate, "Brazil"),
                     # The OECD republishes the BLS figure a month later, so the US is
                     # extended with the months the BLS already has.
-                    (
-                        lambda: extend_with_recent(
-                            oecd_model.get_unemployment_rate(
-                                period="monthly",
-                                start_date=self._start_date,
-                                end_date=self._end_date,
-                            ),
-                            bls_model.get_unemployment_rate(),
-                            "United States",
-                        ),
-                        None,
-                    ),
+                    (self._get_oecd_unemployment_rate_with_bls, None),
                 ],
                 countries,
             )
@@ -8399,7 +8429,7 @@ class Economics:
         index = bis_model.get_commercial_property_prices(
             buffered_start_date(self._start_date, "monthly"), self._end_date
         )
-        commercial_real_estate_prices = index.pct_change(4, fill_method=None)
+        commercial_real_estate_prices = change_over_periods(index, 4)
 
         if self._fred_api_key:
             united_states = fred_model.get_commercial_real_estate_prices(
@@ -11182,7 +11212,15 @@ class Economics:
         "Change %" column, so an unemployment rate of 4.1% is returned as 0.041. Releases
         in other units, such as thousands of jobs or index points, keep their values, as do
         survey levels such as PMIs and confidence indices, which the calendar sometimes
-        labels "%" as well.
+        labels "%" as well. The "Currency" column is the currency of the market a release
+        concerns, not the unit of its value: China's balance of trade is in US dollars
+        while its row shows CNY (the yuan figure is the separate "Balance of Trade Yuan").
+        The "Previous" value is the source's own and can differ from the Actual of the
+        release before it, e.g. after a revision.
+
+        The calendar comes from FinancialModelingPrep and starts in 2013 for most
+        countries; the first release of a series is the first period of its as_series
+        answer.
 
         With as_series=True the releases become time series: the Actual value of every
         event by the period it covers, with a column per country and event and the
@@ -11193,7 +11231,11 @@ class Economics:
         release. The year is that of the release, or the year before when the period starts
         after the release month (a December figure released in January). Several releases of
         the same period, such as a flash estimate and the final figure, keep the latest one
-        published. The index is monthly for monthly events, quarterly for quarterly ones and
+        published. A figure published for two consecutive periods on the same day, such as
+        China's January and February trade figures, is one release of both and is kept once,
+        under the later period (February), leaving January empty; a release without a
+        period, of an event that otherwise has one, is left out. The index is monthly for
+        monthly events, quarterly for quarterly ones and
         daily, at the last day of each period, when events of different frequencies are
         combined. The series can be analysed further with `Econometrics(data=...)`, e.g. how
         unusual the latest value is (get_level_significance) or how long it has been above or

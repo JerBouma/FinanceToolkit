@@ -49,6 +49,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
     summarize_reasons,
 )
 from financetoolkit.mcp_server.formatting_model import (
+    convert_to_period,
     country_names,
     format_result,
     has_period_columns,
@@ -63,6 +64,7 @@ from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger, redact
+from financetoolkit.utilities.sources_model import collect_sources, readable_sources
 from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
@@ -1843,6 +1845,7 @@ class ToolRegistry:
             # named in the answer, so a caller does not believe they were used.
             ignored_params: list[str] = []
             given_params: set[str] = set()
+            requested_period: str | None = None
             for pname, pann, pdefault in param_meta:
                 if pname in kwargs:
                     val = kwargs.pop(pname)
@@ -1860,6 +1863,8 @@ class ToolRegistry:
                     ):
                         if pname in given_params:
                             ignored_params.append(pname)
+                            if pname == "period":
+                                requested_period = str(val)
                         continue
                     # A disputed parameter is advertised as unset, so an unset value means "no preference" and must reach the indicator's own default rather than another indicator's.  # noqa: E501
                     if pname in disputed_params and val in (None, ""):
@@ -2025,8 +2030,12 @@ class ToolRegistry:
             try:
                 call_started = time.perf_counter()
                 # The warnings and errors logged during the call explain an empty result,
-                # e.g. a missing API key, so they are passed on rather than lost.
-                with capture_call_messages() as call_messages:
+                # e.g. a missing API key, so they are passed on rather than lost. The
+                # sources of the data are named with the answer.
+                with (
+                    capture_call_messages() as call_messages,
+                    collect_sources() as call_sources,
+                ):
                     if raw_series:
                         result = provider.call_econometrics_with_data(
                             method_name,
@@ -2102,6 +2111,22 @@ class ToolRegistry:
                             result,
                             strict=False,
                         )
+                    )
+                # An indicator without a period of its own is converted to the requested
+                # one, so a long daily or weekly history fits a yearly answer.
+                period_note = None
+                if (
+                    requested_period
+                    and isinstance(result, pd.DataFrame | pd.Series)
+                    and (converted := convert_to_period(result, requested_period))
+                    is not None
+                ):
+                    result = converted
+                    ignored_params.remove("period")
+                    period_note = (
+                        f"`{method_name}` has no period parameter, so period="
+                        f"'{requested_period}' shows the last value of every period "
+                        "(end of period), not an average."
                     )
                 unmatched_columns: list[str] = []
                 if show_columns is not None:
@@ -2316,6 +2341,8 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
+                if period_note:
+                    notes.append(period_note)
                 if isinstance(result, pd.DataFrame | pd.Series) and (
                     skipped_note := skipped_periods_note(result)
                 ):
@@ -2362,6 +2389,7 @@ class ToolRegistry:
                 formatted = format_result(
                     result,
                     notes=notes or None,
+                    sources=readable_sources(call_sources),
                     reason=summarize_reasons(call_messages)
                     or _short_window_reason(dispatch_category, start_date, end_date),
                     max_characters=None if full_text else max_response_characters,

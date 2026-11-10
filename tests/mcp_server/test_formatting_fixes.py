@@ -40,3 +40,20 @@ def test_skipped_periods_are_named_in_a_note():
     assert note.startswith("No value for United States (2025-10)")
     assert skipped_periods_note(result[["Germany"]]) is None
     assert skipped_periods_note(result.reset_index(drop=True)) is None
+
+
+def test_a_series_without_a_period_parameter_is_converted_to_the_period():
+    from financetoolkit.mcp_server.formatting_model import convert_to_period
+
+    weeks = pd.date_range("2023-01-05", "2024-12-26", freq="W-THU")
+    rates = pd.DataFrame({"United States": range(len(weeks))}, index=weeks)
+
+    yearly = convert_to_period(rates, "yearly")
+
+    # The last week of each year.
+    assert yearly["United States"].tolist() == [51, len(weeks) - 1]
+    assert yearly.index.tolist() == [pd.Period("2023", "Y"), pd.Period("2024", "Y")]
+
+    # Already coarser, or not a time series: nothing to convert.
+    assert convert_to_period(yearly, "monthly") is None
+    assert convert_to_period(pd.DataFrame({"a": [1, 2]}), "yearly") is None

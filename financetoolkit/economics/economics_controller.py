@@ -47,6 +47,7 @@ from financetoolkit.economics import (
     shiller_model,
     stoxx_model,
     treasury_model,
+    world_bank_model,
     yfinance_model,
 )
 from financetoolkit.economics.helpers import (
@@ -10759,6 +10760,136 @@ class Economics:
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_commodity_prices(
+        self,
+        commodity: str | list[str] | None = None,
+        deflate_with: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+    ):
+        """
+        Retrieves the World Bank's monthly commodity prices from 1960 (The Pink Sheet): the
+        average price of each month in US dollars of around seventy commodities, among which
+        crude oil (Brent, WTI, Dubai), natural gas, coal, gold, silver, platinum, copper,
+        aluminum, iron ore, nickel, zinc, grains, softs and fertilizers. Futures prices from
+        exchanges reach back to 2000 at most, which leaves out the commodity booms and busts
+        of the 1970s and 1980s, such as gold's peak of January 1980 and the oil shocks.
+
+        With deflate_with, the prices are in real terms: in the money of the latest month of
+        that country's consumer price index up to the end date (see get_consumer_price_index),
+        so that the gold price of 1980 can be compared with today's. A month after the latest
+        month of the consumer price index, which is published a few weeks late, keeps its
+        nominal price, and a month the consumer price index skipped has no real price.
+
+        The formula is as follows:
+
+        - Real Price (t) = Price (t) * CPI (latest month) / CPI (t)
+
+        The units are those of the World Bank: US dollars per barrel ($/bbl) for crude oil,
+        per million British thermal units ($/mmbtu) for natural gas, per troy ounce ($/troy oz)
+        for gold, silver and platinum, per metric ton ($/mt) for coal, base metals, grains, oils
+        and fertilizers, per kilogram ($/kg) for cocoa, coffee, tea, sugar, meat, fruit, cotton
+        and rubber, per dry metric ton unit ($/dmtu) for iron ore, per cubic meter for logs and
+        sawnwood and cents per sheet for plywood. The Natural gas index is an index (2010=100).
+
+        Also known as: Pink Sheet, commodity price history, long-run gold price, real gold
+        price, real oil price, inflation-adjusted commodity prices.
+
+        Args:
+            commodity (str | list[str] | None, optional): The commodities, e.g. "Gold" or
+                ["Gold", "Crude oil Brent"], as named by the World Bank without commas ("Crude
+                oil, Brent" is "Crude oil Brent"), in any casing. Defaults to None, which
+                returns all of them.
+            deflate_with (str | None, optional): The country whose consumer price index the
+                prices are deflated with, e.g. "United States" for US dollar prices. Defaults
+                to None, which returns nominal prices.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            growth (bool, optional): Whether to calculate the growth. Defaults to False.
+            lag (int, optional): The lag in months for the growth, e.g. 12 for the change
+                over a year. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result.
+                Defaults to False.
+
+        Returns:
+            pd.DataFrame: The monthly prices with a column per commodity.
+
+        Notes:
+        - World Bank, "Commodity Markets: The Pink Sheet", monthly prices, licensed under
+        CC BY 4.0.
+        - The prices are monthly averages: a peak within a month, such as gold's $850 London
+        fix of 21 January 1980, is higher than the average of its month.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date="1979-01-01", end_date="2026-10-31")
+
+        prices = economics.get_commodity_prices(commodity="Gold", deflate_with="United States")
+        prices.loc[["1980-01", "2011-09", "2026-01"]]
+        ```
+
+        Which returns:
+
+        |         |    Gold |
+        |:--------|--------:|
+        | 1980-01 | 2923.32 |
+        | 2011-09 | 2631.5  |
+        | 2026-01 | 4923.8  |
+        TABLE
+        """
+        prices = world_bank_model.get_commodity_prices()
+
+        if commodity is not None:
+            requested = helpers.split_values(commodity)
+            by_lowercase = {name.lower(): name for name in prices.columns}
+            missing = [name for name in requested if name.lower() not in by_lowercase]
+            if missing:
+                logger.warning(
+                    "The following commodities are not available: %s. Available are %s.",
+                    ", ".join(f"'{name}'" for name in missing),
+                    ", ".join(prices.columns),
+                )
+            prices = prices[
+                [
+                    by_lowercase[name.lower()]
+                    for name in requested
+                    if name not in missing
+                ]
+            ]
+
+        if deflate_with is not None:
+            consumer_price_index = self.get_consumer_price_index(
+                countries=deflate_with, period="monthly", rounding=None
+            )
+            if consumer_price_index.empty:
+                raise ValueError(
+                    f"There is no monthly consumer price index for {deflate_with} to deflate "
+                    "the prices with."
+                )
+            prices = helpers.deflate_with_price_index(
+                prices, consumer_price_index.iloc[:, 0]
+            )
+
+        return finalize_dataset(
+            dataset=prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Commodity Prices",
             rounding=rounding,
             growth=growth,
             lag=lag,

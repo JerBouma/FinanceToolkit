@@ -24,3 +24,19 @@ def test_levels_with_the_same_names_say_which_level_a_key_is():
         "Shock AAPL": 1.0,
         "Shock MSFT": 3.0,
     }
+
+
+def test_skipped_periods_are_named_in_a_note():
+    from financetoolkit.mcp_server.formatting_model import skipped_periods_note
+
+    result = pd.DataFrame(
+        {"United States": [1.0, None, 2.0, None], "Germany": [1.0, 1.5, 2.0, 2.5]},
+        index=pd.period_range("2025-09", periods=4, freq="M"),
+    )
+
+    note = skipped_periods_note(result)
+
+    # Only the gap between values counts, not a month not published yet.
+    assert note.startswith("No value for United States (2025-10)")
+    assert skipped_periods_note(result[["Germany"]]) is None
+    assert skipped_periods_note(result.reset_index(drop=True)) is None

@@ -56,6 +56,7 @@ from financetoolkit.mcp_server.formatting_model import (
     is_yearly,
     select_rows,
     signal_rows,
+    skipped_periods_note,
 )
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
@@ -276,6 +277,11 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "diagnostics use) are calculated: 'percentage' (default), 'log', 'difference' (for "
         "rates and ratios) or 'none' (the series are changes already). The series "
         "themselves are the 'Adj Close' column the unit root and cointegration tests use."
+    ),
+    "deflate_with": (
+        "With series: the country whose consumer price index the indicators that take "
+        "deflate_with are deflated with, e.g. 'United States' for "
+        "'macroeconomics:get_commodity_prices:Gold' in real terms."
     ),
     "show_columns": (
         "Comma-separated names to filter the output. "
@@ -1342,6 +1348,7 @@ class ToolRegistry:
         quarterly: bool,
         benchmark_ticker: str,
         period: str | None = None,
+        deflate_with: str | None = None,
     ) -> pd.DataFrame:
         """
         Retrieves the indicators an econometrics call names as its series, each through
@@ -1359,6 +1366,9 @@ class ToolRegistry:
                 the monthly series its source publishes (a monthly average, for some rates)
                 rather than the last daily value of each month. Defaults to None, each
                 indicator's own default.
+            deflate_with (str | None, optional): The country whose consumer price index is
+                passed on to every indicator that takes deflate_with, for its values in
+                real terms. Defaults to None, nominal values.
 
         Returns:
             pd.DataFrame: The series, a column each, by date.
@@ -1441,6 +1451,8 @@ class ToolRegistry:
             # for them as series by the period they cover.
             if "as_series" in parameters:
                 arguments["as_series"] = True
+            if deflate_with and "deflate_with" in parameters:
+                arguments["deflate_with"] = deflate_with
             result = None
             if period and "period" in parameters:
                 result = self._provider.call_method(**arguments, period=period)
@@ -1654,6 +1666,11 @@ class ToolRegistry:
             changes = (
                 kwargs.pop("changes", None) if module_name == "econometrics" else None
             ) or "percentage"
+            deflate_with = (
+                kwargs.pop("deflate_with", None)
+                if module_name == "econometrics"
+                else None
+            )
             # A tool argument is text, so 'none' stands for changes=None (the series are
             # changes already).
             changes = None if str(changes).lower() == "none" else changes
@@ -2024,6 +2041,7 @@ class ToolRegistry:
                                     if "period" in given_params
                                     else None
                                 ),
+                                deflate_with=deflate_with,
                             ),
                             changes=changes,
                             **method_kwargs,
@@ -2298,6 +2316,10 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
+                if isinstance(result, pd.DataFrame | pd.Series) and (
+                    skipped_note := skipped_periods_note(result)
+                ):
+                    notes.append(skipped_note)
                 # The inputs an option model used, which it only logs.
                 if method_kwargs.get("show_input_info"):
                     notes.extend(input_info)
@@ -2487,7 +2509,7 @@ class ToolRegistry:
                     default=None,
                     annotation=_annotate_with_description(name, str | None),
                 )
-                for name in ("series", "changes")
+                for name in ("series", "changes", "deflate_with")
             )
 
         # Appended last so it does not disturb positional ordering of other params.

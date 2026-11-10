@@ -624,3 +624,17 @@ def test_goodwill_and_intangible_assets_fall_back_on_the_separate_rows():
     assert np.isnan(result.loc["B", "2022"])
     assert result.loc["B", "2023"] == 5
     assert result.loc["B", "2024"] == 0
+
+
+def test_deflate_with_price_index_uses_the_latest_month_as_base():
+    months = pd.period_range("2024-01", "2024-04", freq="M")
+    values = pd.DataFrame({"Gold": [100.0, 100.0, 100.0, 100.0]}, index=months)
+    price_index = pd.Series([50.0, np.nan, 100.0], index=months[[0, 1, 2]])
+
+    real = helpers.deflate_with_price_index(values, price_index)
+
+    # January's prices were worth twice as much in March money; a month the index skipped
+    # has no real value and a month after its latest keeps its nominal value.
+    assert real["Gold"].iloc[0] == 200.0
+    assert np.isnan(real["Gold"].iloc[1])
+    assert real["Gold"].iloc[2:].tolist() == [100.0, 100.0]

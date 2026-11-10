@@ -6944,6 +6944,7 @@ class Econometrics:
         column: str = "Close",
         spread_over: str | None = None,
         include_benchmark: bool = False,
+        level: float | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame:
         """
@@ -7004,6 +7005,11 @@ class Econometrics:
                 measures the series themselves.
             include_benchmark (bool, optional): Whether to include "Benchmark" among the assets.
                 Defaults to False.
+            level (float | None, optional): A level to compare every series with, such as an
+                earlier peak, which adds the Level, the First Above Level (the first date the
+                series exceeded it) and Above Level Since (the date it has been above it since
+                without a break, empty when the latest value is not above it). Defaults to
+                None, which leaves them out.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
 
@@ -7071,7 +7077,9 @@ class Econometrics:
 
         level_significance = pd.DataFrame(
             {
-                series: diagnostics_model.get_level_significance(levels[series])
+                series: diagnostics_model.get_level_significance(
+                    levels[series], level=level
+                )
                 for series in levels.columns
             }
         ).T.infer_objects()

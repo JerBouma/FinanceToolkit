@@ -506,7 +506,7 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_level_significance(levels: pd.Series) -> pd.Series:
+def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.Series:
     """
     Calculate how unusual the latest value of a series is compared with its own history: the
     percentile of the latest value among the earlier values, the last dates the series was
@@ -521,6 +521,9 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
     - Change Since Start = (x(T) - x(0)) / |x(0)|
     - Change From Highest = (x(T) - max(x)) / |max(x)|
     - Change From Lowest = (x(T) - min(x)) / |min(x)|
+    - First Above Level = the first date s with x(s) > level
+    - Above Level Since = the first date of the run of observations above the level that
+      the latest one belongs to
 
     Where x(T) is the latest value and s runs over every earlier observation. The percentile counts
     an earlier value equal to the latest one as half, the percentile rank, so a rate that has been
@@ -531,16 +534,21 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
     it is NaN when the first observation is zero. max(x) and min(x) run over every observation,
     the latest included, so the Highest equals the Latest Value when the series is at its peak and
     its change from it is 0. The Highest Date and Lowest Date are the first dates the series
-    reached them; the changes from them are NaN when they are zero.
+    reached them; the changes from them are NaN when they are zero. With a level, such as an
+    earlier peak, the First Above Level is the first date the series exceeded it ("the first
+    month above the 1980 high") and the Above Level Since the date it has been above it since
+    without a break, NaN when it never was or the latest value is not above it.
 
     Args:
         levels (pd.Series): The values of a single series by date; missing values are left out.
+        level (float | None, optional): A level to compare the series with. Defaults to None,
+            which leaves out the Level, First Above Level and Above Level Since.
 
     Returns:
         pd.Series: The Start Date, Start Value, Observations, Latest Date, Latest Value, Change
         Since Start (a decimal), Percentile, Highest Since, Lowest Since, Highest, Highest Date,
         Change From Highest (a decimal), Lowest, Lowest Date and Change From Lowest (a decimal),
-        the dates as text.
+        and with a level the Level, First Above Level and Above Level Since, the dates as text.
     """
     observed = levels.dropna()
 
@@ -557,6 +565,19 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
 
     as_high = np.flatnonzero(earlier >= latest)
     as_low = np.flatnonzero(earlier <= latest)
+    above_level = {}
+    if level is not None:
+        above = np.flatnonzero(values > level)
+        below = np.flatnonzero(values <= level)
+        above_level = {
+            "Level": level,
+            "First Above Level": labels[above[0]] if above.size else np.nan,
+            "Above Level Since": (
+                labels[below[-1] + 1 if below.size else 0]
+                if values[-1] > level
+                else np.nan
+            ),
+        }
 
     return pd.Series(
         {
@@ -582,6 +603,7 @@ def get_level_significance(levels: pd.Series) -> pd.Series:
             "Lowest": lowest,
             "Lowest Date": labels[int(np.argmin(values))],
             "Change From Lowest": (latest - lowest) / abs(lowest) if lowest else np.nan,
+            **above_level,
         },
         dtype=object,
     )

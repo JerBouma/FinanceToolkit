@@ -360,3 +360,23 @@ def test_get_level_significance_highest_and_lowest():
         pd.Series([0.0, -1.0, -0.5, -0.2, -0.1], index=days)
     )
     assert pd.isna(zero["Change From Highest"])
+
+
+def test_get_level_significance_compares_with_a_level():
+    levels = pd.Series(
+        [10.0, 30.0, 20.0, 31.0, 25.0, 32.0, 33.0],
+        index=pd.period_range("2020-01", periods=7, freq="M"),
+    )
+
+    result = diagnostics_model.get_level_significance(levels, level=30.0)
+
+    # First exceeded in April, and above it without a break since June.
+    assert result["Level"] == 30.0
+    assert result["First Above Level"] == "2020-04"
+    assert result["Above Level Since"] == "2020-06"
+    assert pd.isna(
+        diagnostics_model.get_level_significance(levels.iloc[:5], level=30.0)[
+            "Above Level Since"
+        ]
+    )
+    assert "Level" not in diagnostics_model.get_level_significance(levels)

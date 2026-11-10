@@ -411,6 +411,55 @@ def is_yearly(index: pd.Index) -> bool:
     ).startswith(("Y", "A"))
 
 
+# The skipped periods a note names per series before it counts the rest.
+SKIPPED_PERIODS_SHOWN = 3
+
+
+def skipped_periods_note(data: pd.DataFrame | pd.Series) -> str | None:
+    """
+    Names the months, quarters or years a series has no value for between its first and
+    last value, such as a month a statistics office did not publish. They are empty rows in
+    the answer, so the rows around them are not consecutive periods with data and a change
+    over them is empty too.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The result, with periods as its index.
+
+    Returns:
+        str | None: The note, or None when no series skips a period.
+    """
+    if not isinstance(data.index, pd.PeriodIndex) or data.index.freqstr[0] not in "MQY":
+        return None
+
+    frame = data.to_frame() if isinstance(data, pd.Series) else data
+    gaps = []
+    for column in frame.columns:
+        values = frame[column]
+        first, last = values.first_valid_index(), values.last_valid_index()
+        if first is None:
+            continue
+        skipped = values.loc[first:last]
+        skipped = [str(period) for period in skipped[skipped.isna()].index]
+        if skipped:
+            shown = ", ".join(skipped[:SKIPPED_PERIODS_SHOWN]) + (
+                f" and {len(skipped) - SKIPPED_PERIODS_SHOWN} more"
+                if len(skipped) > SKIPPED_PERIODS_SHOWN
+                else ""
+            )
+            gaps.append(f"{column} ({shown})" if frame.shape[1] > 1 else shown)
+
+    if not gaps:
+        return None
+
+    return (
+        "No value for "
+        + "; ".join(gaps[:5])
+        + ": the source skipped them, so they are "
+        "empty rows (the rows around them are not consecutive periods) and a change over "
+        "them is empty too."
+    )
+
+
 def has_period_columns(dataframe: pd.DataFrame) -> bool:
     """Whether the periods are the columns (and not the rows), as with ratios."""
     return not _is_time_index(dataframe.index) and _is_time_index(dataframe.columns)

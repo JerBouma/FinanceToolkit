@@ -1529,3 +1529,85 @@ def test_price_indices_combine_their_publishers_and_select_fred_with_a_key(
         countries=["Japan"], period="quarterly"
     )
     assert quarterly.loc[pd.Period("2026Q3", "Q"), "Japan"] == pytest.approx(119.0)
+
+
+def test_world_bank_commodity_prices_are_read_from_the_linked_workbook(
+    cache, monkeypatch
+):
+    import io
+
+    from financetoolkit.economics import world_bank_model
+
+    rows = [
+        ["World Bank Commodity Price Data (The Pink Sheet)", None, None],
+        [None, None, None],
+        [None, None, None],
+        [None, None, None],
+        [None, "Crude oil, Brent", "Beef **"],
+        [None, "($/bbl)", "($/kg)"],
+        ["1960M01", 1.63, "…"],
+        ["1960M02", 1.64, 0.5],
+    ]
+    workbook = io.BytesIO()
+    with pd.ExcelWriter(workbook) as writer:
+        pd.DataFrame(rows).to_excel(
+            writer, sheet_name="Monthly Prices", header=False, index=False
+        )
+    link = "https://thedocs.worldbank.org/en/doc/x-0050012026/related/CMO-Historical-Data-Monthly.xlsx"
+    requested = []
+
+    def fake_get(url, timeout=60):
+        requested.append(url)
+        response = FakeResponse(text=f'<a href="{link}">Monthly prices</a>')
+        if url == link:
+            response.content = workbook.getvalue()
+        return response
+
+    monkeypatch.setattr(world_bank_model, "get_request", fake_get)
+
+    prices = world_bank_model.get_commodity_prices()
+
+    # The link is read from the page, as it changes every year.
+    assert requested == [world_bank_model.PAGE_URL, link]
+    # Names without commas and footnote marks, a missing price as NaN.
+    assert prices.columns.tolist() == ["Crude oil Brent", "Beef"]
+    assert prices.index.tolist() == [
+        pd.Period("1960-01", "M"),
+        pd.Period("1960-02", "M"),
+    ]
+    assert prices.loc["1960-02", "Crude oil Brent"] == 1.64
+    assert pd.isna(prices.loc["1960-01", "Beef"])
+
+
+def test_commodity_prices_are_selected_and_deflated(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import world_bank_model
+
+    months = pd.period_range("2024-01", "2024-04", freq="M")
+    monkeypatch.setattr(
+        world_bank_model,
+        "get_commodity_prices",
+        lambda: pd.DataFrame(
+            {"Gold": [100.0, 110.0, 120.0, 130.0], "Copper": [1.0, 2.0, 3.0, 4.0]},
+            index=months,
+        ),
+    )
+    economics = Economics(start_date="2024-01-01", end_date="2024-04-30", rounding=None)
+    monkeypatch.setattr(
+        economics,
+        "get_consumer_price_index",
+        lambda **_: pd.DataFrame(
+            {"United States": [100.0, 105.0, 110.0]}, index=months[:3]
+        ),
+    )
+
+    nominal = economics.get_commodity_prices(commodity="gold")
+    real = economics.get_commodity_prices(
+        commodity="Gold", deflate_with="United States"
+    )
+
+    assert nominal.columns.tolist() == ["Gold"]
+    # In the money of the latest CPI month (March); April, after it, keeps its price.
+    assert real["Gold"].tolist() == pytest.approx(
+        [110.0, 110.0 * 110 / 105, 120.0, 130.0]
+    )

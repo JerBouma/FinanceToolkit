@@ -24,6 +24,7 @@ from financetoolkit.cache import frame_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import record_source
 
 logger = get_logger()
 
@@ -93,7 +94,13 @@ def to_gmdb_country_names(data: pd.DataFrame) -> pd.DataFrame:
 
 # The periods a high-frequency series can be returned in, with the PeriodIndex frequency
 # each one maps to. Weekly periods end on Friday, the last trading day of the week.
-PERIOD_FREQUENCIES = {"daily": "D", "weekly": "W-FRI", "monthly": "M"}
+PERIOD_FREQUENCIES = {
+    "daily": "D",
+    "weekly": "W-FRI",
+    "monthly": "M",
+    "quarterly": "Q",
+    "yearly": "Y",
+}
 
 # History requested before the start date, so growth, lag and rolling windows can be
 # computed for the first periods shown (finalize_dataset slices the result afterwards).
@@ -535,14 +542,93 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
     return period
 
 
+def change_over_periods(
+    data: pd.DataFrame | pd.Series, periods: int
+) -> pd.DataFrame | pd.Series:
+    """
+    The relative change over a number of periods (12 months, 4 quarters) on consecutive
+    periods: a period a source skipped becomes empty first, so the change compares the
+    same period a year earlier rather than the row that many places back, and the skipped
+    period and the one a year after it are empty.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The values, indexed by a monthly, quarterly or
+            yearly PeriodIndex.
+        periods (int): The number of periods to compare with, e.g. 12 for monthly data.
+
+    Returns:
+        pd.DataFrame | pd.Series: The change as a decimal, on consecutive periods.
+    """
+    if data.empty:
+        return data
+
+    consecutive = data.reindex(
+        pd.period_range(
+            data.index.min(),
+            data.index.max(),
+            freq=data.index.freq,
+            name=data.index.name,
+        )
+    )
+
+    return consecutive.pct_change(periods, fill_method=None)
+
+
+CONSUMER_PRICE_MEASURES = [
+    "all",
+    "core",
+    "energy",
+    "food",
+    "goods",
+    "services",
+    "shelter",
+]
+
+
+def validate_consumer_price_measure(
+    measure: str, period: str, oecd_source: bool = False
+) -> str:
+    """
+    Normalises the measure of a consumer price indicator and checks that it exists for the
+    requested data: the core index and the components are monthly and not from the OECD.
+
+    Args:
+        measure (str): The requested measure, e.g. "core".
+        period (str): The period of the request.
+        oecd_source (bool): Whether the OECD is the source. Defaults to False.
+
+    Returns:
+        str: The measure in lower case.
+
+    Raises:
+        ValueError: When the measure does not exist, or not at that period or source.
+    """
+    measure = measure.lower()
+
+    if measure not in CONSUMER_PRICE_MEASURES:
+        raise ValueError(
+            f"The measure '{measure}' does not exist. Choose from "
+            f"{', '.join(repr(option) for option in CONSUMER_PRICE_MEASURES)}."
+        )
+
+    if measure != "all" and (period.lower() != "monthly" or oecd_source):
+        raise ValueError(
+            f"The measure '{measure}' is monthly only, without oecd_source. Use "
+            "period='monthly'."
+        )
+
+    return measure
+
+
 def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
-    Converts a daily series to a weekly or monthly one by taking the last observation of
-    every period, the end-of-period convention central banks and the BIS use for rates.
+    Converts a daily series to a weekly, monthly, quarterly or yearly one by taking the
+    last observation of every period, the end-of-period convention central banks and the
+    BIS use for rates.
 
     Args:
         data (pd.DataFrame): The daily series, indexed by a daily PeriodIndex.
-        period (str): "daily", "weekly" or "monthly".
+        period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
 
     Returns:
         pd.DataFrame: The series at the requested frequency.
@@ -584,6 +670,36 @@ def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     return grouped.mean().where(grouped.count() == (3 if period == "quarterly" else 12))
 
 
+def choose_sources(sources: list[pd.DataFrame]) -> dict[str, int]:
+    """
+    Per country, the position of the source with the most recent observation and, when
+    sources are equally recent, the first in the list (see combine_sources).
+
+    Args:
+        sources (list[pd.DataFrame]): The sources, most preferred first, each indexed by
+            period with one column per country.
+
+    Returns:
+        dict[str, int]: Per country, the position of its source in the list.
+    """
+    chosen: dict[str, tuple[pd.Period, int]] = {}
+
+    for position, source in enumerate(sources):
+        if source is None or source.empty:
+            continue
+
+        for country in source.columns:
+            last_observation = source[country].last_valid_index()
+
+            if last_observation is None:
+                continue
+
+            if country not in chosen or last_observation > chosen[country][0]:
+                chosen[country] = (last_observation, position)
+
+    return {country: position for country, (_, position) in chosen.items()}
+
+
 def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     """
     Combines country columns from several sources, taking each country from the source
@@ -603,29 +719,13 @@ def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     Returns:
         pd.DataFrame: One column per country, indexed by period.
     """
-    chosen: dict[str, tuple[pd.Period, int]] = {}
-
-    for position, source in enumerate(sources):
-        if source is None or source.empty:
-            continue
-
-        for country in source.columns:
-            last_observation = source[country].last_valid_index()
-
-            if last_observation is None:
-                continue
-
-            if country not in chosen or last_observation > chosen[country][0]:
-                chosen[country] = (last_observation, position)
+    chosen = choose_sources(sources)
 
     if not chosen:
         return pd.DataFrame()
 
     combined = pd.concat(
-        [
-            sources[position][country]
-            for country, (_, position) in sorted(chosen.items())
-        ],
+        [sources[position][country] for country, position in sorted(chosen.items())],
         axis=1,
     ).sort_index()
 
@@ -639,7 +739,10 @@ EXTENSION_TOLERANCE = 0.0005
 
 
 def extend_with_recent(
-    history: pd.DataFrame, recent: pd.DataFrame, country: str
+    history: pd.DataFrame,
+    recent: pd.DataFrame,
+    country: str,
+    recent_sources: set[str] | None = None,
 ) -> pd.DataFrame:
     """
     Extends a country's series with the months a faster publisher of the same figures
@@ -654,6 +757,9 @@ def extend_with_recent(
         history (pd.DataFrame): The full series, one column per country.
         recent (pd.DataFrame): The faster publisher's recent observations for the country.
         country (str): The column to extend.
+        recent_sources (set[str] | None): The sources of the recent observations, held
+            back with sources_model.collect_sources, which are recorded only when they
+            extend the history. Defaults to None.
 
     Returns:
         pd.DataFrame: The history with the newer observations added to that column.
@@ -692,5 +798,8 @@ def extend_with_recent(
 
     extended = history.reindex(history.index.union(additions.index))
     extended.loc[additions.index, country] = additions
+
+    for source in recent_sources or ():
+        record_source(source)
 
     return extended

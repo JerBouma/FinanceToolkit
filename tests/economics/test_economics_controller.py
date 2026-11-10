@@ -338,16 +338,20 @@ def test_get_producer_price_index(recorder, economics_module):
 
 
 def test_get_real_interest_rate(recorder, economics_module):
-    recorder.capture(economics_module.get_real_interest_rate())
-    recorder.capture(economics_module.get_real_interest_rate(growth=True))
+    recorder.capture(economics_module.get_real_interest_rate(period="yearly"))
+    recorder.capture(
+        economics_module.get_real_interest_rate(period="yearly", growth=True)
+    )
     recorder.capture(
         economics_module.get_real_interest_rate(
-            countries=["United States", "Germany", "Japan"], rate_type="short_term"
+            countries=["United States", "Germany", "Japan"],
+            rate_type="short_term",
+            period="yearly",
         )
     )
     recorder.capture(
         economics_module.get_real_interest_rate(
-            countries=["United States", "Germany"], gmdb_source=False
+            countries=["United States", "Germany"], gmdb_source=False, period="yearly"
         )
     )
 

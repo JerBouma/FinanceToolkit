@@ -37,6 +37,7 @@ from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
@@ -88,6 +89,7 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["scores"] + [
 ]
 
 
+@track_sources
 class Models:
     """
     The Models module is meant to execute well-known models such
@@ -213,6 +215,14 @@ class Models:
             if callable(self._tickers_source)
             else self._tickers_source
         )
+
+    @cached_property
+    def _peer_tickers(self) -> list[str]:
+        """
+        The tickers the scores that rank or compare the tickers with each other use: the
+        Total of a basket is not a peer of the tickers it adds up.
+        """
+        return [ticker for ticker in self._tickers if ticker != "Total"]
 
     @cached_property
     def _period_end_dates(self) -> pd.DataFrame | None:
@@ -1830,6 +1840,12 @@ class Models:
                 "weighted average cost of capital",
             ):
                 continue
+            # A value per share needs the shares, which the Total of a basket has none of.
+            shares_outstanding = self._income_statement.loc[
+                ticker, "Weighted Average Shares Diluted"
+            ].dropna()
+            if shares_outstanding.empty:
+                continue
             cash_flow_series = cash_flows.loc[ticker].dropna()
 
             intrinsic_values_dict[ticker] = intrinsic_model.get_intrinsic_value(
@@ -1863,11 +1879,7 @@ class Models:
                     .any()
                     else 0.0
                 ),
-                shares_outstanding=self._income_statement.loc[
-                    ticker, "Weighted Average Shares Diluted"
-                ]
-                .dropna()
-                .iloc[-1],
+                shares_outstanding=shares_outstanding.iloc[-1],
                 periods=periods,
             )
             intrinsic_values_dict[ticker] = intrinsic_values_dict[ticker].pipe(
@@ -7643,10 +7655,12 @@ class Models:
         ) - (inputs["Total Current Liabilities"] - inputs["Short Term Debt"].fillna(0))
 
         results = quality_model.get_magic_formula(
-            operating_income=inputs["Operating Income"],
-            enterprise_value=enterprise_value,
-            net_working_capital=net_working_capital,
-            net_fixed_assets=inputs["Property, Plant and Equipment"],
+            operating_income=inputs["Operating Income"].reindex(self._peer_tickers),
+            enterprise_value=enterprise_value.reindex(self._peer_tickers),
+            net_working_capital=net_working_capital.reindex(self._peer_tickers),
+            net_fixed_assets=inputs["Property, Plant and Equipment"].reindex(
+                self._peer_tickers
+            ),
         )
         # The ranks need the operating income of a full trailing sum, so the periods before
         # the first one are left out (and the result is empty, with a warning, without one).
@@ -7757,7 +7771,10 @@ class Models:
         # year (a trailing twelve months) unless a trailing period is given.
         if trailing is None and self._quarterly:
             trailing = 4
-        inputs = self._score_inputs(trailing)
+        inputs = {
+            name: frame.reindex(self._peer_tickers)
+            for name, frame in self._score_inputs(trailing).items()
+        }
         lag = trailing or 1
         results = quality_model.get_mohanram_g_score(
             net_income=inputs["Net Income"],
@@ -8115,11 +8132,11 @@ class Models:
         | NVDA  |  1.4289 |  0.2041 | -0.2041 | -0.2041 |  1.4289 |  1.4289 | nan      |
         | ORCL  | -0.2041 | -0.2041 | -1.4289 | -1.0206 | -1.0206 | -1.0206 | nan      |
         """
-        if len(self._tickers) < quality_model.QUALITY_MINIMUM_TICKERS:
+        if len(self._peer_tickers) < quality_model.QUALITY_MINIMUM_TICKERS:
             logger.warning(
                 "The Quality Score ranks the tickers against each other and needs at least "
                 "three tickers, while %s were given.",
-                len(self._tickers),
+                len(self._peer_tickers),
             )
             return pd.DataFrame()
 
@@ -8211,10 +8228,16 @@ class Models:
 
         results = quality_model.get_quality_minus_junk(
             {
-                "Profitability": profitability,
-                "Growth": growth,
-                "Safety": safety,
-                "Payout": payout,
+                component: {
+                    name: frame.reindex(self._peer_tickers)
+                    for name, frame in measures.items()
+                }
+                for component, measures in {
+                    "Profitability": profitability,
+                    "Growth": growth,
+                    "Safety": safety,
+                    "Payout": payout,
+                }.items()
             }
         )
 

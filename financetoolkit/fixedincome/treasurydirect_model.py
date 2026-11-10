@@ -14,6 +14,7 @@ from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.economics.helpers import collect_cached_data, require_columns
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS
+from financetoolkit.utilities.sources_model import record_url
 
 logger = logger_model.get_logger()
 
@@ -132,6 +133,7 @@ def _get_day(price_date: date) -> pd.DataFrame:
                 timeout=60,
             )
             response.raise_for_status()
+            record_url(PRICES_URL)
         return _parse_prices(response.text)
 
     cache = get_active_cache()

@@ -2,6 +2,7 @@
 
 __docformat__ = "google"
 
+import json
 from datetime import datetime
 
 import pandas as pd
@@ -33,6 +34,19 @@ SERIES = {
     "import_price_index": "EIUIR",
 }
 
+# The Consumer Price Index for All Urban Consumers (CPI-U), U.S. city average, not
+# seasonally adjusted, 1982-84 = 100: all items, the core index (all items less food and
+# energy) and the main components.
+CONSUMER_PRICE_SERIES = {
+    "all": "CUUR0000SA0",
+    "core": "CUUR0000SA0L1E",
+    "energy": "CUUR0000SA0E",
+    "food": "CUUR0000SAF1",
+    "goods": "CUUR0000SAC",
+    "services": "CUUR0000SAS",
+    "shelter": "CUUR0000SAH1",
+}
+
 COUNTRY = "United States"
 
 
@@ -41,32 +55,49 @@ class BLSRequestRefusedError(requests.exceptions.RequestException):
 
 
 def collect_recent_bls_series(
-    series_id: str, description: str, fallback: str | None = None
+    series_id: str,
+    description: str,
+    fallback: str | None = None,
+    columns: dict[str, str] | None = None,
+    dataset: str = "series",
 ) -> pd.DataFrame:
     """
-    Retrieves the monthly observations of a BLS series for the current and the two
-    previous years, in a single request that is cached for a day.
+    Retrieves the monthly observations of one or more BLS series for the current and the
+    two previous years, in a single request that is cached (for a day by default).
 
     Args:
         series_id (str): The BLS series identifier, e.g. "LNS14000000".
         description (str): What is retrieved, used in the log and error messages.
         fallback (str | None): What is used instead when the BLS cannot be reached, logged
             as information rather than as an error. Defaults to None.
+        columns (dict[str, str] | None): The column name per series identifier, to retrieve
+            several series in the same request. Defaults to None, which retrieves
+            series_id alone as a "United States" column.
+        dataset (str): The cache dataset, which sets how long the answer is kept.
+            Defaults to "series".
 
     Returns:
-        pd.DataFrame: A single "United States" column indexed by month.
+        pd.DataFrame: One column per series (a single "United States" column by default),
+        indexed by month.
 
     Raises:
         ValueError: When the response has no observations in the expected format.
     """
+    columns = columns or {series_id: COUNTRY}
 
     def fetch() -> pd.DataFrame:
         current_year = datetime.now().year
         response = get_request(
-            f"{BASE_URL}{series_id}?startyear={current_year - RECENT_YEARS + 1}"
-            f"&endyear={current_year}",
+            BASE_URL,
             timeout=60,
-            extra_headers=TOOLKIT_HEADERS,
+            extra_headers={**TOOLKIT_HEADERS, "Content-Type": "application/json"},
+            data=json.dumps(
+                {
+                    "seriesid": list(columns),
+                    "startyear": str(current_year - RECENT_YEARS + 1),
+                    "endyear": str(current_year),
+                }
+            ),
         ).json()
 
         # A refused request, such as one over the daily limit, is answered with status 200.
@@ -75,31 +106,39 @@ def collect_recent_bls_series(
                 f"The BLS did not process the request: {' '.join(response.get('message', []))}"
             )
 
+        series_values = {}
+
         try:
-            observations = pd.DataFrame(response["Results"]["series"][0]["data"])
-            observations = observations[
-                observations["period"].str.match(r"^M(0[1-9]|1[0-2])$")
-            ]
-            index = pd.PeriodIndex(
-                (
-                    observations["year"] + "-" + observations["period"].str[1:]
-                ).to_numpy(),
-                freq="M",
-            )
+            for series in response["Results"]["series"]:
+                observations = pd.DataFrame(series["data"])
+                observations = observations[
+                    observations["period"].str.match(r"^M(0[1-9]|1[0-2])$")
+                ]
+                index = pd.PeriodIndex(
+                    (
+                        observations["year"] + "-" + observations["period"].str[1:]
+                    ).to_numpy(),
+                    freq="M",
+                )
+                series_values[columns[series["seriesID"]]] = pd.Series(
+                    pd.to_numeric(observations["value"], errors="coerce").to_numpy(),
+                    index=index,
+                )
         except (KeyError, IndexError, TypeError) as error:
             raise ValueError(
                 f"The BLS response for the {description} has no observations in the expected "
                 "format, which means the API changed."
             ) from error
 
-        values = pd.to_numeric(observations["value"], errors="coerce").to_numpy()
+        if not series_values:
+            raise ValueError(f"The BLS response for the {description} has no series.")
 
-        return pd.DataFrame({COUNTRY: values}, index=index).sort_index()
+        return pd.DataFrame(series_values).sort_index()
 
     return collect_cached_data(
         source=policy_model.BUREAU_OF_LABOR_STATISTICS,
-        dataset="series",
-        entity=f"{series_id}/recent",
+        dataset=dataset,
+        entity=f"{','.join(columns)}/recent",
         fetch=fetch,
         description=description,
         fallback=fallback,
@@ -166,4 +205,28 @@ def get_price_index(measure: str) -> pd.DataFrame:
     """
     return collect_recent_bls_series(
         SERIES[f"{measure}_price_index"], f"US {measure} price index"
+    )
+
+
+def get_consumer_price_index() -> pd.DataFrame:
+    """
+    Retrieves the latest months of the US Consumer Price Index for All Urban Consumers
+    (CPI-U), not seasonally adjusted, 1982-84 = 100: all items, the core index (all items
+    less food and energy), energy, food, goods (commodities), services and shelter, in a
+    single request. The BLS publishes a month at 8:30 ET on its release day, before any
+    other source.
+
+    The keyless BLS API returns about the last three years, so the full history requires
+    a FRED API key.
+
+    Returns:
+        pd.DataFrame: One column per measure ("all", "core", "energy", "food", "goods",
+        "services" and "shelter"), indexed by month.
+    """
+    return collect_recent_bls_series(
+        CONSUMER_PRICE_SERIES["all"],
+        "US consumer price index",
+        fallback="the US series ends with the months the other sources have",
+        columns={series: measure for measure, series in CONSUMER_PRICE_SERIES.items()},
+        dataset="consumer_prices",
     )

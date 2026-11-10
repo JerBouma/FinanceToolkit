@@ -952,3 +952,68 @@ def get_goodwill_and_intangible_assets(balance_sheet: pd.DataFrame) -> pd.DataFr
     )
 
     return balance_sheet.loc[:, "Goodwill and Intangible Assets", :].fillna(separate)
+
+
+def add_basket_total(
+    statement: pd.DataFrame, tickers: list[str], not_summed: list[str]
+) -> pd.DataFrame:
+    """
+    Adds the tickers up into one company named "Total", so that a group of companies (a
+    basket) can be analysed as if it were one: its financial statements are the sums of
+    theirs, and every ratio calculated from them is the ratio of those sums.
+
+    A figure of the Total is missing for a period when a ticker has no value for it, as the
+    sum of the others would understate the basket. Figures that do not add up across
+    companies (per-share amounts and share counts) are left empty.
+
+    Notes: All the figures must be in the same currency.
+
+    Args:
+        statement (pd.DataFrame): The financial statement, with the tickers and the line
+            items as its index and the periods as its columns.
+        tickers (list[str]): The tickers to add up.
+        not_summed (list[str]): The line items that are left empty for the Total.
+
+    Returns:
+        pd.DataFrame: The financial statement with the Total added after the tickers.
+    """
+    figures = statement.loc[tickers]
+    total = figures.groupby(level=1, sort=False).sum(min_count=len(tickers))
+    total.loc[total.index.isin(not_summed)] = np.nan
+    total.index = pd.MultiIndex.from_product(
+        [["Total"], total.index], names=statement.index.names
+    )
+
+    return pd.concat([statement, total])
+
+
+def deflate_with_price_index(
+    values: pd.DataFrame, price_index: pd.Series
+) -> pd.DataFrame:
+    """
+    Expresses monthly values in the money of one month, the latest month of a price index
+    such as the consumer price index, so that values from decades apart can be compared in
+    real terms ("in September 2026 dollars").
+
+    The formula is as follows:
+
+    - Real Value (t) = Nominal Value (t) * Price Index (latest month) / Price Index (t)
+
+    A month after the latest month of the price index, which statistics offices publish a few
+    weeks late, keeps its nominal value: it is in the money of that latest month already but
+    for the inflation since. A month before the first month of the price index has no real
+    value.
+
+    Args:
+        values (pd.DataFrame): The nominal values, with months (a PeriodIndex) as index.
+        price_index (pd.Series): The price index, with months (a PeriodIndex) as index.
+
+    Returns:
+        pd.DataFrame: The values in the money of the latest month of the price index.
+    """
+    price_index = price_index.dropna()
+    monthly = price_index.reindex(values.index)
+    # Months after the latest month of the price index take that month's level.
+    monthly = monthly.where(values.index <= price_index.index[-1], price_index.iloc[-1])
+
+    return values.mul(price_index.iloc[-1] / monthly, axis=0)

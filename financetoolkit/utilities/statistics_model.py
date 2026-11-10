@@ -317,7 +317,9 @@ def finalize_dataset(
             data over trailing periods (e.g. a trailing-4-quarter sum) before
             growth/standardization. Defaults to None.
         dropna (bool, optional): Whether to drop rows that are entirely NaN after growth
-            and standardization have been applied. Defaults to False.
+            and standardization have been applied; with periods as the index only those
+            before the first and after the last period with data, so a skipped period stays
+            an empty row. Defaults to False.
         countries (list[str] | str | None, optional): A list of countries or a single
             country to include in the results. Defaults to None.
         indicator_name (str, optional): The human-readable name of the indicator, used in
@@ -333,6 +335,29 @@ def finalize_dataset(
     # metric undefined: NaN like any other missing value, also so that one such period
     # does not turn the growth or Z-Scores of the whole series into NaN.
     dataset = drop_non_finite(dataset)
+
+    # A month, quarter or year a source skipped (a month a statistics office did not
+    # publish) becomes an empty row, so the periods stay consecutive and a growth rate
+    # never compares the wrong ones: November with September when October is missing.
+    # Days and weeks are left as they are, as markets close on weekends and holidays.
+    calendar_periods = isinstance(dataset.index, pd.PeriodIndex) and (
+        dataset.index.freqstr[0] in "MQY"
+    )
+    if (
+        axis == "rows"
+        and calendar_periods
+        and len(dataset.index)
+        and dataset.index.is_monotonic_increasing
+        and not dataset.index.has_duplicates
+    ):
+        dataset = dataset.reindex(
+            pd.period_range(
+                dataset.index[0],
+                dataset.index[-1],
+                freq=dataset.index.freq,
+                name=dataset.index.name,
+            )
+        )
 
     if rolling:
         dataset = dataset.rolling(window=rolling).mean()
@@ -457,8 +482,17 @@ def finalize_dataset(
             )
 
     # After the country selection, so a row that is empty for every selected country goes
-    # too, such as a month only an unselected country has published yet.
-    if dropna:
+    # too, such as a month only an unselected country has published yet. Months, quarters
+    # and years keep the empty rows between the first and the last one with data: a month
+    # the source skipped is shown as missing rather than left out.
+    if dropna and calendar_periods:
+        with_data = dataset.notna().any(axis=1)
+        dataset = (
+            dataset.loc[with_data.idxmax() : with_data.iloc[::-1].idxmax()]
+            if with_data.any()
+            else dataset.iloc[0:0]
+        )
+    elif dropna:
         dataset = dataset.dropna(how="all", axis=0)
 
     return dataset

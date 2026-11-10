@@ -9,6 +9,7 @@ from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.economics import cboe_model
 from financetoolkit.options.helpers import validate_numeric_inputs
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import record_source
 
 logger = get_logger()
 
@@ -35,6 +36,8 @@ def get_option_expiry_dates(ticker: str) -> list[str]:
 
     try:
         expiry_dates = list(yf.Ticker(ticker).options)
+        if expiry_dates:
+            record_source(policy_model.YAHOO_FINANCE)
     except Exception as error:  # noqa: BLE001 - Yahoo Finance fails in many ways
         logger.info("Yahoo Finance has no options of %s (%s).", ticker, error)
         expiry_dates = []
@@ -100,6 +103,7 @@ def get_option_chains(
         try:
             option_chain = yf.Ticker(ticker).option_chain(expiration_date)
             options_df = option_chain.puts if put_option else option_chain.calls
+            record_source(policy_model.YAHOO_FINANCE)
             # The price of the underlying quoted with the chain, so metrics that combine
             # the two use prices of the same moment rather than the last historical close.
             underlying_price = (option_chain.underlying or {}).get(

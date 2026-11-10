@@ -1660,3 +1660,29 @@ def test_get_campbell_hilscher_szilagyi_score(recorder, models_module, monkeypat
     monkeypatch.setattr(models_module, "_sp500_function", None)
     result = models_module.get_campbell_hilscher_szilagyi_score()
     assert result.xs("Failure Probability", level=1).isna().all().all()
+
+
+def test_basket_models_leave_the_tickers_as_they_are(
+    models_module, basket_toolkit, caplog
+):
+    basket_models = basket_toolkit.models
+
+    # The Total is a company of its own in the scores built on its statements...
+    piotroski = basket_models.get_piotroski_score()
+    assert "Total" in piotroski.index.get_level_values(0)
+    pd.testing.assert_frame_equal(
+        piotroski.drop(index="Total", level=0), models_module.get_piotroski_score()
+    )
+    # ...but no peer of its own tickers in the scores that rank them against each other.
+    magic_formula = basket_models.get_magic_formula()
+    assert "Total" not in magic_formula.index.get_level_values(0)
+    pd.testing.assert_frame_equal(magic_formula, models_module.get_magic_formula())
+    assert basket_models.get_quality_score().empty
+    assert "while 2 were given" in caplog.text
+
+    # A value per share needs shares, which the Total has none of.
+    intrinsic_valuation = basket_models.get_intrinsic_valuation()
+    assert "Total" not in intrinsic_valuation.index.get_level_values(0)
+    pd.testing.assert_frame_equal(
+        intrinsic_valuation, models_module.get_intrinsic_valuation()
+    )

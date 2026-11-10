@@ -1,5 +1,7 @@
 """Economics Controller Tests"""
 
+import pytest
+
 
 def test_get_gross_domestic_product(recorder, economics_module):
     recorder.capture(economics_module.get_gross_domestic_product())
@@ -457,4 +459,39 @@ def test_get_import_price_index(recorder, economics_module):
         economics_module.get_import_price_index(
             countries=["United States", "Japan", "Germany"], period="quarterly"
         )
+    )
+
+
+def test_get_purchasing_power(recorder, economics_module):
+    countries = ["United States", "Euro Area", "Netherlands", "Japan"]
+    purchasing_power = economics_module.get_purchasing_power(
+        countries=countries, rounding=8
+    )
+    prices = economics_module.get_consumer_price_index(
+        countries=countries, cumulative=True, rounding=8
+    )
+
+    # The purchasing power is the inverse of the growth in prices.
+    assert (purchasing_power * prices / 100).stack().tolist() == pytest.approx(
+        [1.0] * prices.stack().size, rel=1e-6
+    )
+    assert purchasing_power.iloc[0].tolist() == pytest.approx([100.0] * 4)
+
+    recorder.capture(purchasing_power)
+    recorder.capture(
+        economics_module.get_purchasing_power(
+            countries=countries + ["Brazil"], overnight_rate=True
+        )
+    )
+    recorder.capture(economics_module.get_purchasing_power(period="yearly"))
+
+
+def test_get_overnight_rate_cumulative(recorder, economics_module):
+    growth = economics_module.get_overnight_rate(cumulative=True)
+
+    assert growth.bfill().iloc[0].tolist() == pytest.approx([1.0] * growth.shape[1])
+
+    recorder.capture(growth)
+    recorder.capture(
+        economics_module.get_overnight_rate(cumulative=True, period="monthly")
     )

@@ -412,6 +412,79 @@ def is_yearly(index: pd.Index) -> bool:
 
 
 # The skipped periods a note names per series before it counts the rest.
+# The periods an answer can be converted to, coarsest last, with their pandas frequency.
+PERIOD_ORDER = {
+    "daily": "D",
+    "weekly": "W-FRI",
+    "monthly": "M",
+    "quarterly": "Q",
+    "yearly": "Y",
+}
+
+# The longest median spacing in days of an observed frequency, to recognise a date index.
+PERIOD_SPACING_DAYS = {"daily": 4, "weekly": 10, "monthly": 45, "quarterly": 135}
+
+
+def _observed_period(index: pd.Index) -> str | None:
+    """The frequency of a date or period index, or None when it is neither."""
+    if isinstance(index, pd.PeriodIndex):
+        return next(
+            (
+                period
+                for period, code in PERIOD_ORDER.items()
+                if index.freqstr[0] == code[0]
+            ),
+            None,
+        )
+
+    if not isinstance(index, pd.DatetimeIndex) or len(index) < 2:  # noqa: PLR2004
+        return None
+
+    spacing = pd.Series(index.sort_values()).diff().dt.days.median()
+
+    return next(
+        (period for period, days in PERIOD_SPACING_DAYS.items() if spacing <= days),
+        "yearly",
+    )
+
+
+def convert_to_period(
+    data: pd.DataFrame | pd.Series, period: str
+) -> pd.DataFrame | pd.Series | None:
+    """
+    Converts a time series to a coarser period, taking the last value of every period (the
+    end-of-period convention), for an indicator that has no period parameter of its own.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The answer, indexed by date or period.
+        period (str): "weekly", "monthly", "quarterly" or "yearly" ("annual" works too).
+
+    Returns:
+        pd.DataFrame | pd.Series | None: The converted series, or None when the answer is
+        not a time series or is not finer than the period.
+    """
+    period = "yearly" if period.lower() == "annual" else period.lower()
+    observed = _observed_period(data.index)
+    order = list(PERIOD_ORDER)
+
+    if (
+        period not in PERIOD_ORDER
+        or observed is None
+        or order.index(observed) >= order.index(period)
+    ):
+        return None
+
+    index = (
+        data.index.to_timestamp()
+        if isinstance(data.index, pd.PeriodIndex)
+        else data.index
+    )
+    converted = data.groupby(index.to_period(PERIOD_ORDER[period])).last()
+    converted.index.name = data.index.name
+
+    return converted
+
+
 SKIPPED_PERIODS_SHOWN = 3
 
 

@@ -521,6 +521,10 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
     - Change Since Start = (x(T) - x(0)) / |x(0)|
     - Change From Highest = (x(T) - max(x)) / |max(x)|
     - Change From Lowest = (x(T) - min(x)) / |min(x)|
+    - Multiple Since Start = x(T) / x(0)
+    - Annualised Change = (x(T) / x(0)) ^ (1 / years) - 1, years between the two dates
+    - Largest Drawdown = min over t of (x(t) - max(x(s), s <= t)) / |max(x(s), s <= t)|
+    - Recovery Date = the first date after the trough with x >= the peak before it
     - First Above Level = the first date s with x(s) > level
     - Above Level Since = the first date of the run of observations above the level that
       the latest one belongs to
@@ -534,7 +538,12 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
     it is NaN when the first observation is zero. max(x) and min(x) run over every observation,
     the latest included, so the Highest equals the Latest Value when the series is at its peak and
     its change from it is 0. The Highest Date and Lowest Date are the first dates the series
-    reached them; the changes from them are NaN when they are zero. With a level, such as an
+    reached them; the changes from them are NaN when they are zero. The Multiple Since Start and
+    Annualised Change (the compound annual rate between the first and the latest date) are NaN
+    unless both values are positive. The Largest Drawdown is the largest fall from an earlier
+    peak, with the dates of that peak and of the trough, and the Recovery Date the first date
+    the series was back at the peak, NaN while it has not recovered (or when it never fell).
+    With a level, such as an
     earlier peak, the First Above Level is the first date the series exceeded it ("the first
     month above the 1980 high") and the Above Level Since the date it has been above it since
     without a break, NaN when it never was or the latest value is not above it.
@@ -546,9 +555,11 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
 
     Returns:
         pd.Series: The Start Date, Start Value, Observations, Latest Date, Latest Value, Change
-        Since Start (a decimal), Percentile, Highest Since, Lowest Since, Highest, Highest Date,
-        Change From Highest (a decimal), Lowest, Lowest Date and Change From Lowest (a decimal),
-        and with a level the Level, First Above Level and Above Level Since, the dates as text.
+        Since Start (a decimal), Multiple Since Start, Annualised Change (a decimal),
+        Percentile, Highest Since, Lowest Since, Highest, Highest Date, Change From Highest (a
+        decimal), Lowest, Lowest Date, Change From Lowest (a decimal), Largest Drawdown (a
+        decimal), Drawdown Peak Date, Drawdown Trough Date and Recovery Date, and with a level
+        the Level, First Above Level and Above Level Since, the dates as text.
     """
     observed = levels.dropna()
 
@@ -565,6 +576,46 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
 
     as_high = np.flatnonzero(earlier >= latest)
     as_low = np.flatnonzero(earlier <= latest)
+
+    # Years between the first and the latest observation, for the annualised change.
+    try:
+        dates = (
+            observed.index.to_timestamp()
+            if isinstance(observed.index, pd.PeriodIndex)
+            else pd.DatetimeIndex(observed.index)
+        )
+        years = (dates[-1] - dates[0]).days / 365.25
+    except (TypeError, ValueError):
+        years = np.nan
+    positive = first > 0 and latest > 0
+    multiple = latest / first if positive else np.nan
+    annualised = (
+        multiple ** (1 / years) - 1 if positive and years and years > 0 else np.nan
+    )
+
+    # The largest fall from a running peak, and the first date the peak was regained.
+    running_peak = np.maximum.accumulate(values)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        falls = np.where(
+            running_peak != 0,
+            (values - running_peak) / np.abs(running_peak),
+            np.nan,
+        )
+    trough = int(np.nanargmin(falls)) if np.isfinite(falls).any() else 0
+    largest_fall = float(falls[trough]) if np.isfinite(falls[trough]) else np.nan
+    peak = int(np.flatnonzero(values[: trough + 1] == running_peak[trough])[0])
+    regained = np.flatnonzero(values[trough + 1 :] >= running_peak[trough])
+    drawdown = {
+        "Largest Drawdown": largest_fall,
+        "Drawdown Peak Date": labels[peak] if largest_fall < 0 else np.nan,
+        "Drawdown Trough Date": labels[trough] if largest_fall < 0 else np.nan,
+        "Recovery Date": (
+            labels[trough + 1 + regained[0]]
+            if largest_fall < 0 and regained.size
+            else np.nan
+        ),
+    }
+
     above_level = {}
     if level is not None:
         above = np.flatnonzero(values > level)
@@ -587,6 +638,8 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
             "Latest Date": labels[-1],
             "Latest Value": latest,
             "Change Since Start": (latest - first) / abs(first) if first else np.nan,
+            "Multiple Since Start": multiple,
+            "Annualised Change": annualised,
             "Percentile": (
                 (np.sum(earlier < latest) + 0.5 * np.sum(earlier == latest))
                 / len(earlier)
@@ -603,6 +656,7 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
             "Lowest": lowest,
             "Lowest Date": labels[int(np.argmin(values))],
             "Change From Lowest": (latest - lowest) / abs(lowest) if lowest else np.nan,
+            **drawdown,
             **above_level,
         },
         dtype=object,
@@ -684,10 +738,11 @@ def get_window_change_by_year(
     return window
 
 
-def get_streaks(levels: pd.Series) -> pd.Series:
+def get_streaks(levels: pd.Series, level: float | None = None) -> pd.Series:
     """
     Calculate the streak a series is on: the sign of its latest value, since when the series
-    has had that sign without a break, and how that run compares with the earlier ones.
+    has had that sign without a break, and how that run compares with the earlier ones. With
+    a level the runs are above, below or at that level instead ("27 years below 2%").
 
     A run is a stretch of consecutive observations with the same sign (positive, negative or
     zero). The current run is the one the latest observation belongs to, the previous run the
@@ -696,6 +751,8 @@ def get_streaks(levels: pd.Series) -> pd.Series:
 
     Args:
         levels (pd.Series): The values of a single series by date; missing values are left out.
+        level (float | None, optional): The level the runs are measured against. Defaults to
+            None, which is zero: the sign of the values.
 
     Returns:
         pd.Series: The Start Date and Observations of the history, the Latest Date and Latest
@@ -710,8 +767,12 @@ def get_streaks(levels: pd.Series) -> pd.Series:
         raise ValueError("The series has no observations.")
 
     labels = observed.index.astype(str)
-    signs = np.sign(observed.to_numpy(dtype=float))
-    names = {1.0: "Positive", -1.0: "Negative", 0.0: "Zero"}
+    signs = np.sign(observed.to_numpy(dtype=float) - (level or 0.0))
+    names = (
+        {1.0: "Positive", -1.0: "Negative", 0.0: "Zero"}
+        if level is None
+        else {1.0: "Above Level", -1.0: "Below Level", 0.0: "At Level"}
+    )
 
     starts = np.flatnonzero(np.r_[True, signs[1:] != signs[:-1]])
     ends = np.r_[starts[1:] - 1, len(signs) - 1]

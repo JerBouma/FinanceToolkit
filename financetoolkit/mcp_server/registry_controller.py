@@ -49,6 +49,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
     summarize_reasons,
 )
 from financetoolkit.mcp_server.formatting_model import (
+    convert_to_period,
     country_names,
     format_result,
     has_period_columns,
@@ -1843,6 +1844,7 @@ class ToolRegistry:
             # named in the answer, so a caller does not believe they were used.
             ignored_params: list[str] = []
             given_params: set[str] = set()
+            requested_period: str | None = None
             for pname, pann, pdefault in param_meta:
                 if pname in kwargs:
                     val = kwargs.pop(pname)
@@ -1860,6 +1862,8 @@ class ToolRegistry:
                     ):
                         if pname in given_params:
                             ignored_params.append(pname)
+                            if pname == "period":
+                                requested_period = str(val)
                         continue
                     # A disputed parameter is advertised as unset, so an unset value means "no preference" and must reach the indicator's own default rather than another indicator's.  # noqa: E501
                     if pname in disputed_params and val in (None, ""):
@@ -2103,6 +2107,22 @@ class ToolRegistry:
                             strict=False,
                         )
                     )
+                # An indicator without a period of its own is converted to the requested
+                # one, so a long daily or weekly history fits a yearly answer.
+                period_note = None
+                if (
+                    requested_period
+                    and isinstance(result, pd.DataFrame | pd.Series)
+                    and (converted := convert_to_period(result, requested_period))
+                    is not None
+                ):
+                    result = converted
+                    ignored_params.remove("period")
+                    period_note = (
+                        f"`{method_name}` has no period parameter, so period="
+                        f"'{requested_period}' shows the last value of every period "
+                        "(end of period), not an average."
+                    )
                 unmatched_columns: list[str] = []
                 if show_columns is not None:
                     # Matched in any casing ("close" for Close), as the names are shown
@@ -2316,6 +2336,8 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
+                if period_note:
+                    notes.append(period_note)
                 if isinstance(result, pd.DataFrame | pd.Series) and (
                     skipped_note := skipped_periods_note(result)
                 ):

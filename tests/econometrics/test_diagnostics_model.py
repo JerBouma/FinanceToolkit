@@ -406,3 +406,38 @@ def test_window_change_by_year_ranks_the_same_months_of_every_year():
 
     with pytest.raises(ValueError, match="between 1 and 12"):
         diagnostics_model.get_window_change_by_year(values, 0, 10)
+
+
+def test_level_significance_gives_the_annualised_change_and_the_largest_drawdown():
+    months = pd.period_range("2000-01", "2010-01", freq="M")
+    values = pd.Series(100.0, index=months)
+    values[pd.Period("2005-01", "M") :] = 150.0
+    values[pd.Period("2006-01", "M") : pd.Period("2007-12", "M")] = 90.0
+    values[pd.Period("2010-01", "M")] = 200.0
+
+    significance = diagnostics_model.get_level_significance(values)
+
+    assert significance["Multiple Since Start"] == pytest.approx(2.0)
+    # Doubling over ten years.
+    assert significance["Annualised Change"] == pytest.approx(
+        2 ** (1 / 10) - 1, abs=1e-4
+    )
+    assert significance["Largest Drawdown"] == pytest.approx(-0.4)
+    assert significance["Drawdown Peak Date"] == "2005-01"
+    assert significance["Drawdown Trough Date"] == "2006-01"
+    # 150 again from January 2008.
+    assert significance["Recovery Date"] == "2008-01"
+
+
+def test_streaks_count_runs_above_and_below_a_level():
+    years = pd.period_range("2000", "2009", freq="Y")
+    inflation = pd.Series(
+        [0.03, 0.01, 0.01, 0.015, 0.03, 0.025, 0.04, 0.01, 0.01, 0.03], index=years
+    )
+
+    streaks = diagnostics_model.get_streaks(inflation, level=0.02)
+
+    assert streaks["Sign"] == "Above Level"
+    assert streaks["Run Length"] == 1
+    assert streaks["Previous Sign"] == "Below Level"
+    assert streaks["Longest Earlier Run Length"] == 3

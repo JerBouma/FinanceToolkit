@@ -2129,8 +2129,10 @@ class ToolRegistry:
                         pname.endswith(("_ticker", "_tickers"))
                         for pname in method_kwargs
                     )
-                    # A factor analysis answers for the tickers together, not per ticker.
-                    and method_name != "get_factor_analysis"
+                    # A factor analysis and the market cap to GDP of a basket answer for the
+                    # tickers together, not per ticker.
+                    and method_name
+                    not in ("get_factor_analysis", "get_market_cap_to_gdp")
                 ):
                     # An empty column of its own counts as missing too.
                     if isinstance(result, pd.DataFrame) and result.columns.nlevels == 1:

@@ -686,6 +686,20 @@ class Toolkit:
         # what it uses (the gross margin only the income statement).
         period = "quarterly" if self._quarterly else "yearly"
 
+        def gross_domestic_product() -> pd.DataFrame:
+            # Imported when first used, as only the market cap to GDP ratio needs it.
+            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
+                Economics,
+            )
+
+            # Every year, as each date is compared with the GDP of the year before it.
+            return Economics(
+                rounding=None,
+                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
+                cache=self._cache,
+                api_key=self._api_key,
+            ).get_gross_domestic_product(usd=True)
+
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
@@ -713,6 +727,8 @@ class Toolkit:
             period_end_dates=lambda: self._get_daily_start_dates(
                 self._get_module_statement("balance_sheet_statement", "Ratios")
             ),
+            currency_function=self._get_listing_currencies,
+            gross_domestic_product_function=gross_domestic_product,
         )
 
         if self._portfolio_weights:
@@ -1329,15 +1345,6 @@ class Toolkit:
             )
             return ratios_ttm
 
-        def currencies() -> pd.Series:
-            # The currency each ticker is listed in, to compare its close with the NAV.
-            statistics = self.get_historical_statistics()
-            if isinstance(statistics, pd.Series):
-                return pd.Series({self._tickers[0]: statistics.get("Currency")})
-            if statistics.empty or "Currency" not in statistics.index:
-                return pd.Series(dtype=object)
-            return statistics.loc["Currency"]
-
         def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
             # The traded (split-adjusted) close, as an index level is a price index.
             historical = self._other_toolkit(tickers, start, end).get_historical_data(
@@ -1366,7 +1373,7 @@ class Toolkit:
             start_date=self._start_date,
             end_date=self._end_date,
             rounding=self._rounding,
-            currency_function=currencies,
+            currency_function=self._get_listing_currencies,
             prices_function=prices,
             sector_function=sectors,
         )
@@ -1588,6 +1595,20 @@ class Toolkit:
             cache=self._cache,
             api_key=self._api_key,
         )
+
+    def _get_listing_currencies(self) -> pd.Series:
+        """
+        Returns the currency each ticker is listed in, which its prices are quoted in.
+
+        Returns:
+            pd.Series: The currency per ticker, empty when it is unknown.
+        """
+        statistics = self.get_historical_statistics()
+        if isinstance(statistics, pd.Series):
+            return pd.Series({self._tickers[0]: statistics.get("Currency")})
+        if statistics.empty or "Currency" not in statistics.index:
+            return pd.Series(dtype=object)
+        return statistics.loc["Currency"]
 
     def get_profile(self):
         """

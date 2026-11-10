@@ -12,6 +12,7 @@ from financetoolkit.discovery import discovery_model
 from financetoolkit.models import damodaran_model
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 
 # ruff: noqa: E501
 
@@ -73,6 +74,7 @@ def _validate_arguments(
 API_KEY: str | None = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY")
 
 
+@track_sources
 class Discovery:
     """
     The Discovery module contains a collection of functions that are meant to get

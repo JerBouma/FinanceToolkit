@@ -55,6 +55,7 @@ from financetoolkit.economics.helpers import (
     buffered_start_date,
     change_over_periods,
     check_period_type,
+    choose_sources,
     combine_sources,
     extend_with_recent,
     get_exchange_business_days,
@@ -71,6 +72,11 @@ from financetoolkit.fixedincome import (
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import (
+    collect_sources,
+    record_source,
+    track_sources,
+)
 from financetoolkit.utilities.statistics_model import euro_area_hint, finalize_dataset
 
 logger = get_logger()
@@ -92,6 +98,7 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 # ruff: noqa: E501
 
 
+@track_sources
 class Economics:
     """
     The Economics module contains methods to retrieve economic data from the OECD.
@@ -339,10 +346,26 @@ class Economics:
             for fetch, only_country in sources
             if only_country is None or requested is None or only_country in requested
         ]
-        frames = helpers.run_in_parallel(
-            lambda fetch: fetch(), [(fetch,) for fetch in needed]
+
+        def fetch_with_sources(
+            fetch: Callable[[], pd.DataFrame],
+        ) -> tuple[pd.DataFrame, set[str]]:
+            # Held back until it is known which source each country is taken from.
+            with collect_sources() as fetched:
+                frame = fetch()
+            return frame, fetched
+
+        retrieved = helpers.run_in_parallel(
+            fetch_with_sources, [(fetch,) for fetch in needed]
         )
+        frames = [frame for frame, _ in retrieved]
         combined = combine_sources(frames)
+
+        # Only the sources a requested country is taken from are named with the answer.
+        for country, position in choose_sources(frames).items():
+            if requested is None or country in requested:
+                for source in retrieved[position][1]:
+                    record_source(source)
 
         # A source's own index name (such as "Effective Date") is not kept, as it was not
         # when every source was combined.
@@ -454,7 +477,8 @@ class Economics:
         if "United States" not in prices.columns:
             return prices
 
-        recent = self._get_united_states_consumer_prices(measure, "all")
+        with collect_sources() as recent_sources:
+            recent = self._get_united_states_consumer_prices(measure, "all")
         history = prices["United States"].dropna()
         shared = history.index.intersection(recent.dropna().index)
 
@@ -464,7 +488,7 @@ class Economics:
                 recent * history[shared[-1]] / recent.loc[shared[-1], "United States"]
             )
 
-        return extend_with_recent(prices, recent, "United States")
+        return extend_with_recent(prices, recent, "United States", recent_sources)
 
     def _get_united_states_consumer_prices(
         self, measure: str, component: str
@@ -657,15 +681,35 @@ class Economics:
                 continue
 
             # A month of overlap, on which both publishers have to agree.
-            recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
+            with collect_sources() as recent_sources:
+                recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
             recent = recent[
                 (recent.index <= pd.Period(self._end_date, freq="D"))
                 # Business days, like the BIS series (the ECB lists every calendar day).
                 & ~recent.index.dayofweek.isin([5, 6])
             ]
-            policy_rate = extend_with_recent(policy_rate, recent, country)
+            policy_rate = extend_with_recent(
+                policy_rate, recent, country, recent_sources
+            )
 
         return policy_rate
+
+    def _get_oecd_unemployment_rate_with_bls(self) -> pd.DataFrame:
+        """
+        The OECD's monthly unemployment rates, with the US extended by the months the BLS
+        has published since (see extend_with_recent).
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by month.
+        """
+        history = oecd_model.get_unemployment_rate(
+            period="monthly", start_date=self._start_date, end_date=self._end_date
+        )
+
+        with collect_sources() as recent_sources:
+            recent = bls_model.get_unemployment_rate()
+
+        return extend_with_recent(history, recent, "United States", recent_sources)
 
     def _get_daily_long_term_interest_rate(
         self, countries: list[str] | str | None = None
@@ -6729,18 +6773,7 @@ class Economics:
                     (ibge_model.get_unemployment_rate, "Brazil"),
                     # The OECD republishes the BLS figure a month later, so the US is
                     # extended with the months the BLS already has.
-                    (
-                        lambda: extend_with_recent(
-                            oecd_model.get_unemployment_rate(
-                                period="monthly",
-                                start_date=self._start_date,
-                                end_date=self._end_date,
-                            ),
-                            bls_model.get_unemployment_rate(),
-                            "United States",
-                        ),
-                        None,
-                    ),
+                    (self._get_oecd_unemployment_rate_with_bls, None),
                 ],
                 countries,
             )

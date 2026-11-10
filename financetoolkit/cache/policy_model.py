@@ -317,6 +317,11 @@ POLICIES: dict[str, CachePolicy] = {
     f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365
     ),
+    # Government finance and national accounts, published quarterly or yearly and revised
+    # back years when a country revises its national accounts.
+    f"{INTERNATIONAL_MONETARY_FUND}.government_finance": CachePolicy(
+        ttl_seconds=7 * DAY, revision_days=1095
+    ),
     f"{EUROPEAN_CENTRAL_BANK}.convergence_yields": CachePolicy(
         ttl_seconds=DAY, revision_days=93
     ),

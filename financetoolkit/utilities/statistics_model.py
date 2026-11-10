@@ -393,8 +393,14 @@ def finalize_dataset(
             countries = [countries]
         # Common short forms and any casing resolve to the names the sources use, e.g.
         # "USA" or "united states" to "United States".
+        # A column per country and item (e.g. a maturity) is selected by its country.
+        known_countries = (
+            dataset.columns.get_level_values(0).unique()
+            if isinstance(dataset.columns, pd.MultiIndex)
+            else dataset.columns
+        )
         selected_countries: list[object] = [
-            normalize_country_name(country, dataset.columns) for country in countries
+            normalize_country_name(country, known_countries) for country in countries
         ]
         missing_countries = [
             country for country in selected_countries if country not in dataset.columns
@@ -406,7 +412,7 @@ def finalize_dataset(
                     if (
                         close := difflib.get_close_matches(
                             str(country),
-                            [str(column) for column in dataset.columns],
+                            [str(column) for column in known_countries],
                             n=1,
                             cutoff=0.75,
                         )

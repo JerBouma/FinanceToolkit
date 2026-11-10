@@ -64,6 +64,7 @@ from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger, redact
+from financetoolkit.utilities.sources_model import collect_sources, readable_sources
 from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
@@ -2029,8 +2030,12 @@ class ToolRegistry:
             try:
                 call_started = time.perf_counter()
                 # The warnings and errors logged during the call explain an empty result,
-                # e.g. a missing API key, so they are passed on rather than lost.
-                with capture_call_messages() as call_messages:
+                # e.g. a missing API key, so they are passed on rather than lost. The
+                # sources of the data are named with the answer.
+                with (
+                    capture_call_messages() as call_messages,
+                    collect_sources() as call_sources,
+                ):
                     if raw_series:
                         result = provider.call_econometrics_with_data(
                             method_name,
@@ -2384,6 +2389,7 @@ class ToolRegistry:
                 formatted = format_result(
                     result,
                     notes=notes or None,
+                    sources=readable_sources(call_sources),
                     reason=summarize_reasons(call_messages)
                     or _short_window_reason(dispatch_category, start_date, end_date),
                     max_characters=None if full_text else max_response_characters,

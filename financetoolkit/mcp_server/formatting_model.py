@@ -655,6 +655,7 @@ def format_result(
     notes: list[str] | None = None,
     reason: str | None = None,
     max_characters: int | None = None,
+    sources: list[str] | None = None,
 ) -> str:
     """Format a Finance Toolkit result as a compact JSON string for LLM consumption.
 
@@ -668,6 +669,8 @@ def format_result(
             dataset turns out to be empty.
         max_characters: Optional size a response may have. A larger table is cut to the
             most recent rows (or the first columns) with a note on how to narrow it.
+        sources: Optional publishers the data comes from, such as FinancialModelingPrep or
+            the Bank for International Settlements, included under a ``"_sources"`` key.
 
     Returns:
         A JSON string.  DataFrames become lists of flat records; dicts of
@@ -677,13 +680,18 @@ def format_result(
     """
 
     def _inject(payload: Any) -> Any:
-        """Wrap payload in a dict with ``_notes`` when notes are present."""
-        if not notes:
+        """Wrap payload in a dict with ``_notes`` and ``_sources`` when present."""
+        extras = {
+            key: value
+            for key, value in (("_notes", notes), ("_sources", sources))
+            if value
+        }
+        if not extras:
             return payload
         if isinstance(payload, list):
-            return {"data": payload, "_notes": notes}
+            return {"data": payload, **extras}
         if isinstance(payload, dict):
-            payload["_notes"] = notes
+            payload.update(extras)
             return payload
         return payload
 

@@ -16,6 +16,7 @@ from financetoolkit.portfolio import (
 from financetoolkit.portfolio.definition_model import PortfolioDefinition
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, requests_model, validation_model
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, to_period_index
 
 logger = logger_model.get_logger()
@@ -31,6 +32,7 @@ _PERIOD_SYMBOLS = {
 }
 
 
+@track_sources
 class Portfolio:
     """
     A class for managing and analyzing your portfolio.

@@ -24,6 +24,7 @@ from financetoolkit.cache import frame_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import record_source
 
 logger = get_logger()
 
@@ -669,6 +670,36 @@ def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     return grouped.mean().where(grouped.count() == (3 if period == "quarterly" else 12))
 
 
+def choose_sources(sources: list[pd.DataFrame]) -> dict[str, int]:
+    """
+    Per country, the position of the source with the most recent observation and, when
+    sources are equally recent, the first in the list (see combine_sources).
+
+    Args:
+        sources (list[pd.DataFrame]): The sources, most preferred first, each indexed by
+            period with one column per country.
+
+    Returns:
+        dict[str, int]: Per country, the position of its source in the list.
+    """
+    chosen: dict[str, tuple[pd.Period, int]] = {}
+
+    for position, source in enumerate(sources):
+        if source is None or source.empty:
+            continue
+
+        for country in source.columns:
+            last_observation = source[country].last_valid_index()
+
+            if last_observation is None:
+                continue
+
+            if country not in chosen or last_observation > chosen[country][0]:
+                chosen[country] = (last_observation, position)
+
+    return {country: position for country, (_, position) in chosen.items()}
+
+
 def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     """
     Combines country columns from several sources, taking each country from the source
@@ -688,29 +719,13 @@ def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     Returns:
         pd.DataFrame: One column per country, indexed by period.
     """
-    chosen: dict[str, tuple[pd.Period, int]] = {}
-
-    for position, source in enumerate(sources):
-        if source is None or source.empty:
-            continue
-
-        for country in source.columns:
-            last_observation = source[country].last_valid_index()
-
-            if last_observation is None:
-                continue
-
-            if country not in chosen or last_observation > chosen[country][0]:
-                chosen[country] = (last_observation, position)
+    chosen = choose_sources(sources)
 
     if not chosen:
         return pd.DataFrame()
 
     combined = pd.concat(
-        [
-            sources[position][country]
-            for country, (_, position) in sorted(chosen.items())
-        ],
+        [sources[position][country] for country, position in sorted(chosen.items())],
         axis=1,
     ).sort_index()
 
@@ -724,7 +739,10 @@ EXTENSION_TOLERANCE = 0.0005
 
 
 def extend_with_recent(
-    history: pd.DataFrame, recent: pd.DataFrame, country: str
+    history: pd.DataFrame,
+    recent: pd.DataFrame,
+    country: str,
+    recent_sources: set[str] | None = None,
 ) -> pd.DataFrame:
     """
     Extends a country's series with the months a faster publisher of the same figures
@@ -739,6 +757,9 @@ def extend_with_recent(
         history (pd.DataFrame): The full series, one column per country.
         recent (pd.DataFrame): The faster publisher's recent observations for the country.
         country (str): The column to extend.
+        recent_sources (set[str] | None): The sources of the recent observations, held
+            back with sources_model.collect_sources, which are recorded only when they
+            extend the history. Defaults to None.
 
     Returns:
         pd.DataFrame: The history with the newer observations added to that column.
@@ -777,5 +798,8 @@ def extend_with_recent(
 
     extended = history.reindex(history.index.union(additions.index))
     extended.loc[additions.index, country] = additions
+
+    for source in recent_sources or ():
+        record_source(source)
 
     return extended

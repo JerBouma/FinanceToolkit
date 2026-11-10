@@ -32,6 +32,7 @@ from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = get_logger()
@@ -43,6 +44,7 @@ logger = get_logger()
 BENCHMARK_TICKER = "Benchmark"
 
 
+@track_sources
 class Econometrics:
     """
     The Econometrics module is meant to test the statistical properties of a price

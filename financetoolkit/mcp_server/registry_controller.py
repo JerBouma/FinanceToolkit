@@ -119,6 +119,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' "
         "(default) or '30y'."
     ),
+    "basket": (
+        "Also analyse the tickers as one company, 'Total': its statements are the sums of "
+        "theirs and its ratios are calculated on those sums (per-share figures stay empty)."
+    ),
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
     "compound": (
@@ -906,6 +910,9 @@ class RouterGroupSpec(NamedTuple):
         risk_free_rate (bool): Whether the tool takes the Toolkit's risk_free_rate, for the
             modules that use a risk-free rate (performance, risk, models, portfolio). The
             options methods take a risk_free_rate of their own (the rate as a number).
+        basket (bool): Whether the tool takes the Toolkit's basket, for the tools that read
+            the financial statements (the statements, ratios and models, and the series of
+            econometrics), which then add up the tickers into a "Total".
     """
 
     tool_name: str
@@ -918,6 +925,7 @@ class RouterGroupSpec(NamedTuple):
     index_category: str | None = None
     description: str | None = None
     risk_free_rate: bool = False
+    basket: bool = False
 
 
 def _split_values(value: object) -> list[str]:
@@ -1338,6 +1346,7 @@ class ToolRegistry:
                     index_category=raw.get("index_category"),
                     description=raw.get("description"),
                     risk_free_rate=bool(raw.get("risk_free_rate")),
+                    basket=bool(raw.get("basket")),
                 )
             )
         return specifications
@@ -1350,6 +1359,7 @@ class ToolRegistry:
         quarterly: bool,
         benchmark_ticker: str,
         period: str | None = None,
+        basket: bool = False,
         deflate_with: str | None = None,
     ) -> pd.DataFrame:
         """
@@ -1368,6 +1378,8 @@ class ToolRegistry:
                 the monthly series its source publishes (a monthly average, for some rates)
                 rather than the last daily value of each month. Defaults to None, each
                 indicator's own default.
+            basket (bool, optional): Whether the indicators by ticker also add up the tickers
+                into a "Total", which becomes a series of its own. Defaults to False.
             deflate_with (str | None, optional): The country whose consumer price index is
                 passed on to every indicator that takes deflate_with, for its values in
                 real terms. Defaults to None, nominal values.
@@ -1445,6 +1457,7 @@ class ToolRegistry:
                 "end_date": end_date,
                 "quarterly": quarterly,
                 "benchmark_ticker": benchmark_ticker,
+                "toolkit_basket": basket and by_ticker,
             }
             parameters = self._inspector.get_method_param_names(
                 self._module_class_map.get(module), reference.indicator
@@ -1462,7 +1475,10 @@ class ToolRegistry:
             # weekly) is read at its own frequency instead, which the analysis resamples.
             if result is None or getattr(result, "empty", False):
                 result = self._provider.call_method(**arguments)
-            resolved = reference._replace(entities=entities)
+            # The Total of a basket is a series of its own, next to the tickers.
+            resolved = reference._replace(
+                entities=entities + (["Total"] if arguments["toolkit_basket"] else [])
+            )
             frames.append((resolved, series_model.to_series_columns(result, resolved)))
         return series_model.combine_series(frames)
 
@@ -1792,6 +1808,11 @@ class ToolRegistry:
                         f"{', '.join(validation_model.RISK_FREE_RATE_OPTIONS)}."
                     )
 
+            # The Toolkit's own setting as well, so the Total is part of every statement.
+            toolkit_basket = bool(
+                spec.basket and to_boolean(kwargs.pop("basket", False))
+            )
+
             # show_columns is handled entirely here — never forwarded to methods
             raw_show_columns = kwargs.pop("show_columns", None)
             show_columns = (
@@ -2050,6 +2071,7 @@ class ToolRegistry:
                                     if "period" in given_params
                                     else None
                                 ),
+                                basket=toolkit_basket,
                                 deflate_with=deflate_with,
                             ),
                             changes=changes,
@@ -2071,6 +2093,7 @@ class ToolRegistry:
                             **call_arguments,
                             benchmark_ticker=benchmark_ticker,
                             toolkit_risk_free_rate=toolkit_risk_free_rate,
+                            toolkit_basket=toolkit_basket,
                             **method_kwargs,
                         )
                         upper_tickers = {ticker.upper() for ticker in tickers or []}
@@ -2087,6 +2110,7 @@ class ToolRegistry:
                                 **call_arguments,
                                 benchmark_ticker=None,
                                 toolkit_risk_free_rate=toolkit_risk_free_rate,
+                                toolkit_basket=toolkit_basket,
                                 **method_kwargs,
                             )
                     input_info = call_input_info()
@@ -2157,6 +2181,7 @@ class ToolRegistry:
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
                         toolkit_risk_free_rate=toolkit_risk_free_rate,
+                        toolkit_basket=toolkit_basket,
                     )
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
@@ -2172,8 +2197,10 @@ class ToolRegistry:
                         pname.endswith(("_ticker", "_tickers"))
                         for pname in method_kwargs
                     )
-                    # A factor analysis answers for the tickers together, not per ticker.
-                    and method_name != "get_factor_analysis"
+                    # A factor analysis and the market cap to GDP of a basket answer for the
+                    # tickers together, not per ticker.
+                    and method_name
+                    not in ("get_factor_analysis", "get_market_cap_to_gdp")
                 ):
                     # An empty column of its own counts as missing too.
                     if isinstance(result, pd.DataFrame) and result.columns.nlevels == 1:
@@ -2462,6 +2489,8 @@ class ToolRegistry:
                     ],
                 )
             )
+        if spec.basket:
+            common.append(P("basket", POS, default=False, annotation=bool))
         portfolio_tool = category == inspector.categories.get("portfolio", "portfolio")
         sig_params = [indicator_param] + [
             P(

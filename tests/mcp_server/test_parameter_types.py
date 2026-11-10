@@ -236,6 +236,35 @@ def test_the_black_litterman_risk_aversion_is_a_number_or_market(
     assert captured[-1]["risk_aversion"] == expected
 
 
+def test_the_tools_that_read_statements_take_the_basket(schemas):
+    for tool in (
+        "market_data",
+        "efficiency",
+        "liquidity",
+        "profitability",
+        "solvency",
+        "valuation",
+        "models",
+        "econometrics",
+    ):
+        assert schemas[tool]["basket"]["default"] is False
+        assert types_of(schemas[tool]["basket"]) == {"boolean"}
+    assert "basket" not in schemas["performance"]
+
+
+@pytest.mark.parametrize(("given", "expected"), [(None, False), ("true", True)])
+def test_the_basket_reaches_the_toolkit(captured, given, expected):
+    arguments = {"indicator": "get_capex_coverage_ratio", "tickers": "AAPL,MSFT"}
+    if given:
+        arguments["basket"] = given
+    text = call("solvency", arguments)
+
+    assert "error" not in text.lower()
+    assert captured[-1]["toolkit_basket"] is expected
+    # A Toolkit setting, never an argument of the ratio itself.
+    assert "basket" not in captured[-1]
+
+
 def test_econometrics_passes_deflate_with_to_its_series(schemas):
     assert "deflate_with" in schemas["econometrics"]
     assert "deflate_with" not in schemas["performance"]

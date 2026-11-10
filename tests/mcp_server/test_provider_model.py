@@ -244,3 +244,21 @@ def test_the_risk_free_rate_is_part_of_the_toolkit(provider):
     assert bill.kwargs["risk_free_rate"] == "13w"
     # A Toolkit kept for one rate is never handed out for another.
     assert bill is not default
+
+
+def test_the_basket_is_part_of_the_toolkit(provider):
+    arguments = {
+        "tickers": ["MSFT", "AMZN"],
+        "start_date": "2021-01-01",
+        "end_date": "2025-12-31",
+        "quarterly": True,
+        "benchmark_ticker": "SPY",
+        "api_key": "test-key",
+    }
+    default = provider.get_toolkit_instance(**arguments)
+    basket = provider.get_toolkit_instance(**arguments, toolkit_basket=True)
+
+    assert default.kwargs["basket"] is False
+    assert basket.kwargs["basket"] is True
+    # A Toolkit kept without the Total is never handed out for a basket.
+    assert basket is not default

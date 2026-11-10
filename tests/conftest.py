@@ -819,6 +819,37 @@ def test_toolkit(live_mode: bool):
 
 
 @pytest.fixture(scope="session")
+def basket_toolkit(live_mode: bool):
+    """Provides the offline Toolkit with its tickers added up into a basket ("Total")."""
+    if live_mode:
+        pytest.skip("The basket tests compare with the pickled datasets.")
+
+    from financetoolkit import Toolkit
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=pd.read_pickle("tests/datasets/historical_dataset.pickle"),
+        balance=pd.read_pickle("tests/datasets/balance_dataset.pickle"),
+        income=pd.read_pickle("tests/datasets/income_dataset.pickle"),
+        cash=pd.read_pickle("tests/datasets/cash_dataset.pickle"),
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+        basket=True,
+    )
+    toolkit._daily_risk_free_rate = pd.read_pickle(
+        "tests/datasets/risk_free_rate.pickle"
+    )
+    toolkit._daily_treasury_data = pd.read_pickle("tests/datasets/treasury_data.pickle")
+    # The currencies the market caps of the basket are summed in, without a download.
+    toolkit._historical_statistics = pd.DataFrame(
+        {"AAPL": ["USD"], "MSFT": ["USD"]}, index=["Currency"]
+    )
+    return toolkit
+
+
+@pytest.fixture(scope="session")
 def performance_module(test_toolkit):
     return test_toolkit.performance
 

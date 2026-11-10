@@ -1143,6 +1143,9 @@ class Toolkit:
             intraday_period=self._intraday_period,
             progress_bar=self._progress_bar,
             returns_function=self._other_returns,
+            # The daily market cap values the Residual of get_beta_implied_return; the
+            # statements are only retrieved when that method asks for it.
+            market_cap_function=lambda: self.ratios.get_market_cap(show_daily=True),
         )
 
         if self._portfolio_weights:

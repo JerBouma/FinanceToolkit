@@ -183,7 +183,8 @@ python-version = "3.13"
 invalid-argument-type = "ignore"
 invalid-return-type = "ignore"
 invalid-assignment = "ignore"
-unresolved-attribute = "ignore"
+missing-attribute = "ignore"
+missing-union-attribute = "ignore"
 no-matching-overload = "ignore"
 
 [tool.codespell]

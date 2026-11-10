@@ -24,6 +24,13 @@ SERIES = {
     # Total nonfarm employment in thousands, seasonally adjusted (Current Employment
     # Statistics), the source of FRED's PAYEMS series.
     "nonfarm_payrolls": "CES0000000001",
+    # Producer Price Index for final demand, not seasonally adjusted, November 2009 = 100:
+    # the headline PPI.
+    "producer_price_index": "WPUFD4",
+    # Export and import price indices of all commodities, not seasonally adjusted,
+    # 2000 = 100 (International Price Program).
+    "export_price_index": "EIUIQ",
+    "import_price_index": "EIUIR",
 }
 
 COUNTRY = "United States"
@@ -140,3 +147,23 @@ def get_nonfarm_payrolls() -> pd.DataFrame:
     payrolls.index.name = "Date"
 
     return payrolls
+
+
+def get_price_index(measure: str) -> pd.DataFrame:
+    """
+    Retrieves the latest months of a US price index, not seasonally adjusted: the
+    Producer Price Index for final demand (series WPUFD4), or the export or import price
+    index of all commodities (series EIUIQ and EIUIR).
+
+    The keyless BLS API returns about the last three years, so the full history requires
+    a FRED API key.
+
+    Args:
+        measure (str): "producer", "export" or "import".
+
+    Returns:
+        pd.DataFrame: A single "United States" column indexed by month.
+    """
+    return collect_recent_bls_series(
+        SERIES[f"{measure}_price_index"], f"US {measure} price index"
+    )

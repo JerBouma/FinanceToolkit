@@ -713,7 +713,7 @@ class LazyDict(dict):
 
     def get(
         self, key: str, default: Any = None
-    ) -> Any:  # ty: ignore[invalid-method-override]
+    ) -> Any:  # ty: ignore[incompatible-method-override]
         try:
             return self[key]
         except KeyError:

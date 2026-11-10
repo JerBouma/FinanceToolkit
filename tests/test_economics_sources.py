@@ -1023,7 +1023,7 @@ def test_real_interest_rate_and_misery_index_line_up_oecd_and_gmdb_names(monkeyp
         start_date="2022-01-01", end_date="2023-12-31"
     )
 
-    real_rate = economics.get_real_interest_rate(gmdb_source=False)
+    real_rate = economics.get_real_interest_rate(gmdb_source=False, period="yearly")
     misery = economics.get_misery_index(gmdb_source=False)
 
     assert sorted(real_rate.columns) == ["Germany", "Russian Federation"]

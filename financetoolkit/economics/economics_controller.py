@@ -61,7 +61,11 @@ from financetoolkit.economics.helpers import (
     to_gmdb_country_names,
     validate_period,
 )
-from financetoolkit.fixedincome import bundesbank_model, fed_model
+from financetoolkit.fixedincome import (
+    bundesbank_model,
+    ecb_model as ecb_rates_model,
+    fed_model,
+)
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -503,6 +507,61 @@ class Economics:
             return "quarterly"
 
         return highest
+
+    def _get_daily_central_bank_policy_rate(
+        self, start_date: str, countries: list[str] | str | None = None
+    ) -> pd.DataFrame:
+        """
+        Retrieves the daily policy rates of the Bank for International Settlements (BIS),
+        extended with the days the Bank of England and the European Central Bank have
+        published since. The BIS updates its series about once a week, so a decision of
+        the last few days would otherwise be missing.
+
+        Args:
+            start_date (str): The start date (YYYY-MM-DD).
+            countries (list[str] | str | None, optional): The requested countries, so the
+                central banks of other countries are not retrieved. Defaults to None.
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by day.
+        """
+        policy_rate = bis_model.get_central_bank_policy_rate(start_date, self._end_date)
+
+        requested = (
+            {country.strip() for country in countries.split(",")}
+            if isinstance(countries, str)
+            else set(countries or policy_rate.columns)
+        )
+        # Since 18 September 2024 the BIS reports the ECB's deposit facility rate for the
+        # euro area (the main refinancing rate before), the rate the ECB steers with.
+        central_banks = {
+            "United Kingdom": lambda start: boe_model.get_bank_rate(
+                start, self._end_date
+            ),
+            "Euro Area": lambda _: ecb_rates_model.get_deposit_facility()
+            .rename("Euro Area")
+            .to_frame(),
+        }
+
+        for country, fetch in central_banks.items():
+            last_day = (
+                policy_rate[country].last_valid_index()
+                if country in policy_rate and country in requested
+                else None
+            )
+            if last_day is None:
+                continue
+
+            # A month of overlap, on which both publishers have to agree.
+            recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
+            recent = recent[
+                (recent.index <= pd.Period(self._end_date, freq="D"))
+                # Business days, like the BIS series (the ECB lists every calendar day).
+                & ~recent.index.dayofweek.isin([5, 6])
+            ]
+            policy_rate = extend_with_recent(policy_rate, recent, country)
+
+        return policy_rate
 
     def _get_daily_long_term_interest_rate(
         self, countries: list[str] | str | None = None
@@ -5337,6 +5396,13 @@ class Economics:
         Japan, some back to the 1940s. Weekly and monthly take the rate on the last day of
         each period, so the current week or month shows the rate so far.
 
+        The BIS updates its series about once a week. The days since are added from the
+        Bank of England (Bank Rate) and the European Central Bank, which publish their
+        rates the same day; other countries end at the latest BIS update. For the euro
+        area the BIS reports the main refinancing rate up to 17 September 2024 and the
+        deposit facility rate from 18 September 2024, when the ECB began steering money
+        markets with it; get_european_central_bank_rates has either rate throughout.
+
         The result is a decimal fraction (0.05375 for 5.375%), like every other rate in the
         Finance Toolkit.
 
@@ -5399,8 +5465,8 @@ class Economics:
             # Weeks and months are taken from the daily rates, which the BIS updates
             # sooner than its own end-of-month series.
             central_bank_policy_rate = resample_to_period(
-                bis_model.get_central_bank_policy_rate(
-                    buffered_start_date(self._start_date, period), self._end_date
+                self._get_daily_central_bank_policy_rate(
+                    buffered_start_date(self._start_date, period), countries
                 ),
                 period,
             )
@@ -5854,6 +5920,7 @@ class Economics:
         self,
         countries: list[str] | str | None = None,
         rate_type: str = "long_term",
+        period: str | None = None,
         gmdb_source: bool | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
@@ -5871,18 +5938,27 @@ class Economics:
 
         The formula is as follows (the Fisher equation, approximation):
 
-        - Real Interest Rate (year) = Nominal Interest Rate (year) - Inflation Rate (year), with the nominal rate the
-          annual Long Term Interest Rate by default (rate_type="long_term") and the inflation rate the Global Macro
-          Database's annual CPI inflation
+        - Real Interest Rate = Nominal Interest Rate - Inflation Rate, with the nominal rate the Long Term Interest
+          Rate by default (rate_type="long_term") and the inflation rate the year-over-year change in consumer prices
 
-        The nominal interest rate is either the Long Term Interest Rate (the 10-year government
-        bond yield) or the Short Term Interest Rate (the 3-month money market rate), selected via
-        the rate_type parameter. The Inflation Rate is always the annual inflation rate of the
-        Global Macro Database (GMDB), whichever source the nominal rate comes from; this
-        differs from get_inflation_rate, which defaults to monthly year-over-year inflation
-        from national sources. Both legs are annual decimal fractions (0.05 for 5%) whichever
-        source is used, so they line up directly for the subtraction and the result is itself
-        a decimal fraction (-0.0016 for a real rate of -0.16%).
+        The nominal interest rate is the Long Term Interest Rate (the 10-year government bond
+        yield), the Short Term Interest Rate (the 3-month money market rate) or the Central
+        Bank Policy Rate, selected via the rate_type parameter.
+
+        Monthly (the default) subtracts the monthly year-over-year inflation rate of
+        get_inflation_rate (national statistical offices, Eurostat for the euro area and the
+        BIS) from the OECD's monthly long or short-term rate, the monthly average of the daily
+        rates, or from the policy rate at the end of the month (see
+        get_central_bank_policy_rate). The OECD has no euro area rates, so the euro area is
+        available with rate_type="policy": the ECB's deposit facility rate minus euro area
+        inflation. A month the inflation rate is not published yet is empty.
+
+        Yearly subtracts the annual inflation rate of the Global Macro Database (GMDB) from
+        its annual long or short-term rate (or the OECD's with gmdb_source=False) or its
+        end-of-year policy rate.
+
+        Both legs are decimal fractions (0.05 for 5%), so the result is itself a decimal
+        fraction (-0.0016 for a real rate of -0.16%).
 
         A negative real interest rate means that, after inflation, savers are effectively losing
         purchasing power and borrowers are being subsidized in real terms; this occurred in many
@@ -5900,13 +5976,16 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rate_type (str, optional): Which nominal interest rate to use. Can be 'long_term'
-                (10-year government bond yield) or 'short_term' (3-month money market rate).
-                Defaults to 'long_term'.
-            gmdb_source (bool | None, optional): Whether to get the nominal interest rate from
-                the Global Macro Database (GMDB) instead of the OECD. Defaults to None, which
-                falls back to the gmdb_source set on the Economics class (True by default).
-                Either way the countries carry the GMDB names, such as "Russian Federation",
-                "Eswatini" and "Congo DR", as the inflation rate comes from the GMDB.
+                (10-year government bond yield), 'short_term' (3-month money market rate) or
+                'policy' (central bank policy rate). Defaults to 'long_term'.
+            period (str | None, optional): Whether to return the monthly or the yearly data.
+                Defaults to None, which is the monthly data.
+            gmdb_source (bool | None, optional): Whether to get the yearly long or short-term
+                rate from the Global Macro Database (GMDB) instead of the OECD. Defaults to
+                None, which falls back to the gmdb_source set on the Economics class (True by
+                default). Either way the yearly countries carry the GMDB names, such as
+                "Russian Federation", "Eswatini" and "Congo DR", as the yearly inflation
+                rate comes from the GMDB.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -5928,62 +6007,104 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2018-01-01', end_date='2023-01-01')
+        economics = Economics(start_date='2026-01-01', end_date='2026-09-30')
 
-        economics.get_real_interest_rate(countries=['United States', 'Germany', 'Japan'])
+        economics.get_real_interest_rate(
+            countries=['United States', 'Euro Area', 'Japan'], rate_type='policy'
+        )
         ```
 
         Which returns:
 
-        |      |   United States |   Germany |   Japan |
-        |:-----|----------------:|----------:|--------:|
-        | 2018 |          0.0047 |   -0.0151 | -0.009  |
-        | 2019 |          0.0033 |   -0.0163 | -0.0057 |
-        | 2020 |         -0.0037 |   -0.0088 |  0.0001 |
-        | 2021 |         -0.0324 |   -0.0358 |  0.0032 |
-        | 2022 |         -0.0505 |   -0.0753 | -0.023  |
-        | 2023 |         -0.0017 |   -0.0359 | -0.0269 |
+        |         |   United States |   Euro Area |   Japan |
+        |:--------|----------------:|------------:|--------:|
+        | 2026-01 |          0.0124 |      0.003  | -0.0079 |
+        | 2026-02 |          0.0121 |      0.001  | -0.0054 |
+        | 2026-03 |          0.0037 |     -0.006  | -0.0073 |
+        | 2026-04 |         -0.0019 |     -0.01   | -0.006  |
+        | 2026-05 |         -0.0062 |     -0.012  | -0.0074 |
+        | 2026-06 |          0.0009 |     -0.0055 | -0.0064 |
+        | 2026-07 |          0.0026 |     -0.0065 | -0.0095 |
+        | 2026-08 |          0.0023 |     -0.0095 | -0.0089 |
+        | 2026-09 |          0.0014 |     -0.013  | -0.009  |
         """
+        check_period_type(period)
+
         rate_type = rate_type.lower()
 
-        if rate_type not in ["long_term", "short_term"]:
+        if rate_type not in ["long_term", "short_term", "policy"]:
             raise ValueError(
-                "Please choose either 'long_term' or 'short_term' for the rate_type parameter."
+                "Please choose 'long_term', 'short_term' or 'policy' for the rate_type "
+                "parameter."
             )
 
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
-
-        if gmdb_source:
-            nominal_interest_rate = (
-                gmdb_model.get_long_term_interest_rate(
-                    gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
-                )
-                if rate_type == "long_term"
-                else gmdb_model.get_short_term_interest_rate(
-                    gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
-                )
-            )
-        else:
-            nominal_interest_rate = (
-                oecd_model.get_long_term_interest_rate(
-                    period="yearly",
-                    start_date=self._start_date,
-                    end_date=self._end_date,
-                )
-                if rate_type == "long_term"
-                else oecd_model.get_short_term_interest_rate(
-                    period="yearly",
-                    start_date=self._start_date,
-                    end_date=self._end_date,
-                )
-            )
-
-            # The inflation leg comes from the GMDB, which names a few countries differently.
-            nominal_interest_rate = to_gmdb_country_names(nominal_interest_rate)
-
-        inflation_rate = gmdb_model.get_inflation_rate(
-            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+        # The inflation rate is monthly or yearly, so the real rate is as well.
+        period = validate_period(
+            self._default_period(period, "monthly", quarterly_available=False),
+            ["monthly", "yearly"],
+            "real interest rate",
         )
+
+        if period == "monthly":
+            if rate_type == "policy":
+                nominal_interest_rate = resample_to_period(
+                    self._get_daily_central_bank_policy_rate(
+                        buffered_start_date(self._start_date, "monthly"), countries
+                    ),
+                    "monthly",
+                )
+            else:
+                nominal_interest_rate = (
+                    oecd_model.get_long_term_interest_rate
+                    if rate_type == "long_term"
+                    else oecd_model.get_short_term_interest_rate
+                )(
+                    period="monthly",
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                )
+
+            inflation_rate = self._get_monthly_price_data("inflation_rate", countries)
+
+            # Only the countries both legs have, so a country without one is reported as
+            # unavailable rather than shown as an empty column.
+            shared_countries = nominal_interest_rate.columns.intersection(
+                inflation_rate.columns
+            )
+            nominal_interest_rate = nominal_interest_rate[shared_countries]
+            inflation_rate = inflation_rate[shared_countries]
+        else:
+            gmdb_dataset = self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+            gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+
+            if rate_type == "policy":
+                nominal_interest_rate = gmdb_model.get_central_bank_policy_rate(
+                    gmd_dataset=gmdb_dataset
+                )
+            elif gmdb_source:
+                nominal_interest_rate = (
+                    gmdb_model.get_long_term_interest_rate(gmd_dataset=gmdb_dataset)
+                    if rate_type == "long_term"
+                    else gmdb_model.get_short_term_interest_rate(
+                        gmd_dataset=gmdb_dataset
+                    )
+                )
+            else:
+                nominal_interest_rate = (
+                    oecd_model.get_long_term_interest_rate
+                    if rate_type == "long_term"
+                    else oecd_model.get_short_term_interest_rate
+                )(
+                    period="yearly",
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                )
+
+                # The inflation leg comes from the GMDB, which names a few countries
+                # differently.
+                nominal_interest_rate = to_gmdb_country_names(nominal_interest_rate)
+
+            inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=gmdb_dataset)
 
         real_interest_rate = nominal_interest_rate - inflation_rate
 
@@ -6002,6 +6123,8 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Months empty for every selected country, e.g. one without inflation yet.
+            dropna=period == "monthly",
         )
 
     @handle_errors
@@ -8538,9 +8661,9 @@ class Economics:
         self, curve: str, start_date: str
     ) -> pd.DataFrame:
         """
-        Retrieves the US real yield curve or breakeven inflation curve, from FRED when a key
-        is set and from the U.S. Department of the Treasury otherwise, with the maturities
-        labelled as elsewhere ("5Y" and "5Y5Y" for the 5-year, 5-year forward rate).
+        Retrieves the US real yield curve or breakeven inflation curve from the U.S.
+        Department of the Treasury, with the maturities labelled as elsewhere ("5Y" and
+        "5Y5Y" for the 5-year, 5-year forward rate).
 
         Args:
             curve (str): "real" or "breakeven".
@@ -8549,26 +8672,15 @@ class Economics:
         Returns:
             pd.DataFrame: The curve, indexed by day with a column per maturity.
         """
-        # FRED republishes these figures, so it is used when a key is set and the U.S.
-        # Treasury otherwise.
-        if curve == "real":
-            values = (
-                fred_model.get_real_yield_curve(
-                    start_date, self._end_date, self._fred_api_key
-                )
-                if self._fred_api_key
-                else treasury_model.get_real_yield_curve(start_date, self._end_date)
+        # The Treasury publishes the TIPS yields at the end of each business day; FRED
+        # republishes them (DFII) a day later, so the latest day would be missing.
+        values = (
+            treasury_model.get_real_yield_curve(start_date, self._end_date)
+            if curve == "real"
+            else treasury_model.get_breakeven_inflation_expectations(
+                start_date, self._end_date
             )
-        else:
-            values = (
-                fred_model.get_breakeven_inflation_expectations(
-                    start_date, self._end_date, self._fred_api_key
-                )
-                if self._fred_api_key
-                else treasury_model.get_breakeven_inflation_expectations(
-                    start_date, self._end_date
-                )
-            )
+        )
 
         return values.rename(
             columns=lambda column: (
@@ -8618,8 +8730,7 @@ class Economics:
         Every curve comes from the official source without an API key:
         - United States: the U.S. Department of the Treasury's real par yield curve of
           Treasury Inflation-Protected Securities (TIPS), 5, 7, 10, 20 and 30 years, from
-          2003. When a FRED API key is set (see the `fred_api_key` parameter of the
-          `Economics` class), the same figures come from FRED.
+          2003, the figures FRED republishes a day later as DFII.
         - United Kingdom: the Bank of England's real spot curve of index-linked gilts, 3 to
           40 years, from 1985. Index-linked gilts pay the Retail Prices Index (RPI).
         - Germany: the real yields of the inflation-linked German federal securities the
@@ -8742,9 +8853,7 @@ class Economics:
         - United States: the U.S. Department of the Treasury's nominal minus real (TIPS) par
           yields, 5, 7, 10, 20 and 30 years from 2003, plus the 5-year, 5-year forward rate
           ("5Y5Y"), the average inflation expected over the five years starting five years
-          from now, with the formulas FRED uses. When a FRED API key is set (see the
-          `fred_api_key` parameter of the `Economics` class), the same figures come from
-          FRED.
+          from now, with the formulas FRED uses for T5YIE, T10YIE and T5YIFR.
         - United Kingdom: the Bank of England's implied inflation spot curve, 3 to 40 years,
           from 1985. It is measured against the Retail Prices Index (RPI), which index-linked
           gilts pay and which has run above CPI inflation.

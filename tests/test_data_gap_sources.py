@@ -513,3 +513,107 @@ def test_an_unknown_sector_of_borrowers_gives_no_data(monkeypatch):
     )
 
     assert economics.get_debt_service_ratio(borrowers="banks").empty
+
+
+def test_us_inflation_curves_come_from_the_treasury_with_a_fred_key(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import treasury_model
+
+    monkeypatch.setattr(
+        treasury_model,
+        "get_real_yield_curve",
+        lambda start, end: _daily({"5 Year": 0.0242, "10 Year": 0.0266}),
+    )
+
+    economics = Economics(
+        start_date="2026-09-01", end_date="2026-09-30", fred_api_key="a-key"
+    )
+    real_curve = economics.get_real_yield_curve(countries="United States")
+
+    # The Treasury has the latest day, which FRED only republishes a day later.
+    assert real_curve.loc[
+        pd.Period("2026-09-30", "D"), ("United States", "10Y")
+    ] == pytest.approx(0.0266)
+
+
+def test_policy_rates_add_the_days_since_the_latest_bis_update(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import bis_model, boe_model, economics_controller
+
+    days = pd.PeriodIndex(pd.bdate_range("2026-10-26", "2026-11-03"), freq="D")
+    monkeypatch.setattr(
+        bis_model,
+        "get_central_bank_policy_rate",
+        lambda start, end: pd.DataFrame(
+            {"United Kingdom": 0.0375, "Euro Area": 0.025, "Japan": 0.0125},
+            index=days,
+        ),
+    )
+    bank_rate_days = pd.PeriodIndex(
+        pd.bdate_range("2026-10-26", "2026-11-09"), freq="D"
+    )
+    monkeypatch.setattr(
+        boe_model,
+        "get_bank_rate",
+        lambda start, end: pd.DataFrame(
+            {"United Kingdom": [0.0375] * 8 + [0.04] * 3}, index=bank_rate_days
+        ),
+    )
+    # The ECB lists every calendar day; a different rate than the BIS on the shared
+    # days means another series, so the euro area is not extended with it.
+    monkeypatch.setattr(
+        economics_controller.ecb_rates_model,
+        "get_deposit_facility",
+        lambda: pd.Series(
+            0.0265, index=pd.period_range("2026-10-01", "2026-11-09", freq="D")
+        ),
+    )
+
+    economics = Economics(start_date="2026-10-26", end_date="2026-11-09")
+    daily = economics.get_central_bank_policy_rate()
+
+    assert daily.loc[pd.Period("2026-11-05", "D"), "United Kingdom"] == 0.04
+    assert daily["Euro Area"].last_valid_index() == pd.Period("2026-11-03", "D")
+    assert daily["Japan"].last_valid_index() == pd.Period("2026-11-03", "D")
+    # Weekends are not added.
+    assert pd.Period("2026-11-07", "D") not in daily.index
+
+    monthly = economics.get_central_bank_policy_rate(
+        countries="United Kingdom", period="monthly"
+    )
+    assert monthly.loc[pd.Period("2026-11", "M"), "United Kingdom"] == 0.04
+
+
+def test_real_interest_rate_is_monthly_with_the_policy_rate(monkeypatch):
+    from financetoolkit import Economics
+
+    days = pd.PeriodIndex(pd.bdate_range("2026-08-03", "2026-10-30"), freq="D")
+    monkeypatch.setattr(
+        Economics,
+        "_get_daily_central_bank_policy_rate",
+        lambda self, start, countries: pd.DataFrame(
+            {"Euro Area": [0.025] * len(days), "Japan": [0.0125] * len(days)},
+            index=days,
+        ),
+    )
+    months = pd.period_range("2026-08", "2026-10", freq="M")
+    monkeypatch.setattr(
+        Economics,
+        "_get_monthly_price_data",
+        lambda self, measure, countries: pd.DataFrame(
+            {"Euro Area": [0.032, 0.038, 0.04], "Germany": [0.029, 0.033, 0.028]},
+            index=months,
+        ),
+    )
+
+    economics = Economics(start_date="2026-08-01", end_date="2026-10-31")
+    real_rate = economics.get_real_interest_rate(rate_type="policy")
+
+    # The policy rate at the end of the month minus that month's inflation, for the
+    # countries both legs have.
+    assert list(real_rate.columns) == ["Euro Area"]
+    assert real_rate.loc[pd.Period("2026-10", "M"), "Euro Area"] == pytest.approx(
+        -0.015
+    )
+
+    assert economics.get_real_interest_rate(rate_type="overnight").empty

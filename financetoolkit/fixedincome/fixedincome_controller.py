@@ -6024,6 +6024,7 @@ class FixedIncome:
     def get_european_central_bank_rates(
         self,
         rate: str | None = None,
+        period: str = "daily",
         rounding: int | None = None,
         standardize: bool = False,
     ):
@@ -6053,6 +6054,10 @@ class FixedIncome:
         the bottom, with the main refinancing rate in between; the main refinancing rate
         matters more when banks rely on the ECB's weekly operations for funding.
 
+        The rates change on the dates the Governing Council's decisions take effect. Weekly,
+        monthly, quarterly and yearly data hold the rate in force on the last day of each
+        period, so the current period shows the rate so far.
+
         See source: https://data.ecb.europa.eu/main-figures/
 
         Also known as: ECB rates, deposit facility rate.
@@ -6060,6 +6065,8 @@ class FixedIncome:
         Args:
             rate (str, optional): The rate to return. Defaults to None, which returns all rates.
                 Choose between 'refinancing', 'lending' or 'deposit'.
+            period (str, optional): Whether to return the daily, weekly, monthly, quarterly or
+                yearly data. Defaults to 'daily'.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
 
@@ -6096,6 +6103,12 @@ class FixedIncome:
                 "Rate must be one of 'refinancing', 'lending' or 'deposit' or left empty for all."
             )
 
+        period = validate_period(
+            period,
+            ["daily", "weekly", "monthly", "quarterly", "yearly"],
+            "ECB rate",
+        )
+
         collected_rates = {}
 
         if not rate or rate == "refinancing":
@@ -6106,8 +6119,9 @@ class FixedIncome:
             collected_rates["Deposit"] = ecb_model.get_deposit_facility()
 
         # Concatenated in one go so that a rate with a longer history is not truncated to the index of whichever rate happened to be assigned to the frame first.
-        ecb_rates = (
-            pd.concat(collected_rates, axis=1) if collected_rates else pd.DataFrame()
+        ecb_rates = resample_to_period(
+            pd.concat(collected_rates, axis=1) if collected_rates else pd.DataFrame(),
+            period,
         )
 
         return finalize_dataset(

@@ -169,3 +169,37 @@ def test_get_amortization_schedule_reads_the_rate_of_a_date(weekly_mortgage_rate
 
     # Before the first survey there is no rate, which comes back empty.
     assert weekly_mortgage_rates.get_amortization_schedule(date="2020-12-31").empty
+
+
+def test_european_central_bank_rates_take_the_rate_at_the_end_of_each_period(
+    monkeypatch,
+):
+    from financetoolkit.fixedincome import fixedincome_controller
+
+    days = pd.period_range("2026-08-01", "2026-10-31", freq="D")
+    deposit = pd.Series(0.025, index=days)
+    deposit[deposit.index >= pd.Period("2026-09-17", "D")] = 0.0225
+    monkeypatch.setattr(
+        fixedincome_controller.ecb_model, "get_deposit_facility", lambda: deposit
+    )
+
+    fixedincome = fixedincome_controller.FixedIncome(
+        start_date="2026-08-01", end_date="2026-10-31"
+    )
+    monthly = fixedincome.get_european_central_bank_rates(
+        rate="deposit", period="monthly"
+    )
+
+    assert list(monthly["Deposit"]) == pytest.approx([0.025, 0.0225, 0.0225])
+    assert (
+        len(
+            fixedincome.get_european_central_bank_rates(
+                rate="deposit", period="quarterly"
+            )
+        )
+        == 2
+    )
+
+    assert fixedincome.get_european_central_bank_rates(
+        rate="deposit", period="hourly"
+    ).empty

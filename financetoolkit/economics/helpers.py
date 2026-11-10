@@ -93,7 +93,13 @@ def to_gmdb_country_names(data: pd.DataFrame) -> pd.DataFrame:
 
 # The periods a high-frequency series can be returned in, with the PeriodIndex frequency
 # each one maps to. Weekly periods end on Friday, the last trading day of the week.
-PERIOD_FREQUENCIES = {"daily": "D", "weekly": "W-FRI", "monthly": "M"}
+PERIOD_FREQUENCIES = {
+    "daily": "D",
+    "weekly": "W-FRI",
+    "monthly": "M",
+    "quarterly": "Q",
+    "yearly": "Y",
+}
 
 # History requested before the start date, so growth, lag and rolling windows can be
 # computed for the first periods shown (finalize_dataset slices the result afterwards).
@@ -537,12 +543,13 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
 
 def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
-    Converts a daily series to a weekly or monthly one by taking the last observation of
-    every period, the end-of-period convention central banks and the BIS use for rates.
+    Converts a daily series to a weekly, monthly, quarterly or yearly one by taking the
+    last observation of every period, the end-of-period convention central banks and the
+    BIS use for rates.
 
     Args:
         data (pd.DataFrame): The daily series, indexed by a daily PeriodIndex.
-        period (str): "daily", "weekly" or "monthly".
+        period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
 
     Returns:
         pd.DataFrame: The series at the requested frequency.

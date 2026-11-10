@@ -1405,3 +1405,127 @@ def test_hqm_curve_and_spread_need_no_fred_key(monkeypatch):
         0.0051
     )
     assert with_key.get_hqm_corporate_bond_yield_curve().iloc[-1, 0] == 0.102
+
+
+def test_bank_of_japan_price_indices_are_monthly_index_levels(monkeypatch):
+    payload = {
+        "STATUS": 200,
+        "RESULTSET": [
+            {
+                "VALUES": {
+                    "SURVEY_DATES": [202608, 202609, 202610],
+                    "VALUES": [136.1, 135.7, None],
+                }
+            }
+        ],
+    }
+    urls = []
+
+    def fake(url, timeout):
+        urls.append(url)
+        return FakeResponse(payload)
+
+    monkeypatch.setattr(boj_model, "get_request", fake)
+
+    index = boj_model.collect_price_index("producer")
+
+    assert "db=PR01&code=PRCG20_2200000000&startDate=196001" in urls[0]
+    assert list(index.index) == list(pd.period_range("2026-08", "2026-09", freq="M"))
+    assert index["Japan"].tolist() == [136.1, 135.7]
+
+
+def test_monthly_indices_average_into_complete_periods_only():
+    months = pd.period_range("2026-01", "2026-08", freq="M")
+    data = pd.DataFrame(
+        {"Japan": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]}, index=months
+    )
+
+    quarterly = helpers.average_monthly_index(data, "quarterly")
+    yearly = helpers.average_monthly_index(data, "yearly")
+
+    assert quarterly["Japan"].tolist()[:2] == [2.0, 5.0]
+    assert pd.isna(quarterly.loc[pd.Period("2026Q3", "Q"), "Japan"])
+    assert pd.isna(yearly.iloc[0, 0])
+    assert helpers.average_monthly_index(data, "monthly") is data
+
+
+def test_eurostat_industrial_prices_request_the_headline_scope(monkeypatch):
+    urls = []
+
+    def fake(url, timeout):
+        urls.append(url)
+        return FakeResponse(json_stat(["EA21", "DE"], ["2026-09"], [137.8, 134.9]))
+
+    monkeypatch.setattr(eurostat_model, "get_request", fake)
+
+    producer = eurostat_model.get_industrial_price_index(
+        "producer", "2026-09-01", "2026-09-30"
+    )
+    eurostat_model.get_industrial_price_index("import", "2026-09-01", "2026-09-30")
+
+    assert "sts_inppd_m?" in urls[0] and "nace_r2=B-E36" in urls[0]
+    assert "s_adj=NSA" in urls[0] and "unit=I21" in urls[0]
+    assert "sts_inpi_m?" in urls[1] and "cpa2_1=CPA_B-D" in urls[1]
+    assert producer.loc[pd.Period("2026-09", "M"), "Euro Area"] == 137.8
+
+
+def test_price_indices_combine_their_publishers_and_select_fred_with_a_key(
+    monkeypatch, caplog
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics import bls_model, fred_model
+
+    months = pd.period_range("2025-01", "2026-09", freq="M")
+    rising = [100 + month for month in range(len(months))]
+    monkeypatch.setattr(
+        eurostat_model,
+        "get_industrial_price_index",
+        lambda measure, *args: pd.DataFrame(
+            {"Euro Area": rising, "Germany": rising}, index=months
+        ),
+    )
+    monkeypatch.setattr(
+        boj_model,
+        "collect_price_index",
+        lambda measure: pd.DataFrame({"Japan": rising}, index=months),
+    )
+    monkeypatch.setattr(
+        fred_model,
+        "get_price_index",
+        lambda *args: pd.DataFrame(
+            {"United States": [1.0] * len(months)}, index=months
+        ),
+    )
+    monkeypatch.setattr(
+        bls_model,
+        "get_price_index",
+        lambda measure: pd.DataFrame({"United States": [2.0] * 9}, index=months[-9:]),
+    )
+
+    with_key = Economics(
+        start_date="2025-01-01", end_date="2026-09-30", fred_api_key="key"
+    )
+    without_key = Economics(
+        start_date="2025-01-01", end_date="2026-09-30", fred_api_key=""
+    )
+
+    producer = with_key.get_producer_price_index(
+        countries=["United States", "Euro Area", "Japan", "China"]
+    )
+    assert list(producer.columns) == ["United States", "Euro Area", "Japan"]
+    assert producer["United States"].iloc[-1] == 1.0
+
+    growth = with_key.get_import_price_index(countries=["Japan"], growth=True, lag=12)
+    assert growth.loc[pd.Period("2026-09", "M"), "Japan"] == pytest.approx(
+        120 / 108 - 1, abs=1e-4
+    )
+
+    with caplog.at_level("WARNING"):
+        keyless = without_key.get_export_price_index(countries=["United States"])
+    assert keyless["United States"].dropna().iloc[-1] == 2.0
+    assert "Without a FRED API key" in caplog.text
+
+    quarterly = with_key.get_producer_price_index(
+        countries=["Japan"], period="quarterly"
+    )
+    assert quarterly.loc[pd.Period("2026Q3", "Q"), "Japan"] == pytest.approx(119.0)

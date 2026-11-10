@@ -19,6 +19,23 @@ HICP_DATASET = "prc_hicp_minr"
 UNEMPLOYMENT_DATASET = "une_rt_m"
 GDP_DATASET = "namq_10_gdp"
 
+# The short-term business statistics on industrial prices, each not seasonally adjusted
+# with 2021 = 100. The producer and export price indices cover industry except
+# construction, sewerage and waste management (B-E36), the scope of the euro area
+# headline. Import prices are only compiled for mining, manufacturing and energy supply
+# (B-D), which is what is published for the euro area and most members.
+INDUSTRIAL_PRICE_DATASETS = {
+    "producer": (
+        "sts_inppd_m",
+        {"indic_bt": "PRC_PRR_DOM", "nace_r2": "B-E36"},
+    ),
+    "export": (
+        "sts_inppnd_m",
+        {"indic_bt": "PRC_PRR_NDOM", "nace_r2": "B-E36"},
+    ),
+    "import": ("sts_inpi_m", {"indic_bt": "PRC_IMP", "cpa2_1": "CPA_B-D"}),
+}
+
 # The euro area is published as "EA" (changing composition) in some datasets and only
 # under its current membership, e.g. "EA21" since Bulgaria joined in 2026, in others.
 # A yearly period is written as its four-digit year.
@@ -311,6 +328,38 @@ def get_consumer_price_index(start_date: str, end_date: str) -> pd.DataFrame:
         HICP_DATASET,
         {"freq": "M", "unit": "I15", "coicop18": "TOTAL"},
         "HICP index",
+        start_date,
+        end_date,
+    )
+
+
+def get_industrial_price_index(
+    measure: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    """
+    Retrieves a monthly industrial price index for the euro area, the European Union and
+    the countries Eurostat covers, not seasonally adjusted, with 2021 = 100:
+
+    - "producer": the producer prices of industry on the domestic market (sts_inppd_m),
+      the industrial producer price index Eurostat headlines.
+    - "export": the producer prices of industry on the non-domestic market
+      (sts_inppnd_m), the prices received for sales abroad.
+    - "import": the import prices of industrial products (sts_inpi_m).
+
+    Args:
+        measure (str): "producer", "export" or "import".
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The index, indexed by month with a column per country.
+    """
+    dataset, filters = INDUSTRIAL_PRICE_DATASETS[measure]
+
+    return collect_eurostat_data(
+        dataset,
+        {"freq": "M", "s_adj": "NSA", "unit": "I21", **filters},
+        f"{measure} price index",
         start_date,
         end_date,
     )

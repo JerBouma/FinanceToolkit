@@ -35,6 +35,41 @@ def _get_fred_series(
     return data
 
 
+# FRED's copies of the BLS price indices, not seasonally adjusted: the Producer Price
+# Index for final demand (from November 2009) and the export and import price indices of
+# all commodities (from 1983 and 1982).
+PRICE_INDEX_SERIES = {"producer": "PPIFID", "export": "IQ", "import": "IR"}
+
+
+def get_price_index(
+    measure: str, start_date: str, end_date: str, api_key: str
+) -> pd.DataFrame:
+    """
+    Retrieves the full history of a US price index from FRED, which republishes the BLS
+    series: the Producer Price Index for final demand (PPIFID) or the export or import
+    price index of all commodities (IQ and IR), not seasonally adjusted.
+
+    Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        measure (str): "producer", "export" or "import".
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
+    Returns:
+        pd.DataFrame: A single "United States" column indexed by month.
+    """
+    data = _get_fred_series(PRICE_INDEX_SERIES[measure], start_date, end_date, api_key)
+
+    if not data.empty:
+        # FRED dates a month on its first day; the other sources index it by month.
+        data.index = data.index.asfreq("M")
+        data.index.name = None
+
+    return data
+
+
 def get_nonfarm_payrolls(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:
     """
     Retrieves Total Nonfarm Payroll Employment from FRED (series PAYEMS).

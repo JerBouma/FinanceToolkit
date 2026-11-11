@@ -5941,8 +5941,6 @@ class Economics:
         period: str | None = None,
         gmdb_source: bool | None = None,
         end_of_period: bool = False,
-        in_dollars: bool = False,
-        cumulative: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -5974,15 +5972,6 @@ class Economics:
         end of each month for around 130, back to the 1950s for most. Weekly and quarterly or
         yearly end-of-period rates take the last observation of each period.
 
-        With in_dollars=True every currency is quoted the same way round as its value in US
-        dollars (US dollars per unit of the national currency, 1 / rate), as EURUSD is quoted,
-        so a rise is a currency that strengthened against the dollar, also for the yen or the
-        yuan, which are quoted per dollar (USDJPY). With cumulative=True every country's rate
-        is divided by its value in the first period of the date range: the growth of 1 since
-        the start_date, so 0.944 with in_dollars=True is a currency that lost 5.6% against
-        the dollar. A country without data in the first period starts from its own first
-        period.
-
         Also known as: currency exchange, FX rates, foreign exchange rates.
 
         Args:
@@ -5993,11 +5982,6 @@ class Economics:
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             end_of_period (bool, optional): Whether to return the rate at the end of each month,
                 quarter or year instead of its average. Defaults to False.
-            in_dollars (bool, optional): Whether to quote every currency in US dollars per unit
-                of the national currency, so a rise is a stronger currency. Defaults to False,
-                which is national currency per US dollar.
-            cumulative (bool, optional): Whether to return the growth of 1 since the first
-                period of the date range. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -6082,16 +6066,6 @@ class Economics:
         else:
             exchange_rates = oecd_model.get_exchange_rates(
                 period=period, start_date=self._start_date, end_date=self._end_date
-            )
-
-        if in_dollars:
-            exchange_rates = 1 / exchange_rates.replace(0, np.nan)
-
-        if cumulative:
-            # Rebased only after slicing to the date range, so the growth starts at 1 in
-            # the first period of the range.
-            exchange_rates = rebase_to_first(
-                exchange_rates.loc[self._start_date : self._end_date]
             )
 
         return finalize_dataset(

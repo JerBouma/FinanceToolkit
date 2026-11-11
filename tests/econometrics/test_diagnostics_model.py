@@ -449,3 +449,32 @@ def test_level_significance_ranks_the_latest_value():
 
     # Two earlier months were higher.
     assert diagnostics_model.get_level_significance(values)["Rank"] == 3
+
+
+def test_level_significance_in_points_for_a_rate():
+    rates = pd.Series(
+        [0.0529, 0.0510, 0.0540, 0.0494],
+        index=pd.period_range("2026-09-30", periods=4, freq="D"),
+    )
+
+    relative = diagnostics_model.get_level_significance(rates)
+    points = diagnostics_model.get_level_significance(rates, difference=True)
+
+    assert relative["Change Since Start"] == pytest.approx(0.0494 / 0.0529 - 1)
+    assert points["Change Since Start"] == pytest.approx(-0.0035)
+    assert points["Change From Highest"] == pytest.approx(-0.0046)
+    assert points["Change From Lowest"] == pytest.approx(0.0)
+    assert points["Largest Drawdown"] == pytest.approx(-0.0046)
+    assert pd.isna(points["Multiple Since Start"])
+    assert pd.isna(points["Annualised Change"])
+
+
+def test_window_change_by_year_in_points():
+    months = pd.period_range("2024-01", "2025-12", freq="M")
+    rates = pd.Series(np.linspace(0.05, 0.03, len(months)), index=months)
+
+    window = diagnostics_model.get_window_change_by_year(rates, 2, 10, difference=True)
+
+    assert window.loc[2025, "Change"] == pytest.approx(
+        rates[pd.Period("2025-10", "M")] - rates[pd.Period("2025-02", "M")]
+    )

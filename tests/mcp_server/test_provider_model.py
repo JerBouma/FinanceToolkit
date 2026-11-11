@@ -262,3 +262,29 @@ def test_the_basket_is_part_of_the_toolkit(provider):
     assert basket.kwargs["basket"] is True
     # A Toolkit kept without the Total is never handed out for a basket.
     assert basket is not default
+
+
+def test_an_instance_unused_for_the_idle_time_is_dropped(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(provider_model.time, "monotonic", lambda: now[0])
+    released = []
+    monkeypatch.setattr(provider_model, "release_memory", lambda: released.append(1))
+    cache = provider_model.InstanceCache(maximum=3, idle_seconds=60)
+
+    cache.keep("old", "first")
+    now[0] += 50
+    cache.keep("recent", "second")
+    now[0] += 20
+
+    # "old" was last used 70 seconds ago, "recent" 20 seconds ago.
+    assert cache.recall("recent") == "second"
+    assert list(cache) == ["recent"]
+    assert released == [1]
+
+    # Using an instance keeps it, and the least recently used goes beyond the maximum.
+    for key in ("a", "b", "c"):
+        now[0] += 10
+        cache.keep(key, key)
+    assert list(cache) == ["a", "b", "c"]
+    # A second instance for a kept key leaves the kept one in place.
+    assert cache.keep("a", "other") == "a"

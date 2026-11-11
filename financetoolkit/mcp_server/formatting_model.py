@@ -650,6 +650,58 @@ def _fit_to_size(
     )
 
 
+# The most filled dates a note names per ticker.
+MAXIMUM_FILLED_DATES = 5
+
+
+def filled_day_notes(result: Any) -> list[str]:
+    """
+    Names the days a ticker did not trade, such as an exchange holiday, in daily prices that
+    carry its last price over them (fill_nan). Such a day repeats the last close with a
+    Volume of 0 and no Return, which reads as a flat day on a chart.
+
+    Args:
+        result (Any): The answer of a tool call, prices with (column, ticker) columns.
+
+    Returns:
+        list[str]: A note per ticker with filled days, empty for any other answer.
+    """
+    if not (
+        isinstance(result, pd.DataFrame)
+        and result.columns.nlevels == 2  # noqa: PLR2004
+        and {"Close", "Volume", "Return"} <= set(result.columns.get_level_values(0))
+    ):
+        return []
+
+    notes = []
+
+    for ticker in result["Close"].columns:
+        close = result["Close"][ticker]
+        filled = (
+            close.notna()
+            & close.eq(close.shift())
+            & result["Volume"][ticker].eq(0)
+            & result["Return"][ticker].isna()
+        )
+        dates = [str(date) for date in result.index[filled.to_numpy()]]
+
+        if dates:
+            shown = ", ".join(dates[:MAXIMUM_FILLED_DATES])
+            more = (
+                f" and {len(dates) - MAXIMUM_FILLED_DATES} more"
+                if len(dates) > MAXIMUM_FILLED_DATES
+                else ""
+            )
+            notes.append(
+                f"{ticker} did not trade on {shown}{more} (a holiday on its exchange, "
+                "while another ticker or the benchmark traded): those rows repeat the last "
+                "close with a Volume of 0 and no Return, so they do not count in returns or "
+                "volatility. fill_nan=false leaves them empty."
+            )
+
+    return notes
+
+
 def format_result(
     dataset: dict | pd.Series | pd.DataFrame | int | float | str | None,
     notes: list[str] | None = None,

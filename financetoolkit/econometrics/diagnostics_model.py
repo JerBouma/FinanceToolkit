@@ -506,7 +506,9 @@ def get_cusum_test(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
-def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.Series:
+def get_level_significance(
+    levels: pd.Series, level: float | None = None, difference: bool = False
+) -> pd.Series:
     """
     Calculate how unusual the latest value of a series is compared with its own history: the
     percentile of the latest value among the earlier values, the last dates the series was
@@ -527,6 +529,11 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
     - Largest Drawdown = min over t of (x(t) - max(x(s), s <= t)) / |max(x(s), s <= t)|
     - Recovery Date = the first date after the trough with x >= the peak before it
     - First Above Level = the first date s with x(s) > level
+
+    With difference=True the changes are differences instead, in the unit of the series
+    (percentage points for a rate): Change Since Start = x(T) - x(0), Change From Highest =
+    x(T) - max(x), Change From Lowest = x(T) - min(x) and Largest Drawdown = min over t of
+    (x(t) - max(x(s), s <= t)); the Multiple Since Start and Annualised Change are NaN.
     - Above Level Since = the first date of the run of observations above the level that
       the latest one belongs to
 
@@ -553,6 +560,9 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
         levels (pd.Series): The values of a single series by date; missing values are left out.
         level (float | None, optional): A level to compare the series with. Defaults to None,
             which leaves out the Level, First Above Level and Above Level Since.
+        difference (bool, optional): Whether the changes are differences (points) rather
+            than relative changes, for rates and other series where a relative change has
+            no meaning. Defaults to False.
 
     Returns:
         pd.Series: The Start Date, Start Value, Observations, Latest Date, Latest Value, Change
@@ -588,7 +598,7 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
         years = (dates[-1] - dates[0]).days / 365.25
     except (TypeError, ValueError):
         years = np.nan
-    positive = first > 0 and latest > 0
+    positive = first > 0 and latest > 0 and not difference
     multiple = latest / first if positive else np.nan
     annualised = (
         multiple ** (1 / years) - 1 if positive and years and years > 0 else np.nan
@@ -597,10 +607,14 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
     # The largest fall from a running peak, and the first date the peak was regained.
     running_peak = np.maximum.accumulate(values)
     with np.errstate(divide="ignore", invalid="ignore"):
-        falls = np.where(
-            running_peak != 0,
-            (values - running_peak) / np.abs(running_peak),
-            np.nan,
+        falls = (
+            values - running_peak
+            if difference
+            else np.where(
+                running_peak != 0,
+                (values - running_peak) / np.abs(running_peak),
+                np.nan,
+            )
         )
     trough = int(np.nanargmin(falls)) if np.isfinite(falls).any() else 0
     largest_fall = float(falls[trough]) if np.isfinite(falls[trough]) else np.nan
@@ -631,6 +645,12 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
             ),
         }
 
+    def change(start: float) -> float:
+        # In points, or relative to the absolute start (NaN from zero).
+        if difference:
+            return latest - start
+        return (latest - start) / abs(start) if start else np.nan
+
     return pd.Series(
         {
             "Start Date": labels[0],
@@ -638,7 +658,7 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
             "Observations": len(observed),
             "Latest Date": labels[-1],
             "Latest Value": latest,
-            "Change Since Start": (latest - first) / abs(first) if first else np.nan,
+            "Change Since Start": change(first),
             "Multiple Since Start": multiple,
             "Annualised Change": annualised,
             "Percentile": (
@@ -653,12 +673,10 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
             "Lowest Since": labels[as_low[-1]] if as_low.size else np.nan,
             "Highest": highest,
             "Highest Date": labels[int(np.argmax(values))],
-            "Change From Highest": (
-                (latest - highest) / abs(highest) if highest else np.nan
-            ),
+            "Change From Highest": change(highest),
             "Lowest": lowest,
             "Lowest Date": labels[int(np.argmin(values))],
-            "Change From Lowest": (latest - lowest) / abs(lowest) if lowest else np.nan,
+            "Change From Lowest": change(lowest),
             **drawdown,
             **above_level,
         },
@@ -667,7 +685,7 @@ def get_level_significance(levels: pd.Series, level: float | None = None) -> pd.
 
 
 def get_window_change_by_year(
-    levels: pd.Series, from_month: int, to_month: int
+    levels: pd.Series, from_month: int, to_month: int, difference: bool = False
 ) -> pd.DataFrame:
     """
     Calculate the change of a series over the same months of every year, such as February
@@ -692,6 +710,9 @@ def get_window_change_by_year(
             PeriodIndex; missing values are left out.
         from_month (int): The month the window starts, 1 (January) to 12 (December).
         to_month (int): The month the window ends, 1 to 12.
+        difference (bool, optional): Whether the Change is the difference x(to_month, y) -
+            x(from_month, y) (points, for a rate) rather than the relative change. Defaults
+            to False.
 
     Returns:
         pd.DataFrame: Per year the Start Value, End Value, Change (decimal), Rank and
@@ -714,9 +735,9 @@ def get_window_change_by_year(
     end.index = end.index.year
 
     window = pd.DataFrame({"Start Value": start, "End Value": end}).sort_index()
-    window["Change"] = (window["End Value"] - window["Start Value"]) / window[
-        "Start Value"
-    ].abs().replace(0, np.nan)
+    window["Change"] = window["End Value"] - window["Start Value"]
+    if not difference:
+        window["Change"] /= window["Start Value"].abs().replace(0, np.nan)
     window["Rank"] = window["Change"].rank(ascending=False, method="min")
 
     changes = window["Change"].to_numpy()

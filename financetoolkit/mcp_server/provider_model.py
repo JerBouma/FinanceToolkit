@@ -4,6 +4,9 @@ Centralized Finance Toolkit provider with SQLite-backed caching.
 
 from __future__ import annotations
 
+import contextlib
+import ctypes
+import gc
 import hashlib
 import inspect
 import json
@@ -51,6 +54,91 @@ MAXIMUM_TOOLKIT_INSTANCES = 64
 # A Portfolio holds the daily prices and values of all its positions and its benchmark.
 MAXIMUM_PORTFOLIO_INSTANCES = 16
 MAXIMUM_STANDALONE_INSTANCES = 4
+# An instance unused this long is dropped, so a long-running server (a stdio session open
+# for days) gives back the memory of the data it no longer answers from.
+INSTANCE_IDLE_SECONDS = 30 * 60
+
+
+def release_memory() -> None:
+    """
+    Hands memory freed by dropped instances back to the operating system. The C library
+    (glibc) keeps freed memory for later allocations, so without this the process keeps
+    the size of its largest moment, even when it no longer uses it.
+    """
+    gc.collect()
+
+    with contextlib.suppress(OSError, AttributeError):
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+
+
+class InstanceCache(OrderedDict):
+    """
+    The instances the provider reuses, at most `maximum`, the least recently used first. An
+    instance unused for idle_seconds is dropped when the cache is next used.
+    """
+
+    def __init__(self, maximum: int, idle_seconds: float = INSTANCE_IDLE_SECONDS):
+        super().__init__()
+        self.maximum = maximum
+        self.idle_seconds = idle_seconds
+        self._last_used: dict[str, float] = {}
+
+    def recall(self, key: str) -> Any | None:
+        """
+        The instance kept under key, or None.
+
+        Args:
+            key (str): The cache key.
+
+        Returns:
+            Any | None: The instance, now the most recently used.
+        """
+        self.expire()
+        instance = self.get(key)
+
+        if instance is not None:
+            self.move_to_end(key)
+            self._last_used[key] = time.monotonic()
+
+        return instance
+
+    def keep(self, key: str, instance: Any) -> Any:
+        """
+        Keeps an instance, unless one is kept under key already, and drops the least
+        recently used beyond the maximum.
+
+        Args:
+            key (str): The cache key.
+            instance (Any): The instance.
+
+        Returns:
+            Any: The instance kept under key.
+        """
+        instance = self.setdefault(key, instance)
+        self.move_to_end(key)
+        self._last_used[key] = time.monotonic()
+
+        while len(self) > self.maximum:
+            self._last_used.pop(self.popitem(last=False)[0], None)
+
+        return instance
+
+    def expire(self) -> None:
+        """Drops the instances unused for idle_seconds and releases their memory."""
+        now = time.monotonic()
+        expired = False
+
+        # Ordered from least to most recently used, so the stale ones are at the front.
+        while (
+            self
+            and now - self._last_used.get(next(iter(self)), now) > self.idle_seconds
+        ):
+            self._last_used.pop(self.popitem(last=False)[0], None)
+            expired = True
+
+        if expired:
+            release_memory()
+
 
 # Tool responses are computed output, so they sit under their own source.
 MCP_CACHE_SOURCE = policy_model.MCP
@@ -215,9 +303,9 @@ class ToolkitProvider:
 
         # Least recently used first; bounded, as a hosted server meets many distinct requests
         # and an Economics instance holds the Global Macro Database (over 100 MB) per range.
-        self._toolkit_cache: OrderedDict[str, Any] = OrderedDict()
-        self._standalone_cache: OrderedDict[str, Any] = OrderedDict()
-        self._portfolio_cache: OrderedDict[str, Portfolio] = OrderedDict()
+        self._toolkit_cache = InstanceCache(MAXIMUM_TOOLKIT_INSTANCES)
+        self._standalone_cache = InstanceCache(MAXIMUM_STANDALONE_INSTANCES)
+        self._portfolio_cache = InstanceCache(MAXIMUM_PORTFOLIO_INSTANCES)
         self._lock = Lock()
         # One lock per cached Toolkit or module instance, held for the whole call. Tools run
         # in worker threads, and an instance fills its statements, prices and conversions
@@ -714,9 +802,9 @@ class ToolkitProvider:
 
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
-            if cache_key in self._toolkit_cache:
-                self._toolkit_cache.move_to_end(cache_key)
-                return self._toolkit_cache[cache_key]
+            kept = self._toolkit_cache.recall(cache_key)
+            if kept is not None:
+                return kept
 
             if not effective_key:
                 raise ValueError(FMP_KEY_HINT)
@@ -737,11 +825,7 @@ class ToolkitProvider:
                 # so small values (a daily variance) keep their precision.
                 rounding=None,
             )
-            self._toolkit_cache[cache_key] = toolkit_instance
-            while len(self._toolkit_cache) > MAXIMUM_TOOLKIT_INSTANCES:
-                self._toolkit_cache.popitem(last=False)
-
-        return toolkit_instance
+            return self._toolkit_cache.keep(cache_key, toolkit_instance)
 
     def call_sub_module_functionality(
         self,
@@ -890,9 +974,9 @@ class ToolkitProvider:
         ).hexdigest()
 
         with self._lock:
-            if cache_key in self._portfolio_cache:
-                self._portfolio_cache.move_to_end(cache_key)
-                return self._portfolio_cache[cache_key]
+            kept = self._portfolio_cache.recall(cache_key)
+            if kept is not None:
+                return kept
 
         if not effective_key:
             raise ValueError(FMP_KEY_HINT)
@@ -923,12 +1007,7 @@ class ToolkitProvider:
         # Built outside the lock, as building collects prices; a portfolio built twice at
         # once keeps the first one stored.
         with self._lock:
-            instance = self._portfolio_cache.setdefault(cache_key, instance)
-            self._portfolio_cache.move_to_end(cache_key)
-            while len(self._portfolio_cache) > MAXIMUM_PORTFOLIO_INSTANCES:
-                self._portfolio_cache.popitem(last=False)
-
-        return instance
+            return self._portfolio_cache.keep(cache_key, instance)
 
     def call_portfolio_functionality(
         self,
@@ -1051,9 +1130,7 @@ class ToolkitProvider:
 
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
-            instance = self._standalone_cache.get(cache_key)
-            if instance is not None:
-                self._standalone_cache.move_to_end(cache_key)
+            instance = self._standalone_cache.recall(cache_key)
 
             if instance is None:
                 if module_name == "economics":
@@ -1084,9 +1161,7 @@ class ToolkitProvider:
                 else:
                     raise ValueError(f"Unknown standalone module: {module_name}")
 
-                self._standalone_cache[cache_key] = instance
-                while len(self._standalone_cache) > MAXIMUM_STANDALONE_INSTANCES:
-                    self._standalone_cache.popitem(last=False)
+                self._standalone_cache.keep(cache_key, instance)
 
         method = getattr(instance, method_name)
 

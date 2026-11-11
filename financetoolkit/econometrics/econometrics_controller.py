@@ -163,6 +163,8 @@ class Econometrics:
         self._rounding: int | None = rounding
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
+        # With "difference", the changes of the level significance are in points too.
+        self._changes = changes
         self._portfolio_weights: dict | None = None
         # Memo for the sliced-and-dropna'd frames handed to the calculations: nearly
         # every method starts from the same (period, column) slice, and re-copying it
@@ -6998,13 +7000,18 @@ class Econometrics:
         the range, the latest value included, with the first dates they were reached, so the
         start date works as the anchor of an event window: the rise from the start to the peak,
         the date of the peak and the fall from it to the latest value. The changes from them
-        are relative to their absolute values, and NaN when they are zero.
+        are relative to their absolute values, and NaN when they are zero. With
+        `Econometrics(data=..., changes="difference")` every change, the Largest Drawdown
+        included, is a difference in the unit of the series instead (percentage points for a
+        rate: a 10-year yield from 5.29% to 4.94% is -0.0035), and the Multiple Since Start and
+        Annualised Change are NaN.
 
         Also known as: highest since, lowest since, record high, multi-year high, level
         percentile, historical percentile, how unusual is the latest value, change since,
         change between two dates, cumulative change, event window, peak, trough, drawdown
         from the peak, change from the high, change from the low, multiple, compound annual
-        growth rate (CAGR), annualised change, peak to trough, time to recover the peak.
+        growth rate (CAGR), annualised change, peak to trough, time to recover the peak,
+        change in percentage points.
 
         Args:
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -7109,7 +7116,9 @@ class Econometrics:
         level_significance = pd.DataFrame(
             {
                 series: diagnostics_model.get_level_significance(
-                    levels[series], level=level
+                    levels[series],
+                    level=level,
+                    difference=self._changes == "difference",
                 )
                 for series in levels.columns
             }
@@ -7154,7 +7163,9 @@ class Econometrics:
         February) runs into the next year and is labelled by the year it ends; the same
         month for both gives the change over twelve months. A year without the value of
         either month has no change, so the current year is empty until its last month is
-        published. Largest Since is NaN when no earlier year had a change as large.
+        published. Largest Since is NaN when no earlier year had a change as large. With
+        `Econometrics(data=..., changes="difference")` the Change is x(to_month, y) -
+        x(from_month, y), in percentage points for a rate.
 
         Also known as: same period each year, seasonal change, year-to-date comparison,
         change from February to October, largest since, fastest since, seasonality.
@@ -7228,7 +7239,10 @@ class Econometrics:
         window_change = pd.concat(
             {
                 series: diagnostics_model.get_window_change_by_year(
-                    levels[series], from_month, to_month
+                    levels[series],
+                    from_month,
+                    to_month,
+                    difference=self._changes == "difference",
                 )
                 for series in levels.columns
             },

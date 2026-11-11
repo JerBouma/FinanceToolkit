@@ -51,6 +51,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
 from financetoolkit.mcp_server.formatting_model import (
     convert_to_period,
     country_names,
+    filled_day_notes,
     format_result,
     has_period_columns,
     is_time_index_of,
@@ -2157,6 +2158,8 @@ class ToolRegistry:
                         "(end of period), not an average."
                     )
                 unmatched_columns: list[str] = []
+                # Read before show_columns can leave out the Volume and Return they need.
+                filled_days = filled_day_notes(result)
                 if show_columns is not None:
                     # Matched in any casing ("close" for Close), as the names are shown
                     # in a response and typed back by hand.
@@ -2189,7 +2192,7 @@ class ToolRegistry:
                     )
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
-                notes = list(notes) + missing_data_notes(call_messages)
+                notes = list(notes) + filled_days + missing_data_notes(call_messages)
                 # A ticker the sources do not know is dropped from the answer; when the
                 # others are there, say which one is missing rather than leave it out quietly.
                 if (

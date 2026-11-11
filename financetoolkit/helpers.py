@@ -1053,3 +1053,69 @@ def add_score_zone(
     tickers = list(dict.fromkeys(results.index.get_level_values(0)))
 
     return pd.concat([results.astype(object), zone]).reindex(tickers, level=0)
+
+
+def rank_across_tickers(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ranks the tickers within every period, from the highest value (rank 1) to the lowest,
+    and compares each ticker with its neighbour in the ranking toward the middle: the
+    ticker ranked just below it in the top half and the one ranked just above it in the
+    bottom half. The first and last rank therefore show how far the best and the worst
+    stand apart from the rest, e.g. an index that fell more than twice as far as the next
+    worst.
+
+    The Difference is the ticker's value minus its neighbour's, in the units of the values
+    (a difference of returns in decimals is in points). The Multiple is the ticker's value
+    divided by its neighbour's, only when both have the same sign (a multiple of a loss and
+    a gain says nothing). A ticker without a value in a period is left out of its ranking,
+    and tickers with the same value share the higher rank.
+
+    Args:
+        data (pd.DataFrame): The values with the periods as rows and a column per ticker.
+
+    Returns:
+        pd.DataFrame: A row per period and ticker, ordered by rank, with the Rank, Value,
+            Compared With, Difference and Multiple.
+    """
+    rankings = {}
+    for period, row in data.iterrows():
+        values = (
+            pd.to_numeric(row, errors="coerce")
+            .dropna()
+            .sort_values(ascending=False, kind="stable")
+        )
+        count = len(values)
+        if not count:
+            continue
+        middle = (count - 1) / 2
+        neighbours = [
+            position + 1 if position <= middle else position - 1
+            for position in range(count)
+        ]
+        compared = values.iloc[neighbours] if count > 1 else pd.Series([np.nan])
+        compared_values = compared.to_numpy(dtype=float)
+        same_sign = np.sign(values.to_numpy()) == np.sign(compared_values)
+        rankings[period] = pd.DataFrame(
+            {
+                "Rank": values.rank(ascending=False, method="min").astype(int),
+                "Value": values,
+                "Compared With": list(compared.index) if count > 1 else [None],
+                "Difference": values.to_numpy() - compared_values,
+                "Multiple": np.where(
+                    same_sign & (compared_values != 0),
+                    values.to_numpy()
+                    / np.where(compared_values == 0, np.nan, compared_values),
+                    np.nan,
+                ),
+            },
+            index=pd.Index(values.index, name=data.columns.name or "Ticker"),
+        )
+
+    if not rankings:
+        return pd.DataFrame(
+            columns=["Rank", "Value", "Compared With", "Difference", "Multiple"]
+        )
+
+    return pd.concat(
+        rankings, names=[data.index.name or "Date", data.columns.name or "Ticker"]
+    )

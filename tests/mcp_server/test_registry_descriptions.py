@@ -2,9 +2,11 @@
 
 import asyncio
 
+import pandas as pd
 import yaml
 
 from financetoolkit.mcp_server import mcp_controller
+from financetoolkit.mcp_server.registry_controller import _rank_result
 
 
 def test_long_tool_descriptions_are_complete():
@@ -403,3 +405,23 @@ def test_the_last_rows_of_stacked_tickers_are_selected_per_ticker():
 
     assert select_rows(calendar, -2)["EPS"].tolist() == [2.0, 3.0, 5.0, 6.0]
     assert select_rows(calendar, 1)["EPS"].tolist() == [1.0, 4.0]
+
+
+def test_rank_result_ranks_tickers_per_period_in_either_orientation():
+
+    periods = pd.PeriodIndex(["2024", "2025"], freq="Y", name="Date")
+    returns = pd.DataFrame({"AAPL": [0.1, 0.2], "MSFT": [0.3, -0.1]}, index=periods)
+
+    ranking = _rank_result(returns, is_country=False)
+    assert ranking.loc[("2025", "AAPL"), "Rank"] == 1
+    assert ranking.index.names == ["Date", "Ticker"]
+
+    # Ratios have their periods as columns and a (ticker, metric) row each.
+    ratios = returns.T
+    ratios.index = pd.MultiIndex.from_product([ratios.index, ["P/E"]])
+    assert _rank_result(ratios, is_country=False).equals(ranking)
+
+    # Several fields per ticker (historical data) need show_columns first.
+    fields = pd.concat({"Close": returns, "Return": returns}, axis=1)
+    assert _rank_result(fields, is_country=False) is None
+    assert _rank_result(fields[["Return"]], is_country=False).equals(ranking)

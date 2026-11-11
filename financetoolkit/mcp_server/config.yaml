@@ -165,7 +165,9 @@ instructions: >-
   benchmark ticker (SPY unless benchmark_ticker says otherwise). Keep answers small:
   limit=-5 gives the last five periods (5 the first five), show_columns keeps the named
   fields, and start_date/end_date or period narrow the range; an answer that is still
-  too large is cut, with a note. Read the _notes of an answer: they say what was left
+  too large is cut, with a note. rank=true turns a value per period and ticker (or
+  country) into a ranking per period, with each one's gap to its neighbour (e.g. the
+  worst return and how far it fell beyond the next worst). Read the _notes of an answer: they say what was left
   out, ignored or converted. The _sources of an answer name the publishers its data
   comes from (such as FinancialModelingPrep or the Bank for International
   Settlements); mention them when citing the figures. To find which tickers exist (by

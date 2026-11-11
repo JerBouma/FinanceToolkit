@@ -32,6 +32,7 @@ from pydantic import (
 
 from financetoolkit.cache import policy_model
 from financetoolkit.fmp_model import parse_fiscal_period
+from financetoolkit.helpers import rank_across_tickers
 from financetoolkit.mcp_server import series_model
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thread
 from financetoolkit.mcp_server.coercion_model import (
@@ -294,6 +295,14 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "deflate_with are deflated with, e.g. 'United States' for "
         "'macroeconomics:get_commodity_prices:Gold' in real terms."
     ),
+    "rank": (
+        "true ranks the tickers (or countries) within every period, from the highest value "
+        "(rank 1) to the lowest, and compares each with its neighbour toward the middle of "
+        "the ranking: the Difference (in points for returns) and the Multiple (only when "
+        "both have the same sign), so the first and last rank show how far the best and the "
+        "worst stand apart, e.g. a fall more than twice as large as the next one. Needs a "
+        "value per period and ticker; pick one field with show_columns where there are more."
+    ),
     "show_columns": (
         "Comma-separated names to filter the output. "
         "For historical data use the key names visible in any response record "
@@ -531,6 +540,48 @@ def _summarize_docstring(docstring: str) -> dict[str, str]:
     )
 
     return {"summary": summary, "aliases": aliases.group(1).strip() if aliases else ""}
+
+
+def _rank_result(result: object, is_country: bool) -> pd.DataFrame | None:
+    """The result ranked across its tickers (or countries) per period, if it has that shape.
+
+    A table with the periods as rows and a column per ticker is ranked as it is; one with
+    the periods as columns (ratios) is turned around first. A second level with a single
+    field (historical data with show_columns='Return', ratios with one metric) is dropped.
+
+    Args:
+        result (object): The answer of the indicator.
+        is_country (bool): Whether the columns are countries rather than tickers.
+
+    Returns:
+        pd.DataFrame | None: The ranking, or None when the result has no such shape.
+    """
+    if isinstance(result, pd.Series) and isinstance(result.index, pd.MultiIndex):
+        result = result.unstack(level=-1)
+    if not isinstance(result, pd.DataFrame) or result.empty:
+        return None
+    if has_period_columns(result):
+        result = result.T
+    if result.columns.nlevels == 2:  # noqa: PLR2004
+        # (field, ticker) for historical data, (ticker, metric) for turned-around ratios
+        single_level = [
+            level
+            for level in range(2)
+            if len(set(result.columns.get_level_values(level))) == 1
+        ]
+        if not single_level:
+            return None
+        result = result.droplevel(single_level[0], axis=1)
+    if (
+        result.columns.nlevels != 1
+        or not is_time_index_of(result)
+        or result.columns.size < 2  # noqa: PLR2004
+    ):
+        return None
+    result = result.copy()
+    result.columns.name = "Country" if is_country else "Ticker"
+
+    return rank_across_tickers(result)
 
 
 def _unmatched_columns(
@@ -1818,6 +1869,11 @@ class ToolRegistry:
                 spec.basket and to_boolean(kwargs.pop("basket", False))
             )
 
+            # rank is handled here as well, unless the indicator ranks itself.
+            rank_tickers = "rank" not in method_param_names.get(
+                method_name, set()
+            ) and to_boolean(kwargs.pop("rank", False))
+
             # show_columns is handled entirely here — never forwarded to methods
             raw_show_columns = kwargs.pop("show_columns", None)
             show_columns = (
@@ -2363,6 +2419,17 @@ class ToolRegistry:
                                 f"limit={row_selection - 1 if row_selection < 0 else row_selection + 1} "
                                 "includes one more period."
                             )
+                # After the row selection, so limit=-1 ranks the latest period only.
+                if rank_tickers:
+                    ranking = _rank_result(result, is_country=bool(countries))
+                    if ranking is None:
+                        notes.append(
+                            "rank=true was not applied: it needs a value per period and "
+                            "ticker (or country) for two or more of them; pick one field "
+                            "with show_columns where there are more."
+                        )
+                    else:
+                        result = ranking
                 # Most economic series are yearly only, whatever quarterly asks for.
                 if (
                     quarterly
@@ -2577,6 +2644,15 @@ class ToolRegistry:
             )
 
         # Appended last so it does not disturb positional ordering of other params.
+        if "rank" not in {p.name for p in sig_params}:
+            sig_params.append(
+                P(
+                    "rank",
+                    POS,
+                    default=False,
+                    annotation=_annotate_with_description("rank", bool),
+                )
+            )
         sig_params.append(
             P(
                 "show_columns",

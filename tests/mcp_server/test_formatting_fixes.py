@@ -57,3 +57,31 @@ def test_a_series_without_a_period_parameter_is_converted_to_the_period():
     # Already coarser, or not a time series: nothing to convert.
     assert convert_to_period(yearly, "monthly") is None
     assert convert_to_period(pd.DataFrame({"a": [1, 2]}), "yearly") is None
+
+
+def test_days_a_ticker_did_not_trade_are_named():
+    from financetoolkit.mcp_server.formatting_model import filled_day_notes
+
+    days = pd.period_range("2026-10-01", periods=4, freq="D")
+    prices = pd.concat(
+        {
+            "Close": pd.DataFrame(
+                {"^KS11": [6971.35, 7003.74, 7003.74, 6941.39], "SPY": [1, 2, 3, 4]},
+                index=days,
+            ),
+            "Volume": pd.DataFrame(
+                {"^KS11": [292300, 239000, 0, 269800], "SPY": [5, 5, 5, 5]}, index=days
+            ),
+            "Return": pd.DataFrame(
+                {"^KS11": [None, 0.0046, None, -0.0089], "SPY": [None, 1.0, 0.5, 0.33]},
+                index=days,
+            ),
+        },
+        axis=1,
+    )
+
+    notes = filled_day_notes(prices)
+
+    assert len(notes) == 1
+    assert notes[0].startswith("^KS11 did not trade on 2026-10-03 (")
+    assert filled_day_notes(prices["Close"]) == []

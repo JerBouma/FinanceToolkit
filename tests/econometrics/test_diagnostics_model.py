@@ -478,3 +478,25 @@ def test_window_change_by_year_in_points():
     assert window.loc[2025, "Change"] == pytest.approx(
         rates[pd.Period("2025-10", "M")] - rates[pd.Period("2025-02", "M")]
     )
+
+
+def test_get_largest_falls_lists_separate_episodes():
+    years = pd.period_range("1860", periods=12, freq="Y")
+    prices = pd.Series(
+        [20.0, 100.0, 60.0, 30.0, 50.0, 80.0, 40.0, 90.0, 85.0, 45.0, 70.0, 60.0],
+        index=years,
+    )
+
+    falls = diagnostics_model.get_largest_falls(prices, window=3, top=3)
+
+    # 1861 -> 1863 is the largest; 1865 -> 1866 and 1867 -> 1869 do not overlap it.
+    assert falls["Peak Date"].tolist() == ["1861", "1865", "1867"]
+    assert falls["Trough Date"].tolist() == ["1863", "1866", "1869"]
+    assert falls["Change"].tolist() == pytest.approx([-0.7, -0.5, -0.5])
+    assert falls.index.tolist() == [1, 2, 3]
+
+    # In points: the fall of a rate.
+    points = diagnostics_model.get_largest_falls(
+        prices / 1000, window=3, top=1, difference=True
+    )
+    assert points["Change"].iloc[0] == pytest.approx(-0.07)

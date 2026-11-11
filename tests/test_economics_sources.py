@@ -1755,3 +1755,34 @@ def test_bls_consumer_prices_come_in_one_request(monkeypatch):
     assert len(requests_sent) == 1
     assert list(prices.columns) == list(bls_model.CONSUMER_PRICE_SERIES)
     assert prices.loc[pd.Period("2026-10", "M"), "core"] == pytest.approx(337.511)
+
+
+def test_millennium_series_in_real_terms(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import boe_model
+
+    years = pd.period_range("1861", periods=4, freq="Y")
+    monkeypatch.setattr(
+        boe_model,
+        "get_millennium_data",
+        lambda: pd.DataFrame({"$ Oil prices": [0.49, 1.0, 2.0, 8.06]}, index=years),
+    )
+    monkeypatch.setattr(
+        Economics,
+        "get_consumer_price_index",
+        lambda self, **kwargs: pd.DataFrame(
+            {"United States": [3.7146, 4.2402, 5.2911, 6.623]}, index=years
+        ),
+    )
+
+    real = Economics(
+        start_date="1861-01-01", end_date="1864-12-31"
+    ).get_millennium_of_macroeconomic_data(
+        series="$ Oil prices", deflate_with="United States", rounding=6
+    )
+
+    # In the money of the latest year of the price index, 1864.
+    assert real.loc["1864", "$ Oil prices"] == pytest.approx(8.06)
+    assert real.loc["1861", "$ Oil prices"] == pytest.approx(
+        0.49 * 6.623 / 3.7146, abs=1e-6
+    )

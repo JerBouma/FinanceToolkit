@@ -991,9 +991,9 @@ def deflate_with_price_index(
     values: pd.DataFrame, price_index: pd.Series
 ) -> pd.DataFrame:
     """
-    Expresses monthly values in the money of one month, the latest month of a price index
-    such as the consumer price index, so that values from decades apart can be compared in
-    real terms ("in September 2026 dollars").
+    Expresses monthly or yearly values in the money of one period, the latest period of a
+    price index such as the consumer price index, so that values from decades apart can be
+    compared in real terms ("in September 2026 dollars").
 
     The formula is as follows:
 
@@ -1005,11 +1005,11 @@ def deflate_with_price_index(
     value.
 
     Args:
-        values (pd.DataFrame): The nominal values, with months (a PeriodIndex) as index.
-        price_index (pd.Series): The price index, with months (a PeriodIndex) as index.
+        values (pd.DataFrame): The nominal values, with periods (a PeriodIndex) as index.
+        price_index (pd.Series): The price index, with the same periods as index.
 
     Returns:
-        pd.DataFrame: The values in the money of the latest month of the price index.
+        pd.DataFrame: The values in the money of the latest period of the price index.
     """
     price_index = price_index.dropna()
     monthly = price_index.reindex(values.index)

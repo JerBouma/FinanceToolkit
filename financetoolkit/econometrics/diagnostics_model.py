@@ -842,3 +842,75 @@ def get_streaks(levels: pd.Series, level: float | None = None) -> pd.Series:
         },
         dtype=object,
     )
+
+
+def get_largest_falls(
+    levels: pd.Series,
+    window: int | None = None,
+    top: int = 5,
+    difference: bool = False,
+) -> pd.DataFrame:
+    """
+    The largest falls of a series from a peak to the lowest value within `window` periods
+    after it, as separate episodes: the largest fall first, then the largest one that does
+    not overlap it, and so on.
+
+    The formula is as follows:
+
+    - Fall (p) = (min(x(p + 1), ..., x(p + window)) - x(p)) / |x(p)|, or the difference with
+      difference=True
+    - Trough (p) = the period of that lowest value
+
+    A peak and its trough span the periods from p to the trough; an episode overlapping one
+    already chosen is left out, so a high two years after a peak that falls to the same
+    trough is not counted twice.
+
+    Args:
+        levels (pd.Series): The series, indexed by period.
+        window (int | None, optional): The number of periods after a peak the trough is
+            looked for in. Defaults to None, which is every later period.
+        top (int, optional): The number of falls. Defaults to 5.
+        difference (bool, optional): Whether a fall is the difference in the units of the
+            series (points for a rate) instead of a relative change. Defaults to False.
+
+    Returns:
+        pd.DataFrame: A row per fall (Rank 1 the largest) with the Peak Date, Peak, Trough
+            Date, Trough, Change and Periods (from the peak to the trough).
+    """
+    values = levels.dropna()
+    numbers = values.to_numpy(dtype=float)
+    span = len(numbers) if window is None else window
+
+    candidates = []
+    for peak in range(len(numbers) - 1):
+        later = numbers[peak + 1 : peak + 1 + span]
+        trough = peak + 1 + int(np.argmin(later))
+        change = numbers[trough] - numbers[peak]
+        if not difference:
+            change = change / abs(numbers[peak]) if numbers[peak] else np.nan
+        if change < 0:
+            candidates.append((change, peak, trough))
+
+    chosen: list[tuple[float, int, int]] = []
+    for change, peak, trough in sorted(candidates):
+        if any(peak <= end and trough >= start for _, start, end in chosen):
+            continue
+        chosen.append((change, peak, trough))
+        if len(chosen) == top:
+            break
+
+    return pd.DataFrame(
+        [
+            {
+                "Peak Date": str(values.index[peak]),
+                "Peak": numbers[peak],
+                "Trough Date": str(values.index[trough]),
+                "Trough": numbers[trough],
+                "Change": change,
+                "Periods": trough - peak,
+            }
+            for change, peak, trough in chosen
+        ],
+        index=pd.RangeIndex(1, len(chosen) + 1, name="Rank"),
+        columns=["Peak Date", "Peak", "Trough Date", "Trough", "Change", "Periods"],
+    )

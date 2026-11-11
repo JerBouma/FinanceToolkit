@@ -296,6 +296,12 @@ HICP_AGGREGATES = {
 }
 
 
+# Eurostat's HICP dataset also holds an experimental US index (BLS data on the HICP concept,
+# leaving out owner-occupied housing, until 2024), which differs from the CPI-U by up to a
+# percentage point and would win from the BIS when both end in the same month.
+NOT_HICP_COUNTRIES = ["United States"]
+
+
 def get_inflation_rate(
     start_date: str, end_date: str, measure: str = "all"
 ) -> pd.DataFrame:
@@ -325,7 +331,7 @@ def get_inflation_rate(
     )
 
     # Eurostat publishes the rate in percent.
-    return inflation_rate / 100
+    return inflation_rate.drop(columns=NOT_HICP_COUNTRIES, errors="ignore") / 100
 
 
 def get_consumer_price_index(
@@ -349,7 +355,7 @@ def get_consumer_price_index(
         f"HICP index ({measure})",
         start_date,
         end_date,
-    )
+    ).drop(columns=NOT_HICP_COUNTRIES, errors="ignore")
 
 
 def get_industrial_price_index(

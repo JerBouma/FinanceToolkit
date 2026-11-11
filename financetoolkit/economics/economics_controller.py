@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 
+import itertools
 import os
 import warnings
 from collections.abc import Callable
@@ -82,6 +83,7 @@ from financetoolkit.utilities.sources_model import (
 )
 from financetoolkit.utilities.statistics_model import (
     EURO_AREA_MEMBERS,
+    apply_rounding,
     euro_area_hint,
     finalize_dataset,
 )
@@ -9970,6 +9972,137 @@ class Economics:
             axis="rows",
             row_slice=True,
             dropna=True,
+        )
+
+    @handle_errors
+    def get_yield_decomposition(
+        self,
+        countries: list[str] | str | None = None,
+        maturities: list[str] | str = "10Y",
+        period: str = "daily",
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Split the nominal government bond yield of a maturity into the real yield of the
+        inflation-linked bond of that maturity and the breakeven inflation, the part the
+        market demands for inflation, with the change of each part since the previous period:
+
+        - Nominal Yield = Real Yield + Breakeven Inflation
+
+        A rise of the nominal yield is either a rise of real rates (tighter monetary policy,
+        stronger growth, more supply of bonds) or of inflation compensation (a higher
+        expectation of inflation or a larger inflation risk premium), and the split says
+        which: a 5-year US yield up 0.14 with an unchanged breakeven rose on real rates alone.
+
+        The curves are those of `get_real_yield_curve` and
+        `get_breakeven_inflation_expectations`, from the official sources without an API key:
+        the U.S. Department of the Treasury (par yields, 5 to 30 years), the Bank of England
+        (spot rates, 3 to 40 years) and, for Germany, the Bundesbank (constant maturities
+        between 3 and 30 years). Each source's breakeven is its nominal yield minus its real
+        yield, so the parts add up to the nominal yield in that source's own compounding. UK
+        breakevens are measured against the Retail Prices Index (RPI) and German ones against
+        euro area inflation (HICP excluding tobacco).
+
+        The changes are the difference with the previous period the country has a curve for,
+        in decimals (0.0014 for 14 basis points), so a market holiday is not a change. The first
+        period of the date range has no change.
+
+        Also known as: real yield and breakeven split, nominal yield decomposition,
+        inflation compensation, real rate versus inflation.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries, from the United
+                States, the United Kingdom and Germany. Defaults to None, which is all three.
+            maturities (list[str] | str, optional): The maturities, such as "5Y" or
+                ["5Y", "10Y"], each one both curves of a country have. Defaults to "10Y".
+            period (str, optional): Whether to return the daily, weekly or monthly data, the
+                curve on the last trading day of each week or month. Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: The Nominal Yield, Real Yield, Breakeven Inflation and their Nominal
+            Change, Real Change and Breakeven Change per country and maturity, with the dates
+            as the index.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-11-02', end_date='2026-11-10')
+
+        economics.get_yield_decomposition(
+            countries=['United States', 'Germany'], maturities='5Y'
+        ).xs(('United States', '5Y'), axis=1)
+        ```
+
+        Which returns:
+
+        |            |   Nominal Yield |   Real Yield |   Breakeven Inflation |   Nominal Change |   Real Change |   Breakeven Change |
+        |:-----------|----------------:|-------------:|----------------------:|-----------------:|--------------:|-------------------:|
+        | 2026-11-02 |          0.047  |       0.0231 |                0.0239 |         nan      |      nan      |           nan      |
+        | 2026-11-03 |          0.0474 |       0.0235 |                0.0239 |           0.0004 |        0.0004 |             0      |
+        | 2026-11-04 |          0.0469 |       0.0239 |                0.023  |          -0.0005 |        0.0004 |            -0.0009 |
+        | 2026-11-05 |          0.0459 |       0.0233 |                0.0226 |          -0.001  |       -0.0006 |            -0.0004 |
+        | 2026-11-06 |          0.0464 |       0.0235 |                0.0229 |           0.0005 |        0.0002 |             0.0003 |
+        | 2026-11-09 |          0.0467 |       0.0242 |                0.0225 |           0.0003 |        0.0007 |            -0.0004 |
+        | 2026-11-10 |          0.0481 |       0.0256 |                0.0225 |           0.0014 |        0.0014 |             0      |
+        TABLE
+        """
+        maturities = [
+            str(maturity).strip().upper()
+            for maturity in helpers.split_values(maturities)
+        ]
+        # Unrounded, so the parts add up and the changes are exact; rounded once at the end.
+        unrounded = 12
+        real_yield = self.get_real_yield_curve(
+            countries=countries, period=period, rounding=unrounded
+        )
+        breakeven_inflation = self.get_breakeven_inflation_expectations(
+            countries=countries, period=period, rounding=unrounded
+        )
+
+        decompositions = {}
+        for country, maturity in itertools.product(
+            dict.fromkeys(real_yield.columns.get_level_values(0)), maturities
+        ):
+            if (country, maturity) not in real_yield.columns or (
+                country,
+                maturity,
+            ) not in breakeven_inflation.columns:
+                logger.warning(
+                    "%s has no %s real yield and breakeven inflation, so it is left out.",
+                    country,
+                    maturity,
+                )
+                continue
+
+            parts = pd.DataFrame(
+                {
+                    "Real Yield": real_yield[(country, maturity)],
+                    "Breakeven Inflation": breakeven_inflation[(country, maturity)],
+                }
+            ).dropna()
+            parts.insert(
+                0, "Nominal Yield", parts["Real Yield"] + parts["Breakeven Inflation"]
+            )
+            changes = parts.diff()
+            changes.columns = ["Nominal Change", "Real Change", "Breakeven Change"]
+            decompositions[(country, maturity)] = pd.concat([parts, changes], axis=1)
+
+        if not decompositions:
+            raise ValueError(
+                f"No country has a {', '.join(maturities)} real yield and breakeven inflation; the "
+                "maturities run from 5 to 30 years for the United States and from 3 years "
+                "for the United Kingdom and Germany."
+            )
+
+        decomposition = pd.concat(decompositions, axis=1)
+        decomposition.columns.names = ["Country", "Maturity", None]
+
+        return apply_rounding(
+            decomposition, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors

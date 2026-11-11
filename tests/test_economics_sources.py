@@ -1755,3 +1755,60 @@ def test_bls_consumer_prices_come_in_one_request(monkeypatch):
     assert len(requests_sent) == 1
     assert list(prices.columns) == list(bls_model.CONSUMER_PRICE_SERIES)
     assert prices.loc[pd.Period("2026-10", "M"), "core"] == pytest.approx(337.511)
+
+
+def test_eurostat_leaves_out_its_experimental_us_index(monkeypatch):
+    months = pd.period_range("2022-06", periods=2, freq="M")
+    hicp = pd.DataFrame(
+        {"Germany": [8.2, 8.5], "United States": [10.1, 9.8]}, index=months
+    )
+    monkeypatch.setattr(
+        eurostat_model, "collect_eurostat_data", lambda *args, **kwargs: hicp.copy()
+    )
+
+    # The BIS (the CPI-U) is then the only source of the United States, also when both
+    # end in the same month.
+    for prices in (
+        eurostat_model.get_inflation_rate("2022-06-01", "2022-07-31"),
+        eurostat_model.get_consumer_price_index("2022-06-01", "2022-07-31"),
+    ):
+        assert list(prices.columns) == ["Germany"]
+
+
+def test_yield_decomposition_adds_the_parts_and_skips_missing_days(monkeypatch):
+    from financetoolkit import Economics
+
+    days = pd.to_datetime(["2026-11-06", "2026-11-09", "2026-11-10"])
+    columns = pd.MultiIndex.from_tuples(
+        [("United States", "5Y"), ("United States", "10Y")],
+        names=["Country", "Maturity"],
+    )
+    real = pd.DataFrame(
+        [[0.0235, 0.027], [0.0242, 0.0266], [0.0256, 0.0278]],
+        index=days,
+        columns=columns,
+    )
+    # The breakeven has no value on the 9th: the change of the 10th is over two days.
+    breakeven = pd.DataFrame(
+        [[0.0229, 0.0222], [float("nan"), float("nan")], [0.0225, 0.022]],
+        index=days,
+        columns=columns,
+    )
+    monkeypatch.setattr(Economics, "get_real_yield_curve", lambda self, **kwargs: real)
+    monkeypatch.setattr(
+        Economics,
+        "get_breakeven_inflation_expectations",
+        lambda self, **kwargs: breakeven,
+    )
+
+    decomposition = Economics(
+        start_date="2026-11-06", end_date="2026-11-10"
+    ).get_yield_decomposition(maturities="5y", rounding=6)
+    five_year = decomposition[("United States", "5Y")]
+
+    assert list(five_year.index) == [days[0], days[2]]
+    assert five_year.loc[days[2], "Nominal Yield"] == pytest.approx(0.0481)
+    assert five_year.loc[days[2], "Real Change"] == pytest.approx(0.0021)
+    assert five_year.loc[days[2], "Breakeven Change"] == pytest.approx(-0.0004)
+    assert five_year.loc[days[2], "Nominal Change"] == pytest.approx(0.0017)
+    assert ("United States", "10Y") not in decomposition.columns

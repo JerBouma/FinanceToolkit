@@ -55,3 +55,59 @@ def test_a_search_is_kept_to_a_few_words():
     )
     assert "keep it to a few keywords" in result[0][0].text
     assert len(long_query) > tools_model.MAX_QUERY_CHARACTERS
+
+
+def test_an_indicator_name_returns_its_description_and_parameters():
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "search_metrics", {"query": "get_yield_decomposition"}
+        )
+    )[0][0].text
+
+    assert text.startswith("### `get_yield_decomposition` (tool `rates`)")
+    assert "Nominal Yield = Real Yield + Breakeven Inflation" in text
+    assert "- `maturities`:" in text
+
+
+def test_a_partial_indicator_name_is_searched_by_its_words():
+    assert search("get_maximum_sharpe")[0] == (
+        "portfolio",
+        "get_maximum_sharpe_weights",
+    )
+
+
+def test_compact_tools_keep_the_first_clause_and_the_indicator_description(
+    monkeypatch,
+):
+    from financetoolkit.mcp_server import registry_controller
+
+    monkeypatch.setenv("FT_MCP_COMPACT_TOOLS", "1")
+    assert registry_controller.compact_tools_enabled()
+
+    description = registry_controller._compact_description(
+        "Interest rate data (central bank policy rates, ...). More text.",
+        "get_central_bank_policy_rate",
+    )
+    assert description.startswith("Interest rate data. Pass the indicator by name")
+    assert "'get_central_bank_policy_rate'" in description
+
+    class Tool:
+        parameters = {
+            "properties": {
+                "indicator": {"description": "Name of the metric."},
+                "start_date": {"description": "The first date."},
+            }
+        }
+
+    class Manager:
+        def get_tool(self, name):
+            return Tool
+
+    class Server:
+        _tool_manager = Manager()
+
+    registry_controller._strip_schema_descriptions(Server(), "rates")
+    assert Tool.parameters["properties"] == {
+        "indicator": {"description": "Name of the metric."},
+        "start_date": {},
+    }

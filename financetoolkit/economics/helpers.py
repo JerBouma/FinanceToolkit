@@ -803,3 +803,67 @@ def extend_with_recent(
         record_source(source)
 
     return extended
+
+
+# The day count of each overnight rate in its money market: interest accrues over 360
+# days a year for the euro and the US dollar and over 365 for sterling and the yen.
+OVERNIGHT_RATE_DAY_COUNTS = {
+    "Euro Area": 360,
+    "United States": 360,
+    "United Kingdom": 365,
+    "Japan": 365,
+}
+
+
+def compound_overnight_rate(
+    rates: pd.DataFrame, day_counts: dict[str, int]
+) -> pd.DataFrame:
+    """
+    Compounds daily overnight rates into the growth of 1 deposited on the first day, the
+    method of the compounded indices the European Central Bank and the New York Fed
+    publish for €STR and SOFR:
+
+    - Growth (t) = Growth (t-1) × (1 + Rate (t-1) × Days (t-1) / Day Count)
+
+    where Days (t-1) is the number of calendar days the rate of the previous publication
+    day applies to, three over a weekend, and the Day Count is 360 or 365. The value on a
+    day includes the interest up to that day, so the first day is 1. Each country is
+    compounded over its own publication days.
+
+    Args:
+        rates (pd.DataFrame): The daily rates as decimals, indexed by a daily PeriodIndex
+            with a column per country.
+        day_counts (dict[str, int]): The day count of every country's rate.
+
+    Returns:
+        pd.DataFrame: The growth of 1 per country, NaN on days without a publication.
+    """
+    growth = {}
+
+    for country in rates.columns:
+        rate = rates[country].dropna()
+        days = (
+            pd.Series(rate.index.to_timestamp(), index=rate.index)
+            .diff()
+            .shift(-1)
+            .dt.days
+        )
+        growth[country] = (
+            (1 + rate * days / day_counts[country]).shift(1, fill_value=1.0).cumprod()
+        )
+
+    return pd.DataFrame(growth, index=rates.index, columns=rates.columns)
+
+
+def rebase_to_first(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Divides every column by its first value, so each series is the growth of 1 since its
+    first observation (a country that starts later starts from its own first value).
+
+    Args:
+        data (pd.DataFrame): The series, a column per country.
+
+    Returns:
+        pd.DataFrame: The growth of 1 per column.
+    """
+    return data if data.empty else data / data.bfill().iloc[0]

@@ -256,6 +256,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "which makes them comparable across countries (Global Macro Database)."
     ),
     "component": ("Part of final consumption: 'total', 'household' or 'government'."),
+    "functions": (
+        "Functions of government (COFOG), comma-separated, e.g. 'Defence,Health,Education'; "
+        "'Public Debt Transactions' or 'Total' also work. Defaults to the ten divisions."
+    ),
     "level": (
         "Level of government: 'consolidated' (longest history), 'general' (central, "
         "state and local government and social security) or 'central'."

@@ -701,3 +701,33 @@ def test_add_score_zone_names_the_zone_of_each_score():
     assert zoned.loc[("AAPL", "Zone"), "2024"] == "Safe"
     # A period without a score has no zone.
     assert pd.isna(zoned.loc[("AAPL", "Zone"), "2025"])
+
+
+def test_rank_across_tickers_compares_with_the_neighbour_toward_the_middle():
+    returns = pd.DataFrame(
+        {
+            "^KS11": [-0.162, 0.01],
+            "BTC-USD": [-0.073, 0.02],
+            "^HSI": [-0.054, np.nan],
+            "BZ=F": [0.136, 0.03],
+            "GC=F": [0.02, 0.01],
+        },
+        index=pd.PeriodIndex(["2026-10", "2026-11"], freq="M", name="Date"),
+    )
+
+    ranking = helpers.rank_across_tickers(returns)
+    october = ranking.loc["2026-10"]
+
+    assert october.index.tolist() == ["BZ=F", "GC=F", "^HSI", "BTC-USD", "^KS11"]
+    assert october["Rank"].tolist() == [1, 2, 3, 4, 5]
+    # The best is compared with the second, the worst with the next worst.
+    assert october.loc["BZ=F", "Compared With"] == "GC=F"
+    assert october.loc["^KS11", "Compared With"] == "BTC-USD"
+    assert october.loc["^KS11", "Difference"] == pytest.approx(-0.089)
+    assert october.loc["^KS11", "Multiple"] == pytest.approx(0.162 / 0.073)
+    # A gain against a loss has no multiple.
+    assert pd.isna(october.loc["GC=F", "Multiple"])
+    # A ticker without a value is left out of that period; ties share the higher rank.
+    november = ranking.loc["2026-11"]
+    assert "^HSI" not in november.index
+    assert november.loc[["^KS11", "GC=F"], "Rank"].tolist() == [3, 3]

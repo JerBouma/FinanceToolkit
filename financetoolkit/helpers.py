@@ -1017,3 +1017,39 @@ def deflate_with_price_index(
     monthly = monthly.where(values.index <= price_index.index[-1], price_index.iloc[-1])
 
     return values.mul(price_index.iloc[-1] / monthly, axis=0)
+
+
+def add_score_zone(
+    results: pd.DataFrame, score: str, cut_offs: list[float], zones: list[str]
+) -> pd.DataFrame:
+    """
+    Adds a "Zone" row after each ticker's rows that names the zone its score falls in, such
+    as "Distress", "Grey" or "Safe" for the Altman Z-Score, so a score does not have to be
+    compared with the cut-offs of its model by hand.
+
+    A score equal to a cut-off falls in the zone above it. A period without a score has no
+    zone.
+
+    Args:
+        results (pd.DataFrame): The model's results, with (ticker, item) rows and periods as
+            columns.
+        score (str): The row with the score, e.g. "Altman Z-Score".
+        cut_offs (list[float]): The cut-offs between the zones, in increasing order.
+        zones (list[str]): The zones from the lowest scores to the highest, one more than
+            there are cut-offs.
+
+    Returns:
+        pd.DataFrame: The results with a "Zone" row per ticker.
+    """
+    scores = results.xs(score, level=1)
+    zone = scores.apply(
+        lambda row: pd.cut(
+            row, bins=[-np.inf, *cut_offs, np.inf], labels=zones, right=False
+        ).astype(object),
+        axis=1,
+    ).where(scores.notna())
+    zone.index = pd.MultiIndex.from_product([zone.index, ["Zone"]])
+
+    tickers = list(dict.fromkeys(results.index.get_level_values(0)))
+
+    return pd.concat([results.astype(object), zone]).reindex(tickers, level=0)

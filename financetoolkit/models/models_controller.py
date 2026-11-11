@@ -8,7 +8,11 @@ from functools import cache, cached_property
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import LazyDict, get_goodwill_and_intangible_assets
+from financetoolkit.helpers import (
+    LazyDict,
+    add_score_zone,
+    get_goodwill_and_intangible_assets,
+)
 from financetoolkit.models import (
     altman_model,
     beneish_model,
@@ -3136,6 +3140,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        zone: bool = False,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -3193,6 +3198,9 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
+            zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below the lower cut-off of
+                the chosen model, "Grey" up to the upper one and "Safe" from it (see above). Not with growth or
+                standardize. Defaults to False.
             show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
                 which shows all columns.
 
@@ -3391,6 +3399,14 @@ class Models:
             standardize=standardize,
             axis="columns",
         )
+
+        if zone and not growth and not standardize:
+            altman_results = add_score_zone(
+                altman_results,
+                "Altman Z-Score",
+                list(altman_model.ALTMAN_CUT_OFFS[model]),
+                ["Distress", "Grey", "Safe"],
+            )
 
         return filter_columns(altman_results, show_columns)
 
@@ -4267,6 +4283,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        zone: bool = False,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4302,6 +4319,9 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
+            zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" from a score of 0, a
+                bankruptcy probability of 0.5 and up (Zmijewski's classification), "Safe" below it. Not with
+                growth or standardize. Defaults to False.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4446,6 +4466,11 @@ class Models:
             axis="columns",
         )
 
+        if zone and not growth and not standardize:
+            zmijewski_results = add_score_zone(
+                zmijewski_results, "Zmijewski Score", [0.0], ["Safe", "Distress"]
+            )
+
         return filter_columns(zmijewski_results, show_columns)
 
     @handle_errors
@@ -4456,6 +4481,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        zone: bool = False,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -4491,6 +4517,8 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
+            zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below Springate's cut-off
+                of 0.862, "Safe" from it. Not with growth or standardize. Defaults to False.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -4637,6 +4665,11 @@ class Models:
             standardize=standardize,
             axis="columns",
         )
+
+        if zone and not growth and not standardize:
+            springate_results = add_score_zone(
+                springate_results, "Springate Score", [0.862], ["Distress", "Safe"]
+            )
 
         return filter_columns(springate_results, show_columns)
 
@@ -5136,6 +5169,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        zone: bool = False,
         show_columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -5171,6 +5205,8 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation: flows are
                 summed and balances averaged over it. Defaults to None, which is 4 on quarterly data (a
                 trailing twelve months), as the score was estimated on yearly statements.
+            zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below zero (Taffler's at
+                risk profile), "Safe" from it. Not with growth or standardize. Defaults to False.
             show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
                 columns will be shown. Defaults to None.
 
@@ -5300,6 +5336,11 @@ class Models:
             standardize=standardize,
             axis="columns",
         )
+
+        if zone and not growth and not standardize:
+            taffler_results = add_score_zone(
+                taffler_results, "Taffler Z-Score", [0.0], ["Distress", "Safe"]
+            )
 
         return filter_columns(taffler_results, show_columns)
 

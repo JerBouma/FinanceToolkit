@@ -260,3 +260,54 @@ def get_backtest_statistics(
             / years,
         }
     )
+
+
+def get_in_sample_expectations(weights: pd.DataFrame, estimates: dict) -> pd.DataFrame:
+    """
+    What the weights of a walk-forward backtest promised when they were set: on every
+    rebalancing date the expected return and Sharpe ratio of the weights by the estimates
+    of their own estimation window, averaged over the dates. Next to the realised (out of
+    sample) return of the backtest, it shows how much of an optimizer's promise held.
+
+    The formula is as follows:
+
+    - In-Sample Return = average over the dates t of w(t) · mu(t)
+    - In-Sample Sharpe Ratio = average over the dates t of (w(t) · mu(t) - rf(t)) /
+      sqrt(w(t)' Sigma(t) w(t))
+
+    Where w(t) are the weights set on date t and mu(t), Sigma(t) and rf(t) the annualized
+    expected returns, covariance matrix and risk free rate estimated from the window up to
+    and including t, with the estimators of the backtest.
+
+    Args:
+        weights (pd.DataFrame): The weights set on each rebalancing date, one column per
+            strategy and asset (see get_walk_forward_backtest).
+        estimates (dict): Per rebalancing date the risk free rate, the expected returns
+            (pd.Series) and the covariance matrix (pd.DataFrame) of its window.
+
+    Returns:
+        pd.DataFrame: Per strategy the In-Sample Return and In-Sample Sharpe Ratio.
+    """
+    expectations = {}
+
+    for strategy in weights.columns.get_level_values(0).unique():
+        returns, sharpe_ratios = [], []
+
+        for date, row in weights[strategy].iterrows():
+            risk_free_rate, mu, sigma = estimates[date]
+            weight = row.reindex(mu.index).fillna(0).to_numpy(dtype=float)
+            expected = float(weight @ mu.to_numpy(dtype=float))
+            variance = float(weight @ sigma.to_numpy(dtype=float) @ weight)
+            returns.append(expected)
+            sharpe_ratios.append(
+                (expected - risk_free_rate) / np.sqrt(variance)
+                if variance > 0
+                else np.nan
+            )
+
+        expectations[strategy] = {
+            "In-Sample Return": np.nanmean(returns),
+            "In-Sample Sharpe Ratio": np.nanmean(sharpe_ratios),
+        }
+
+    return pd.DataFrame(expectations).T

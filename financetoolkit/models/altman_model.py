@@ -179,6 +179,15 @@ ALTMAN_COEFFICIENTS = {
     "emerging": (6.56, 3.26, 6.72, 1.05, 0.0, 3.25),
 }
 
+# The distress and safe cut-offs of each model: distress below the first, safe from the
+# second, the grey zone in between (Altman 1968, 1983, 2000 and 2005).
+ALTMAN_CUT_OFFS = {
+    "original": (1.81, 2.99),
+    "private": (1.23, 2.90),
+    "non-manufacturing": (1.10, 2.60),
+    "emerging": (4.35, 5.85),
+}
+
 
 def get_altman_z_score(
     working_capital_to_total_assets_ratio: float | pd.Series | pd.DataFrame,

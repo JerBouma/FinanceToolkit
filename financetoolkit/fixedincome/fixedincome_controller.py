@@ -340,6 +340,10 @@ DURATION_TYPES = {
 }
 
 
+# The maturities, in years, get_issuer_spreads compares issuers at by default.
+DEFAULT_SPREAD_MATURITIES = (2, 3, 5, 7, 10, 20, 30)
+
+
 @track_sources
 class FixedIncome:
     """
@@ -3790,6 +3794,101 @@ class FixedIncome:
 
         return apply_rounding(
             bonds, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_issuer_spreads(
+        self,
+        issuer: list[str] | str | None = None,
+        maturity_years: list[float] | str | float | None = None,
+        etfs: list[str] | str | None = None,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Compares the credit spreads of bond issuers at the same maturities: the G-Spread
+        (yield to maturity minus the Treasury par yield) of each issuer at, for example, 2, 5
+        and 10 years, interpolated between the issuer's own bonds from `get_bond_universe`.
+        Picking one bond per issuer by hand compares bonds of different maturities, and
+        spreads rise with maturity; at the same maturity the difference is the credit.
+
+        The formula is as follows:
+
+        - Spread (issuer, T) = s(a) + (s(b) - s(a)) * (T - a) / (b - a)
+
+        Where a and b are the years to maturity of the issuer's bonds closest below and above
+        T and s their G-Spreads (see `get_bond_universe`). Bonds of the same maturity count
+        with their average spread, and a maturity outside the range of the issuer's bonds
+        has no spread, as a spread curve is not extrapolated.
+
+        Also known as: issuer spread curve, credit curve, spread at a maturity, interpolated
+        G-spread, credit spread comparison.
+
+        Args:
+            issuer (list[str] | str | None, optional): The issuers, each kept by the text its
+                name contains (case-insensitive), e.g. "APPLE,BOEING". Defaults to None, every
+                issuer in the funds.
+            maturity_years (list[float] | str | float | None, optional): The maturities in years,
+                as a list or comma-separated, e.g. "2,5,10". Defaults to None, which uses 2, 3,
+                5, 7, 10, 20 and 30 years.
+            etfs (list[str] | str | None, optional): The bond ETFs to read the bonds from (see
+                `get_bond_universe`). Defaults to None, LQD, IGSB and USHY.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class.
+
+        Returns:
+            pd.DataFrame: Per issuer (the name the funds give it) the G-Spread at each
+            maturity (decimals, columns such as "5Y"), the number of Bonds and the Shortest
+            and Longest years to maturity among them.
+
+        Notes:
+        - An issuer's bonds of one name can differ in seniority, and the funds list a
+          finance subsidiary (such as Ford Motor Credit) under its own name, apart from its
+          parent.
+        - The spreads are those of `get_bond_universe`: to maturity, at the funds' evaluated
+          prices of the previous business day. A callable bond priced above its call price
+          has a lower yield to worst.
+        - Requires a FinancialModelingPrep API key for the holdings.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        fixedincome.get_issuer_spreads(issuer="APPLE INC,BOEING,INTEL", maturity_years="2,5,10")
+        ```
+
+        Which returns:
+
+        | Issuer            |     2Y |     5Y |    10Y |   Bonds |   Shortest |   Longest |
+        |:------------------|-------:|-------:|-------:|--------:|-----------:|----------:|
+        | APPLE INC         | 0.0017 | 0.0029 | 0.0052 |      43 |     1.2473 |   35.7473 |
+        | BOEING CO         | 0.0062 | 0.0083 | 0.0093 |      20 |     1.2283 |   37.4779 |
+        | INTEL CORPORATION | 0.0081 | 0.0112 | 0.0149 |      35 |     1.2527 |   36.2527 |
+        """
+        maturities = [
+            float(value) for value in helpers.split_values(maturity_years)
+        ] or list(DEFAULT_SPREAD_MATURITIES)
+        bonds = self.get_bond_universe(etfs=etfs, issuer=issuer, rounding=None)
+
+        if bonds.empty:
+            raise ValueError("No bonds were found for the issuers given.")
+
+        bonds = bonds.assign(
+            Years=[
+                bond_data_model.get_years_to_maturity(
+                    pd.Timestamp(settlement).date(), pd.Timestamp(maturity).date()
+                )
+                for settlement, maturity in zip(
+                    bonds["Price Date"], bonds["Maturity"], strict=True
+                )
+            ]
+        )
+
+        return apply_rounding(
+            bond_data_model.get_spreads_at_maturities(bonds, maturities),
+            rounding if rounding is not None else self._rounding,
         )
 
     @handle_errors

@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 
 from financetoolkit.cache.request_model import CREDENTIAL_PARAMETERS, redact_credentials
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.sources_model import record_url
 
 logger = logger_model.get_logger()
 
@@ -89,19 +90,20 @@ def get_request(
     url: str,
     timeout: int = 60,
     extra_headers: dict | None = None,
-    data: dict | None = None,
+    data: dict | str | None = None,
 ) -> requests.Response:
     """
     Make an HTTP GET request with automatic SSL fallback for corporate proxies
-    and environments with self-signed certificates, or a POST of form fields for a
-    source that only answers a submitted form.
+    and environments with self-signed certificates, or a POST of form fields (or a
+    prepared body, such as JSON) for a source that only answers a submitted request.
 
     Args:
         url (str): The URL to request.
         timeout (int): Request timeout in seconds.
         extra_headers (dict | None): Additional headers merged on top of the default HEADERS,
             e.g. {"Authorization": "Bearer <token>"}. Defaults to None.
-        data (dict | None): Form fields to POST instead of a GET. Defaults to None.
+        data (dict | str | None): Form fields, or a prepared body with its Content-Type in
+            extra_headers, to POST instead of a GET. Defaults to None.
 
     Returns:
         requests.Response: The HTTP response object.
@@ -121,10 +123,15 @@ def get_request(
 
     def send(verify: bool | str) -> requests.Response:
         if data is None:
-            return SESSION.get(url, headers=headers, timeout=timeout, verify=verify)
-        return SESSION.post(
-            url, data=data, headers=headers, timeout=timeout, verify=verify
-        )
+            response = SESSION.get(url, headers=headers, timeout=timeout, verify=verify)
+        else:
+            response = SESSION.post(
+                url, data=data, headers=headers, timeout=timeout, verify=verify
+            )
+        # Only an answer counts: a source that fails is not one the data came from.
+        if response.ok:
+            record_url(url)
+        return response
 
     try:
         response = send(verify=True)

@@ -154,6 +154,13 @@ def test_capex_ratios_use_the_magnitude_of_capital_expenditure():
     assert to_depreciation.iloc[0] == 1.5
     assert pd.isna(to_depreciation.iloc[1])
 
+    # The investment beyond the depreciation, negative when below it.
+    net_capital_expenditure = efficiency_model.get_net_capital_expenditure(
+        capital_expenditure=pd.Series([-30.0, -10.0]),
+        depreciation_and_amortization=pd.Series([20.0, 15.0]),
+    )
+    assert net_capital_expenditure.tolist() == [10.0, -5.0]
+
 
 def test_asset_growth_and_net_operating_assets():
     asset_growth = efficiency_model.get_asset_growth(

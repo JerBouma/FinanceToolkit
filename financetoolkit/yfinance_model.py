@@ -18,6 +18,7 @@ from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.currencies_model import to_yahoo_finance_symbol
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.sources_model import record_source
 
 logger = logger_model.get_logger()
 
@@ -106,6 +107,9 @@ def get_financial_statement(
         # yfinance only hands back a dict when asked with as_dict=True, which never
         # happens here; treating anything else as "no data" keeps the fallback path.
         return pd.DataFrame()
+
+    if not financial_statement.empty:
+        record_source(policy_model.YAHOO_FINANCE)
 
     if financial_statement.empty:
         error_code = (
@@ -267,6 +271,7 @@ def get_company_information(ticker: str) -> dict[str, str]:
         fiscal year end, each an empty string when Yahoo Finance does not report it.
     """
     if ticker in COMPANY_INFORMATION_CACHE:
+        record_source(policy_model.YAHOO_FINANCE)
         return COMPANY_INFORMATION_CACHE[ticker]
 
     cache = get_active_cache()
@@ -296,6 +301,7 @@ def get_company_information(ticker: str) -> dict[str, str]:
         error_model.report_request_failure()
         return {"financialCurrency": "", "lastFiscalYearEnd": ""}
 
+    record_source(policy_model.YAHOO_FINANCE)
     fiscal_year_end = information.get("lastFiscalYearEnd")
 
     company_information = {
@@ -414,6 +420,45 @@ def get_historical_data(
                 **history_parameters, repair=False
             )
 
+        if (
+            interval == "1d"
+            and ticker.upper().endswith("=F")
+            and len(historical_data) <= 1
+            and (end_date - start_date).days > 1
+        ):
+            # Yahoo Finance answers the daily (and weekly, monthly) history of some continuous futures, such as Dutch TTF gas (TTF=F), with the latest bar only, while it keeps their hourly bars for the last 730 days. The days are rebuilt from those bars, in the exchange's time zone, so the close is the last trade of the day rather than the settlement price.  # noqa: E501
+            hourly_data = yf.Ticker(ticker).history(
+                start=max(start_date, datetime.now() - timedelta(days=729)).strftime(
+                    "%Y-%m-%d"
+                ),
+                end=end_date_string,
+                interval="1h",
+                auto_adjust=False,
+                repair=False,
+            )
+
+            if len(hourly_data) > len(historical_data):
+                logger.warning(
+                    "Yahoo Finance has no daily history of %s, so its days are built from the "
+                    "hourly bars of the last 730 days: the close is the last trade of each day "
+                    "rather than the settlement price.",
+                    ticker,
+                )
+                historical_data = (
+                    hourly_data.groupby(hourly_data.index.date)
+                    .agg(
+                        {
+                            "Open": "first",
+                            "High": "max",
+                            "Low": "min",
+                            "Close": "last",
+                            "Volume": "sum",
+                        }
+                    )
+                    .dropna(subset=["Close"])
+                )
+                historical_data.index = pd.DatetimeIndex(historical_data.index)
+
         # Columns can occasionally be duplicated, so they are checked and dropped.
         historical_data = historical_data.loc[:, ~historical_data.columns.duplicated()]
 
@@ -436,6 +481,8 @@ def get_historical_data(
     if historical_data.empty:
         # No prices in the range, such as before the listing.
         return pd.DataFrame()
+
+    record_source(policy_model.YAHOO_FINANCE)
 
     if historical_data.loc[start:end].empty:
         logger.warning(

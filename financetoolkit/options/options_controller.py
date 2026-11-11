@@ -23,6 +23,7 @@ from financetoolkit.options import (
 from financetoolkit.ratios import valuation_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_standardization,
@@ -69,6 +70,7 @@ def _days_to_expiration(expiration_date: str) -> int:
     ).days
 
 
+@track_sources
 class Options:
     """
     The Options module is meant to calculate important options metrics such as the

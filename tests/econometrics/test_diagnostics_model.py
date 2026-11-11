@@ -324,3 +324,128 @@ def test_get_level_significance_change_since_start():
         pd.Series([0.0, 0.01, 0.02], index=months)
     )
     assert pd.isna(zero["Change Since Start"])
+
+
+def test_get_level_significance_highest_and_lowest():
+    days = pd.period_range("2026-02-27", periods=5, freq="D")
+
+    # Brent from the close before the war: the peak, its date and the fall from it.
+    brent = diagnostics_model.get_level_significance(
+        pd.Series([72.48, 118.35, np.nan, 71.57, 92.17], index=days)
+    )
+    assert brent["Highest"] == pytest.approx(118.35)
+    assert brent["Highest Date"] == "2026-02-28"
+    assert brent["Change From Highest"] == pytest.approx(92.17 / 118.35 - 1)
+    assert brent["Lowest"] == pytest.approx(71.57)
+    assert brent["Lowest Date"] == "2026-03-02"
+    assert brent["Change From Lowest"] == pytest.approx(92.17 / 71.57 - 1)
+
+    # The latest value counts: at a new peak the change from the highest is zero, and of
+    # equal values the first date is the one reached first.
+    peak = diagnostics_model.get_level_significance(
+        pd.Series([1.0, 3.0, 2.0, 3.0, 3.0], index=days)
+    )
+    assert peak["Change From Highest"] == 0
+    assert peak["Highest Date"] == "2026-02-28"
+
+    # A spread that went from negative to positive: changes relative to the absolute level,
+    # NaN where the level is zero.
+    spread = diagnostics_model.get_level_significance(
+        pd.Series([-0.02, 0.0, -0.01, 0.01, 0.005], index=days)
+    )
+    assert spread["Change From Lowest"] == pytest.approx((0.005 + 0.02) / 0.02)
+    assert spread["Change From Highest"] == pytest.approx(-0.5)
+
+    zero = diagnostics_model.get_level_significance(
+        pd.Series([0.0, -1.0, -0.5, -0.2, -0.1], index=days)
+    )
+    assert pd.isna(zero["Change From Highest"])
+
+
+def test_get_level_significance_compares_with_a_level():
+    levels = pd.Series(
+        [10.0, 30.0, 20.0, 31.0, 25.0, 32.0, 33.0],
+        index=pd.period_range("2020-01", periods=7, freq="M"),
+    )
+
+    result = diagnostics_model.get_level_significance(levels, level=30.0)
+
+    # First exceeded in April, and above it without a break since June.
+    assert result["Level"] == 30.0
+    assert result["First Above Level"] == "2020-04"
+    assert result["Above Level Since"] == "2020-06"
+    assert pd.isna(
+        diagnostics_model.get_level_significance(levels.iloc[:5], level=30.0)[
+            "Above Level Since"
+        ]
+    )
+    assert "Level" not in diagnostics_model.get_level_significance(levels)
+
+
+def test_window_change_by_year_ranks_the_same_months_of_every_year():
+    months = pd.period_range("2021-01", "2024-06", freq="M")
+    values = pd.Series(100.0, index=months)
+    values[pd.Period("2021-10", "M")] = 105
+    values[pd.Period("2022-10", "M")] = 103
+    values[pd.Period("2023-10", "M")] = 104
+
+    window = diagnostics_model.get_window_change_by_year(values, 2, 10)
+
+    assert window["Change"].tolist()[:3] == pytest.approx([0.05, 0.03, 0.04])
+    assert window["Rank"].tolist()[:3] == [1, 3, 2]
+    # 2023's 4% is the largest since 2021; 2021 has no earlier year as large.
+    assert pd.isna(window.loc[2021, "Largest Since"])
+    assert window.loc[2023, "Largest Since"] == 2021
+    # October 2024 is not there yet.
+    assert pd.isna(window.loc[2024, "Change"])
+
+    # A window over the turn of the year is labelled by the year it ends.
+    turn = diagnostics_model.get_window_change_by_year(values, 11, 2)
+    assert turn.index.tolist() == [2021, 2022, 2023, 2024]
+    assert pd.isna(turn.loc[2021, "Change"])
+
+    with pytest.raises(ValueError, match="between 1 and 12"):
+        diagnostics_model.get_window_change_by_year(values, 0, 10)
+
+
+def test_level_significance_gives_the_annualised_change_and_the_largest_drawdown():
+    months = pd.period_range("2000-01", "2010-01", freq="M")
+    values = pd.Series(100.0, index=months)
+    values[pd.Period("2005-01", "M") :] = 150.0
+    values[pd.Period("2006-01", "M") : pd.Period("2007-12", "M")] = 90.0
+    values[pd.Period("2010-01", "M")] = 200.0
+
+    significance = diagnostics_model.get_level_significance(values)
+
+    assert significance["Multiple Since Start"] == pytest.approx(2.0)
+    # Doubling over ten years.
+    assert significance["Annualised Change"] == pytest.approx(
+        2 ** (1 / 10) - 1, abs=1e-4
+    )
+    assert significance["Largest Drawdown"] == pytest.approx(-0.4)
+    assert significance["Drawdown Peak Date"] == "2005-01"
+    assert significance["Drawdown Trough Date"] == "2006-01"
+    # 150 again from January 2008.
+    assert significance["Recovery Date"] == "2008-01"
+
+
+def test_streaks_count_runs_above_and_below_a_level():
+    years = pd.period_range("2000", "2009", freq="Y")
+    inflation = pd.Series(
+        [0.03, 0.01, 0.01, 0.015, 0.03, 0.025, 0.04, 0.01, 0.01, 0.03], index=years
+    )
+
+    streaks = diagnostics_model.get_streaks(inflation, level=0.02)
+
+    assert streaks["Sign"] == "Above Level"
+    assert streaks["Run Length"] == 1
+    assert streaks["Previous Sign"] == "Below Level"
+    assert streaks["Longest Earlier Run Length"] == 3
+
+
+def test_level_significance_ranks_the_latest_value():
+    months = pd.period_range("2026-01", "2026-06", freq="M")
+    values = pd.Series([0.3, 0.5, 0.1, 0.5, 0.2, 0.4], index=months)
+
+    # Two earlier months were higher.
+    assert diagnostics_model.get_level_significance(values)["Rank"] == 3

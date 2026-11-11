@@ -10,6 +10,7 @@ import pandas as pd
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
 from financetoolkit.utilities.requests_model import HEADERS, SESSION
+from financetoolkit.utilities.sources_model import record_url
 
 # CEREP, ESMA's central repository of the ratings of the credit rating agencies registered
 # in the EU, publishes their rating activity, default rates and transition matrices twice a
@@ -107,6 +108,7 @@ def _query(
             timeout=60,
         )
         response.raise_for_status()
+        record_url(BASE_URL)
         text = response.content.decode("utf-8-sig", errors="replace")
 
         # A period without ratings, or a combination CEREP does not publish.

@@ -1539,6 +1539,108 @@ def test_price_indices_combine_their_publishers_and_select_fred_with_a_key(
     assert quarterly.loc[pd.Period("2026Q3", "Q"), "Japan"] == pytest.approx(119.0)
 
 
+def test_overnight_rates_compound_over_calendar_days_with_their_day_count():
+    # A Friday and the Monday after: Friday's rate applies over three days.
+    index = pd.PeriodIndex(["2026-09-03", "2026-09-04", "2026-09-07"], freq="D")
+    rates = pd.DataFrame(
+        {"United States": [0.036, 0.0365, 0.037], "Japan": [0.01, None, 0.01]},
+        index=index,
+    )
+
+    growth = helpers.compound_overnight_rate(rates, helpers.OVERNIGHT_RATE_DAY_COUNTS)
+
+    assert growth["United States"].tolist() == pytest.approx(
+        [1.0, 1 + 0.036 / 360, (1 + 0.036 / 360) * (1 + 0.0365 * 3 / 360)]
+    )
+    # A day without a publication stays empty and the rate before it covers the gap.
+    assert growth["Japan"].iloc[0] == 1.0
+    assert pd.isna(growth["Japan"].iloc[1])
+    assert growth["Japan"].iloc[2] == pytest.approx(1 + 0.01 * 4 / 365)
+
+
+def test_rebasing_starts_every_country_at_its_own_first_value():
+    data = pd.DataFrame(
+        {"A": [100.0, 110.0, 121.0], "B": [None, 50.0, 40.0]},
+        index=pd.period_range("2020-01", periods=3, freq="M"),
+    )
+
+    rebased = helpers.rebase_to_first(data)
+
+    assert rebased["A"].tolist() == pytest.approx([1.0, 1.1, 1.21])
+    assert pd.isna(rebased["B"].iloc[0])
+    assert rebased["B"].iloc[1:].tolist() == pytest.approx([1.0, 0.8])
+
+
+def _purchasing_power_economics(monkeypatch):
+    from financetoolkit.economics.economics_controller import Economics
+
+    economics = Economics(start_date="2020-01-01", end_date="2020-03-31")
+    prices = pd.DataFrame(
+        {
+            "United States": [99.0, 100.0, 102.0, 104.0],
+            "Netherlands": [50.0, 50.0, 51.0, None],
+            "Brazil": [10.0, 10.0, 11.0, 12.0],
+        },
+        index=pd.period_range("2019-12", periods=4, freq="M"),
+    )
+    days = pd.period_range("2019-12-31", "2020-04-01", freq="D")
+    rates = pd.DataFrame(
+        {"United States": 0.036, "Euro Area": -0.0036}, index=days, dtype=float
+    )
+    monkeypatch.setattr(
+        economics, "_get_consumer_price_index", lambda *args, **kwargs: prices
+    )
+    monkeypatch.setattr(economics, "_get_overnight_rate", lambda *args: rates)
+
+    return economics, rates
+
+
+def test_purchasing_power_is_100_times_the_first_price_over_the_price(monkeypatch):
+    economics, _ = _purchasing_power_economics(monkeypatch)
+
+    purchasing_power = economics.get_purchasing_power(rounding=6)
+
+    assert purchasing_power["United States"].tolist() == pytest.approx(
+        [100.0, 100 * 100 / 102, 100 * 100 / 104]
+    )
+    assert purchasing_power["Netherlands"].iloc[:2].tolist() == pytest.approx(
+        [100.0, 100 * 50 / 51]
+    )
+
+
+def test_purchasing_power_of_cash_pairs_each_month_with_its_own_prices(
+    monkeypatch,
+):
+    economics, rates = _purchasing_power_economics(monkeypatch)
+
+    cash = economics.get_purchasing_power(
+        countries=["United States", "Netherlands", "Brazil"],
+        overnight_rate=True,
+        rounding=8,
+    )
+
+    # Brazil has no overnight rate here: it is left out rather than an error.
+    assert list(cash.columns) == ["United States", "Netherlands"]
+
+    growth = helpers.compound_overnight_rate(
+        rates.loc["2020-01-01":"2020-03-31"], helpers.OVERNIGHT_RATE_DAY_COUNTS
+    )
+    assert cash.loc["2020-02", "United States"] == pytest.approx(
+        100 * growth.loc["2020-02-29", "United States"] * 100 / 102
+    )
+    # A euro member earns €STR, and a month without its prices is left empty.
+    assert cash.loc["2020-02", "Netherlands"] == pytest.approx(
+        100 * growth.loc["2020-02-29", "Euro Area"] * 50 / 51
+    )
+    assert pd.isna(cash.loc["2020-03", "Netherlands"])
+
+
+def test_purchasing_power_of_cash_is_monthly_only(monkeypatch):
+    economics, _ = _purchasing_power_economics(monkeypatch)
+
+    assert economics.get_purchasing_power(overnight_rate=True, period="yearly").empty
+
+
 def test_world_bank_commodity_prices_are_read_from_the_linked_workbook(
     cache, monkeypatch
 ):

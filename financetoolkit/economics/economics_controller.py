@@ -51,14 +51,17 @@ from financetoolkit.economics import (
     yfinance_model,
 )
 from financetoolkit.economics.helpers import (
+    OVERNIGHT_RATE_DAY_COUNTS,
     average_monthly_index,
     buffered_start_date,
     change_over_periods,
     check_period_type,
     choose_sources,
     combine_sources,
+    compound_overnight_rate,
     extend_with_recent,
     get_exchange_business_days,
+    rebase_to_first,
     resample_to_period,
     to_gmdb_country_names,
     validate_consumer_price_measure,
@@ -77,7 +80,11 @@ from financetoolkit.utilities.sources_model import (
     record_source,
     track_sources,
 )
-from financetoolkit.utilities.statistics_model import euro_area_hint, finalize_dataset
+from financetoolkit.utilities.statistics_model import (
+    EURO_AREA_MEMBERS,
+    euro_area_hint,
+    finalize_dataset,
+)
 
 logger = get_logger()
 
@@ -4277,6 +4284,46 @@ class Economics:
             row_slice=True,
         )
 
+    def _get_consumer_price_index(
+        self,
+        countries: list[str] | str | None,
+        period: str,
+        oecd_source: bool = False,
+        gmdb_forecasts: bool = False,
+        measure: str = "all",
+    ) -> pd.DataFrame:
+        """
+        Retrieves the consumer price index, unrounded and for the full history retrieved,
+        from the source the period and oecd_source select (see get_consumer_price_index).
+
+        Args:
+            countries (list[str] | str | None): The requested countries, so the sources of
+                other countries are not retrieved.
+            period (str): "monthly", "quarterly" or "yearly", already validated.
+            oecd_source (bool, optional): Whether to retrieve the data from the OECD.
+                Defaults to False.
+            gmdb_forecasts (bool, optional): Whether to include the projections of the
+                Global Macro Database. Defaults to False.
+            measure (str, optional): All items, core or a component, already validated
+                (monthly only). Defaults to "all".
+
+        Returns:
+            pd.DataFrame: The consumer price index, a column per country.
+        """
+        if oecd_source:
+            return oecd_model.get_consumer_price_index(
+                period=period, start_date=self._start_date, end_date=self._end_date
+            )
+
+        if period.lower() == "monthly":
+            return self._get_monthly_price_data(
+                "consumer_price_index", countries, measure
+            )
+
+        return gmdb_model.get_consumer_price_index(
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+        )
+
     @handle_errors
     def get_consumer_price_index(
         self,
@@ -4284,6 +4331,7 @@ class Economics:
         period: str | None = None,
         oecd_source: bool = False,
         measure: str = "all",
+        cumulative: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -4321,6 +4369,12 @@ class Economics:
         publishes a few days after the BLS. The months the BLS has published since are
         added to it, so a release appears the same day.
 
+        With cumulative=True, every country's index is divided by its value in the first
+        period of the date range: the growth of 1 in prices since the start_date (1.3460
+        for prices 34.60% higher), which compares countries regardless of their base year.
+        A country without data in the first period starts from its own first period. The
+        purchasing power of money is its inverse (see get_purchasing_power).
+
         Further information about the Global Macro Database (GMDB) variable can be found
         within https://www.globalmacrodata.com/documentation.html
 
@@ -4339,6 +4393,8 @@ class Economics:
                 energy, or a component: "energy", "food", "goods", "services" or "shelter"
                 (United States only). Other measures than "all" are monthly, without
                 oecd_source. Defaults to "all".
+            cumulative (bool, optional): Whether to return the growth of 1 in prices since the
+                first period of the date range instead of the index. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -4396,19 +4452,15 @@ class Economics:
             )
 
         measure = validate_consumer_price_measure(measure, period, oecd_source)
+        consumer_price_index = self._get_consumer_price_index(
+            countries, period, oecd_source, gmdb_forecasts, measure
+        )
 
-        if not oecd_source and period.lower() == "monthly":
-            consumer_price_index = self._get_monthly_price_data(
-                "consumer_price_index", countries, measure
-            )
-        elif oecd_source:
-            consumer_price_index = oecd_model.get_consumer_price_index(
-                period=period, start_date=self._start_date, end_date=self._end_date
-            )
-        else:
-
-            consumer_price_index = gmdb_model.get_consumer_price_index(
-                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+        if cumulative:
+            # Rebased only after slicing to the date range, so the growth starts at 1 in
+            # the first period of the range.
+            consumer_price_index = rebase_to_first(
+                consumer_price_index.loc[self._start_date : self._end_date]
             )
 
         return finalize_dataset(
@@ -4580,6 +4632,157 @@ class Economics:
             row_slice=True,
             # Rows empty for every selected country, e.g. a month only another source has.
             dropna=period == "monthly",
+        )
+
+    @handle_errors
+    def get_purchasing_power(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        overnight_rate: bool = False,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+    ):
+        """
+        Purchasing Power is what 100 units of a currency at the start of the date range
+        buy in every later period, in the prices of the start: it falls as consumer prices
+        rise, so 74.29 means that money has lost a quarter of its value. It is the inverse
+        of the growth in the Consumer Price Index since the first period of the range (see
+        get_consumer_price_index with cumulative=True), on the same monthly sources by
+        default (period="yearly" for the Global Macro Database's annual averages).
+
+        With overnight_rate=True, the 100 is not held as banknotes but deposited at the
+        overnight rate of its currency, compounded day by day (see get_overnight_rate with
+        cumulative=True): €STR for the Euro Area and its members, SONIA for the United
+        Kingdom, TONA for Japan and SOFR for the United States. The result is the real
+        value of cash, which stays above 100 only when the interest outpaced inflation.
+        Countries without an overnight rate are left out with a note. A euro member earns
+        €STR over the whole range, also before it adopted the euro.
+
+        The formula is as follows:
+
+        - Purchasing Power (t) = 100 × CPI (start) / CPI (t)
+        - Purchasing Power of Cash (t) = 100 × Overnight Rate Growth (t) × CPI (start) / CPI (t)
+
+        CPI (start) is each country's index in the first period of the date range (its own
+        first period when it starts later). The cash growth starts at 1 on the first day of
+        the range and every month takes it on the last day of the month, next to the index
+        of that same month (the reference month). The index of a month is published some
+        weeks after it ends, so the latest months of the cash growth are left out until
+        their index is published rather than paired with older prices.
+
+        Also known as: real value of money, value of money, real value of cash, real return
+        on cash, inflation erosion.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data.
+                Defaults to None, which is every country with a consumer price index, or the
+                Euro Area, Japan, the United Kingdom and the United States with
+                overnight_rate=True.
+            period (str | None, optional): Whether to return the monthly or the annual data.
+                Defaults to None, which is the monthly data. The overnight rate is only
+                combined with the monthly data.
+            overnight_rate (bool, optional): Whether the 100 earns the overnight rate of its
+                currency instead of being held as banknotes. Defaults to False.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The purchasing power of 100 per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', end_date='2026-09-30')
+
+        economics.get_purchasing_power(
+            countries=['Euro Area', 'Netherlands', 'United States'], overnight_rate=True
+        ).iloc[::12]
+        ```
+
+        Which returns:
+
+        |         |   Euro Area |   Netherlands |   United States |
+        |:--------|------------:|--------------:|----------------:|
+        | 2020-01 |     99.9567 |       99.9567 |        100.124  |
+        | 2021-01 |     98.5071 |       97.8545 |         98.9891 |
+        | 2022-01 |     93.1777 |       90.4128 |         92.1353 |
+        | 2023-01 |     85.9347 |       83.578  |         88.3553 |
+        | 2024-01 |     86.5277 |       83.8851 |         90.2447 |
+        | 2025-01 |     87.5091 |       84.4527 |         92.2405 |
+        | 2026-01 |     87.9163 |       84.4219 |         93.9886 |
+        """
+        check_period_type(period)
+
+        period = validate_period(
+            self._default_period(period, "monthly", quarterly_available=False),
+            ["monthly", "yearly"],
+            "purchasing power",
+        )
+
+        if overnight_rate and period != "monthly":
+            raise ValueError(
+                "The purchasing power of cash at the overnight rate is only available with "
+                "period='monthly', as the interest is compounded to the end of every month."
+            )
+
+        purchasing_power = 100 / rebase_to_first(
+            self._get_consumer_price_index(countries, period).loc[
+                self._start_date : self._end_date
+            ]
+        )
+
+        if overnight_rate:
+            cash = resample_to_period(
+                compound_overnight_rate(
+                    self._get_overnight_rate(None).loc[
+                        self._start_date : self._end_date
+                    ],
+                    OVERNIGHT_RATE_DAY_COUNTS,
+                ),
+                "monthly",
+            )
+
+            # The euro members hold euros, which earn €STR; they are only included when
+            # asked for, so the default is one column per currency.
+            areas = {
+                country: country if country in cash.columns else "Euro Area"
+                for country in purchasing_power.columns
+                if country in cash.columns
+                or (
+                    countries is not None
+                    and country in EURO_AREA_MEMBERS
+                    and "Euro Area" in cash.columns
+                )
+            }
+            purchasing_power = pd.DataFrame(
+                {
+                    country: purchasing_power[country]
+                    * cash[area].reindex(purchasing_power.index)
+                    for country, area in areas.items()
+                },
+                index=purchasing_power.index,
+            )
+
+        return finalize_dataset(
+            dataset=purchasing_power,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name=(
+                "Purchasing Power of Cash" if overnight_rate else "Purchasing Power"
+            ),
+            countries=countries,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
         )
 
     @handle_errors
@@ -6562,11 +6765,60 @@ class Economics:
             dropna=period.lower() in ("daily", "weekly"),
         )
 
+    def _get_overnight_rate(
+        self, countries: list[str] | str | None, period: str = "daily"
+    ) -> pd.DataFrame:
+        """
+        Retrieves the daily overnight rates (€STR, SONIA, TONA and SOFR), unrounded and
+        with history before the start date for the growth, lag and rolling windows of the
+        period.
+
+        Args:
+            countries (list[str] | str | None): The requested countries, so the sources of
+                other countries are not retrieved.
+            period (str, optional): The period the rates are returned in, which sets how
+                much history is retrieved. Defaults to "daily".
+
+        Returns:
+            pd.DataFrame: The daily rates as decimals, a column per country.
+        """
+        start_date = buffered_start_date(self._start_date, period)
+        end_date = self._end_date
+
+        def secured_overnight_financing_rate() -> pd.DataFrame:
+            # The New York Fed publishes the full history of SOFR in one file.
+            rate = fed_model.get_secured_overnight_financing_rate()
+            return (
+                rate[["Rate"]].rename(columns={"Rate": "United States"})
+                if not rate.empty
+                else rate
+            )
+
+        return self._combine_sources_for(
+            [
+                (
+                    lambda: ecb_model.get_overnight_rate(start_date, end_date),
+                    "Euro Area",
+                ),
+                (
+                    lambda: boe_model.get_overnight_rate(start_date, end_date),
+                    "United Kingdom",
+                ),
+                (
+                    lambda: boj_model.get_overnight_rate(start_date, end_date),
+                    "Japan",
+                ),
+                (secured_overnight_financing_rate, "United States"),
+            ],
+            countries,
+        )
+
     @handle_errors
     def get_overnight_rate(
         self,
         countries: list[str] | str | None = None,
         period: str = "daily",
+        cumulative: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -6596,12 +6848,28 @@ class Economics:
         fractions per annum (0.0244 for 2.44%). Weekly and monthly periods take the rate
         on the last day of each period (weeks end on Friday).
 
+        With cumulative=True, the rates are compounded day by day into the growth of 1
+        deposited on the first day of the date range, the method of the compounded €STR
+        index of the European Central Bank and the SOFR Index of the New York Fed:
+
+        - Growth (t) = Growth (t-1) × (1 + Overnight Rate (t-1) × Days (t-1) / Day Count)
+
+        Days (t-1) is the number of calendar days the previous rate applies to (three over
+        a weekend) and the Day Count is that of each money market: 360 for €STR and SOFR
+        (ACT/360) and 365 for SONIA and TONA (ACT/365). The value on a day includes the
+        interest up to that day, so the first day is 1, and weekly and monthly periods
+        take the value on the last day of each period. It is the cash return of money
+        deposited at the overnight rate, before costs and taxes.
+
         Also known as: €STR, ESTR, SONIA, TONA, SOFR, overnight interbank rate, risk-free
         rate.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str, optional): Whether to return the daily, weekly or monthly data. Defaults to "daily".
+            cumulative (bool, optional): Whether to return the growth of 1 deposited at the
+                overnight rate on the first day of the date range instead of the rate.
+                Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -6641,36 +6909,15 @@ class Economics:
             period, ["daily", "weekly", "monthly"], "overnight rate"
         )
 
-        start_date = buffered_start_date(self._start_date, period)
-        end_date = self._end_date
+        overnight_rate = self._get_overnight_rate(countries, period)
 
-        def secured_overnight_financing_rate() -> pd.DataFrame:
-            # The New York Fed publishes the full history of SOFR in one file.
-            rate = fed_model.get_secured_overnight_financing_rate()
-            return (
-                rate[["Rate"]].rename(columns={"Rate": "United States"})
-                if not rate.empty
-                else rate
+        if cumulative:
+            # Compounded only after slicing to the date range, so the growth starts at 1
+            # on the first day of the range.
+            overnight_rate = compound_overnight_rate(
+                overnight_rate.loc[self._start_date : self._end_date],
+                OVERNIGHT_RATE_DAY_COUNTS,
             )
-
-        overnight_rate = self._combine_sources_for(
-            [
-                (
-                    lambda: ecb_model.get_overnight_rate(start_date, end_date),
-                    "Euro Area",
-                ),
-                (
-                    lambda: boe_model.get_overnight_rate(start_date, end_date),
-                    "United Kingdom",
-                ),
-                (
-                    lambda: boj_model.get_overnight_rate(start_date, end_date),
-                    "Japan",
-                ),
-                (secured_overnight_financing_rate, "United States"),
-            ],
-            countries,
-        )
 
         return finalize_dataset(
             dataset=resample_to_period(overnight_rate, period),

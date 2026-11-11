@@ -562,6 +562,57 @@ def get_financial_statement(
 # A Free plan receives only the latest dividend payments.
 FREE_DIVIDEND_LIMIT = 5
 
+# FMP rounds its dividend-adjusted prices to two decimals, which for a currency pair (1.1165
+# becomes 1.12), a cryptocurrency or a share below a few dollars changes every daily return.
+ADJUSTED_PRICE_ROUNDING = 0.005
+
+
+def _unrounded_adjusted_close(
+    close: pd.Series,
+    adjusted_close: pd.Series,
+    dividends: pd.Series | None,
+    rounding: float = ADJUSTED_PRICE_ROUNDING,
+) -> pd.Series:
+    """
+    The dividend-adjusted close without FMP's rounding to two decimals.
+
+    With the dividends, the close is adjusted the way FMP and Yahoo Finance adjust it: every
+    ex-dividend date multiplies the closes before it by one minus the dividend divided by
+    the close of the day before, so the return of an ex-dividend day is Close / (Previous
+    Close - Dividend) - 1. Without the dividends, FMP's adjusted close is kept, unless it
+    only differs from the close by its rounding (no dividends in the range: currencies,
+    cryptocurrencies, indices and shares that pay none), in which case it is the close.
+
+    Formula:
+
+    - Adj Close (t) = Close (t) × Π over ex-dividend dates e > t of (1 - Dividend (e) / Close (e - 1))
+
+    Args:
+        close (pd.Series): The split-adjusted close, unrounded.
+        adjusted_close (pd.Series): FMP's dividend-adjusted close.
+        dividends (pd.Series | None): The split-adjusted dividends on their ex-dividend
+            dates, or None when they were not retrieved.
+        rounding (float): The largest difference the rounding can make, in the units of
+            the prices. Defaults to ADJUSTED_PRICE_ROUNDING.
+
+    Returns:
+        pd.Series: The adjusted close, empty where FMP's is.
+    """
+    if dividends is not None:
+        paid = dividends.reindex(close.index).fillna(0)
+        step = (1 - paid / close.shift(1)).where(paid > 0).fillna(1)
+        # The factor of a day is the product of the steps of the ex-dividend dates after it.
+        factor = step[::-1].cumprod()[::-1].shift(-1, fill_value=1.0)
+
+        return (close * factor).where(adjusted_close.notna())
+
+    known = adjusted_close.notna() & close.notna()
+
+    if ((adjusted_close - close)[known].abs() <= rounding * (1 + 1e-9)).all():
+        return close.where(adjusted_close.notna())
+
+    return adjusted_close
+
 
 def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
     """
@@ -850,6 +901,15 @@ def get_historical_data(
     historical_data = historical_data.loc[
         ~historical_data.index.duplicated(keep="first")
     ]
+
+    if adjusted_data is not None and "Adj Close" in historical_data:
+        historical_data["Adj Close"] = _unrounded_adjusted_close(
+            historical_data["Close"],
+            historical_data["Adj Close"],
+            historical_data.get("Dividends") if include_dividends else None,
+            # The prices may have been divided, e.g. from percentages.
+            rounding=ADJUSTED_PRICE_ROUNDING / (divide_ohlc_by or 1),
+        )
 
     historical_data = helpers.enrich_historical_data(
         historical_data=historical_data,

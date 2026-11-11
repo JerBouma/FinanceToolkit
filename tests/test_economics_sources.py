@@ -1755,3 +1755,25 @@ def test_bls_consumer_prices_come_in_one_request(monkeypatch):
     assert len(requests_sent) == 1
     assert list(prices.columns) == list(bls_model.CONSUMER_PRICE_SERIES)
     assert prices.loc[pd.Period("2026-10", "M"), "core"] == pytest.approx(337.511)
+
+
+def test_exchange_rates_in_dollars_since_the_start(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import bis_model
+
+    days = pd.period_range("2025-12-31", periods=3, freq="D")
+    per_dollar = pd.DataFrame(
+        {"Japan": [156.0, 160.0, 150.0], "Euro Area": [0.8, 0.85, 0.9]}, index=days
+    )
+    monkeypatch.setattr(
+        bis_model, "get_exchange_rates", lambda *args, **kwargs: per_dollar.copy()
+    )
+
+    rates = Economics(
+        start_date="2025-12-31", end_date="2026-01-02"
+    ).get_exchange_rates(period="daily", in_dollars=True, cumulative=True, rounding=6)
+
+    # The yen strengthened from 156 to 150 per dollar: worth 4% more in dollars.
+    assert rates["Japan"].iloc[-1] == pytest.approx(156 / 150, abs=1e-6)
+    assert rates["Euro Area"].iloc[0] == 1
+    assert rates["Euro Area"].iloc[-1] == pytest.approx(0.8 / 0.9, abs=1e-6)

@@ -1,8 +1,8 @@
-Portfolio,Annualized Return,Annualized Volatility,Sharpe Ratio,Maximum Drawdown,Average Turnover,Annualized Costs
-Hierarchical Equal Risk Contribution,0.0221,0.2821,0.1405,-0.3059,0.0467,0.0002
-Nested Clustered Optimization,0.0238,0.2828,0.1466,-0.322,0.1342,0.0005
-Minimum Drawdown,0.0117,0.2923,0.1105,-0.3483,0.4129,0.0014
-Maximum Omega,-0.0631,0.3083,-0.1289,-0.3481,0.5709,0.002
-Maximum CVaR Ratio,-0.0627,0.3095,-0.126,-0.3459,0.5723,0.002
-Equal Weight,0.0243,0.2826,0.1482,-0.3004,0.0332,0.0001
-Benchmark,0.0263,0.1947,0.118,-0.2449,,
+Portfolio,Annualized Return,Annualized Volatility,Sharpe Ratio,Maximum Drawdown,Average Turnover,Annualized Costs,In-Sample Return,In-Sample Sharpe Ratio
+Hierarchical Equal Risk Contribution,0.0221,0.2821,0.1405,-0.3059,0.0467,0.0002,0.3114,1.0882
+Nested Clustered Optimization,0.0238,0.2828,0.1466,-0.322,0.1342,0.0005,0.2963,1.0651
+Minimum Drawdown,0.0117,0.2923,0.1105,-0.3483,0.4129,0.0014,0.3033,1.0807
+Maximum Omega,-0.0631,0.3083,-0.1289,-0.3481,0.5709,0.002,0.3849,1.2392
+Maximum CVaR Ratio,-0.0627,0.3095,-0.126,-0.3459,0.5723,0.002,0.3897,1.2337
+Equal Weight,0.0243,0.2826,0.1482,-0.3004,0.0332,0.0001,0.3163,1.0825
+Benchmark,0.0263,0.1947,0.118,-0.2449,,,,

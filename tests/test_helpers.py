@@ -677,3 +677,27 @@ def test_change_over_periods_compares_the_same_period_a_year_earlier():
     assert change.loc[pd.Period("2025-11", "M"), "Japan"] == pytest.approx(
         121 / 110 - 1
     )
+
+
+def test_add_score_zone_names_the_zone_of_each_score():
+    results = pd.DataFrame(
+        {"2024": [0.5, 1.5, 0.1, 3.0], "2025": [0.6, 2.99, 0.2, np.nan]},
+        index=pd.MultiIndex.from_product([["BA", "AAPL"], ["X1", "Altman Z-Score"]]),
+    )
+
+    zoned = helpers.add_score_zone(
+        results, "Altman Z-Score", [1.81, 2.99], ["Distress", "Grey", "Safe"]
+    )
+
+    assert zoned.index.tolist() == [
+        ("BA", "X1"),
+        ("BA", "Altman Z-Score"),
+        ("BA", "Zone"),
+        ("AAPL", "X1"),
+        ("AAPL", "Altman Z-Score"),
+        ("AAPL", "Zone"),
+    ]
+    assert zoned.loc[("BA", "Zone")].tolist() == ["Distress", "Safe"]
+    assert zoned.loc[("AAPL", "Zone"), "2024"] == "Safe"
+    # A period without a score has no zone.
+    assert pd.isna(zoned.loc[("AAPL", "Zone"), "2025"])

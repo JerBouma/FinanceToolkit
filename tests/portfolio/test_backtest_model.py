@@ -180,3 +180,30 @@ def test_holdings_earn_the_returns_of_days_left_out_of_the_estimates():
         if date in dates:
             value = np.full(3, value.sum() / 3)
     np.testing.assert_allclose(net["1/N"], path, atol=1e-14)
+
+
+def test_in_sample_expectations_average_what_each_rebalance_expected():
+    dates = pd.to_datetime(["2024-01-31", "2024-02-29"])
+    weights = pd.concat(
+        {
+            "Maximum Sharpe": pd.DataFrame(
+                [[1.0, 0.0], [0.5, 0.5]], index=dates, columns=["A", "B"]
+            )
+        },
+        axis=1,
+    )
+    mu = pd.Series({"A": 0.20, "B": 0.10})
+    sigma = pd.DataFrame(
+        [[0.04, 0.0], [0.0, 0.01]], index=["A", "B"], columns=["A", "B"]
+    )
+    estimates = {dates[0]: (0.0, mu, sigma), dates[1]: (0.02, mu, sigma)}
+
+    expectations = backtest_model.get_in_sample_expectations(weights, estimates)
+
+    assert expectations.loc["Maximum Sharpe", "In-Sample Return"] == pytest.approx(
+        (0.20 + 0.15) / 2
+    )
+    second_sharpe = (0.15 - 0.02) / np.sqrt(0.25 * 0.04 + 0.25 * 0.01)
+    assert expectations.loc[
+        "Maximum Sharpe", "In-Sample Sharpe Ratio"
+    ] == pytest.approx((0.20 / 0.2 + second_sharpe) / 2)

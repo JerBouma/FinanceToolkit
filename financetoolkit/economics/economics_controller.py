@@ -3595,6 +3595,593 @@ class Economics:
         )
 
     @handle_errors
+    def get_government_interest_expenditure(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Interest Expenditure for a variety of countries over time from the
+        Government Finance Statistics of the International Monetary Fund (IMF). It is the
+        interest the general government (the central, state and local governments and the
+        social security funds together) owes on its debt: GFS item 24, interest payable, which
+        is D.41 in the national accounts.
+
+        The interest is recorded when it accrues rather than when it is paid, and before the
+        interest the government receives is netted against it. It is therefore higher than
+        the net interest of a national budget: for the United States, the general government
+        interest also covers the states and local governments, and the federal net interest
+        the Congressional Budget Office reports subtracts the interest the federal government
+        receives.
+
+        The figures are quarterly (period="quarterly", the default) or yearly and expressed in
+        millions of national currency, so levels are not comparable across countries with
+        different currencies, but growth rates are. Quarterly figures are not seasonally
+        adjusted; trailing=4 gives the interest over the last four quarters. The IMF's
+        quarterly government finance statistics cover around 40 economies, among which the
+        United States, the euro area and its members, the United Kingdom, Canada, Australia,
+        Brazil, Turkey and Indonesia; countries outside them are left out with a warning.
+        For those, get_government_expenditure_by_function with
+        functions="Public Debt Transactions" has the yearly public debt transactions (COFOG
+        01.7, mostly interest) of around 180 countries.
+
+        Data comes from the IMF's Quarterly Government Finance Statistics, further information
+        can be found within https://data.imf.org/en/datasets/IMF.STA:QGFS
+
+        Also known as: interest payments, debt service cost, interest outlays, cost of
+        government debt.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" or "yearly". Defaults to None, which is
+                quarterly, the highest frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Interest Expenditure
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        economics.get_government_interest_expenditure(
+            countries=['United States', 'Germany', 'Italy'], period='yearly')
+        ```
+
+        Which returns:
+
+        |      |    United States |   Germany |   Italy |
+        |:-----|-----------------:|----------:|--------:|
+        | 2015 | 428286           |     42913 |   68116 |
+        | 2016 | 468186           |     37888 |   66258 |
+        | 2017 | 494638           |     34489 |   65333 |
+        | 2018 | 571996           |     31787 |   64366 |
+        | 2019 | 606869           |     28052 |   60214 |
+        | 2020 | 541832           |     22390 |   57125 |
+        | 2021 | 631404           |     21756 |   63003 |
+        | 2022 | 815793           |     28018 |   81614 |
+        | 2023 | 997791           |     36848 |   77780 |
+        | 2024 |      1.17905e+06 |     45828 |   85484 |
+        | 2025 |      1.24322e+06 |     49544 |   87145 |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "government interest expenditure",
+        )
+
+        government_interest_expenditure = imf_model.get_government_interest(
+            period, self._start_date, self._end_date
+        )
+
+        return finalize_dataset(
+            dataset=government_interest_expenditure,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Interest Expenditure",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_government_interest_expenditure_to_gdp_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Interest Expenditure to GDP Ratio for a variety of countries over
+        time from the International Monetary Fund (IMF). It is the interest the general
+        government owes on its debt (GFS item 24, interest payable, D.41 in the national
+        accounts) as a share of the Gross Domestic Product (GDP).
+
+        The interest burden as a share of GDP shows how much of the economy's output goes to
+        servicing government debt. It rises with the debt ratio and with the interest rate the
+        debt is refinanced at, and is the item that turns a primary balance into the overall
+        balance. Comparing it with the spending on a function, such as defence with
+        get_government_expenditure_by_function_to_gdp_ratio, uses the same general government
+        and the same GDP.
+
+        The interest is general government interest payable, on an accrual basis and before
+        interest received is netted, so it is higher than the net interest of a national budget
+        (see get_government_interest_expenditure). Both the interest and the GDP come from the
+        IMF: its Quarterly Government Finance Statistics and its National Economic Accounts
+        (quarterly GDP not seasonally adjusted, like the interest). Around 40 economies are
+        covered; countries outside them are left out with a warning.
+
+        The ratio is expressed as a decimal fraction (0.0402 for 4.02% of GDP).
+
+        The formula is as follows:
+
+        - Government Interest Expenditure to GDP Ratio = Interest Payable / Nominal GDP,
+          both summed over the last four quarters for period="quarterly" (an annual ratio
+          without seasonal swings) or over the year for period="yearly"
+
+        Also known as: interest burden, interest to GDP, debt service to GDP.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" (the ratio over the four quarters up to
+                each quarter) or "yearly". Defaults to None, which is quarterly, the highest
+                frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Interest Expenditure to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        economics.get_government_interest_expenditure_to_gdp_ratio(
+            countries=['United States', 'Germany', 'Italy', 'United Kingdom'], period='yearly')
+        ```
+
+        Which returns:
+
+        |      |   United States |   Germany |   Italy |   United Kingdom |
+        |:-----|----------------:|----------:|--------:|-----------------:|
+        | 2015 |          0.0234 |    0.0139 |  0.041  |           0.0244 |
+        | 2016 |          0.0249 |    0.0118 |  0.0389 |           0.0256 |
+        | 2017 |          0.0252 |    0.0103 |  0.0375 |           0.028  |
+        | 2018 |          0.0277 |    0.0092 |  0.0363 |           0.0258 |
+        | 2019 |          0.0282 |    0.0079 |  0.0334 |           0.0229 |
+        | 2020 |          0.0253 |    0.0064 |  0.0343 |           0.0208 |
+        | 2021 |          0.0266 |    0.0059 |  0.0343 |           0.0277 |
+        | 2022 |          0.0313 |    0.007  |  0.0408 |           0.0426 |
+        | 2023 |          0.0359 |    0.0087 |  0.0363 |           0.0322 |
+        | 2024 |          0.0402 |    0.0104 |  0.0387 |           0.0292 |
+        | 2025 |          0.0404 |    0.0109 |  0.0385 |           0.0332 |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "government interest expenditure to GDP ratio",
+        )
+
+        government_interest_expenditure_to_gdp_ratio = (
+            imf_model.get_government_interest(
+                period, self._start_date, self._end_date, denominator="gdp"
+            )
+        )
+
+        return finalize_dataset(
+            dataset=government_interest_expenditure_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Interest Expenditure to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_government_interest_expenditure_to_revenue_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Interest Expenditure to Revenue Ratio for a variety of countries
+        over time from the Government Finance Statistics of the International Monetary Fund
+        (IMF). It is the interest the general government owes on its debt (GFS item 24,
+        interest payable) as a share of its revenue (GFS item 1: taxes, social contributions,
+        grants and other revenue).
+
+        The share of revenue that goes to interest is the measure rating agencies use for debt
+        affordability: it says how much of what the government collects is committed to its
+        creditors before anything else is paid for. Both come from the same statistics of the
+        same general government, on an accrual basis, with the interest before interest
+        received is netted. Around 40 economies are covered; countries outside them are left
+        out with a warning.
+
+        The ratio is expressed as a decimal fraction (0.1351 for 13.51% of revenue).
+
+        The formula is as follows:
+
+        - Government Interest Expenditure to Revenue Ratio = Interest Payable / Government
+          Revenue, both summed over the last four quarters for period="quarterly" (an annual
+          ratio without the seasonal swings of tax receipts) or over the year for
+          period="yearly"
+
+        Also known as: interest to revenue, interest burden on revenue, debt affordability.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" (the ratio over the four quarters up to
+                each quarter) or "yearly". Defaults to None, which is quarterly, the highest
+                frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Interest Expenditure to Revenue Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2024-01-01', end_date="2025-12-31")
+
+        economics.get_government_interest_expenditure_to_revenue_ratio(
+            countries=['United States', 'France', 'Canada'])
+        ```
+
+        Which returns:
+
+        |        |   United States |   France |   Canada |
+        |:-------|----------------:|---------:|---------:|
+        | 2024Q1 |          0.1258 |   0.038  |   0.0788 |
+        | 2024Q2 |          0.1301 |   0.0386 |   0.0805 |
+        | 2024Q3 |          0.1335 |   0.0402 |   0.0822 |
+        | 2024Q4 |          0.1351 |   0.04   |   0.082  |
+        | 2025Q1 |          0.1354 |   0.0416 |   0.0812 |
+        | 2025Q2 |          0.1347 |   0.0418 |   0.0808 |
+        | 2025Q3 |          0.1334 |   0.0423 |   0.0792 |
+        | 2025Q4 |          0.1325 |   0.0427 |   0.08   |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "government interest expenditure to revenue ratio",
+        )
+
+        government_interest_expenditure_to_revenue_ratio = (
+            imf_model.get_government_interest(
+                period, self._start_date, self._end_date, denominator="revenue"
+            )
+        )
+
+        return finalize_dataset(
+            dataset=government_interest_expenditure_to_revenue_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Interest Expenditure to Revenue Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @staticmethod
+    def _expenditure_functions(functions: list[str] | str | None) -> list[str]:
+        """
+        Returns the government functions asked for, by their names in
+        imf_model.EXPENDITURE_FUNCTIONS, in any casing.
+
+        Args:
+            functions (list[str] | str | None): The functions, a comma-separated string, or
+                None for the ten COFOG divisions.
+
+        Returns:
+            list[str]: The functions.
+
+        Raises:
+            ValueError: When a function is not known.
+        """
+        names = {name.lower(): name for name in imf_model.EXPENDITURE_FUNCTIONS}
+        requested = helpers.split_values(functions) or imf_model.DIVISIONS
+
+        if unknown := [name for name in requested if str(name).lower() not in names]:
+            raise ValueError(
+                f"Unknown government function(s) {', '.join(map(repr, unknown))}. Choose from "
+                f"{', '.join(map(repr, imf_model.EXPENDITURE_FUNCTIONS))}."
+            )
+
+        return list(dict.fromkeys(names[str(name).lower()] for name in requested))
+
+    @handle_errors
+    def get_government_expenditure_by_function(
+        self,
+        countries: list[str] | str | None = None,
+        functions: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Expenditure by Function for a variety of countries over time from
+        the Government Finance Statistics of the International Monetary Fund (IMF). The
+        spending of the general government (the central, state and local governments and the
+        social security funds together) is split by purpose according to the United Nations'
+        Classification of the Functions of Government (COFOG), the classification Eurostat,
+        the OECD and the IMF all publish.
+
+        The ten COFOG divisions are General Public Services, Defence, Public Order and Safety,
+        Economic Affairs, Environmental Protection, Housing and Community Amenities, Health,
+        Recreation, Culture and Religion, Education and Social Protection, which add up to the
+        Total. General Public Services include the Public Debt Transactions (group 01.7),
+        which are mostly the interest on government debt, also available as a function of its
+        own where a country reports it. Defence is military and civil defence, foreign military
+        aid and defence research; military pensions are Social Protection.
+
+        The data is yearly, in millions of national currency, for around 180 countries; the
+        most recent year is usually one or two years back. Levels are not comparable across
+        countries with different currencies, but growth rates are, and
+        get_government_expenditure_by_function_to_gdp_ratio returns the shares of GDP.
+
+        The columns are a country and a function each; a country without data for a function
+        has no column for it, and countries without data are left out with a warning.
+
+        Data comes from the IMF's Government Finance Statistics, further information can be
+        found within https://data.imf.org/en/datasets/IMF.STA:GFS_COFOG
+
+        Also known as: COFOG, government spending by function, defence spending, military
+        spending, health spending, education spending, social spending.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            functions (list[str] | str | None, optional): The functions to return, a list or a
+                comma-separated string of the ten divisions above, "Public Debt Transactions"
+                or "Total". Defaults to None, which returns the ten divisions.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Expenditure by Function, with a
+            (Country, Function) column
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01', end_date="2025-12-31")
+
+        expenditure = economics.get_government_expenditure_by_function(
+            countries=['United States', 'Germany'], functions='Defence,Health,Education')
+
+        expenditure['United States']
+        ```
+
+        Which returns:
+
+        |      |   Defence |      Health |   Education |
+        |:-----|----------:|------------:|------------:|
+        | 2018 |    660147 | 1.91712e+06 | 1.22016e+06 |
+        | 2019 |    712831 | 2.0491e+06  | 1.26193e+06 |
+        | 2020 |    744556 | 2.26781e+06 | 1.28909e+06 |
+        | 2021 |    762090 | 2.45445e+06 | 1.37456e+06 |
+        | 2022 |    775165 | 2.64297e+06 | 1.47586e+06 |
+        | 2023 |    843209 | 2.79374e+06 | 1.54819e+06 |
+        | 2024 |    911017 | 3.01146e+06 | 1.63922e+06 |
+        """
+        government_expenditure_by_function = imf_model.get_expenditure_by_function(
+            self._expenditure_functions(functions), self._start_date, self._end_date
+        )
+
+        return finalize_dataset(
+            dataset=government_expenditure_by_function,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Expenditure by Function",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_government_expenditure_by_function_to_gdp_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        functions: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+    ):
+        """
+        Get the Government Expenditure by Function to GDP Ratio for a variety of countries over
+        time from the Government Finance Statistics of the International Monetary Fund (IMF).
+        It is the spending of the general government on each function of the United Nations'
+        Classification of the Functions of Government (COFOG) as a share of the Gross Domestic
+        Product (GDP).
+
+        Shares of GDP make the functions comparable across countries and over time, such as
+        NATO's 2% of GDP guideline for defence. The ten divisions, the Public Debt Transactions
+        (group 01.7, mostly interest) and the Total are described in
+        get_government_expenditure_by_function. Defence covers military and civil defence,
+        foreign military aid and defence research, not military pensions, so it differs from
+        NATO's definition and from a national defence budget.
+
+        For the interest itself, get_government_interest_expenditure_to_gdp_ratio uses the
+        same general government and the same GDP, so the two together answer whether a
+        government pays more in interest than it spends on defence.
+
+        The data is yearly, for around 180 countries; the most recent year is usually one or
+        two years back. The ratio is the IMF's own figure, published in percent and divided by
+        100 here, so it is a decimal fraction (0.0311 for 3.11% of GDP).
+
+        The formula is as follows:
+
+        - Government Expenditure by Function to GDP Ratio = Expenditure on the Function /
+          Nominal GDP
+
+        Also known as: defence spending to GDP, military spending to GDP, health spending to
+        GDP, education spending to GDP, social spending to GDP, COFOG to GDP.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            functions (list[str] | str | None, optional): The functions to return, a list or a
+                comma-separated string of the ten COFOG divisions, "Public Debt Transactions"
+                or "Total". Defaults to None, which returns the ten divisions.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Expenditure by Function to GDP
+            Ratio, with a (Country, Function) column
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        defence = economics.get_government_expenditure_by_function_to_gdp_ratio(
+            countries=['United States', 'Japan', 'Germany', 'United Kingdom'], functions='Defence')
+
+        defence.xs('Defence', axis=1, level='Function')
+        ```
+
+        Which returns:
+
+        |      |   United States |   Japan |   Germany |   United Kingdom |
+        |:-----|----------------:|--------:|----------:|-----------------:|
+        | 2015 |          0.0327 |  0.0086 |    0.0094 |           0.0198 |
+        | 2016 |          0.0318 |  0.0079 |    0.0096 |           0.0189 |
+        | 2017 |          0.0314 |  0.0085 |    0.0099 |           0.0185 |
+        | 2018 |          0.032  |  0.009  |    0.0105 |           0.0183 |
+        | 2019 |          0.0331 |  0.0089 |    0.0106 |           0.0196 |
+        | 2020 |          0.0348 |  0.0092 |    0.0112 |           0.0214 |
+        | 2021 |          0.0321 |  0.0099 |    0.0114 |           0.0212 |
+        | 2022 |          0.0298 |  0.0092 |    0.0115 |           0.0214 |
+        | 2023 |          0.0303 |  0.0105 |    0.0125 |           0.022  |
+        | 2024 |          0.0311 |  0.013  |    0.0135 |           0.0225 |
+        """
+        government_expenditure_by_function_to_gdp_ratio = (
+            imf_model.get_expenditure_by_function(
+                self._expenditure_functions(functions),
+                self._start_date,
+                self._end_date,
+                to_gdp=True,
+            )
+        )
+
+        return finalize_dataset(
+            dataset=government_expenditure_by_function_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Expenditure by Function to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
     def get_trust_in_government(
         self,
         countries: list[str] | str | None = None,

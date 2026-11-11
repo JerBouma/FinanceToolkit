@@ -515,6 +515,131 @@ def test_an_unknown_sector_of_borrowers_gives_no_data(monkeypatch):
     assert economics.get_debt_service_ratio(borrowers="banks").empty
 
 
+def _imf_series(attributes: str, observations: dict[str, float]) -> str:
+    return (
+        f"<Series {attributes}>"
+        + "".join(
+            f'<Obs TIME_PERIOD="{period}" OBS_VALUE="{value}"/>'
+            for period, value in observations.items()
+        )
+        + "</Series>"
+    )
+
+
+def test_imf_interest_ratios_cover_the_last_four_quarters(monkeypatch):
+    from financetoolkit.economics import imf_model
+
+    structure = (
+        '<str:Codelist id="CL_COUNTRY"><str:Code id="USA"><com:Name xml:lang="en">'
+        "United States</com:Name></str:Code></str:Codelist>"
+    )
+    quarters = ["2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4"]
+    interest = _imf_series(
+        'COUNTRY="USA" INDICATOR="G24_T_XDC" FREQUENCY="Q"',
+        dict(zip(quarters, [1e9, 2e9, 3e9, 4e9], strict=True)),
+    )
+    revenue = _imf_series(
+        'COUNTRY="USA" INDICATOR="G1_T_XDC" FREQUENCY="Q"',
+        dict(zip(quarters, [50e9, 10e9, 20e9, 20e9], strict=True)),
+    )
+    # The euro area is an aggregate outside the country codelist.
+    euro_area = _imf_series(
+        'COUNTRY="G163" INDICATOR="G24_T_XDC" FREQUENCY="Q"', {"2025-Q4": 5e9}
+    )
+    gross_domestic_product = _imf_series(
+        'COUNTRY="USA" INDICATOR="B1GQ" FREQUENCY="Q"',
+        dict(zip(quarters, [40e9, 50e9, 50e9, 60e9], strict=True)),
+    )
+    requested = []
+
+    def fake(url, timeout):
+        requested.append(url)
+        if "dataflow" in url:
+            return FakeResponse(text=structure)
+        if "QNEA" in url:
+            return FakeResponse(text=gross_domestic_product)
+        return FakeResponse(text=interest + revenue + euro_area)
+
+    monkeypatch.setattr(imf_model, "get_request", fake)
+
+    level = imf_model.get_government_interest("quarterly", "2025-01-01", "2025-12-31")
+    to_gdp = imf_model.get_government_interest(
+        "quarterly", "2025-01-01", "2025-12-31", denominator="gdp"
+    )
+    to_revenue = imf_model.get_government_interest(
+        "quarterly", "2025-01-01", "2025-12-31", denominator="revenue"
+    )
+    last = pd.Period("2025Q4", "Q")
+
+    # Millions of national currency, and the euro area named like the other sources.
+    assert level.loc[last, "United States"] == 4000
+    assert level.loc[last, "Euro Area"] == 5000
+    # 10 of interest over 200 of GDP and 100 of revenue in the four quarters.
+    assert to_gdp.loc[last, "United States"] == pytest.approx(0.05)
+    assert to_revenue.loc[last, "United States"] == pytest.approx(0.1)
+    # Three quarters are no trailing year.
+    assert to_gdp["United States"].isna().sum() == 3
+    assert "QGFS/.SOO.S13.G24_T_XDC+G1_T_XDC.Q" in "".join(requested)
+
+
+def test_imf_expenditure_by_function_has_a_column_per_country_and_function(
+    monkeypatch,
+):
+    from financetoolkit.economics import imf_model
+    from financetoolkit.utilities.statistics_model import finalize_dataset
+
+    structure = (
+        '<str:Codelist id="CL_COUNTRY">'
+        '<str:Code id="USA"><com:Name xml:lang="en">United States</com:Name></str:Code>'
+        '<str:Code id="JPN"><com:Name xml:lang="en">Japan</com:Name></str:Code>'
+        "</str:Codelist>"
+    )
+    data = "".join(
+        _imf_series(f'COUNTRY="{country}" INDICATOR="{code}" FREQUENCY="A"', values)
+        for country, code, values in [
+            ("USA", "GF07_T", {"2024": 9.7}),
+            ("USA", "GF02_T", {"2024": 3.1}),
+            ("JPN", "GF02_T", {"2024": 1.3}),
+            ("JPN", "GF0170_T", {"2024": 1.6}),
+        ]
+    )
+    requested = []
+
+    def fake(url, timeout):
+        requested.append(url)
+        return FakeResponse(text=structure if "dataflow" in url else data)
+
+    monkeypatch.setattr(imf_model, "get_request", fake)
+
+    ratio = imf_model.get_expenditure_by_function(
+        ["Defence", "Health", "Public Debt Transactions"],
+        "2024-01-01",
+        "2024-12-31",
+        to_gdp=True,
+    )
+
+    # The functions in the order asked for, without columns a country has no data for.
+    assert list(ratio.columns) == [
+        ("Japan", "Defence"),
+        ("Japan", "Public Debt Transactions"),
+        ("United States", "Defence"),
+        ("United States", "Health"),
+    ]
+    assert ratio.loc[pd.Period("2024", "Y"), ("United States", "Defence")] == (
+        pytest.approx(0.031)
+    )
+    assert "GFS_COFOG/.S13.G2MF.GF02_T+GF07_T+GF0170_T.POGDP_PT.A" in requested[0]
+
+    # A short form selects the country with all of its functions.
+    selected = finalize_dataset(
+        ratio, None, None, None, countries="USA", axis="rows", row_slice=True
+    )
+    assert list(selected.columns) == [
+        ("United States", "Defence"),
+        ("United States", "Health"),
+    ]
+
+
 def test_us_inflation_curves_come_from_the_treasury_with_a_fred_key(monkeypatch):
     from financetoolkit import Economics
     from financetoolkit.economics import treasury_model

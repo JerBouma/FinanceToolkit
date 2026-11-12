@@ -6,6 +6,69 @@ import pytest
 from financetoolkit.ratios import valuation_model
 
 
+@pytest.mark.parametrize(
+    "estimated_eps, trailing_eps, years",
+    [
+        (2.0, 0.0, 1),
+        (2.0, 1.0, 0),
+        (0.0, 0.0, 0),
+        (0.0, 1.0, 1),
+        (-2.0, 1.0, 2),
+        (2.0, -1.0, 2),
+        (2.0, 1.0, -1),
+    ],
+)
+def test_estimated_eps_growth_is_missing_for_invalid_scalars(
+    estimated_eps, trailing_eps, years
+):
+    assert np.isnan(
+        valuation_model.get_estimated_eps_growth_rate(
+            estimated_eps, trailing_eps, years
+        )
+    )
+
+
+@pytest.mark.parametrize("years, expected", [(1, 1.25), (2, 0.5)])
+def test_estimated_eps_growth_valid_scalar_formula(years, expected):
+    assert valuation_model.get_estimated_eps_growth_rate(
+        9.0, 4.0, years
+    ) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("zero_input", ["trailing_eps", "years"])
+def test_estimated_eps_growth_broadcasts_an_invalid_scalar(zero_input):
+    estimates = pd.DataFrame({"2024": [2.0, 3.0], "2025": [4.0, 5.0]}, index=["A", "B"])
+    inputs = {"estimated_eps": estimates, "trailing_eps": 1.0, "years": 1}
+    inputs[zero_input] = 0
+
+    result = valuation_model.get_estimated_eps_growth_rate(**inputs)
+
+    pd.testing.assert_frame_equal(result, estimates * np.nan)
+
+
+def test_estimated_eps_growth_preserves_series_alignment():
+    result = valuation_model.get_estimated_eps_growth_rate(
+        estimated_eps=pd.Series([9.0, 2.0], index=["B", "A"]),
+        trailing_eps=pd.Series([1.0, 4.0], index=["A", "B"]),
+        years=pd.Series([0.0, 2.0], index=["A", "B"]),
+    )
+
+    pd.testing.assert_series_equal(result, pd.Series([np.nan, 0.5], index=["A", "B"]))
+
+
+def test_estimated_eps_growth_preserves_dataframe_alignment():
+    estimates = pd.DataFrame(
+        [[9.0, 4.0], [16.0, 25.0]], index=["A", "B"], columns=["2025", "2024"]
+    )
+    trailing = pd.DataFrame(
+        [[1.0, 4.0], [4.0, 9.0]], index=["B", "A"], columns=["2024", "2025"]
+    )
+
+    result = valuation_model.get_estimated_eps_growth_rate(estimates, trailing, years=2)
+
+    pd.testing.assert_frame_equal(result, (estimates / trailing) ** 0.5 - 1)
+
+
 def test_get_earnings_per_share(recorder):
     recorder.capture(
         valuation_model.get_earnings_per_share(

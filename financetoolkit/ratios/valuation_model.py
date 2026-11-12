@@ -119,11 +119,12 @@ def get_estimated_eps_growth_rate(
     Returns:
         float | pd.Series | pd.DataFrame: The annualized estimated EPS growth rate.
     """
-    eps_ratio = estimated_eps / trailing_eps
-
     valid = (estimated_eps > 0) & (trailing_eps > 0) & (years > 0)
 
-    growth_rate = eps_ratio ** (1 / years) - 1
+    # NumPy division also handles scalar zero denominators, which are masked below.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        eps_ratio = np.divide(estimated_eps, trailing_eps)
+        growth_rate = np.power(eps_ratio, np.divide(1, years)) - 1
 
     if isinstance(growth_rate, pd.Series | pd.DataFrame):
         return growth_rate.where(valid)

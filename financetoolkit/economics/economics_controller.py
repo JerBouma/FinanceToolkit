@@ -11077,6 +11077,7 @@ class Economics:
     def get_millennium_of_macroeconomic_data(
         self,
         series: list[str] | str | None = None,
+        deflate_with: str | None = None,
         rolling: int | None = None,
         growth: bool = False,
         lag: int = 1,
@@ -11103,6 +11104,16 @@ class Economics:
         The dataset is not updated anymore. No API key is needed; the workbook is large
         (around 28 MB), so it is cached for a year.
 
+        With deflate_with, every series is in real terms: in the money of the latest year of
+        that country's yearly consumer price index up to the end date (see
+        get_consumer_price_index), such as the dollar oil price ("$ Oil prices") in 2025
+        dollars with deflate_with="United States", which compares the oil price of 1864
+        with that of 2008. A year before the first year of the consumer price index has no
+        real value. Only deflate series in money, such as prices, in the currency of that
+        country: rates, indices and growth rates are not amounts of money.
+
+        - Real Value (t) = Value (t) * CPI (latest year) / CPI (t)
+
         See definition: https://www.bankofengland.co.uk/statistics/research-datasets
 
         Also known as: three centuries of macroeconomic data, BoE millennium dataset, long
@@ -11112,6 +11123,10 @@ class Economics:
             series (list[str] | str | None, optional): The series to include, matched on
                 (part of) their name without regard to case, e.g. "Bank Rate" or ["consols",
                 "share prices"]. Defaults to None, which includes all of them.
+            deflate_with (str | None, optional): The country whose yearly consumer price index
+                the series are deflated with, e.g. "United States" for the dollar oil price
+                or "United Kingdom" for sterling series. Defaults to None, which returns the
+                series as published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -11173,6 +11188,19 @@ class Economics:
                 selected += [column for column in matches if column not in selected]
 
             millennium = millennium[selected]
+
+        if deflate_with is not None:
+            consumer_price_index = self.get_consumer_price_index(
+                countries=deflate_with, period="yearly", rounding=None
+            )
+            if consumer_price_index.empty:
+                raise ValueError(
+                    f"There is no yearly consumer price index for {deflate_with} to deflate "
+                    "the series with."
+                )
+            millennium = helpers.deflate_with_price_index(
+                millennium, consumer_price_index.iloc[:, 0]
+            )
 
         return finalize_dataset(
             dataset=millennium,

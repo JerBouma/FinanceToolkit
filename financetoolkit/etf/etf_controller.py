@@ -7,7 +7,7 @@ from collections.abc import Callable
 import pandas as pd
 
 from financetoolkit.etf import etf_model
-from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -52,6 +52,7 @@ def _major_currency(currency: object) -> tuple[str | None, float]:
     return currency.upper(), 1.0
 
 
+@filter_shown_columns
 @track_sources
 class ETF:
     """
@@ -198,7 +199,7 @@ class ETF:
     def get_holdings(
         self,
         overwrite: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
         limit: int | None = None,
         rounding: int | None = None,
     ) -> pd.DataFrame | None:
@@ -215,9 +216,10 @@ class ETF:
 
         Args:
             overwrite (bool, optional): Whether to retrieve the holdings again. Defaults to False.
-            show_columns (list[str] | None, optional): A list of column names to keep in the
-                result. Invalid names are reported and ignored. Defaults to None, which keeps
-                every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
             limit (int | None, optional): The number of largest holdings (by weight) to keep per
                 fund, e.g. 10 for the top 10, or of the smallest for a negative number, e.g.
                 -10. Defaults to None, which keeps every holding. The holdings carry no sector or
@@ -280,11 +282,13 @@ class ETF:
         )
 
         if len(self._tickers) == 1 and not holdings.empty:
-            return filter_columns(holdings.loc[self._tickers[0]], show_columns)
+            return holdings.loc[self._tickers[0]]
 
-        return filter_columns(holdings, show_columns)
+        return holdings
 
-    def get_information(self, overwrite: bool = False) -> pd.DataFrame | None:
+    def get_information(
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame | None:
         """
         Get everything Financial Modeling Prep publishes about every fund: its name,
         identifiers, issuer, asset class, domicile, inception date, expense ratio (as a
@@ -301,6 +305,10 @@ class ETF:
         Args:
             overwrite (bool, optional): Whether to retrieve the information again. Defaults to
                 False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | None: The information (rows) per fund (columns). None without an API
@@ -343,7 +351,9 @@ class ETF:
         """
         return self._fund_data_function("information", overwrite=overwrite)
 
-    def get_country_weightings(self, overwrite: bool = False) -> pd.DataFrame | None:
+    def get_country_weightings(
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame | None:
         """
         Get how every fund is allocated across countries, as decimals, the largest weights of
         the first fund first. Two funds tracking similar markets can differ considerably here,
@@ -357,6 +367,10 @@ class ETF:
         Args:
             overwrite (bool, optional): Whether to retrieve the weightings again. Defaults to
                 False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | None: The weight per country (rows) and fund (columns). None without
@@ -391,7 +405,9 @@ class ETF:
             self._fund_data_function("country_weightings", overwrite=overwrite)
         )
 
-    def get_sector_weightings(self, overwrite: bool = False) -> pd.DataFrame | None:
+    def get_sector_weightings(
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame | None:
         """
         Get how every fund is allocated across sectors, as decimals, the largest weights of the
         first fund first. This shows whether a fund that looks broad is in fact concentrated
@@ -405,6 +421,10 @@ class ETF:
         Args:
             overwrite (bool, optional): Whether to retrieve the weightings again. Defaults to
                 False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | None: The weight per sector (rows) and fund (columns). None without an
@@ -448,7 +468,10 @@ class ETF:
 
     @handle_errors
     def get_profile(
-        self, stale_nav: bool = False, rounding: int | None = None
+        self,
+        stale_nav: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the profile of every fund: its name, issuer, asset class, domicile, inception date,
@@ -477,6 +500,10 @@ class ETF:
                 NAV Date.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The profile fields (rows) per fund (columns).
@@ -670,6 +697,7 @@ class ETF:
         period: str = "daily",
         yearly: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Measure how closely every fund tracks the Benchmark of the Toolkit, which for an index
@@ -700,6 +728,10 @@ class ETF:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The tracking measures (rows) per fund (columns), or the tracking
@@ -777,7 +809,9 @@ class ETF:
         )
 
     @handle_errors
-    def get_concentration(self, rounding: int | None = None) -> pd.DataFrame:
+    def get_concentration(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Measure how concentrated every fund is from its holdings: the number of holdings, the
         largest holding and its weight, the weight of the ten largest (shares of the fund), the
@@ -793,6 +827,10 @@ class ETF:
         Args:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The concentration measures (rows) per fund (columns).
@@ -835,7 +873,9 @@ class ETF:
         )
 
     @handle_errors
-    def get_overlap(self, rounding: int | None = None) -> pd.DataFrame:
+    def get_overlap(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Measure how much the funds hold of the same: for every pair of funds the sum, over the
         holdings they share, of the smaller of the two weights. An overlap of 0.8 means 80% of
@@ -846,6 +886,10 @@ class ETF:
         Args:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The overlap of every pair of funds, as decimals.
@@ -875,7 +919,9 @@ class ETF:
         )
 
     @handle_errors
-    def get_active_share(self, rounding: int | None = None) -> pd.DataFrame:
+    def get_active_share(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Measure how much each fund's holdings differ from every other fund's: half the sum, over
         all holdings of either fund, of the absolute difference between their weights. Against
@@ -897,6 +943,10 @@ class ETF:
         Args:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The active share of every fund (rows) against every other fund
@@ -938,7 +988,10 @@ class ETF:
 
     @handle_errors
     def get_look_through_valuation(
-        self, holdings: int = 25, rounding: int | None = None
+        self,
+        holdings: int = 25,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Value every fund through its holdings: the price-to-earnings, price-to-book,
@@ -960,6 +1013,10 @@ class ETF:
                 Defaults to 25.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The valuation measures and the coverage (rows) per fund (columns).
@@ -1017,7 +1074,9 @@ class ETF:
         )
 
     @handle_errors
-    def get_liquidity(self, rounding: int | None = None) -> pd.DataFrame:
+    def get_liquidity(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Measure how liquid every fund is to trade over the last year of the period: its average
         daily volume and dollar volume, that dollar volume relative to the fund's assets under
@@ -1039,6 +1098,10 @@ class ETF:
                 Defaults to None, which uses the rounding of the Toolkit for every measure but
                 the price impact: that of the largest funds is a fraction of a basis point, so it
                 keeps its full precision unless rounding is given.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The liquidity measures (rows) per fund (columns).
@@ -1243,6 +1306,7 @@ class ETF:
         holdings: int | None = None,
         index: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how much every holding (or sector) of a fund added to or took off its return
@@ -1282,6 +1346,10 @@ class ETF:
                 Defaults to None, which gives points of the fund's own price.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Start Weight, Return, Contribution and Points of every holding
@@ -1368,6 +1436,7 @@ class ETF:
         exclude: str | list[str] | None = None,
         holdings: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the return a fund would have had without some of its holdings or sectors:
@@ -1399,6 +1468,10 @@ class ETF:
                 Defaults to None, which prices every holding with a symbol.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The fund's Return, the Priced Holdings Return, the Excluded Weight

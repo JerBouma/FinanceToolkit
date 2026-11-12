@@ -16,6 +16,7 @@ from financetoolkit.portfolio import (
 from financetoolkit.portfolio.definition_model import PortfolioDefinition
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, requests_model, validation_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, to_period_index
 
@@ -32,6 +33,7 @@ _PERIOD_SYMBOLS = {
 }
 
 
+@filter_shown_columns
 @track_sources
 class Portfolio:
     """
@@ -1179,6 +1181,7 @@ class Portfolio:
     def collect_benchmark_historical_data(
         self,
         benchmark_ticker: str | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Collect and align historical benchmark data with the portfolio's data.
@@ -1211,6 +1214,10 @@ class Portfolio:
         Args:
             benchmark_ticker (str | None): The benchmark ticker symbol. Defaults to None, the benchmark ticker
                 given to the Portfolio, or the one of the configuration file when none was given.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the benchmark data for the portfolio, indexed by the portfolio's dates,
@@ -1536,8 +1543,7 @@ class Portfolio:
         )
 
     def collect_historical_data(
-        self,
-        rounding: int | None = None,
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ):
         """
         Collect and adjust historical price data for the portfolio's tickers.
@@ -1570,6 +1576,10 @@ class Portfolio:
         Args:
             rounding (int | None): An optional integer specifying the number of decimal places to round the
                 historical price data. If None, the default rounding value is used.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the adjusted daily historical price data for the portfolio.
@@ -1762,7 +1772,9 @@ class Portfolio:
             rounding if rounding is not None else self._rounding,
         )
 
-    def get_positions_overview(self, rounding: int | None = None):
+    def get_positions_overview(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ):
         """
         Calculate and provide an overview of the portfolio's positions, including key statistics and performance metrics.
 
@@ -1801,6 +1813,10 @@ class Portfolio:
         Args:
             rounding (int | None): An optional integer specifying the number of decimal places to round the data.
                 If None, the default rounding precision is used.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing an overview of the portfolio's positions, with key statistics and
@@ -1881,6 +1897,7 @@ class Portfolio:
         include_portfolio: bool = True,
         exclude_sold_positions: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate and provide an overview of the portfolio's key statistics, including performance metrics and
@@ -1958,6 +1975,10 @@ class Portfolio:
                 to True.
             rounding (int | None): An optional integer specifying the number of decimal places to round the data.
                 If None, the default rounding precision is used.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing key statistics and an overview of the portfolio, including
@@ -2074,6 +2095,7 @@ class Portfolio:
         period: str | None = None,
         exclude_sold_positions: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate portfolio performance metrics for a specified period.
@@ -2092,6 +2114,10 @@ class Portfolio:
             exclude_sold_positions (bool): A flag indicating whether to exclude sold positions. Defaults to True.
             rounding (int | None): The number of decimal places to round the output to.
                 If None, it defaults to the rounding precision specified in the configuration.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the portfolio performance metrics for the specified period.
@@ -2180,6 +2206,7 @@ class Portfolio:
         rounding: int | None = None,
         exclude_sold_positions: bool = True,
         pnl_method: str = "FIFO",
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate and collect transaction overview ratios based on the provided data.
@@ -2201,6 +2228,10 @@ class Portfolio:
             pnl_method (str): The method for calculating profit & loss. Options are:
                 'FIFO' (First In, First Out), 'LIFO' (Last In, First Out), or 'AVERAGE'.
                 Defaults to 'FIFO'.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The portfolio dataset with added transaction overview ratios and PnL columns.
@@ -2329,6 +2360,7 @@ class Portfolio:
         period: str | None = None,
         exclude_sold_positions: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate transaction performance metrics for a specified period.
@@ -2365,6 +2397,10 @@ class Portfolio:
                 to True.
             rounding (int | None): The number of decimal places to round the output to.
                 If None, it defaults to the rounding specified in the configuration.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing transaction performance metrics, including
@@ -2471,7 +2507,9 @@ class Portfolio:
 
         return self._transactions_performance
 
-    def get_money_weighted_return(self, rounding: int | None = None) -> pd.DataFrame:
+    def get_money_weighted_return(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Calculate the money-weighted return of every position and of the whole portfolio:
         the annual rate at which the money put in grew into the money taken out plus the
@@ -2497,6 +2535,10 @@ class Portfolio:
         Args:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per position and for the Portfolio, the money Invested, the money

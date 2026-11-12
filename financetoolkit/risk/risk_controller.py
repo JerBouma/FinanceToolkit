@@ -24,6 +24,7 @@ from financetoolkit.risk import (
 )
 from financetoolkit.risk.helpers import as_float, determine_within_historical_data
 from financetoolkit.utilities import factor_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -134,6 +135,7 @@ def _get_out_of_sample_estimates(
     return pd.DataFrame(estimates, index=returns.index, columns=returns.columns)
 
 
+@filter_shown_columns
 @track_sources
 class Risk:
     """
@@ -304,6 +306,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates and collects all risk metrics.
@@ -318,6 +321,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Risk metrics calculated based on the specified parameters.
@@ -533,6 +540,7 @@ class Risk:
         standardize: bool = False,
         distribution: str = "historic",
         threshold_percentile: float = 0.95,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Value at Risk (VaR) of an investment portfolio or asset's returns.
@@ -605,6 +613,10 @@ class Risk:
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
             1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
             Defaults to 0.95.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: VaR values with time as the index.
@@ -722,6 +734,7 @@ class Risk:
         standardize: bool = False,
         distribution: str = "historic",
         threshold_percentile: float = 0.95,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Conditional Value at Risk (CVaR) of an investment portfolio or asset's returns.
@@ -790,6 +803,10 @@ class Risk:
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
             1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
             Defaults to 0.95.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: CVaR values with time as the index.
@@ -913,6 +930,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Entropic Value at Risk (EVaR) of an investment portfolio or asset's returns.
@@ -958,6 +976,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: EVaR values with time as the index.
@@ -1048,6 +1070,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Conditional Drawdown at Risk (CDaR) of an investment portfolio or asset's returns.
@@ -1089,6 +1112,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: CDaR values with time as the index.
@@ -1189,6 +1216,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Tail Ratio of an investment portfolio or asset's returns.
@@ -1226,6 +1254,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Tail Ratio values with time as the index.
@@ -1316,6 +1348,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Maximum Drawdown (MDD) of an investment portfolio or asset's returns.
@@ -1359,6 +1392,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Maximum Drawdown values with time as the index.
@@ -1449,6 +1486,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Maximum Drawdown Duration of an investment portfolio or asset's returns.
@@ -1481,6 +1519,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Maximum Drawdown Duration values, in number of periods, with time as the index.
@@ -1569,6 +1611,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Maximum Drawdown Recovery Time of an investment portfolio or asset's returns.
@@ -1602,6 +1645,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Maximum Drawdown Recovery Time values, in number of periods, with time as the index.
@@ -1690,6 +1737,7 @@ class Risk:
         recovery: bool = False,
         deepest_since: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the drawdown in every period: how far an asset stands below its highest value so far,
@@ -1731,6 +1779,10 @@ class Risk:
                 peak. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The drawdown per period as a negative decimal or, with recovery=True, the gain needed
@@ -1830,6 +1882,7 @@ class Risk:
         top: int = 5,
         period: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         List the largest drawdowns of each asset with their peak, trough and recovery dates, depth and length.
@@ -1871,6 +1924,10 @@ class Risk:
                 Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per drawdown, indexed by ticker and rank, with the dates of the Peak, Trough
@@ -1948,6 +2005,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The Ulcer Index is a financial metric used to assess the risk and volatility of an
@@ -1995,6 +2053,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: UI values with time as the index.
@@ -2069,6 +2131,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the conditional variance (sigma_t^2) of the returns with a GARCH(1, 1) model fitted to
@@ -2108,6 +2171,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | pd.Series: GARCH values
@@ -2196,6 +2263,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates sigma_2 forecasts.
@@ -2233,6 +2301,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | pd.Series: sigma_2 forecast values
@@ -2335,6 +2407,7 @@ class Risk:
         period: str | None = None,
         optimization_t: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fits a GARCH(1, 1) model to the historical returns and returns the estimated
@@ -2381,6 +2454,10 @@ class Risk:
             optimization_t (int, optional): Time steps of the returns series to use for the optimization.
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Omega, Alpha and Beta values per asset.
@@ -2450,6 +2527,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the conditional variance (sigma_t^2) of the returns with a GJR-GARCH(1, 1, 1) model
@@ -2494,6 +2572,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | pd.Series: GJR-GARCH values
@@ -2583,6 +2665,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates sigma_2 forecasts based on the GJR-GARCH model.
@@ -2620,6 +2703,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | pd.Series: sigma_2 forecast values
@@ -2722,6 +2809,7 @@ class Risk:
         period: str | None = None,
         optimization_t: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fits a GJR-GARCH(1, 1, 1) model to the historical returns and returns the
@@ -2759,6 +2847,10 @@ class Risk:
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Omega, Alpha, Gamma and Beta values per asset.
@@ -2832,6 +2924,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the conditional variance (sigma_t^2) of the returns with an EGARCH(1, 1) model fitted
@@ -2877,6 +2970,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | pd.Series: EGARCH values
@@ -2980,6 +3077,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates sigma_2 forecasts based on the EGARCH model.
@@ -3016,6 +3114,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame | pd.Series: sigma_2 forecast values
@@ -3118,6 +3220,7 @@ class Risk:
         period: str | None = None,
         optimization_t: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fits an EGARCH(1, 1) model to the historical returns and returns the estimated
@@ -3149,6 +3252,10 @@ class Risk:
             Defaults to the full length of the returns series.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Omega, Alpha, Gamma and Beta values per asset.
@@ -3274,6 +3381,7 @@ class Risk:
         method: str = "empirical",
         dof: float = 4.0,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Upper and Lower Tail Dependence Coefficients between `ticker_a`
@@ -3330,6 +3438,10 @@ class Risk:
             `method="student-t"`. Defaults to 4.0.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If one of the two tickers is missing while the Toolkit has no benchmark.
@@ -3396,6 +3508,7 @@ class Risk:
         period: str | None = None,
         column: str = "Return",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calibrate a bivariate copula between `ticker_a` and `ticker_b` on the
@@ -3468,6 +3581,10 @@ class Risk:
             column (str, optional): The historical data column to use. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If `copula` is not one of "gaussian", "student-t", "clayton", "gumbel" or "frank",
@@ -3561,6 +3678,7 @@ class Risk:
         random_state: int = 42,
         empirical_margins: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calibrate a bivariate copula (see `get_copula_parameters`) between
@@ -3609,6 +3727,10 @@ class Risk:
             instead.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If `copula` is not one of "gaussian", "student-t", "clayton", "gumbel" or "frank",
@@ -3751,6 +3873,7 @@ class Risk:
         column: str = "Return",
         show_full_results: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calibrate all five supported copula families (see `get_copula_parameters`)
@@ -3786,6 +3909,10 @@ class Risk:
             observations used. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If only one of `ticker_a`/`ticker_b` is given, or if fewer than 2 tickers are
@@ -3905,6 +4032,7 @@ class Risk:
         column: str = "Return",
         alpha: float = 0.05,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the (Delta-)CoVaR of `ticker` conditional on `conditioning_ticker`
@@ -3960,6 +4088,10 @@ class Risk:
             the VaR of `conditioning_ticker` (e.g., 0.05 for the 95% confidence level). Defaults to 0.05.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If one of the two tickers is missing while the Toolkit has no benchmark.
@@ -4054,6 +4186,7 @@ class Risk:
         alpha: float = 0.05,
         distribution: str = "historic",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Marginal Value at Risk (Marginal VaR) of each asset in a
@@ -4108,6 +4241,10 @@ class Risk:
             "historic".
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Marginal VaR of each asset.
@@ -4166,6 +4303,7 @@ class Risk:
         alpha: float = 0.05,
         distribution: str = "historic",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Component Value at Risk (Component VaR) of each asset in a
@@ -4222,6 +4360,10 @@ class Risk:
             "historic".
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Component VaR of each asset, plus a "Portfolio" entry equal to
@@ -4287,6 +4429,7 @@ class Risk:
         window_size: int = 252,
         test: str = "both",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Backtest a Value at Risk model against realized returns.
@@ -4344,6 +4487,10 @@ class Risk:
             test (str, optional): Which test(s) to run, one of "kupiec", "christoffersen" or "both". Defaults
             to "both".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The requested test statistic(s) and their p-value(s) per asset.
@@ -4421,6 +4568,7 @@ class Risk:
         n_bootstrap: int = 1000,
         random_state: int = 42,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Backtest a Conditional Value at Risk (Expected Shortfall) model against
@@ -4471,6 +4619,10 @@ class Risk:
             random_state (int, optional): The seed for the bootstrap random number generator. Defaults to
             42.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Z2 statistic, its bootstrap Standard Error, its one-sided p-value (a low
@@ -4546,6 +4698,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Skewness of an investment portfolio or asset's returns.
@@ -4586,6 +4739,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Skewness values with time as the index.
@@ -4679,6 +4836,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Kurtosis of an investment portfolio or asset's returns.
@@ -4733,6 +4891,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Kurtosis values with time as the index.
@@ -4823,6 +4985,7 @@ class Risk:
         k: int | float = 0.1,
         tail: str = "left",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Hill Estimator of the tail index of returns, per asset.
@@ -4872,6 +5035,10 @@ class Risk:
             gain tail). Defaults to "left".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Hill tail index, the Hill shape parameter, its Standard Error and the
@@ -4939,6 +5106,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Variance of an investment portfolio or asset's returns for a
@@ -4972,6 +5140,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Variance values with time as the index.
@@ -5044,6 +5216,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Volatility of an investment portfolio or asset's returns for a
@@ -5126,6 +5299,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Volatility values with time as the index.
@@ -5247,6 +5424,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Corsi (2009) Heterogeneous Autoregressive Realized Volatility
@@ -5299,6 +5477,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The HAR-RV forecast of Realized Variance with time as the index.
@@ -5409,6 +5591,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Amihud (2002) Illiquidity ratio, per asset.
@@ -5455,6 +5638,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Amihud Illiquidity values with time as the index.
@@ -5552,6 +5739,7 @@ class Risk:
         period: str | None = None,
         within_period: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Roll (1984) implied bid-ask spread, per asset.
@@ -5592,6 +5780,10 @@ class Risk:
             single day only nests observations when intraday data was fetched.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Roll Spread (in price units), the Relative Roll Spread (the Roll Spread divided
@@ -5660,6 +5852,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Excess Volatility of an investment portfolio or asset's returns for a
@@ -5694,6 +5887,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Excess Volatility values with time as the index.
@@ -5776,6 +5973,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Downside Deviation of an investment portfolio or asset's returns.
@@ -5815,6 +6013,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Downside Deviation values with time as the index.
@@ -5910,6 +6112,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Mean Absolute Deviation (MAD) of an investment portfolio or asset's
@@ -5935,6 +6138,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Mean Absolute Deviation values with time as the index.
@@ -6006,6 +6213,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Coefficient of Variation (CV) of an investment portfolio or asset's
@@ -6040,6 +6248,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Coefficient of Variation values with time as the index.
@@ -6109,6 +6321,7 @@ class Risk:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the exponentially weighted moving average (EWMA) Volatility of an
@@ -6147,6 +6360,10 @@ class Risk:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Daily EWMA Volatility values with time as the index.
@@ -6209,6 +6426,7 @@ class Risk:
         window: int | None = None,
         alpha: float = 0.05,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how unusual each move of an investment portfolio or asset is: the return in
@@ -6255,6 +6473,10 @@ class Risk:
                 the VaR Multiple divides by (0.05 for the 95% VaR). Defaults to 0.05.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Return, Volatility Multiple, VaR Multiple, Percentile and Largest Since
@@ -6358,6 +6580,7 @@ class Risk:
         self,
         lags: int = 10,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Autocorrelation Function (ACF) of each asset's daily returns for a
@@ -6380,6 +6603,10 @@ class Risk:
             lags (int, optional): The number of lags to calculate the ACF for. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The ACF value for each lag (rows) and each asset (columns).
@@ -6431,6 +6658,7 @@ class Risk:
         self,
         max_lag: int = 20,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Hurst Exponent of each asset's daily (adjusted close) log price series, a
@@ -6460,6 +6688,10 @@ class Risk:
                 the regression runs over the lags 2 up to and including `max_lag`. Defaults to 20.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The estimated Hurst Exponent for each asset.
@@ -6517,6 +6749,7 @@ class Risk:
         detail: str | None = None,
         column: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -6570,6 +6803,10 @@ class Risk:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the metrics that take them, e.g. alpha=0.05.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The summary per metric and horizon, or with detail that part of the

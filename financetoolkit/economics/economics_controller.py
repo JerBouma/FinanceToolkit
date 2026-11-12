@@ -74,6 +74,7 @@ from financetoolkit.fixedincome import (
     fed_model,
 )
 from financetoolkit.utilities import validation_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import (
@@ -107,6 +108,7 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 # ruff: noqa: E501
 
 
+@filter_shown_columns
 @track_sources
 class Economics:
     """
@@ -770,6 +772,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Gross Domestic Product for a variety of countries over
@@ -815,6 +818,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product
@@ -894,6 +901,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The quarterly growth of real Gross Domestic Product (GDP) is the headline measure
@@ -940,6 +948,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the quarterly growth of real GDP per country.
@@ -1024,6 +1036,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Gross Domestic Product Deflator for a variety of countries over
@@ -1059,6 +1072,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product Deflator
@@ -1126,6 +1143,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Real Gross Domestic Product per Capita for a variety of countries over time from
@@ -1162,6 +1180,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Gross Domestic Product per Capita
@@ -1224,6 +1246,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Output Gap for a variety of countries over time from the OECD Economic Outlook.
@@ -1274,6 +1297,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Output Gap as a decimal fraction of
@@ -1334,6 +1361,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Total Consumption for a variety of countries over time from the
@@ -1370,6 +1398,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Total Consumption
@@ -1453,6 +1485,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Total Consumption to GDP Ratio for a variety of countries over time from the
@@ -1491,6 +1524,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Total Consumption to GDP Ratio
@@ -1556,6 +1593,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Investment for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1585,6 +1623,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Investment
@@ -1651,6 +1693,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1686,6 +1729,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Investment to GDP Ratio
@@ -1748,6 +1795,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Fixed Investment for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1778,6 +1826,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Fixed Investment
@@ -1838,6 +1890,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Fixed Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1872,6 +1925,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Fixed Investment to GDP Ratio
@@ -1937,6 +1994,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Exports for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1966,6 +2024,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exports
@@ -2029,6 +2091,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Exports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2062,6 +2125,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exports to GDP Ratio
@@ -2126,6 +2193,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Imports for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2155,6 +2223,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Imports
@@ -2224,6 +2296,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Imports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2257,6 +2330,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Imports to GDP Ratio
@@ -2326,6 +2403,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Trade Balance for a variety of countries over time from the Global Macro
@@ -2363,6 +2441,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Trade Balance
@@ -2425,6 +2507,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Current Account Balance for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2454,6 +2537,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Current Account Balance
@@ -2517,6 +2604,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Current Account Balance to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2558,6 +2646,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Current Account Balance to GDP Ratio
@@ -2625,6 +2717,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Debt for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2653,6 +2746,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Debt
@@ -2717,6 +2814,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Debt to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2758,6 +2856,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Debt to GDP Ratio
@@ -2824,6 +2926,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Revenue for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2852,6 +2955,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Revenue
@@ -2912,6 +3019,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2947,6 +3055,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Revenue to GDP Ratio
@@ -3013,6 +3125,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Tax Revenue for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3041,6 +3154,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Tax Revenue
@@ -3105,6 +3222,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Tax Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3140,6 +3258,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Tax Revenue to GDP Ratio
@@ -3207,6 +3329,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Expenditure for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3236,6 +3359,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure
@@ -3300,6 +3427,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Expenditure to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3336,6 +3464,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure to GDP Ratio
@@ -3403,6 +3535,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Deficit for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3433,6 +3566,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Deficit
@@ -3497,6 +3634,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Deficit to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3540,6 +3678,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Deficit to GDP Ratio
@@ -3607,6 +3749,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Interest Expenditure for a variety of countries over time from the
@@ -3651,6 +3794,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Interest Expenditure
@@ -3721,6 +3868,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Interest Expenditure to GDP Ratio for a variety of countries over
@@ -3765,6 +3913,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Interest Expenditure to GDP Ratio
@@ -3837,6 +3989,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Interest Expenditure to Revenue Ratio for a variety of countries
@@ -3876,6 +4029,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Interest Expenditure to Revenue Ratio
@@ -3972,6 +4129,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Expenditure by Function for a variety of countries over time from
@@ -4016,6 +4174,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure by Function, with a
@@ -4079,6 +4241,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Expenditure by Function to GDP Ratio for a variety of countries over
@@ -4123,6 +4286,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure by Function to GDP
@@ -4193,6 +4360,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Trust in government refers to the share of people who report having confidence
@@ -4224,6 +4392,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Trust in Government.
@@ -4341,6 +4513,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Consumer Price Index (CPI) is a measure that examines the average change in prices
@@ -4409,6 +4582,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Consumer Price Index.
@@ -4499,6 +4676,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Inflation Rate is the percentage change in the Consumer Price Index (CPI) from one
@@ -4572,6 +4750,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Inflation Rate.
@@ -4645,6 +4827,7 @@ class Economics:
         growth: bool = False,
         lag: int = 1,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Purchasing Power is what 100 units of a currency at the start of the date range
@@ -4690,6 +4873,10 @@ class Economics:
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The purchasing power of 100 per country.
@@ -4798,6 +4985,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Producer Price Index (PPI) for a variety of countries over time. The PPI
@@ -4844,6 +5032,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Producer Price Index per country.
@@ -4922,6 +5114,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Export Price Index for a variety of countries over time. The index
@@ -4963,6 +5156,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Export Price Index per country.
@@ -5041,6 +5238,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Import Price Index for a variety of countries over time. The index measures
@@ -5080,6 +5278,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Import Price Index per country.
@@ -5157,6 +5359,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         This consumer confidence indicator provides an indication of future developments of
@@ -5185,6 +5388,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Consumer Confidence Index.
@@ -5242,6 +5449,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         This business confidence indicator provides information on future developments,
@@ -5266,6 +5474,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Business Confidence Index.
@@ -5323,6 +5535,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The composite leading indicator (CLI) is designed to provide early signals
@@ -5356,6 +5569,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Composite Leading Indicator.
@@ -5417,6 +5634,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         In most cases, the nominal house price index covers the sales of newly-built
@@ -5460,6 +5678,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the House Prices.
@@ -5553,6 +5775,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The housing rent price index measures the prices paid for renting
@@ -5579,6 +5802,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Rent Prices.
@@ -5644,6 +5871,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Gross Household Savings Rate for a variety of countries over time from the
@@ -5680,6 +5908,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Household Savings Rate.
@@ -5746,6 +5978,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Household Debt to Disposable Income Ratio for a variety of countries over
@@ -5778,6 +6011,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Household Debt to Income Ratio.
@@ -5844,6 +6081,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Share price indices are calculated from the prices of common shares of companies
@@ -5879,6 +6117,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Share Prices.
@@ -5950,6 +6192,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Exchange rates are defined as the price of one country's currency in relation
@@ -5996,6 +6239,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exchange Rates.
@@ -6100,6 +6347,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Real Effective Exchange Rate (REER) for a variety of countries over time from the
@@ -6132,6 +6380,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Effective Exchange Rate
@@ -6193,6 +6445,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Money Supply is the total amount of money that is in circulation in a country.
@@ -6233,6 +6486,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Money Supply
@@ -6357,6 +6614,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The Central Bank Policy Rate is the interest rate that a central bank sets on its
@@ -6404,6 +6662,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Central Bank Policy Rate
@@ -6483,6 +6745,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Short-term interest rates are the rates at which short-term borrowings are
@@ -6524,6 +6787,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Short Term Interest Rate.
@@ -6612,6 +6879,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Long-term interest rates refer to government bonds maturing in ten years.
@@ -6673,6 +6941,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
@@ -6827,6 +7099,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The overnight rate is the interest rate at which banks borrow from each other for
@@ -6880,6 +7153,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the overnight rate per country.
@@ -6953,6 +7230,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Real Interest Rate for a variety of countries over time. The Real Interest Rate
@@ -7022,6 +7300,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Interest Rate
@@ -7164,6 +7446,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Yield Curve Slope for a variety of countries over time. The Yield Curve Slope is
@@ -7210,6 +7493,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Yield Curve Slope
@@ -7295,6 +7582,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Renewable energy is defined as the contribution of renewables to total primary energy supply (TPES).
@@ -7327,6 +7615,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Renewable Energy Percentage.
@@ -7388,6 +7680,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The carbon footprint is a measure of the total amount of greenhouse gases produced
@@ -7419,6 +7712,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Carbon Footprint.
@@ -7483,6 +7780,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The unemployed are people of working age who are without work,
@@ -7548,6 +7846,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Unemployment Rate.
@@ -7654,6 +7956,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Misery Index for a variety of countries over time. The Misery Index is a simple
@@ -7696,6 +7999,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Misery Index
@@ -7768,6 +8075,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         GDP per hour worked is a measure of labour productivity. It measures
@@ -7808,6 +8116,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Labour Productivity.
@@ -7868,6 +8180,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Income is defined as household disposable income in a particular year. It consists of earnings,
@@ -7899,6 +8212,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Income Inequality.
@@ -7960,6 +8277,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Population is defined as all nationals present in, or temporarily absent from a country,
@@ -8010,6 +8328,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Population Statistics.
@@ -8090,6 +8412,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The poverty rate is the ratio of the number of people (in a given age group) whose income
@@ -8111,6 +8434,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Poverty Rates.
@@ -8168,6 +8495,7 @@ class Economics:
         trailing: int | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Sovereign Debt Crisis dummy for a variety of countries over time from the Global
@@ -8194,6 +8522,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Sovereign Debt Crisis dummy
@@ -8247,6 +8579,7 @@ class Economics:
         trailing: int | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Currency Crisis dummy for a variety of countries over time from the Global Macro
@@ -8273,6 +8606,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Currency Crisis dummy
@@ -8324,6 +8661,7 @@ class Economics:
         trailing: int | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Banking Crisis dummy for a variety of countries over time from the Global Macro
@@ -8350,6 +8688,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Banking Crisis dummy
@@ -8418,6 +8760,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get Total Nonfarm Payroll Employment for the United States from the Bureau of
@@ -8456,6 +8799,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of nonfarm payroll
@@ -8532,6 +8879,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get weekly Initial Claims for Unemployment Insurance for the United States
@@ -8563,6 +8911,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of weekly initial
@@ -8625,6 +8977,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get Advance Retail Sales (Retail and Food Services) for the United States from
@@ -8659,6 +9012,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of total retail
@@ -8721,6 +9078,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the Industrial Production Index for the United States from the Federal
@@ -8753,6 +9111,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of the
@@ -8812,6 +9174,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get Housing Starts (Total New Privately-Owned Housing Units Started) for the
@@ -8843,6 +9206,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of new housing
@@ -8905,6 +9272,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get Real Personal Income Excluding Current Transfer Receipts for the United
@@ -8940,6 +9308,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of real personal
@@ -9003,6 +9375,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the weekly average 30-Year Fixed Rate Mortgage from FRED (Freddie
@@ -9042,6 +9415,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of the weekly
@@ -9101,6 +9478,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the NBER-based US Recession Indicator from FRED.
@@ -9136,6 +9514,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame, 1 during
@@ -9196,6 +9578,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the quarterly growth of commercial real estate prices: the change in the price
@@ -9236,6 +9619,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The quarterly change in commercial real estate prices on a year
@@ -9304,6 +9691,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the credit-to-GDP gap: how far the ratio of credit to the private non-financial
@@ -9341,6 +9729,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The quarterly credit-to-GDP gap as a decimal fraction of GDP
@@ -9405,6 +9797,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the debt service ratio: the share of income that goes to interest payments and
@@ -9442,6 +9835,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The quarterly debt service ratio as a decimal fraction of income,
@@ -9517,6 +9914,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the total credit to a non-financial sector as a share of GDP: all loans and
@@ -9555,6 +9953,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The quarterly credit as a decimal fraction of GDP (1.5 for 150% of
@@ -9733,6 +10135,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the real yield curve of a variety of countries: the yields of inflation-linked
@@ -9777,6 +10180,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The real yields as decimals, indexed by date with a column per
@@ -9853,6 +10260,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the market-implied (Q-measure) breakeven inflation of a variety of countries by
@@ -9909,6 +10317,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The breakeven inflation as decimals, indexed by date with a column
@@ -9981,6 +10393,7 @@ class Economics:
         maturities: list[str] | str = "10Y",
         period: str = "daily",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Split the nominal government bond yield of a maturity into the real yield of the
@@ -10019,6 +10432,10 @@ class Economics:
                 curve on the last trading day of each week or month. Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Nominal Yield, Real Yield, Breakeven Inflation and their Nominal
@@ -10116,6 +10533,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the inflation professional forecasters expect over the longer term, from surveys.
@@ -10157,6 +10575,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The expected inflation as decimals, indexed by month or quarter with
@@ -10274,6 +10696,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the implied volatility the option markets price, by market and time to expiry:
@@ -10331,6 +10754,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The implied volatility as decimals, indexed by date with a column per
@@ -10465,6 +10892,7 @@ class Economics:
         countries: list[str] | str | None = None,
         year: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the scenarios regulators publish for their stress tests: documented paths of
@@ -10514,6 +10942,10 @@ class Economics:
             year (int | None, optional): The year of the Federal Reserve's stress test, from
                 2025. Defaults to None, which takes the latest.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The scenario, indexed by quarter or year with a column per country
@@ -10600,6 +11032,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the Global Supply Chain Pressure Index (GSCPI) of the Federal Reserve Bank of New
@@ -10636,6 +11069,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The index in standard deviations from its average, indexed by month
@@ -10690,6 +11127,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the price of emitting one tonne of CO2 under the EU Emissions Trading System
@@ -10719,6 +11157,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The price in euro per tonne of CO2, indexed by date with a "European
@@ -10782,6 +11224,7 @@ class Economics:
         risk: str = "combined",
         deviation: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the path of an economic or financial variable in a climate scenario of the
@@ -10842,6 +11285,10 @@ class Economics:
             deviation (bool, optional): Whether to return the deviation from the baseline
                 instead of the level. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The path of the variable, indexed by year with a column per
@@ -10958,6 +11405,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the yearly total returns of equity, housing, government bonds and bills for 18
@@ -11009,6 +11457,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The returns as decimals, indexed by year with a column per country.
@@ -11083,6 +11535,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the headline annual series of "A millennium of macroeconomic data for the UK",
@@ -11135,6 +11588,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The series, indexed by year with a column per series.
@@ -11226,6 +11683,7 @@ class Economics:
         quantiles: list[float] | None = None,
         scenarios: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get a regulator's published scenario set: the thousands of simulated paths of
@@ -11273,6 +11731,10 @@ class Economics:
             scenarios (bool, optional): Whether to return every scenario instead of the
                 distribution. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Indexed by the year of the horizon, with a column per variable and
@@ -11377,6 +11839,7 @@ class Economics:
         rolling: int | None = None,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the total returns of listed funds that track asset classes without a public
@@ -11423,6 +11886,10 @@ class Economics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The returns (or prices), indexed by date with a column per asset
@@ -11614,6 +12081,7 @@ class Economics:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the forward/futures curve for a commodity from Yahoo Finance -- the
@@ -11673,6 +12141,10 @@ class Economics:
                 of the price. Defaults to False.
             lag (int | list[int], optional): The number of trading days to calculate the
                 change over. Defaults to 1.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If `commodity` is not one of the supported names.
@@ -11746,6 +12218,7 @@ class Economics:
         commodity: str | list[str] | None = None,
         generic: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the term structure of a commodity futures curve per day: the front contract,
@@ -11791,6 +12264,10 @@ class Economics:
             generic (bool, optional): Whether the front and far contract are
                 those of each day's curve, instead of today's. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If `commodity` is not one of the supported names.
@@ -11860,6 +12337,7 @@ class Economics:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the life tables Eurostat compiles yearly for the countries of the European
@@ -11894,6 +12372,10 @@ class Economics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The measure, indexed by year with a column per country and age.
@@ -11970,6 +12452,7 @@ class Economics:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves Robert Shiller's monthly US stock market data from 1871, the data behind
@@ -12006,6 +12489,10 @@ class Economics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One column per measure, indexed by month.
@@ -12017,7 +12504,7 @@ class Economics:
 
         economics = Economics(start_date='2026-01-01', end_date='2026-09-30')
 
-        economics.get_shiller_stock_market_data()[['Price', 'Dividend', 'Earnings', 'CAPE']]
+        economics.get_shiller_stock_market_data(show_columns=['Price', 'Dividend', 'Earnings', 'CAPE'])
         ```
 
         Which returns:
@@ -12058,6 +12545,7 @@ class Economics:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the World Bank's monthly commodity prices from 1960 (The Pink Sheet): the
@@ -12102,6 +12590,10 @@ class Economics:
                 over a year. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result.
                 Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The monthly prices with a column per commodity.
@@ -12189,6 +12681,7 @@ class Economics:
         impact: str | list[str] | None = None,
         events: str | list[str] | None = None,
         as_series: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the scheduled releases of economic data for every country, such as
@@ -12261,6 +12754,10 @@ class Economics:
             as_series (bool, optional): Whether to return the Actual and Estimate of every
                 event as time series by the period they cover, with (Country, Event) columns,
                 instead of the releases by date. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The economic data releases, indexed by date, or with as_series=True
@@ -12311,7 +12808,9 @@ class Economics:
         return economic_calendar
 
     @handle_errors
-    def get_market_risk_premium(self) -> pd.DataFrame:
+    def get_market_risk_premium(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Returns the market risk premium per country: the extra return investors demand
         for holding equities over a risk-free investment. It consists of the country risk
@@ -12331,6 +12830,12 @@ class Economics:
         when initializing.
 
         Also known as: equity risk premium, country risk premium, MRP.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The country and total equity risk premium per country, as decimals

@@ -3,13 +3,18 @@
 __docformat__ = "google"
 
 import contextlib
-from collections.abc import Mapping
+import functools
+import inspect
+from collections.abc import Callable, Mapping
+from typing import Any, TypeVar
 
 import pandas as pd
 
 from financetoolkit.utilities import logger_model
 
 logger = logger_model.get_logger()
+
+FilteredClass = TypeVar("FilteredClass", bound=type)
 
 
 def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -101,6 +106,62 @@ def filter_columns(
     return result
 
 
+def _shown_columns_method(function: Callable, position: int) -> Callable:
+    """
+    Wrap a method so that its result keeps only the columns its show_columns argument names.
+
+    Args:
+        function (Callable): The method, with a show_columns parameter.
+        position (int): The position of show_columns among the parameters, including self.
+
+    Returns:
+        Callable: The wrapped method.
+    """
+
+    @functools.wraps(function)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        show_columns = kwargs.get(
+            "show_columns", args[position] if len(args) > position else None
+        )
+
+        if isinstance(show_columns, str):
+            show_columns = [show_columns]
+
+        return filter_columns(function(*args, **kwargs), show_columns)
+
+    return wrapper
+
+
+def filter_shown_columns(cls: FilteredClass) -> FilteredClass:
+    """
+    Class decorator that applies the show_columns parameter of every method that has one,
+    so that each method returns its full result and the columns are selected in one place,
+    the same way for every method (see filter_columns).
+
+    Args:
+        cls (FilteredClass): The class.
+
+    Returns:
+        FilteredClass: The same class.
+    """
+    for name, member in list(vars(cls).items()):
+        if not callable(member) or isinstance(
+            member, staticmethod | classmethod | type
+        ):
+            continue
+
+        parameters = list(inspect.signature(member).parameters)
+
+        if "show_columns" in parameters:
+            setattr(
+                cls,
+                name,
+                _shown_columns_method(member, parameters.index("show_columns")),
+            )
+
+    return cls
+
+
 def _filter_dataframe_columns(
     df: pd.DataFrame,
     show_columns: list[str],
@@ -156,7 +217,17 @@ def _filter_dataframe_columns(
                 )
 
         if matched:
-            return df.loc[:, mask.to_numpy()]
+            filtered = df.loc[:, mask.to_numpy()]
+            # A level reduced to one value repeats, so drop it, as for the rows below: the
+            # Close of three tickers is indexed by ticker alone.
+            for level in reversed(range(filtered.columns.nlevels)):
+                if (
+                    filtered.columns.nlevels > 1
+                    and len(filtered.columns.unique(level)) == 1
+                    and str(filtered.columns.get_level_values(level)[0]) in matched
+                ):
+                    filtered = filtered.droplevel(level, axis="columns")
+            return filtered
 
         logger.warning(
             "None of the requested columns %s exist, so the result is returned "

@@ -12,6 +12,7 @@ from financetoolkit.portfolio import (
     backtest_model,
     optimization_model,
 )
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -59,6 +60,7 @@ WEIGHT_SUM_TOLERANCE = 1e-6
 # ruff: noqa: E501
 
 
+@filter_shown_columns
 @track_sources
 class PortfolioConstruction:
     """
@@ -440,6 +442,7 @@ class PortfolioConstruction:
         maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the minimum variance portfolio: the fully invested
@@ -509,6 +512,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -603,6 +610,7 @@ class PortfolioConstruction:
         transaction_cost: float = 0.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the maximum Sharpe ratio portfolio: the fully invested
@@ -685,6 +693,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -784,6 +796,7 @@ class PortfolioConstruction:
         target_volatility: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of a mean-variance efficient portfolio. With a target return,
@@ -878,6 +891,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -976,6 +993,7 @@ class PortfolioConstruction:
         maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the efficient frontier: the portfolios with the lowest volatility for
@@ -1051,6 +1069,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per portfolio on the frontier (numbered from the lowest risk), its
@@ -1126,6 +1148,7 @@ class PortfolioConstruction:
         country_bounds: dict[str, tuple[float, float]] | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the risk parity weights: the portfolio in which every asset contributes
@@ -1186,6 +1209,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -1254,6 +1281,7 @@ class PortfolioConstruction:
         maximum_weight: float | dict[str, float] = 1.0,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Hierarchical Risk Parity (HRP) weights. The assets are clustered by
@@ -1312,6 +1340,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -1380,6 +1412,7 @@ class PortfolioConstruction:
         country_bounds: dict[str, tuple[float, float]] | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Hierarchical Equal Risk Contribution (HERC) weights. The assets are
@@ -1453,6 +1486,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -1535,6 +1572,7 @@ class PortfolioConstruction:
         expected_returns_span: int = 180,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Nested Clustered Optimization (NCO) weights. The assets are
@@ -1605,6 +1643,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -1687,6 +1729,7 @@ class PortfolioConstruction:
         covariance_span: int = 180,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate inverse volatility weights: each asset's weight is proportional to one
@@ -1717,6 +1760,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -1770,6 +1817,7 @@ class PortfolioConstruction:
         maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the minimum Conditional Value at Risk (CVaR) portfolio:
@@ -1827,6 +1875,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -1916,6 +1968,7 @@ class PortfolioConstruction:
         maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the portfolio with the lowest drawdown risk over the
@@ -1978,6 +2031,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -2074,6 +2131,7 @@ class PortfolioConstruction:
         maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the portfolio with the highest Omega ratio over the
@@ -2142,6 +2200,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -2239,6 +2301,7 @@ class PortfolioConstruction:
         maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the portfolio with the highest CVaR ratio: the average
@@ -2308,6 +2371,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -2408,6 +2475,7 @@ class PortfolioConstruction:
         maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the maximum diversification portfolio: the fully invested
@@ -2482,6 +2550,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -2570,6 +2642,7 @@ class PortfolioConstruction:
         current_weights: dict[str, float] | None = None,
         maximum_turnover: float | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the portfolio of the Toolkit's assets that follows the
@@ -2657,6 +2730,10 @@ class PortfolioConstruction:
                 of the portfolio each way. Defaults to None, no limit.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight, Expected Return,
@@ -2775,6 +2852,7 @@ class PortfolioConstruction:
         gross_exposure: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the growth optimal (Kelly) portfolio: the fully invested
@@ -2861,6 +2939,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset, for the Cash (when the fraction is not one) and for the
@@ -2981,6 +3063,7 @@ class PortfolioConstruction:
         maximum_turnover: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the weights of the resampled efficient portfolio (Michaud resampling):
@@ -3080,6 +3163,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and for the portfolio, the Weight (the average over
@@ -3194,6 +3281,7 @@ class PortfolioConstruction:
         net_exposure: float = 1.0,
         gross_exposure: float | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Black-Litterman expected returns and the weights they lead to. The
@@ -3292,6 +3380,10 @@ class PortfolioConstruction:
                 a 130/30 portfolio. Defaults to None, no limit.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset its Market Weight, Implied Return, Black-Litterman Return
@@ -3411,6 +3503,7 @@ class PortfolioConstruction:
         covariance_span: int = 180,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how much each asset contributes to the risk of a portfolio, measured as
@@ -3495,6 +3588,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and in total, the Weight, Marginal Contribution, Risk
@@ -3569,6 +3666,7 @@ class PortfolioConstruction:
         covariance_span: int = 180,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate how diversified a portfolio is, by the concentration of its weights and
@@ -3621,6 +3719,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Herfindahl-Hirschman Index, Effective Number of Assets,
@@ -3670,6 +3772,7 @@ class PortfolioConstruction:
         period: str = "daily",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the return and risk of a portfolio with given weights over the
@@ -3717,6 +3820,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Annualized Return, Annualized Volatility, Sharpe Ratio,
@@ -3774,6 +3881,7 @@ class PortfolioConstruction:
         method: str = "integer",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how many whole shares to buy of each asset to hold weights with a
@@ -3817,6 +3925,10 @@ class PortfolioConstruction:
                 asset. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset the Price, Shares, Amount (shares times price),
@@ -3892,6 +4004,7 @@ class PortfolioConstruction:
         maximum_weight: float | dict[str, float] = 1.0,
         output: str = "summary",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Backtest the portfolio optimizers out of sample against equal weights (1/N) and
@@ -3980,6 +4093,10 @@ class PortfolioConstruction:
                 set on each rebalancing date. Defaults to "summary".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: With output="summary", per portfolio the Annualized Return
@@ -4222,6 +4339,7 @@ class PortfolioConstruction:
         weights: dict[str, float] | None = None,
         scenarios: dict[str, tuple[str, str]] | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how a portfolio would have fared in historical market crises: the return
@@ -4245,6 +4363,10 @@ class PortfolioConstruction:
                 above.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per scenario its Start Date and End Date, the Portfolio Return,
@@ -4367,6 +4489,7 @@ class PortfolioConstruction:
         weights: dict[str, float] | None = None,
         by: str = "sector",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate a portfolio's exposure after looking through its funds. An ETF's weight is
@@ -4386,6 +4509,10 @@ class PortfolioConstruction:
                 Defaults to "sector".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Exposure per sector, country or holding, largest first, with
@@ -4460,6 +4587,7 @@ class PortfolioConstruction:
         self,
         weights: dict[str, float] | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Brinson-Fachler attribution of the portfolio's return over the
@@ -4494,6 +4622,10 @@ class PortfolioConstruction:
                 Portfolio the Toolkit came from, or equal weights.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per sector and in total, the Portfolio Weight, Benchmark Weight,

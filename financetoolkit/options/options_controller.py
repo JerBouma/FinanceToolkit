@@ -22,6 +22,7 @@ from financetoolkit.options import (
 )
 from financetoolkit.ratios import valuation_model
 from financetoolkit.utilities import logger_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -70,6 +71,7 @@ def _days_to_expiration(expiration_date: str) -> int:
     ).days
 
 
+@filter_shown_columns
 @track_sources
 class Options:
     """
@@ -376,6 +378,7 @@ class Options:
         show_expiration_dates: bool = False,
         rounding: int | None = None,
         strike_price_range: float | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Option Chains which gives information about the currently available
@@ -404,6 +407,10 @@ class Options:
             strike_price_range (float | None, optional): Only the strikes within this fraction of the
                 current stock price, e.g. 0.05 for strikes within 5% of it. Defaults to None, which
                 keeps every strike.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the option chains with the tickers and strike prices as the index
@@ -512,6 +519,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Black Scholes Model, a mathematical model used to estimate the price of European—style options.
@@ -585,6 +593,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Black Scholes values containing the tickers and strike prices as the index and the
@@ -712,6 +724,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Implied Volatility (IV) based on the Black Scholes Model and the actual option prices for
@@ -775,6 +788,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series | list[str]: Implied Volatility values indexed by ticker and strike price, with the expiration
@@ -925,6 +942,7 @@ class Options:
         number_of_expirations: int = 6,
         outlier_threshold: float = 5.0,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calibrate an arbitrage-checked implied volatility surface across multiple
@@ -987,6 +1005,10 @@ class Options:
                 5.0.
             rounding (int | None, optional): The number of decimals to round the
                 results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The SVI-fitted implied volatility, indexed by (ticker,
@@ -1218,6 +1240,7 @@ class Options:
         number_of_strikes: int = 200,
         outlier_threshold: float = 5.0,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Extract the market-implied risk-neutral probability density of the
@@ -1291,6 +1314,10 @@ class Options:
                 5.0.
             rounding (int | None, optional): The number of decimals to round the
                 results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If no implied volatility could be determined for the given
@@ -1510,6 +1537,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Binomial Option Pricing Model, a mathematical model used to estimate the price of European and
@@ -1586,6 +1614,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Binomial Trees values containing the tickers, strike prices and movements as the index and the
@@ -1736,6 +1768,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Simulate the Stock Price based on the Binomial Model, a mathematical model used to estimate the price of European
@@ -1789,6 +1822,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Simulated Stock Price values containing the tickers and movements as the index and the
@@ -1907,6 +1944,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Put-Call Parity gap, the amount by which Black-Scholes call and put
@@ -1960,6 +1998,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Put-Call Parity gap containing the tickers and strike prices as the index and the
@@ -2105,6 +2147,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Garman-Kohlhagen Model, a variant of the Black-Scholes model used
@@ -2156,6 +2199,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Garman-Kohlhagen values containing the tickers and strike prices as the index and the
@@ -2281,6 +2328,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the price of a Binary (Digital) Option using the Black-Scholes
@@ -2340,6 +2388,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Binary Option values containing the tickers and strike prices as the index and the
@@ -2473,6 +2525,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate American option prices using the Bjerksund-Stensland (2002)
@@ -2543,6 +2596,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Bjerksund-Stensland American option values containing the tickers and strike prices as
@@ -2677,6 +2734,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate European option prices through Monte Carlo simulation of Geometric
@@ -2746,6 +2804,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Monte Carlo option values containing the tickers and strike prices as the index and the
@@ -2912,6 +2974,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the closed-form price of a single-barrier (knock-in or knock-out, up
@@ -3002,6 +3065,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Barrier option values containing the tickers and strike prices as the index and the
@@ -3159,6 +3226,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the closed-form price of a geometric-average Asian option using the
@@ -3216,6 +3284,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Geometric-average Asian option values containing the tickers and strike prices as the
@@ -3341,6 +3413,7 @@ class Options:
         stock_price_range: float = 0.5,
         stock_price_step_size: int = 1,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the net expiration profit and loss (P&L) profile of a multi-leg
@@ -3398,6 +3471,10 @@ class Options:
             stock_price_step_size (int): The step size to use for the stock prices at expiration. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The strategy's net P&L with the range of stock prices at expiration as the index and the
@@ -3543,6 +3620,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate all Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -3628,6 +3706,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the greeks values containing the tickers and strike prices as the index and the
@@ -3736,6 +3818,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the first order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -3792,6 +3875,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the first order greek values containing the tickers and strike prices as the index
@@ -3940,6 +4027,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the delta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4006,6 +4094,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the delta values containing the tickers and strike prices as the index and the
@@ -4136,6 +4228,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the dual delta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4191,6 +4284,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the dual delta values containing the tickers and strike prices as the index and the
@@ -4325,6 +4422,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the vega of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4389,6 +4487,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the vega values containing the tickers and strike prices as the index and the
@@ -4518,6 +4620,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the theta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4585,6 +4688,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the theta values containing the tickers and strike prices as the index and the
@@ -4712,6 +4819,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the rho of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4773,6 +4881,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the rho values containing the tickers and strike prices as the index and the
@@ -4898,6 +5010,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the epsilon of an option based on the Black Scholes Model. The Black Scholes Model
@@ -4955,6 +5068,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the epsilon values containing the tickers and strike prices as the index and the
@@ -5081,6 +5198,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the lambda of an option based on the Black Scholes Model. The Black Scholes Model
@@ -5140,6 +5258,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the lambda values containing the tickers and strike prices as the index and the
@@ -5270,6 +5392,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the second order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -5327,6 +5450,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the second order greeks values containing the tickers and strike prices as the index and the
@@ -5481,6 +5608,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the gamma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -5540,6 +5668,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the gamma values containing the tickers and strike prices as the index and the
@@ -5664,6 +5796,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the dual gamma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -5714,6 +5847,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the dual gamma values containing the tickers and strike prices as the index and the
@@ -5838,6 +5975,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the vanna of an option based on the Black Scholes Model. The Black Scholes Model
@@ -5892,6 +6030,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the vanna values containing the tickers and strike prices as the index and the
@@ -6024,6 +6166,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the charm of an option based on the Black Scholes Model. The Black Scholes Model
@@ -6083,6 +6226,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the charm values containing the tickers and strike prices as the index and the
@@ -6219,6 +6366,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the vomma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -6272,6 +6420,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the vomma values containing the tickers and strike prices as the index and the
@@ -6406,6 +6558,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the vera of an option based on the Black Scholes Model. The Black Scholes Model
@@ -6462,6 +6615,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the vera values containing the tickers and strike prices as the index and the
@@ -6592,6 +6749,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the veta of an option based on the Black Scholes Model. The Black Scholes Model
@@ -6652,6 +6810,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the veta values containing the tickers and strike prices as the index and the
@@ -6780,6 +6942,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the partial derivative of an option based on the Black Scholes Model. The Black Scholes Model
@@ -6830,6 +6993,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the partial derivative values containing the tickers and strike prices as the index and the
@@ -6966,6 +7133,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the third order Greeks of an option based on the Black Scholes Model. This will return the following Greeks
@@ -7010,6 +7178,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the third order greeks values containing the tickers and strike prices as the index and the
@@ -7133,6 +7305,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the speed of an option based on the Black Scholes Model. The Black Scholes Model
@@ -7185,6 +7358,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the speed values containing the tickers and strike prices as the index and the
@@ -7306,6 +7483,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the zomma of an option based on the Black Scholes Model. The Black Scholes Model
@@ -7360,6 +7538,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the zomma values containing the tickers and strike prices as the index and the
@@ -7486,6 +7668,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the color of an option based on the Black Scholes Model. The Black Scholes Model
@@ -7545,6 +7728,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the color values containing the tickers and strike prices as the index and the
@@ -7668,6 +7855,7 @@ class Options:
         show_input_info: bool = False,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the ultima of an option based on the Black Scholes Model. The Black Scholes Model
@@ -7723,6 +7911,10 @@ class Options:
                 the rounding of the Toolkit (4 unless set otherwise).
             standardize (bool, optional): Whether to standardize (Z-Score) the result across the
                 time to expiration columns for each ticker and strike price. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: the ultima values containing the tickers and strike prices as the index and the
@@ -7987,6 +8179,7 @@ class Options:
         expiration_dates: list[str] | None = None,
         number_of_expirations: int = 6,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the put-call ratio of every expiry, by volume and by open interest. The
@@ -8004,6 +8197,10 @@ class Options:
                 no dates are given. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and expiry, and over all of them ("All"), the Days to
@@ -8071,6 +8268,7 @@ class Options:
         expiration_dates: list[str] | None = None,
         number_of_expirations: int = 6,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the max pain strike of every expiry: the expiry price at which the
@@ -8090,6 +8288,10 @@ class Options:
                 no dates are given. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and expiry the Days to Expiration, Max Pain strike,
@@ -8136,6 +8338,7 @@ class Options:
         number_of_expirations: int = 6,
         by_strike: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the dealer gamma exposure (GEX): the dollar value of shares market makers
@@ -8167,6 +8370,10 @@ class Options:
                 the totals. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker the Stock Price, Call, Put and Net Gamma Exposure (in
@@ -8263,6 +8470,7 @@ class Options:
         expiration_dates: list[str] | None = None,
         number_of_expirations: int = 10,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the term structure of implied volatility: the at-the-money implied
@@ -8280,6 +8488,10 @@ class Options:
                 no dates are given. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and expiry the Days to Expiration and the At-the-Money
@@ -8337,6 +8549,7 @@ class Options:
         expiration_dates: list[str] | None = None,
         number_of_expirations: int = 6,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the volatility skew of every expiry from the 25-delta options, the
@@ -8364,6 +8577,10 @@ class Options:
                 no dates are given. Defaults to 6.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and expiry the Days to Expiration, the 25-Delta Put,
@@ -8413,6 +8630,7 @@ class Options:
         number_of_expirations: int = 4,
         around_earnings: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the move the options market expects up to every expiry, from the price of
@@ -8439,6 +8657,10 @@ class Options:
                 earnings date instead. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and expiry the Days to Expiration, Straddle Strike,
@@ -8573,6 +8795,7 @@ class Options:
         self,
         days: int = 30,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the model-free implied volatility with the Cboe VIX methodology, for any
@@ -8601,6 +8824,10 @@ class Options:
             days (int, optional): The constant maturity in calendar days. Defaults to 30.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker the Near-Term and Next-Term Expiration and Volatility,
@@ -8663,6 +8890,7 @@ class Options:
         self,
         days: int = 30,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the volatility risk premium: the model-free implied volatility over the
@@ -8696,6 +8924,10 @@ class Options:
                 Defaults to 30.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker the Implied Volatility, Realized Volatility, Volatility

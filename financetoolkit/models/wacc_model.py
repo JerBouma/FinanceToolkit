@@ -123,15 +123,15 @@ def get_corporate_tax_rate(
 
 
 def get_weighted_average_cost_of_capital(
-    share_price: pd.Series,
-    total_shares_outstanding: pd.Series,
-    interest_expense: pd.Series,
-    total_debt: pd.Series,
-    risk_free_rate: pd.Series,
-    beta: pd.Series | pd.DataFrame,
-    benchmark_returns: pd.Series | pd.DataFrame,
-    income_tax_expense: pd.Series,
-    income_before_tax: pd.Series,
+    share_price: float | pd.Series,
+    total_shares_outstanding: float | pd.Series,
+    interest_expense: float | pd.Series,
+    total_debt: float | pd.Series,
+    risk_free_rate: float | pd.Series,
+    beta: float | pd.Series | pd.DataFrame,
+    benchmark_returns: float | pd.Series | pd.DataFrame,
+    income_tax_expense: float | pd.Series,
+    income_before_tax: float | pd.Series,
 ) -> pd.DataFrame:
     """
     The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate the
@@ -162,7 +162,7 @@ def get_weighted_average_cost_of_capital(
     Returns:
         pd.DataFrame: A DataFrame containing the Weighted Average Cost of Capital and the components
         it is built from (Market Value Equity, Market Value Debt, Cost of Equity, Cost of Debt and
-        the Corporate Tax Rate).
+        the Corporate Tax Rate). All-scalar inputs return one period in column 0.
 
     Notes:
     - The market value of equity is calculated as the share price multiplied by the total shares outstanding.
@@ -176,6 +176,23 @@ def get_weighted_average_cost_of_capital(
     kept within 0 and 1, and 0 when there is no pre-tax profit (no taxable income for the interest to
     shield).
     """
+    inputs = (
+        share_price,
+        total_shares_outstanding,
+        interest_expense,
+        total_debt,
+        risk_free_rate,
+        beta,
+        benchmark_returns,
+        income_tax_expense,
+        income_before_tax,
+    )
+    if all(np.isscalar(value) for value in inputs):
+        # Reuse the labelled path, including its debt-free and tax-rate handling.
+        return get_weighted_average_cost_of_capital(
+            *(pd.Series([value]) for value in inputs)
+        )
+
     # Calculate the Market Value of Equity
     market_value_equity = valuation_model.get_market_cap(
         share_price, total_shares_outstanding

@@ -37,6 +37,33 @@ logger = get_logger()
 
 # The longest search and the most terms of it that are matched.
 MAX_QUERY_CHARACTERS = 200
+
+
+def describe_indicators(entries: list[dict]) -> str:
+    """What each indicator of that name calculates, its tool and its parameters.
+
+    Args:
+        entries (list[dict]): The indicator index entries of one name (an indicator can be
+            part of more than one tool).
+
+    Returns:
+        str: The description in Markdown.
+    """
+    sections = []
+    for entry in entries:
+        parameters = "\n".join(
+            f"- `{name}`: {text}" for name, text in entry["parameters"].items()
+        )
+        sections.append(
+            f"### `{entry['indicator']}` (tool `{entry['tool']}`)\n\n"
+            f"{entry['description']}\n\n"
+            + (f"Parameters:\n{parameters}\n\n" if parameters else "")
+            + f"Call `{entry['tool']}` with `indicator='{entry['indicator']}'`."
+        )
+
+    return "\n\n".join(sections)
+
+
 MAX_QUERY_TERMS = 12
 
 
@@ -414,10 +441,22 @@ class UtilityToolRegistry:
                 f"The search is {len(query)} characters long; keep it to a few keywords "
                 f"(at most {MAX_QUERY_CHARACTERS} characters)."
             )
+        # An indicator's own name answers with what it calculates and its parameters.
+        named = [
+            entry
+            for entry in self._registry.get_indicator_index()
+            if entry["indicator"] == query.strip().strip("`'\" ")
+        ]
+        if named:
+            return describe_indicators(named)
+
         index = self._registry.get_tool_index()
         query_tokens = [
             w.lower()
-            for w in re.findall(r"\b[a-zA-Z]{2,}\b", join_initials(query))
+            # An indicator's name reads as its words (get_return_on_equity).
+            for w in re.findall(
+                r"\b[a-zA-Z]{2,}\b", join_initials(query.replace("_", " "))
+            )
             if w.lower() not in self._search_stop_words
         ][:MAX_QUERY_TERMS]
         if not query_tokens:
@@ -446,7 +485,8 @@ class UtilityToolRegistry:
             first = indicator_hits[0]
             lines.append(
                 f"\nCall the tool with the indicator, e.g. `{first['tool']}` with "
-                f"`indicator='{first['indicator']}'`; the tool's description lists its parameters."
+                f"`indicator='{first['indicator']}'`; searching for the indicator's name lists its "
+                "parameters."
             )
             return "\n".join(lines)
 

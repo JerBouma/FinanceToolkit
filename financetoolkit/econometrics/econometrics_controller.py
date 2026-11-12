@@ -29,11 +29,12 @@ from financetoolkit.econometrics import (
     unitroot_model,
 )
 from financetoolkit.helpers import LazyDict, handle_portfolio
+from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_rounding
 
 logger = get_logger()
 
@@ -7126,6 +7127,143 @@ class Econometrics:
 
         return apply_rounding(
             level_significance, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_move_significance(
+        self,
+        period: str | None = None,
+        window: int | None = None,
+        alpha: float = 0.05,
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how unusual each move of every series is: the change in units of its trailing
+        volatility and of its trailing Value at Risk, its percentile among the earlier moves and
+        the date of the last move at least as large in the same direction ("the largest one-day
+        rise since").
+
+        This is `get_move_significance` (Risk) for any series rather than the returns of the
+        Toolkit's tickers: with `Econometrics(data=..., changes="difference")` a yield, rate or
+        spread moves in points, so a rise of the 2-year Treasury yield from 4.56% to 4.73% is a
+        move of 0.0017, measured against the earlier daily moves of the same yield. Where
+        `get_level_significance` asks how unusual a level is, this asks how unusual a change is.
+
+        The formula is as follows:
+
+        - Volatility Multiple(t) = Change(t) / σ(Change(t - window), ..., Change(t - 1))
+        - VaR Multiple(t) = Change(t) / |Quantile(Change(t - window), ..., Change(t - 1); alpha)|
+        - Percentile(t) = Count(|Change(s)| < |Change(t)|, s < t) / Count(s < t)
+        - Largest Since(t) = max(s < t : Change(s) <= Change(t)) if Change(t) < 0
+        - Largest Since(t) = max(s < t : Change(s) >= Change(t)) if Change(t) > 0
+
+        The Change is the series' change as `changes` defines it: a percentage change by default,
+        the difference with `changes="difference"` and the series itself with `changes="none"`.
+        The volatility σ uses ddof=1 and the quantile is the historic Value at Risk, interpolated
+        linearly. Each measure only uses the changes before the period itself (no look-ahead),
+        and Largest Since compares falls with falls and rises with rises, as a headline does.
+
+        Also known as: sigma move, largest move since, biggest daily rise since, standardized
+        change, yield move significance.
+
+        Args:
+            period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly
+                or yearly). Defaults to None, which is daily.
+            window (int | None, optional): The number of earlier changes the volatility is
+                measured over, which the percentile also needs at least. Defaults to None, which
+                uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20
+                monthly, quarterly or yearly changes).
+            alpha (float, optional): The tail probability of the trailing historic Value at Risk
+                the VaR Multiple divides by (0.05 for the 95% VaR). Defaults to 0.05.
+            include_benchmark (bool, optional): Whether to include the benchmark of a Toolkit.
+                Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+
+        Returns:
+            pd.DataFrame: Return (the change), Volatility Multiple, VaR Multiple, Percentile and
+            Largest Since (the date as text) per series, with time as the index and the measures
+            and series as the column levels.
+
+        Notes:
+        - The history a move is compared with starts at the start of the data: the volatility,
+          the VaR and the percentile are NaN until `window` changes are available, and Largest
+          Since is NaN when no earlier move was as large, which makes the move the largest since
+          the start. Choose an early start date for a long history.
+        - Each series uses its own history and only the dates it has a value for, so a market
+          holiday is not a move of zero.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Econometrics, FixedIncome
+
+        fixedincome = FixedIncome(start_date='2025-01-01', end_date='2026-11-10')
+
+        treasury_rates = fixedincome.get_treasury_rates(maturities=['2Y', '10Y'])
+
+        econometrics = Econometrics(data=treasury_rates, changes='difference')
+
+        econometrics.get_move_significance().loc['2026-11-10'].unstack(level=0)
+        ```
+
+        Which returns:
+
+        |         |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
+        |:--------|---------:|----------------------:|---------------:|-------------:|:----------------|
+        | 2 Year  |   0.0017 |                3.5345 |         2.4286 |       0.9935 | 2025-04-09      |
+        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9546 | 2026-09-23      |
+        |         |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
+        |:--------|---------:|----------------------:|---------------:|-------------:|:----------------|
+        | 2 Year  |   0.0017 |                3.5345 |         2.4286 |       0.9935 | 2025-04-09      |
+        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9546 | 2026-09-23      |
+        """
+        period = period if period else "daily"
+
+        if window is not None and window < 2:  # noqa: PLR2004
+            raise ValueError(
+                "The window needs at least 2 changes to measure a volatility."
+            )
+        if not 0 < alpha < 1:
+            raise ValueError(
+                "alpha must be between 0 and 1, e.g. 0.05 for the 95% VaR."
+            )
+
+        window = window if window else max(PERIODS_PER_YEAR[period], 20)
+        changes = self._filter_benchmark(
+            self._get_series_column(period, "Return"),
+            include_benchmark=include_benchmark,
+        )
+
+        move_significance = pd.concat(
+            {
+                series: risk_model.get_move_significance(
+                    changes[series].dropna(), window, alpha
+                )
+                for series in changes.columns
+            },
+            axis=1,
+        ).swaplevel(1, 0, axis=1)
+
+        # The measures in reading order, each with the series in their own order.
+        move_significance = move_significance[
+            pd.MultiIndex.from_product(
+                [
+                    [
+                        "Return",
+                        "Volatility Multiple",
+                        "VaR Multiple",
+                        "Percentile",
+                        "Largest Since",
+                    ],
+                    changes.columns,
+                ]
+            )
+        ].dropna(how="all", axis=0)
+
+        return apply_rounding(
+            move_significance, rounding if rounding is not None else self._rounding
         )
 
     @handle_errors

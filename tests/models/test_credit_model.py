@@ -8,6 +8,22 @@ from scipy.stats import norm
 from financetoolkit.models import credit_model
 
 
+@pytest.mark.parametrize("time_horizon", [0.0, -1.0, np.nan, np.inf, -np.inf])
+@pytest.mark.parametrize("default_point", [0.0, 80.0])
+def test_merton_model_rejects_invalid_horizons_before_solving(
+    time_horizon, default_point, mocker
+):
+    solver = mocker.patch("financetoolkit.models.credit_model.fsolve")
+
+    result = credit_model.get_merton_model(
+        100.0, 0.4, default_point, 0.04, time_horizon=time_horizon
+    )
+
+    solver.assert_not_called()
+    assert result["Default Point"] == default_point
+    assert result.drop("Default Point").isna().all()
+
+
 def test_merton_model_solves_both_equations():
     result = credit_model.get_merton_model(100, 0.4, 80, 0.04)
     value, volatility = result["Asset Value"], result["Asset Volatility"]

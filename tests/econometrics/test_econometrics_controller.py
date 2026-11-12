@@ -1014,3 +1014,25 @@ def test_level_significance_measures_the_ratio_of_two_series():
 
     assert significance.index.tolist() == ["Exports / GDP"]
     assert significance.loc["Exports / GDP", "Latest Value"] == pytest.approx(0.2)
+
+
+def test_get_move_significance_measures_yield_moves_in_points():
+    from financetoolkit import Econometrics
+
+    days = pd.bdate_range("2025-01-01", periods=60)
+    rng = np.random.default_rng(1)
+    yields = pd.DataFrame(
+        {"2 Year": 0.04 + np.cumsum(rng.normal(0, 0.0003, len(days)))}, index=days
+    )
+    # Day 30 rises 0.002, the last day 0.0017: the largest rise since day 30.
+    yields.iloc[30:, 0] += 0.002
+    yields.iloc[-1, 0] = yields.iloc[-2, 0] + 0.0017
+
+    significance = Econometrics(
+        data=yields, changes="difference"
+    ).get_move_significance(window=20, rounding=6)
+
+    latest = significance.iloc[-1].unstack(level=0)
+    assert latest.loc["2 Year", "Return"] == pytest.approx(0.0017)
+    assert latest.loc["2 Year", "Largest Since"] == str(days[30].date())
+    assert latest.loc["2 Year", "Volatility Multiple"] > 3  # noqa: PLR2004

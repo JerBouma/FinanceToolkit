@@ -14,6 +14,7 @@ import importlib
 import inspect
 import json
 import math
+import os
 import re
 import time
 import traceback
@@ -519,6 +520,62 @@ def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
         schema.pop("title", None)
 
 
+# With FT_MCP_COMPACT_TOOLS=1 a tool's description is its first sentence and its parameters
+# have no descriptions: a client that loads several tools (an agent searching for its tools
+# on every run) reads a few hundred characters per tool instead of tens of thousands.
+# search_metrics with an indicator's name gives what it calculates and its parameters.
+COMPACT_TOOLS_ENVIRONMENT_VARIABLE = "FT_MCP_COMPACT_TOOLS"
+
+
+def compact_tools_enabled() -> bool:
+    """Whether the tools are listed without their long descriptions.
+
+    Returns:
+        bool: True when FT_MCP_COMPACT_TOOLS is 1, true, yes or on.
+    """
+    return os.environ.get(COMPACT_TOOLS_ENVIRONMENT_VARIABLE, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _compact_description(description: str, first_indicator: str) -> str:
+    """The first clause of a tool description and where the rest can be found.
+
+    Args:
+        description (str): The full description of the tool.
+        first_indicator (str): An indicator of the tool, for the example.
+
+    Returns:
+        str: The compact description.
+    """
+    clause = re.split(r" \(|\. |: ", description, maxsplit=1)[0].rstrip(".")
+
+    return (
+        f"{clause}. Pass the indicator by name; search_metrics with an indicator's name "
+        f"(e.g. '{first_indicator}') says what it calculates and which parameters it takes."
+    )
+
+
+def _strip_schema_descriptions(mcp: Any, tool_name: str) -> None:
+    """Drop the parameter descriptions of a tool, except that of the indicator.
+
+    Args:
+        mcp (Any): The FastMCP server.
+        tool_name (str): The tool whose input schema to trim.
+    """
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tool = tool_manager.get_tool(tool_name) if tool_manager is not None else None
+    if tool is None:
+        return
+
+    for name, schema in tool.parameters.get("properties", {}).items():
+        if name != "indicator":
+            schema.pop("description", None)
+
+
 def _summarize_docstring(docstring: str) -> dict[str, str]:
     """The first sentence of a docstring and its "Also known as" aliases.
 
@@ -540,6 +597,25 @@ def _summarize_docstring(docstring: str) -> dict[str, str]:
     )
 
     return {"summary": summary, "aliases": aliases.group(1).strip() if aliases else ""}
+
+
+def _describe_docstring(docstring: str) -> dict[str, Any]:
+    """What an indicator calculates and its parameters, for search_metrics by name.
+
+    Args:
+        docstring (str): The cleaned docstring of an indicator.
+
+    Returns:
+        dict[str, Any]: The ``description`` (the first paragraph) and the ``parameters``
+            (per argument, its description).
+    """
+    paragraphs = docstring.split("\n\n")
+    description = " ".join(paragraphs[0].split())
+    # A paragraph that introduces a formula or list ends with a colon; it goes with it.
+    if description.endswith(":") and len(paragraphs) > 1:
+        description += "\n\n" + paragraphs[1].strip()
+
+    return {"description": description, "parameters": _docstring_arguments(docstring)}
 
 
 def _rank_result(result: object, is_country: bool) -> pd.DataFrame | None:
@@ -1294,7 +1370,7 @@ class ToolRegistry:
         self._provider = provider
         self._inspector = inspector
         self._tool_index: dict[str, list[dict[str, str]]] = {}
-        self._indicator_index: list[dict[str, str]] = []
+        self._indicator_index: list[dict[str, Any]] = []
         # The module and category of every indicator per tool, for the indicators an
         # econometrics call names as its series.
         self._routes: dict[str, dict[str, tuple[str, str]]] = {}
@@ -1363,7 +1439,7 @@ class ToolRegistry:
         """
         return self._tool_index
 
-    def get_indicator_index(self) -> list[dict[str, str]]:
+    def get_indicator_index(self) -> list[dict[str, Any]]:
         """Return every registered indicator with its tool, summary and aliases.
 
         Returns:
@@ -2767,6 +2843,9 @@ class ToolRegistry:
                     **_summarize_docstring(
                         inspect.getdoc(getattr(owner, method_name, None)) or ""
                     ),
+                    **_describe_docstring(
+                        inspect.getdoc(getattr(owner, method_name, None)) or ""
+                    ),
                 }
             )
 
@@ -2775,6 +2854,9 @@ class ToolRegistry:
         # does not repeat them; the category listing (search_by_category) does show them.
         description = spec.description or f"{spec.display_name}."
         index_description = f"{description}\n\nAvailable indicators: {method_list}."
+        compact = compact_tools_enabled()
+        if compact:
+            description = _compact_description(description, group_methods[0])
 
         try:
             fn = self._build_router_wrapper(
@@ -2810,6 +2892,8 @@ class ToolRegistry:
                 {"tool": spec.tool_name, "description": index_description}
             )
             _strip_schema_titles(self._mcp, spec.tool_name)
+            if compact:
+                _strip_schema_descriptions(self._mcp, spec.tool_name)
             return True
         except Exception as exc:
             logger.warning(f"Failed to register group '{spec.tool_name}': {exc}")

@@ -39,11 +39,12 @@ def get_merton_model(
         equity_volatility (float): The annualized volatility of the equity returns.
         default_point (float): The value of the debt at which the company defaults.
         risk_free_rate (float): The annualized risk free rate.
-        time_horizon (float, optional): The horizon in years. Defaults to 1.
+        time_horizon (float, optional): The positive, finite horizon in years. Defaults to 1.
 
     Returns:
         pd.Series: The Asset Value, Asset Volatility, Default Point, Distance to Default and
-        Probability of Default.
+        Probability of Default. Invalid inputs, including a non-positive or non-finite
+        horizon, leave the estimated values as NaN.
     """
     result = pd.Series(
         {
@@ -57,10 +58,17 @@ def get_merton_model(
 
     if (
         not np.isfinite(
-            [equity_value, equity_volatility, default_point, risk_free_rate]
+            [
+                equity_value,
+                equity_volatility,
+                default_point,
+                risk_free_rate,
+                time_horizon,
+            ]
         ).all()
         or equity_value <= 0
         or equity_volatility <= 0
+        or time_horizon <= 0
     ):
         return result
 

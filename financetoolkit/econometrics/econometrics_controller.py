@@ -31,6 +31,7 @@ from financetoolkit.econometrics import (
 from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import determine_within_historical_data
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -45,6 +46,7 @@ logger = get_logger()
 BENCHMARK_TICKER = "Benchmark"
 
 
+@filter_shown_columns
 @track_sources
 class Econometrics:
     """
@@ -203,6 +205,7 @@ class Econometrics:
         lags: int = 5,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate Engle's Lagrange Multiplier (LM) test for ARCH effects.
@@ -240,6 +243,10 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The ARCH-LM statistic and its p-value per asset.
@@ -305,6 +312,7 @@ class Econometrics:
         within_period: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Jarque-Bera test for normality.
@@ -339,6 +347,10 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Jarque-Bera statistic and its p-value per asset.
@@ -405,6 +417,7 @@ class Econometrics:
         lags: int = 10,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Ljung-Box test for autocorrelation.
@@ -442,6 +455,10 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Ljung-Box statistic and its p-value per asset.
@@ -508,6 +525,7 @@ class Econometrics:
         q: int = 2,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Lo-MacKinlay Variance Ratio test for the random walk hypothesis.
@@ -554,6 +572,10 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Variance Ratio, the homoskedastic test statistic and its p-value,
@@ -623,6 +645,7 @@ class Econometrics:
         within_period: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the CUSUM test for the stability of the mean of returns over time.
@@ -658,6 +681,10 @@ class Econometrics:
             include_benchmark (bool, optional): Whether to include "Benchmark" among the
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The CUSUM statistic, its p-value, the number of observations used, the
@@ -930,6 +957,7 @@ class Econometrics:
         regression: str = "c",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Augmented Dickey-Fuller (ADF) test for a unit root, per asset.
@@ -968,6 +996,10 @@ class Econometrics:
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The ADF statistic, its p-value, lags used, observations used, 1%/5%/10%
@@ -1035,6 +1067,7 @@ class Econometrics:
         lags: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test for stationarity, per asset.
@@ -1078,6 +1111,10 @@ class Econometrics:
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The KPSS statistic, its p-value, truncation lag used, observations used,
@@ -1146,6 +1183,7 @@ class Econometrics:
         lags: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Phillips-Perron (PP) test for a unit root, per asset.
@@ -1188,6 +1226,10 @@ class Econometrics:
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Phillips-Perron Z_t statistic, its MacKinnon (1994) p-value, truncation
@@ -1256,6 +1298,7 @@ class Econometrics:
         trim: float = 0.15,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Zivot-Andrews test for a unit root, per asset, allowing for a
@@ -1308,6 +1351,10 @@ class Econometrics:
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Zivot-Andrews statistic, its p-value, the (0-indexed) position of the
@@ -1375,6 +1422,7 @@ class Econometrics:
         max_lag: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Engle-Granger test for cointegration between every ordered
@@ -1422,6 +1470,10 @@ class Econometrics:
             tickers paired up. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per ordered `(Dependent, Independent)` ticker pair, with the
@@ -1490,6 +1542,7 @@ class Econometrics:
         k_ar_diff: int = 1,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Johansen test for cointegration among every ticker in the
@@ -1544,6 +1597,10 @@ class Econometrics:
             tickers tested jointly. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per candidate cointegration rank `r = 0, ..., N-1`, with the
@@ -1602,6 +1659,7 @@ class Econometrics:
         max_lag: int = 5,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Granger causality test, for every ordered pair of tickers in
@@ -1646,6 +1704,10 @@ class Econometrics:
             tickers paired up. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per ordered `(Dependent, Independent)` ticker pair, with the
@@ -1713,6 +1775,7 @@ class Econometrics:
         loss: str = "squared",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Compare the forecast accuracy of two volatility forecasting methods against
@@ -1768,6 +1831,10 @@ class Econometrics:
             assets tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Diebold-Mariano statistic, its p-value, the mean loss differential (negative
@@ -1852,6 +1919,7 @@ class Econometrics:
         clusters: pd.Series | None = None,
         maxlags: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit an Ordinary Least Squares (OLS) regression of `dependent_ticker` on
@@ -1920,6 +1988,10 @@ class Econometrics:
             with `n` the number of observations.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
@@ -1994,6 +2066,7 @@ class Econometrics:
         clusters: pd.Series | None = None,
         maxlags: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Weighted Least Squares (WLS) regression of `dependent_ticker` on
@@ -2055,6 +2128,10 @@ class Econometrics:
             None, meaning the Newey & West (1994) rule of thumb (see `get_ols`).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
@@ -2142,6 +2219,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Generalized Least Squares (GLS) regression of `dependent_ticker` on
@@ -2194,6 +2272,10 @@ class Econometrics:
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value),
@@ -2265,6 +2347,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Logistic Regression (Logit model) of whether `dependent_ticker`'s return is
@@ -2321,6 +2404,10 @@ class Econometrics:
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error, z-Statistic, P-Value),
@@ -2385,6 +2472,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Probit Regression of whether `dependent_ticker`'s return is positive on
@@ -2432,6 +2520,10 @@ class Econometrics:
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error, z-Statistic, P-Value),
@@ -2498,6 +2590,7 @@ class Econometrics:
         add_constant: bool = True,
         n_bootstrap: int = 0,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Quantile Regression of `dependent_ticker` on `independent_tickers` at quantile
@@ -2555,6 +2648,10 @@ class Econometrics:
             standard errors. Defaults to 0 (use the analytic standard errors).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error), indexed by regressor name.
@@ -2616,6 +2713,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Fama-MacBeth (1973) two-pass cross-sectional regression: `asset_tickers` is
@@ -2678,6 +2776,10 @@ class Econometrics:
             second-pass cross-sectional regression. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Risk Premium, Std. Error, t-Statistic,
@@ -2793,6 +2895,7 @@ class Econometrics:
         equal_variance: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate a two-sample t-test for a difference in mean `column` between every
@@ -2840,6 +2943,10 @@ class Econometrics:
             tickers paired up. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per unordered `(Ticker A, Ticker B)` pair, with the t-statistic,
@@ -2904,6 +3011,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate a nested-model F-test for the joint significance of the regressors in
@@ -2944,6 +3052,10 @@ class Econometrics:
             to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The F-statistic, its numerator/denominator degrees of freedom, its p-value,
@@ -3009,6 +3121,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate a nested-model Likelihood Ratio (LR) test, the Maximum Likelihood analogue
@@ -3054,6 +3167,10 @@ class Econometrics:
             to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The LR statistic, its degrees of freedom, its p-value, and whether the added
@@ -3120,6 +3237,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate a Wald test of `q` general linear restriction(s) on the coefficients of an
@@ -3177,6 +3295,10 @@ class Econometrics:
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Wald (chi-squared) statistic and its p-value, the small-sample F-statistic
@@ -3256,6 +3378,7 @@ class Econometrics:
         period: str | None = None,
         column: str = "Return",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate a regression-based Hausman-Wu test for the endogeneity of `suspect_ticker`
@@ -3311,6 +3434,10 @@ class Econometrics:
             column (str, optional): The historical data column to regress on. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The coefficient on the first-stage residuals, its t-statistic and p-value, and
@@ -3424,6 +3551,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Breusch-Pagan test for heteroskedasticity of a regression of
@@ -3476,6 +3604,10 @@ class Econometrics:
             regression. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Breusch-Pagan LM statistic, its p-value, and whether homoskedasticity is
@@ -3531,6 +3663,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate White's test for heteroskedasticity of a regression of `dependent_ticker` on
@@ -3576,6 +3709,10 @@ class Econometrics:
             regression. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: White's LM statistic, its p-value, and whether homoskedasticity is rejected at
@@ -3631,6 +3768,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Durbin-Watson statistic for first-order autocorrelation in the
@@ -3681,6 +3819,10 @@ class Econometrics:
             regression. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Durbin-Watson statistic and an approximate interpretation flag.
@@ -3740,6 +3882,7 @@ class Econometrics:
         column: str = "Return",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Variance Inflation Factor (VIF) of every ticker in the Toolkit
@@ -3775,6 +3918,10 @@ class Econometrics:
             regressors tested. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The VIF of each asset, indexed by ticker.
@@ -3828,6 +3975,7 @@ class Econometrics:
         add_constant: bool = True,
         power: int = 3,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate Ramsey's RESET test for functional form misspecification of a regression of
@@ -3879,6 +4027,10 @@ class Econometrics:
             power (int, optional): The highest power of the fitted values to add. Defaults to 3.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The RESET F-statistic, its p-value, and whether correct specification is
@@ -3937,6 +4089,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Chow test for a structural break at `break_date` in a regression of
@@ -3989,6 +4142,10 @@ class Econometrics:
             regression(s). Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Chow F-statistic, its p-value, and whether no structural break is rejected
@@ -4072,6 +4229,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit an Instrumental Variables regression via Two-Stage Least Squares (2SLS) of
@@ -4118,6 +4276,10 @@ class Econometrics:
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, CORRECTED Std. Error, t-Statistic,
@@ -4200,6 +4362,7 @@ class Econometrics:
         column: str = "Return",
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Difference-in-Differences (DiD) regression estimating the effect of some
@@ -4253,6 +4416,10 @@ class Econometrics:
             add_constant (bool, optional): Whether to include an intercept. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error, t-Statistic, P-Value)
@@ -4365,6 +4532,7 @@ class Econometrics:
         bandwidth: float | None = None,
         kernel: str = "uniform",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Estimate a Sharp Regression Discontinuity (RDD): the jump in `dependent_ticker`
@@ -4413,6 +4581,10 @@ class Econometrics:
             kernel (str, optional): One of "uniform" or "triangular". Defaults to "uniform".
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A one-column results table with the discontinuity estimate, its
@@ -4479,6 +4651,7 @@ class Econometrics:
         caliper: float | None = None,
         add_constant: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Estimate the Average Treatment effect on the Treated (ATT) of `treatment_ticker`
@@ -4530,6 +4703,10 @@ class Econometrics:
             propensity score model. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to.
             Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The ATT estimate, its standard error/t-statistic/p-value, and the
@@ -4603,6 +4780,7 @@ class Econometrics:
         column: str = "Return",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Construct a Synthetic Control for `treated_ticker` from a weighted combination of
@@ -4665,6 +4843,10 @@ class Econometrics:
             Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to
             None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The average post-treatment effect, pre/post RMSPE and their
@@ -4895,6 +5077,7 @@ class Econometrics:
         entity_effects: bool = True,
         time_effects: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Fixed Effects ("within") estimator explaining a panel of
@@ -4954,6 +5137,10 @@ class Econometrics:
             time-specific shocks. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error,
@@ -5035,6 +5222,7 @@ class Econometrics:
         column: str = "Return",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Random Effects estimator explaining a panel of `dependent_tickers`
@@ -5084,6 +5272,10 @@ class Econometrics:
                 entities. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
                 results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error,
@@ -5143,6 +5335,7 @@ class Econometrics:
         column: str = "Return",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Hausman specification test comparing a Fixed Effects and a
@@ -5186,6 +5379,10 @@ class Econometrics:
             entities. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Hausman statistic, its degrees of freedom, its p-value,
@@ -5250,6 +5447,7 @@ class Econometrics:
         include_constant: bool = True,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit an ARIMA(p, d, q) model to every ticker's price series in the Toolkit
@@ -5289,6 +5487,10 @@ class Econometrics:
             the tickers forecast. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The `forecast_steps`-ahead forecast, one column per ticker,
@@ -5374,6 +5576,7 @@ class Econometrics:
         forecast_steps: int = 5,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance and
@@ -5419,6 +5622,10 @@ class Econometrics:
             the tickers modeled jointly. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The `forecast_steps`-ahead forecast, one column per ticker,
@@ -5495,6 +5702,7 @@ class Econometrics:
         orthogonalized: bool = True,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance
@@ -5536,6 +5744,10 @@ class Econometrics:
             the tickers modeled jointly. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Each shock ticker's response table, one column per response
@@ -5615,6 +5827,7 @@ class Econometrics:
         periods: int = 10,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Vector Autoregression (VAR) across every ticker in the Toolkit instance
@@ -5650,6 +5863,10 @@ class Econometrics:
             the tickers modeled jointly. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Each response ticker's variance-share table (one column per
@@ -5726,6 +5943,7 @@ class Econometrics:
         significance: float = 0.05,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Vector Error Correction Model (VECM) across every (cointegrated)
@@ -5767,6 +5985,10 @@ class Econometrics:
             the tickers modeled jointly. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The `forecast_steps`-ahead forecast, on the price-level
@@ -5832,6 +6054,7 @@ class Econometrics:
         column: str = "Return",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Root Mean Squared Error (RMSE) between every unordered pair
@@ -5867,6 +6090,10 @@ class Econometrics:
             tickers paired up. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The RMSE, indexed by unordered `(Ticker A, Ticker B)` pair.
@@ -5926,6 +6153,7 @@ class Econometrics:
         column: str = "Return",
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Calculate the Mean Absolute Error (MAE) between every unordered pair of tickers'
@@ -5960,6 +6188,10 @@ class Econometrics:
             tickers paired up. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The MAE, indexed by unordered `(Ticker A, Ticker B)` pair.
@@ -6027,6 +6259,7 @@ class Econometrics:
         other_tickers: list[str] | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Out-of-sample validate an ARIMA or VAR forecast of every ticker in the
@@ -6085,6 +6318,10 @@ class Econometrics:
             `other_tickers`). Defaults to False.
             rounding (int | None, optional): The number of decimals to round the
             results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: `RMSE`, `MAE` and `Holdout Observations`, one column per
@@ -6205,6 +6442,7 @@ class Econometrics:
         pre_event_days: int = 10,
         post_event_days: int = 10,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series:
         """
         Perform a market-model event study around a single event date, following the
@@ -6261,6 +6499,10 @@ class Econometrics:
                 date included in the event window. Defaults to 10.
             rounding (int | None, optional): The number of decimals to round the
                 results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The Cumulative Abnormal Return (CAR), its t-statistic and
@@ -6346,6 +6588,7 @@ class Econometrics:
         probabilities: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Fit a Markov regime switching model to every asset: the mean and volatility of its
@@ -6401,6 +6644,10 @@ class Econometrics:
                 assets. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset the Mean, Volatility, Probability of Staying, Expected
@@ -6474,6 +6721,7 @@ class Econometrics:
         breaks: int | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Find the dates at which the mean of every asset's series shifts, with the Bai and
@@ -6530,6 +6778,10 @@ class Econometrics:
                 assets. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per asset and segment the Start, End, Observations, Mean and
@@ -6587,6 +6839,7 @@ class Econometrics:
         period: str | None = None,
         column: str = "Return",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Estimate the alpha and beta of every asset as they change over time, with the Kalman
@@ -6634,6 +6887,10 @@ class Econometrics:
             column (str, optional): The historical data column to use. Defaults to "Return".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per date and asset the Alpha, the Beta and the standard error of
@@ -6714,6 +6971,7 @@ class Econometrics:
         parameters: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Estimate the correlation between every pair of assets as it changes over time, with
@@ -6755,6 +7013,10 @@ class Econometrics:
                 assets. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The conditional correlation of every pair of assets per date, or
@@ -6820,6 +7082,7 @@ class Econometrics:
         time_series: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the statistics of trading the spread between every pair of assets. The
@@ -6887,6 +7150,10 @@ class Econometrics:
                 assets. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per pair the Hedge Ratio, Intercept, Half-Life (in periods),
@@ -6959,6 +7226,7 @@ class Econometrics:
         include_benchmark: bool = False,
         level: float | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how unusual the latest value of every series is: its percentile in the series'
@@ -7039,6 +7307,10 @@ class Econometrics:
                 None, which leaves them out.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per series the Start Date, Start Value and number of Observations of its
@@ -7137,6 +7409,7 @@ class Econometrics:
         alpha: float = 0.05,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how unusual each move of every series is: the change in units of its trailing
@@ -7180,6 +7453,10 @@ class Econometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Return (the change), Volatility Multiple, VaR Multiple, Percentile and
@@ -7276,6 +7553,7 @@ class Econometrics:
         ratio: bool = False,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the change of every series over the same months of every year, such as
@@ -7325,6 +7603,10 @@ class Econometrics:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set
                 otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per year (rows) and series the Start Value, End Value, Change
@@ -7401,6 +7683,7 @@ class Econometrics:
         level: float | None = None,
         include_benchmark: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the streak every series is on: whether its latest value is positive,
@@ -7452,6 +7735,10 @@ class Econometrics:
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per series the Start Date and number of Observations of its history,

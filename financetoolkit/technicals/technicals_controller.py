@@ -17,6 +17,7 @@ from financetoolkit.technicals import (
     volatility_model,
 )
 from financetoolkit.utilities import factor_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
@@ -114,6 +115,7 @@ FACTOR_PRICE_DIFFERENCES = (
 # ruff: noqa: E501
 
 
+@filter_shown_columns
 @track_sources
 class Technicals:
     """
@@ -210,6 +212,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates all Technical Indicators based on the data provided.
@@ -225,6 +228,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Technical indicators calculated based on the specified parameters.
@@ -335,6 +342,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects various breadth indicators based on the provided data.
@@ -353,6 +361,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Breadth indicators calculated based on the specified parameters.
@@ -580,6 +592,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the McClellan Oscillator for a given price series.
@@ -616,6 +629,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: McClellan Oscillator values.
@@ -702,6 +719,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the daily advance/decline signal for a given price series.
@@ -732,6 +750,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Advance/decline signal values (+1, 0 or -1).
@@ -814,6 +836,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the On-Balance Volume (OBV) for a given price series.
@@ -848,6 +871,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: On-Balance Volume values.
@@ -931,6 +958,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Accumulation/Distribution Line for a given price series.
@@ -962,6 +990,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Accumulation/Distribution Line values.
@@ -1058,6 +1090,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Chaikin Oscillator for a given price series.
@@ -1091,6 +1124,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Chaikin Oscillator values.
@@ -1179,6 +1216,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Chaikin Money Flow (CMF) for a given price series.
@@ -1215,6 +1253,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Chaikin Money Flow values, bounded between -1 and 1.
@@ -1310,6 +1352,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Ease of Movement (EMV) for a given price series.
@@ -1350,6 +1393,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Ease of Movement values.
@@ -1443,6 +1490,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Negative Volume Index (NVI) for a given price series.
@@ -1478,6 +1526,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Negative Volume Index values.
@@ -1571,6 +1623,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Positive Volume Index (PVI) for a given price series.
@@ -1606,6 +1659,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Positive Volume Index values.
@@ -1698,6 +1755,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects various momentum indicators based on the provided data.
@@ -1718,6 +1776,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Momentum indicators calculated based on the specified parameters.
@@ -1956,6 +2018,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Money Flow Index (MFI) for a given price series.
@@ -1987,6 +2050,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Money Flow Index (MFI) values.
@@ -2074,6 +2141,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Williams Percent R (Williams %R) for a given price series.
@@ -2104,6 +2172,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Williams %R values.
@@ -2190,6 +2262,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Aroon Indicator for a given price series.
@@ -2219,6 +2292,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -2313,6 +2390,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Commodity Channel Index (CCI) for a given price series.
@@ -2345,6 +2423,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Commodity Channel Index (CCI) values.
@@ -2439,6 +2521,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Relative Vigor Index (RVI) for a given price series.
@@ -2479,6 +2562,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Relative Vigor Index and Signal Line values.
@@ -2575,6 +2662,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Force Index for a given price series.
@@ -2605,6 +2693,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Force Index values.
@@ -2692,6 +2784,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Ultimate Oscillator for a given price series.
@@ -2729,6 +2822,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Ultimate Oscillator values.
@@ -2822,6 +2919,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Percentage Price Oscillator (PPO) for a given price series.
@@ -2858,6 +2956,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Percentage Price Oscillator (PPO) values as a decimal
@@ -2944,6 +3046,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Detrended Price Oscillator (DPO) for a given price series.
@@ -2976,6 +3079,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Detrended Price Oscillator (DPO) values.
@@ -3059,6 +3166,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Average Directional Index (ADX) for a given price series.
@@ -3096,6 +3204,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame or pd.Series: Average Directional Index (ADX) values.
@@ -3188,6 +3300,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Chande Momentum Oscillator (CMO) for a given price series.
@@ -3218,6 +3331,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Chande Momentum Oscillator values.
@@ -3303,6 +3420,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Ichimoku Cloud indicator for a given price series.
@@ -3351,6 +3469,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -3452,6 +3574,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Stochastic Oscillator indicator for a given price series.
@@ -3486,6 +3609,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Stochastic Oscillator (%K and %D) values.
@@ -3589,6 +3716,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Moving Average Convergence Divergence (MACD) indicator for a given price series.
@@ -3630,6 +3758,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -3724,6 +3856,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Relative Strength Index (RSI) indicator for a given price series.
@@ -3759,6 +3892,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -3842,6 +3979,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Balance of Power (BOP) indicator for a given price series.
@@ -3870,6 +4008,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -3958,6 +4100,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Awesome Oscillator (AO) for a given price series.
@@ -3992,6 +4135,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Awesome Oscillator (AO) values.
@@ -4088,6 +4235,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Vortex Indicator for a given price series.
@@ -4124,6 +4272,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -4222,6 +4374,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Elder Ray Index (Bull Power and Bear Power) for a given price series.
@@ -4255,6 +4408,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -4355,6 +4512,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Rate of Change (ROC) for a given price series.
@@ -4387,6 +4545,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Rate of Change values as a decimal (0.05 is 5%).
@@ -4473,6 +4635,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Choppiness Index (CHOP) for a given price series.
@@ -4509,6 +4672,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Choppiness Index values, bounded between 0 and 100.
@@ -4607,6 +4774,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Know Sure Thing (KST) for a given price series.
@@ -4652,6 +4820,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -4750,6 +4922,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects various overlap-based indicators based on the provided data.
@@ -4770,6 +4943,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Overlap-based indicators calculated based on the specified parameters.
@@ -4961,6 +5138,7 @@ class Technicals:
         lag: int | list[int] = 1,
         standardize: bool = False,
         method: str = "simple",
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate a Moving Average (MA) of a given price series: the simple, exponential,
@@ -5013,6 +5191,10 @@ class Technicals:
                 values. Defaults to False.
             method (str, optional): The moving average: "simple", "exponential",
                 "double_exponential", "triangular", "weighted" or "hull". Defaults to "simple".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5109,6 +5291,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Trix (Triple Exponential Moving Average) for a given price series.
@@ -5145,6 +5328,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5232,6 +5419,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Bollinger Bands for a given price series.
@@ -5277,6 +5465,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -5372,6 +5564,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Kaufman Adaptive Moving Average (KAMA) for a given price series.
@@ -5418,6 +5611,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: KAMA values.
@@ -5511,6 +5708,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Volume Weighted Average Price (VWAP) for a given price series.
@@ -5549,6 +5747,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5646,6 +5848,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Parabolic Stop and Reverse (SAR) for a given price series.
@@ -5681,6 +5884,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame or pd.Series:
@@ -5772,6 +5979,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Pivot Points for a given price series.
@@ -5807,6 +6015,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -5905,6 +6117,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Retrieves the support and resistance levels for the specified period and assets.
@@ -5958,6 +6171,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
            pd.Series or pd.DataFrame: The support and resistance levels for each asset.
@@ -6065,6 +6282,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Fibonacci Retracement Levels for a given price series.
@@ -6106,6 +6324,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Fibonacci Retracement Levels, one column per ratio in
@@ -6219,6 +6441,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects various volatility indicators based on the provided data.
@@ -6239,6 +6462,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Volatility indicators calculated based on the specified parameters.
@@ -6399,6 +6626,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the True Range (TR) for a given price series.
@@ -6428,6 +6656,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: True Range values.
@@ -6517,6 +6749,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Average True Range (ATR) of a given price series.
@@ -6563,6 +6796,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: ATR values per ticker or ATR growth rate (if growth is True).
@@ -6653,6 +6890,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Supertrend indicator for a given price series.
@@ -6699,6 +6937,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame:
@@ -6804,6 +7046,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Keltner Channels for a given price series.
@@ -6841,6 +7084,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Keltner Channels (upper, middle, lower).
@@ -6937,6 +7184,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the Donchian Channels for a given price series.
@@ -6973,6 +7221,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Donchian Channels (upper, middle, lower).
@@ -7063,6 +7315,7 @@ class Technicals:
         period: str = "daily",
         close_column: str = "Adj Close",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Retrieves the Volatility Cone for the specified period and assets.
@@ -7109,6 +7362,10 @@ class Technicals:
             rounding (int | None, optional): The number of decimals to round the results to.
                 If None, the rounding value specified during the initialization of the Toolkit instance will be used.
                 Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Volatility Cone for each asset, indexed by rolling window.
@@ -7215,6 +7472,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the TRIN (Arms Index) for a given price series.
@@ -7252,6 +7510,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: TRIN values.
@@ -7348,6 +7610,7 @@ class Technicals:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculate the New Highs - New Lows for a given price series.
@@ -7387,6 +7650,10 @@ class Technicals:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: New Highs - New Lows values.
@@ -7498,6 +7765,7 @@ class Technicals:
         long_window: int = 200,
         high_low_window: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the breadth of the market the Toolkit's tickers make up: how many of them take
@@ -7553,6 +7821,10 @@ class Technicals:
                 high or low, so those stay NaN), and 252 for intraday data.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The breadth measures per date.
@@ -7610,6 +7882,7 @@ class Technicals:
         frequency: str = "month",
         close_column: str = "Adj Close",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the seasonality of every ticker's returns: the average return per calendar
@@ -7640,6 +7913,10 @@ class Technicals:
                 Defaults to "Adj Close".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Average Return, Median Return, Hit Rate, t-Statistic and
@@ -7712,6 +7989,7 @@ class Technicals:
         close_column: str = "Adj Close",
         window: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the relative strength of every ticker against the Benchmark and against the
@@ -7756,6 +8034,10 @@ class Technicals:
                 measure zero, so pass a longer window for yearly data).
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Relative Strength, Mansfield Relative Strength and Relative Strength
@@ -7838,6 +8120,7 @@ class Technicals:
         detail: str | None = None,
         column: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -7897,6 +8180,10 @@ class Technicals:
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the indicators that take them, e.g. window=14 or
                 close_column="Close".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The summary per indicator and horizon, or with detail that part of
@@ -7986,6 +8273,7 @@ class Technicals:
         close_column: str = "Adj Close",
         patterns: str | list[str] | None = None,
         signals_only: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Recognise 15 classic candlestick patterns in every ticker's candles, with the definitions
@@ -8046,6 +8334,10 @@ class Technicals:
                 "Engulfing"]. Defaults to None, which returns all 15.
             signals_only (bool, optional): Whether to return only the periods in which at least one
                 of the returned patterns occurs for at least one ticker. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The patterns per date, with a column per pattern and ticker: 1 (bullish),
@@ -8163,6 +8455,7 @@ class Technicals:
         bollinger_std_dev: float = 2,
         high_low_window: int | None = None,
         signals_only: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Turn the moving averages, the MACD, the RSI, the Bollinger Bands and new highs and lows
@@ -8222,6 +8515,10 @@ class Technicals:
                 (and intraday), 52 weekly, 12 monthly, 4 quarterly and 1 yearly.
             signals_only (bool, optional): Whether to return only the periods in which at least one
                 signal occurs for at least one ticker. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The signals per date, with a column per signal and ticker: 1 (crossed
@@ -8318,6 +8615,7 @@ class Technicals:
         show_crossings: bool = False,
         column: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -8375,6 +8673,10 @@ class Technicals:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the indicator, e.g. window=14 or period="weekly".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The summary per ticker: Latest, Latest Date, Percentile, Rank,

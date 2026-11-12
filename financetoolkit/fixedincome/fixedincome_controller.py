@@ -57,6 +57,7 @@ from financetoolkit.fixedincome import (
     yieldcurve_model,
 )
 from financetoolkit.utilities import logger_model, validation_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
@@ -344,6 +345,7 @@ DURATION_TYPES = {
 DEFAULT_SPREAD_MATURITIES = (2, 3, 5, 7, 10, 20, 30)
 
 
+@filter_shown_columns
 @track_sources
 class FixedIncome:
     """
@@ -652,6 +654,7 @@ class FixedIncome:
         maturity_end: str | None = None,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Collects the statistics of individual bonds from their market price: the yield to
@@ -733,6 +736,10 @@ class FixedIncome:
                 with prices.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bond, indexed by CUSIP (Treasuries) or ISIN, with the
@@ -811,6 +818,7 @@ class FixedIncome:
         maturity_end: str | None = None,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the present value of individual bonds: their coupons and principal
@@ -859,6 +867,10 @@ class FixedIncome:
                 Defaults to None, the latest day with prices.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
@@ -916,6 +928,7 @@ class FixedIncome:
         maturity_end: str | None = None,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the duration of individual bonds at their yield to maturity. It has the
@@ -970,6 +983,10 @@ class FixedIncome:
                 Defaults to None, the latest day with prices.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
@@ -1031,6 +1048,7 @@ class FixedIncome:
         maturity_end: str | None = None,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the yield to maturity of individual bonds from their market price. The yield to maturity is the
@@ -1077,6 +1095,10 @@ class FixedIncome:
                 Defaults to None, the latest day with prices.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
@@ -1126,6 +1148,7 @@ class FixedIncome:
         maturity_end: str | None = None,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the zero-volatility spread (Z-spread) of individual bonds over the Treasury
@@ -1172,6 +1195,10 @@ class FixedIncome:
                 Defaults to None, the latest day with prices.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
@@ -1237,6 +1264,7 @@ class FixedIncome:
         maturity_end: str | None = None,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the key rate durations of individual bonds on the Treasury zero-coupon curve:
@@ -1292,6 +1320,10 @@ class FixedIncome:
                 Defaults to None, the latest day with prices.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
@@ -1368,6 +1400,7 @@ class FixedIncome:
         date: str | None = None,
         from_date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Estimates the percentage change in the price of individual bonds for a change in their
@@ -1431,6 +1464,10 @@ class FixedIncome:
                 it. Defaults to None, which estimates the price change for yield_change instead.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bond with the Issuer, Security Type, Coupon, Maturity,
@@ -1578,6 +1615,7 @@ class FixedIncome:
         bonds: list[str] | str | None = None,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the bond-equivalent yield (BEY) of every Treasury bill from its price.
@@ -1610,6 +1648,10 @@ class FixedIncome:
                 the latest day with prices.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bill, indexed by CUSIP, with the Maturity, Days to
@@ -1686,6 +1728,7 @@ class FixedIncome:
         country: str = "United States",
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the implied forward rates between pairs of maturities of a country's
@@ -1722,6 +1765,10 @@ class FixedIncome:
                 before it with a curve. Defaults to None, the end date.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The forward rate (decimal, annually compounded) for each combination
@@ -1787,6 +1834,7 @@ class FixedIncome:
         country: str = "United States",
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the par yields of any maturity from a country's zero-coupon (spot) yield
@@ -1821,6 +1869,10 @@ class FixedIncome:
                 before it with a curve. Defaults to None, the end date.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: The par yield (decimal) by maturity in years.
@@ -1875,6 +1927,7 @@ class FixedIncome:
         country: str = "United States",
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the spreads between pairs of maturities of a country's government bond yield
@@ -1908,6 +1961,10 @@ class FixedIncome:
                 before it with a curve. Defaults to None, the end date.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The spread (decimal) for each combination of long (rows) and short
@@ -1967,6 +2024,7 @@ class FixedIncome:
         self,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the breakeven inflation rates of the US Treasury curve on a day: the nominal
@@ -1997,6 +2055,10 @@ class FixedIncome:
                 before it. Defaults to None, the end date.
             rounding (int | None, optional): The number of decimals to round the results
                 to. Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Nominal Yield, Real Yield and Breakeven Inflation Rate (decimals)
@@ -2072,6 +2134,7 @@ class FixedIncome:
         lag: int = 1,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the government bond yield for a variety of countries over time from the OECD. By
@@ -2116,6 +2179,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the long-term (10-year) government bond yield, or the
@@ -2230,6 +2297,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the government bond yield curve of a variety of countries, every maturity
@@ -2297,6 +2365,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame with the yields as decimals, indexed by date with a
@@ -2459,6 +2531,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the daily U.S. Treasury par yield curve rates as officially published by the
@@ -2489,6 +2562,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Notes:
             The underlying endpoint caps each request at 90 calendar days of data, so this method
@@ -2711,6 +2788,7 @@ class FixedIncome:
         countries: list[str] | str = "United States",
         period: str = "daily",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the zero-coupon (spot) yield curve of a country by bootstrapping its
@@ -2744,6 +2822,10 @@ class FixedIncome:
             period (str, optional): Whether to use the daily, weekly or monthly curves.
                 Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The zero-coupon rates as decimals (annually compounded), indexed by
@@ -2801,6 +2883,7 @@ class FixedIncome:
         svensson: bool = True,
         maturities: list[float | str] | str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Fits the Nelson-Siegel-Svensson model to the zero-coupon yield curve of a country on
@@ -2860,6 +2943,10 @@ class FixedIncome:
                 return the fitted zero-coupon yields at instead of the parameters. Defaults
                 to None, which returns the parameters.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per date, the parameters (Beta 0 to Beta 3 as continuously
@@ -2963,6 +3050,7 @@ class FixedIncome:
         changes: bool = True,
         scores: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the principal components of a country's government bond yield curve: the
@@ -2999,6 +3087,10 @@ class FixedIncome:
             scores (bool, optional): Whether to return the value of every component per date
                 (the scores) instead of the loadings. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The loadings per maturity and component, with the share of the
@@ -3086,6 +3178,7 @@ class FixedIncome:
         short_rate: str = "3M",
         period: str = "daily",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calibrates the Vasicek and Cox-Ingersoll-Ross (CIR) short-rate models to the history
@@ -3128,6 +3221,10 @@ class FixedIncome:
             period (str, optional): Whether to calibrate on daily, weekly or monthly rates.
                 Defaults to "daily".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per model (columns Vasicek and CIR) the Speed of Mean Reversion, the
@@ -3234,6 +3331,7 @@ class FixedIncome:
         paths: int = 10000,
         seed: int | None = 0,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Simulates the future path of a country's short-term interest rate with the
@@ -3277,6 +3375,10 @@ class FixedIncome:
             seed (int | None, optional): The random seed, None for a different simulation
                 every time. Defaults to 0.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Mean and the percentiles of the simulated rate (as decimals),
@@ -3392,6 +3494,7 @@ class FixedIncome:
         security_type: list[str] | str | None = None,
         security_term: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the results of the US Treasury auctions held between the start and end
@@ -3427,6 +3530,10 @@ class FixedIncome:
                 "13-Week", "10-Year" or "30-Year". Defaults to None, which returns every term.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which keeps the precision the Treasury publishes.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per auction, indexed by the auction date, with the security,
@@ -3529,6 +3636,7 @@ class FixedIncome:
         maturity_end: str | None = None,
         bonds: list[str] | str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves thousands of individual US dollar bonds with their price, yield to maturity,
@@ -3578,6 +3686,10 @@ class FixedIncome:
                 CUSIPs, as a list or a comma-separated string. Defaults to None, every bond.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per bond, indexed by ISIN, with the Issuer, CUSIP, Coupon
@@ -3803,6 +3915,7 @@ class FixedIncome:
         maturity_years: list[float] | str | float | None = None,
         etfs: list[str] | str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Compares the credit spreads of bond issuers at the same maturities: the G-Spread
@@ -3834,6 +3947,10 @@ class FixedIncome:
                 `get_bond_universe`). Defaults to None, LQD, IGSB and USHY.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per issuer (the name the funds give it) the G-Spread at each
@@ -3898,6 +4015,7 @@ class FixedIncome:
         security_type: list[str] | str | None = None,
         bonds: list[str] | str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves every marketable US Treasury (bills, notes, bonds, TIPS and floating rate
@@ -3942,6 +4060,10 @@ class FixedIncome:
                 every security.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per security, indexed by CUSIP, with the Security Type,
@@ -4048,6 +4170,7 @@ class FixedIncome:
         maturity: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The ICE BofA Option-Adjusted Spreads (OASs) are the calculated spreads between a computed OAS index
@@ -4069,6 +4192,10 @@ class FixedIncome:
                 Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Notes:
             ICE licenses only the most recent three years of every ICE BofA series to FRED. A
@@ -4139,6 +4266,7 @@ class FixedIncome:
         maturity: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         This data represents the effective yield of the ICE BofA Indices, When the last calendar day of the month
@@ -4164,6 +4292,10 @@ class FixedIncome:
                 Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Notes:
             ICE licenses only the most recent three years of every ICE BofA series to FRED. A
@@ -4232,6 +4364,7 @@ class FixedIncome:
         maturity: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         This data represents the total return of the ICE BofA Indices, When the last calendar day of the month
@@ -4250,6 +4383,10 @@ class FixedIncome:
                 Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Notes:
             ICE licenses only the most recent three years of every ICE BofA series to FRED. A
@@ -4319,6 +4456,7 @@ class FixedIncome:
         maturity: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         This data represents the semi-annual yield to worst of the ICE BofA Indices, When the last calendar day of the month
@@ -4338,6 +4476,10 @@ class FixedIncome:
                 Defaults to True (by maturity).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Notes:
             ICE licenses only the most recent three years of every ICE BofA series to FRED. A
@@ -4409,6 +4551,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the High Quality Market (HQM) corporate bond yield curve of the U.S.
@@ -4444,6 +4587,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The monthly average rates, indexed by month with a column per maturity.
@@ -4503,6 +4650,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Computes the credit spread of high quality US corporate bonds per maturity: the
@@ -4541,6 +4689,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The monthly spreads, indexed by month with a column per maturity.
@@ -4599,6 +4751,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the yields of corporate bonds of a variety of countries, by rating where
@@ -4643,6 +4796,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The yields (or spreads) as decimals, indexed by month with a column
@@ -4789,6 +4946,7 @@ class FixedIncome:
         include_withdrawals: bool = False,
         region: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the rating transition matrix of a credit rating agency: for every rating
@@ -4845,6 +5003,10 @@ class FixedIncome:
                 "America", "Asia", "Europe", "EU members", "International" or "Oceania".
                 Defaults to None, which covers all of them.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The transition matrix, with a row per rating at the start of the
@@ -4930,6 +5092,7 @@ class FixedIncome:
         rating_type: str = "corporate",
         region: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the one-year default rates per rating of a credit rating agency, year by
@@ -4967,6 +5130,10 @@ class FixedIncome:
                 "America", "Asia", "Europe", "EU members", "International" or "Oceania".
                 Defaults to None, which covers all of them.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The default rates as decimals, indexed by year with a column per
@@ -5070,6 +5237,7 @@ class FixedIncome:
         recovery_rate: float = 0.4,
         horizons: list[float] | str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the default probabilities that credit spreads imply. Investors in a
@@ -5104,6 +5272,10 @@ class FixedIncome:
             horizons (list[float] | str | None, optional): The horizons in years, as a list or
                 a comma-separated string. Defaults to None, which uses 1, 3, 5 and 10 years.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Spread, the Hazard Rate and the default probability per horizon
@@ -5187,6 +5359,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves Moody's seasoned corporate bond yields for Aaa (the highest rating) and Baa
@@ -5228,6 +5401,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The "Aaa" and "Baa" yields, or with spread=True the "Aaa", "Baa" and
@@ -5298,6 +5475,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the credit spread of Gilchrist and Zakrajšek (2012) and its excess bond
@@ -5328,6 +5506,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The "GZ Credit Spread", "Excess Bond Premium" and "Recession
@@ -5378,6 +5560,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the Treasury term premia of Adrian, Crump and Moench (2013), as the
@@ -5422,6 +5605,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The rates, indexed by date with a column per component ("Term
@@ -5492,6 +5679,7 @@ class FixedIncome:
         lag: int = 1,
         standardize: bool = False,
         maturity_years: list[int] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the risk-free interest rate term structures the European Insurance and
@@ -5542,6 +5730,10 @@ class FixedIncome:
             maturity_years (list[int] | None, optional): The maturities in years to keep, e.g.
                 [1, 2, 5, 10, 20, 30] (or "1,2,5,10,20,30") for the key points of the curve. Defaults to None, which
                 keeps every maturity from 1 to 150 years.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The rates, indexed by month with a column per currency or country and
@@ -5633,6 +5825,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the symmetric adjustment of the equity capital charge of Solvency II, the
@@ -5664,6 +5857,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The symmetric adjustment and the type 1 and type 2 equity charges,
@@ -5723,6 +5920,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the UK yield curves the Bank of England estimates daily from 1985, for
@@ -5754,6 +5952,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The spot rates as decimals, indexed by date with a column per
@@ -5828,6 +6030,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the composite cost of borrowing for non-financial corporations the European
@@ -5854,6 +6057,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The rate, indexed by month with a column per country.
@@ -5910,6 +6117,7 @@ class FixedIncome:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the Composite Indicator of Systemic Stress (CISS) the European Central Bank
@@ -5940,6 +6148,10 @@ class FixedIncome:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The index, indexed by date with a column per area.
@@ -6001,6 +6213,7 @@ class FixedIncome:
         nominal: bool = True,
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Euribor rates, short for Euro Interbank Offered Rate, are the interest rates at which a panel
@@ -6027,6 +6240,10 @@ class FixedIncome:
                 were requested rather than silently answering them with a nominal rate. Defaults to True.
             rounding (int | None, optional): Rounding precision for the rates. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pandas.DataFrame: DataFrame containing the Euribor rates for the specified maturities.
@@ -6136,6 +6353,7 @@ class FixedIncome:
         period: str = "daily",
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The Governing Council of the ECB sets the key interest rates for the
@@ -6178,6 +6396,10 @@ class FixedIncome:
                 yearly data. Defaults to 'daily'.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the ECB rates.
@@ -6250,6 +6472,7 @@ class FixedIncome:
         rate: str = "EFFR",
         rounding: int | None = None,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Federal Reserve rates as published by the Federal Reserve Bank of New York.
@@ -6304,6 +6527,10 @@ class FixedIncome:
             rate (str): The rate to return. Defaults to 'EFFR' (Effective Federal Funds Rate).
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Federal Reserve rates including the rate,
@@ -6400,6 +6627,7 @@ class FixedIncome:
         years: float = 30,
         payments_per_year: int = 12,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the monthly payment of a new 30-year fixed-rate mortgage at every weekly US
@@ -6437,6 +6665,10 @@ class FixedIncome:
             payments_per_year (int, optional): The number of payments per year. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per survey date the Rate (a decimal), the Payment, the Total Interest
@@ -6486,6 +6718,7 @@ class FixedIncome:
         years: float = 30,
         payments_per_year: int = 12,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the loan a fixed monthly payment carries at every weekly US mortgage rate:
@@ -6525,6 +6758,10 @@ class FixedIncome:
             payments_per_year (int, optional): The number of payments per year. Defaults to 12.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per survey date the Rate (a decimal), the Payment, the Affordable Loan
@@ -6579,6 +6816,7 @@ class FixedIncome:
         payments_per_year: int = 12,
         date: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the amortization schedule of a new 30-year fixed-rate mortgage at the US
@@ -6612,6 +6850,10 @@ class FixedIncome:
                 latest rate up to the end date.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per payment number (1 to years * payments per year) the Rate (a

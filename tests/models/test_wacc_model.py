@@ -5,6 +5,37 @@ import pytest
 from financetoolkit.models import wacc_model
 
 
+@pytest.mark.parametrize(
+    "total_debt, interest_expense", [(1000.0, 50.0), (0.0, 0.0), (1000.0, 0.0)]
+)
+def test_weighted_average_cost_of_capital_accepts_scalar_inputs(
+    total_debt, interest_expense
+):
+    inputs = {
+        "share_price": 10.0,
+        "total_shares_outstanding": 100.0,
+        "interest_expense": interest_expense,
+        "total_debt": total_debt,
+        "risk_free_rate": 0.02,
+        "beta": 1.0,
+        "benchmark_returns": 0.08,
+        "income_tax_expense": 21.0,
+        "income_before_tax": 100.0,
+    }
+    expected = wacc_model.get_weighted_average_cost_of_capital(
+        **{name: pd.Series([value]) for name, value in inputs.items()}
+    )
+
+    result = wacc_model.get_weighted_average_cost_of_capital(**inputs)
+
+    pd.testing.assert_frame_equal(result, expected)
+    equity = inputs["share_price"] * inputs["total_shares_outstanding"]
+    expected_wacc = (equity * 0.08 + interest_expense * 0.79) / (equity + total_debt)
+    assert result.loc["Weighted Average Cost of Capital", 0] == pytest.approx(
+        expected_wacc
+    )
+
+
 def test_get_cost_of_equity(recorder):
     recorder.capture(
         wacc_model.get_cost_of_equity(

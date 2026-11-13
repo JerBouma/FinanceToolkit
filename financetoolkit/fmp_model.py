@@ -1839,8 +1839,9 @@ def get_earnings_calendar(
 
             earnings_calendar = earnings_calendar.rename(columns=naming)
 
+            # A window that reaches today keeps the scheduled dates after it.
             earnings_calendar = earnings_calendar.sort_index(axis=0).truncate(
-                before=start_date, after=end_date, axis=0
+                before=start_date, after=helpers.calendar_end_date(end_date), axis=0
             )
 
             return ticker, earnings_calendar[naming.values()], True
@@ -1951,8 +1952,9 @@ def get_dividend_calendar(
                     pd.to_numeric(dividend_calendar["Yield"], errors="coerce") / 100
                 )
 
+            # A window that reaches today keeps the scheduled dates after it.
             dividend_calendar = dividend_calendar.sort_index(axis=0).truncate(
-                before=start_date, after=end_date, axis=0
+                before=start_date, after=helpers.calendar_end_date(end_date), axis=0
             )
 
             return ticker, dividend_calendar[naming.values()], True
@@ -3356,6 +3358,84 @@ def add_price_target_metrics(
     return pd.concat(parts + [targets.drop(index=target_rows)])
 
 
+# The first word of an analyst company stands for the company in news titles ("Stifel" for
+# Stifel Nicolaus) when it has at least this many letters; shorter ones ("Loop", "Bank") are
+# too common.
+SHORTEST_COMPANY_WORD = 5
+
+
+def correct_analyst_companies(targets: pd.DataFrame) -> pd.DataFrame:
+    """
+    Credits each price target to the analyst company its news article names. The price
+    target news occasionally names another company than the article: a target reported as
+    "PT Raised to $320 at JPMorgan" can be listed under Macquarie, which then shows as a
+    jump in that company's targets. When the title does not name the listed company but
+    names exactly one other company that covers the stock, the target is credited to that
+    company, or dropped when the same article already lists that company (one article
+    listed twice, e.g. "Morgan Stanley Renames NVIDIA to Top Pick" under both Morgan
+    Stanley and Wells Fargo). Titles that name no company (general news) keep the listed
+    company.
+
+    Args:
+        targets (pd.DataFrame): The price target news of one ticker with the analystCompany
+            and newsTitle columns.
+
+    Returns:
+        pd.DataFrame: The price target news with the analystCompany corrected.
+    """
+    if not {"analystCompany", "newsTitle"} <= set(targets.columns):
+        return targets
+
+    def names(company: str) -> list[str]:
+        # "J.P. Morgan" appears as "JP Morgan" and "JPMorgan", "Stifel Nicolaus" as
+        # "Stifel"; a short or common first word ("Morgan", "Robert") would match others.
+        spaced = re.sub(r"[^a-z0-9 ]", "", company.lower()).strip()
+        first = spaced.split(" ")[0]
+        variants = {spaced, spaced.replace(" ", "")}
+        if len(first) >= SHORTEST_COMPANY_WORD and first not in {
+            "morgan",
+            "robert",
+            "industrial",
+        }:
+            variants.add(first)
+        return [variant for variant in variants if variant]
+
+    companies = {
+        company: names(company)
+        for company in targets["analystCompany"].dropna().unique()
+    }
+
+    def named_in(title: str, company: str) -> bool:
+        return any(
+            re.search(rf"\b{re.escape(variant)}\b", title)
+            for variant in companies[company]
+        )
+
+    def credited_company(row: pd.Series) -> str:
+        company = row["analystCompany"]
+        if not isinstance(company, str) or not isinstance(row["newsTitle"], str):
+            return company
+        title = re.sub(r"[^a-z0-9 ]", "", row["newsTitle"].lower())
+        if named_in(title, company):
+            return company
+        others = [
+            other for other in companies if other != company and named_in(title, other)
+        ]
+        return others[0] if len(others) == 1 else company
+
+    credited = targets.apply(credited_company, axis=1)
+    corrected = credited != targets["analystCompany"]
+    targets = targets.assign(analystCompany=credited)
+
+    # The news can list one article twice, under the named company with its target and
+    # under another with a different one; the corrected copy is then dropped.
+    duplicate = targets.duplicated(
+        ["publishedDate", "newsTitle", "analystCompany"], keep=False
+    )
+
+    return targets[~(corrected & duplicate)]
+
+
 def get_price_target_history(
     tickers: list[str] | str,
     api_key: str,
@@ -3366,10 +3446,14 @@ def get_price_target_history(
 ) -> tuple[pd.DataFrame, list[str]]:
     """
     Retrieves every published analyst price target of each ticker: per date and analyst
-    company the split-adjusted target and the share price when it was published.
+    company the split-adjusted target, the share price when it was published and the
+    company's previous target, so that revisions can be told apart from new coverage.
 
     The endpoint returns the most recent hundred targets per page and ignores the date
-    range, so pages are requested until they reach back before the start date.
+    range, so pages are requested until they reach a year before the start date: the
+    previous target of a company is looked up over the year before each target, the
+    horizon of a price target. Targets the news lists under another company than the
+    article names are credited to the named company (see correct_analyst_companies).
 
     Args:
         tickers (list[str] | str): The tickers to retrieve the price targets for.
@@ -3386,9 +3470,10 @@ def get_price_target_history(
     page_size = 100
     start = pd.Timestamp(start_date) if start_date else None
     end = pd.Timestamp(end_date) if end_date else None
-    date_range = (f"&from={start_date}" if start_date else "") + (
-        f"&to={end_date}" if end_date else ""
-    )
+    lookback = start - pd.Timedelta(days=365) if start is not None else None
+    date_range = (
+        f"&from={lookback.strftime('%Y-%m-%d')}" if lookback is not None else ""
+    ) + (f"&to={end_date}" if end_date else "")
 
     def worker(ticker):
         pages = []
@@ -3408,10 +3493,10 @@ def get_price_target_history(
             pages.append(targets)
             oldest = pd.to_datetime(targets["publishedDate"]).min().tz_localize(None)
 
-            if len(targets) < page_size or (start is not None and oldest < start):
+            if len(targets) < page_size or (lookback is not None and oldest < lookback):
                 break
 
-        targets = pd.concat(pages, ignore_index=True)
+        targets = correct_analyst_companies(pd.concat(pages, ignore_index=True))
         # The publication time is in UTC; the day is what the targets are compared on.
         targets["Date"] = (
             pd.to_datetime(targets["publishedDate"]).dt.tz_localize(None).dt.normalize()
@@ -3430,6 +3515,19 @@ def get_price_target_history(
             / targets["Price When Posted"].where(targets["Price When Posted"] > 0)
             - 1
         )
+        # The company's previous target, when it published one in the year before: a price
+        # target looks a year ahead, so an older one no longer stands.
+        targets = targets.sort_values("Date", kind="stable")
+        companies = targets.groupby("Analyst Company", sort=False)
+        previous_date = companies["Date"].shift(1)
+        recent = (targets["Date"] - previous_date) <= pd.Timedelta(days=365)
+        targets["Previous Target"] = companies["Price Target"].shift(1).where(recent)
+        targets["Previous Date"] = previous_date.where(recent).dt.strftime("%Y-%m-%d")
+        targets["Target Change"] = (
+            targets["Price Target"]
+            / targets["Previous Target"].where(targets["Previous Target"] > 0)
+            - 1
+        )
         targets = targets.set_index(["Date", "Analyst Company"]).sort_index()
         targets = targets.loc[
             start
@@ -3437,7 +3535,14 @@ def get_price_target_history(
             or targets.index.get_level_values(0).max()
         ]  # noqa: E501
 
-        columns = ["Price Target", "Price When Posted", "Implied Upside"]
+        columns = [
+            "Price Target",
+            "Price When Posted",
+            "Implied Upside",
+            "Previous Target",
+            "Previous Date",
+            "Target Change",
+        ]
 
         return ticker, targets[columns], not targets.empty
 

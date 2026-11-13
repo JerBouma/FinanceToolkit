@@ -1263,9 +1263,10 @@ def test_price_target_history_pages_back_to_the_start_date(monkeypatch):
         ["NVDA"], "key", start_date="2025-01-01", end_date="2025-03-31"
     )
 
-    # The second page reaches back before the start date, so no third page is requested.
+    # The second page holds the last targets, so no third page is requested; the previous
+    # targets are looked up over the year before the start date.
     assert len(requested) == 2
-    assert "from=2025-01-01" in requested[0] and "to=2025-03-31" in requested[0]
+    assert "from=2024-01-02" in requested[0] and "to=2025-03-31" in requested[0]
     nvda = history.loc["NVDA"]
     assert nvda.index.get_level_values("Analyst Company").tolist() == [
         "Broker",
@@ -1273,7 +1274,69 @@ def test_price_target_history_pages_back_to_the_start_date(monkeypatch):
         "Bank",
     ]
     assert nvda["Implied Upside"].tolist() == pytest.approx([-0.2, 0.0, 0.25])
+    # The Broker's target of December, before the start date, is the previous one.
+    assert nvda["Previous Target"].iloc[0] == 90
+    assert nvda["Previous Date"].iloc[0] == "2024-12-02"
+    assert nvda["Target Change"].iloc[0] == pytest.approx(100 / 90 - 1)
+    # The Bank's first target has no previous one: new coverage.
+    assert pd.isna(nvda["Previous Target"].iloc[1])
+    assert nvda["Target Change"].iloc[2] == pytest.approx(150 / 140 - 1)
     assert missing == []
+
+
+def test_a_previous_target_older_than_a_year_no_longer_stands(monkeypatch):
+    def target(day, price_target):
+        return {
+            "publishedDate": f"{day}T12:00:00.000Z",
+            "analystCompany": "Firm",
+            "newsTitle": f"NVIDIA (NVDA) PT Raised to ${price_target} at Firm",
+            "adjPriceTarget": price_target,
+            "priceWhenPosted": 100,
+        }
+
+    monkeypatch.setattr(
+        fmp_model,
+        "get_financial_data",
+        lambda url, **kwargs: pd.DataFrame(
+            [target("2025-06-02", 150), target("2024-05-01", 120)]
+            if "page=0" in url
+            else []
+        ),
+    )
+
+    history, _ = fmp_model.get_price_target_history("NVDA", "key")
+
+    assert history["Previous Target"].isna().all()
+
+
+def test_targets_listed_under_another_company_are_credited_to_the_named_one():
+    targets = pd.DataFrame(
+        [
+            # Listed under Macquarie, reported at JPMorgan.
+            ("2026-08-27T06:25:00.000Z", "Macquarie", 320, "NVIDIA (NVDA) PT Raised to $320 at JPMorgan"),
+            ("2026-05-21T06:25:00.000Z", "J.P. Morgan", 300, "Nvidia price target raised to $300 at JP Morgan"),
+            ("2026-05-21T06:20:00.000Z", "Macquarie", 310, "Macquarie Reiterates Outperform Rating on NVIDIA"),
+            # One article listed twice: the copy under Wells Fargo is dropped.
+            ("2026-10-02T09:25:00.000Z", "Wells Fargo", 210, "Morgan Stanley Renames NVIDIA (NVDA) to Top Pick"),
+            ("2026-10-02T09:25:00.000Z", "Morgan Stanley", 230, "Morgan Stanley Renames NVIDIA (NVDA) to Top Pick"),
+            ("2026-05-12T10:22:10.000Z", "Wells Fargo", 315, "Nvidia price target raised to $315 at Wells Fargo"),
+            # A title that names no company keeps the listed one.
+            ("2026-06-01T10:00:00.000Z", "Wells Fargo", 320, "Analyst says the AI build-out has years to run"),
+        ],
+        columns=["publishedDate", "analystCompany", "adjPriceTarget", "newsTitle"],
+    )  # fmt: skip
+
+    corrected = fmp_model.correct_analyst_companies(targets)
+
+    assert corrected["analystCompany"].tolist() == [
+        "J.P. Morgan",
+        "J.P. Morgan",
+        "Macquarie",
+        "Morgan Stanley",
+        "Wells Fargo",
+        "Wells Fargo",
+    ]
+    assert corrected["adjPriceTarget"].tolist() == [320, 300, 310, 230, 315, 320]
 
 
 def test_analyst_recommendations_count_the_analysts_and_score_them(responses):

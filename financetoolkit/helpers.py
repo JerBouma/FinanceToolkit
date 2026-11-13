@@ -1055,6 +1055,26 @@ def add_score_zone(
     return pd.concat([results.astype(object), zone]).reindex(tickers, level=0)
 
 
+def calendar_end_date(end_date: str | None) -> str | None:
+    """
+    Returns the date a calendar of scheduled events (earnings releases, dividends) is cut
+    off at. A window that reaches today also keeps the events scheduled after it: the
+    upcoming release is what a calendar is read for, and the Toolkit's end date defaults
+    to today. A window that ends in the past is cut off at its end date.
+
+    Args:
+        end_date (str | None): The end date of the window (YYYY-MM-DD), or None.
+
+    Returns:
+        str | None: The end date, or None when the window reaches today and nothing is cut
+            off.
+    """
+    if end_date is None or pd.Timestamp(end_date) >= pd.Timestamp.today().normalize():
+        return None
+
+    return end_date
+
+
 def rank_across_tickers(data: pd.DataFrame) -> pd.DataFrame:
     """
     Ranks the tickers within every period, from the highest value (rank 1) to the lowest,

@@ -179,3 +179,32 @@ def test_statements_of_a_52_53_week_year_keep_every_quarter(monkeypatch):
     ]
     # The Period End Date keeps the day the period actually ended.
     assert statement.loc["periodEndDate"].tolist() == dates
+
+
+def test_the_calendars_keep_the_scheduled_dates_when_the_window_reaches_today(
+    monkeypatch,
+):
+    upcoming = (pd.Timestamp.today() + pd.Timedelta(days=4)).strftime("%Y-%m-%d")
+    today = pd.Timestamp.today().strftime("%Y-%m-%d")
+    _answer(
+        monkeypatch,
+        [
+            {"date": upcoming, "epsActual": None, "epsEstimated": 2.47,
+             "revenueActual": None, "revenueEstimated": 108.7e9, "lastUpdated": today},
+            {"date": "2026-08-26", "epsActual": 2.22, "epsEstimated": 2.09,
+             "revenueActual": 96.2e9, "revenueEstimated": 92.3e9, "lastUpdated": today},
+        ],
+    )  # fmt: skip
+
+    # The Toolkit's end date defaults to today; the next release comes after it.
+    calendar, _ = fmp_model.get_earnings_calendar(
+        "NVDA", api_key="KEY", start_date="2026-08-01", end_date=today
+    )
+    assert calendar.loc["NVDA"].index[-1] == pd.Timestamp(upcoming)
+    assert np.isnan(calendar.loc["NVDA", "EPS"].iloc[-1])
+
+    # A window that ends in the past stays cut off at its end date.
+    calendar, _ = fmp_model.get_earnings_calendar(
+        "NVDA", api_key="KEY", start_date="2026-08-01", end_date="2026-09-30"
+    )
+    assert list(calendar.loc["NVDA"].index) == [pd.Timestamp("2026-08-26")]

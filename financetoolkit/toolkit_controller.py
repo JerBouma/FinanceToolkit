@@ -2117,6 +2117,10 @@ class Toolkit:
         Obtain Earnings Calendars for any range of companies. You have the option to
         obtain the actual dates or to convert to the corresponding quarters.
 
+        Filtered to this Toolkit instance's start_date and end_date; when the end_date is
+        today or later (the default), the scheduled releases after today are included too,
+        with the estimates and without reported figures yet.
+
         Note that this information requires a Premium FMP subscription.
 
         The surprise is the reported EPS against the estimate, usually as a percentage of the
@@ -3157,6 +3161,9 @@ class Toolkit:
 
         If a company does not pay any dividend, the function will mention that it was not able
         to find any dividend data for that company.
+
+        Filtered to this Toolkit instance's start_date and end_date; when the end_date is
+        today or later (the default), the dividends scheduled after today are included too.
 
         Also known as: dividend dates, ex-dividend date, dividend history.
 
@@ -4798,11 +4805,23 @@ class Toolkit:
         """
         Obtain every price target analysts published for each company: per date and
         analyst company the target (adjusted for stock splits), the share price when it
-        was published and the upside it implied at that moment. Following the targets
-        over time shows how analysts revise their expectations, and unlike today's
-        consensus each row only uses what was known on its date.
+        was published and the upside it implied at that moment, and the company's
+        previous target with the change. Following the targets over time shows how
+        analysts revise their expectations, and unlike today's consensus each row only
+        uses what was known on its date.
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        - Previous Target and Previous Date: the analyst company's target before this one,
+          when it published one in the year before (a price target looks about a year
+          ahead, so an older one no longer stands). Without one, the target is new
+          coverage (an initiation, or a company returning after more than a year).
+        - Target Change: Price Target / Previous Target − 1.
+
+        The median of the latest target per company over a window against the same
+        companies' previous targets follows from these columns, e.g. with
+        history.loc["2026-11-09":].groupby(level="Analyst Company").last().
+
+        Automatically filtered to this Toolkit instance's start_date and end_date; the
+        previous targets are looked up over the year before the start_date as well.
 
         Also known as: price target changes, analyst target revisions, price target news.
 
@@ -4817,13 +4836,17 @@ class Toolkit:
 
         Returns:
             pd.DataFrame: The price targets per ticker, indexed by date and analyst company,
-            with the Price Target, the Price When Posted and the Implied Upside
-            (Price Target / Price When Posted − 1, a decimal).
+            with the Price Target, the Price When Posted, the Implied Upside
+            (Price Target / Price When Posted − 1, a decimal), the Previous Target, the
+            Previous Date (text, YYYY-MM-DD) and the Target Change (a decimal).
 
         Notes:
             The targets come from the news articles that report them. A target reported by
             several publishers on the same day is kept once; a change of target that no
-            article reported is missing.
+            article reported is missing, so the previous target can be older than the
+            company's last change. The news sometimes lists a target under another analyst
+            company than the article names; such a target is credited to the company the
+            article's title names, or dropped when the article already lists that company.
 
         As an example:
 
@@ -4837,26 +4860,28 @@ class Toolkit:
             end_date="2025-11-30",
         )
 
-        toolkit.get_price_target_history()
+        toolkit.get_price_target_history(
+            show_columns=["Price Target", "Implied Upside", "Previous Target", "Target Change"]
+        )
         ```
 
         Which returns:
 
-        |                                        |   Price Target |   Price When Posted |   Implied Upside |
-        |:---------------------------------------|---------------:|--------------------:|-----------------:|
-        | ('2025-11-03', 'Loop Capital Markets') |            350 |             202.49  |           0.7285 |
-        | ('2025-11-14', 'Wells Fargo')          |            265 |             186.52  |           0.4208 |
-        | ('2025-11-20', 'Barclays')             |            275 |             194.17  |           0.4163 |
-        | ('2025-11-20', 'Bernstein')            |            275 |             186.52  |           0.4744 |
-        | ('2025-11-20', 'Deutsche Bank')        |            215 |             186.52  |           0.1527 |
-        | ('2025-11-20', 'Evercore ISI')         |            352 |             184.615 |           0.9067 |
-        | ('2025-11-20', 'Jefferies')            |            250 |             195.096 |           0.2814 |
-        | ('2025-11-20', 'KeyBanc')              |            275 |             189.96  |           0.4477 |
-        | ('2025-11-20', 'Mizuho Securities')    |            245 |             184.615 |           0.3271 |
-        | ('2025-11-20', 'Morgan Stanley')       |            235 |             186.52  |           0.2599 |
-        | ('2025-11-20', 'Raymond James')        |            272 |             180.64  |           0.5058 |
-        | ('2025-11-20', 'Robert W. Baird')      |            275 |             186.52  |           0.4744 |
-        | ('2025-11-20', 'Susquehanna')          |            250 |             186.52  |           0.3403 |
+        |                                        |   Price Target |   Implied Upside |   Previous Target |   Target Change |
+        |:---------------------------------------|---------------:|-----------------:|------------------:|----------------:|
+        | ('2025-11-03', 'Loop Capital Markets') |            350 |           0.7285 |               250 |          0.4    |
+        | ('2025-11-14', 'Wells Fargo')          |            265 |           0.4208 |               nan |        nan      |
+        | ('2025-11-20', 'Barclays')             |            275 |           0.4163 |               240 |          0.1458 |
+        | ('2025-11-20', 'Bernstein')            |            275 |           0.4744 |               nan |        nan      |
+        | ('2025-11-20', 'Deutsche Bank')        |            215 |           0.1527 |               140 |          0.5357 |
+        | ('2025-11-20', 'Evercore ISI')         |            352 |           0.9067 |               261 |          0.3487 |
+        | ('2025-11-20', 'Jefferies')            |            250 |           0.2814 |               220 |          0.1364 |
+        | ('2025-11-20', 'KeyBanc')              |            275 |           0.4477 |               190 |          0.4474 |
+        | ('2025-11-20', 'Mizuho Securities')    |            245 |           0.3271 |               235 |          0.0426 |
+        | ('2025-11-20', 'Morgan Stanley')       |            235 |           0.2599 |               210 |          0.119  |
+        | ('2025-11-20', 'Raymond James')        |            272 |           0.5058 |               150 |          0.8133 |
+        | ('2025-11-20', 'Robert W. Baird')      |            275 |           0.4744 |               225 |          0.2222 |
+        | ('2025-11-20', 'Susquehanna')          |            250 |           0.3403 |               nan |        nan      |
         """
         if not self._api_key:
             self._missing_api_key_message()

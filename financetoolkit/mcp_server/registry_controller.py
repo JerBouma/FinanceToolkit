@@ -784,8 +784,8 @@ def _unclosed_session_note(result: object) -> str | None:
         result (object): The value returned by the indicator.
 
     Returns:
-        str | None: The note, or None when the last row is a closed session (or the
-            rows are no daily dates).
+        str | None: The note, or None when the last row is a closed session, a date
+            after today or the rows are no daily dates.
     """
     if (
         not isinstance(result, pd.DataFrame | pd.Series)
@@ -804,7 +804,12 @@ def _unclosed_session_note(result: object) -> str | None:
 
     last_date = dates.max().date()
 
-    if last_date <= policy_model.get_last_closed_session():
+    # A date after today is a scheduled event (the next earnings release or dividend in a
+    # calendar), not a session.
+    if (
+        last_date <= policy_model.get_last_closed_session()
+        or last_date > pd.Timestamp.today().date()
+    ):
         return None
 
     return (

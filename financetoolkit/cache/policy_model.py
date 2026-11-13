@@ -112,8 +112,8 @@ def get_last_closed_session(now: datetime | None = None) -> date:
     date.
 
     Args:
-        now (datetime | None): The moment to judge, with a time zone. Defaults to the
-            current time; mainly useful for testing.
+        now (datetime | None): The moment to judge, with a time zone. Defaults to None,
+            which uses the current time; mainly useful for testing.
 
     Returns:
         date: The last date whose daily bars are final.

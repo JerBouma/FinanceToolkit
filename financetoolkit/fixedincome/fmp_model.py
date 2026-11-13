@@ -50,8 +50,9 @@ def get_treasury_rates(
 
     Args:
         api_key (str): the API Key obtained from https://www.jeroenbouma.com/fmp
-        start_date (str, optional): The start date to filter data with. Defaults to 10 years ago.
-        end_date (str, optional): The end date to filter data with. Defaults to today.
+        start_date (str, optional): The start date to filter data with. Defaults to None, which uses
+            the date 10 years before the end date.
+        end_date (str, optional): The end date to filter data with. Defaults to None, which uses today.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
             if you have a Premium subscription (Starter or higher) from FinancialModelingPrep. Defaults to True.
         user_subscription (str): The subscription type of the user. Defaults to "Free".

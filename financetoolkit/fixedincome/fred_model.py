@@ -174,6 +174,11 @@ def get_maturity_option_adjusted_spread(
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
     environment variable.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
+
     Returns:
         pandas.DataFrame: A DataFrame containing the OAS data for different maturity ranges.
             The columns represent the maturity ranges in years, and the values are decimal
@@ -214,6 +219,11 @@ def get_maturity_effective_yield(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
     environment variable.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
 
     Returns:
         pandas.DataFrame: A DataFrame containing the maturity effective yield data.
@@ -256,6 +266,11 @@ def get_maturity_total_return(
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
     environment variable.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
+
     Returns:
         pandas.DataFrame: A DataFrame containing the total return data for different maturity periods.
             The columns represent the maturity periods in years.
@@ -292,6 +307,11 @@ def get_maturity_yield_to_worst(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
     environment variable.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
 
     Returns:
         pandas.DataFrame: A DataFrame containing the yield to worst data for different maturity periods.
@@ -334,6 +354,11 @@ def get_rating_option_adjusted_spread(
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
     environment variable.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
+
     Returns:
         pandas.DataFrame: A DataFrame containing the OAS data for different credit ratings.
             The columns represent the credit ratings: "AAA", "AA", "A", "BBB", "BB", "B", "CCC".
@@ -368,6 +393,11 @@ def get_rating_effective_yield(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
     environment variable.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
 
     Returns:
         pandas.DataFrame: A DataFrame containing the effective yield data for different credit ratings.
@@ -404,6 +434,11 @@ def get_rating_total_return(
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
     environment variable.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
+
     Returns:
         pandas.DataFrame: A DataFrame containing the total return data for different rating indices.
             The columns of the DataFrame represent the ratings: "AAA", "AA", "A", "BBB", "BB", "B", "CCC".
@@ -434,6 +469,11 @@ def get_rating_yield_to_worst(
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html
     and pass the key via the `fred_api_key` argument on FixedIncome or set the `FRED_API_KEY`
     environment variable.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
 
     Returns:
         pandas.DataFrame: A DataFrame containing the yield to worst data for different credit ratings.
@@ -572,6 +612,11 @@ def get_hqm_corporate_bond_spread(
     """
     Computes the spread of the HQM corporate par yields over the Treasury constant maturity
     yields at the same maturities (2, 5, 10 and 30 years), both monthly averages.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key, sent as the `api_key` query parameter.
 
     Returns:
         pd.DataFrame: The spreads as decimals (0.012 for 1.2 percentage points), indexed by

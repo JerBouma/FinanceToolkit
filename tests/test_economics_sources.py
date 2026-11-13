@@ -1180,6 +1180,35 @@ def test_department_of_labor_claims_are_posted_for_and_seasonally_adjusted(monke
     assert claims["United States"].iloc[0] == 232000
 
 
+def test_department_of_labor_outage_serves_the_cached_claims(cache, monkeypatch):
+    from financetoolkit.economics import dol_model
+
+    report = (
+        "<r539cyNational><week><weekEnded>10/18/2026</weekEnded><InitialClaims><NSA>"
+        "201,000</NSA><SA>232,000</SA></InitialClaims></week></r539cyNational>"
+    )
+    # What the report answers when its database cannot be reached.
+    outage = (
+        "Unable to connect!<br/>SQLSTATE=HY000, SQLDriverConnect: -25546 [Informix]"
+        "[Informix ODBC Driver][Informix]Invalid ASF assoc_id."
+    )
+    answers = [report]
+    monkeypatch.setattr(
+        dol_model, "get_request", lambda url, **kwargs: FakeResponse(text=answers[-1])
+    )
+    claims = dol_model.get_initial_jobless_claims()
+
+    # Expire the cached claims, then let the database be unreachable: the outage is
+    # retried and answered with the cached claims, not reported as a changed layout.
+    answers.append(outage)
+    monkeypatch.setattr(dol_model, "OUTAGE_DELAY_SECONDS", 0)
+    monkeypatch.setattr(helpers, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(helpers, "STALE_TTL_SECONDS", 10**9)
+    monkeypatch.setattr(cache, "get", _expire_fresh_reads(cache.get))
+
+    assert dol_model.get_initial_jobless_claims().equals(claims)
+
+
 def test_census_retail_sales_leave_out_the_seasonal_factors(monkeypatch):
     from financetoolkit.economics import census_model
 
@@ -1886,3 +1915,127 @@ def test_long_run_prices_warn_about_repeated_years_and_hyperinflations(caplog):
     with caplog.at_level("WARNING"):
         helpers.warn_about_long_run_prices(index, None, "1916", "1921")
     assert not caplog.records
+
+
+def test_portwatch_transits_are_read_in_pages(cache, monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+
+    from financetoolkit.economics import portwatch_model
+
+    monkeypatch.setattr(portwatch_model, "PAGE_SIZE", 2)
+    days = ["2026-02-27", "2026-02-28", "2026-03-01"]
+    queries = []
+
+    def row(day, tankers):
+        fields = {f"n_{category}": 0 for category in portwatch_model.VESSEL_TYPES}
+        fields |= {
+            f"capacity_{category}": 0.0
+            for category in portwatch_model.VESSEL_TYPES
+            if category != "total"
+        }
+        return fields | {
+            "date": day,
+            "n_tanker": tankers,
+            "n_total": tankers + 1,
+            "capacity_tanker": tankers * 1000.0,
+            "capacity": tankers * 1000.0 + 500.0,
+        }
+
+    def fake_get(url, timeout=60):
+        query = {key: value[0] for key, value in parse_qs(urlsplit(url).query).items()}
+        queries.append(query)
+        offset = int(query["resultOffset"])
+        page = [row(day, tankers) for day, tankers in zip(days, [37, 36, 5])][
+            offset : offset + 2
+        ]
+        return FakeResponse(
+            payload={
+                "features": [{"attributes": attributes} for attributes in page],
+                "exceededTransferLimit": offset + 2 < len(days),
+            }
+        )
+
+    monkeypatch.setattr(portwatch_model, "get_request", fake_get)
+
+    transits = portwatch_model.get_chokepoint_transits("Strait of Hormuz")
+
+    # Two pages of at most two days, for the chokepoint by name.
+    assert [query["resultOffset"] for query in queries] == ["0", "2"]
+    assert queries[0]["where"] == "portname='Strait of Hormuz'"
+    assert transits.index.tolist() == [pd.Period(day, "D") for day in days]
+    assert transits["Transits Tanker"].tolist() == [37.0, 36.0, 5.0]
+    assert transits["Transits Total"].tolist() == [38.0, 37.0, 6.0]
+    # capacity is the volume of all ships, named after the Total category.
+    assert transits.loc["2026-03-01", "Trade Volume Total"] == 5500.0
+
+
+def test_portwatch_error_answers_raise(cache, monkeypatch):
+    from financetoolkit.economics import portwatch_model
+
+    monkeypatch.setattr(
+        portwatch_model,
+        "get_request",
+        lambda url, timeout=60: FakeResponse(
+            payload={"error": {"code": 400, "message": "Invalid query"}}
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Invalid query"):
+        portwatch_model.get_chokepoint_transits("Suez Canal")
+
+
+def test_chokepoint_transits_select_measure_and_complete_periods(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import portwatch_model
+
+    # Two full months and two days of March: March is not complete.
+    days = pd.period_range("2026-01-01", "2026-03-02", freq="D")
+
+    def transits(chokepoint):
+        scale = 1.0 if chokepoint == "Strait of Hormuz" else 10.0
+        return pd.DataFrame(
+            {
+                "Transits Tanker": scale,
+                "Transits Total": 2 * scale,
+                "Trade Volume Tanker": 1000 * scale,
+                "Trade Volume Total": 3000 * scale,
+            },
+            index=days,
+        )
+
+    monkeypatch.setattr(
+        portwatch_model,
+        "get_chokepoint_names",
+        lambda: ["Panama Canal", "Strait of Hormuz", "Suez Canal"],
+    )
+    monkeypatch.setattr(portwatch_model, "get_chokepoint_transits", transits)
+    economics = Economics(start_date="2026-01-01", end_date="2026-03-31", rounding=None)
+
+    # A part of a name selects the chokepoint; one chokepoint has a column per category.
+    daily = economics.get_chokepoint_transits(chokepoints="hormuz")
+    assert daily.columns.tolist() == ["Tanker", "Total"]
+    assert len(daily) == len(days)
+
+    monthly = economics.get_chokepoint_transits(
+        chokepoints=["Strait of Hormuz", "suez canal"],
+        measure="trade_volume",
+        period="monthly",
+    )
+    assert monthly.columns.tolist() == [
+        ("Strait of Hormuz", "Tanker"),
+        ("Strait of Hormuz", "Total"),
+        ("Suez Canal", "Tanker"),
+        ("Suez Canal", "Total"),
+    ]
+    # January and February summed; the incomplete March is left out.
+    assert monthly.index.tolist() == [
+        pd.Period("2026-01", "M"),
+        pd.Period("2026-02", "M"),
+    ]
+    assert monthly[("Suez Canal", "Tanker")].tolist() == [310000.0, 280000.0]
+
+    # A name that matches several chokepoints, or none, is left out.
+    assert economics.get_chokepoint_transits(chokepoints="Canal,Atlantis").empty
+
+    # An unknown measure is reported and gives an empty result.
+    assert economics.get_chokepoint_transits(measure="volume").empty

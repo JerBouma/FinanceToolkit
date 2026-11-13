@@ -1,17 +1,23 @@
 name: Live Sources
 
-# Checks every Sunday that each data source the Finance Toolkit reads without an API key
-# still answers with current, plausible data: the keyless Economics sources (Eurostat,
-# ONS, BLS, IBGE, the Statistics Bureau of Japan, the OECD, the IMF, BIS, ECB, Bank of
-# England, Bank of Japan, Japan's Ministry of Finance, the U.S. Treasury, the Federal
-# Reserve Board, Freddie Mac, the NBER, Shiller, Cboe, STOXX, EEX, the Global Macro
-# Database, the JST Macrohistory Database, the ESRB, the NGFS and the DNB scenario set),
-# the keyless Fixed Income sources (ECB policy rates and Euribor, Bundesbank, Bank of
-# Canada, Riksbank, Norges Bank, the Reserve Bank of Australia, the New York Fed, EIOPA
-# and ESMA), Kenneth French's factor library and Yahoo Finance (prices, statements,
+# Checks every Sunday that each data source the Finance Toolkit reads still answers with
+# current, plausible data (see tests/live_sources): the Economics sources (Eurostat, ONS,
+# BLS, IBGE, the Statistics Bureau of Japan, the OECD, the IMF and IMF PortWatch, BIS,
+# ECB, Bank of England, Bank of Japan, Japan's Ministry of Finance, the U.S. Treasury,
+# the Federal Reserve Board, the New York Fed, the Census Bureau, the BEA, the Department
+# of Labor, Freddie Mac, the NBER, the World Bank, Shiller, Cboe, STOXX, EEX, the Global
+# Macro Database, the JST Macrohistory Database, the ESRB, the NGFS and the DNB scenario
+# set), the Fixed Income sources (ECB policy rates and Euribor, Bundesbank, Bank of
+# Canada, Riksbank, Norges Bank, the Reserve Bank of Australia, the New York Fed, the
+# Treasury's HQM curve and FedInvest prices, EIOPA and ESMA), Kenneth French's factor
+# library, Aswath Damodaran's datasets, FINRA and Yahoo Finance (prices, statements,
 # statistics, option chains, asset class proxies and commodity futures curves). Datasets
 # published once a year or less are checked for being reachable and readable rather than
-# for their age. Sources that need a key (FinancialModelingPrep, FRED) are not checked.
+# for their age.
+#
+# FinancialModelingPrep (every endpoint the package reads, through its public methods)
+# and FRED are checked with the repository secrets FINANCIAL_MODELING_PREP_API_KEY and
+# FRED_API_KEY; without a secret, its checks are skipped.
 #
 # Every source that fails gets its own issue, labelled data-source and titled after the
 # source ("Data source check failed: <source>"), so a changed format is fixed before
@@ -55,6 +61,8 @@ jobs:
         id: check
         env:
           FINANCETOOLKIT_LIVE_SOURCES: "1"
+          FINANCIAL_MODELING_PREP_API_KEY: ${{ secrets.FINANCIAL_MODELING_PREP_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           FINANCE_TOOLKIT_CACHE_DB: ${{ runner.temp }}/live-sources-cache.db
         run: |
           set -o pipefail

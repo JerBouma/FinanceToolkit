@@ -433,8 +433,8 @@ class Cache:
             parameters (dict[str, Any] | None): Parameters that change the data.
             date_axis (int): 0 when the index holds the dates, 1 when the columns do. Defaults to 0.
             reference_date (date | None): The date the revision window is measured
-                back from when the requested range has no end or ends after it. Defaults to today;
-                mainly useful for testing.
+                back from when the requested range has no end or ends after it. Defaults to None,
+                which uses today; mainly useful for testing.
 
         Returns:
             CachePlan: The cached data per entity and the gaps still to be fetched.

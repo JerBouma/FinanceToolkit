@@ -171,7 +171,7 @@ def get_nonfarm_payrolls() -> pd.DataFrame:
     persons and seasonally adjusted (series CES0000000001), the headline figure of the
     monthly Employment Situation report.
 
-    The keyless BLS API returns about the last three years, so the full history, from
+    The BLS API returns about the last three years, so the full history, from
     1939, requires a FRED API key.
 
     Returns:
@@ -194,7 +194,7 @@ def get_price_index(measure: str) -> pd.DataFrame:
     Producer Price Index for final demand (series WPUFD4), or the export or import price
     index of all commodities (series EIUIQ and EIUIR).
 
-    The keyless BLS API returns about the last three years, so the full history requires
+    The BLS API returns about the last three years, so the full history requires
     a FRED API key.
 
     Args:
@@ -216,7 +216,7 @@ def get_consumer_price_index() -> pd.DataFrame:
     single request. The BLS publishes a month at 8:30 ET on its release day, before any
     other source.
 
-    The keyless BLS API returns about the last three years, so the full history requires
+    The BLS API returns about the last three years, so the full history requires
     a FRED API key.
 
     Returns:

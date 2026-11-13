@@ -662,7 +662,7 @@ class FixedIncome:
         and convexity, plus the present value on the Treasury zero-coupon curve and the
         Z-spread over it.
 
-        Treasuries come from the Treasury's daily FedInvest prices without an API key (see
+        Treasuries come from the Treasury's daily FedInvest prices (see
         `get_treasury_securities`), corporate bonds from the holdings of bond ETFs (see
         `get_bond_universe`). Without bonds or an issuer the statistics are those of the
         benchmark Treasuries: the note or bond maturing closest to 2, 3, 5, 7, 10, 20 and
@@ -2306,7 +2306,7 @@ class FixedIncome:
         and its shape is one of the most watched signals in markets: an inverted curve,
         with short rates above long rates, has preceded most recessions.
 
-        Every curve comes from the official source without an API key:
+        Every curve comes from the official source:
 
         - United States: the U.S. Department of the Treasury's par yield curve, 1 month to
           30 years, from 1990.
@@ -2331,10 +2331,9 @@ class FixedIncome:
         With period="monthly", every other European Union member, such as France, Italy,
         Spain, the Netherlands and Poland, is included with its 10-year yield, the long-term
         interest rate for convergence purposes the ECB publishes monthly. For other
-        countries no official source publishes a curve without a key; see
-        `get_government_bond_yield` for the monthly 3-month and 10-year rates of around
-        forty countries from the OECD. Only the requested countries are retrieved, and
-        only the days that are not cached yet.
+        countries, see `get_government_bond_yield` for the monthly 3-month and 10-year
+        rates of around forty countries from the OECD. Only the requested countries are
+        retrieved, and only the days that are not cached yet.
 
         The yields are returned as decimal fractions per annum (0.0419 for 4.19%), with one
         column per country and maturity, sorted from the shortest to the longest maturity.
@@ -2539,9 +2538,9 @@ class FixedIncome:
         a single dataset. This is the official, risk-free curve widely used as the discount curve
         for bond valuation and as the benchmark for credit spreads.
 
-        No API key is needed: with a FinancialModelingPrep API key the rates come from
-        FinancialModelingPrep, and without one, or when the key's plan does not include them,
-        from the U.S. Department of the Treasury directly, which gives the same figures.
+        With a FinancialModelingPrep API key the rates come from FinancialModelingPrep, and
+        without one, or when the key's plan does not include them, from the U.S. Department
+        of the Treasury directly, which gives the same figures.
 
         These are par yields: the coupons at which a new Treasury of each maturity would price at
         par, interpolated by the Treasury from the most recently auctioned securities. Discounting
@@ -3504,7 +3503,7 @@ class FixedIncome:
         government debt: a lower bid-to-cover ratio or a smaller share for indirect bidders
         (which include foreign central banks) at a large auction is a sign of weak demand.
 
-        The data comes from the Treasury's Fiscal Data API, from 1979 on, without an API key.
+        The data comes from the Treasury's Fiscal Data API, from 1979 on.
         The Yield is the high yield of notes and bonds and the investment rate (the bond
         equivalent yield) of bills; the High Discount Rate is the discount rate bills are
         quoted at. The Bid-to-Cover Ratio is the Treasury's, which leaves out the Federal
@@ -4567,7 +4566,7 @@ class FixedIncome:
         years, comparable to the Treasury par yield curve (see `get_treasury_rates`). Every
         value is the average over the month.
 
-        No API key is needed: without a FRED API key the curve comes from the Treasury's own
+        Without a FRED API key the curve comes from the Treasury's own
         HQM files, which gives the same figures. When a FRED API key is set (see the
         `fred_api_key` parameter of the `FixedIncome` class), it comes from FRED, which
         republishes the Treasury's curve. The rates are returned as decimal fractions (0.0558
@@ -4670,12 +4669,12 @@ class FixedIncome:
         - HQM Spread (maturity) = HQM Corporate Par Yield (maturity) - Treasury Constant Maturity Yield (maturity),
           both monthly averages, for 2, 5, 10 and 30 years
 
-        No API key is needed: without a FRED API key both legs come from the Treasury, the HQM
+        Without a FRED API key both legs come from the Treasury, the HQM
         par yields from its HQM files and the Treasury yields as the monthly averages of its
         daily par yield curve, rounded to two decimals in percent as the Federal Reserve's H.15
         release publishes them. That curve starts in 1990 and has no 30-year yield from
-        February 2002 to February 2006, so the keyless spread starts in 1990 and leaves those
-        30-year months empty. When a FRED API key is set (see the `fred_api_key` parameter of
+        February 2002 to February 2006, so the spread without a FRED API key starts in 1990
+        and leaves those 30-year months empty. When a FRED API key is set (see the `fred_api_key` parameter of
         the `FixedIncome` class), the Treasury yields are FRED's constant maturity series, from
         1984. The spreads are returned as decimal fractions (0.0079 for 0.79 percentage points).
 
@@ -4761,10 +4760,10 @@ class FixedIncome:
 
         - Germany: the average yield on debt securities outstanding of non-MFI corporations
           the Bundesbank publishes monthly from 1957 (monthly averages), all ratings
-          together ("All ratings"). No API key is needed.
+          together ("All ratings").
         - Australia: the yields of non-financial corporate bonds rated A and BBB with a
           target tenor of 3, 5, 7 and 10 years the Reserve Bank of Australia publishes from
-          2005 (end of month), e.g. "BBB 10Y". No API key is needed.
+          2005 (end of month), e.g. "BBB 10Y".
         - United States: Moody's seasoned Aaa and Baa corporate bond yields, from 1919. This
           requires a FRED API key (the fred_api_key of the FixedIncome class); see
           get_moodys_corporate_bond_yields for daily data.
@@ -4959,7 +4958,7 @@ class FixedIncome:
         year with periods from 1989. It covers the global ratings of agencies such as S&P,
         Moody's, Fitch, DBRS and Scope, for corporates (non-financial, financial and
         insurance), sovereigns, structured finance and covered bonds, in each agency's own
-        rating scale. No API key is needed.
+        rating scale.
 
         By default the matrix is withdrawal-adjusted, the convention of the agencies' own
         default studies: ratings withdrawn during the period are left out, so each row sums
@@ -5103,9 +5102,9 @@ class FixedIncome:
         The data comes from CEREP, the central repository where every credit rating agency
         registered in the European Union reports its ratings to ESMA, in each agency's own
         rating scale (AAA to C for S&P and Fitch, Aaa to C for Moody's). Only the years
-        between the start and end date are retrieved, one request per year. No API key is
-        needed. CEREP answers slowly (up to half a minute per year), so a long history takes
-        a few minutes the first time; each year is cached afterwards. The years before an
+        between the start and end date are retrieved, one request per year. CEREP answers
+        slowly (up to half a minute per year), so a long history takes a few minutes the
+        first time; each year is cached afterwards. The years before an
         agency reported to CEREP read as zero defaults and are left out, so the history
         starts at the first year with a default.
 
@@ -5491,7 +5490,7 @@ class FixedIncome:
         Fluctuations. American Economic Review, 102(4), 1692-1720.
         https://doi.org/10.1257/aer.102.4.1692
 
-        No API key is needed. The spread and premium are returned as decimal fractions
+        The spread and premium are returned as decimal fractions
         (0.0084 for 0.84 percentage points) and the probability as a fraction (0.108 for
         10.8%).
 
@@ -5580,7 +5579,7 @@ class FixedIncome:
         the "Fitted Yield" of the model, which is their sum. The model is fitted to the
         zero-coupon Treasury curve of Gürkaynak, Sack and Wright (2007), so every value is a
         continuously compounded zero-coupon rate, as a decimal fraction (0.0067 for 0.67%).
-        No API key is needed. Weekly and monthly periods take the last day of each period,
+        Weekly and monthly periods take the last day of each period,
         matching the New York Fed's own month-end series.
 
         The term premium is a model estimate rather than an observed price: it rests on the
@@ -5699,7 +5698,7 @@ class FixedIncome:
         negative rates left unchanged. Every value is a decimal fraction (0.0358 for 3.58%),
         at the end of the month the release is for.
 
-        No API key is needed. EIOPA's page links the releases from January 2023; each is a
+        EIOPA's page links the releases from January 2023; each is a
         separate file, so only the months between the start and end date are downloaded, and
         a release is cached for a year since it does not change.
 
@@ -5840,7 +5839,7 @@ class FixedIncome:
 
         - Type 1 Equity Charge = 0.39 + Symmetric Adjustment, for equities listed in the EEA or OECD
         - Type 2 Equity Charge = 0.49 + Symmetric Adjustment, for other equities
-        Every value is a decimal fraction (0.0771 for 7.71%). No API key is needed. Weekly
+        Every value is a decimal fraction (0.0771 for 7.71%). Weekly
         and monthly periods take the value on the last day of each period, which is the
         value insurers apply at that reporting date.
 
@@ -5934,7 +5933,7 @@ class FixedIncome:
         `economics.get_real_yield_curve` and `economics.get_breakeven_inflation_expectations`
         (countries='United Kingdom').
 
-        No API key is needed. The archive is a set of large files, of which only those
+        The archive is a set of large files, of which only those
         covering the requested years are read, and they are cached since past years do not
         change. Weekly and monthly periods take the curve on the last day of each period.
 
@@ -6041,7 +6040,7 @@ class FixedIncome:
         available proxy for euro area corporate credit conditions, since euro area corporate
         bond indices are licensed data.
 
-        No API key is needed. The rate is a decimal fraction (0.0377 for 3.77%).
+        The rate is a decimal fraction (0.0377 for 3.77%).
 
         See definition: https://data.ecb.europa.eu/data/datasets/MIR
 
@@ -6130,7 +6129,7 @@ class FixedIncome:
         Hollo, D., Kremer, M., & Lo Duca, M. (2012). CISS - A Composite Indicator of
         Systemic Stress in the Financial System. ECB Working Paper No. 1426.
 
-        No API key is needed. Weekly and monthly periods take the index on the last day of
+        Weekly and monthly periods take the index on the last day of
         each period.
 
         See definition: https://data.ecb.europa.eu/data/datasets/CISS
@@ -6652,7 +6651,7 @@ class FixedIncome:
         payment is the annual rate divided by twelve (7.18% is 0.5983% a month). The rate is the
         weekly average 30-year fixed rate of Freddie Mac's Primary Mortgage Market Survey (the
         rate of `Economics.get_mortgage_rate_30_year`), from FRED when a FRED API key is set and
-        from Freddie Mac otherwise; no API key is needed. For a rate of your own, use
+        from Freddie Mac otherwise. For a rate of your own, use
         `loan_model.get_loan_payment`, which takes a number or a series of rates.
 
         Also known as: mortgage payment, monthly payment, annuity payment, mortgage calculator,
@@ -6742,7 +6741,7 @@ class FixedIncome:
         US mortgage rates are quoted as a nominal annual rate compounded monthly, so the rate per
         payment is the annual rate divided by twelve. The rate is the weekly average 30-year fixed
         rate of Freddie Mac's Primary Mortgage Market Survey, from FRED when a FRED API key is set
-        and from Freddie Mac otherwise; no API key is needed. For a rate of your own, use
+        and from Freddie Mac otherwise. For a rate of your own, use
         `loan_model.get_affordable_loan`.
 
         Also known as: affordability, how much can I borrow, mortgage affordability, borrowing
@@ -6835,8 +6834,8 @@ class FixedIncome:
         the annuity payment of `get_loan_payment`. US mortgage rates are quoted as a nominal
         annual rate compounded monthly. The rate is the weekly average 30-year fixed rate of
         Freddie Mac's Primary Mortgage Market Survey on the date (the last survey on or before
-        it), from FRED when a FRED API key is set and from Freddie Mac otherwise; no API key is
-        needed. For a rate of your own, use `loan_model.get_amortization_schedule`.
+        it), from FRED when a FRED API key is set and from Freddie Mac otherwise. For a rate
+        of your own, use `loan_model.get_amortization_schedule`.
 
         Also known as: amortization table, mortgage schedule, repayment schedule, interest and
         principal per payment, remaining balance.

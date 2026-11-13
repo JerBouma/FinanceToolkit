@@ -629,9 +629,25 @@ class ToolkitProvider:
         the most recent result for the given Toolkit instance (benchmark handling,
         fiscal-year relabelling and currency conversion).
 
-        Returns an empty list when no transformations were applied or when the
-        Toolkit instance has not yet fetched any financial statements, apart from
-        the benchmark note, which depends on the request alone.
+        Args:
+            tickers (list[str]): The ticker symbols of the request.
+            start_date (str): The start date of the request (format YYYY-MM-DD).
+            end_date (str): The end date of the request (format YYYY-MM-DD).
+            quarterly (bool): Whether the request is for quarterly (True) or yearly (False) statements.
+            benchmark_ticker (str): The benchmark ticker of the request.
+            api_key (str, optional): FinancialModelingPrep API key, used when the request carries
+                none. Defaults to "".
+            fred_api_key (str, optional): FRED API key, used when the request carries none.
+                Defaults to "".
+            toolkit_risk_free_rate (str, optional): The Treasury yield used as the risk-free rate
+                ("13w", "5y", "10y" or "30y"). Defaults to "10y".
+            toolkit_basket (bool, optional): Whether the Toolkit adds up the tickers into a
+                "Total" (Toolkit(basket=True)). Defaults to False.
+
+        Returns:
+            list[str]: The notes. An empty list when no transformations were applied or
+                when the Toolkit instance has not yet fetched any financial statements,
+                apart from the benchmark note, which depends on the request alone.
         """
         notes: list[str] = []
 

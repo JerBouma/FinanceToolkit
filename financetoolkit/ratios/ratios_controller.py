@@ -2428,12 +2428,13 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
-        Returns:
-            pd.DataFrame: Receivables turnover ratio values.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Receivables turnover ratio values.
 
         Notes:
         - The method retrieves historical data and calculates the receivables turnover ratio for each
@@ -3825,7 +3826,6 @@ class Ratios:
         | META  | 1.06e+10   | 2.2745e+10 | 1.6088e+10 | 2.1758e+10  | 5.1075e+10  |
         | MSFT  | 8.936e+09  | 9.426e+09  | 1.4246e+10 | 2.219e+10   | 3.0398e+10  |
         | Total | 5.8355e+10 | 7.1905e+10 | 5.4705e+10 | 1.11376e+11 | 2.17847e+11 |
-        TABLE
         """
         net_capital_expenditure = efficiency_model.get_net_capital_expenditure(
             self._sum_trailing(
@@ -4971,6 +4971,9 @@ class Ratios:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Short-term coverage ratio values.
 
         As an example:
 

@@ -143,6 +143,10 @@ def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
     Retrieves the daily average uncollateralized overnight call rate, the Tokyo Overnight
     Average Rate (TONA) the Bank of Japan steers its policy with.
 
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
     Returns:
         pd.DataFrame: The rate as a decimal, indexed by day.
     """

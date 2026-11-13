@@ -154,8 +154,8 @@ class UsageAnalytics:
 
     def _adopt_unkeyed_identifier(self, api_key: str, user: str) -> None:
         """
-        Moves the counts of a user stored under an unkeyed SHA-256 identifier, as an
-        earlier version recorded them, to the keyed one, so nobody counts twice.
+        Moves the counts of a user stored under the unkeyed SHA-256 identifier of the key
+        to the keyed one, so nobody counts twice.
         """
         legacy = f"u_{hashlib.sha256(api_key.encode()).hexdigest()[:12]}"
 

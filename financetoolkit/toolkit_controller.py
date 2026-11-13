@@ -246,8 +246,8 @@ class Toolkit:
             variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
             allow_stale_oecd_cache (bool): the OECD API (used by the economics module) enforces a hard rate
             limit (60 downloads/hour). When True, a rate-limited call falls back to the most recently cached
-            successful response for that query instead of empty data -- opt-in, since served data may be
-            stale. Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
+            successful response for that query instead of empty data, which may then be stale.
+            Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
             different mechanism). Defaults to True.
             point_in_time (bool): Use each period's figures only from the day they were filed, as a backtest
             would have seen them: the statements leave out the periods filed after end_date and daily ratios
@@ -1755,6 +1755,9 @@ class Toolkit:
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
+        Returns:
+            pd.DataFrame: The profile per ticker, with the profile items as the index.
+
         As an example:
 
         ```python
@@ -1826,6 +1829,9 @@ class Toolkit:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The quote per ticker, with the quote items as the index.
 
         As an example:
 
@@ -5258,7 +5264,7 @@ class Toolkit:
     ):
         """
         Retrieve daily, weekly, monthly, quarterly or yearly US Treasury yields for four maturities, 13 weeks,
-        5 years, 10 years and 30 years, from FinancialModelingPrep or, as a free alternative, YahooFinance. With
+        5 years, 10 years and 30 years, from FinancialModelingPrep or YahooFinance. With
         the default divide_ohlc_by of 100 the yields are returned as decimals (0.042 is 4.2%).
 
         A week, month, quarter or year holds the first (Open), highest, lowest and last (Close) yield of
@@ -5799,7 +5805,7 @@ class Toolkit:
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
-                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
@@ -5984,9 +5990,8 @@ class Toolkit:
         statement that shows a company's revenues and expenses over a specific period. It is used to calculate
         a company's net income.
 
-        The income statement is a financial statement that shows a company's revenues and expenses over a specific
-        period. Therefore, trailing results are available for this statement. A trailing result sums each
-        item over the window, except the Weighted Average Shares, Weighted Average Shares Diluted and Tax
+        As the income statement covers a period, trailing results are available for this statement. A
+        trailing result sums each item over the window, except the Weighted Average Shares, Weighted Average Shares Diluted and Tax
         Rate for Calcs rows, which keep the value of the latest period.
 
         With convert_currency, the statement is converted to the currency of the historical data at the
@@ -5999,7 +6004,7 @@ class Toolkit:
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
-                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
@@ -6206,8 +6211,7 @@ class Toolkit:
         statement that shows how changes in balance sheet accounts and income affect cash and cash equivalents.
         It breaks the analysis down to operating, investing and financing activities.
 
-        The cash flow statement is a financial statement that shows how changes in balance sheet accounts and income
-        affect cash and cash equivalents. Therefore, trailing results are available for this statement. A
+        As the cash flow statement covers a period, trailing results are available for this statement. A
         trailing result sums each cash flow over the window, while Cash Beginning of Period is the cash at
         the beginning of the first period of the window and Cash End of Period the cash at the end of the
         last one.
@@ -6224,7 +6228,7 @@ class Toolkit:
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
-                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
@@ -6447,7 +6451,7 @@ class Toolkit:
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
-                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.

@@ -24,8 +24,8 @@ def combine_dataframes(dataset_dictionary: dict[str, pd.DataFrame]) -> pd.DataFr
 
     Args:
         dataset_dictionary (dict[str, pd.DataFrame]): A dictionary containing the
-        dataframes for each company. It should have the structure key: ticker,
-        value: dataframe.
+            dataframes for each company. It should have the structure key: ticker,
+            value: dataframe.
 
     Returns:
         pd.DataFrame: A pandas DataFrame with the combined financial statements.

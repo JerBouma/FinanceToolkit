@@ -1027,7 +1027,7 @@ class RouterGroupSpec(NamedTuple):
     the tool on the FastMCP instance.
 
     Args:
-        tool_name (str): Unique name for the FastMCP tool (e.g. "get_valuation_ratios").
+        tool_name (str): Unique name for the FastMCP tool (e.g. "valuation").
         display_name (str): Human-readable label shown in tool descriptions.
         module_name (str): Key into module_class_map identifying the controller class.
         category (str): Dispatch category ("ticker", "standalone", "toolkit",

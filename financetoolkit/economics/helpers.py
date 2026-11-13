@@ -23,10 +23,15 @@ from pandas.tseries.holiday import (
 from financetoolkit.cache import frame_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
+from financetoolkit.helpers import split_values
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source
 
 logger = get_logger()
+
+# A rise in prices of more than tenfold (1,000%) in a year, the hyperinflations of the long
+# run price indices.
+HYPERINFLATION_RISE = 9.0
 
 # Two-letter country codes (ISO 3166, as used by Eurostat, the BIS and the economic
 # calendar) named as elsewhere in the Economics module, so a country is one column no
@@ -463,6 +468,76 @@ def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> 
             "column(s), which means the source changed its format and the data cannot be "
             "interpreted."
         )
+
+
+def warn_about_long_run_prices(
+    consumer_price_index: pd.DataFrame,
+    countries: list[str] | str | None,
+    start_date: str | None,
+    end_date: str | None,
+) -> None:
+    """
+    Warns about the years of the Global Macro Database's yearly consumer price index, in
+    the date range, that its inflation rate does not describe as it reads:
+
+    - A value repeated in consecutive years, which the source carried forward rather
+      than measured, so that the inflation of those years is 0 by construction. Germany's
+      index repeats its 1912 value in 1913 and 1914, where the Jordà-Schularick-Taylor
+      Macrohistory Database has prices rising 0.7% and 2.8%.
+    - A hyperinflation (prices rising more than tenfold in a year). Yearly figures are
+      averages over the year, so the year after one still shows a large rise from that
+      average when a currency reform ended it within the year, as Germany's Rentenmark
+      did in November 1923 (1924: +723%). The index is chained across currency reforms
+      and redenominations, in today's currency, so it has no break at the reform.
+
+    Args:
+        consumer_price_index (pd.DataFrame): The yearly index, a column per country.
+        countries (list[str] | str | None): The requested countries, all when None.
+        start_date (str | None): The start of the date range.
+        end_date (str | None): The end of the date range.
+    """
+    selected = (
+        consumer_price_index.columns
+        if countries is None
+        else [
+            country
+            for country in split_values(countries)
+            if country in consumer_price_index.columns
+        ]
+    )
+    window = consumer_price_index.loc[start_date:end_date, selected]
+
+    def years(index: pd.Index) -> str:
+        names = [str(year) for year in index]
+        return " and ".join(
+            [", ".join(names[:-1]), names[-1]] if len(names) > 1 else names
+        )
+
+    for country in window.columns:
+        index = window[country].dropna()
+        repeated = index.index[1:][(index.to_numpy()[1:] == index.to_numpy()[:-1])]
+
+        if len(repeated):
+            logger.warning(
+                "The Global Macro Database repeats the %s consumer price index of the "
+                "year before in %s: a value carried forward rather than measured, so the "
+                "inflation rate of those years is 0 by construction.",
+                country,
+                years(repeated),
+            )
+
+        hyperinflation = index.index[index.pct_change() > HYPERINFLATION_RISE]
+
+        if len(hyperinflation):
+            logger.warning(
+                "Prices in %s rose more than tenfold in %s. Yearly figures are averages "
+                "over the year, so the year after shows a large rise from that average "
+                "even when a currency reform ended the hyperinflation within the year; "
+                "the index is chained across currency reforms and redenominations, in "
+                "today's currency.",
+                country,
+                years(hyperinflation),
+            )
 
 
 def to_us_series(observations: dict, source: str, description: str) -> pd.DataFrame:

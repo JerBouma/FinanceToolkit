@@ -1843,3 +1843,46 @@ def test_yield_decomposition_adds_the_parts_and_skips_missing_days(monkeypatch):
     assert five_year.loc[days[2], "Breakeven Change"] == pytest.approx(-0.0004)
     assert five_year.loc[days[2], "Nominal Change"] == pytest.approx(0.0017)
     assert ("United States", "10Y") not in decomposition.columns
+
+
+def test_long_run_prices_warn_about_repeated_years_and_hyperinflations(caplog):
+    from financetoolkit.mcp_server.diagnostics_model import missing_data_notes
+
+    years = pd.period_range("1911", "1926", freq="Y")
+    germany = [
+        9.25,
+        9.74,
+        9.74,
+        9.74,
+        13.1,
+        17.5,
+        21.9,
+        30.2,
+        47.7,
+        101.7,
+        130.2,
+        1464.2,
+        1.5e12,
+        1.27e13,
+        1.38e13,
+        1.39e13,
+    ]
+    index = pd.DataFrame(
+        {"Germany": germany, "France": [float(n) for n in range(10, 26)]}, index=years
+    )
+
+    with caplog.at_level("WARNING"):
+        helpers.warn_about_long_run_prices(index, "Germany", "1912", "1930")
+
+    messages = [record.getMessage() for record in caplog.records]
+    # 1913 and 1914 repeat 1912; 1922 and 1923 rose more than tenfold; France is not asked.
+    assert len(messages) == 2
+    assert "1913 and 1914" in messages[0]
+    assert "Prices in Germany rose more than tenfold in 1922 and 1923" in messages[1]
+    # The MCP server passes both on as notes.
+    assert missing_data_notes(messages) == messages
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        helpers.warn_about_long_run_prices(index, None, "1916", "1921")
+    assert not caplog.records

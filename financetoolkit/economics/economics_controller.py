@@ -67,6 +67,7 @@ from financetoolkit.economics.helpers import (
     to_gmdb_country_names,
     validate_consumer_price_measure,
     validate_period,
+    warn_about_long_run_prices,
 )
 from financetoolkit.fixedincome import (
     bundesbank_model,
@@ -4524,6 +4525,13 @@ class Economics:
         (GMDB), annual with 2015 = 100. Set `oecd_source=True` to retrieve monthly or
         quarterly data from the OECD instead (base year varies per country).
 
+        The yearly index is chained across currency reforms and redenominations, in today's
+        currency. A warning names the years in the date range where it repeats the value
+        of the year before (carried forward by the source, such as Germany's 1913 and
+        1914, so their inflation is 0 by construction) and the hyperinflations (prices
+        rising more than tenfold in a year), after which the yearly average still rises
+        sharply even when a currency reform ended them within the year.
+
         With period="monthly" and without oecd_source, every country comes from its most
         current source without an API key: Eurostat for the euro area and the European
         Economic Area (the HICP, 2015 = 100), the Office for National Statistics for the
@@ -4635,6 +4643,11 @@ class Economics:
             countries, period, oecd_source, gmdb_forecasts, measure
         )
 
+        if period == "yearly" and not oecd_source:
+            warn_about_long_run_prices(
+                consumer_price_index, countries, self._start_date, self._end_date
+            )
+
         if cumulative:
             # Rebased only after slicing to the date range, so the growth starts at 1 in
             # the first period of the range.
@@ -4687,6 +4700,13 @@ class Economics:
         gmdb_forecasts=True; by default a series ends with its last observation. Further
         information about the variable can be found within
         https://www.globalmacrodata.com/documentation.html
+
+        The yearly index is chained across currency reforms and redenominations, in today's
+        currency. A warning names the years in the date range where it repeats the value
+        of the year before (carried forward by the source, such as Germany's 1913 and
+        1914, so their inflation is 0 by construction) and the hyperinflations (prices
+        rising more than tenfold in a year), after which the yearly average still rises
+        sharply even when a currency reform ended them within the year.
 
         With period="monthly", the default, the annual rate of change is returned for every
         month, the figure statistical offices publish, taken per country from the most
@@ -4794,9 +4814,13 @@ class Economics:
                 "inflation_rate", countries, measure
             )
         else:
-
-            inflation_rate = gmdb_model.get_inflation_rate(
-                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+            gmdb_dataset = self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+            inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=gmdb_dataset)
+            warn_about_long_run_prices(
+                gmdb_model.get_consumer_price_index(gmd_dataset=gmdb_dataset),
+                countries,
+                self._start_date,
+                self._end_date,
             )
 
         return finalize_dataset(

@@ -2,25 +2,29 @@
 Live checks of every data source the Finance Toolkit reads without an API key, run
 weekly by the Live Sources workflow.
 
-The checks cover the keyless Economics sources (Eurostat, ONS, BLS, IBGE, the Statistics
-Bureau of Japan, the OECD, the IMF, BIS, ECB, Bank of England, Bank of Japan, Japan's
-Ministry of Finance, the U.S. Treasury, the Federal Reserve Board, Freddie Mac, the NBER,
-Shiller, IMF PortWatch, Cboe, STOXX, EEX, the Global Macro Database, the Jordà-Schularick-Taylor
-Macrohistory Database, the ESRB, the NGFS and the DNB scenario set), the keyless Fixed
-Income sources (the ECB policy rates and Euribor, the Bundesbank, Bank of Canada,
-Riksbank, Norges Bank, the Reserve Bank of Australia, the New York Fed, EIOPA and ESMA's
-CEREP), Kenneth French's factor library, and Yahoo Finance (prices, exchange rates,
-financial statements, statistics, option chains, the asset class proxies and the
-commodity futures curves) together with the Cboe option chains it falls back on.
+The checks cover the Economics sources (Eurostat, ONS, BLS, IBGE, the Statistics Bureau
+of Japan, the OECD, the IMF and IMF PortWatch, BIS, ECB, Bank of England, Bank of Japan,
+Japan's Ministry of Finance, the U.S. Treasury, the Federal Reserve Board, the New York
+Fed, the Census Bureau, the BEA, the Department of Labor, Freddie Mac, the NBER, the World
+Bank, Shiller, Cboe, STOXX, EEX, the Global Macro Database, the Jordà-Schularick-Taylor
+Macrohistory Database, the ESRB, the NGFS and the DNB scenario set), the Fixed Income
+sources (the ECB policy rates and Euribor, the Bundesbank, Bank of Canada, Riksbank,
+Norges Bank, the Reserve Bank of Australia, the New York Fed, the Treasury's HQM curve
+and FedInvest prices, EIOPA and ESMA's CEREP), Kenneth French's factor library, Aswath
+Damodaran's datasets, FINRA, and Yahoo Finance (prices, exchange rates, financial
+statements, statistics, option chains, the asset class proxies and the commodity futures
+curves) together with the Cboe option chains it falls back on.
 
 Each source is asked for a small, recent piece of data. Sources that update daily,
 weekly, monthly or quarterly must return current data within a plausible range; sources
-that publish a dataset once a year or less (the long-run histories and the stress test
-scenarios) must be reachable and parse into the expected columns. A failing check names
-its source, so the workflow opens one issue per broken source.
+that publish a dataset once a year or less (the long-run histories, the stress test
+scenarios and Damodaran's datasets) must be reachable and parse into the expected
+columns. A failing check names its source, so the workflow opens one issue per broken
+source.
 
-Sources that need a key (FinancialModelingPrep, FRED) are not checked here. Skipped
-unless FINANCETOOLKIT_LIVE_SOURCES=1, since it needs network access.
+The sources that need a key (FinancialModelingPrep, FRED) are checked in
+test_live_keyed_sources.py. Skipped unless FINANCETOOLKIT_LIVE_SOURCES=1, since it needs
+network access.
 """
 
 import logging
@@ -33,12 +37,15 @@ import pytest
 
 from financetoolkit import finra_model, historical_model, yfinance_model
 from financetoolkit.economics import (
+    bea_model,
     bis_model,
     bls_model,
     boe_model,
     boj_model,
     cboe_model,
+    census_model,
     dnb_model,
+    dol_model,
     ecb_model,
     eex_model,
     esrb_model,
@@ -52,6 +59,7 @@ from financetoolkit.economics import (
     mof_model,
     nber_model,
     ngfs_model,
+    nyfed_model,
     oecd_model,
     ons_model,
     portwatch_model,
@@ -59,6 +67,7 @@ from financetoolkit.economics import (
     shiller_model,
     stoxx_model,
     treasury_model,
+    world_bank_model,
     yfinance_model as futures_model,
 )
 from financetoolkit.economics.economics_controller import ASSET_CLASS_PROXIES
@@ -71,10 +80,13 @@ from financetoolkit.fixedincome import (
     euribor_model,
     fed_model,
     fiscaldata_model,
+    hqm_model,
     norgesbank_model,
     rba_model,
     riksbank_model,
+    treasurydirect_model,
 )
+from financetoolkit.models import damodaran_model
 from financetoolkit.options import options_model
 from financetoolkit.performance import performance_model
 
@@ -110,17 +122,18 @@ REQUEST_LIMIT_PATTERN = re.compile(
 )
 
 
-def fetch_or_explain(name, fetch, caplog):
+def fetch_or_explain(name, fetch, caplog, is_empty=lambda data: data.empty):
     """
     The data of a source, after skipping the check when the source refused the request
     because of a request limit. An empty answer otherwise fails with what the source
     logged, since the retrieval logs why it returned nothing (often at info level, when
-    another source is used instead) rather than raising.
+    another source is used instead) rather than raising. is_empty says whether an answer
+    is empty, for answers that are not a DataFrame.
     """
     with caplog.at_level(logging.INFO):
         data = fetch()
 
-    if data.empty:
+    if is_empty(data):
         logged = " | ".join(record.getMessage() for record in caplog.records)
         if REQUEST_LIMIT_PATTERN.search(logged):
             pytest.skip(
@@ -456,6 +469,59 @@ SOURCES = {
         "weekly",
         (5, 400),
     ),
+    # The Census Bureau, the BEA, the Department of Labor and the New York Fed, which the
+    # US series read when there is no FRED API key.
+    "Census Bureau retail sales": (
+        census_model.get_retail_sales,
+        "United States",
+        "monthly",
+        (200_000, 2_000_000),
+    ),
+    "Census Bureau housing starts": (
+        census_model.get_housing_starts,
+        "United States",
+        "monthly",
+        (300, 3_000),
+    ),
+    "BEA real personal income": (
+        bea_model.get_real_personal_income,
+        "United States",
+        "monthly",
+        (5_000, 50_000),
+    ),
+    # The claims report adds the latest weeks some weeks after FRED does, so it is held
+    # to the age of monthly data.
+    "Department of Labor initial jobless claims": (
+        dol_model.get_initial_jobless_claims,
+        "United States",
+        "monthly",
+        (50_000, 5_000_000),
+    ),
+    "New York Fed term premium": (
+        lambda: nyfed_model.get_term_premium()["Term Premium"][["10Y"]].rename(
+            columns={"10Y": "United States"}
+        ),
+        "United States",
+        "daily",
+    ),
+    "New York Fed supply chain pressure index": (
+        nyfed_model.get_supply_chain_pressure_index,
+        "World",
+        "monthly",
+        (-5, 10),
+    ),
+    # The World Bank's commodity prices and the Treasury's HQM corporate bond curve
+    "World Bank commodity prices": (
+        lambda: world_bank_model.get_commodity_prices()[["Gold"]],
+        "Gold",
+        "monthly",
+        (200, 20_000),
+    ),
+    "Treasury HQM corporate bond par yields": (
+        lambda: hqm_model.get_hqm_par_yields().rename(columns={"10Y": "United States"}),
+        "United States",
+        "monthly",
+    ),
     "Shiller stock market data": (
         lambda: shiller_model.get_stock_market_data().rename(
             columns={"Long Interest Rate": "United States"}
@@ -656,6 +722,19 @@ for _symbol in CBOE_VOLATILITY_INDICES:
 # expected column, whose latest value must lie in the given range; their age is not
 # checked. Each source: a request, the column to check and the range.
 STATIC_SOURCES = {
+    # Aswath Damodaran's industry averages and rating table, updated every January.
+    "Damodaran industry statistics": (
+        lambda: damodaran_model.get_industry_statistics(
+            "cost_of_capital", "United States"
+        ),
+        "Beta",
+        (0.5, 1.5),
+    ),
+    "Damodaran synthetic rating table": (
+        damodaran_model.get_synthetic_rating_table,
+        "Default Spread",
+        (0, 0.5),
+    ),
     "Eurostat life tables": (
         lambda: eurostat_model.get_life_table(
             "life_expectancy", "total", YEARLY_START, END, ["DE"]
@@ -965,6 +1044,26 @@ def test_commodity_forward_curve(name):
         TODAY - timedelta(days=DAILY_MAX_AGE_DAYS)
     ), f"{name} is not current: the latest observation is {curve.index[-1]}"
     assert (latest > 0).all(), f"{name} has non-positive prices"
+
+
+@pytest.mark.parametrize("name", ["TreasuryDirect Treasury prices"])
+def test_treasury_prices(name):
+    # The FedInvest prices of every marketable Treasury on the latest business day.
+    prices, price_date = treasurydirect_model.get_treasury_prices()
+
+    assert not prices.empty, f"{name} returned no prices"
+    assert pd.Timestamp(price_date) >= pd.Timestamp(
+        TODAY - timedelta(days=DAILY_MAX_AGE_DAYS)
+    ), f"{name} is not current: the prices are of {price_date}"
+    assert set(prices["Security Type"]) >= {
+        "Bill",
+        "Note",
+        "Bond",
+    }, f"{name} lacks bills, notes or bonds"
+    price = pd.to_numeric(prices["Price"], errors="coerce").dropna()
+    assert (
+        (price > 20) & (price < 200)
+    ).all(), f"{name} has an implausible price per 100 of par"
 
 
 @pytest.mark.parametrize("name", ["FiscalData Treasury auctions"])

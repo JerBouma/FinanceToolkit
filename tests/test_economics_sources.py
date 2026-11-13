@@ -1180,6 +1180,35 @@ def test_department_of_labor_claims_are_posted_for_and_seasonally_adjusted(monke
     assert claims["United States"].iloc[0] == 232000
 
 
+def test_department_of_labor_outage_serves_the_cached_claims(cache, monkeypatch):
+    from financetoolkit.economics import dol_model
+
+    report = (
+        "<r539cyNational><week><weekEnded>10/18/2026</weekEnded><InitialClaims><NSA>"
+        "201,000</NSA><SA>232,000</SA></InitialClaims></week></r539cyNational>"
+    )
+    # What the report answers when its database cannot be reached.
+    outage = (
+        "Unable to connect!<br/>SQLSTATE=HY000, SQLDriverConnect: -25546 [Informix]"
+        "[Informix ODBC Driver][Informix]Invalid ASF assoc_id."
+    )
+    answers = [report]
+    monkeypatch.setattr(
+        dol_model, "get_request", lambda url, **kwargs: FakeResponse(text=answers[-1])
+    )
+    claims = dol_model.get_initial_jobless_claims()
+
+    # Expire the cached claims, then let the database be unreachable: the outage is
+    # retried and answered with the cached claims, not reported as a changed layout.
+    answers.append(outage)
+    monkeypatch.setattr(dol_model, "OUTAGE_DELAY_SECONDS", 0)
+    monkeypatch.setattr(helpers, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(helpers, "STALE_TTL_SECONDS", 10**9)
+    monkeypatch.setattr(cache, "get", _expire_fresh_reads(cache.get))
+
+    assert dol_model.get_initial_jobless_claims().equals(claims)
+
+
 def test_census_retail_sales_leave_out_the_seasonal_factors(monkeypatch):
     from financetoolkit.economics import census_model
 

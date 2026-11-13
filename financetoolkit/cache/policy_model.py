@@ -42,6 +42,7 @@ EIOPA = "EIOPA"
 INTERNATIONAL_MONETARY_FUND = "IMF"
 SHILLER = "Shiller"
 WORLD_BANK = "WorldBank"
+IMF_PORTWATCH = "IMFPortWatch"
 CBOE = "Cboe"
 STOXX = "STOXX"
 RESERVE_BANK_OF_AUSTRALIA = "ReserveBankOfAustralia"
@@ -294,6 +295,9 @@ POLICIES: dict[str, CachePolicy] = {
     f"{SHILLER}.stock_market_data": CachePolicy(ttl_seconds=7 * DAY),
     # The Pink Sheet is updated in the first days of every month.
     f"{WORLD_BANK}.commodity_prices": CachePolicy(ttl_seconds=7 * DAY),
+    # PortWatch adds the latest days once a week, on Tuesdays, and the chokepoints rarely.
+    f"{IMF_PORTWATCH}.chokepoint_transits": CachePolicy(ttl_seconds=DAY),
+    f"{IMF_PORTWATCH}.chokepoints": CachePolicy(ttl_seconds=30 * DAY),
     # Index histories published whole, one file per index, updated after every close.
     f"{CBOE}.index": CachePolicy(ttl_seconds=DAY),
     f"{CBOE}.option_chain": CachePolicy(ttl_seconds=900),

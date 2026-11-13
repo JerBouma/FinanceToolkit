@@ -44,6 +44,7 @@ from financetoolkit.economics import (
     nyfed_model,
     oecd_model,
     ons_model,
+    portwatch_model,
     sbj_model,
     shiller_model,
     stoxx_model,
@@ -12663,6 +12664,204 @@ class Economics:
             end_date=self._end_date,
             default_rounding=self._rounding,
             indicator_name="Commodity Prices",
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_chokepoint_transits(
+        self,
+        chokepoints: str | list[str] | None = None,
+        measure: str = "transits",
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Retrieves IMF PortWatch's daily ship transits through the world's maritime
+        chokepoints from 2019, such as the Strait of Hormuz, the Suez Canal, the Bab
+        el-Mandeb Strait, the Panama Canal, the Malacca Strait and the Bosporus, 28 in all.
+        For each chokepoint and day it gives the number of ships that passed it (transits)
+        or the estimated cargo they carried (trade volume, in metric tons), by ship
+        category: Container, Dry Bulk, General Cargo, Ro-Ro and Tanker, with Cargo (all
+        but tankers) and Total.
+
+        The transits show disruptions to trade as they happen, weeks before trade
+        statistics are published: tankers through the Strait of Hormuz fell from 36 on 28
+        February 2026 to 5 on 1 March, and when ships avoided the Red Sea, the monthly
+        transits of the Bab el-Mandeb Strait fell from 2,438 in October 2023 to 1,013 in
+        February 2024 while those around the Cape of Good Hope rose from 1,561 to 2,487.
+
+        PortWatch reads the transits from the Automatic Identification System (AIS)
+        signals ships broadcast, as collected by satellites for the UN Global Platform. A
+        ship is counted when it crosses a chokepoint's boundary, once per transit and not
+        again within 48 hours. Its trade volume is its deadweight tonnage (the most it can
+        carry) times its load factor, which PortWatch estimates from the ship's draft and
+        dimensions. It is an estimate: on a day with few transits it can be zero while
+        ships passed.
+
+        With period, the days are summed by week (Monday to Sunday), month, quarter or
+        year. Only complete periods are returned, since PortWatch adds the latest days
+        once a week.
+
+        Also known as: shipping traffic, strait of Hormuz tanker traffic, Suez Canal
+        transits, Red Sea shipping, maritime trade disruptions, oil flows.
+
+        Args:
+            chokepoints (str | list[str] | None, optional): The chokepoints, e.g. "Strait
+                of Hormuz" or ["Suez Canal", "Cape of Good Hope"], in any casing; a part of
+                a name that identifies one chokepoint, such as "Hormuz" or "Suez", works
+                too. Defaults to None, which returns all of them.
+            measure (str, optional): "transits" for the number of ships or "trade_volume"
+                for the estimated cargo they carried in metric tons. Defaults to
+                "transits".
+            period (str, optional): "daily", "weekly", "monthly", "quarterly" or "yearly".
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            growth (bool, optional): Whether to calculate the growth. Defaults to False.
+            lag (int, optional): The lag in periods for the growth, e.g. 12 with monthly
+                data for the change over a year. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result.
+                Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The transits or trade volumes by day (or period), with a column
+            per ship category, and per chokepoint and ship category when there are several
+            chokepoints.
+
+        Notes:
+        - Sources: UN Global Platform; IMF PortWatch (portwatch.imf.org).
+        - Arslanalp, S., Koepke, R. and Verschuur, J. (2021). "Tracking Trade from Space:
+        An Application to Pacific Island Countries." IMF Working Paper No. 2021/225.
+        - The days are in Coordinated Universal Time (UTC).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date="2026-02-24", end_date="2026-03-03")
+
+        economics.get_chokepoint_transits(chokepoints="Strait of Hormuz", show_columns=["Tanker", "Cargo", "Total"])
+        ```
+
+        Which returns:
+
+        |            |   Tanker |   Cargo |   Total |
+        |:-----------|---------:|--------:|--------:|
+        | 2026-02-24 |       49 |      44 |      93 |
+        | 2026-02-25 |       59 |      57 |     116 |
+        | 2026-02-26 |       45 |      44 |      89 |
+        | 2026-02-27 |       37 |      27 |      64 |
+        | 2026-02-28 |       36 |      21 |      57 |
+        | 2026-03-01 |        5 |      15 |      20 |
+        | 2026-03-02 |        1 |       3 |       4 |
+        | 2026-03-03 |        1 |       3 |       4 |
+        """
+        if measure not in ("transits", "trade_volume"):
+            raise ValueError(
+                f"measure='{measure}' is not available. Choose 'transits' or "
+                "'trade_volume'."
+            )
+
+        frequencies = {
+            "daily": "D",
+            "weekly": "W",
+            "monthly": "M",
+            "quarterly": "Q",
+            "yearly": "Y",
+        }
+
+        if period not in frequencies:
+            raise ValueError(
+                f"period='{period}' is not available. Choose from "
+                f"{', '.join(frequencies)}."
+            )
+
+        available = portwatch_model.get_chokepoint_names()
+
+        if not available:
+            return pd.DataFrame()
+
+        selected: list[str] = []
+
+        # A chokepoint is found by its name, else by a part of it that matches one name.
+        for requested in (
+            available if chokepoints is None else helpers.split_values(chokepoints)
+        ):
+            exact = [name for name in available if name.lower() == requested.lower()]
+            partial = [name for name in available if requested.lower() in name.lower()]
+            matches = exact or partial
+
+            if len(matches) == 1:
+                if matches[0] not in selected:
+                    selected.append(matches[0])
+            else:
+                logger.warning(
+                    "'%s' %s. The chokepoints are: %s.",
+                    requested,
+                    "matches several chokepoints" if matches else "is not a chokepoint",
+                    ", ".join(available),
+                )
+
+        if not selected:
+            return pd.DataFrame()
+
+        prefix = "Transits " if measure == "transits" else "Trade Volume "
+        transits = {}
+
+        for name, data in zip(
+            selected,
+            helpers.run_in_parallel(
+                portwatch_model.get_chokepoint_transits,
+                [(name,) for name in selected],
+            ),
+            strict=True,
+        ):
+            if not data.empty:
+                columns = [
+                    column for column in data.columns if column.startswith(prefix)
+                ]
+                transits[name] = data[columns].rename(
+                    columns=lambda column: column.removeprefix(prefix)
+                )
+
+        if not transits:
+            return pd.DataFrame()
+
+        dataset = pd.concat(transits, axis=1).sort_index()
+
+        if period != "daily":
+            # Only periods whose last day is in the data are complete.
+            last_day = dataset.index[-1].to_timestamp()
+            dataset = dataset.groupby(dataset.index.asfreq(frequencies[period])).sum(
+                min_count=1
+            )
+            dataset = dataset[
+                dataset.index.to_timestamp(how="end").normalize() <= last_day
+            ]
+
+        if len(selected) == 1:
+            dataset = dataset.droplevel(0, axis=1)
+
+        return finalize_dataset(
+            dataset=dataset,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Chokepoint Transits",
             rounding=rounding,
             growth=growth,
             lag=lag,

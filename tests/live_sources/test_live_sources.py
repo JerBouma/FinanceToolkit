@@ -5,7 +5,7 @@ weekly by the Live Sources workflow.
 The checks cover the keyless Economics sources (Eurostat, ONS, BLS, IBGE, the Statistics
 Bureau of Japan, the OECD, the IMF, BIS, ECB, Bank of England, Bank of Japan, Japan's
 Ministry of Finance, the U.S. Treasury, the Federal Reserve Board, Freddie Mac, the NBER,
-Shiller, Cboe, STOXX, EEX, the Global Macro Database, the Jordà-Schularick-Taylor
+Shiller, IMF PortWatch, Cboe, STOXX, EEX, the Global Macro Database, the Jordà-Schularick-Taylor
 Macrohistory Database, the ESRB, the NGFS and the DNB scenario set), the keyless Fixed
 Income sources (the ECB policy rates and Euribor, the Bundesbank, Bank of Canada,
 Riksbank, Norges Bank, the Reserve Bank of Australia, the New York Fed, EIOPA and ESMA's
@@ -54,6 +54,7 @@ from financetoolkit.economics import (
     ngfs_model,
     oecd_model,
     ons_model,
+    portwatch_model,
     sbj_model,
     shiller_model,
     stoxx_model,
@@ -97,6 +98,9 @@ YEARLY_START = f"{TODAY.year - 6}-01-01"
 QUARTERLY_MAX_AGE_DAYS = 200
 MONTHLY_MAX_AGE_DAYS = 130
 DAILY_MAX_AGE_DAYS = 10
+# Daily data published once a week, such as IMF PortWatch's (on Tuesdays, up to the
+# Sunday before).
+WEEKLY_MAX_AGE_DAYS = 16
 
 # What a source answers when it refuses a request because of a request limit, such as the
 # 25 keyless requests a day per IP address of the BLS. The runners of the workflow share
@@ -443,6 +447,15 @@ SOURCES = {
         "United States",
         "daily",
     ),
+    # IMF PortWatch: the ships through the Suez Canal each day, published weekly.
+    "IMF PortWatch chokepoint transits": (
+        lambda: portwatch_model.get_chokepoint_transits("Suez Canal")[
+            ["Transits Total"]
+        ].rename(columns={"Transits Total": "Suez Canal"}),
+        "Suez Canal",
+        "weekly",
+        (5, 400),
+    ),
     "Shiller stock market data": (
         lambda: shiller_model.get_stock_market_data().rename(
             columns={"Long Interest Rate": "United States"}
@@ -720,6 +733,7 @@ def test_source_is_current_and_plausible(name, caplog):
     max_age = {
         "quarterly": QUARTERLY_MAX_AGE_DAYS,
         "monthly": MONTHLY_MAX_AGE_DAYS,
+        "weekly": WEEKLY_MAX_AGE_DAYS,
         "daily": DAILY_MAX_AGE_DAYS,
     }[frequency]
 

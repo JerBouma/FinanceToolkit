@@ -900,7 +900,7 @@ def get_factor_asset_correlations(
 
     Args:
         factors (pd.DataFrame): the factor dataset with each factor in a column.
-        excess_returns (pd.Series): the excess returns.
+        excess_return (pd.Series): the excess return of the asset.
 
     Returns:
         pd.Series: the correlation of each factor with the excess return.
@@ -1418,8 +1418,7 @@ def get_probabilistic_sharpe_ratio(
     defaults to `fisher=True` (excess kurtosis, Normal = 0); either call it with
     `fisher=False` before passing the result in here, or add 3 to a Fisher/excess
     kurtosis value. Getting this convention backwards silently shifts every PSR value
-    (via the ((γ₄ − 1) / 4) term), which is exactly the kind of sign/convention bug this
-    codebase has been bitten by before, so double check which convention is being fed in.
+    (via the ((γ₄ − 1) / 4) term), so double check which convention is being fed in.
 
     For more information about the method, see the following paper:
 
@@ -1434,7 +1433,7 @@ def get_probabilistic_sharpe_ratio(
         skewness (pd.Series | pd.DataFrame | float): The skewness (γ₃) of the same
         returns used to compute `sharpe_ratio`.
         kurtosis (pd.Series | pd.DataFrame | float): The non-excess (raw) kurtosis (γ₄)
-        of the same returns used to compute `sharpe_ratio`. See the Notes above — a
+        of the same returns used to compute `sharpe_ratio`. See the note above — a
         Normal distribution has a kurtosis of 3 under this convention, not 0.
         n_observations (pd.Series | pd.DataFrame | float | int): The number of return
         observations used to compute `sharpe_ratio`.
@@ -3282,8 +3281,7 @@ def get_adjusted_sharpe_ratio(
     a Fisher/excess kurtosis value first. Getting this convention backwards flips the sign
     of the ((K - 3) / 24) * SR^2 term for any return series that is actually close to
     Normal (where raw kurtosis is close to 3 but excess/Fisher kurtosis is close to 0),
-    silently turning a near-zero adjustment into a large, wrong one — exactly the kind of
-    sign/convention bug this codebase has been bitten by before, so double check which
+    silently turning a near-zero adjustment into a large, wrong one, so double check which
     convention is being fed in.
 
     For more information about the method, see the following paper:
@@ -3298,7 +3296,7 @@ def get_adjusted_sharpe_ratio(
         skewness (pd.Series | pd.DataFrame | float): The skewness (γ₃) of the same returns
         used to compute `sharpe_ratio`.
         kurtosis (pd.Series | pd.DataFrame | float): The non-excess (raw) kurtosis (γ₄) of
-        the same returns used to compute `sharpe_ratio`. See the Notes above — a Normal
+        the same returns used to compute `sharpe_ratio`. See the note above — a Normal
         distribution has a kurtosis of 3 under this convention, not 0.
 
     Returns:
@@ -3356,7 +3354,7 @@ def get_starr_ratio(
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
         the risk-free rate subtracted, already aggregated to one value per period (see
-        Notes above).
+        above).
         returns (pd.Series | pd.DataFrame): The corresponding raw (non-excess) returns,
         from which the CVaR denominator is computed. When this has a "within period" Multi
         Index (period, date), the resulting per-period CVaR is rescaled to the period

@@ -257,12 +257,15 @@ class Discovery:
         many means the list was truncated, which is warned about in the log; narrow the criteria
         or raise the limit to see the remainder.
 
+        Market caps are in each listing's own currency in "Market Cap" and in US dollars in
+        "Market Cap (USD)", which the market cap bounds and the ranking use.
+
         Also known as: filter stocks, financial criteria screener.
 
         Args:
-            market_cap_higher (int): The minimum market capitalization of the stock in US dollars
+            market_cap_higher (int | None): The minimum market capitalization of the stock in US dollars
                 (not in millions), e.g. 1_000_000_000 for $1 billion. Defaults to None, which applies no filter.
-            market_cap_lower (int): The maximum market capitalization of the stock in US dollars.
+            market_cap_lower (int | None): The maximum market capitalization of the stock in US dollars.
                 The screener returns the largest companies first, so this bound is only sent to it
                 when the currency of the listings is known: with an exchange, or with a country and
                 primary_only. Otherwise it is applied to the companies returned. Defaults to None,
@@ -271,9 +274,9 @@ class Discovery:
             price_lower (float | None): The maximum price of the stock. Defaults to None, which applies no filter.
             beta_higher (float | None): The minimum beta of the stock. Defaults to None, which applies no filter.
             beta_lower (float | None): The maximum beta of the stock. Defaults to None, which applies no filter.
-            volume_higher (int): The minimum volume of the stock, in shares traded. Defaults to None, which applies no
-                filter.
-            volume_lower (int): The maximum volume of the stock. Defaults to None, which applies no filter.
+            volume_higher (int | None): The minimum volume of the stock, in shares traded. Defaults to None, which
+                applies no filter.
+            volume_lower (int | None): The maximum volume of the stock. Defaults to None, which applies no filter.
             dividend_higher (float | None): The minimum dividend of the stock, as an amount per share
                 over the last annual period rather than as a yield. Defaults to None, which applies no filter.
             dividend_lower (float | None): The maximum dividend of the stock. Defaults to None, which applies no filter.
@@ -296,9 +299,6 @@ class Discovery:
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
-
-        Market caps are in each listing's own currency in "Market Cap" and in US dollars in
-        "Market Cap (USD)", which the market cap bounds and the ranking use.
 
         Returns:
             pd.DataFrame: A dataframe with all the symbols that match the query. An empty
@@ -500,9 +500,9 @@ class Discovery:
 
         Args:
             start_date (str | None): The start date to filter data with, e.g. "2024-01-01".
-                Defaults to a year ago.
+                Defaults to None, which uses the date a year ago.
             end_date (str | None): The end date to filter data with, e.g. "2024-12-31".
-                Defaults to today.
+                Defaults to None, which uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2019,9 +2019,10 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
             sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
-            start_date (str, optional): The start of the history of one sector. Defaults to a year
-                ago.
-            end_date (str, optional): The end of the history of one sector. Defaults to today.
+            start_date (str, optional): The start of the history of one sector. Defaults to None,
+                which uses the date a year ago.
+            end_date (str, optional): The end of the history of one sector. Defaults to None, which
+                uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2093,9 +2094,10 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
-            start_date (str, optional): The start of the history of one industry. Defaults to a year
-                ago.
-            end_date (str, optional): The end of the history of one industry. Defaults to today.
+            start_date (str, optional): The start of the history of one industry. Defaults to None,
+                which uses the date a year ago.
+            end_date (str, optional): The end of the history of one industry. Defaults to None, which
+                uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2166,9 +2168,10 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
             sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
-            start_date (str, optional): The start of the history of one sector. Defaults to a year
-                ago.
-            end_date (str, optional): The end of the history of one sector. Defaults to today.
+            start_date (str, optional): The start of the history of one sector. Defaults to None,
+                which uses the date a year ago.
+            end_date (str, optional): The end of the history of one sector. Defaults to None, which
+                uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2240,9 +2243,10 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
-            start_date (str, optional): The start of the history of one industry. Defaults to a year
-                ago.
-            end_date (str, optional): The end of the history of one industry. Defaults to today.
+            start_date (str, optional): The start of the history of one industry. Defaults to None,
+                which uses the date a year ago.
+            end_date (str, optional): The end of the history of one industry. Defaults to None, which
+                uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2489,8 +2493,9 @@ class Discovery:
         (Berkshire Hathaway's in Frankfurt two days after New York), so the primary listing
         is chosen from the releases of the week before and after the range as well. Every
         listing of a company has the market cap of its primary listing, since the one
-        reported for a depositary receipt or a secondary listing is often far off. The country filter uses the country of the company, so it also keeps
-        a company's listings abroad.
+        reported for a depositary receipt or a secondary listing is often far off. The
+        country filter uses the country of the company, so it also keeps a company's
+        listings abroad.
 
         The EPS and revenue figures are in the currency the source reports them in for each
         listing, which is the reporting currency for some listings and the trading currency
@@ -2502,10 +2507,10 @@ class Discovery:
         Also known as: earnings season, earnings release dates, upcoming earnings.
 
         Args:
-            start_date (str, optional): The start date to filter data with. Defaults to today,
-                or to seven days before the end date when only that is given.
-            end_date (str, optional): The end date to filter data with. Defaults to seven days
-                after the start date.
+            start_date (str, optional): The start date to filter data with. Defaults to None,
+                which uses today, or seven days before the end date when only that is given.
+            end_date (str, optional): The end date to filter data with. Defaults to None,
+                which uses seven days after the start date.
             min_market_cap (float, optional): The minimum market cap in US dollars, such as
                 10e9 for ten billion. Releases without a market cap are left out. Defaults to
                 None.
@@ -2584,8 +2589,10 @@ class Discovery:
         Also known as: current reports, material event filings, SEC filings.
 
         Args:
-            start_date (str, optional): The start date to filter data with. Defaults to 30 days ago.
-            end_date (str, optional): The end date to filter data with. Defaults to today.
+            start_date (str, optional): The start date to filter data with. Defaults to None,
+                which uses the date 30 days ago.
+            end_date (str, optional): The end date to filter data with. Defaults to None, which
+                uses today.
             limit (int, optional): The number of results to return. Defaults to 100.
             page (int, optional): The page number to retrieve. Defaults to 0.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched

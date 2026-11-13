@@ -170,6 +170,10 @@ def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
     Retrieves the daily Sterling Overnight Index Average (SONIA).
 
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
     Returns:
         pd.DataFrame: The rate as a decimal, indexed by day.
     """
@@ -179,6 +183,10 @@ def get_overnight_rate(start_date: str, end_date: str) -> pd.DataFrame:
 def get_bank_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
     Retrieves the daily Bank Rate, the policy rate of the Bank of England.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
 
     Returns:
         pd.DataFrame: The rate as a decimal, indexed by day.

@@ -143,14 +143,16 @@ def create_binomial_tree_dataframe(
     time_to_expiration: float,
 ):
     """
-    Creates the DataFrame that correctly displays the binomial tree for each ticker and strike price.
-    over time (the time of expiration).
+    Creates the DataFrame that correctly displays the binomial tree for each ticker and strike price
+    over time (up to the time of expiration).
 
     Args:
         binomial_tree_dictionary (dict[str, dict[float, pd.DataFrame]]): a dictionary
         containing the binomial tree for each ticker, strike price and expiration date.
         start_date (str | pd.Period): the date the tree starts from, which labels the
         first column.
+        time_to_expiration (float): the time to expiration in years, which sets the date
+        of the last column.
 
     Returns:
         pd.DataFrame: the DataFrame that correctly displays the binomial tree for each ticker
@@ -192,8 +194,8 @@ def create_stock_simulation_dataframe(
     time_to_expiration: float,
 ):
     """
-    Creates the DataFrame that correctly displays the binomial tree for each ticker and strike price.
-    over time (the time of expiration).
+    Creates the DataFrame that correctly displays the simulated stock prices for each ticker over
+    time (up to the time of expiration).
 
     Args:
         stock_simulation_dictionary (dict[str, pd.DataFrame]): the simulated stock prices
@@ -240,7 +242,7 @@ def show_input_info(
     risk_neutral_probability_dict: dict | None = None,
 ):
     """
-    Based on the input parameters, print the input information.
+    Based on the input parameters, log the input information.
 
     Args:
         start_date (str): the start date.
@@ -248,10 +250,17 @@ def show_input_info(
         stock_prices (pd.Series): the stock price for each ticker.
         volatility (pd.Series): the volatility for each ticker.
         risk_free_rate (float): the risk free rate.
-        dividend_yield (dict[str, float]): the dividend yield for each ticker.
+        dividend_yield (dict[str, float] | None): the dividend yield for each ticker. Defaults
+        to None, which leaves it out.
+        up_movement_dict (dict | None): the up movement of the binomial tree for each ticker.
+        Defaults to None, which leaves it out.
+        down_movement_dict (dict | None): the down movement of the binomial tree for each
+        ticker. Defaults to None, which leaves it out.
+        risk_neutral_probability_dict (dict | None): the risk neutral probability of an up
+        movement for each ticker. Defaults to None, which leaves it out.
 
     Returns:
-        a print statement with the input information.
+        None: the input information is logged.
     """
     stock_price_list = [
         (f"{ticker} ({round(stock_price_value, 2)})")

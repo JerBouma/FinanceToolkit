@@ -114,9 +114,10 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 @track_sources
 class Economics:
     """
-    The Economics module contains methods to retrieve economic data from the OECD.
-    These can be anything ranging from Gross Domestic Product (GDP) to Inflation
-    to Consumer Price Index (CPI) and more.
+    The Economics module contains methods to retrieve economic data from the OECD, the
+    Global Macro Database, central banks, statistical offices and other official
+    publishers. These can be anything ranging from Gross Domestic Product (GDP) to
+    Inflation to Consumer Price Index (CPI) and more.
     """
 
     def __init__(
@@ -136,8 +137,10 @@ class Economics:
         Initializes the Economics Controller Class.
 
         Args:
-            start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
-            end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
+            start_date (str | None, optional): The start date to retrieve data from. Defaults to None,
+                which starts 100 years before today.
+            end_date (str | None, optional): The end date to retrieve data from. Defaults to None,
+                which uses today.
             gmdb_source (bool, optional): If True, retrieves data from the GMDB source. Defaults to True.
             quarterly (bool | None, optional): If True, methods with a period argument return quarterly
                 data where the indicator has it. Otherwise they return the highest frequency the
@@ -157,9 +160,10 @@ class Economics:
                 is cached regardless of this setting. Defaults to True.
             cache (Cache | None, optional): A cache to use for the data this module retrieves, which takes
                 precedence over use_cached_data. Defaults to None.
-            api_key (str, optional): A FinancialModelingPrep API key, only needed for the economic
-                calendar and the market risk premium. Obtain one at https://www.jeroenbouma.com/fmp.
-                Defaults to an empty string.
+            api_key (str, optional): A FinancialModelingPrep API key, needed for the economic
+                calendar, the market risk premium and the MOVE and JGB VIX of the implied volatility,
+                and used for the asset class proxies (Yahoo Finance otherwise). Obtain one at
+                https://www.jeroenbouma.com/fmp. Defaults to an empty string.
             use_cached_data (bool | str | None, optional): Whether to cache the data retrieved from external
                 sources. None or True uses the shared cache database in the user configuration directory, False
                 retrieves everything every time and a string is the path to a dedicated cache folder or database
@@ -401,8 +405,8 @@ class Economics:
         (Japan). Every other country comes from the Bank for International Settlements,
         which compiles the national consumer price indices of around sixty countries,
         including the United States, China, India and Brazil. Each country comes from the
-        source with the most recent month. None of them need an API key, and none have the
-        tight request limit of the OECD API.
+        source with the most recent month. None of them have the tight request limit of
+        the OECD API.
 
         The BIS republishes the US index of the Bureau of Labor Statistics (BLS), rebased
         to 2010 = 100, a few days after its release, so the months the BLS has published
@@ -508,8 +512,8 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Retrieves the US Consumer Price Index for All Urban Consumers (CPI-U), not
-        seasonally adjusted, or its annual rate of change. All items come from the keyless
-        BLS API (about the last three years, for the months it publishes before the BIS);
+        seasonally adjusted, or its annual rate of change. All items come from the BLS API
+        (about the last three years, for the months it publishes before the BIS);
         the core index and the components from FRED when a FRED API key is set, for the
         full history, and from the BLS otherwise.
 
@@ -563,7 +567,7 @@ class Economics:
     ) -> pd.DataFrame:
         """
         Combines a monthly industrial price index of every country from its official
-        publisher, none of which needs an API key: Eurostat (the euro area, the European
+        publisher: Eurostat (the euro area, the European
         Union and around 35 European countries), the Bureau of Labor Statistics (United
         States, through FRED when a FRED API key is set) and the Bank of Japan (Japan).
 
@@ -728,8 +732,8 @@ class Economics:
         self, countries: list[str] | str | None = None
     ) -> pd.DataFrame:
         """
-        Combines the daily 10-year government bond yields published without an API key:
-        the U.S. Department of the Treasury, the Bank of England, the Japanese Ministry of
+        Combines the daily 10-year government bond yields published by the U.S.
+        Department of the Treasury, the Bank of England, the Japanese Ministry of
         Finance and the European Central Bank (the euro area yield curve).
 
         Returns:
@@ -918,8 +922,8 @@ class Economics:
         so a US figure is about a quarter of the annualized rate the Bureau of Economic
         Analysis headlines.
 
-        Every country comes from the most current source without an API key: Eurostat for
-        the euro area and the countries it covers (including the preliminary flash estimate
+        Every country comes from the most current source: Eurostat for the euro area and
+        the countries it covers (including the preliminary flash estimate
         for the euro area, about thirty days after the quarter ends), the Office for
         National Statistics for the United Kingdom and the OECD Quarterly National Accounts
         for every other country, including the United States and Japan.
@@ -4534,7 +4538,7 @@ class Economics:
         sharply even when a currency reform ended them within the year.
 
         With period="monthly" and without oecd_source, every country comes from its most
-        current source without an API key: Eurostat for the euro area and the European
+        current source: Eurostat for the euro area and the European
         Economic Area (the HICP, 2015 = 100), the Office for National Statistics for the
         United Kingdom (CPI, 2015 = 100), the Statistics Bureau of Japan for Japan (CPI
         from 2015, on its latest base) and the Bank for International Settlements for
@@ -4711,7 +4715,7 @@ class Economics:
 
         With period="monthly", the default, the annual rate of change is returned for every
         month, the figure statistical offices publish, taken per country from the most
-        current source without an API key: Eurostat for the euro area and the European
+        current source: Eurostat for the euro area and the European
         Economic Area (the HICP, including the flash estimate at the end of the month
         itself), the Office for National Statistics for the United Kingdom (CPI), the
         Statistics Bureau of Japan for Japan (CPI, from 2016), the Bank for International
@@ -5019,15 +5023,14 @@ class Economics:
         customers with a lag, the PPI is generally seen as a leading, upstream indicator of
         cost pressure that later shows up in the Consumer Price Index (CPI).
 
-        Each country's headline index comes monthly from its official publisher, without an
-        API key:
+        Each country's headline index comes monthly from its official publisher:
 
         - Eurostat for the euro area, the European Union and around 35 European countries:
           the industrial producer prices on the domestic market (industry except
           construction, sewerage and waste management), 2021 = 100.
         - The Bureau of Labor Statistics for the United States: the PPI for final demand,
-          November 2009 = 100. The keyless BLS API returns about the last three years; with
-          a FRED API key the full history comes from FRED, which republishes it.
+          November 2009 = 100. The BLS API returns about the last three years; with a FRED
+          API key the full history comes from FRED, which republishes it.
         - The Bank of Japan for Japan: the Corporate Goods Price Index (domestic), 2020 =
           100, from 1960.
 
@@ -5148,15 +5151,15 @@ class Economics:
         Index it gives the terms of trade, and it shows how much of a currency move or a
         foreign price shock exporters pass on.
 
-        Each country's index comes monthly from its official publisher, without an API key:
+        Each country's index comes monthly from its official publisher:
 
         - Eurostat for the euro area, the European Union and around 35 European countries:
           the industrial producer prices on the non-domestic market (industry except
           construction, sewerage and waste management), 2021 = 100. For the euro area these
           include sales to other members.
         - The Bureau of Labor Statistics for the United States: the export price index of
-          all commodities, 2000 = 100. The keyless BLS API returns about the last three
-          years; with a FRED API key the full history comes from FRED.
+          all commodities, 2000 = 100. The BLS API returns about the last three years; with
+          a FRED API key the full history comes from FRED.
         - The Bank of Japan for Japan: the export price index in yen, 2020 = 100, from 1960.
 
         All indices are not seasonally adjusted, so changes are best taken year over year
@@ -5271,14 +5274,14 @@ class Economics:
         in its own currency. It shows how foreign price shocks and currency moves reach the
         domestic economy, ahead of the Producer and Consumer Price Indices.
 
-        Each country's index comes monthly from its official publisher, without an API key:
+        Each country's index comes monthly from its official publisher:
 
         - Eurostat for the euro area, the European Union and around 20 European countries:
           the import prices of industrial products (mining, manufacturing and energy
           supply), 2021 = 100. For the euro area these include imports from other members.
         - The Bureau of Labor Statistics for the United States: the import price index of
-          all commodities, 2000 = 100. The keyless BLS API returns about the last three
-          years; with a FRED API key the full history comes from FRED.
+          all commodities, 2000 = 100. The BLS API returns about the last three years; with
+          a FRED API key the full history comes from FRED.
         - The Bank of Japan for Japan: the import price index in yen, 2020 = 100, from 1960.
 
         All indices are not seasonally adjusted, so changes are best taken year over year
@@ -6653,7 +6656,7 @@ class Economics:
         taken at the end of the year rather than averaged over it.
 
         With period="daily", "weekly" or "monthly" the rates come from the Bank for
-        International Settlements (BIS) instead, without an API key. It publishes the
+        International Settlements (BIS) instead. It publishes the
         policy rates of around fifty central banks daily, including the Federal Reserve,
         the European Central Bank (as "Euro Area"), the Bank of England and the Bank of
         Japan, some back to the 1940s. Weekly and monthly take the rate on the last day of
@@ -6930,7 +6933,7 @@ class Economics:
         when gmdb_source is True.
 
         With period="daily" or "weekly" the 10-year yields come from the issuers
-        themselves, without an API key: the U.S. Department of the Treasury (par yield,
+        themselves: the U.S. Department of the Treasury (par yield,
         from 1990), the Bank of England (nominal par yield of gilts, from 1993), the
         Japanese Ministry of Finance (JGBs, from 1974) and the European Central Bank (the
         euro area yield curve of all central government bonds, from 2004). The euro area
@@ -7144,8 +7147,8 @@ class Economics:
         - United States: the Secured Overnight Financing Rate (SOFR) from the Federal
           Reserve Bank of New York, since April 2018.
 
-        None of these sources require an API key. The rates are returned as decimal
-        fractions per annum (0.0244 for 2.44%). Weekly and monthly periods take the rate
+        The rates are returned as decimal fractions per annum (0.0244 for 2.44%). Weekly
+        and monthly periods take the rate
         on the last day of each period (weeks end on Friday).
 
         With cumulative=True, the rates are compounded day by day into the growth of 1
@@ -7846,8 +7849,8 @@ class Economics:
         their figures, and Brazil from the IBGE (as the UK, the average of the three months
         ending in each month); every other country comes from the OECD. The United States is
         extended with the months the Bureau of Labor Statistics has published since, when
-        both agree on the months they share. None of these need an API key. The UK figure is the average of the three months ending in each month, as the
-        Labour Force Survey reports it.
+        both agree on the months they share. The UK figure is the average of the three
+        months ending in each month, as the Labour Force Survey reports it.
 
         Both sources return a decimal fraction (0.036 for 3.6%).
 
@@ -8804,8 +8807,8 @@ class Economics:
         adjusted, so 156857 means 156.857 million jobs -- not the monthly change that the
         headline "jobs added" number refers to. Use growth=True for that change.
 
-        Without a FRED API key the data comes from the Bureau of Labor Statistics' keyless
-        API, which gives the same figures but only for about the last three years. The
+        Without a FRED API key the data comes from the Bureau of Labor Statistics' API,
+        which gives the same figures but only for about the last three years. The
         full history, from 1939, comes from FRED when a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class).
 
@@ -8917,8 +8920,9 @@ class Economics:
         one of the most timely leading indicators of labor-market deterioration and a
         core component of the Conference Board's Leading Economic Index.
 
-        No API key is needed: without a FRED API key the data comes from the Department of Labor's weekly claims report
-        directly, which gives the same figures, although FRED adds the latest weeks before the report includes them. When a FRED API key is set (see the
+        Without a FRED API key the data comes from the Department of Labor's weekly claims
+        report directly, which gives the same figures, although FRED adds the latest weeks
+        before the report includes them. When a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/ICSA
@@ -9018,9 +9022,9 @@ class Economics:
         retail trade and food services. It is nominal, so growth=True mixes volume and price
         changes together; compare against the Consumer Price Index to separate the two.
 
-        No API key is needed: without a FRED API key the data comes from the Census Bureau
-        directly, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Without a FRED API key the data comes from the Census Bureau directly, which gives
+        the same figures. When a FRED API key is set (see the `fred_api_key` parameter of
+        the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/RSAFS
 
@@ -9117,8 +9121,8 @@ class Economics:
         manufacturing/trade sales and, see `get_nonfarm_payrolls`, nonfarm payroll
         employment).
 
-        No API key is needed: without a FRED API key the data comes from
-        the Federal Reserve's G.17 release directly, which gives the same figures. When a FRED API key is set (see the
+        Without a FRED API key the data comes from the Federal Reserve's G.17 release
+        directly, which gives the same figures. When a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/INDPRO
@@ -9212,9 +9216,9 @@ class Economics:
         turns up before a recovery), making Housing Starts one of the ten components
         of the Conference Board's Leading Economic Index.
 
-        No API key is needed: without a FRED API key the data comes from the Census Bureau
-        directly, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Without a FRED API key the data comes from the Census Bureau directly, which gives
+        the same figures. When a FRED API key is set (see the `fred_api_key` parameter of
+        the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/HOUST
 
@@ -9314,7 +9318,7 @@ class Economics:
         activity rather than the fiscal cushioning that automatically increases
         during a downturn.
 
-        No API key is needed: without a FRED API key the data comes from the Bureau of Economic Analysis
+        Without a FRED API key the data comes from the Bureau of Economic Analysis
         directly, which gives the same figures. When a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
@@ -9421,8 +9425,8 @@ class Economics:
         points; it is rescaled here so that every rate the Finance Toolkit returns is a
         decimal fraction.
 
-        No API key is needed: without a FRED API key the data comes from
-        Freddie Mac's Primary Mortgage Market Survey directly, which gives the same figures. When a FRED API key is set (see the
+        Without a FRED API key the data comes from Freddie Mac's Primary Mortgage Market
+        Survey directly, which gives the same figures. When a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/MORTGAGE30US
@@ -9520,9 +9524,10 @@ class Economics:
         academic and applied business-cycle research to backtest whether other
         indicators lead, lag or coincide with recessions.
 
-        No API key is needed: without a FRED API key the data comes from
-        the NBER's business cycle dates directly, built the way FRED builds USREC, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Without a FRED API key the data comes from the NBER's business cycle dates
+        directly, built the way FRED builds USREC, which gives the same figures. When a
+        FRED API key is set (see the `fred_api_key` parameter of the `Economics` class), it
+        comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/USREC
 
@@ -9618,7 +9623,7 @@ class Economics:
         freely available anywhere -- so expect more volatility and less
         autocorrelation than an appraisal-based series would show.
 
-        No API key is needed: the prices come from the commercial property price indices
+        The prices come from the commercial property price indices
         the Bank for International Settlements collects from national sources, for the euro
         area, the United States (from 1945), Japan, Denmark, the Netherlands, Germany,
         France, Spain and around ten more, taking per country a nominal index of commercial
@@ -9735,7 +9740,7 @@ class Economics:
         The credit is all credit to households and non-financial corporations from all
         lenders, banks and non-banks, at market value, as compiled by the Bank for
         International Settlements for around 45 economies, quarterly and back to the
-        1950s for some. No API key is needed.
+        1950s for some.
 
         See definition: https://data.bis.org/topics/CREDIT_GAPS and
         https://www.bis.org/publ/qtrpdf/r_qt1403g.htm
@@ -9953,7 +9958,7 @@ class Economics:
         is comparable across countries where companies borrow from banks (the euro area,
         Japan) and where they issue bonds (the United States). The data is compiled by the
         Bank for International Settlements for around 45 economies, quarterly and back to
-        the 1940s for some, from national financial accounts. No API key is needed.
+        the 1940s for some, from national financial accounts.
 
         See definition: https://data.bis.org/topics/TOTAL_CREDIT and
         https://www.bis.org/publ/qtrpdf/r_qt1303h.htm
@@ -10168,7 +10173,7 @@ class Economics:
         the nominal curve (see `fixedincome.get_government_bond_yield_curve`) it gives the
         inflation the bond market expects, see `get_breakeven_inflation_expectations`.
 
-        Every curve comes from the official source without an API key:
+        Every curve comes from the official source:
         - United States: the U.S. Department of the Treasury's real par yield curve of
           Treasury Inflation-Protected Securities (TIPS), 5, 7, 10, 20 and 30 years, from
           2003, the figures FRED republishes a day later as DFII.
@@ -10295,7 +10300,7 @@ class Economics:
         inflation risk premium. See `get_inflation_expectations` for the expectations of
         professional forecasters instead.
 
-        Every curve comes from the official source without an API key:
+        Every curve comes from the official source:
         - United States: the U.S. Department of the Treasury's nominal minus real (TIPS) par
           yields, 5, 7, 10, 20 and 30 years from 2003, plus the 5-year, 5-year forward rate
           ("5Y5Y"), the average inflation expected over the five years starting five years
@@ -10433,7 +10438,7 @@ class Economics:
         which: a 5-year US yield up 0.14 with an unchanged breakeven rose on real rates alone.
 
         The curves are those of `get_real_yield_curve` and
-        `get_breakeven_inflation_expectations`, from the official sources without an API key:
+        `get_breakeven_inflation_expectations`, from the official sources:
         the U.S. Department of the Treasury (par yields, 5 to 30 years), the Bank of England
         (spot rates, 3 to 40 years) and, for Germany, the Bundesbank (constant maturities
         between 3 and 30 years). Each source's breakeven is its nominal yield minus its real
@@ -10490,7 +10495,6 @@ class Economics:
         | 2026-11-06 |          0.0464 |       0.0235 |                0.0229 |           0.0005 |        0.0002 |             0.0003 |
         | 2026-11-09 |          0.0467 |       0.0242 |                0.0225 |           0.0003 |        0.0007 |            -0.0004 |
         | 2026-11-10 |          0.0481 |       0.0256 |                0.0225 |           0.0014 |        0.0014 |             0      |
-        TABLE
         """
         maturities = [
             str(maturity).strip().upper()
@@ -10566,7 +10570,7 @@ class Economics:
         priced daily and including risk premia, this is the forecasters' own expectation,
         with no inflation risk or liquidity premium in it and a longer history.
 
-        Every series comes from the official source without an API key:
+        Every series comes from the official source:
         - Germany: the inflation Consensus Economics' forecasters expect over 5 and 10 years,
           monthly from 1989. The Bundesbank publishes the expected real interest rate, the
           yield on debt securities outstanding issued by German residents with a residual
@@ -10765,8 +10769,9 @@ class Economics:
             markets (list[str] | str | None, optional): The markets to retrieve, from
                 "US Equity", "Euro Area Equity", "Emerging Markets Equity", "US Equity
                 Volatility", "US Treasury Bonds", "Crude Oil", "Gold", "US Treasury Rates" and
-                "Japan Government Bonds". Defaults to None, which retrieves every market that
-                needs no API key, and the MOVE and JGB VIX as well when an API key is set.
+                "Japan Government Bonds". Defaults to None, which retrieves every market, with
+                "US Treasury Rates" (the MOVE) and "Japan Government Bonds" (the JGB VIX) only
+                when an API key is set.
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
@@ -10925,7 +10930,7 @@ class Economics:
         serve as calibration and validation targets for scenario generators and as the
         stresses banks and insurers are tested against.
 
-        Two authorities are available, both without an API key:
+        Two authorities are available:
         - "federal_reserve": the Federal Reserve's supervisory stress test, quarterly over
           13 quarters. For the United States: real and nominal GDP and disposable income
           growth, unemployment, CPI inflation, the 3-month, 5-year and 10-year Treasury
@@ -11077,7 +11082,7 @@ class Economics:
         The index is the first principal component of the series after removing the part
         explained by demand, measured in standard deviations from its average: zero is the
         average pressure and 1 is one standard deviation above it. It is not a rate, so it is
-        not a decimal fraction. No API key is needed. The New York Fed re-estimates the whole
+        not a decimal fraction. The New York Fed re-estimates the whole
         history with every release, so past months can change slightly.
 
         See definition: https://www.newyorkfed.org/research/policy/gscpi
@@ -11162,7 +11167,7 @@ class Economics:
         risk variable of climate scenarios; see get_climate_scenario for its projected paths.
 
         The price is the average of the day's auctions of general allowances, in euro per
-        tonne of CO2. No API key is needed. Weekly and monthly periods take the price of the
+        tonne of CO2. Weekly and monthly periods take the price of the
         last auction of each period.
 
         See definition: https://www.eex.com/en/markets/environmental-markets/eu-ets-auctions
@@ -11281,9 +11286,9 @@ class Economics:
         (0.0094 for 0.94 percentage points higher). Rates are decimal fractions (0.041 for
         4.1%).
 
-        The data is the Phase 5 vintage (November 2024), hosted by IIASA and retrieved
-        without an API key; the NGFS licence allows commercial use with attribution but
-        not the redistribution of substantial parts, so it is retrieved when needed rather
+        The data is the Phase 5 vintage (November 2024), hosted by IIASA. The NGFS
+        licence allows commercial use with attribution but not the redistribution of
+        substantial parts, so it is retrieved when needed rather
         than stored with the Finance Toolkit.
 
         See definition: https://www.ngfs.net/ngfs-scenarios-portal/
@@ -11457,7 +11462,7 @@ class Economics:
         purposes with attribution, and its authors expressly exclude commercial data
         providers. Pass accept_licence=True to confirm the use is non-commercial; the data
         is retrieved from macrohistory.net when needed and is not distributed with the
-        Finance Toolkit. No API key is needed.
+        Finance Toolkit.
 
         See definition: https://www.macrohistory.net/database/
 
@@ -11579,8 +11584,8 @@ class Economics:
         unit in brackets. Rates, growth rates and shares of GDP are decimal fractions (0.05
         for 5%); levels, indices and exchange rates are returned as published.
 
-        The dataset is not updated anymore. No API key is needed; the workbook is large
-        (around 28 MB), so it is cached for a year.
+        The dataset is not updated anymore. The workbook is large (around 28 MB), so it is
+        cached for a year.
 
         With deflate_with, every series is in real terms: in the money of the latest year of
         that country's yearly consumer price index up to the end date (see
@@ -11735,7 +11740,7 @@ class Economics:
         scenarios and their mean. With scenarios=True every scenario is returned instead
         (20,000 columns per variable). The set is a large workbook (around 180 MB) that
         takes a minute or two to download and read the first time; it is cached for 30
-        days. No API key is needed.
+        days.
 
         See definition: https://www.dnb.nl/voor-de-sector/open-boek-toezicht/sectoren/pensioenfondsen/
 
@@ -12379,7 +12384,7 @@ class Economics:
         (life_expectancy, ex). Probabilities and rates are fractions; the others are counts
         or years.
 
-        No API key is needed. For countries outside Europe the UN World Population Prospects
+        For countries outside Europe the UN World Population Prospects
         publish life tables for every country (bulk files at population.un.org/wpp), and the
         Human Mortality Database long national histories (with free registration).
 
@@ -12500,8 +12505,6 @@ class Economics:
         The Total Return CAPE corrects for the shift in payout policy.
 
         Shiller, R. J. (2015). Irrational Exuberance (3rd ed.). Princeton University Press.
-
-        No API key is needed.
 
         See definition: https://shillerdata.com/
 
@@ -12647,7 +12650,6 @@ class Economics:
         | 1980-01 | 2923.32 |
         | 2011-09 | 2631.5  |
         | 2026-01 | 4923.8  |
-        TABLE
         """
         prices = world_bank_model.get_commodity_prices()
 

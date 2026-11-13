@@ -799,6 +799,14 @@ def bounded_ffill(
     observation exists to bound the gap — never past the last real data point, and
     never across a longer run of missing periods. Used ahead of pct_change so a data
     gap surfaces as a NaN growth/return rather than a fabricated flat one.
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): The data to fill.
+        axis (str, optional): The axis that holds the periods of a DataFrame, "columns" or
+            "rows" (also "index"). Ignored for a Series. Defaults to "columns".
+
+    Returns:
+        pd.Series | pd.DataFrame: The data with each bounded single-period gap filled.
     """
     if isinstance(dataset, pd.DataFrame):
         # pandas accepts the "rows"/"index"/"columns" aliases the callers use, but its

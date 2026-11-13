@@ -1498,7 +1498,7 @@ def get_profile(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "AAPL")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1615,7 +1615,7 @@ def get_quote(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "AMD")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1716,7 +1716,7 @@ def get_rating(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1800,7 +1800,7 @@ def get_earnings_calendar(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         actual_dates (bool): Whether to return the actual reporting dates (True) or the fiscal quarters they
@@ -1904,7 +1904,7 @@ def get_dividend_calendar(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
@@ -2021,7 +2021,7 @@ def get_esg_scores(
         tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         quarter (bool): whether to retrieve quarterly data. Defaults to False.
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
@@ -2119,7 +2119,7 @@ def get_market_risk_premium(api_key: str) -> pd.DataFrame:
 
     Args:
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
 
     Returns:
         pd.DataFrame: the market risk premium by country, indexed by country and including
@@ -2243,7 +2243,7 @@ def get_commitment_of_traders(
     Args:
         tickers (list[str] | str): the ticker or tickers (for example: "NG" for Natural Gas futures)
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         user_subscription (str): The subscription type of the user. Defaults to "Free".

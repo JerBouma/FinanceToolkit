@@ -974,9 +974,9 @@ def get_consumer_price_index(
     The CPI measures the average change over time in the prices paid by consumers for a
     basket of goods and services, and is the standard measure of inflation.
 
-    Unlike the Global Macro Database CPI (see `economics_controller.get_consumer_price_index`
-    without `oecd_source=True`), which is annual-only, this OECD source additionally supports
-    monthly and quarterly frequency, useful for tracking inflation more closely in real time.
+    Unlike the Global Macro Database CPI, which is annual-only, this OECD source also
+    supports monthly and quarterly frequency, useful for tracking inflation more closely
+    in real time.
 
     The index is set to 100 in the base year, which can vary per country. It covers
     all items and is not seasonally adjusted.

@@ -48,6 +48,7 @@ SOURCE_NAMES = {
     policy_model.INTERNATIONAL_MONETARY_FUND: "International Monetary Fund",
     policy_model.SHILLER: "Robert Shiller (Yale)",
     policy_model.WORLD_BANK: "World Bank",
+    policy_model.IMF_PORTWATCH: "IMF PortWatch (UN Global Platform)",
     policy_model.CBOE: "Cboe",
     policy_model.STOXX: "STOXX",
     policy_model.RESERVE_BANK_OF_AUSTRALIA: "Reserve Bank of Australia",
@@ -98,6 +99,8 @@ HOST_SOURCES = {
     "imf.org": policy_model.INTERNATIONAL_MONETARY_FUND,
     "shillerdata.com": policy_model.SHILLER,
     "worldbank.org": policy_model.WORLD_BANK,
+    # IMF PortWatch publishes its data through ArcGIS Online.
+    "services9.arcgis.com": policy_model.IMF_PORTWATCH,
     "cboe.com": policy_model.CBOE,
     "stoxx.com": policy_model.STOXX,
     "rba.gov.au": policy_model.RESERVE_BANK_OF_AUSTRALIA,

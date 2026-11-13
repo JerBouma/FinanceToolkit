@@ -980,31 +980,31 @@ class Portfolio:
 
         Args:
             adjust_duplicates (bool | None): Flag to indicate whether to adjust duplicate rows in the dataset.
-                If None, defaults to the configuration setting.
+                Defaults to None, which uses the configuration setting.
             date_column (list[str] | None): List of column names for date information.
-                Defaults to configuration settings.
+                Defaults to None, which uses the configuration.
             date_format_options (list[str] | None): List of date format strings to attempt when parsing
-                date columns (e.g. ['%Y-%m-%d', '%d/%m/%Y']). Defaults to configuration.
+                date columns (e.g. ['%Y-%m-%d', '%d/%m/%Y']). Defaults to None, which uses the configuration.
             name_columns (list[str] | None): List of column names for transaction descriptions.
-                Defaults to configuration.
+                Defaults to None, which uses the configuration.
             ticker_columns (list[str] | None): List of column names for asset tickers.
-                Defaults to configuration.
+                Defaults to None, which uses the configuration.
             price_columns (list[str] | None): List of column names for asset prices.
-                Defaults to configuration.
+                Defaults to None, which uses the configuration.
             volume_columns (list[str] | None): List of column names for asset volumes.
-                Defaults to configuration.
+                Defaults to None, which uses the configuration.
             currency_columns (list[str] | None): List of column names for transaction currencies.
-                Defaults to configuration.
+                Defaults to None, which uses the configuration.
             costs_columns (list[str] | None): List of column names for costs or income categories.
-                Defaults to configuration.
+                Defaults to None, which uses the configuration.
             column_mapping (dict[str, str] | None): Dictionary mapping dataset columns to the appropriate field names.
-                Defaults to configuration.
+                Defaults to None, which uses the configuration.
 
         Returns:
             pd.DataFrame: A DataFrame containing the consolidated and processed portfolio data.
 
         Raises:
-            FileNotFoundError: If any of the files or directories specified in 'excel_location' cannot be found.
+            FileNotFoundError: If any of the files or directories in the portfolio dataset path cannot be found.
             ValueError: If essential columns (date, description, amount) are missing in the dataset or configuration.
                 - Columns can be specified in the configuration or provided explicitly.
                 - For missing cost or income columns, an exception is raised if no valid configuration is found.

@@ -28,6 +28,13 @@ def request_csv(url: str, timeout: int) -> str:
     Request a BIS dataset as CSV. The BIS answers a period it has not published yet (such as
     the current month) with a 404 rather than an empty body, so that counts as no data and
     the cached history is served without an error.
+
+    Args:
+        url (str): The URL of the BIS dataset request.
+        timeout (int): The number of seconds to wait for an answer.
+
+    Returns:
+        str: The CSV text, or an empty string when the BIS has no data for the period.
     """
     try:
         return get_request(url, timeout=timeout).text

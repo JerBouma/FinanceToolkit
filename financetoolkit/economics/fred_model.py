@@ -89,6 +89,11 @@ def get_nonfarm_payrolls(start_date: str, end_date: str, api_key: str) -> pd.Dat
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of the monthly level of
             nonfarm payroll employment, in thousands of persons, seasonally adjusted.
@@ -103,6 +108,11 @@ def get_initial_jobless_claims(
     Retrieves Initial Claims for Unemployment Insurance from FRED (series ICSA).
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
 
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of initial jobless
@@ -119,6 +129,11 @@ def get_retail_sales(start_date: str, end_date: str, api_key: str) -> pd.DataFra
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of monthly total retail
             trade and food services sales, in millions of dollars, seasonally adjusted.
@@ -134,6 +149,11 @@ def get_industrial_production_index(
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of the monthly
             Industrial Production Index (2017 = 100), seasonally adjusted.
@@ -147,6 +167,11 @@ def get_housing_starts(start_date: str, end_date: str, api_key: str) -> pd.DataF
     (series HOUST).
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
 
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of monthly new housing
@@ -166,6 +191,11 @@ def get_real_personal_income(
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of monthly real personal
             income excluding current transfer receipts, in billions of chained 2017
@@ -182,6 +212,11 @@ def get_mortgage_rate_30_year(
     MORTGAGE30US, Freddie Mac's Primary Mortgage Market Survey).
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
 
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of the 30-year fixed
@@ -208,6 +243,11 @@ def get_recession_indicator(
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
 
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame, monthly and not
             seasonally adjusted, 1 during NBER-dated recession months and 0 otherwise.
@@ -232,6 +272,11 @@ def get_commercial_real_estate_prices(
     volatility and less autocorrelation than an appraisal-based series would.
 
     Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
 
     Returns:
         pd.DataFrame: A single-column ("United States") DataFrame of quarterly commercial

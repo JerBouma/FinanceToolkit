@@ -837,9 +837,9 @@ def get_sectors_performance(
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         start_date (str, optional): The start date to filter data with, e.g. "2024-01-01".
-            Defaults to a year ago.
+            Defaults to None, which uses the date a year ago.
         end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
-            Defaults to today.
+            Defaults to None, which uses today.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
@@ -2117,8 +2117,10 @@ def get_sector_performance(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
-        end_date (str, optional): The end of the history of one sector. Defaults to today.
+        start_date (str, optional): The start of the history of one sector. Defaults to None,
+            which uses the date a year ago.
+        end_date (str, optional): The end of the history of one sector. Defaults to None, which uses
+            today.
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
 
@@ -2190,8 +2192,10 @@ def get_industry_performance(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
-        end_date (str, optional): The end of the history of one industry. Defaults to today.
+        start_date (str, optional): The start of the history of one industry. Defaults to None,
+            which uses the date a year ago.
+        end_date (str, optional): The end of the history of one industry. Defaults to None, which uses
+            today.
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
 
@@ -2263,8 +2267,10 @@ def get_sector_pe(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
-        end_date (str, optional): The end of the history of one sector. Defaults to today.
+        start_date (str, optional): The start of the history of one sector. Defaults to None,
+            which uses the date a year ago.
+        end_date (str, optional): The end of the history of one sector. Defaults to None, which uses
+            today.
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
 
@@ -2330,8 +2336,10 @@ def get_industry_pe(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
-        end_date (str, optional): The end of the history of one industry. Defaults to today.
+        start_date (str, optional): The start of the history of one industry. Defaults to None,
+            which uses the date a year ago.
+        end_date (str, optional): The end of the history of one industry. Defaults to None, which uses
+            today.
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
 
@@ -2501,10 +2509,10 @@ def get_earnings_calendar(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with. Defaults to today, or
-            to seven days before the end date when only that is given.
-        end_date (str, optional): The end date to filter data with. Defaults to seven days
-            after the start date.
+        start_date (str, optional): The start date to filter data with. Defaults to None, which
+            uses today, or seven days before the end date when only that is given.
+        end_date (str, optional): The end date to filter data with. Defaults to None, which
+            uses seven days after the start date.
         min_market_cap (float, optional): The minimum market cap in US dollars. Releases
             without a market cap are left out. Defaults to None.
         country (str, optional): The country of the company, as a two-letter code ("DE") or
@@ -2757,8 +2765,10 @@ def get_sec_filings_8k(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with. Defaults to 30 days ago.
-        end_date (str, optional): The end date to filter data with. Defaults to today.
+        start_date (str, optional): The start date to filter data with. Defaults to None, which
+            uses the date 30 days ago.
+        end_date (str, optional): The end date to filter data with. Defaults to None, which uses
+            today.
         limit (int, optional): The number of results to return. Defaults to 100.
         page (int, optional): The page number to retrieve. Defaults to 0.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".

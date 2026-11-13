@@ -3109,7 +3109,8 @@ def get_growth_optimal_weights(
     method maximizes its second-order approximation w'μ - ½ w'Σw, a mean-variance
     portfolio with a risk aversion of one. Fractional Kelly scales the weights by the
     fraction; the remainder (1 - fraction) is cash, or borrowed when the fraction is
-    above one.
+    above one. The constraints apply to the full Kelly portfolio, before the fraction
+    scales it.
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, for the
@@ -3137,8 +3138,6 @@ def get_growth_optimal_weights(
             portfolio. Defaults to 1.
         gross_exposure (float | None, optional): The highest sum of the absolute weights,
             e.g. 1.6 for a 130/30 portfolio. Defaults to None, no limit.
-
-    The constraints apply to the full Kelly portfolio, before the fraction scales it.
 
     Returns:
         pd.Series: The weight per asset, summing to the fraction times the net exposure.

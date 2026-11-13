@@ -137,10 +137,7 @@ def setup_logger(log_level=logging.INFO):
 
 def get_logger():
     """
-    Get an existing logger or create a new one if it doesn't exist.
-
-    Args:
-        name (str, optional): Name of the logger, by default "financetoolkit"
+    Get the "financetoolkit" logger, which is created when it does not exist yet.
 
     Returns:
         logging.Logger: Logger instance

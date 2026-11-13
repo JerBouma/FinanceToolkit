@@ -476,8 +476,8 @@ def get_implied_default_probability(
     Args:
         spread (float): The credit spread, as a decimal.
         recovery_rate (float, optional): The share recovered on default. Defaults to 0.4.
-        horizons (tuple[float, ...], optional): The horizons in years. Defaults to 1, 3, 5
-            and 10.
+        horizons (tuple[float, ...], optional): The horizons in years. Defaults to (1, 3, 5,
+            10).
 
     Returns:
         dict[str, float]: The Hazard Rate and the default probability per horizon.

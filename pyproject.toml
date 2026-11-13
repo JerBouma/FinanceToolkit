@@ -181,7 +181,7 @@ python-version = "3.13"
 
 [tool.ty.rules]
 invalid-argument-type = "ignore"
-invalid-return-type = "ignore"
+invalid-explicit-return = "ignore"
 invalid-assignment = "ignore"
 missing-attribute = "ignore"
 missing-union-attribute = "ignore"

@@ -36,7 +36,8 @@ import pandas as pd
 import pytest
 
 from financetoolkit import finra_model, historical_model, yfinance_model
-from financetoolkit.economics import (
+from financetoolkit.economics.economics_controller import ASSET_CLASS_PROXIES
+from financetoolkit.economics.sources import (
     bea_model,
     bis_model,
     bls_model,
@@ -70,7 +71,6 @@ from financetoolkit.economics import (
     world_bank_model,
     yfinance_model as futures_model,
 )
-from financetoolkit.economics.economics_controller import ASSET_CLASS_PROXIES
 from financetoolkit.fixedincome import (
     boc_model,
     bundesbank_model,

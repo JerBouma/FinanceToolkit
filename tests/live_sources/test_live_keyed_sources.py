@@ -21,7 +21,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit import Discovery, Toolkit
-from financetoolkit.economics import fred_model as economics_fred_model
+from financetoolkit.economics.sources import fred_model as economics_fred_model
 from financetoolkit.fixedincome import fred_model
 from tests.live_sources.test_live_sources import (
     DAILY_MAX_AGE_DAYS,

@@ -440,7 +440,7 @@ def test_a_sector_a_fund_does_not_hold_weighs_zero(
 @pytest.fixture(name="calendar_requests")
 def fixture_calendar_requests(monkeypatch):
     """Serve a small economic calendar and record the requested urls."""
-    from financetoolkit.economics import fmp_model as economics_fmp_model
+    from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 
     requested: list[str] = []
     releases = [
@@ -579,7 +579,7 @@ def test_economic_calendar_only_falls_back_to_requested_dates(
     calendar_requests, monkeypatch
 ):
     from financetoolkit import Economics
-    from financetoolkit.economics import gmdb_model
+    from financetoolkit.economics.sources import gmdb_model
 
     _, requested = calendar_requests
     monkeypatch.setattr(
@@ -1644,7 +1644,7 @@ def test_price_targets_without_any_published_target_have_no_latest_date(response
 def test_economic_calendar_reference_periods(
     event, release, expected_event, expected_period
 ):
-    from financetoolkit.economics import fmp_model as economics_fmp_model
+    from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 
     name, period = economics_fmp_model.get_reference_period(
         event, pd.Timestamp(release)
@@ -1655,7 +1655,7 @@ def test_economic_calendar_reference_periods(
 
 
 def test_economic_calendar_as_series():
-    from financetoolkit.economics import fmp_model as economics_fmp_model
+    from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 
     releases = pd.DataFrame(
         [
@@ -1741,7 +1741,7 @@ def test_economic_calendar_as_series():
 
 
 def test_calendar_series_keep_a_joint_january_and_february_release_once():
-    from financetoolkit.economics import fmp_model as economics_fmp_model
+    from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 
     releases = pd.DataFrame(
         [

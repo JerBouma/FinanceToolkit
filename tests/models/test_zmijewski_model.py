@@ -1,7 +1,7 @@
 """Zmijewski Model Tests""" ""
 import pandas as pd
 
-from financetoolkit.models import zmijewski_model
+from financetoolkit.models.distress import zmijewski_model
 
 
 def test_get_net_income_to_total_assets_ratio(recorder):

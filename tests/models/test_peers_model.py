@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.models import peers_model
+from financetoolkit.models.valuation import peers_model
 
 
 def test_peer_comparison():

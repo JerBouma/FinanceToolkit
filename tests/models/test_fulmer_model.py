@@ -4,7 +4,7 @@ import math
 import pandas as pd
 import pytest
 
-from financetoolkit.models import fulmer_model
+from financetoolkit.models.distress import fulmer_model
 
 
 def test_get_retained_earnings_to_total_assets_ratio(recorder):

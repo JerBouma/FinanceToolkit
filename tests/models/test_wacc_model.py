@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.models import wacc_model
+from financetoolkit.models.valuation import wacc_model
 
 
 @pytest.mark.parametrize(

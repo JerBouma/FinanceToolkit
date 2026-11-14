@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.models import altman_model, taffler_model
+from financetoolkit.models.distress import altman_model, taffler_model
 
 
 def test_get_profit_before_tax_to_current_liabilities_ratio(recorder):

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.models import damodaran_model
+from financetoolkit.models.valuation import damodaran_model
 
 
 def industry_sheet(total_label: str = "Total Market") -> pd.DataFrame:

@@ -1,7 +1,7 @@
 """Ohlson Model Tests""" ""
 import pandas as pd
 
-from financetoolkit.models import ohlson_model
+from financetoolkit.models.distress import ohlson_model
 
 COLUMNS = ["2020", "2021", "2022", "2023", "2024"]
 

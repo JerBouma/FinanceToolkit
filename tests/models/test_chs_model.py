@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.models import chs_model
+from financetoolkit.models.distress import chs_model
 
 # pylint: disable=missing-function-docstring
 

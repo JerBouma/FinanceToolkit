@@ -44,20 +44,25 @@ from statsmodels.tsa.stattools import (
 )
 from statsmodels.tsa.vector_ar.vecm import VECM, coint_johansen
 
-from financetoolkit.econometrics import (
-    causal_inference_model,
-    causality_model,
-    cointegration_model,
-    diagnostics_model,
-    event_study_model,
-    fama_macbeth_model,
+from financetoolkit.econometrics.causal import causal_inference_model, event_study_model
+from financetoolkit.econometrics.diagnostics import diagnostics_model
+from financetoolkit.econometrics.forecasting import (
     forecast_evaluation_model,
-    hypothesis_testing_model,
+    time_series_model,
+)
+from financetoolkit.econometrics.regression import (
+    fama_macbeth_model,
     panel_data_model,
     regression_model,
-    specification_tests_model,
-    time_series_model,
+)
+from financetoolkit.econometrics.stationarity import (
+    causality_model,
+    cointegration_model,
     unitroot_model,
+)
+from financetoolkit.econometrics.testing import (
+    hypothesis_testing_model,
+    specification_tests_model,
 )
 from financetoolkit.risk import risk_model
 

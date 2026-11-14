@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import causality_model
+from financetoolkit.econometrics.stationarity import causality_model
 
 
 def test_get_granger_causality_causal(recorder):

@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import time_series_model
+from financetoolkit.econometrics.forecasting import time_series_model
 
 
 def test_get_arima_forecast_recovers_ar1_coefficients(recorder):

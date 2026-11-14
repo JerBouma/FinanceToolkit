@@ -367,7 +367,7 @@ def get_ols(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import regression_model
+    from financetoolkit.econometrics.regression import regression_model
 
     rng = np.random.default_rng(42)
     x = pd.Series(rng.standard_normal(100), name="Market Return")

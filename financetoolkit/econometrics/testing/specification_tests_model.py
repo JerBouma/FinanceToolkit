@@ -10,7 +10,7 @@ from statsmodels.stats.diagnostic import het_breuschpagan, het_white, linear_res
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.stattools import durbin_watson
 
-from financetoolkit.econometrics import regression_model
+from financetoolkit.econometrics.regression import regression_model
 
 # The conventional 5% level for the boolean 'reject' flags in this module.
 SIGNIFICANCE_LEVEL = 0.05

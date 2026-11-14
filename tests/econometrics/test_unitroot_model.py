@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import unitroot_model
+from financetoolkit.econometrics.stationarity import unitroot_model
 
 # The simulated break sits at index 150, so the last pre-break index is expected.
 EXPECTED_BREAK_INDEX = 149

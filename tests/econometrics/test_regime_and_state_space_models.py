@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.econometrics import (
+from financetoolkit.econometrics.dynamics import (
     pairs_trading_model,
     regime_model,
     state_space_model,

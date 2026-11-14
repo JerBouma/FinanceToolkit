@@ -5,7 +5,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import cointegration_model
+from financetoolkit.econometrics.stationarity import cointegration_model
 
 NO_REVERSION = 1e-10
 

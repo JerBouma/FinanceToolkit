@@ -3,7 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import causal_inference_model, regression_model
+from financetoolkit.econometrics.causal import causal_inference_model
+from financetoolkit.econometrics.regression import regression_model
 
 # --- IV / 2SLS -----------------------------------------------------------------------
 

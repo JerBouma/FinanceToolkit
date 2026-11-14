@@ -251,7 +251,7 @@ def get_rmse(
 
     ```python
     import pandas as pd
-    from financetoolkit.econometrics import forecast_evaluation_model
+    from financetoolkit.econometrics.forecasting import forecast_evaluation_model
 
     actual = pd.Series([10.0, 12.0, 11.0, 13.0])
     forecast = pd.Series([11.0, 11.0, 13.0, 12.0])
@@ -314,7 +314,7 @@ def get_mae(
 
     ```python
     import pandas as pd
-    from financetoolkit.econometrics import forecast_evaluation_model
+    from financetoolkit.econometrics.forecasting import forecast_evaluation_model
 
     actual = pd.Series([10.0, 12.0, 11.0, 13.0])
     forecast = pd.Series([11.0, 11.0, 13.0, 12.0])
@@ -401,7 +401,7 @@ def get_out_of_sample_validation(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import forecast_evaluation_model, time_series_model
+    from financetoolkit.econometrics.forecasting import forecast_evaluation_model, time_series_model
 
     rng = np.random.default_rng(1)
     e = rng.standard_normal(200)

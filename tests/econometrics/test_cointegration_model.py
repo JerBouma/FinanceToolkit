@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import cointegration_model
+from financetoolkit.econometrics.stationarity import cointegration_model
 
 
 def test_get_engle_granger_cointegration_independent(recorder):

@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import fama_macbeth_model
+from financetoolkit.econometrics.regression import fama_macbeth_model
 
 
 def _synthetic_single_factor(n_periods=200, n_assets=25, true_premium=0.005, seed=1):

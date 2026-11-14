@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import event_study_model
+from financetoolkit.econometrics.causal import event_study_model
 
 
 def _synthetic_returns(n=300, seed=1):

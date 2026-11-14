@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from financetoolkit.risk import evar_model
+from financetoolkit.risk.value_at_risk import evar_model
 
 
 def test_get_evar_gaussian(recorder):

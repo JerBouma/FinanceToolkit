@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from scipy import integrate, stats
 
-from financetoolkit.risk import cvar_model, var_model
+from financetoolkit.risk.value_at_risk import cvar_model, var_model
 
 
 def test_get_cvar_historic(recorder):
@@ -315,7 +315,7 @@ def test_rolling_cvar_historic_matches_the_cvar_of_every_window():
 
 
 def test_out_of_sample_gaussian_estimates_match_a_fit_per_window():
-    from financetoolkit.risk import risk_controller
+    from financetoolkit.risk.value_at_risk import value_at_risk_controller
 
     rng = np.random.default_rng(1)
     returns = pd.DataFrame(rng.normal(0, 0.01, size=(200, 2)), columns=["A", "B"])
@@ -325,7 +325,7 @@ def test_out_of_sample_gaussian_estimates_match_a_fit_per_window():
         ("var", var_model.get_var_gaussian),
         ("cvar", cvar_model.get_cvar_gaussian),
     ]:
-        estimates = risk_controller._get_out_of_sample_estimates(
+        estimates = value_at_risk_controller._get_out_of_sample_estimates(
             returns, measure, "gaussian", 0.05, 50
         )
         expected = pd.DataFrame(

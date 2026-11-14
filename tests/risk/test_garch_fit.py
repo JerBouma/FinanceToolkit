@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.risk import garch_model, realized_volatility_model
+from financetoolkit.risk.volatility import garch_model, realized_volatility_model
 
 
 def simulate_garch(omega, alpha, beta, n=1500, seed=0):

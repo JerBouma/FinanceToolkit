@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.risk import covar_model
+from financetoolkit.risk.dependence import covar_model
 
 QUANTILE_REGRESSION_TOLERANCE = 0.2
 CRASH_PROBABILITY = 0.05

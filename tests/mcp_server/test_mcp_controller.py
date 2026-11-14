@@ -37,8 +37,8 @@ def test_build_mcp_app_uses_global_cache_path(monkeypatch, tmp_path):
 
     for mod in [
         "financetoolkit.mcp_server.mcp_controller",
-        "financetoolkit.mcp_server.registry_controller",
-        "financetoolkit.mcp_server.tools_model",
+        "financetoolkit.mcp_server.registry.registry_controller",
+        "financetoolkit.mcp_server.registry.tools_model",
     ]:
         name = mod.rsplit(".", 1)[1]
         if hasattr(mcp_server_package, name):
@@ -212,7 +212,7 @@ def test_the_transport_flag_builds_the_server_as_mcp_transport_does(monkeypatch)
 def test_setup_leaves_a_config_it_cannot_read_unchanged(monkeypatch, tmp_path):
     import json
 
-    from financetoolkit.mcp_server import setup_model
+    from financetoolkit.mcp_server.setup import setup_model
 
     monkeypatch.setattr(
         setup_model, "get_global_env_path", lambda: tmp_path / "config" / ".env"
@@ -234,7 +234,7 @@ def test_setup_leaves_a_config_it_cannot_read_unchanged(monkeypatch, tmp_path):
 
 
 def test_project_configs_leave_out_keys_the_global_env_holds(monkeypatch, tmp_path):
-    from financetoolkit.mcp_server import setup_model
+    from financetoolkit.mcp_server.setup import setup_model
 
     env = tmp_path / ".env"
     env.write_text("FINANCIAL_MODELING_PREP_API_KEY=FMPKEY\n")
@@ -247,7 +247,7 @@ def test_project_configs_leave_out_keys_the_global_env_holds(monkeypatch, tmp_pa
 def test_claude_desktop_on_linux_reads_its_capitalised_config_folder(
     monkeypatch, tmp_path
 ):
-    from financetoolkit.mcp_server import setup_model
+    from financetoolkit.mcp_server.setup import setup_model
 
     monkeypatch.setattr(setup_model.platform, "system", lambda: "Linux")
     monkeypatch.setattr(setup_model.pathlib.Path, "home", lambda: tmp_path)
@@ -260,7 +260,7 @@ def test_claude_desktop_on_linux_reads_its_capitalised_config_folder(
 def test_devin_desktop_uses_the_windsurf_folder_only_where_it_exists(
     monkeypatch, tmp_path
 ):
-    from financetoolkit.mcp_server import setup_model
+    from financetoolkit.mcp_server.setup import setup_model
 
     monkeypatch.setattr(setup_model.pathlib.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_model.platform, "system", lambda: "Linux")
@@ -284,7 +284,7 @@ def test_devin_desktop_uses_the_windsurf_folder_only_where_it_exists(
 def test_the_global_copilot_config_follows_copilot_home(monkeypatch, tmp_path):
     import json
 
-    from financetoolkit.mcp_server import setup_model
+    from financetoolkit.mcp_server.setup import setup_model
 
     monkeypatch.setattr(setup_model.pathlib.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(
@@ -310,7 +310,7 @@ def test_the_global_copilot_config_follows_copilot_home(monkeypatch, tmp_path):
 def test_vscode_entries_name_their_stdio_transport(monkeypatch, tmp_path):
     import json
 
-    from financetoolkit.mcp_server import setup_model
+    from financetoolkit.mcp_server.setup import setup_model
 
     monkeypatch.setattr(
         setup_model, "get_global_env_path", lambda: tmp_path / "config" / ".env"
@@ -381,7 +381,7 @@ def test_the_wizard_writes_key_files_privately_and_masks_keys(monkeypatch, tmp_p
     import json
     import os
 
-    from financetoolkit.mcp_server import setup_model
+    from financetoolkit.mcp_server.setup import setup_model
 
     env = tmp_path / "config" / ".env"
     monkeypatch.setattr(setup_model, "get_global_env_path", lambda: env)

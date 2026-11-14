@@ -27,11 +27,14 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thread
+from financetoolkit.mcp_server.analytics.analytics_model import (
+    UsageAnalytics,
+    run_in_thread,
+)
 from financetoolkit.utilities.logger_model import get_logger
 
 if TYPE_CHECKING:
-    from financetoolkit.mcp_server.registry_controller import ToolRegistry
+    from financetoolkit.mcp_server.registry.registry_controller import ToolRegistry
 
 logger = get_logger()
 

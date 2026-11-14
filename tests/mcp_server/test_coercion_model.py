@@ -2,7 +2,7 @@
 
 import pytest
 
-from financetoolkit.mcp_server.coercion_model import coerce_value
+from financetoolkit.mcp_server.registry.coercion_model import coerce_value
 
 
 @pytest.mark.parametrize(

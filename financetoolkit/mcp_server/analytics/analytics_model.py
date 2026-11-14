@@ -37,7 +37,7 @@ from anyio.lowlevel import RunVar
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
-from financetoolkit.mcp_server import stats_page_model
+from financetoolkit.mcp_server.analytics import stats_page_model
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()

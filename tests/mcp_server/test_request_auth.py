@@ -3,7 +3,7 @@
 import fastmcp.server.dependencies as deps
 from starlette.requests import Request
 
-from financetoolkit.mcp_server import auth_model
+from financetoolkit.mcp_server.auth import auth_model
 
 
 def _make_request(query: str = "") -> Request:

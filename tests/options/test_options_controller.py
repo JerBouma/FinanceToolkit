@@ -667,11 +667,11 @@ def test_the_treasury_yield_is_converted_to_continuous_compounding(
 
 
 def test_a_stale_spot_next_to_live_chains_is_reported(options_module, monkeypatch):
-    from financetoolkit.options import options_controller
+    from financetoolkit.options.base import base_controller
 
     warnings = []
     monkeypatch.setattr(
-        options_controller.logger, "warning", lambda *args: warnings.append(args)
+        base_controller.logger, "warning", lambda *args: warnings.append(args)
     )
     monkeypatch.setattr(
         options_module, "_stale_spot_warning_shown", False, raising=False
@@ -722,10 +722,8 @@ def option_market(monkeypatch, options_module):
     """Option chains priced with Black-Scholes around each ticker's last price."""
     import numpy as np  # noqa: PLC0415
 
-    from financetoolkit.options import (  # noqa: PLC0415
-        black_scholes_model,
-        options_model,
-    )
+    from financetoolkit.options import options_model  # noqa: PLC0415
+    from financetoolkit.options.pricing import black_scholes_model  # noqa: PLC0415
 
     today = pd.Timestamp.today().normalize()
     expiries = [

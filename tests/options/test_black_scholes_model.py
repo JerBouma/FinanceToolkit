@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.options import black_scholes_model
+from financetoolkit.options.pricing import black_scholes_model
 
 
 def test_black_scholes_at_expiration_is_the_intrinsic_value():
@@ -119,7 +119,7 @@ def test_options_without_volatility_or_time_are_worth_their_discounted_intrinsic
     import numpy as np
     import pytest
 
-    from financetoolkit.options import greeks_model
+    from financetoolkit.options.greeks import greeks_model
 
     # At the money at expiration, and in the money without volatility.
     assert black_scholes_model.get_black_scholes(100, 100, 0, 0, 1) == 0

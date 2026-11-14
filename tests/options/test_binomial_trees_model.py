@@ -2,7 +2,7 @@
 
 import pytest
 
-from financetoolkit.options import binomial_trees_model
+from financetoolkit.options.pricing import binomial_trees_model
 
 
 def test_a_risk_neutral_probability_outside_zero_and_one_is_refused():

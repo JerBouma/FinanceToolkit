@@ -47,7 +47,7 @@ def test_a_close_spelling_does_not_count_when_a_word_matches_exactly():
 
 
 def test_a_search_is_kept_to_a_few_words():
-    from financetoolkit.mcp_server import tools_model
+    from financetoolkit.mcp_server.registry import tools_model
 
     long_query = " ".join(["volatility"] * 100)
     result = asyncio.run(
@@ -79,7 +79,7 @@ def test_a_partial_indicator_name_is_searched_by_its_words():
 def test_compact_tools_keep_the_first_clause_and_the_indicator_description(
     monkeypatch,
 ):
-    from financetoolkit.mcp_server import registry_controller
+    from financetoolkit.mcp_server.registry import registry_controller
 
     monkeypatch.setenv("FT_MCP_COMPACT_TOOLS", "1")
     assert registry_controller.compact_tools_enabled()

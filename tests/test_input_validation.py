@@ -198,7 +198,7 @@ def test_mcp_requires_countries_for_country_indicators():
 
 
 def test_mcp_accepts_countries_as_a_list(monkeypatch):
-    from financetoolkit.mcp_server.provider_model import ToolkitProvider
+    from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
     received = {}
 

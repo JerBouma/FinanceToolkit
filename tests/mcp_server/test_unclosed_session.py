@@ -5,7 +5,9 @@ from datetime import date, timedelta
 import pandas as pd
 
 from financetoolkit.cache import policy_model
-from financetoolkit.mcp_server.registry_controller import _unclosed_session_note
+from financetoolkit.mcp_server.registry.registry_controller import (
+    _unclosed_session_note,
+)
 
 
 def prices(last_day: date) -> pd.DataFrame:

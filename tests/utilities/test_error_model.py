@@ -524,7 +524,9 @@ def test_a_missing_key_names_the_statements_only_for_statement_modules():
 
 def test_unavailable_inflation_expectations_are_reported_as_missing_data():
     from financetoolkit.economics.economics_controller import Economics
-    from financetoolkit.mcp_server.diagnostics_model import MISSING_DATA_PATTERN
+    from financetoolkit.mcp_server.registry.diagnostics_model import (
+        MISSING_DATA_PATTERN,
+    )
 
     # No source is asked for a country without one, so this needs no network.
     with patch("financetoolkit.economics.economics_controller.logger") as mock_logger:

@@ -1875,7 +1875,7 @@ def test_yield_decomposition_adds_the_parts_and_skips_missing_days(monkeypatch):
 
 
 def test_long_run_prices_warn_about_repeated_years_and_hyperinflations(caplog):
-    from financetoolkit.mcp_server.diagnostics_model import missing_data_notes
+    from financetoolkit.mcp_server.registry.diagnostics_model import missing_data_notes
 
     years = pd.period_range("1911", "1926", freq="Y")
     germany = [

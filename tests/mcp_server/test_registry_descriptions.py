@@ -6,7 +6,7 @@ import pandas as pd
 import yaml
 
 from financetoolkit.mcp_server import mcp_controller
-from financetoolkit.mcp_server.registry_controller import _rank_result
+from financetoolkit.mcp_server.registry.registry_controller import _rank_result
 
 
 def test_long_tool_descriptions_are_complete():
@@ -34,7 +34,7 @@ def test_the_server_reports_the_finance_toolkit_version():
 
 
 def test_tickers_without_data_are_named_in_the_answer():
-    from financetoolkit.mcp_server.diagnostics_model import missing_data_notes
+    from financetoolkit.mcp_server.registry.diagnostics_model import missing_data_notes
 
     assert missing_data_notes(
         [
@@ -77,7 +77,7 @@ def test_a_category_of_one_tool_is_named_after_it():
 
 
 def test_an_unnamed_result_is_named_after_its_method():
-    from financetoolkit.mcp_server.provider_model import readable_name
+    from financetoolkit.mcp_server.registry.provider_model import readable_name
 
     assert readable_name("get_value_at_risk") == "Value at Risk"
     assert readable_name("get_return_on_equity") == "Return on Equity"
@@ -89,7 +89,7 @@ def test_a_large_answer_is_cut_to_its_most_recent_rows():
     import numpy as np
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
 
     prices = pd.DataFrame(
         {"Close": np.arange(5000.0)},
@@ -113,7 +113,7 @@ def test_a_very_wide_answer_keeps_its_first_columns():
 
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
 
     curve = pd.DataFrame(
         [[0.02] * 3000] * 3, columns=[f"{year}Y" for year in range(1, 3001)]
@@ -130,7 +130,7 @@ def test_a_long_text_is_shortened_rather_than_dropped():
 
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
 
     transcripts = pd.DataFrame(
         {"Date": ["2026-07-30", "2026-07-29"], "Transcript": ["word " * 20000] * 2},
@@ -149,7 +149,7 @@ def test_columns_of_three_levels_are_joined_into_one_name():
 
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
 
     draws = pd.DataFrame(
         [[0.01, 0.02]],
@@ -169,7 +169,10 @@ def test_limit_and_the_cut_keep_the_latest_periods_of_a_sideways_table():
 
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result, select_rows
+    from financetoolkit.mcp_server.registry.formatting_model import (
+        format_result,
+        select_rows,
+    )
 
     ratios = pd.DataFrame(
         [list(range(30))],
@@ -191,7 +194,7 @@ def test_floats_are_rounded_to_significant_digits_and_infinity_becomes_null():
 
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
 
     values = pd.DataFrame(
         {"Value": [0.08317952249999999, 0.000123456, 12345.678912, float("inf")]}
@@ -212,7 +215,7 @@ def test_a_factor_model_has_a_row_per_ticker_and_the_coefficients_as_keys():
 
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
 
     model = pd.DataFrame(
         [[0.1, 1.2, 0.2, 0.9]],
@@ -233,7 +236,7 @@ def test_an_unnamed_level_of_countries_is_called_country():
 
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
 
     money = pd.DataFrame(
         [[1.0, 2.0, 3.0, 4.0]],
@@ -249,7 +252,7 @@ def test_an_unnamed_level_of_countries_is_called_country():
 def test_the_last_periods_skip_one_most_rows_have_not_reported():
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import select_rows
+    from financetoolkit.mcp_server.registry.formatting_model import select_rows
 
     caps = pd.DataFrame(
         {"2024": [1.0, 2.0, 3.0], "2025": [1.5, 2.5, 3.5], "2026": [None, None, 4.0]},
@@ -268,8 +271,8 @@ def test_every_parameter_has_a_real_description():
     # Imported afresh, as another test leaves the server modules built on a stub.
     for module in (
         "financetoolkit.mcp_server.mcp_controller",
-        "financetoolkit.mcp_server.registry_controller",
-        "financetoolkit.mcp_server.tools_model",
+        "financetoolkit.mcp_server.registry.registry_controller",
+        "financetoolkit.mcp_server.registry.tools_model",
     ):
         sys.modules.pop(module, None)
     mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
@@ -285,7 +288,9 @@ def test_every_parameter_has_a_real_description():
 
 
 def test_docstring_arguments_are_read_without_their_defaults():
-    from financetoolkit.mcp_server.registry_controller import _docstring_arguments
+    from financetoolkit.mcp_server.registry.registry_controller import (
+        _docstring_arguments,
+    )
 
     docstring = """Calculate something.
 
@@ -307,7 +312,7 @@ Returns:
 def test_the_last_rows_of_a_series_are_the_last_ones_with_data():
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import select_rows
+    from financetoolkit.mcp_server.registry.formatting_model import select_rows
 
     poverty = pd.Series(
         [0.18, 0.18, None, None],
@@ -322,7 +327,7 @@ def test_symbols_with_an_exchange_suffix_are_called_tickers():
 
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import format_result
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
 
     ratios = pd.DataFrame({"2025": [37.1, 33.1]}, index=["ASML.AS", "SAP.DE"])
     ratios.columns = pd.PeriodIndex(ratios.columns, freq="Y")
@@ -340,8 +345,8 @@ def test_the_server_tells_a_client_how_to_use_it():
 
     for module in (
         "financetoolkit.mcp_server.mcp_controller",
-        "financetoolkit.mcp_server.registry_controller",
-        "financetoolkit.mcp_server.tools_model",
+        "financetoolkit.mcp_server.registry.registry_controller",
+        "financetoolkit.mcp_server.registry.tools_model",
     ):
         sys.modules.pop(module, None)
     mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
@@ -353,7 +358,7 @@ def test_the_server_tells_a_client_how_to_use_it():
 def test_limit_keeps_whole_periods_of_rows_per_date_and_item():
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import select_rows
+    from financetoolkit.mcp_server.registry.formatting_model import select_rows
 
     correlations = pd.DataFrame(
         {"SMB": [1.0, 0.2, 1.0, 0.3], "HML": [0.2, 1.0, 0.3, 1.0]},
@@ -375,8 +380,8 @@ def test_the_slow_egarch_fits_are_not_offered():
 
     for module in (
         "financetoolkit.mcp_server.mcp_controller",
-        "financetoolkit.mcp_server.registry_controller",
-        "financetoolkit.mcp_server.tools_model",
+        "financetoolkit.mcp_server.registry.registry_controller",
+        "financetoolkit.mcp_server.registry.tools_model",
     ):
         sys.modules.pop(module, None)
     mcp_controller = importlib.import_module("financetoolkit.mcp_server.mcp_controller")
@@ -395,7 +400,7 @@ def test_the_slow_egarch_fits_are_not_offered():
 def test_the_last_rows_of_stacked_tickers_are_selected_per_ticker():
     import pandas as pd
 
-    from financetoolkit.mcp_server.formatting_model import select_rows
+    from financetoolkit.mcp_server.registry.formatting_model import select_rows
 
     dates = pd.to_datetime(["2025-01-30", "2025-04-30", "2025-07-30"])
     calendar = pd.DataFrame(

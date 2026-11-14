@@ -8,7 +8,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 from starlette.testclient import TestClient
 
-from financetoolkit.mcp_server import analytics_model
+from financetoolkit.mcp_server.analytics import analytics_model
 
 
 def make_analytics(tmp_path, key="KEY") -> analytics_model.UsageAnalytics:
@@ -152,7 +152,7 @@ def test_a_browser_gets_a_dashboard_of_the_same_totals(tmp_path):
 
 
 def test_the_dashboard_renders_without_any_calls(tmp_path):
-    from financetoolkit.mcp_server import stats_page_model  # noqa: PLC0415
+    from financetoolkit.mcp_server.analytics import stats_page_model  # noqa: PLC0415
 
     page = stats_page_model.render(make_analytics(tmp_path).summary())
 
@@ -164,7 +164,7 @@ def test_a_threaded_tool_runs_off_the_event_loop_and_keeps_its_signature():
     import threading
 
     from financetoolkit.mcp_server import mcp_controller
-    from financetoolkit.mcp_server.analytics_model import run_in_thread
+    from financetoolkit.mcp_server.analytics.analytics_model import run_in_thread
 
     def tool(query: str, limit: int = 5) -> str:
         return (
@@ -189,7 +189,7 @@ def test_threaded_tools_run_a_limited_number_at_a_time():
 
     import anyio
 
-    from financetoolkit.mcp_server.analytics_model import (
+    from financetoolkit.mcp_server.analytics.analytics_model import (
         MAXIMUM_TOOL_THREADS,
         run_in_thread,
     )
@@ -221,7 +221,7 @@ def test_calls_waiting_for_a_busy_instance_leave_the_work_slots_to_others():
 
     import anyio
 
-    from financetoolkit.mcp_server.analytics_model import (
+    from financetoolkit.mcp_server.analytics.analytics_model import (
         MAXIMUM_TOOL_THREADS,
         hold_lock,
         run_in_thread,
@@ -257,7 +257,7 @@ def test_calls_waiting_for_a_busy_instance_leave_the_work_slots_to_others():
 def test_a_reentrant_hold_does_not_give_up_the_slot():
     import threading
 
-    from financetoolkit.mcp_server.analytics_model import hold_lock
+    from financetoolkit.mcp_server.analytics.analytics_model import hold_lock
 
     lock = threading.RLock()
     with hold_lock(lock), hold_lock(lock):

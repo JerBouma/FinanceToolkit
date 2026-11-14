@@ -876,7 +876,7 @@ def test_the_mcp_earnings_move_answers_every_ticker(monkeypatch, option_market):
     import types  # noqa: PLC0415
 
     from financetoolkit.mcp_server import mcp_controller  # noqa: PLC0415
-    from financetoolkit.mcp_server.provider_model import (  # noqa: PLC0415
+    from financetoolkit.mcp_server.registry.provider_model import (  # noqa: PLC0415
         ToolkitProvider,
     )
 

@@ -86,7 +86,7 @@ from financetoolkit.fixedincome import (
     riksbank_model,
     treasurydirect_model,
 )
-from financetoolkit.models import damodaran_model
+from financetoolkit.models.valuation import damodaran_model
 from financetoolkit.options import options_model
 from financetoolkit.performance import performance_model
 

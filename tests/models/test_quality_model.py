@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.models import quality_model
+from financetoolkit.models.quality import quality_model
 
 PERIODS = ["2021", "2022", "2023"]
 

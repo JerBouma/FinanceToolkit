@@ -5,7 +5,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.models import piotroski_model
+from financetoolkit.models.quality import piotroski_model
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from scipy.stats import norm
 
-from financetoolkit.models import credit_model
+from financetoolkit.models.distress import credit_model
 
 
 @pytest.mark.parametrize("time_horizon", [0.0, -1.0, np.nan, np.inf, -np.inf])
@@ -13,7 +13,7 @@ from financetoolkit.models import credit_model
 def test_merton_model_rejects_invalid_horizons_before_solving(
     time_horizon, default_point, mocker
 ):
-    solver = mocker.patch("financetoolkit.models.credit_model.fsolve")
+    solver = mocker.patch("financetoolkit.models.distress.credit_model.fsolve")
 
     result = credit_model.get_merton_model(
         100.0, 0.4, default_point, 0.04, time_horizon=time_horizon

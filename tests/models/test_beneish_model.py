@@ -1,7 +1,7 @@
 """Beneish Model Tests""" ""
 import pandas as pd
 
-from financetoolkit.models import beneish_model
+from financetoolkit.models.quality import beneish_model
 
 COLUMNS = ["2020", "2021", "2022", "2023", "2024"]
 

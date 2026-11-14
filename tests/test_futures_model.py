@@ -8,8 +8,8 @@ import pytest
 
 from financetoolkit import Economics
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.economics import futures_model, yfinance_model
 from financetoolkit.economics.helpers import get_exchange_business_days
+from financetoolkit.economics.sources import futures_model, yfinance_model
 
 # The NYMEX WTI contracts December 2026 to November 2027 as Yahoo Finance listed them on
 # 2026-11-08, after the October (last trading day 2026-09-22) and November 2026 contracts

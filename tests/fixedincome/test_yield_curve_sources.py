@@ -186,7 +186,7 @@ def test_treasury_rates_fall_back_without_a_working_key(monkeypatch):
 
 
 def test_convergence_yields_keep_the_euro_series_of_adopters(monkeypatch):
-    from financetoolkit.economics import ecb_model
+    from financetoolkit.economics.sources import ecb_model
 
     text = (
         "KEY,REF_AREA,CURRENCY_TRANS,TIME_PERIOD,OBS_VALUE\n"
@@ -276,7 +276,7 @@ def test_moodys_monthly_spreads_include_the_default_spread(monkeypatch):
 
 
 def test_excess_bond_premium_is_parsed_into_decimals(monkeypatch):
-    from financetoolkit.economics import frb_model
+    from financetoolkit.economics.sources import frb_model
 
     text = "date,gz_spread,ebp,est_prob\n6/1/2026,0.8608,-0.2886,0.1153\n7/1/2026,0.8423,-0.3191,0.1080\n"
     monkeypatch.setattr(

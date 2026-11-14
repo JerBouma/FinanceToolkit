@@ -1,5 +1,6 @@
 """Offline tests for the keyless high-frequency Economics sources."""
 
+import importlib
 import json
 
 import pandas as pd
@@ -11,13 +12,15 @@ from financetoolkit.cache.cache_controller import (
     clear_active_cache,
     set_active_cache,
 )
-from financetoolkit.economics import (
+from financetoolkit.economics import helpers
+from financetoolkit.economics.sources import (
     bis_model,
     boe_model,
     boj_model,
     eurostat_model,
-    helpers,
+    gmdb_model,
     mof_model,
+    oecd_model,
     ons_model,
     sbj_model,
     treasury_model,
@@ -437,7 +440,7 @@ def test_a_different_series_does_not_extend_the_history():
 
 
 def test_bls_unemployment_is_parsed_into_decimals(monkeypatch):
-    from financetoolkit.economics import bls_model
+    from financetoolkit.economics.sources import bls_model
 
     payload = {
         "status": "REQUEST_SUCCEEDED",
@@ -468,7 +471,7 @@ def test_bls_unemployment_is_parsed_into_decimals(monkeypatch):
 
 
 def test_a_refused_bls_request_is_not_a_format_change(monkeypatch):
-    from financetoolkit.economics import bls_model
+    from financetoolkit.economics.sources import bls_model
 
     payload = {
         "status": "REQUEST_NOT_PROCESSED",
@@ -485,7 +488,8 @@ def test_a_refused_bls_request_is_not_a_format_change(monkeypatch):
 def test_an_unreachable_bls_is_logged_as_the_oecd_fallback(monkeypatch, caplog):
     import logging  # noqa: PLC0415
 
-    from financetoolkit.economics import bls_model, helpers  # noqa: PLC0415
+    from financetoolkit.economics import helpers  # noqa: PLC0415
+    from financetoolkit.economics.sources import bls_model  # noqa: PLC0415
 
     def busy(url, **kwargs):
         response = requests.Response()
@@ -541,7 +545,7 @@ def test_eurostat_quarters_are_requested_and_parsed(monkeypatch):
 
 
 def test_freddie_mac_mortgage_rates_match_freds_layout(monkeypatch):
-    from financetoolkit.economics import freddie_mac_model
+    from financetoolkit.economics.sources import freddie_mac_model
 
     text = "date,pmms30,pmms30p,pmms15\n9/24/2026,7.03, ,6.1\n10/1/2026,7.28, ,6.3\n"
     monkeypatch.setattr(
@@ -557,7 +561,7 @@ def test_freddie_mac_mortgage_rates_match_freds_layout(monkeypatch):
 
 
 def test_industrial_production_reads_the_total_index_only(monkeypatch):
-    from financetoolkit.economics import frb_model
+    from financetoolkit.economics.sources import frb_model
 
     text = (
         '"B50001: Total index" "B50001"  2026  101.926  101.617  0  0  0  0  0  0  0  0  0  0\n'
@@ -577,7 +581,7 @@ def test_industrial_production_reads_the_total_index_only(monkeypatch):
 
 
 def test_recession_indicator_follows_freds_usrec_rules(monkeypatch):
-    from financetoolkit.economics import nber_model
+    from financetoolkit.economics.sources import nber_model
 
     cycles = [
         {"peak": "", "trough": "1854-12-01"},
@@ -625,11 +629,7 @@ def test_breakeven_inflation_and_the_five_year_forward(monkeypatch):
 
 def test_a_fred_key_selects_fred_and_none_selects_the_keyless_source(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import (
-        economics_controller,
-        fred_model,
-        freddie_mac_model,
-    )
+    from financetoolkit.economics.sources import fred_model, freddie_mac_model
 
     days = pd.period_range("2026-09-24", periods=1, freq="D", name="Date")
     monkeypatch.setattr(
@@ -643,7 +643,7 @@ def test_a_fred_key_selects_fred_and_none_selects_the_keyless_source(monkeypatch
         lambda: pd.DataFrame({"United States": [0.02]}, index=days),
     )
     monkeypatch.setattr(
-        economics_controller.gmdb_model,
+        gmdb_model,
         "collect_global_macro_database_dataset",
         lambda **_: pd.DataFrame(),
     )
@@ -704,7 +704,7 @@ def test_bis_consumer_prices_are_named_and_in_decimals(monkeypatch):
 
 
 def test_ibge_unemployment_asks_for_json_and_is_in_decimals(monkeypatch):
-    from financetoolkit.economics import ibge_model
+    from financetoolkit.economics.sources import ibge_model
 
     headers = []
     rows = [
@@ -726,7 +726,7 @@ def test_ibge_unemployment_asks_for_json_and_is_in_decimals(monkeypatch):
 
 
 def test_ecb_requests_start_on_the_first_of_the_month(monkeypatch):
-    from financetoolkit.economics import ecb_model
+    from financetoolkit.economics.sources import ecb_model
 
     urls = []
     text = (
@@ -756,7 +756,7 @@ def test_ecb_requests_start_on_the_first_of_the_month(monkeypatch):
 
 
 def test_ecb_ten_year_rate_is_annually_compounded(monkeypatch):
-    from financetoolkit.economics import ecb_model
+    from financetoolkit.economics.sources import ecb_model
 
     curve = pd.DataFrame(
         {"3M": [0.0262], "10Y": [0.0419]},
@@ -772,7 +772,7 @@ def test_ecb_ten_year_rate_is_annually_compounded(monkeypatch):
 
 
 def test_calendar_events_filter_and_survey_levels(monkeypatch):
-    from financetoolkit.economics import fmp_model as economics_fmp_model
+    from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 
     releases = pd.DataFrame(
         [
@@ -829,7 +829,7 @@ def test_calendar_events_filter_and_survey_levels(monkeypatch):
 
 
 def test_calendar_events_match_without_spaces_or_hyphens(monkeypatch):
-    from financetoolkit.economics import fmp_model as economics_fmp_model
+    from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 
     releases = pd.DataFrame(
         [
@@ -893,7 +893,6 @@ def test_a_period_defaults_to_the_highest_frequency_available():
 
 def test_quarterly_oecd_indicators_default_to_quarterly_data(monkeypatch):
     from financetoolkit import Economics  # noqa: PLC0415
-    from financetoolkit.economics import economics_controller  # noqa: PLC0415
 
     requested = {}
 
@@ -911,7 +910,7 @@ def test_quarterly_oecd_indicators_default_to_quarterly_data(monkeypatch):
         "get_household_savings_rate",
         "get_household_debt_to_income_ratio",
     ):
-        monkeypatch.setattr(economics_controller.oecd_model, name, fake(name))
+        monkeypatch.setattr(oecd_model, name, fake(name))
 
     economics = Economics(start_date="2023-01-01", use_cached_data=False)
 
@@ -1011,16 +1010,12 @@ def test_real_interest_rate_and_misery_index_line_up_oecd_and_gmdb_names(monkeyp
         economics_controller.Economics, "_get_gmdb_dataset", lambda self, **kw: None
     )
     monkeypatch.setattr(
-        economics_controller.oecd_model,
+        oecd_model,
         "get_long_term_interest_rate",
         lambda **kw: oecd,
     )
-    monkeypatch.setattr(
-        economics_controller.oecd_model, "get_unemployment_rate", lambda **kw: oecd
-    )
-    monkeypatch.setattr(
-        economics_controller.gmdb_model, "get_inflation_rate", lambda **kw: inflation
-    )
+    monkeypatch.setattr(oecd_model, "get_unemployment_rate", lambda **kw: oecd)
+    monkeypatch.setattr(gmdb_model, "get_inflation_rate", lambda **kw: inflation)
 
     economics = economics_controller.Economics(
         start_date="2022-01-01", end_date="2023-12-31"
@@ -1067,7 +1062,7 @@ class WorkbookResponse:
 
 
 def test_the_term_premium_splits_each_yield_into_decimals(monkeypatch):
-    from financetoolkit.economics import nyfed_model
+    from financetoolkit.economics.sources import nyfed_model
 
     sheet = pd.DataFrame({"DATE": ["02-Nov-2026", "03-Nov-2026"]})
     for maturity in range(1, 11):
@@ -1101,7 +1096,7 @@ def test_the_term_premium_splits_each_yield_into_decimals(monkeypatch):
 
 
 def test_a_term_premium_workbook_without_its_columns_is_reported(monkeypatch):
-    from financetoolkit.economics import nyfed_model
+    from financetoolkit.economics.sources import nyfed_model
 
     sheet = pd.DataFrame({"DATE": ["03-Nov-2026"], "ACMY01": [4.0]})
     monkeypatch.setattr(
@@ -1115,7 +1110,7 @@ def test_a_term_premium_workbook_without_its_columns_is_reported(monkeypatch):
 
 
 def test_the_supply_chain_pressure_index_skips_the_empty_rows(monkeypatch):
-    from financetoolkit.economics import nyfed_model
+    from financetoolkit.economics.sources import nyfed_model
 
     # The workbook leaves empty rows between the header and the first month.
     sheet = pd.DataFrame(
@@ -1155,7 +1150,7 @@ class SheetResponse:
 
 
 def test_department_of_labor_claims_are_posted_for_and_seasonally_adjusted(monkeypatch):
-    from financetoolkit.economics import dol_model
+    from financetoolkit.economics.sources import dol_model
 
     text = (
         "<r539cyState><week><weekEnded>10/18/2026</weekEnded><InitialClaims><NSA>201,000"
@@ -1181,7 +1176,7 @@ def test_department_of_labor_claims_are_posted_for_and_seasonally_adjusted(monke
 
 
 def test_department_of_labor_outage_serves_the_cached_claims(cache, monkeypatch):
-    from financetoolkit.economics import dol_model
+    from financetoolkit.economics.sources import dol_model
 
     report = (
         "<r539cyNational><week><weekEnded>10/18/2026</weekEnded><InitialClaims><NSA>"
@@ -1210,7 +1205,7 @@ def test_department_of_labor_outage_serves_the_cached_claims(cache, monkeypatch)
 
 
 def test_census_retail_sales_leave_out_the_seasonal_factors(monkeypatch):
-    from financetoolkit.economics import census_model
+    from financetoolkit.economics.sources import census_model
 
     text = (
         "ADVANCE MONTHLY SALES\n"
@@ -1231,7 +1226,7 @@ def test_census_retail_sales_leave_out_the_seasonal_factors(monkeypatch):
 
 
 def test_census_housing_starts_read_the_dated_rows(monkeypatch):
-    from financetoolkit.economics import census_model
+    from financetoolkit.economics.sources import census_model
 
     rows = [
         ["New Privately-Owned Housing Units Started", None],
@@ -1253,7 +1248,7 @@ def test_census_housing_starts_read_the_dated_rows(monkeypatch):
 
 
 def test_bea_real_personal_income_is_in_billions_rounded_half_up(monkeypatch):
-    from financetoolkit.economics import bea_model
+    from financetoolkit.economics.sources import bea_model
 
     text = (
         "%SeriesCode,Period,Value\n"
@@ -1277,7 +1272,7 @@ def test_bea_real_personal_income_is_in_billions_rounded_half_up(monkeypatch):
 
 
 def test_bls_nonfarm_payrolls_are_dated_on_the_first_of_the_month(monkeypatch):
-    from financetoolkit.economics import bls_model
+    from financetoolkit.economics.sources import bls_model
 
     payload = {
         "status": "REQUEST_SUCCEEDED",
@@ -1315,7 +1310,8 @@ def test_a_fred_key_selects_fred_for_the_us_activity_indicators(
     monkeypatch, method, keyless_model
 ):
     from financetoolkit import Economics
-    from financetoolkit.economics import economics_controller, fred_model
+    from financetoolkit.economics import sources
+    from financetoolkit.economics.sources import fred_model
 
     days = pd.period_range("2026-09-01", periods=1, freq="D", name="Date")
     monkeypatch.setattr(
@@ -1324,7 +1320,7 @@ def test_a_fred_key_selects_fred_for_the_us_activity_indicators(
         lambda *args: pd.DataFrame({"United States": [1.0]}, index=days),
     )
     monkeypatch.setattr(
-        getattr(economics_controller, keyless_model),
+        importlib.import_module(f"{sources.__name__}.{keyless_model}"),
         method,
         lambda: pd.DataFrame({"United States": [2.0]}, index=days),
     )
@@ -1510,7 +1506,7 @@ def test_price_indices_combine_their_publishers_and_select_fred_with_a_key(
     monkeypatch, caplog
 ):
     from financetoolkit import Economics
-    from financetoolkit.economics import bls_model, fred_model
+    from financetoolkit.economics.sources import bls_model, fred_model
 
     months = pd.period_range("2025-01", "2026-09", freq="M")
     rising = [100 + month for month in range(len(months))]
@@ -1675,7 +1671,7 @@ def test_world_bank_commodity_prices_are_read_from_the_linked_workbook(
 ):
     import io
 
-    from financetoolkit.economics import world_bank_model
+    from financetoolkit.economics.sources import world_bank_model
 
     rows = [
         ["World Bank Commodity Price Data (The Pink Sheet)", None, None],
@@ -1720,7 +1716,7 @@ def test_world_bank_commodity_prices_are_read_from_the_linked_workbook(
 
 def test_commodity_prices_are_selected_and_deflated(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import world_bank_model
+    from financetoolkit.economics.sources import world_bank_model
 
     months = pd.period_range("2024-01", "2024-04", freq="M")
     monkeypatch.setattr(
@@ -1753,7 +1749,7 @@ def test_commodity_prices_are_selected_and_deflated(monkeypatch):
 
 
 def test_bls_consumer_prices_come_in_one_request(monkeypatch):
-    from financetoolkit.economics import bls_model
+    from financetoolkit.economics.sources import bls_model
 
     requests_sent = []
 
@@ -1788,7 +1784,7 @@ def test_bls_consumer_prices_come_in_one_request(monkeypatch):
 
 def test_millennium_series_in_real_terms(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import boe_model
+    from financetoolkit.economics.sources import boe_model
 
     years = pd.period_range("1861", periods=4, freq="Y")
     monkeypatch.setattr(
@@ -1920,7 +1916,7 @@ def test_long_run_prices_warn_about_repeated_years_and_hyperinflations(caplog):
 def test_portwatch_transits_are_read_in_pages(cache, monkeypatch):
     from urllib.parse import parse_qs, urlsplit
 
-    from financetoolkit.economics import portwatch_model
+    from financetoolkit.economics.sources import portwatch_model
 
     monkeypatch.setattr(portwatch_model, "PAGE_SIZE", 2)
     days = ["2026-02-27", "2026-02-28", "2026-03-01"]
@@ -1970,7 +1966,7 @@ def test_portwatch_transits_are_read_in_pages(cache, monkeypatch):
 
 
 def test_portwatch_error_answers_raise(cache, monkeypatch):
-    from financetoolkit.economics import portwatch_model
+    from financetoolkit.economics.sources import portwatch_model
 
     monkeypatch.setattr(
         portwatch_model,
@@ -1986,7 +1982,7 @@ def test_portwatch_error_answers_raise(cache, monkeypatch):
 
 def test_chokepoint_transits_select_measure_and_complete_periods(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import portwatch_model
+    from financetoolkit.economics.sources import portwatch_model
 
     # Two full months and two days of March: March is not complete.
     days = pd.period_range("2026-01-01", "2026-03-02", freq="D")

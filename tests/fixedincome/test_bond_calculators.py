@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.economics import treasury_model
+from financetoolkit.economics.sources import treasury_model
 from financetoolkit.fixedincome import (
     bond_data_model,
     bond_model,

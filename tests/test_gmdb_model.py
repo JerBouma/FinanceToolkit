@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.economics import gmdb_model
+from financetoolkit.economics.sources import gmdb_model
 
 
 @pytest.fixture(autouse=True)
@@ -170,7 +170,7 @@ def test_projected_years_are_a_choice_per_method(monkeypatch):
 
 
 def test_the_dataset_is_read_once_and_shared(monkeypatch):
-    from financetoolkit.economics import gmdb_model
+    from financetoolkit.economics.sources import gmdb_model
 
     reads = []
 

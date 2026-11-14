@@ -527,7 +527,7 @@ def test_unavailable_inflation_expectations_are_reported_as_missing_data():
     from financetoolkit.mcp_server.diagnostics_model import MISSING_DATA_PATTERN
 
     # No source is asked for a country without one, so this needs no network.
-    with patch("financetoolkit.economics.economics_controller.logger") as mock_logger:
+    with patch("financetoolkit.economics.rates.rates_controller.logger") as mock_logger:
         assert Economics().get_inflation_expectations("United States").empty
 
     message = mock_logger.warning.call_args[0][0] % mock_logger.warning.call_args[0][1:]

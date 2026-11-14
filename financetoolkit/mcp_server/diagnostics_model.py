@@ -155,6 +155,8 @@ def call_input_info() -> list[str]:
 MISSING_DATA_PATTERN = re.compile(
     r"^No (?:\w+ )*data (?:is available|found) for\b|\bdoes not apply to\b"
     r"|^The following countries are not available for\b"
+    # The years of a long-run price index its inflation rate does not describe as it reads.
+    r"|^The Global Macro Database repeats\b|^Prices in .+ rose more than tenfold\b"
 )
 
 

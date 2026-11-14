@@ -161,3 +161,93 @@ def test_a_reference_needs_tickers_or_countries_and_a_call_a_few_references():
     many = ";".join(["get_inflation_rate:Germany"] * 21)
     with pytest.raises(ValueError, match="at most 20"):
         series_model.parse_series_references(many)
+
+
+def test_the_period_reaches_the_indicators_that_take_one(indicator_answers):
+    answer = call_econometrics(
+        indicator="get_level_significance",
+        series="rates:get_long_term_interest_rate:United States; get_government_bond_yield:Germany",
+        start_date="2010-01-01",
+        period="monthly",
+    )
+
+    # Both indicators take a period, so both are asked for the monthly series.
+    assert [kwargs.get("period") for *_, kwargs in indicator_answers[-2:]] == [
+        "monthly",
+        "monthly",
+    ]
+    assert "Highest Since" in answer and "Germany" in answer
+
+    # Without a period every indicator keeps its own default.
+    call_econometrics(
+        indicator="get_level_significance",
+        series="rates:get_long_term_interest_rate:United States",
+        start_date="2010-01-01",
+    )
+    assert "period" not in indicator_answers[-1][3]
+
+
+def test_an_indicator_not_published_at_the_period_is_read_at_its_own(
+    indicator_answers, monkeypatch
+):
+    calls = []
+
+    def fake_call_method(
+        self, module_name, method_name, category, **kwargs
+    ):  # noqa: ARG001
+        calls.append(kwargs.get("period"))
+        if kwargs.get("period") == "weekly":
+            return pd.Series(dtype=object)
+        months = pd.period_range("2010-01", periods=60, freq="M")
+        return pd.DataFrame({"Germany": np.linspace(0.01, 0.03, 60)}, index=months)
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", fake_call_method)
+
+    answer = call_econometrics(
+        indicator="get_level_significance",
+        series="macroeconomics:get_inflation_rate:Germany",
+        start_date="2010-01-01",
+        period="weekly",
+    )
+
+    assert calls == ["weekly", None]
+    assert "Highest Since" in answer
+
+
+def test_the_economic_calendar_is_read_as_series(monkeypatch):
+    calls = []
+    months = pd.period_range("2021-05", periods=66, freq="M")
+
+    def fake_call_method(
+        self, module_name, method_name, category, **kwargs
+    ):  # noqa: ARG001
+        calls.append(kwargs)
+        return pd.DataFrame(
+            {
+                ("China", "Inflation Rate YoY"): np.linspace(0.013, 0.007, 66),
+                ("China", "Producer Price Index YoY"): np.linspace(0.09, 0.057, 66),
+                ("China", "Producer Price Index YoY Estimate"): np.linspace(
+                    0.08, 0.053, 66
+                ),
+            },
+            index=months,
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", fake_call_method)
+
+    answer = call_econometrics(
+        indicator="get_streaks",
+        series=(
+            "macroeconomics:get_economic_calendar:China:Producer Price Index YoY; "
+            "macroeconomics:get_economic_calendar:China:Inflation Rate YoY"
+        ),
+        spread_over="China Inflation Rate YoY",
+        start_date="2021-06-01",
+        period="monthly",
+    )
+
+    # The calendar is asked for its series, and the event is picked by its name only.
+    assert all(kwargs.get("as_series") is True for kwargs in calls)
+    assert "China Producer Price Index YoY - China Inflation Rate YoY" in answer
+    assert "Estimate" not in answer
+    assert "Run Length" in answer

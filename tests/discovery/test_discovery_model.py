@@ -755,8 +755,10 @@ def test_the_earnings_calendar_splits_a_range_that_reaches_the_limit(monkeypatch
 
     calendar = discovery_model.get_earnings_calendar("KEY", "2026-11-09", "2026-11-13")
 
+    # The week in two halves, plus the week before and the week after it that decide
+    # the primary listings.
     ranges = [url for url in requested if "/earnings-calendar" in url]
-    assert len(ranges) == 3
+    assert len(ranges) == 5
     assert sorted(calendar.index) == ["S09", "S10", "S11", "S12", "S13"]
 
 
@@ -765,7 +767,66 @@ def test_the_earnings_calendar_always_asks_for_a_range(monkeypatch):
 
     discovery_model.get_earnings_calendar("KEY", end_date="2026-11-13")
 
-    assert "from=2026-11-06&to=2026-11-13" in requested[0]
+    assert any("from=2026-11-06&to=2026-11-13" in url for url in requested)
+
+
+def test_a_listing_abroad_dated_after_the_home_release_is_not_primary(monkeypatch):
+    # Berkshire Hathaway reported on Saturday 7 November in New York; its Frankfurt listing
+    # shows the release on Monday 9 November, the first day of the range.
+    def releases(url):
+        start = pd.Timestamp(url.split("from=")[1][:10])
+        end = pd.Timestamp(url.split("to=")[1][:10])
+        calendar = pd.DataFrame(
+            {
+                "symbol": ["BRK-B", "BRYN.DE", "CSCO"],
+                "date": ["2026-11-07", "2026-11-09", "2026-11-12"],
+            }
+        )
+        return calendar[pd.to_datetime(calendar["date"]).between(start, end)]
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "/earnings-calendar" in url:
+            return releases(url)
+        if "/batch-quote" in url and "EURUSD" in url:
+            return pd.DataFrame({"symbol": ["EURUSD"], "price": [1.1]})
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["BRK-B", "BRYN.DE", "CSCO"],
+                    "name": [
+                        "Berkshire Hathaway Inc.",
+                        "Berkshire Hathaway Inc.",
+                        "Cisco Systems, Inc.",
+                    ],
+                    "exchange": ["NYSE", "XETRA", "NASDAQ"],
+                    "marketCap": [1.2e12, 1.0e12, 370e9],
+                    "price": [480.0, 410.0, 93.0],
+                    "volume": [4e6, 2e3, 20e6],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {
+                    "exchange": ["NYSE", "XETRA", "NASDAQ"],
+                    "countryCode": ["US", "DE", "US"],
+                }
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    primary = discovery_model.get_earnings_calendar(
+        "KEY", "2026-11-09", "2026-11-16", primary_only=True, sort_by="market_cap"
+    )
+    every_listing = discovery_model.get_earnings_calendar(
+        "KEY", "2026-11-09", "2026-11-16"
+    )
+
+    # Berkshire reported before the range, so only Cisco reports in it.
+    assert list(primary.index) == ["CSCO"]
+    # The listing abroad keeps its release in the range, with the company's market cap.
+    assert list(every_listing.index) == ["BRYN.DE", "CSCO"]
+    assert every_listing.loc["BRYN.DE", "Market Cap (USD)"] == pytest.approx(1.2e12)
 
 
 def test_the_earnings_calendar_takes_prices_in_pence_in_pounds(monkeypatch):

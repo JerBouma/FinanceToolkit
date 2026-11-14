@@ -166,9 +166,10 @@ def get_pseudo_observations(series: pd.Series) -> pd.Series:
     their marginal distributions (Sklar's theorem). Rather than assuming a
     parametric marginal distribution for each series, the standard "canonical
     maximum likelihood" approach used throughout this module instead works
-    directly with each series' own empirical ranks -- every copula function in
-    this module expects its `u`/`v` (or `series_a`/`series_b`) inputs to already
-    be on this pseudo-observation scale.
+    directly with each series' own empirical ranks -- every copula density in
+    this module expects its `u`/`v` inputs to already be on this pseudo-observation
+    scale, and the calibration functions transform their `series_a`/`series_b`
+    inputs with this function first.
 
     The formula is as follows:
 

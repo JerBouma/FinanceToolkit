@@ -55,6 +55,7 @@ from financetoolkit.fmp_model import (
 from financetoolkit.fundamentals_model import collect_financial_statements
 from financetoolkit.helpers import (
     LazyDict,
+    add_basket_total,
     determine_availability_dates,
     determine_period_end_dates,
     prepare_supplied_historical_data,
@@ -70,7 +71,8 @@ from financetoolkit.normalization_model import (
     initialize_statements_and_normalization as _initialize_statements_and_normalization,
 )
 from financetoolkit.utilities import logger_model, validation_model
-from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
 
 if TYPE_CHECKING:
@@ -136,6 +138,8 @@ API_KEY: str = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY", "")
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 
 
+@filter_shown_columns
+@track_sources
 class Toolkit:
     """
     The Finance Toolkit is an open-source toolkit in which
@@ -172,6 +176,7 @@ class Toolkit:
         fred_api_key: str = FRED_API_KEY,
         allow_stale_oecd_cache: bool = True,
         point_in_time: bool = False,
+        basket: bool = False,
     ):
         """
         Initializes a Toolkit object with a ticker or a list of tickers. The way the Toolkit is initialized
@@ -241,13 +246,34 @@ class Toolkit:
             variable. Defaults to the value of FRED_API_KEY if set, otherwise an empty string.
             allow_stale_oecd_cache (bool): the OECD API (used by the economics module) enforces a hard rate
             limit (60 downloads/hour). When True, a rate-limited call falls back to the most recently cached
-            successful response for that query instead of empty data -- opt-in, since served data may be
-            stale. Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
+            successful response for that query instead of empty data, which may then be stale.
+            Independent of use_cached_data (which governs this Toolkit's own config/ticker cache, a
             different mechanism). Defaults to True.
             point_in_time (bool): Use each period's figures only from the day they were filed, as a backtest
             would have seen them: the statements leave out the periods filed after end_date and daily ratios
             apply a period's figures from its filing day instead of from its period end. See "Point in time"
             below. Defaults to False.
+            basket (bool): Analyse the tickers as one basket as well: a company named "Total" is added
+            whose financial statements are the sums of those of the tickers, so every ratio and model is
+            also calculated for the group as a whole (on the summed figures, not as an average of the
+            ratios) and the market cap of the Total is the sum of theirs. See "Basket" below. Defaults
+            to False.
+
+        Basket:
+
+            With basket=True, the financial statements get a "Total" next to the tickers: each line
+            item of each period is the sum of that item over the tickers, so the capital expenditure of
+            the Total is the combined capital expenditure of the group. The ratios and models read these
+            statements, so they return the Total as well, calculated on the summed figures: the capex
+            coverage ratio of the Total is the combined operating cash flow over the combined capital
+            expenditure, which weighs each company by its size. A figure of the Total is left empty for
+            a period in which a ticker has no value for it, as the sum of the others would understate the
+            group. Per-share figures and share counts (EPS, Weighted Average Shares) do not add up across
+            companies and stay empty, and so do the ratios built on them (P/E, EPS growth); ratios built
+            on the market cap (EV/EBITDA, free cash flow yield) use the summed market cap of the tickers.
+            The figures are only summed when they are in one currency (the currency of the historical
+            data with convert_currency, otherwise the reported currency); for tickers in different
+            currencies no Total is added and a warning says so.
 
         Fiscal periods and calendar periods:
 
@@ -373,6 +399,7 @@ class Toolkit:
         self._rounding = rounding
         self._remove_invalid_tickers = remove_invalid_tickers
         self._invalid_tickers: list = []
+        self._basket = basket
 
         self._cache = cache_controller.resolve_cache(use_cached_data)
         self._use_cached_data = self._cache.enabled
@@ -589,6 +616,13 @@ class Toolkit:
             else self._fmp_plan != "Free"
         )
 
+        # Supplied statements get the Total of a basket as they are, without a currency check.
+        self._balance_sheet_statement = self._add_basket_total(
+            self._balance_sheet_statement
+        )
+        self._income_statement = self._add_basket_total(self._income_statement)
+        self._cash_flow_statement = self._add_basket_total(self._cash_flow_statement)
+
         # Initialization of Risk Free Rate
         self._daily_risk_free_rate: pd.DataFrame = pd.DataFrame()
         self._weekly_risk_free_rate: pd.DataFrame = pd.DataFrame()
@@ -686,12 +720,26 @@ class Toolkit:
         # what it uses (the gross margin only the income statement).
         period = "quarterly" if self._quarterly else "yearly"
 
+        def gross_domestic_product() -> pd.DataFrame:
+            # Imported when first used, as only the market cap to GDP ratio needs it.
+            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
+                Economics,
+            )
+
+            # Every year, as each date is compared with the GDP of the year before it.
+            return Economics(
+                rounding=None,
+                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
+                cache=self._cache,
+                api_key=self._api_key,
+            ).get_gross_domestic_product(usd=True)
+
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
             # The daily ratios use the prices from before the start date as well.
             historical=LazyDict(
-                lambda key: (
+                lambda key: self._with_basket_prices(
                     self._get_module_historical_data(period)
                     if key == "period"
                     else self._get_lookback_historical_data(key)
@@ -713,6 +761,8 @@ class Toolkit:
             period_end_dates=lambda: self._get_daily_start_dates(
                 self._get_module_statement("balance_sheet_statement", "Ratios")
             ),
+            currency_function=self._get_listing_currencies,
+            gross_domestic_product_function=gross_domestic_product,
         )
 
         if self._portfolio_weights:
@@ -871,7 +921,7 @@ class Toolkit:
             # "lookback" is the daily data from a year before the start date, for the
             # models that measure returns over the year before a period end.
             historical_data=LazyDict(
-                lambda key: (
+                lambda key: self._with_basket_prices(
                     self._get_lookback_historical_data("daily")
                     if key == "lookback"
                     else self._get_module_historical_data(key)
@@ -1127,6 +1177,9 @@ class Toolkit:
             intraday_period=self._intraday_period,
             progress_bar=self._progress_bar,
             returns_function=self._other_returns,
+            # The daily market cap values the Residual of get_beta_implied_return; the
+            # statements are only retrieved when that method asks for it.
+            market_cap_function=lambda: self.ratios.get_market_cap(show_daily=True),
         )
 
         if self._portfolio_weights:
@@ -1329,15 +1382,6 @@ class Toolkit:
             )
             return ratios_ttm
 
-        def currencies() -> pd.Series:
-            # The currency each ticker is listed in, to compare its close with the NAV.
-            statistics = self.get_historical_statistics()
-            if isinstance(statistics, pd.Series):
-                return pd.Series({self._tickers[0]: statistics.get("Currency")})
-            if statistics.empty or "Currency" not in statistics.index:
-                return pd.Series(dtype=object)
-            return statistics.loc["Currency"]
-
         def prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
             # The traded (split-adjusted) close, as an index level is a price index.
             historical = self._other_toolkit(tickers, start, end).get_historical_data(
@@ -1366,7 +1410,7 @@ class Toolkit:
             start_date=self._start_date,
             end_date=self._end_date,
             rounding=self._rounding,
-            currency_function=currencies,
+            currency_function=self._get_listing_currencies,
             prices_function=prices,
             sector_function=sectors,
         )
@@ -1589,7 +1633,115 @@ class Toolkit:
             api_key=self._api_key,
         )
 
-    def get_profile(self):
+    def _add_basket_total(self, statement: pd.DataFrame) -> pd.DataFrame:
+        """
+        Adds the "Total" of the tickers to a financial statement when the Toolkit analyses them
+        as a basket, see helpers.add_basket_total.
+
+        The figures are summed in the currency they are in: the currency of the historical data
+        when the statements are converted to it, otherwise the reported currency. When the tickers
+        are in different currencies, no Total is added.
+
+        Args:
+            statement (pd.DataFrame): The financial statement of the tickers.
+
+        Returns:
+            pd.DataFrame: The financial statement, with the Total when the Toolkit has basket=True.
+        """
+        if not self._basket or statement.empty:
+            return statement
+
+        tickers = [
+            ticker
+            for ticker in statement.index.unique(level=0)
+            if ticker not in ("Portfolio", "Total")
+        ]
+        if len(tickers) < 2:  # noqa: PLR2004
+            logger.warning(
+                "A basket adds up two or more tickers, so no Total is added for %s.",
+                ", ".join(tickers),
+            )
+            return statement
+
+        if self._convert_currency and not self._statement_currencies.empty:
+            currencies = self._get_listing_currencies().reindex(tickers)
+        elif not self._statistics_statement.empty:
+            reported = self._statistics_statement.xs(
+                "Reported Currency", axis=0, level=1
+            ).reindex(tickers)
+            # The latest currency each ticker reported in.
+            currencies = reported.T.ffill().iloc[-1]
+        else:
+            currencies = pd.Series(dtype=object)
+
+        if len(set(currencies.dropna())) > 1:
+            listed = ", ".join(
+                f"{ticker} ({currency})" for ticker, currency in currencies.items()
+            )
+            logger.warning(
+                "The figures of a basket are summed in one currency, but the tickers are in "
+                "different currencies: %s. No Total is added; set convert_currency=True to "
+                "convert the statements to the currency of the historical data.",
+                listed,
+            )
+            return statement
+
+        return add_basket_total(
+            statement,
+            tickers,
+            not_summed=[
+                "EPS",
+                "EPS Diluted",
+                "Weighted Average Shares",
+                "Weighted Average Shares Diluted",
+            ],
+        )
+
+    def _with_basket_prices(self, historical_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Adds the Total of a basket to the historical data without prices, for the Ratios and
+        Models modules, which calculate the Total like a ticker. A basket has no share price,
+        so its per-share ratios and the models that value a share are NaN, while the ratios
+        built on the market cap use the summed market cap of the tickers.
+
+        Args:
+            historical_data (pd.DataFrame): The historical data, with the columns and the
+                tickers as its column levels.
+
+        Returns:
+            pd.DataFrame: The historical data, with an empty Total for a basket.
+        """
+        if (
+            not self._basket
+            or historical_data.empty
+            or "Total" in historical_data.columns.get_level_values(1)
+        ):
+            return historical_data
+
+        return historical_data.reindex(
+            columns=pd.MultiIndex.from_product(
+                [
+                    historical_data.columns.get_level_values(0).unique(),
+                    [*historical_data.columns.get_level_values(1).unique(), "Total"],
+                ]
+            )
+        )
+
+    def _get_listing_currencies(self) -> pd.Series:
+        """
+        Returns the currency each ticker is listed in, which its prices are quoted in.
+
+        Returns:
+            pd.Series: The currency per ticker, empty when it is unknown.
+        """
+        statistics = self.get_historical_statistics()
+        if isinstance(statistics, pd.Series):
+            return pd.Series({self._tickers[0]: statistics.get("Currency")})
+        if statistics.empty or "Currency" not in statistics.index:
+            return pd.Series(dtype=object)
+        return statistics.loc["Currency"]
+
+    def get_profile(self, show_columns: str | list[str] | None = None):
         """
         Obtain the profile of the specified tickers. These include important metrics
         such as the beta, market capitalization, currency, isin, industry, and ipo date
@@ -1598,6 +1750,13 @@ class Toolkit:
         Also known as: company description, sector, industry, CEO, employee count.
 
         Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The profile per ticker, with the profile items as the index.
 
         As an example:
 
@@ -1656,7 +1815,7 @@ class Toolkit:
 
         return self._profile
 
-    def get_quote(self):
+    def get_quote(self, show_columns: str | list[str] | None = None):
         """
         Get the quote of the specified tickers: the price and its change, the day's
         open, low and high, the previous close, the year low and high, the 50 and 200
@@ -1666,6 +1825,13 @@ class Toolkit:
         Also known as: real-time price, current stock price, live quote.
 
         Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The quote per ticker, with the quote items as the index.
 
         As an example:
 
@@ -1722,7 +1888,7 @@ class Toolkit:
 
         return self._quote
 
-    def get_rating(self):
+    def get_rating(self, show_columns: str | list[str] | None = None):
         """
         Get the rating of the specified tickers: a letter rating and an overall score based on
         six scores from 1 (weak) to 5 (strong). These scores are categorized as follows:
@@ -1738,6 +1904,10 @@ class Toolkit:
         Also known as: stock rating, fundamental score, quantitative rating.
 
         Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The stock rating information for the specified tickers.
@@ -1815,7 +1985,7 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         compound: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain analyst estimates regarding revenues, EBITDA, EBIT, Net Income
@@ -1844,8 +2014,10 @@ class Toolkit:
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pandas.DataFrame: The analyst estimates for the specified tickers.
@@ -1935,21 +2107,25 @@ class Toolkit:
                 if growth
                 else analyst_estimates.loc[self._tickers[0]]
             )
-            return filter_columns(result, show_columns)
+            return result
 
         result = self._analyst_estimates_growth if growth else analyst_estimates
-        return filter_columns(result, show_columns)
+        return result
 
     def get_earnings_calendar(
         self,
         actual_dates: bool = True,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain Earnings Calendars for any range of companies. You have the option to
         obtain the actual dates or to convert to the corresponding quarters.
+
+        Filtered to this Toolkit instance's start_date and end_date; when the end_date is
+        today or later (the default), the scheduled releases after today are included too,
+        with the estimates and without reported figures yet.
 
         Note that this information requires a Premium FMP subscription.
 
@@ -1964,8 +2140,10 @@ class Toolkit:
             actual_dates (bool): Defines whether to return the actual dates or the corresponding quarters. Defaults to
                 True.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
             rounding (int | None): The number of decimals to round the results to. Defaults to None,
             which uses the rounding set on the Toolkit.
 
@@ -2054,16 +2232,16 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._earnings_calendar.empty:
-            return filter_columns(earnings_calendar.loc[self._tickers[0]], show_columns)
+            return earnings_calendar.loc[self._tickers[0]]
 
-        return filter_columns(earnings_calendar, show_columns)
+        return earnings_calendar
 
     def get_earnings_surprise(
         self,
         window: int = 1,
         sue_window: int = 8,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate how far each reported EPS and revenue came in above or below the analyst
@@ -2108,9 +2286,10 @@ class Toolkit:
                 scale the SUE. Defaults to 8 (two years of quarterly reports).
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding set on the Toolkit.
-            show_columns (list[str] | None, optional): A list of column names to keep in the
-                result. Invalid names are reported and ignored. Defaults to None, which keeps
-                every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per reported announcement the EPS, Estimated EPS, EPS Surprise,
@@ -2215,15 +2394,15 @@ class Toolkit:
         )
 
         if len(self._tickers) == 1:
-            return filter_columns(earnings_surprise.loc[self._tickers[0]], show_columns)
+            return earnings_surprise.loc[self._tickers[0]]
 
-        return filter_columns(earnings_surprise, show_columns)
+        return earnings_surprise
 
     def get_stock_news(
         self,
         pages: int = 1,
         limit: int = 100,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Obtain the latest news articles for the tickers of this Toolkit instance, whether
@@ -2242,8 +2421,10 @@ class Toolkit:
             pages (int, optional): The number of pages to collect per news feed, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The latest news articles for the specified tickers, newest first.
@@ -2332,13 +2513,13 @@ class Toolkit:
         stock_news = pd.concat(news_frames).sort_index(ascending=False)
         stock_news = stock_news[~stock_news.duplicated(subset=["Symbol", "URL"])]
 
-        return filter_columns(stock_news, show_columns)
+        return stock_news
 
     def get_press_releases(
         self,
         pages: int = 1,
         limit: int = 100,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Obtain the latest official company press releases for the tickers of this
@@ -2351,8 +2532,10 @@ class Toolkit:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The latest press releases for the specified tickers.
@@ -2394,12 +2577,12 @@ class Toolkit:
             user_subscription=self._fmp_plan,
         )
 
-        return filter_columns(press_releases, show_columns)
+        return press_releases
 
     def get_revenue_geographic_segmentation(
         self,
         overwrite: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain revenue by geographic segmentation (e.g. United States, Europe, Asia).
@@ -2410,8 +2593,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The revenue by geographic segmentation for the specified tickers.
@@ -2485,17 +2670,14 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._revenue_geographic_segmentation.empty:
-            return filter_columns(
-                self._revenue_geographic_segmentation.loc[self._tickers[0]],
-                show_columns,
-            )
+            return self._revenue_geographic_segmentation.loc[self._tickers[0]]
 
-        return filter_columns(self._revenue_geographic_segmentation, show_columns)
+        return self._revenue_geographic_segmentation
 
     def get_revenue_product_segmentation(
         self,
         overwrite: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain revenue by product segmentation (e.g. iPad, Advertisement, Windows).
@@ -2506,8 +2688,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The revenue by product segmentation for the specified tickers.
@@ -2581,11 +2765,9 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._revenue_product_segmentation.empty:
-            return filter_columns(
-                self._revenue_product_segmentation.loc[self._tickers[0]], show_columns
-            )
+            return self._revenue_product_segmentation.loc[self._tickers[0]]
 
-        return filter_columns(self._revenue_product_segmentation, show_columns)
+        return self._revenue_product_segmentation
 
     def get_historical_data(
         self,
@@ -2597,7 +2779,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_ticker_separation: bool = True,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Returns historical data for the specified tickers. This contains the following columns:
@@ -2645,10 +2827,10 @@ class Toolkit:
                 rounding of the Toolkit (4 unless set otherwise).
             show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
-            show_columns (list[str], optional): A list of columns to include in the output. Valid columns
-            are Open, High, Low, Close, Adj Close, Volume, Dividends, Return and Cumulative Return.
-            Invalid column names are logged as warnings. If all
-            provided columns are invalid the full dataset is returned. Defaults to None (all columns).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -2820,31 +3002,8 @@ class Toolkit:
 
         historical_data = apply_rounding(historical_data, resolved_rounding)
 
-        requested: list[str] = []
-
-        if show_columns is not None:
-            valid_columns = (
-                historical_data.columns.get_level_values(0).unique().tolist()
-            )
-            invalid = [c for c in show_columns if c not in valid_columns]
-            for col in invalid:
-                logger.warning(
-                    f"Column '{col}' is not a valid column for get_historical_data. "
-                    f"Valid columns are: {valid_columns}"
-                )
-            requested = [c for c in show_columns if c in valid_columns]
-            if requested:
-                mask = historical_data.columns.get_level_values(0).isin(requested)
-                historical_data = historical_data.loc[:, mask]
-
         if len(self._tickers) == 1 and not self._benchmark_ticker:
-            result = historical_data.xs(self._tickers[0], level=1, axis="columns")
-            if len(requested) == 1:
-                return result.iloc[:, 0]
-            return result
-
-        if len(requested) == 1:
-            return historical_data.droplevel(0, axis="columns")
+            return historical_data.xs(self._tickers[0], level=1, axis="columns")
 
         return historical_data
 
@@ -2854,7 +3013,7 @@ class Toolkit:
         return_column: str = "Close",
         fill_nan: bool = True,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Returns intraday historical data for the specified tickers. This contains the following columns:
@@ -2887,8 +3046,10 @@ class Toolkit:
             return_column (str, optional): The column to use for the return calculation. Defaults to "Close".
             fill_nan (bool, optional): Defines whether to forward fill NaN values. Defaults to True.
             rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pandas.DataFrame: The intraday data for the specified tickers.
@@ -2982,9 +3143,6 @@ class Toolkit:
 
         # The first row of the window has no preceding observation, so its Return stays NaN rather than being reported as an unchanged period.
 
-        if show_columns is not None:
-            historical_data = filter_columns(historical_data, show_columns)
-
         if len(self._tickers) == 1 and not self._benchmark_ticker:
             return historical_data.xs(self._tickers[0], level=1, axis="columns")
 
@@ -2994,7 +3152,7 @@ class Toolkit:
         self,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain Dividend Calendars for any range of companies. It includes the following columns:
@@ -3010,14 +3168,19 @@ class Toolkit:
         If a company does not pay any dividend, the function will mention that it was not able
         to find any dividend data for that company.
 
+        Filtered to this Toolkit instance's start_date and end_date; when the end_date is
+        today or later (the default), the dividends scheduled after today are included too.
+
         Also known as: dividend dates, ex-dividend date, dividend history.
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The dividend calendar for the specified tickers.
@@ -3107,7 +3270,7 @@ class Toolkit:
             ]
 
         if len(self._tickers) == 1 and not self._dividend_calendar.empty:
-            return filter_columns(dividend_calendar.loc[self._tickers[0]], show_columns)
+            return dividend_calendar.loc[self._tickers[0]]
 
         if dividend_calendar.empty and self._fmp_plan == "Free":
             logger.warning(
@@ -3115,13 +3278,13 @@ class Toolkit:
                 "https://www.jeroenbouma.com/fmp"
             )
 
-        return filter_columns(dividend_calendar, show_columns)
+        return dividend_calendar
 
     def get_esg_scores(
         self,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         ESG scores, which stands for Environmental, Social, and Governance scores, are a crucial
@@ -3161,8 +3324,10 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The ESG scores for the specified tickers.
@@ -3236,15 +3401,14 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        if show_columns is not None:
-            esg_scores = filter_columns(esg_scores, show_columns)
-
         if len(self._tickers) == 1 and not self._esg_scores.empty:
             return esg_scores.xs(self._tickers[0], axis=1, level=1)
 
         return esg_scores
 
-    def get_market_risk_premium(self, overwrite: bool = False):
+    def get_market_risk_premium(
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+    ):
         """
         Obtains the equity risk premium by country -- the equity risk premium of a mature market
         plus a country risk premium, the country's default spread scaled by the volatility of its
@@ -3261,6 +3425,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The market risk premium by country, including the continent, Country
@@ -3400,7 +3568,9 @@ class Toolkit:
 
         return premiums
 
-    def get_commitment_of_traders(self, overwrite: bool = False):
+    def get_commitment_of_traders(
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+    ):
         """
         Obtains the CFTC Commitment of Traders (COT) report for the tickers the Toolkit was
         initialized with. Published weekly by the U.S. Commodity Futures Trading Commission, it
@@ -3422,6 +3592,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Commitment of Traders report for the specified tickers.
@@ -3510,7 +3684,7 @@ class Toolkit:
             ]
 
     def get_executives(
-        self, overwrite: bool = False, show_columns: list[str] | None = None
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
         Obtain the key executives of each company: their title, pay, gender, year of birth
@@ -3522,8 +3696,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The executives per ticker, indexed by their name. Pay is only
@@ -3579,14 +3755,14 @@ class Toolkit:
         self._remove_invalid()
 
         if len(self._tickers) == 1 and not self._executives.empty:
-            return filter_columns(self._executives.loc[self._tickers[0]], show_columns)
+            return self._executives.loc[self._tickers[0]]
 
-        return filter_columns(self._executives, show_columns)
+        return self._executives
 
     def get_executive_compensation(
         self,
         overwrite: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain the compensation of each company's executives per year as reported in the
@@ -3600,8 +3776,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The compensation per ticker, indexed by year and executive.
@@ -3658,14 +3836,12 @@ class Toolkit:
         self._remove_invalid()
 
         if len(self._tickers) == 1 and not self._executive_compensation.empty:
-            return filter_columns(
-                self._executive_compensation.loc[self._tickers[0]], show_columns
-            )
+            return self._executive_compensation.loc[self._tickers[0]]
 
-        return filter_columns(self._executive_compensation, show_columns)
+        return self._executive_compensation
 
     def get_company_notes(
-        self, overwrite: bool = False, show_columns: list[str] | None = None
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
         Obtain the securities other than common stock that each company has registered
@@ -3679,8 +3855,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The notes per ticker, indexed by their title.
@@ -3733,13 +3911,13 @@ class Toolkit:
         self._remove_invalid()
 
         if len(self._tickers) == 1 and not self._company_notes.empty:
-            return filter_columns(
-                self._company_notes.loc[self._tickers[0]], show_columns
-            )
+            return self._company_notes.loc[self._tickers[0]]
 
-        return filter_columns(self._company_notes, show_columns)
+        return self._company_notes
 
-    def get_employee_count(self, overwrite: bool = False):
+    def get_employee_count(
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+    ):
         """
         Obtain the number of employees each company reported in its annual filings over
         time. The most recent row is the current employee count and the rows before it
@@ -3752,6 +3930,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The employee count per reporting year (rows) and ticker (columns).
@@ -3809,7 +3991,9 @@ class Toolkit:
 
         return self._employee_count
 
-    def get_shares_float(self, overwrite: bool = False):
+    def get_shares_float(
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+    ):
         """
         Obtain the free float of each company: the number of shares available for public
         trading, the number of shares outstanding and the free float as the share of the
@@ -3820,6 +4004,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The share float figures (rows) per ticker (columns).
@@ -3866,7 +4054,7 @@ class Toolkit:
         return self._shares_float
 
     def get_mergers_acquisitions(
-        self, overwrite: bool = False, show_columns: list[str] | None = None
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
         Obtain the mergers and acquisitions each company took part in, as the acquirer or
@@ -3883,8 +4071,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The deals per ticker, indexed by their transaction date.
@@ -3948,13 +4138,13 @@ class Toolkit:
         # A company without deals is not an invalid ticker, so nothing is removed here.
 
         if len(self._tickers) == 1 and not self._mergers_acquisitions.empty:
-            return filter_columns(
-                self._mergers_acquisitions.loc[self._tickers[0]], show_columns
-            )
+            return self._mergers_acquisitions.loc[self._tickers[0]]
 
-        return filter_columns(self._mergers_acquisitions, show_columns)
+        return self._mergers_acquisitions
 
-    def get_stock_splits(self, overwrite: bool = False):
+    def get_stock_splits(
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
+    ):
         """
         Obtain the stock splits of each company, with the split ratio as a numerator and
         denominator: a 4-for-1 split has numerator 4 and denominator 1, while a reverse
@@ -3968,6 +4158,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The splits per ticker, indexed by their date.
@@ -4033,7 +4227,7 @@ class Toolkit:
         self,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain quarterly statistics on the trades of each company's insiders (officers,
@@ -4053,8 +4247,10 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The statistics per ticker, indexed by quarter.
@@ -4119,17 +4315,15 @@ class Toolkit:
         self._remove_invalid()
 
         if len(self._tickers) == 1 and not self._insider_trade_statistics.empty:
-            return filter_columns(
-                insider_trade_statistics.loc[self._tickers[0]], show_columns
-            )
+            return insider_trade_statistics.loc[self._tickers[0]]
 
-        return filter_columns(insider_trade_statistics, show_columns)
+        return insider_trade_statistics
 
     def get_institutional_ownership(
         self,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain the institutional ownership of each company per quarter, based on the Form 13F
@@ -4155,8 +4349,10 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The ownership per ticker, indexed by quarter.
@@ -4234,18 +4430,16 @@ class Toolkit:
         self._remove_invalid()
 
         if len(self._tickers) == 1 and not self._institutional_ownership.empty:
-            return filter_columns(
-                institutional_ownership.loc[self._tickers[0]], show_columns
-            )
+            return institutional_ownership.loc[self._tickers[0]]
 
-        return filter_columns(institutional_ownership, show_columns)
+        return institutional_ownership
 
     def get_short_volume(
         self,
         history_days: int | None = 92,
         window: int = 20,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain the daily short sale volume of each company from FINRA's Reg SHO files: the
@@ -4290,8 +4484,10 @@ class Toolkit:
             Defaults to 20, about a month.
             rounding (int | None): The number of decimals to round the results to. Defaults to
             None, which uses the rounding of the Toolkit.
-            show_columns (list[str] | None): A list of column names to keep in the result.
-            Invalid names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Short Volume, Short Exempt Volume, Total Volume, Short Volume
@@ -4381,10 +4577,10 @@ class Toolkit:
         if len(statistics) == 1:
             short_volume = short_volume.droplevel(1, axis=1)
 
-        return filter_columns(short_volume, show_columns)
+        return short_volume
 
     def get_stock_grades(
-        self, overwrite: bool = False, show_columns: list[str] | None = None
+        self, overwrite: bool = False, show_columns: str | list[str] | None = None
     ):
         """
         Obtain the grades analysts gave each company: per date and grading company the
@@ -4399,8 +4595,10 @@ class Toolkit:
 
         Args:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The grades per ticker, indexed by date and grading company.
@@ -4473,17 +4671,15 @@ class Toolkit:
         self._remove_invalid()
 
         if len(self._tickers) == 1 and not self._stock_grades.empty:
-            return filter_columns(
-                self._stock_grades.loc[self._tickers[0]], show_columns
-            )
+            return self._stock_grades.loc[self._tickers[0]]
 
-        return filter_columns(self._stock_grades, show_columns)
+        return self._stock_grades
 
     def get_price_targets(
         self,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain the analysts' price targets of each company and the measures they are read
@@ -4520,8 +4716,10 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list[str] | None): A list of tickers to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every ticker.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The price targets and their measures with a column per ticker.
@@ -4599,28 +4797,37 @@ class Toolkit:
             else pd.Series(dtype=float)
         )
 
-        return filter_columns(
-            apply_rounding(
-                _add_price_target_metrics(self._price_targets, prices),
-                rounding if rounding is not None else self._rounding,
-            ),
-            show_columns,
+        return apply_rounding(
+            _add_price_target_metrics(self._price_targets, prices),
+            rounding if rounding is not None else self._rounding,
         )
 
     def get_price_target_history(
         self,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain every price target analysts published for each company: per date and
         analyst company the target (adjusted for stock splits), the share price when it
-        was published and the upside it implied at that moment. Following the targets
-        over time shows how analysts revise their expectations, and unlike today's
-        consensus each row only uses what was known on its date.
+        was published and the upside it implied at that moment, and the company's
+        previous target with the change. Following the targets over time shows how
+        analysts revise their expectations, and unlike today's consensus each row only
+        uses what was known on its date.
 
-        Automatically filtered to this Toolkit instance's start_date and end_date.
+        - Previous Target and Previous Date: the analyst company's target before this one,
+          when it published one in the year before (a price target looks about a year
+          ahead, so an older one no longer stands). Without one, the target is new
+          coverage (an initiation, or a company returning after more than a year).
+        - Target Change: Price Target / Previous Target − 1.
+
+        The median of the latest target per company over a window against the same
+        companies' previous targets follows from these columns, e.g. with
+        history.loc["2026-11-09":].groupby(level="Analyst Company").last().
+
+        Automatically filtered to this Toolkit instance's start_date and end_date; the
+        previous targets are looked up over the year before the start_date as well.
 
         Also known as: price target changes, analyst target revisions, price target news.
 
@@ -4628,18 +4835,24 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The price targets per ticker, indexed by date and analyst company,
-            with the Price Target, the Price When Posted and the Implied Upside
-            (Price Target / Price When Posted − 1, a decimal).
+            with the Price Target, the Price When Posted, the Implied Upside
+            (Price Target / Price When Posted − 1, a decimal), the Previous Target, the
+            Previous Date (text, YYYY-MM-DD) and the Target Change (a decimal).
 
         Notes:
             The targets come from the news articles that report them. A target reported by
             several publishers on the same day is kept once; a change of target that no
-            article reported is missing.
+            article reported is missing, so the previous target can be older than the
+            company's last change. The news sometimes lists a target under another analyst
+            company than the article names; such a target is credited to the company the
+            article's title names, or dropped when the article already lists that company.
 
         As an example:
 
@@ -4653,26 +4866,28 @@ class Toolkit:
             end_date="2025-11-30",
         )
 
-        toolkit.get_price_target_history()
+        toolkit.get_price_target_history(
+            show_columns=["Price Target", "Implied Upside", "Previous Target", "Target Change"]
+        )
         ```
 
         Which returns:
 
-        |                                        |   Price Target |   Price When Posted |   Implied Upside |
-        |:---------------------------------------|---------------:|--------------------:|-----------------:|
-        | ('2025-11-03', 'Loop Capital Markets') |            350 |             202.49  |           0.7285 |
-        | ('2025-11-14', 'Wells Fargo')          |            265 |             186.52  |           0.4208 |
-        | ('2025-11-20', 'Barclays')             |            275 |             194.17  |           0.4163 |
-        | ('2025-11-20', 'Bernstein')            |            275 |             186.52  |           0.4744 |
-        | ('2025-11-20', 'Deutsche Bank')        |            215 |             186.52  |           0.1527 |
-        | ('2025-11-20', 'Evercore ISI')         |            352 |             184.615 |           0.9067 |
-        | ('2025-11-20', 'Jefferies')            |            250 |             195.096 |           0.2814 |
-        | ('2025-11-20', 'KeyBanc')              |            275 |             189.96  |           0.4477 |
-        | ('2025-11-20', 'Mizuho Securities')    |            245 |             184.615 |           0.3271 |
-        | ('2025-11-20', 'Morgan Stanley')       |            235 |             186.52  |           0.2599 |
-        | ('2025-11-20', 'Raymond James')        |            272 |             180.64  |           0.5058 |
-        | ('2025-11-20', 'Robert W. Baird')      |            275 |             186.52  |           0.4744 |
-        | ('2025-11-20', 'Susquehanna')          |            250 |             186.52  |           0.3403 |
+        |                                        |   Price Target |   Implied Upside |   Previous Target |   Target Change |
+        |:---------------------------------------|---------------:|-----------------:|------------------:|----------------:|
+        | ('2025-11-03', 'Loop Capital Markets') |            350 |           0.7285 |               250 |          0.4    |
+        | ('2025-11-14', 'Wells Fargo')          |            265 |           0.4208 |               nan |        nan      |
+        | ('2025-11-20', 'Barclays')             |            275 |           0.4163 |               240 |          0.1458 |
+        | ('2025-11-20', 'Bernstein')            |            275 |           0.4744 |               nan |        nan      |
+        | ('2025-11-20', 'Deutsche Bank')        |            215 |           0.1527 |               140 |          0.5357 |
+        | ('2025-11-20', 'Evercore ISI')         |            352 |           0.9067 |               261 |          0.3487 |
+        | ('2025-11-20', 'Jefferies')            |            250 |           0.2814 |               220 |          0.1364 |
+        | ('2025-11-20', 'KeyBanc')              |            275 |           0.4477 |               190 |          0.4474 |
+        | ('2025-11-20', 'Mizuho Securities')    |            245 |           0.3271 |               235 |          0.0426 |
+        | ('2025-11-20', 'Morgan Stanley')       |            235 |           0.2599 |               210 |          0.119  |
+        | ('2025-11-20', 'Raymond James')        |            272 |           0.5058 |               150 |          0.8133 |
+        | ('2025-11-20', 'Robert W. Baird')      |            275 |           0.4744 |               225 |          0.2222 |
+        | ('2025-11-20', 'Susquehanna')          |            250 |           0.3403 |               nan |        nan      |
         """
         if not self._api_key:
             self._missing_api_key_message()
@@ -4706,17 +4921,15 @@ class Toolkit:
         self._remove_invalid()
 
         if len(self._tickers) == 1 and not price_target_history.empty:
-            return filter_columns(
-                price_target_history.loc[self._tickers[0]], show_columns
-            )
+            return price_target_history.loc[self._tickers[0]]
 
-        return filter_columns(price_target_history, show_columns)
+        return price_target_history
 
     def get_analyst_recommendations(
         self,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain how many analysts recommend each company as a strong buy, buy, hold, sell
@@ -4735,8 +4948,10 @@ class Toolkit:
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The recommendations per ticker, indexed by month, with the Strong
@@ -4812,11 +5027,9 @@ class Toolkit:
         self._remove_invalid()
 
         if len(self._tickers) == 1 and not analyst_recommendations.empty:
-            return filter_columns(
-                analyst_recommendations.loc[self._tickers[0]], show_columns
-            )
+            return analyst_recommendations.loc[self._tickers[0]]
 
-        return filter_columns(analyst_recommendations, show_columns)
+        return analyst_recommendations
 
     def _collect_fund_data(
         self, dataset: str, overwrite: bool = False
@@ -4875,6 +5088,7 @@ class Toolkit:
         latest: bool = True,
         fiscal_period: str | None = None,
         overwrite: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Obtain the earnings call transcripts of each company: the full text of the call,
@@ -4901,6 +5115,10 @@ class Toolkit:
                 differs from the calendar year for e.g. Apple and Microsoft. Takes precedence
                 over latest. Defaults to None.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The date and transcript per ticker, indexed by fiscal period.
@@ -4968,7 +5186,7 @@ class Toolkit:
 
         return self._earnings_call_transcripts
 
-    def get_historical_statistics(self):
+    def get_historical_statistics(self, show_columns: str | list[str] | None = None):
         """
         Retrieve statistics about each ticker's historical data. This is especially useful to understand why certain
         tickers might fluctuate more than others as it could be due to local regulations or the currency the instrument
@@ -4985,6 +5203,12 @@ class Toolkit:
             - Exchange Timezone Name: The name of the timezone the instrument is traded in.
 
         Also known as: listing details, instrument information, exchange and currency.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the statistics for each ticker.
@@ -5036,10 +5260,11 @@ class Toolkit:
         divide_ohlc_by: int | float | None = 100,
         rounding: int | None = None,
         show_errors: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieve daily, weekly, monthly, quarterly or yearly US Treasury yields for four maturities, 13 weeks,
-        5 years, 10 years and 30 years, from FinancialModelingPrep or, as a free alternative, YahooFinance. With
+        5 years, 10 years and 30 years, from FinancialModelingPrep or YahooFinance. With
         the default divide_ohlc_by of 100 the yields are returned as decimals (0.042 is 4.2%).
 
         A week, month, quarter or year holds the first (Open), highest, lowest and last (Close) yield of
@@ -5067,6 +5292,10 @@ class Toolkit:
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself. Defaults to None, which falls back to
                 the Toolkit's own enforce_source.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the treasury data.
@@ -5238,6 +5467,7 @@ class Toolkit:
         overwrite: bool = False,
         rounding: int | None = None,
         show_ticker_separation: bool = True,
+        show_columns: str | list[str] | None = None,
     ):
         """
         This functionality looks at the exchange rates between the currency of the historical data and the currency
@@ -5273,6 +5503,10 @@ class Toolkit:
             translated with are never rounded.
             show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
             acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance. Defaults to True.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If an invalid value is specified for period.
@@ -5543,7 +5777,7 @@ class Toolkit:
         growth: bool = False,
         lag: int | list[int] = 1,
         compound: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the balance sheet statement data for the specified tickers. The balance sheet statement
@@ -5571,7 +5805,7 @@ class Toolkit:
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
-                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
@@ -5583,8 +5817,10 @@ class Toolkit:
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved balance sheet statement data.
@@ -5694,8 +5930,8 @@ class Toolkit:
                         financial_statement_name="balance sheet statement",
                     )
 
-            self._balance_sheet_statement = self._remove_unfiled_periods(
-                self._balance_sheet_statement
+            self._balance_sheet_statement = self._add_basket_total(
+                self._remove_unfiled_periods(self._balance_sheet_statement)
             )
 
         if self._remove_invalid_tickers:
@@ -5731,12 +5967,12 @@ class Toolkit:
                 if growth
                 else balance_sheet_statement.loc[self._tickers[0]]
             )
-            return filter_columns(result, show_columns)
+            return result
 
         result = (
             self._balance_sheet_statement_growth if growth else balance_sheet_statement
         )
-        return filter_columns(result, show_columns)
+        return result
 
     def get_income_statement(
         self,
@@ -5747,16 +5983,15 @@ class Toolkit:
         lag: int | list[int] = 1,
         compound: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the income statement data for the specified tickers. The income statement is a financial
         statement that shows a company's revenues and expenses over a specific period. It is used to calculate
         a company's net income.
 
-        The income statement is a financial statement that shows a company's revenues and expenses over a specific
-        period. Therefore, trailing results are available for this statement. A trailing result sums each
-        item over the window, except the Weighted Average Shares, Weighted Average Shares Diluted and Tax
+        As the income statement covers a period, trailing results are available for this statement. A
+        trailing result sums each item over the window, except the Weighted Average Shares, Weighted Average Shares Diluted and Tax
         Rate for Calcs rows, which keep the value of the latest period.
 
         With convert_currency, the statement is converted to the currency of the historical data at the
@@ -5769,7 +6004,7 @@ class Toolkit:
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
-                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
@@ -5783,8 +6018,10 @@ class Toolkit:
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved income statement data.
@@ -5901,8 +6138,8 @@ class Toolkit:
                         financial_statement_name="income statement",
                     )
 
-            self._income_statement = self._remove_unfiled_periods(
-                self._income_statement
+            self._income_statement = self._add_basket_total(
+                self._remove_unfiled_periods(self._income_statement)
             )
 
         if self._remove_invalid_tickers:
@@ -5953,10 +6190,10 @@ class Toolkit:
                 if growth
                 else income_statement.loc[self._tickers[0]]
             )
-            return filter_columns(result, show_columns)
+            return result
 
         result = self._income_statement_growth if growth else income_statement
-        return filter_columns(result, show_columns)
+        return result
 
     def get_cash_flow_statement(
         self,
@@ -5967,15 +6204,14 @@ class Toolkit:
         lag: int | list[int] = 1,
         compound: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the cash flow statement data for the specified tickers. The cash flow statement is a financial
         statement that shows how changes in balance sheet accounts and income affect cash and cash equivalents.
         It breaks the analysis down to operating, investing and financing activities.
 
-        The cash flow statement is a financial statement that shows how changes in balance sheet accounts and income
-        affect cash and cash equivalents. Therefore, trailing results are available for this statement. A
+        As the cash flow statement covers a period, trailing results are available for this statement. A
         trailing result sums each cash flow over the window, while Cash Beginning of Period is the cash at
         the beginning of the first period of the window and Cash End of Period the cash at the end of the
         last one.
@@ -5992,7 +6228,7 @@ class Toolkit:
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
-                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
@@ -6006,8 +6242,10 @@ class Toolkit:
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved cash flow statement data.
@@ -6133,8 +6371,8 @@ class Toolkit:
                         },
                     )
 
-            self._cash_flow_statement = self._remove_unfiled_periods(
-                self._cash_flow_statement
+            self._cash_flow_statement = self._add_basket_total(
+                self._remove_unfiled_periods(self._cash_flow_statement)
             )
 
         if self._remove_invalid_tickers:
@@ -6186,17 +6424,17 @@ class Toolkit:
                 if growth
                 else cash_flow_statement.loc[self._tickers[0]]
             )
-            return filter_columns(result, show_columns)
+            return result
 
         result = self._cash_flow_statement_growth if growth else cash_flow_statement
-        return filter_columns(result, show_columns)
+        return result
 
     def get_statistics_statement(
         self,
         enforce_source: str | None = None,
         overwrite: bool = False,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the filing details of each financial statement period: the reported currency, the CIK,
@@ -6213,14 +6451,16 @@ class Toolkit:
             enforce_source (str | None, optional): Forces this specific call to use a given
                 source, either "FinancialModelingPrep" or "YahooFinance". This takes precedence
                 over the source set on the Toolkit itself, so one instance can pull historical
-                data from the free Yahoo Finance source while still using a FinancialModelingPrep
+                data from Yahoo Finance while still using a FinancialModelingPrep
                 key for the financial statements (or the other way around). Defaults to None,
                 which falls back to the Toolkit's own enforce_source.
             overwrite (bool): Defines whether to overwrite the existing data. Defaults to False.
             rounding (int): Defines the number of decimal places to round the data to. Defaults to None, which uses the
                 rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list[str] | None): A list of column names to keep in the result. Invalid
-            names are reported and ignored. Defaults to None, which keeps every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A pandas DataFrame with the retrieved statistics statement data.
@@ -6255,11 +6495,9 @@ class Toolkit:
         # replace the balance sheet with it.
         if self._custom_statements["balance_sheet_statement"]:
             if len(self._tickers) == 1 and not self._statistics_statement.empty:
-                return filter_columns(
-                    self._statistics_statement.loc[self._tickers[0]], show_columns
-                )
+                return self._statistics_statement.loc[self._tickers[0]]
 
-            return filter_columns(self._statistics_statement, show_columns)
+            return self._statistics_statement
 
         if not self._api_key and self._statistics_statement.empty:
             logger.error(
@@ -6305,13 +6543,13 @@ class Toolkit:
             )
 
         if len(self._tickers) == 1 and not statistics_statement.empty:
-            return filter_columns(
-                statistics_statement.loc[self._tickers[0]], show_columns
-            )
+            return statistics_statement.loc[self._tickers[0]]
 
-        return filter_columns(statistics_statement, show_columns)
+        return statistics_statement
 
-    def get_normalization_files(self, path: str = ""):
+    def get_normalization_files(
+        self, path: str = "", show_columns: str | list[str] | None = None
+    ):
         """
         Copies the normalization files to a folder based on path. By default, this is the path
         of the 'Downloads' folder.
@@ -6325,6 +6563,10 @@ class Toolkit:
         Args:
             path (str, optional): The folder to save the files to. Defaults to "", which
                 saves them to the 'Downloads' folder of your home directory.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             None: The four csv files (balance, income, cash and statistics) are saved to
@@ -6853,7 +7095,9 @@ class Toolkit:
             parameters=parameters,
         )
 
-    def get_cache_contents(self) -> pd.DataFrame:
+    def get_cache_contents(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Show what the cache currently holds, grouped by source and dataset.
 
@@ -6865,6 +7109,12 @@ class Toolkit:
         The cache is inspected even when this Toolkit was created with
         use_cached_data=False, so a cache filled by an earlier session can always
         be reviewed.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per source and dataset combination, with the number

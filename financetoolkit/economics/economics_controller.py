@@ -3,6 +3,7 @@
 __docformat__ = "google"
 
 
+import itertools
 import os
 import warnings
 from collections.abc import Callable
@@ -43,27 +44,52 @@ from financetoolkit.economics import (
     nyfed_model,
     oecd_model,
     ons_model,
+    portwatch_model,
     sbj_model,
     shiller_model,
     stoxx_model,
     treasury_model,
+    world_bank_model,
     yfinance_model,
 )
 from financetoolkit.economics.helpers import (
+    OVERNIGHT_RATE_DAY_COUNTS,
+    average_monthly_index,
     buffered_start_date,
+    change_over_periods,
     check_period_type,
+    choose_sources,
     combine_sources,
+    compound_overnight_rate,
     extend_with_recent,
     get_exchange_business_days,
+    rebase_to_first,
     resample_to_period,
     to_gmdb_country_names,
+    validate_consumer_price_measure,
     validate_period,
+    warn_about_long_run_prices,
 )
-from financetoolkit.fixedincome import bundesbank_model, fed_model
+from financetoolkit.fixedincome import (
+    bundesbank_model,
+    ecb_model as ecb_rates_model,
+    fed_model,
+)
 from financetoolkit.utilities import validation_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.statistics_model import euro_area_hint, finalize_dataset
+from financetoolkit.utilities.sources_model import (
+    collect_sources,
+    record_source,
+    track_sources,
+)
+from financetoolkit.utilities.statistics_model import (
+    EURO_AREA_MEMBERS,
+    apply_rounding,
+    euro_area_hint,
+    finalize_dataset,
+)
 
 logger = get_logger()
 
@@ -84,11 +110,14 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 # ruff: noqa: E501
 
 
+@filter_shown_columns
+@track_sources
 class Economics:
     """
-    The Economics module contains methods to retrieve economic data from the OECD.
-    These can be anything ranging from Gross Domestic Product (GDP) to Inflation
-    to Consumer Price Index (CPI) and more.
+    The Economics module contains methods to retrieve economic data from the OECD, the
+    Global Macro Database, central banks, statistical offices and other official
+    publishers. These can be anything ranging from Gross Domestic Product (GDP) to
+    Inflation to Consumer Price Index (CPI) and more.
     """
 
     def __init__(
@@ -108,8 +137,10 @@ class Economics:
         Initializes the Economics Controller Class.
 
         Args:
-            start_date (str | None, optional): The start date to retrieve data from. Defaults to None.
-            end_date (str | None, optional): The end date to retrieve data from. Defaults to None.
+            start_date (str | None, optional): The start date to retrieve data from. Defaults to None,
+                which starts 100 years before today.
+            end_date (str | None, optional): The end date to retrieve data from. Defaults to None,
+                which uses today.
             gmdb_source (bool, optional): If True, retrieves data from the GMDB source. Defaults to True.
             quarterly (bool | None, optional): If True, methods with a period argument return quarterly
                 data where the indicator has it. Otherwise they return the highest frequency the
@@ -129,9 +160,10 @@ class Economics:
                 is cached regardless of this setting. Defaults to True.
             cache (Cache | None, optional): A cache to use for the data this module retrieves, which takes
                 precedence over use_cached_data. Defaults to None.
-            api_key (str, optional): A FinancialModelingPrep API key, only needed for the economic
-                calendar and the market risk premium. Obtain one at https://www.jeroenbouma.com/fmp.
-                Defaults to an empty string.
+            api_key (str, optional): A FinancialModelingPrep API key, needed for the economic
+                calendar, the market risk premium and the MOVE and JGB VIX of the implied volatility,
+                and used for the asset class proxies (Yahoo Finance otherwise). Obtain one at
+                https://www.jeroenbouma.com/fmp. Defaults to an empty string.
             use_cached_data (bool | str | None, optional): Whether to cache the data retrieved from external
                 sources. None or True uses the shared cache database in the user configuration directory, False
                 retrieves everything every time and a string is the path to a dedicated cache folder or database
@@ -331,10 +363,26 @@ class Economics:
             for fetch, only_country in sources
             if only_country is None or requested is None or only_country in requested
         ]
-        frames = helpers.run_in_parallel(
-            lambda fetch: fetch(), [(fetch,) for fetch in needed]
+
+        def fetch_with_sources(
+            fetch: Callable[[], pd.DataFrame],
+        ) -> tuple[pd.DataFrame, set[str]]:
+            # Held back until it is known which source each country is taken from.
+            with collect_sources() as fetched:
+                frame = fetch()
+            return frame, fetched
+
+        retrieved = helpers.run_in_parallel(
+            fetch_with_sources, [(fetch,) for fetch in needed]
         )
+        frames = [frame for frame, _ in retrieved]
         combined = combine_sources(frames)
+
+        # Only the sources a requested country is taken from are named with the answer.
+        for country, position in choose_sources(frames).items():
+            if requested is None or country in requested:
+                for source in retrieved[position][1]:
+                    record_source(source)
 
         # A source's own index name (such as "Effective Date") is not kept, as it was not
         # when every source was combined.
@@ -343,7 +391,10 @@ class Economics:
         return combined
 
     def _get_monthly_price_data(
-        self, measure: str, countries: list[str] | str | None = None
+        self,
+        measure: str,
+        countries: list[str] | str | None = None,
+        component: str = "all",
     ) -> pd.DataFrame:
         """
         Combines the monthly consumer prices of every country from its most current source.
@@ -354,12 +405,175 @@ class Economics:
         (Japan). Every other country comes from the Bank for International Settlements,
         which compiles the national consumer price indices of around sixty countries,
         including the United States, China, India and Brazil. Each country comes from the
-        source with the most recent month. None of them need an API key, and none have the
-        tight request limit of the OECD API.
+        source with the most recent month. None of them have the tight request limit of
+        the OECD API.
+
+        The BIS republishes the US index of the Bureau of Labor Statistics (BLS), rebased
+        to 2010 = 100, a few days after its release, so the months the BLS has published
+        since are added to it: the index chained on with the BLS changes, the inflation
+        rate as the BLS computes it.
+
+        The core index and the components come from Eurostat (all but shelter) and, for
+        the United States, from the BLS, through FRED when a FRED API key is set.
 
         Args:
             measure (str): "inflation_rate" for the annual rate of change or
                 "consumer_price_index" for the index itself.
+            countries (list[str] | str | None, optional): The requested countries, so the
+                sources of other countries are not retrieved. Defaults to None.
+            component (str, optional): "all", "core", "energy", "food", "goods",
+                "services" or "shelter". Defaults to "all".
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by month.
+        """
+        # Only the requested months are asked for, with room for growth and rolling.
+        start_date = buffered_start_date(self._start_date, "monthly")
+        end_date = self._end_date
+
+        eurostat_prices = (
+            eurostat_model.get_inflation_rate
+            if measure == "inflation_rate"
+            else eurostat_model.get_consumer_price_index
+        )
+
+        if component != "all":
+            return self._combine_sources_for(
+                [
+                    (
+                        lambda: (
+                            eurostat_prices(start_date, end_date, component)
+                            if component in eurostat_model.HICP_AGGREGATES
+                            else pd.DataFrame()
+                        ),
+                        None,
+                    ),
+                    (
+                        lambda: self._get_united_states_consumer_prices(
+                            measure, component
+                        ),
+                        "United States",
+                    ),
+                ],
+                countries,
+            )
+
+        inflation = measure == "inflation_rate"
+        sources = [
+            (lambda: eurostat_prices(start_date, end_date), None),
+            (
+                (
+                    ons_model.get_inflation_rate
+                    if inflation
+                    else ons_model.get_consumer_price_index
+                ),
+                "United Kingdom",
+            ),
+            (
+                (
+                    sbj_model.get_inflation_rate
+                    if inflation
+                    else sbj_model.get_consumer_price_index
+                ),
+                "Japan",
+            ),
+            (
+                lambda: bis_model.get_consumer_prices(measure, start_date, end_date),
+                None,
+            ),
+        ]
+
+        if inflation:
+            # Around a hundred further countries the BIS does not cover.
+            sources.append(
+                (lambda: imf_model.get_inflation_rate(start_date, end_date), None)
+            )
+
+        prices = self._combine_sources_for(sources, countries)
+
+        if "United States" not in prices.columns:
+            return prices
+
+        with collect_sources() as recent_sources:
+            recent = self._get_united_states_consumer_prices(measure, "all")
+        history = prices["United States"].dropna()
+        shared = history.index.intersection(recent.dropna().index)
+
+        if measure == "consumer_price_index" and not shared.empty:
+            # Rebased to the BIS's 2010 = 100 on the latest month both have.
+            recent = (
+                recent * history[shared[-1]] / recent.loc[shared[-1], "United States"]
+            )
+
+        return extend_with_recent(prices, recent, "United States", recent_sources)
+
+    def _get_united_states_consumer_prices(
+        self, measure: str, component: str
+    ) -> pd.DataFrame:
+        """
+        Retrieves the US Consumer Price Index for All Urban Consumers (CPI-U), not
+        seasonally adjusted, or its annual rate of change. All items come from the BLS API
+        (about the last three years, for the months it publishes before the BIS);
+        the core index and the components from FRED when a FRED API key is set, for the
+        full history, and from the BLS otherwise.
+
+        Args:
+            measure (str): "inflation_rate" or "consumer_price_index".
+            component (str): "all", "core", "energy", "food", "goods", "services" or
+                "shelter".
+
+        Returns:
+            pd.DataFrame: A single "United States" column indexed by month.
+        """
+        if component != "all" and self._fred_api_key:
+            index = fred_model.get_price_index(
+                f"consumer_{component}",
+                # Two years before the start, for the annual rate of change of the first
+                # months and room for growth and rolling.
+                buffered_start_date(self._start_date, "monthly"),
+                self._end_date,
+                self._fred_api_key,
+            )
+        else:
+            index = bls_model.get_consumer_price_index()
+            index = (
+                index[[component]].rename(columns={component: "United States"})
+                if component in index.columns
+                else pd.DataFrame()
+            )
+
+            if (
+                component != "all"
+                and not index.empty
+                and index.index[0] > pd.Period(self._start_date, freq="M")
+            ):
+                logger.warning(
+                    "Without a FRED API key, the US %s consumer price index starts in %s: "
+                    "the keyless BLS API only returns about the last three years. Set a "
+                    "FRED API key for the full history.",
+                    component,
+                    index.index[0].strftime("%Y-%m"),
+                )
+
+        if measure == "inflation_rate":
+            # A month the BLS did not publish (October 2025) leaves its rate and the one a
+            # year later empty rather than compare the wrong months.
+            return change_over_periods(index, 12)
+
+        return index
+
+    def _get_monthly_industrial_prices(
+        self, measure: str, countries: list[str] | str | None = None
+    ) -> pd.DataFrame:
+        """
+        Combines a monthly industrial price index of every country from its official
+        publisher: Eurostat (the euro area, the European
+        Union and around 35 European countries), the Bureau of Labor Statistics (United
+        States, through FRED when a FRED API key is set) and the Bank of Japan (Japan).
+
+        Args:
+            measure (str): "producer" for the producer price index, "export" for the
+                export price index or "import" for the import price index.
             countries (list[str] | str | None, optional): The requested countries, so the
                 sources of other countries are not retrieved. Defaults to None.
 
@@ -370,46 +584,47 @@ class Economics:
         start_date = buffered_start_date(self._start_date, "monthly")
         end_date = self._end_date
 
-        if measure == "inflation_rate":
-            return self._combine_sources_for(
-                [
-                    (
-                        lambda: eurostat_model.get_inflation_rate(start_date, end_date),
-                        None,
-                    ),
-                    (ons_model.get_inflation_rate, "United Kingdom"),
-                    (sbj_model.get_inflation_rate, "Japan"),
-                    (
-                        lambda: bis_model.get_consumer_prices(
-                            measure, start_date, end_date
-                        ),
-                        None,
-                    ),
-                    # Around a hundred further countries the BIS does not cover.
-                    (lambda: imf_model.get_inflation_rate(start_date, end_date), None),
-                ],
-                countries,
+        # FRED republishes the BLS series in full, so it is used when a key is set; the
+        # keyless BLS API returns about the last three years.
+        united_states = (
+            (
+                lambda: fred_model.get_price_index(
+                    measure, start_date, end_date, self._fred_api_key
+                )
             )
+            if self._fred_api_key
+            else (lambda: bls_model.get_price_index(measure))
+        )
 
-        return self._combine_sources_for(
+        prices = self._combine_sources_for(
             [
                 (
-                    lambda: eurostat_model.get_consumer_price_index(
-                        start_date, end_date
-                    ),
-                    None,
-                ),
-                (ons_model.get_consumer_price_index, "United Kingdom"),
-                (sbj_model.get_consumer_price_index, "Japan"),
-                (
-                    lambda: bis_model.get_consumer_prices(
+                    lambda: eurostat_model.get_industrial_price_index(
                         measure, start_date, end_date
                     ),
                     None,
                 ),
+                (united_states, "United States"),
+                (lambda: boj_model.collect_price_index(measure), "Japan"),
             ],
             countries,
         )
+
+        if (
+            not self._fred_api_key
+            and "United States" in prices.columns
+            and prices["United States"].first_valid_index()
+            > pd.Period(self._start_date, freq="M")
+        ):
+            logger.warning(
+                "Without a FRED API key, the US %s price index starts in %s: the keyless BLS "
+                "API only returns about the last three years. Set a FRED API key for the "
+                "full history.",
+                measure,
+                prices["United States"].first_valid_index().strftime("%Y-%m"),
+            )
+
+        return prices
 
     def _default_period(
         self, period: str | None, highest: str, quarterly_available: bool = True
@@ -438,12 +653,87 @@ class Economics:
 
         return highest
 
+    def _get_daily_central_bank_policy_rate(
+        self, start_date: str, countries: list[str] | str | None = None
+    ) -> pd.DataFrame:
+        """
+        Retrieves the daily policy rates of the Bank for International Settlements (BIS),
+        extended with the days the Bank of England and the European Central Bank have
+        published since. The BIS updates its series about once a week, so a decision of
+        the last few days would otherwise be missing.
+
+        Args:
+            start_date (str): The start date (YYYY-MM-DD).
+            countries (list[str] | str | None, optional): The requested countries, so the
+                central banks of other countries are not retrieved. Defaults to None.
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by day.
+        """
+        policy_rate = bis_model.get_central_bank_policy_rate(start_date, self._end_date)
+
+        requested = (
+            {country.strip() for country in countries.split(",")}
+            if isinstance(countries, str)
+            else set(countries or policy_rate.columns)
+        )
+        # Since 18 September 2024 the BIS reports the ECB's deposit facility rate for the
+        # euro area (the main refinancing rate before), the rate the ECB steers with.
+        central_banks = {
+            "United Kingdom": lambda start: boe_model.get_bank_rate(
+                start, self._end_date
+            ),
+            "Euro Area": lambda _: ecb_rates_model.get_deposit_facility()
+            .rename("Euro Area")
+            .to_frame(),
+        }
+
+        for country, fetch in central_banks.items():
+            last_day = (
+                policy_rate[country].last_valid_index()
+                if country in policy_rate and country in requested
+                else None
+            )
+            if last_day is None:
+                continue
+
+            # A month of overlap, on which both publishers have to agree.
+            with collect_sources() as recent_sources:
+                recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
+            recent = recent[
+                (recent.index <= pd.Period(self._end_date, freq="D"))
+                # Business days, like the BIS series (the ECB lists every calendar day).
+                & ~recent.index.dayofweek.isin([5, 6])
+            ]
+            policy_rate = extend_with_recent(
+                policy_rate, recent, country, recent_sources
+            )
+
+        return policy_rate
+
+    def _get_oecd_unemployment_rate_with_bls(self) -> pd.DataFrame:
+        """
+        The OECD's monthly unemployment rates, with the US extended by the months the BLS
+        has published since (see extend_with_recent).
+
+        Returns:
+            pd.DataFrame: One column per country, indexed by month.
+        """
+        history = oecd_model.get_unemployment_rate(
+            period="monthly", start_date=self._start_date, end_date=self._end_date
+        )
+
+        with collect_sources() as recent_sources:
+            recent = bls_model.get_unemployment_rate()
+
+        return extend_with_recent(history, recent, "United States", recent_sources)
+
     def _get_daily_long_term_interest_rate(
         self, countries: list[str] | str | None = None
     ) -> pd.DataFrame:
         """
-        Combines the daily 10-year government bond yields published without an API key:
-        the U.S. Department of the Treasury, the Bank of England, the Japanese Ministry of
+        Combines the daily 10-year government bond yields published by the U.S.
+        Department of the Treasury, the Bank of England, the Japanese Ministry of
         Finance and the European Central Bank (the euro area yield curve).
 
         Returns:
@@ -488,6 +778,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Gross Domestic Product for a variety of countries over
@@ -533,6 +824,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product
@@ -612,6 +907,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The quarterly growth of real Gross Domestic Product (GDP) is the headline measure
@@ -626,8 +922,8 @@ class Economics:
         so a US figure is about a quarter of the annualized rate the Bureau of Economic
         Analysis headlines.
 
-        Every country comes from the most current source without an API key: Eurostat for
-        the euro area and the countries it covers (including the preliminary flash estimate
+        Every country comes from the most current source: Eurostat for the euro area and
+        the countries it covers (including the preliminary flash estimate
         for the euro area, about thirty days after the quarter ends), the Office for
         National Statistics for the United Kingdom and the OECD Quarterly National Accounts
         for every other country, including the United States and Japan.
@@ -658,6 +954,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the quarterly growth of real GDP per country.
@@ -742,6 +1042,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Gross Domestic Product Deflator for a variety of countries over
@@ -777,6 +1078,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Gross Domestic Product Deflator
@@ -844,6 +1149,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Real Gross Domestic Product per Capita for a variety of countries over time from
@@ -880,6 +1186,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Gross Domestic Product per Capita
@@ -942,6 +1252,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Output Gap for a variety of countries over time from the OECD Economic Outlook.
@@ -992,6 +1303,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Output Gap as a decimal fraction of
@@ -1052,6 +1367,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Total Consumption for a variety of countries over time from the
@@ -1088,6 +1404,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Total Consumption
@@ -1171,6 +1491,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Total Consumption to GDP Ratio for a variety of countries over time from the
@@ -1209,6 +1530,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Total Consumption to GDP Ratio
@@ -1274,6 +1599,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Investment for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1303,6 +1629,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Investment
@@ -1369,6 +1699,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1404,6 +1735,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Investment to GDP Ratio
@@ -1466,6 +1801,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Fixed Investment for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1496,6 +1832,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Fixed Investment
@@ -1556,6 +1896,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Fixed Investment to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1590,6 +1931,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Fixed Investment to GDP Ratio
@@ -1655,6 +2000,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Exports for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1684,6 +2030,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exports
@@ -1747,6 +2097,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Exports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1780,6 +2131,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exports to GDP Ratio
@@ -1844,6 +2199,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Imports for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1873,6 +2229,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Imports
@@ -1942,6 +2302,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Imports to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -1975,6 +2336,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Imports to GDP Ratio
@@ -2044,6 +2409,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Trade Balance for a variety of countries over time from the Global Macro
@@ -2081,6 +2447,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Trade Balance
@@ -2143,6 +2513,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Current Account Balance for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2172,6 +2543,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Current Account Balance
@@ -2235,6 +2610,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Current Account Balance to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2276,6 +2652,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Current Account Balance to GDP Ratio
@@ -2343,6 +2723,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Debt for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2371,6 +2752,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Debt
@@ -2435,6 +2820,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Debt to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2476,6 +2862,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Debt to GDP Ratio
@@ -2542,6 +2932,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Revenue for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2570,6 +2961,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Revenue
@@ -2630,6 +3025,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2665,6 +3061,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Revenue to GDP Ratio
@@ -2731,6 +3131,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Tax Revenue for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2759,6 +3160,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Tax Revenue
@@ -2823,6 +3228,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Tax Revenue to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2858,6 +3264,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Tax Revenue to GDP Ratio
@@ -2925,6 +3335,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Expenditure for a variety of countries over time from the Global Macro Database (GMDB).
@@ -2954,6 +3365,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure
@@ -3018,6 +3433,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Expenditure to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3054,6 +3470,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Expenditure to GDP Ratio
@@ -3121,6 +3541,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Deficit for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3151,6 +3572,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Deficit
@@ -3215,6 +3640,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Government Deficit to GDP Ratio for a variety of countries over time from the Global Macro Database (GMDB).
@@ -3258,6 +3684,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Government Deficit to GDP Ratio
@@ -3315,6 +3745,618 @@ class Economics:
         )
 
     @handle_errors
+    def get_government_interest_expenditure(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Government Interest Expenditure for a variety of countries over time from the
+        Government Finance Statistics of the International Monetary Fund (IMF). It is the
+        interest the general government (the central, state and local governments and the
+        social security funds together) owes on its debt: GFS item 24, interest payable, which
+        is D.41 in the national accounts.
+
+        The interest is recorded when it accrues rather than when it is paid, and before the
+        interest the government receives is netted against it. It is therefore higher than
+        the net interest of a national budget: for the United States, the general government
+        interest also covers the states and local governments, and the federal net interest
+        the Congressional Budget Office reports subtracts the interest the federal government
+        receives.
+
+        The figures are quarterly (period="quarterly", the default) or yearly and expressed in
+        millions of national currency, so levels are not comparable across countries with
+        different currencies, but growth rates are. Quarterly figures are not seasonally
+        adjusted; trailing=4 gives the interest over the last four quarters. The IMF's
+        quarterly government finance statistics cover around 40 economies, among which the
+        United States, the euro area and its members, the United Kingdom, Canada, Australia,
+        Brazil, Turkey and Indonesia; countries outside them are left out with a warning.
+        For those, get_government_expenditure_by_function with
+        functions="Public Debt Transactions" has the yearly public debt transactions (COFOG
+        01.7, mostly interest) of around 180 countries.
+
+        Data comes from the IMF's Quarterly Government Finance Statistics, further information
+        can be found within https://data.imf.org/en/datasets/IMF.STA:QGFS
+
+        Also known as: interest payments, debt service cost, interest outlays, cost of
+        government debt.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" or "yearly". Defaults to None, which is
+                quarterly, the highest frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Interest Expenditure
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        economics.get_government_interest_expenditure(
+            countries=['United States', 'Germany', 'Italy'], period='yearly')
+        ```
+
+        Which returns:
+
+        |      |    United States |   Germany |   Italy |
+        |:-----|-----------------:|----------:|--------:|
+        | 2015 | 428286           |     42913 |   68116 |
+        | 2016 | 468186           |     37888 |   66258 |
+        | 2017 | 494638           |     34489 |   65333 |
+        | 2018 | 571996           |     31787 |   64366 |
+        | 2019 | 606869           |     28052 |   60214 |
+        | 2020 | 541832           |     22390 |   57125 |
+        | 2021 | 631404           |     21756 |   63003 |
+        | 2022 | 815793           |     28018 |   81614 |
+        | 2023 | 997791           |     36848 |   77780 |
+        | 2024 |      1.17905e+06 |     45828 |   85484 |
+        | 2025 |      1.24322e+06 |     49544 |   87145 |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "government interest expenditure",
+        )
+
+        government_interest_expenditure = imf_model.get_government_interest(
+            period, self._start_date, self._end_date
+        )
+
+        return finalize_dataset(
+            dataset=government_interest_expenditure,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Interest Expenditure",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_government_interest_expenditure_to_gdp_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Government Interest Expenditure to GDP Ratio for a variety of countries over
+        time from the International Monetary Fund (IMF). It is the interest the general
+        government owes on its debt (GFS item 24, interest payable, D.41 in the national
+        accounts) as a share of the Gross Domestic Product (GDP).
+
+        The interest burden as a share of GDP shows how much of the economy's output goes to
+        servicing government debt. It rises with the debt ratio and with the interest rate the
+        debt is refinanced at, and is the item that turns a primary balance into the overall
+        balance. Comparing it with the spending on a function, such as defence with
+        get_government_expenditure_by_function_to_gdp_ratio, uses the same general government
+        and the same GDP.
+
+        The interest is general government interest payable, on an accrual basis and before
+        interest received is netted, so it is higher than the net interest of a national budget
+        (see get_government_interest_expenditure). Both the interest and the GDP come from the
+        IMF: its Quarterly Government Finance Statistics and its National Economic Accounts
+        (quarterly GDP not seasonally adjusted, like the interest). Around 40 economies are
+        covered; countries outside them are left out with a warning.
+
+        The ratio is expressed as a decimal fraction (0.0402 for 4.02% of GDP).
+
+        The formula is as follows:
+
+        - Government Interest Expenditure to GDP Ratio = Interest Payable / Nominal GDP,
+          both summed over the last four quarters for period="quarterly" (an annual ratio
+          without seasonal swings) or over the year for period="yearly"
+
+        Also known as: interest burden, interest to GDP, debt service to GDP.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" (the ratio over the four quarters up to
+                each quarter) or "yearly". Defaults to None, which is quarterly, the highest
+                frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Interest Expenditure to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        economics.get_government_interest_expenditure_to_gdp_ratio(
+            countries=['United States', 'Germany', 'Italy', 'United Kingdom'], period='yearly')
+        ```
+
+        Which returns:
+
+        |      |   United States |   Germany |   Italy |   United Kingdom |
+        |:-----|----------------:|----------:|--------:|-----------------:|
+        | 2015 |          0.0234 |    0.0139 |  0.041  |           0.0244 |
+        | 2016 |          0.0249 |    0.0118 |  0.0389 |           0.0256 |
+        | 2017 |          0.0252 |    0.0103 |  0.0375 |           0.028  |
+        | 2018 |          0.0277 |    0.0092 |  0.0363 |           0.0258 |
+        | 2019 |          0.0282 |    0.0079 |  0.0334 |           0.0229 |
+        | 2020 |          0.0253 |    0.0064 |  0.0343 |           0.0208 |
+        | 2021 |          0.0266 |    0.0059 |  0.0343 |           0.0277 |
+        | 2022 |          0.0313 |    0.007  |  0.0408 |           0.0426 |
+        | 2023 |          0.0359 |    0.0087 |  0.0363 |           0.0322 |
+        | 2024 |          0.0402 |    0.0104 |  0.0387 |           0.0292 |
+        | 2025 |          0.0404 |    0.0109 |  0.0385 |           0.0332 |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "government interest expenditure to GDP ratio",
+        )
+
+        government_interest_expenditure_to_gdp_ratio = (
+            imf_model.get_government_interest(
+                period, self._start_date, self._end_date, denominator="gdp"
+            )
+        )
+
+        return finalize_dataset(
+            dataset=government_interest_expenditure_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Interest Expenditure to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_government_interest_expenditure_to_revenue_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Government Interest Expenditure to Revenue Ratio for a variety of countries
+        over time from the Government Finance Statistics of the International Monetary Fund
+        (IMF). It is the interest the general government owes on its debt (GFS item 24,
+        interest payable) as a share of its revenue (GFS item 1: taxes, social contributions,
+        grants and other revenue).
+
+        The share of revenue that goes to interest is the measure rating agencies use for debt
+        affordability: it says how much of what the government collects is committed to its
+        creditors before anything else is paid for. Both come from the same statistics of the
+        same general government, on an accrual basis, with the interest before interest
+        received is netted. Around 40 economies are covered; countries outside them are left
+        out with a warning.
+
+        The ratio is expressed as a decimal fraction (0.1351 for 13.51% of revenue).
+
+        The formula is as follows:
+
+        - Government Interest Expenditure to Revenue Ratio = Interest Payable / Government
+          Revenue, both summed over the last four quarters for period="quarterly" (an annual
+          ratio without the seasonal swings of tax receipts) or over the year for
+          period="yearly"
+
+        Also known as: interest to revenue, interest burden on revenue, debt affordability.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" (the ratio over the four quarters up to
+                each quarter) or "yearly". Defaults to None, which is quarterly, the highest
+                frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Interest Expenditure to Revenue Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2024-01-01', end_date="2025-12-31")
+
+        economics.get_government_interest_expenditure_to_revenue_ratio(
+            countries=['United States', 'France', 'Canada'])
+        ```
+
+        Which returns:
+
+        |        |   United States |   France |   Canada |
+        |:-------|----------------:|---------:|---------:|
+        | 2024Q1 |          0.1258 |   0.038  |   0.0788 |
+        | 2024Q2 |          0.1301 |   0.0386 |   0.0805 |
+        | 2024Q3 |          0.1335 |   0.0402 |   0.0822 |
+        | 2024Q4 |          0.1351 |   0.04   |   0.082  |
+        | 2025Q1 |          0.1354 |   0.0416 |   0.0812 |
+        | 2025Q2 |          0.1347 |   0.0418 |   0.0808 |
+        | 2025Q3 |          0.1334 |   0.0423 |   0.0792 |
+        | 2025Q4 |          0.1325 |   0.0427 |   0.08   |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "government interest expenditure to revenue ratio",
+        )
+
+        government_interest_expenditure_to_revenue_ratio = (
+            imf_model.get_government_interest(
+                period, self._start_date, self._end_date, denominator="revenue"
+            )
+        )
+
+        return finalize_dataset(
+            dataset=government_interest_expenditure_to_revenue_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Interest Expenditure to Revenue Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @staticmethod
+    def _expenditure_functions(functions: list[str] | str | None) -> list[str]:
+        """
+        Returns the government functions asked for, by their names in
+        imf_model.EXPENDITURE_FUNCTIONS, in any casing.
+
+        Args:
+            functions (list[str] | str | None): The functions, a comma-separated string, or
+                None for the ten COFOG divisions.
+
+        Returns:
+            list[str]: The functions.
+
+        Raises:
+            ValueError: When a function is not known.
+        """
+        names = {name.lower(): name for name in imf_model.EXPENDITURE_FUNCTIONS}
+        requested = helpers.split_values(functions) or imf_model.DIVISIONS
+
+        if unknown := [name for name in requested if str(name).lower() not in names]:
+            raise ValueError(
+                f"Unknown government function(s) {', '.join(map(repr, unknown))}. Choose from "
+                f"{', '.join(map(repr, imf_model.EXPENDITURE_FUNCTIONS))}."
+            )
+
+        return list(dict.fromkeys(names[str(name).lower()] for name in requested))
+
+    @handle_errors
+    def get_government_expenditure_by_function(
+        self,
+        countries: list[str] | str | None = None,
+        functions: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Government Expenditure by Function for a variety of countries over time from
+        the Government Finance Statistics of the International Monetary Fund (IMF). The
+        spending of the general government (the central, state and local governments and the
+        social security funds together) is split by purpose according to the United Nations'
+        Classification of the Functions of Government (COFOG), the classification Eurostat,
+        the OECD and the IMF all publish.
+
+        The ten COFOG divisions are General Public Services, Defence, Public Order and Safety,
+        Economic Affairs, Environmental Protection, Housing and Community Amenities, Health,
+        Recreation, Culture and Religion, Education and Social Protection, which add up to the
+        Total. General Public Services include the Public Debt Transactions (group 01.7),
+        which are mostly the interest on government debt, also available as a function of its
+        own where a country reports it. Defence is military and civil defence, foreign military
+        aid and defence research; military pensions are Social Protection.
+
+        The data is yearly, in millions of national currency, for around 180 countries; the
+        most recent year is usually one or two years back. Levels are not comparable across
+        countries with different currencies, but growth rates are, and
+        get_government_expenditure_by_function_to_gdp_ratio returns the shares of GDP.
+
+        The columns are a country and a function each; a country without data for a function
+        has no column for it, and countries without data are left out with a warning.
+
+        Data comes from the IMF's Government Finance Statistics, further information can be
+        found within https://data.imf.org/en/datasets/IMF.STA:GFS_COFOG
+
+        Also known as: COFOG, government spending by function, defence spending, military
+        spending, health spending, education spending, social spending.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            functions (list[str] | str | None, optional): The functions to return, a list or a
+                comma-separated string of the ten divisions above, "Public Debt Transactions"
+                or "Total". Defaults to None, which returns the ten divisions.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Expenditure by Function, with a
+            (Country, Function) column
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2018-01-01', end_date="2025-12-31")
+
+        expenditure = economics.get_government_expenditure_by_function(
+            countries=['United States', 'Germany'], functions='Defence,Health,Education')
+
+        expenditure['United States']
+        ```
+
+        Which returns:
+
+        |      |   Defence |      Health |   Education |
+        |:-----|----------:|------------:|------------:|
+        | 2018 |    660147 | 1.91712e+06 | 1.22016e+06 |
+        | 2019 |    712831 | 2.0491e+06  | 1.26193e+06 |
+        | 2020 |    744556 | 2.26781e+06 | 1.28909e+06 |
+        | 2021 |    762090 | 2.45445e+06 | 1.37456e+06 |
+        | 2022 |    775165 | 2.64297e+06 | 1.47586e+06 |
+        | 2023 |    843209 | 2.79374e+06 | 1.54819e+06 |
+        | 2024 |    911017 | 3.01146e+06 | 1.63922e+06 |
+        """
+        government_expenditure_by_function = imf_model.get_expenditure_by_function(
+            self._expenditure_functions(functions), self._start_date, self._end_date
+        )
+
+        return finalize_dataset(
+            dataset=government_expenditure_by_function,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Expenditure by Function",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_government_expenditure_by_function_to_gdp_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        functions: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Government Expenditure by Function to GDP Ratio for a variety of countries over
+        time from the Government Finance Statistics of the International Monetary Fund (IMF).
+        It is the spending of the general government on each function of the United Nations'
+        Classification of the Functions of Government (COFOG) as a share of the Gross Domestic
+        Product (GDP).
+
+        Shares of GDP make the functions comparable across countries and over time, such as
+        NATO's 2% of GDP guideline for defence. The ten divisions, the Public Debt Transactions
+        (group 01.7, mostly interest) and the Total are described in
+        get_government_expenditure_by_function. Defence covers military and civil defence,
+        foreign military aid and defence research, not military pensions, so it differs from
+        NATO's definition and from a national defence budget.
+
+        For the interest itself, get_government_interest_expenditure_to_gdp_ratio uses the
+        same general government and the same GDP, so the two together answer whether a
+        government pays more in interest than it spends on defence.
+
+        The data is yearly, for around 180 countries; the most recent year is usually one or
+        two years back. The ratio is the IMF's own figure, published in percent and divided by
+        100 here, so it is a decimal fraction (0.0311 for 3.11% of GDP).
+
+        The formula is as follows:
+
+        - Government Expenditure by Function to GDP Ratio = Expenditure on the Function /
+          Nominal GDP
+
+        Also known as: defence spending to GDP, military spending to GDP, health spending to
+        GDP, education spending to GDP, social spending to GDP, COFOG to GDP.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            functions (list[str] | str | None, optional): The functions to return, a list or a
+                comma-separated string of the ten COFOG divisions, "Public Debt Transactions"
+                or "Total". Defaults to None, which returns the ten divisions.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Government Expenditure by Function to GDP
+            Ratio, with a (Country, Function) column
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        defence = economics.get_government_expenditure_by_function_to_gdp_ratio(
+            countries=['United States', 'Japan', 'Germany', 'United Kingdom'], functions='Defence')
+
+        defence.xs('Defence', axis=1, level='Function')
+        ```
+
+        Which returns:
+
+        |      |   United States |   Japan |   Germany |   United Kingdom |
+        |:-----|----------------:|--------:|----------:|-----------------:|
+        | 2015 |          0.0327 |  0.0086 |    0.0094 |           0.0198 |
+        | 2016 |          0.0318 |  0.0079 |    0.0096 |           0.0189 |
+        | 2017 |          0.0314 |  0.0085 |    0.0099 |           0.0185 |
+        | 2018 |          0.032  |  0.009  |    0.0105 |           0.0183 |
+        | 2019 |          0.0331 |  0.0089 |    0.0106 |           0.0196 |
+        | 2020 |          0.0348 |  0.0092 |    0.0112 |           0.0214 |
+        | 2021 |          0.0321 |  0.0099 |    0.0114 |           0.0212 |
+        | 2022 |          0.0298 |  0.0092 |    0.0115 |           0.0214 |
+        | 2023 |          0.0303 |  0.0105 |    0.0125 |           0.022  |
+        | 2024 |          0.0311 |  0.013  |    0.0135 |           0.0225 |
+        """
+        government_expenditure_by_function_to_gdp_ratio = (
+            imf_model.get_expenditure_by_function(
+                self._expenditure_functions(functions),
+                self._start_date,
+                self._end_date,
+                to_gdp=True,
+            )
+        )
+
+        return finalize_dataset(
+            dataset=government_expenditure_by_function_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Government Expenditure by Function to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
     def get_trust_in_government(
         self,
         countries: list[str] | str | None = None,
@@ -3324,6 +4366,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Trust in government refers to the share of people who report having confidence
@@ -3355,6 +4398,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Trust in Government.
@@ -3417,12 +4464,54 @@ class Economics:
             row_slice=True,
         )
 
+    def _get_consumer_price_index(
+        self,
+        countries: list[str] | str | None,
+        period: str,
+        oecd_source: bool = False,
+        gmdb_forecasts: bool = False,
+        measure: str = "all",
+    ) -> pd.DataFrame:
+        """
+        Retrieves the consumer price index, unrounded and for the full history retrieved,
+        from the source the period and oecd_source select (see get_consumer_price_index).
+
+        Args:
+            countries (list[str] | str | None): The requested countries, so the sources of
+                other countries are not retrieved.
+            period (str): "monthly", "quarterly" or "yearly", already validated.
+            oecd_source (bool, optional): Whether to retrieve the data from the OECD.
+                Defaults to False.
+            gmdb_forecasts (bool, optional): Whether to include the projections of the
+                Global Macro Database. Defaults to False.
+            measure (str, optional): All items, core or a component, already validated
+                (monthly only). Defaults to "all".
+
+        Returns:
+            pd.DataFrame: The consumer price index, a column per country.
+        """
+        if oecd_source:
+            return oecd_model.get_consumer_price_index(
+                period=period, start_date=self._start_date, end_date=self._end_date
+            )
+
+        if period.lower() == "monthly":
+            return self._get_monthly_price_data(
+                "consumer_price_index", countries, measure
+            )
+
+        return gmdb_model.get_consumer_price_index(
+            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+        )
+
     @handle_errors
     def get_consumer_price_index(
         self,
         countries: list[str] | str | None = None,
         period: str | None = None,
         oecd_source: bool = False,
+        measure: str = "all",
+        cumulative: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -3430,6 +4519,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Consumer Price Index (CPI) is a measure that examines the average change in prices
@@ -3440,18 +4530,44 @@ class Economics:
         (GMDB), annual with 2015 = 100. Set `oecd_source=True` to retrieve monthly or
         quarterly data from the OECD instead (base year varies per country).
 
+        The yearly index is chained across currency reforms and redenominations, in today's
+        currency. A warning names the years in the date range where it repeats the value
+        of the year before (carried forward by the source, such as Germany's 1913 and
+        1914, so their inflation is 0 by construction) and the hyperinflations (prices
+        rising more than tenfold in a year), after which the yearly average still rises
+        sharply even when a currency reform ended them within the year.
+
         With period="monthly" and without oecd_source, every country comes from its most
-        current source without an API key: Eurostat for the euro area and the European
+        current source: Eurostat for the euro area and the European
         Economic Area (the HICP, 2015 = 100), the Office for National Statistics for the
         United Kingdom (CPI, 2015 = 100), the Statistics Bureau of Japan for Japan (CPI
         from 2015, on its latest base) and the Bank for International Settlements for
         every other country (2010 = 100). The base year differs between countries, so
         compare the changes rather than the levels.
 
+        The measure parameter selects the core index (all items less energy and food;
+        Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
+        includes alcohol and tobacco, the BLS does not), goods, services and, for the United
+        States, shelter. These are monthly, from Eurostat (the euro area and the European
+        Economic Area) and the Bureau of Labor Statistics for the United States (CPI-U, not
+        seasonally adjusted, 1982-84 = 100; the full history through FRED when a FRED API
+        key is set, the last three years otherwise). Other countries have all items only.
+
+        The US index of the BIS is the BLS's CPI-U rebased to 2010 = 100, which the BIS
+        publishes a few days after the BLS. The months the BLS has published since are
+        added to it, so a release appears the same day.
+
+        With cumulative=True, every country's index is divided by its value in the first
+        period of the date range: the growth of 1 in prices since the start_date (1.3460
+        for prices 34.60% higher), which compares countries regardless of their base year.
+        A country without data in the first period starts from its own first period. The
+        purchasing power of money is its inverse (see get_purchasing_power).
+
         Further information about the Global Macro Database (GMDB) variable can be found
         within https://www.globalmacrodata.com/documentation.html
 
-        Also known as: CPI, cost of living index.
+        Also known as: CPI, cost of living index, core CPI, CPI components, energy prices,
+        food prices, shelter costs.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
@@ -3461,6 +4577,12 @@ class Economics:
                 with `oecd_source=True` when the Economics class was initialized with quarterly=True).
             oecd_source (bool, optional): Whether to get the data from the OECD instead of the
                 Global Macro Database (GMDB). Defaults to False.
+            measure (str, optional): "all" for all items, "core" for all items less food and
+                energy, or a component: "energy", "food", "goods", "services" or "shelter"
+                (United States only). Other measures than "all" are monthly, without
+                oecd_source. Defaults to "all".
+            cumulative (bool, optional): Whether to return the growth of 1 in prices since the
+                first period of the date range instead of the index. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -3473,6 +4595,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Consumer Price Index.
@@ -3517,18 +4643,21 @@ class Economics:
                 "consumer price index (quarterly data needs oecd_source=True)",
             )
 
-        if not oecd_source and period.lower() == "monthly":
-            consumer_price_index = self._get_monthly_price_data(
-                "consumer_price_index", countries
-            )
-        elif oecd_source:
-            consumer_price_index = oecd_model.get_consumer_price_index(
-                period=period, start_date=self._start_date, end_date=self._end_date
-            )
-        else:
+        measure = validate_consumer_price_measure(measure, period, oecd_source)
+        consumer_price_index = self._get_consumer_price_index(
+            countries, period, oecd_source, gmdb_forecasts, measure
+        )
 
-            consumer_price_index = gmdb_model.get_consumer_price_index(
-                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+        if period == "yearly" and not oecd_source:
+            warn_about_long_run_prices(
+                consumer_price_index, countries, self._start_date, self._end_date
+            )
+
+        if cumulative:
+            # Rebased only after slicing to the date range, so the growth starts at 1 in
+            # the first period of the range.
+            consumer_price_index = rebase_to_first(
+                consumer_price_index.loc[self._start_date : self._end_date]
             )
 
         return finalize_dataset(
@@ -3557,6 +4686,7 @@ class Economics:
         self,
         countries: list[str] | str | None = None,
         period: str | None = None,
+        measure: str = "all",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -3564,6 +4694,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Inflation Rate is the percentage change in the Consumer Price Index (CPI) from one
@@ -3575,15 +4706,34 @@ class Economics:
         information about the variable can be found within
         https://www.globalmacrodata.com/documentation.html
 
+        The yearly index is chained across currency reforms and redenominations, in today's
+        currency. A warning names the years in the date range where it repeats the value
+        of the year before (carried forward by the source, such as Germany's 1913 and
+        1914, so their inflation is 0 by construction) and the hyperinflations (prices
+        rising more than tenfold in a year), after which the yearly average still rises
+        sharply even when a currency reform ended them within the year.
+
         With period="monthly", the default, the annual rate of change is returned for every
         month, the figure statistical offices publish, taken per country from the most
-        current source without an API key: Eurostat for the euro area and the European
+        current source: Eurostat for the euro area and the European
         Economic Area (the HICP, including the flash estimate at the end of the month
         itself), the Office for National Statistics for the United Kingdom (CPI), the
         Statistics Bureau of Japan for Japan (CPI, from 2016), the Bank for International
         Settlements for around sixty other countries, including the United States, China,
         India and Brazil, and the IMF for around a hundred more, all republishing the
         national consumer price indices.
+
+        The measure parameter selects the inflation of the core index (all items less energy and food;
+        Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
+        includes alcohol and tobacco, the BLS does not), goods, services and, for the United
+        States, shelter. These are monthly, from Eurostat (the euro area and the European
+        Economic Area) and the Bureau of Labor Statistics for the United States (CPI-U, not
+        seasonally adjusted, 1982-84 = 100; the full history through FRED when a FRED API
+        key is set, the last three years otherwise). Other countries have all items only.
+
+        The US index of the BIS is the BLS's CPI-U rebased to 2010 = 100, which the BIS
+        publishes a few days after the BLS. The months the BLS has published since are
+        added to it, so a release appears the same day.
 
         The result is a decimal fraction (0.041166 for 4.1166%), like every other rate in the
         Finance Toolkit.
@@ -3603,12 +4753,16 @@ class Economics:
         figures are the harmonised index (HICP), which differs from national CPIs, for
         example in leaving out the costs of owner-occupied housing.
 
-        Also known as: CPI-based inflation, price increases, consumer prices.
+        Also known as: CPI-based inflation, price increases, consumer prices, core
+        inflation, energy inflation, food inflation, services inflation, shelter inflation.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly or the annual data.
                 Defaults to None, which is the monthly data.
+            measure (str, optional): "all" for all items, "core" for all items less food and
+                energy, or a component: "energy", "food", "goods", "services" or "shelter"
+                (United States only). Other measures than "all" are monthly. Defaults to "all".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -3621,6 +4775,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Inflation Rate.
@@ -3654,13 +4812,20 @@ class Economics:
             ["monthly", "yearly"],
             "inflation rate",
         )
+        measure = validate_consumer_price_measure(measure, period)
 
         if period == "monthly":
-            inflation_rate = self._get_monthly_price_data("inflation_rate", countries)
+            inflation_rate = self._get_monthly_price_data(
+                "inflation_rate", countries, measure
+            )
         else:
-
-            inflation_rate = gmdb_model.get_inflation_rate(
-                gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+            gmdb_dataset = self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+            inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=gmdb_dataset)
+            warn_about_long_run_prices(
+                gmdb_model.get_consumer_price_index(gmd_dataset=gmdb_dataset),
+                countries,
+                self._start_date,
+                self._end_date,
             )
 
         return finalize_dataset(
@@ -3683,6 +4848,162 @@ class Economics:
         )
 
     @handle_errors
+    def get_purchasing_power(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        overnight_rate: bool = False,
+        growth: bool = False,
+        lag: int = 1,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Purchasing Power is what 100 units of a currency at the start of the date range
+        buy in every later period, in the prices of the start: it falls as consumer prices
+        rise, so 74.29 means that money has lost a quarter of its value. It is the inverse
+        of the growth in the Consumer Price Index since the first period of the range (see
+        get_consumer_price_index with cumulative=True), on the same monthly sources by
+        default (period="yearly" for the Global Macro Database's annual averages).
+
+        With overnight_rate=True, the 100 is not held as banknotes but deposited at the
+        overnight rate of its currency, compounded day by day (see get_overnight_rate with
+        cumulative=True): €STR for the Euro Area and its members, SONIA for the United
+        Kingdom, TONA for Japan and SOFR for the United States. The result is the real
+        value of cash, which stays above 100 only when the interest outpaced inflation.
+        Countries without an overnight rate are left out with a note. A euro member earns
+        €STR over the whole range, also before it adopted the euro.
+
+        The formula is as follows:
+
+        - Purchasing Power (t) = 100 × CPI (start) / CPI (t)
+        - Purchasing Power of Cash (t) = 100 × Overnight Rate Growth (t) × CPI (start) / CPI (t)
+
+        CPI (start) is each country's index in the first period of the date range (its own
+        first period when it starts later). The cash growth starts at 1 on the first day of
+        the range and every month takes it on the last day of the month, next to the index
+        of that same month (the reference month). The index of a month is published some
+        weeks after it ends, so the latest months of the cash growth are left out until
+        their index is published rather than paired with older prices.
+
+        Also known as: real value of money, value of money, real value of cash, real return
+        on cash, inflation erosion.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data.
+                Defaults to None, which is every country with a consumer price index, or the
+                Euro Area, Japan, the United Kingdom and the United States with
+                overnight_rate=True.
+            period (str | None, optional): Whether to return the monthly or the annual data.
+                Defaults to None, which is the monthly data. The overnight rate is only
+                combined with the monthly data.
+            overnight_rate (bool, optional): Whether the 100 earns the overnight rate of its
+                currency instead of being held as banknotes. Defaults to False.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The purchasing power of 100 per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2020-01-01', end_date='2026-09-30')
+
+        economics.get_purchasing_power(
+            countries=['Euro Area', 'Netherlands', 'United States'], overnight_rate=True
+        ).iloc[::12]
+        ```
+
+        Which returns:
+
+        |         |   Euro Area |   Netherlands |   United States |
+        |:--------|------------:|--------------:|----------------:|
+        | 2020-01 |     99.9567 |       99.9567 |        100.124  |
+        | 2021-01 |     98.5071 |       97.8545 |         98.9891 |
+        | 2022-01 |     93.1777 |       90.4128 |         92.1353 |
+        | 2023-01 |     85.9347 |       83.578  |         88.3553 |
+        | 2024-01 |     86.5277 |       83.8851 |         90.2447 |
+        | 2025-01 |     87.5091 |       84.4527 |         92.2405 |
+        | 2026-01 |     87.9163 |       84.4219 |         93.9886 |
+        """
+        check_period_type(period)
+
+        period = validate_period(
+            self._default_period(period, "monthly", quarterly_available=False),
+            ["monthly", "yearly"],
+            "purchasing power",
+        )
+
+        if overnight_rate and period != "monthly":
+            raise ValueError(
+                "The purchasing power of cash at the overnight rate is only available with "
+                "period='monthly', as the interest is compounded to the end of every month."
+            )
+
+        purchasing_power = 100 / rebase_to_first(
+            self._get_consumer_price_index(countries, period).loc[
+                self._start_date : self._end_date
+            ]
+        )
+
+        if overnight_rate:
+            cash = resample_to_period(
+                compound_overnight_rate(
+                    self._get_overnight_rate(None).loc[
+                        self._start_date : self._end_date
+                    ],
+                    OVERNIGHT_RATE_DAY_COUNTS,
+                ),
+                "monthly",
+            )
+
+            # The euro members hold euros, which earn €STR; they are only included when
+            # asked for, so the default is one column per currency.
+            areas = {
+                country: country if country in cash.columns else "Euro Area"
+                for country in purchasing_power.columns
+                if country in cash.columns
+                or (
+                    countries is not None
+                    and country in EURO_AREA_MEMBERS
+                    and "Euro Area" in cash.columns
+                )
+            }
+            purchasing_power = pd.DataFrame(
+                {
+                    country: purchasing_power[country]
+                    * cash[area].reindex(purchasing_power.index)
+                    for country, area in areas.items()
+                },
+                index=purchasing_power.index,
+            )
+
+        return finalize_dataset(
+            dataset=purchasing_power,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name=(
+                "Purchasing Power of Cash" if overnight_rate else "Purchasing Power"
+            ),
+            countries=countries,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
     def get_producer_price_index(
         self,
         countries: list[str] | str | None = None,
@@ -3693,23 +5014,36 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
-        Get the Producer Price Index (PPI) for a variety of countries over time from the OECD.
-        The PPI measures the average change over time in the prices received by domestic
-        producers (manufacturing) for their output. Because producers tend to pass rising input
-        costs on to their customers with a lag, the PPI is generally seen as a leading, upstream
-        indicator of cost pressure that later shows up in the Consumer Price Index (CPI).
+        Get the Producer Price Index (PPI) for a variety of countries over time. The PPI
+        measures the average change over time in the prices domestic producers receive for
+        their output. Because producers tend to pass rising input costs on to their
+        customers with a lag, the PPI is generally seen as a leading, upstream indicator of
+        cost pressure that later shows up in the Consumer Price Index (CPI).
 
-        The index covers manufacturing output only, is not seasonally adjusted, and is set to
-        100 in the base year, which can vary per country.
+        Each country's headline index comes monthly from its official publisher:
 
-        The OECD stopped updating this series in its Key Economic Indicators dataset during
-        2023: annual values end in 2022, and monthly and quarterly values end in early 2023
-        for all but a couple of countries. A start_date after that point returns an empty
-        DataFrame.
+        - Eurostat for the euro area, the European Union and around 35 European countries:
+          the industrial producer prices on the domestic market (industry except
+          construction, sewerage and waste management), 2021 = 100.
+        - The Bureau of Labor Statistics for the United States: the PPI for final demand,
+          November 2009 = 100. The BLS API returns about the last three years; with a FRED
+          API key the full history comes from FRED, which republishes it.
+        - The Bank of Japan for Japan: the Corporate Goods Price Index (domestic), 2020 =
+          100, from 1960.
 
-        See definition: https://www.oecd.org/en/data/indicators/producer-prices-ppi.html
+        China is not included: the National Bureau of Statistics of China publishes its
+        producer prices as changes rather than as an index, and its database refuses
+        automated requests. Its monthly year-on-year figure is in get_economic_calendar.
+
+        All indices are not seasonally adjusted, so changes are best taken year over year
+        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        5.7%). The base year differs per country, so compare growth rather than levels.
+        Quarterly and yearly values are the average of the months, for complete periods only.
+
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
 
         Also known as: PPI, wholesale prices, factory gate prices, upstream inflation.
 
@@ -3726,39 +5060,56 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the Producer Price Index.
+            pd.DataFrame: A DataFrame containing the Producer Price Index per country.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2018-01-01', end_date='2022-01-01')
+        economics = Economics(start_date='2025-10-01', end_date='2026-09-30')
 
         economics.get_producer_price_index(
-            countries=['United States', 'Germany'],
-            period='yearly'
+            countries=['United States', 'Euro Area', 'Japan'],
+            period='monthly',
+            growth=True,
+            lag=12,
         )
         ```
 
         Which returns:
 
-        |      |   United States |   Germany |
-        |:-----|----------------:|----------:|
-        | 2018 |         106.059 |   102.758 |
-        | 2019 |         106.067 |   103.65  |
-        | 2020 |         103.849 |   103.15  |
-        | 2021 |         116.511 |   108.242 |
-        | 2022 |         134.46  |   122.75  |
+        |         |   United States |   Euro Area |   Japan |
+        |:--------|----------------:|------------:|--------:|
+        | 2025-10 |          0.0284 |     -0.004  |  0.0282 |
+        | 2025-11 |          0.0314 |     -0.0126 |  0.0281 |
+        | 2025-12 |          0.0314 |     -0.0204 |  0.0248 |
+        | 2026-01 |          0.0308 |     -0.021  |  0.0247 |
+        | 2026-02 |          0.0337 |     -0.0303 |  0.0223 |
+        | 2026-03 |          0.0429 |      0.0198 |  0.0301 |
+        | 2026-04 |          0.057  |      0.0493 |  0.0553 |
+        | 2026-05 |          0.0592 |      0.0586 |  0.068  |
+        | 2026-06 |          0.0559 |      0.046  |  0.0752 |
+        | 2026-07 |          0.0494 |      0.0578 |  0.0773 |
+        | 2026-08 |          0.0561 |      0.083  |  0.0759 |
+        | 2026-09 |          0.0634 |      0.1113 |  0.0677 |
         """
         check_period_type(period)
 
-        period = self._default_period(period, "monthly")
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "producer price index",
+        )
 
-        producer_price_index = oecd_model.get_producer_price_index(
-            period=period, start_date=self._start_date, end_date=self._end_date
+        producer_price_index = average_monthly_index(
+            self._get_monthly_industrial_prices("producer", countries), period
         )
 
         return finalize_dataset(
@@ -3776,6 +5127,254 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_export_price_index(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Export Price Index for a variety of countries over time. The index
+        measures the average change over time in the prices a country's producers receive
+        for the goods they sell abroad, in its own currency. Together with the Import Price
+        Index it gives the terms of trade, and it shows how much of a currency move or a
+        foreign price shock exporters pass on.
+
+        Each country's index comes monthly from its official publisher:
+
+        - Eurostat for the euro area, the European Union and around 35 European countries:
+          the industrial producer prices on the non-domestic market (industry except
+          construction, sewerage and waste management), 2021 = 100. For the euro area these
+          include sales to other members.
+        - The Bureau of Labor Statistics for the United States: the export price index of
+          all commodities, 2000 = 100. The BLS API returns about the last three years; with
+          a FRED API key the full history comes from FRED.
+        - The Bank of Japan for Japan: the export price index in yen, 2020 = 100, from 1960.
+
+        All indices are not seasonally adjusted, so changes are best taken year over year
+        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        5.7%). The base year differs per country, so compare growth rather than levels.
+        Quarterly and yearly values are the average of the months, for complete periods only.
+
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
+
+        Also known as: export prices, XPI, trade prices.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Export Price Index per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-10-01', end_date='2026-09-30')
+
+        economics.get_export_price_index(
+            countries=['United States', 'Euro Area', 'Japan'],
+            period='monthly',
+            growth=True,
+            lag=12,
+        )
+        ```
+
+        Which returns:
+
+        |         |   United States |   Euro Area |   Japan |
+        |:--------|----------------:|------------:|--------:|
+        | 2025-10 |        nan      |     -0.0052 |  0.0224 |
+        | 2025-11 |          0.0329 |     -0.0087 |  0.0205 |
+        | 2025-12 |          0.0341 |     -0.0147 |  0.04   |
+        | 2026-01 |          0.0251 |     -0.0129 |  0.0494 |
+        | 2026-02 |          0.038  |     -0.018  |  0.0838 |
+        | 2026-03 |          0.0564 |      0.0121 |  0.113  |
+        | 2026-04 |          0.0931 |      0.0323 |  0.1809 |
+        | 2026-05 |          0.1135 |      0.042  |  0.2057 |
+        | 2026-06 |          0.0998 |      0.042  |  0.2126 |
+        | 2026-07 |          0.0812 |      0.0525 |  0.1936 |
+        | 2026-08 |          0.0928 |      0.0623 |  0.1796 |
+        | 2026-09 |          0.1163 |      0.0747 |  0.1786 |
+        """
+        check_period_type(period)
+
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "export price index",
+        )
+
+        export_price_index = average_monthly_index(
+            self._get_monthly_industrial_prices("export", countries), period
+        )
+
+        return finalize_dataset(
+            dataset=export_price_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Export Price Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_import_price_index(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Import Price Index for a variety of countries over time. The index measures
+        the average change over time in the prices of the goods a country buys from abroad,
+        in its own currency. It shows how foreign price shocks and currency moves reach the
+        domestic economy, ahead of the Producer and Consumer Price Indices.
+
+        Each country's index comes monthly from its official publisher:
+
+        - Eurostat for the euro area, the European Union and around 20 European countries:
+          the import prices of industrial products (mining, manufacturing and energy
+          supply), 2021 = 100. For the euro area these include imports from other members.
+        - The Bureau of Labor Statistics for the United States: the import price index of
+          all commodities, 2000 = 100. The BLS API returns about the last three years; with
+          a FRED API key the full history comes from FRED.
+        - The Bank of Japan for Japan: the import price index in yen, 2020 = 100, from 1960.
+
+        All indices are not seasonally adjusted, so changes are best taken year over year
+        (growth=True with lag=12 on monthly data), which returns them as decimals (0.057 for
+        5.7%). The base year differs per country, so compare growth rather than levels.
+        Quarterly and yearly values are the average of the months, for complete periods only.
+
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpi_esms.htm
+
+        Also known as: import prices, MPI, trade prices.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
+                Defaults to None, which is quarterly when the Economics class was initialized with
+                quarterly=True and monthly otherwise.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Import Price Index per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-10-01', end_date='2026-09-30')
+
+        economics.get_import_price_index(
+            countries=['United States', 'Euro Area', 'Japan'],
+            period='monthly',
+            growth=True,
+            lag=12,
+        )
+        ```
+
+        Which returns:
+
+        |         |   United States |   Euro Area |   Japan |
+        |:--------|----------------:|------------:|--------:|
+        | 2025-10 |        nan      |     -0.0231 | -0.016  |
+        | 2025-11 |         -0.0007 |     -0.0291 | -0.017  |
+        | 2025-12 |          0      |     -0.036  |  0.0018 |
+        | 2026-01 |          0.0021 |     -0.0357 |  0.0072 |
+        | 2026-02 |          0.0099 |     -0.033  |  0.0283 |
+        | 2026-03 |          0.0226 |      0.015  |  0.0831 |
+        | 2026-04 |          0.0452 |      0.0617 |  0.217  |
+        | 2026-05 |          0.0688 |      0.073  |  0.2642 |
+        | 2026-06 |          0.0675 |      0.0604 |  0.3042 |
+        | 2026-07 |          0.0602 |      0.064  |  0.2939 |
+        | 2026-08 |          0.0674 |      0.0835 |  0.2506 |
+        | 2026-09 |          0.081  |      0.1072 |  0.2447 |
+        """
+        check_period_type(period)
+
+        period = validate_period(
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly", "yearly"],
+            "import price index",
+        )
+
+        import_price_index = average_monthly_index(
+            self._get_monthly_industrial_prices("import", countries), period
+        )
+
+        return finalize_dataset(
+            dataset=import_price_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Import Price Index",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Rows empty for every selected country, e.g. a month only another source has.
+            dropna=True,
         )
 
     @handle_errors
@@ -3788,6 +5387,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         This consumer confidence indicator provides an indication of future developments of
@@ -3816,6 +5416,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Consumer Confidence Index.
@@ -3873,6 +5477,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         This business confidence indicator provides information on future developments,
@@ -3897,6 +5502,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Business Confidence Index.
@@ -3954,6 +5563,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The composite leading indicator (CLI) is designed to provide early signals
@@ -3987,6 +5597,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Composite Leading Indicator.
@@ -4048,6 +5662,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         In most cases, the nominal house price index covers the sales of newly-built
@@ -4091,6 +5706,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the House Prices.
@@ -4184,6 +5803,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The housing rent price index measures the prices paid for renting
@@ -4210,6 +5830,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Rent Prices.
@@ -4275,6 +5899,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Gross Household Savings Rate for a variety of countries over time from the
@@ -4311,6 +5936,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Household Savings Rate.
@@ -4377,6 +6006,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Household Debt to Disposable Income Ratio for a variety of countries over
@@ -4409,6 +6039,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Household Debt to Income Ratio.
@@ -4475,6 +6109,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Share price indices are calculated from the prices of common shares of companies
@@ -4510,6 +6145,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Share Prices.
@@ -4581,6 +6220,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Exchange rates are defined as the price of one country's currency in relation
@@ -4627,6 +6267,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Exchange Rates.
@@ -4731,6 +6375,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Real Effective Exchange Rate (REER) for a variety of countries over time from the
@@ -4763,6 +6408,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Effective Exchange Rate
@@ -4824,6 +6473,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Money Supply is the total amount of money that is in circulation in a country.
@@ -4864,6 +6514,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Money Supply
@@ -4988,6 +6642,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The Central Bank Policy Rate is the interest rate that a central bank sets on its
@@ -5001,11 +6656,18 @@ class Economics:
         taken at the end of the year rather than averaged over it.
 
         With period="daily", "weekly" or "monthly" the rates come from the Bank for
-        International Settlements (BIS) instead, without an API key. It publishes the
+        International Settlements (BIS) instead. It publishes the
         policy rates of around fifty central banks daily, including the Federal Reserve,
         the European Central Bank (as "Euro Area"), the Bank of England and the Bank of
         Japan, some back to the 1940s. Weekly and monthly take the rate on the last day of
         each period, so the current week or month shows the rate so far.
+
+        The BIS updates its series about once a week. The days since are added from the
+        Bank of England (Bank Rate) and the European Central Bank, which publish their
+        rates the same day; other countries end at the latest BIS update. For the euro
+        area the BIS reports the main refinancing rate up to 17 September 2024 and the
+        deposit facility rate from 18 September 2024, when the ECB began steering money
+        markets with it; get_european_central_bank_rates has either rate throughout.
 
         The result is a decimal fraction (0.05375 for 5.375%), like every other rate in the
         Finance Toolkit.
@@ -5028,6 +6690,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Central Bank Policy Rate
@@ -5069,8 +6735,8 @@ class Economics:
             # Weeks and months are taken from the daily rates, which the BIS updates
             # sooner than its own end-of-month series.
             central_bank_policy_rate = resample_to_period(
-                bis_model.get_central_bank_policy_rate(
-                    buffered_start_date(self._start_date, period), self._end_date
+                self._get_daily_central_bank_policy_rate(
+                    buffered_start_date(self._start_date, period), countries
                 ),
                 period,
             )
@@ -5107,6 +6773,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Short-term interest rates are the rates at which short-term borrowings are
@@ -5148,6 +6815,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Short Term Interest Rate.
@@ -5236,6 +6907,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Long-term interest rates refer to government bonds maturing in ten years.
@@ -5261,7 +6933,7 @@ class Economics:
         when gmdb_source is True.
 
         With period="daily" or "weekly" the 10-year yields come from the issuers
-        themselves, without an API key: the U.S. Department of the Treasury (par yield,
+        themselves: the U.S. Department of the Treasury (par yield,
         from 1990), the Bank of England (nominal par yield of gilts, from 1993), the
         Japanese Ministry of Finance (JGBs, from 1974) and the European Central Bank (the
         euro area yield curve of all central government bonds, from 2004). The euro area
@@ -5297,6 +6969,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Long Term Interest Rate.
@@ -5391,17 +7067,67 @@ class Economics:
             dropna=period.lower() in ("daily", "weekly"),
         )
 
+    def _get_overnight_rate(
+        self, countries: list[str] | str | None, period: str = "daily"
+    ) -> pd.DataFrame:
+        """
+        Retrieves the daily overnight rates (€STR, SONIA, TONA and SOFR), unrounded and
+        with history before the start date for the growth, lag and rolling windows of the
+        period.
+
+        Args:
+            countries (list[str] | str | None): The requested countries, so the sources of
+                other countries are not retrieved.
+            period (str, optional): The period the rates are returned in, which sets how
+                much history is retrieved. Defaults to "daily".
+
+        Returns:
+            pd.DataFrame: The daily rates as decimals, a column per country.
+        """
+        start_date = buffered_start_date(self._start_date, period)
+        end_date = self._end_date
+
+        def secured_overnight_financing_rate() -> pd.DataFrame:
+            # The New York Fed publishes the full history of SOFR in one file.
+            rate = fed_model.get_secured_overnight_financing_rate()
+            return (
+                rate[["Rate"]].rename(columns={"Rate": "United States"})
+                if not rate.empty
+                else rate
+            )
+
+        return self._combine_sources_for(
+            [
+                (
+                    lambda: ecb_model.get_overnight_rate(start_date, end_date),
+                    "Euro Area",
+                ),
+                (
+                    lambda: boe_model.get_overnight_rate(start_date, end_date),
+                    "United Kingdom",
+                ),
+                (
+                    lambda: boj_model.get_overnight_rate(start_date, end_date),
+                    "Japan",
+                ),
+                (secured_overnight_financing_rate, "United States"),
+            ],
+            countries,
+        )
+
     @handle_errors
     def get_overnight_rate(
         self,
         countries: list[str] | str | None = None,
         period: str = "daily",
+        cumulative: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The overnight rate is the interest rate at which banks borrow from each other for
@@ -5421,9 +7147,22 @@ class Economics:
         - United States: the Secured Overnight Financing Rate (SOFR) from the Federal
           Reserve Bank of New York, since April 2018.
 
-        None of these sources require an API key. The rates are returned as decimal
-        fractions per annum (0.0244 for 2.44%). Weekly and monthly periods take the rate
+        The rates are returned as decimal fractions per annum (0.0244 for 2.44%). Weekly
+        and monthly periods take the rate
         on the last day of each period (weeks end on Friday).
+
+        With cumulative=True, the rates are compounded day by day into the growth of 1
+        deposited on the first day of the date range, the method of the compounded €STR
+        index of the European Central Bank and the SOFR Index of the New York Fed:
+
+        - Growth (t) = Growth (t-1) × (1 + Overnight Rate (t-1) × Days (t-1) / Day Count)
+
+        Days (t-1) is the number of calendar days the previous rate applies to (three over
+        a weekend) and the Day Count is that of each money market: 360 for €STR and SOFR
+        (ACT/360) and 365 for SONIA and TONA (ACT/365). The value on a day includes the
+        interest up to that day, so the first day is 1, and weekly and monthly periods
+        take the value on the last day of each period. It is the cash return of money
+        deposited at the overnight rate, before costs and taxes.
 
         Also known as: €STR, ESTR, SONIA, TONA, SOFR, overnight interbank rate, risk-free
         rate.
@@ -5431,6 +7170,9 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str, optional): Whether to return the daily, weekly or monthly data. Defaults to "daily".
+            cumulative (bool, optional): Whether to return the growth of 1 deposited at the
+                overnight rate on the first day of the date range instead of the rate.
+                Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -5439,6 +7181,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the overnight rate per country.
@@ -5470,36 +7216,15 @@ class Economics:
             period, ["daily", "weekly", "monthly"], "overnight rate"
         )
 
-        start_date = buffered_start_date(self._start_date, period)
-        end_date = self._end_date
+        overnight_rate = self._get_overnight_rate(countries, period)
 
-        def secured_overnight_financing_rate() -> pd.DataFrame:
-            # The New York Fed publishes the full history of SOFR in one file.
-            rate = fed_model.get_secured_overnight_financing_rate()
-            return (
-                rate[["Rate"]].rename(columns={"Rate": "United States"})
-                if not rate.empty
-                else rate
+        if cumulative:
+            # Compounded only after slicing to the date range, so the growth starts at 1
+            # on the first day of the range.
+            overnight_rate = compound_overnight_rate(
+                overnight_rate.loc[self._start_date : self._end_date],
+                OVERNIGHT_RATE_DAY_COUNTS,
             )
-
-        overnight_rate = self._combine_sources_for(
-            [
-                (
-                    lambda: ecb_model.get_overnight_rate(start_date, end_date),
-                    "Euro Area",
-                ),
-                (
-                    lambda: boe_model.get_overnight_rate(start_date, end_date),
-                    "United Kingdom",
-                ),
-                (
-                    lambda: boj_model.get_overnight_rate(start_date, end_date),
-                    "Japan",
-                ),
-                (secured_overnight_financing_rate, "United States"),
-            ],
-            countries,
-        )
 
         return finalize_dataset(
             dataset=resample_to_period(overnight_rate, period),
@@ -5524,6 +7249,7 @@ class Economics:
         self,
         countries: list[str] | str | None = None,
         rate_type: str = "long_term",
+        period: str | None = None,
         gmdb_source: bool | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
@@ -5532,6 +7258,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Real Interest Rate for a variety of countries over time. The Real Interest Rate
@@ -5541,18 +7268,27 @@ class Economics:
 
         The formula is as follows (the Fisher equation, approximation):
 
-        - Real Interest Rate (year) = Nominal Interest Rate (year) - Inflation Rate (year), with the nominal rate the
-          annual Long Term Interest Rate by default (rate_type="long_term") and the inflation rate the Global Macro
-          Database's annual CPI inflation
+        - Real Interest Rate = Nominal Interest Rate - Inflation Rate, with the nominal rate the Long Term Interest
+          Rate by default (rate_type="long_term") and the inflation rate the year-over-year change in consumer prices
 
-        The nominal interest rate is either the Long Term Interest Rate (the 10-year government
-        bond yield) or the Short Term Interest Rate (the 3-month money market rate), selected via
-        the rate_type parameter. The Inflation Rate is always the annual inflation rate of the
-        Global Macro Database (GMDB), whichever source the nominal rate comes from; this
-        differs from get_inflation_rate, which defaults to monthly year-over-year inflation
-        from national sources. Both legs are annual decimal fractions (0.05 for 5%) whichever
-        source is used, so they line up directly for the subtraction and the result is itself
-        a decimal fraction (-0.0016 for a real rate of -0.16%).
+        The nominal interest rate is the Long Term Interest Rate (the 10-year government bond
+        yield), the Short Term Interest Rate (the 3-month money market rate) or the Central
+        Bank Policy Rate, selected via the rate_type parameter.
+
+        Monthly (the default) subtracts the monthly year-over-year inflation rate of
+        get_inflation_rate (national statistical offices, Eurostat for the euro area and the
+        BIS) from the OECD's monthly long or short-term rate, the monthly average of the daily
+        rates, or from the policy rate at the end of the month (see
+        get_central_bank_policy_rate). The OECD has no euro area rates, so the euro area is
+        available with rate_type="policy": the ECB's deposit facility rate minus euro area
+        inflation. A month the inflation rate is not published yet is empty.
+
+        Yearly subtracts the annual inflation rate of the Global Macro Database (GMDB) from
+        its annual long or short-term rate (or the OECD's with gmdb_source=False) or its
+        end-of-year policy rate.
+
+        Both legs are decimal fractions (0.05 for 5%), so the result is itself a decimal
+        fraction (-0.0016 for a real rate of -0.16%).
 
         A negative real interest rate means that, after inflation, savers are effectively losing
         purchasing power and borrowers are being subsidized in real terms; this occurred in many
@@ -5570,13 +7306,16 @@ class Economics:
         Args:
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rate_type (str, optional): Which nominal interest rate to use. Can be 'long_term'
-                (10-year government bond yield) or 'short_term' (3-month money market rate).
-                Defaults to 'long_term'.
-            gmdb_source (bool | None, optional): Whether to get the nominal interest rate from
-                the Global Macro Database (GMDB) instead of the OECD. Defaults to None, which
-                falls back to the gmdb_source set on the Economics class (True by default).
-                Either way the countries carry the GMDB names, such as "Russian Federation",
-                "Eswatini" and "Congo DR", as the inflation rate comes from the GMDB.
+                (10-year government bond yield), 'short_term' (3-month money market rate) or
+                'policy' (central bank policy rate). Defaults to 'long_term'.
+            period (str | None, optional): Whether to return the monthly or the yearly data.
+                Defaults to None, which is the monthly data.
+            gmdb_source (bool | None, optional): Whether to get the yearly long or short-term
+                rate from the Global Macro Database (GMDB) instead of the OECD. Defaults to
+                None, which falls back to the gmdb_source set on the Economics class (True by
+                default). Either way the yearly countries carry the GMDB names, such as
+                "Russian Federation", "Eswatini" and "Congo DR", as the yearly inflation
+                rate comes from the GMDB.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -5589,6 +7328,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Real Interest Rate
@@ -5598,62 +7341,104 @@ class Economics:
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date='2018-01-01', end_date='2023-01-01')
+        economics = Economics(start_date='2026-01-01', end_date='2026-09-30')
 
-        economics.get_real_interest_rate(countries=['United States', 'Germany', 'Japan'])
+        economics.get_real_interest_rate(
+            countries=['United States', 'Euro Area', 'Japan'], rate_type='policy'
+        )
         ```
 
         Which returns:
 
-        |      |   United States |   Germany |   Japan |
-        |:-----|----------------:|----------:|--------:|
-        | 2018 |          0.0047 |   -0.0151 | -0.009  |
-        | 2019 |          0.0033 |   -0.0163 | -0.0057 |
-        | 2020 |         -0.0037 |   -0.0088 |  0.0001 |
-        | 2021 |         -0.0324 |   -0.0358 |  0.0032 |
-        | 2022 |         -0.0505 |   -0.0753 | -0.023  |
-        | 2023 |         -0.0017 |   -0.0359 | -0.0269 |
+        |         |   United States |   Euro Area |   Japan |
+        |:--------|----------------:|------------:|--------:|
+        | 2026-01 |          0.0124 |      0.003  | -0.0079 |
+        | 2026-02 |          0.0121 |      0.001  | -0.0054 |
+        | 2026-03 |          0.0037 |     -0.006  | -0.0073 |
+        | 2026-04 |         -0.0019 |     -0.01   | -0.006  |
+        | 2026-05 |         -0.0062 |     -0.012  | -0.0074 |
+        | 2026-06 |          0.0009 |     -0.0055 | -0.0064 |
+        | 2026-07 |          0.0026 |     -0.0065 | -0.0095 |
+        | 2026-08 |          0.0023 |     -0.0095 | -0.0089 |
+        | 2026-09 |          0.0014 |     -0.013  | -0.009  |
         """
+        check_period_type(period)
+
         rate_type = rate_type.lower()
 
-        if rate_type not in ["long_term", "short_term"]:
+        if rate_type not in ["long_term", "short_term", "policy"]:
             raise ValueError(
-                "Please choose either 'long_term' or 'short_term' for the rate_type parameter."
+                "Please choose 'long_term', 'short_term' or 'policy' for the rate_type "
+                "parameter."
             )
 
-        gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
-
-        if gmdb_source:
-            nominal_interest_rate = (
-                gmdb_model.get_long_term_interest_rate(
-                    gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
-                )
-                if rate_type == "long_term"
-                else gmdb_model.get_short_term_interest_rate(
-                    gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
-                )
-            )
-        else:
-            nominal_interest_rate = (
-                oecd_model.get_long_term_interest_rate(
-                    period="yearly",
-                    start_date=self._start_date,
-                    end_date=self._end_date,
-                )
-                if rate_type == "long_term"
-                else oecd_model.get_short_term_interest_rate(
-                    period="yearly",
-                    start_date=self._start_date,
-                    end_date=self._end_date,
-                )
-            )
-
-            # The inflation leg comes from the GMDB, which names a few countries differently.
-            nominal_interest_rate = to_gmdb_country_names(nominal_interest_rate)
-
-        inflation_rate = gmdb_model.get_inflation_rate(
-            gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+        # The inflation rate is monthly or yearly, so the real rate is as well.
+        period = validate_period(
+            self._default_period(period, "monthly", quarterly_available=False),
+            ["monthly", "yearly"],
+            "real interest rate",
         )
+
+        if period == "monthly":
+            if rate_type == "policy":
+                nominal_interest_rate = resample_to_period(
+                    self._get_daily_central_bank_policy_rate(
+                        buffered_start_date(self._start_date, "monthly"), countries
+                    ),
+                    "monthly",
+                )
+            else:
+                nominal_interest_rate = (
+                    oecd_model.get_long_term_interest_rate
+                    if rate_type == "long_term"
+                    else oecd_model.get_short_term_interest_rate
+                )(
+                    period="monthly",
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                )
+
+            inflation_rate = self._get_monthly_price_data("inflation_rate", countries)
+
+            # Only the countries both legs have, so a country without one is reported as
+            # unavailable rather than shown as an empty column.
+            shared_countries = nominal_interest_rate.columns.intersection(
+                inflation_rate.columns
+            )
+            nominal_interest_rate = nominal_interest_rate[shared_countries]
+            inflation_rate = inflation_rate[shared_countries]
+        else:
+            gmdb_dataset = self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
+            gmdb_source = gmdb_source if gmdb_source is not None else self._gmdb_source
+
+            if rate_type == "policy":
+                nominal_interest_rate = gmdb_model.get_central_bank_policy_rate(
+                    gmd_dataset=gmdb_dataset
+                )
+            elif gmdb_source:
+                nominal_interest_rate = (
+                    gmdb_model.get_long_term_interest_rate(gmd_dataset=gmdb_dataset)
+                    if rate_type == "long_term"
+                    else gmdb_model.get_short_term_interest_rate(
+                        gmd_dataset=gmdb_dataset
+                    )
+                )
+            else:
+                nominal_interest_rate = (
+                    oecd_model.get_long_term_interest_rate
+                    if rate_type == "long_term"
+                    else oecd_model.get_short_term_interest_rate
+                )(
+                    period="yearly",
+                    start_date=self._start_date,
+                    end_date=self._end_date,
+                )
+
+                # The inflation leg comes from the GMDB, which names a few countries
+                # differently.
+                nominal_interest_rate = to_gmdb_country_names(nominal_interest_rate)
+
+            inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=gmdb_dataset)
 
         real_interest_rate = nominal_interest_rate - inflation_rate
 
@@ -5672,6 +7457,8 @@ class Economics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+            # Months empty for every selected country, e.g. one without inflation yet.
+            dropna=period == "monthly",
         )
 
     @handle_errors
@@ -5687,6 +7474,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Yield Curve Slope for a variety of countries over time. The Yield Curve Slope is
@@ -5733,6 +7521,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Yield Curve Slope
@@ -5818,6 +7610,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Renewable energy is defined as the contribution of renewables to total primary energy supply (TPES).
@@ -5850,6 +7643,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Renewable Energy Percentage.
@@ -5911,6 +7708,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The carbon footprint is a measure of the total amount of greenhouse gases produced
@@ -5942,6 +7740,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Carbon Footprint.
@@ -6006,6 +7808,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The unemployed are people of working age who are without work,
@@ -6046,8 +7849,8 @@ class Economics:
         their figures, and Brazil from the IBGE (as the UK, the average of the three months
         ending in each month); every other country comes from the OECD. The United States is
         extended with the months the Bureau of Labor Statistics has published since, when
-        both agree on the months they share. None of these need an API key. The UK figure is the average of the three months ending in each month, as the
-        Labour Force Survey reports it.
+        both agree on the months they share. The UK figure is the average of the three
+        months ending in each month, as the Labour Force Survey reports it.
 
         Both sources return a decimal fraction (0.036 for 3.6%).
 
@@ -6071,6 +7874,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Unemployment Rate.
@@ -6132,18 +7939,7 @@ class Economics:
                     (ibge_model.get_unemployment_rate, "Brazil"),
                     # The OECD republishes the BLS figure a month later, so the US is
                     # extended with the months the BLS already has.
-                    (
-                        lambda: extend_with_recent(
-                            oecd_model.get_unemployment_rate(
-                                period="monthly",
-                                start_date=self._start_date,
-                                end_date=self._end_date,
-                            ),
-                            bls_model.get_unemployment_rate(),
-                            "United States",
-                        ),
-                        None,
-                    ),
+                    (self._get_oecd_unemployment_rate_with_bls, None),
                 ],
                 countries,
             )
@@ -6188,6 +7984,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Misery Index for a variety of countries over time. The Misery Index is a simple
@@ -6230,6 +8027,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Misery Index
@@ -6302,6 +8103,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         GDP per hour worked is a measure of labour productivity. It measures
@@ -6342,6 +8144,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Labour Productivity.
@@ -6402,6 +8208,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Income is defined as household disposable income in a particular year. It consists of earnings,
@@ -6433,6 +8240,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Income Inequality.
@@ -6494,6 +8305,7 @@ class Economics:
         standardize: bool = False,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Population is defined as all nationals present in, or temporarily absent from a country,
@@ -6544,6 +8356,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Population Statistics.
@@ -6624,6 +8440,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The poverty rate is the ratio of the number of people (in a given age group) whose income
@@ -6645,6 +8462,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Poverty Rates.
@@ -6702,6 +8523,7 @@ class Economics:
         trailing: int | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Sovereign Debt Crisis dummy for a variety of countries over time from the Global
@@ -6728,6 +8550,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Sovereign Debt Crisis dummy
@@ -6781,6 +8607,7 @@ class Economics:
         trailing: int | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Currency Crisis dummy for a variety of countries over time from the Global Macro
@@ -6807,6 +8634,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Currency Crisis dummy
@@ -6858,6 +8689,7 @@ class Economics:
         trailing: int | None = None,
         rounding: int | None = None,
         gmdb_forecasts: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Get the Banking Crisis dummy for a variety of countries over time from the Global Macro
@@ -6884,6 +8716,10 @@ class Economics:
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
                 False, which ends a series with its last observation.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the Banking Crisis dummy
@@ -6952,6 +8788,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get Total Nonfarm Payroll Employment for the United States from the Bureau of
@@ -6970,8 +8807,8 @@ class Economics:
         adjusted, so 156857 means 156.857 million jobs -- not the monthly change that the
         headline "jobs added" number refers to. Use growth=True for that change.
 
-        Without a FRED API key the data comes from the Bureau of Labor Statistics' keyless
-        API, which gives the same figures but only for about the last three years. The
+        Without a FRED API key the data comes from the Bureau of Labor Statistics' API,
+        which gives the same figures but only for about the last three years. The
         full history, from 1939, comes from FRED when a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class).
 
@@ -6990,6 +8827,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of nonfarm payroll
@@ -7066,6 +8907,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get weekly Initial Claims for Unemployment Insurance for the United States
@@ -7078,8 +8920,9 @@ class Economics:
         one of the most timely leading indicators of labor-market deterioration and a
         core component of the Conference Board's Leading Economic Index.
 
-        No API key is needed: without a FRED API key the data comes from the Department of Labor's weekly claims report
-        directly, which gives the same figures, although FRED adds the latest weeks before the report includes them. When a FRED API key is set (see the
+        Without a FRED API key the data comes from the Department of Labor's weekly claims
+        report directly, which gives the same figures, although FRED adds the latest weeks
+        before the report includes them. When a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/ICSA
@@ -7097,6 +8940,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of weekly initial
@@ -7159,6 +9006,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get Advance Retail Sales (Retail and Food Services) for the United States from
@@ -7174,9 +9022,9 @@ class Economics:
         retail trade and food services. It is nominal, so growth=True mixes volume and price
         changes together; compare against the Consumer Price Index to separate the two.
 
-        No API key is needed: without a FRED API key the data comes from the Census Bureau
-        directly, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Without a FRED API key the data comes from the Census Bureau directly, which gives
+        the same figures. When a FRED API key is set (see the `fred_api_key` parameter of
+        the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/RSAFS
 
@@ -7193,6 +9041,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of total retail
@@ -7255,6 +9107,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the Industrial Production Index for the United States from the Federal
@@ -7268,8 +9121,8 @@ class Economics:
         manufacturing/trade sales and, see `get_nonfarm_payrolls`, nonfarm payroll
         employment).
 
-        No API key is needed: without a FRED API key the data comes from
-        the Federal Reserve's G.17 release directly, which gives the same figures. When a FRED API key is set (see the
+        Without a FRED API key the data comes from the Federal Reserve's G.17 release
+        directly, which gives the same figures. When a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/INDPRO
@@ -7287,6 +9140,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of the
@@ -7346,6 +9203,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get Housing Starts (Total New Privately-Owned Housing Units Started) for the
@@ -7358,9 +9216,9 @@ class Economics:
         turns up before a recovery), making Housing Starts one of the ten components
         of the Conference Board's Leading Economic Index.
 
-        No API key is needed: without a FRED API key the data comes from the Census Bureau
-        directly, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Without a FRED API key the data comes from the Census Bureau directly, which gives
+        the same figures. When a FRED API key is set (see the `fred_api_key` parameter of
+        the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/HOUST
 
@@ -7377,6 +9235,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of new housing
@@ -7439,6 +9301,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get Real Personal Income Excluding Current Transfer Receipts for the United
@@ -7455,7 +9318,7 @@ class Economics:
         activity rather than the fiscal cushioning that automatically increases
         during a downturn.
 
-        No API key is needed: without a FRED API key the data comes from the Bureau of Economic Analysis
+        Without a FRED API key the data comes from the Bureau of Economic Analysis
         directly, which gives the same figures. When a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
@@ -7474,6 +9337,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of real personal
@@ -7537,6 +9404,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the weekly average 30-Year Fixed Rate Mortgage from FRED (Freddie
@@ -7557,8 +9425,8 @@ class Economics:
         points; it is rescaled here so that every rate the Finance Toolkit returns is a
         decimal fraction.
 
-        No API key is needed: without a FRED API key the data comes from
-        Freddie Mac's Primary Mortgage Market Survey directly, which gives the same figures. When a FRED API key is set (see the
+        Without a FRED API key the data comes from Freddie Mac's Primary Mortgage Market
+        Survey directly, which gives the same figures. When a FRED API key is set (see the
         `fred_api_key` parameter of the `Economics` class), it comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/MORTGAGE30US
@@ -7576,6 +9444,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of the weekly
@@ -7635,6 +9507,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the NBER-based US Recession Indicator from FRED.
@@ -7651,9 +9524,10 @@ class Economics:
         academic and applied business-cycle research to backtest whether other
         indicators lead, lag or coincide with recessions.
 
-        No API key is needed: without a FRED API key the data comes from
-        the NBER's business cycle dates directly, built the way FRED builds USREC, which gives the same figures. When a FRED API key is set (see the
-        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+        Without a FRED API key the data comes from the NBER's business cycle dates
+        directly, built the way FRED builds USREC, which gives the same figures. When a
+        FRED API key is set (see the `fred_api_key` parameter of the `Economics` class), it
+        comes from FRED.
 
         See definition: https://fred.stlouisfed.org/series/USREC
 
@@ -7670,6 +9544,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame, 1 during
@@ -7730,6 +9608,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the quarterly growth of commercial real estate prices: the change in the price
@@ -7744,7 +9623,7 @@ class Economics:
         freely available anywhere -- so expect more volatility and less
         autocorrelation than an appraisal-based series would show.
 
-        No API key is needed: the prices come from the commercial property price indices
+        The prices come from the commercial property price indices
         the Bank for International Settlements collects from national sources, for the euro
         area, the United States (from 1945), Japan, Denmark, the Netherlands, Germany,
         France, Spain and around ten more, taking per country a nominal index of commercial
@@ -7770,6 +9649,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The quarterly change in commercial real estate prices on a year
@@ -7799,7 +9682,7 @@ class Economics:
         index = bis_model.get_commercial_property_prices(
             buffered_start_date(self._start_date, "monthly"), self._end_date
         )
-        commercial_real_estate_prices = index.pct_change(4, fill_method=None)
+        commercial_real_estate_prices = change_over_periods(index, 4)
 
         if self._fred_api_key:
             united_states = fred_model.get_commercial_real_estate_prices(
@@ -7838,6 +9721,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the credit-to-GDP gap: how far the ratio of credit to the private non-financial
@@ -7856,7 +9740,7 @@ class Economics:
         The credit is all credit to households and non-financial corporations from all
         lenders, banks and non-banks, at market value, as compiled by the Bank for
         International Settlements for around 45 economies, quarterly and back to the
-        1950s for some. No API key is needed.
+        1950s for some.
 
         See definition: https://data.bis.org/topics/CREDIT_GAPS and
         https://www.bis.org/publ/qtrpdf/r_qt1403g.htm
@@ -7875,6 +9759,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The quarterly credit-to-GDP gap as a decimal fraction of GDP
@@ -7939,6 +9827,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the debt service ratio: the share of income that goes to interest payments and
@@ -7976,6 +9865,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The quarterly debt service ratio as a decimal fraction of income,
@@ -8051,6 +9944,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the total credit to a non-financial sector as a share of GDP: all loans and
@@ -8064,7 +9958,7 @@ class Economics:
         is comparable across countries where companies borrow from banks (the euro area,
         Japan) and where they issue bonds (the United States). The data is compiled by the
         Bank for International Settlements for around 45 economies, quarterly and back to
-        the 1940s for some, from national financial accounts. No API key is needed.
+        the 1940s for some, from national financial accounts.
 
         See definition: https://data.bis.org/topics/TOTAL_CREDIT and
         https://www.bis.org/publ/qtrpdf/r_qt1303h.htm
@@ -8089,6 +9983,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The quarterly credit as a decimal fraction of GDP (1.5 for 150% of
@@ -8208,9 +10106,9 @@ class Economics:
         self, curve: str, start_date: str
     ) -> pd.DataFrame:
         """
-        Retrieves the US real yield curve or breakeven inflation curve, from FRED when a key
-        is set and from the U.S. Department of the Treasury otherwise, with the maturities
-        labelled as elsewhere ("5Y" and "5Y5Y" for the 5-year, 5-year forward rate).
+        Retrieves the US real yield curve or breakeven inflation curve from the U.S.
+        Department of the Treasury, with the maturities labelled as elsewhere ("5Y" and
+        "5Y5Y" for the 5-year, 5-year forward rate).
 
         Args:
             curve (str): "real" or "breakeven".
@@ -8219,26 +10117,15 @@ class Economics:
         Returns:
             pd.DataFrame: The curve, indexed by day with a column per maturity.
         """
-        # FRED republishes these figures, so it is used when a key is set and the U.S.
-        # Treasury otherwise.
-        if curve == "real":
-            values = (
-                fred_model.get_real_yield_curve(
-                    start_date, self._end_date, self._fred_api_key
-                )
-                if self._fred_api_key
-                else treasury_model.get_real_yield_curve(start_date, self._end_date)
+        # The Treasury publishes the TIPS yields at the end of each business day; FRED
+        # republishes them (DFII) a day later, so the latest day would be missing.
+        values = (
+            treasury_model.get_real_yield_curve(start_date, self._end_date)
+            if curve == "real"
+            else treasury_model.get_breakeven_inflation_expectations(
+                start_date, self._end_date
             )
-        else:
-            values = (
-                fred_model.get_breakeven_inflation_expectations(
-                    start_date, self._end_date, self._fred_api_key
-                )
-                if self._fred_api_key
-                else treasury_model.get_breakeven_inflation_expectations(
-                    start_date, self._end_date
-                )
-            )
+        )
 
         return values.rename(
             columns=lambda column: (
@@ -8278,6 +10165,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the real yield curve of a variety of countries: the yields of inflation-linked
@@ -8285,11 +10173,10 @@ class Economics:
         the nominal curve (see `fixedincome.get_government_bond_yield_curve`) it gives the
         inflation the bond market expects, see `get_breakeven_inflation_expectations`.
 
-        Every curve comes from the official source without an API key:
+        Every curve comes from the official source:
         - United States: the U.S. Department of the Treasury's real par yield curve of
           Treasury Inflation-Protected Securities (TIPS), 5, 7, 10, 20 and 30 years, from
-          2003. When a FRED API key is set (see the `fred_api_key` parameter of the
-          `Economics` class), the same figures come from FRED.
+          2003, the figures FRED republishes a day later as DFII.
         - United Kingdom: the Bank of England's real spot curve of index-linked gilts, 3 to
           40 years, from 1985. Index-linked gilts pay the Retail Prices Index (RPI).
         - Germany: the real yields of the inflation-linked German federal securities the
@@ -8323,6 +10210,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The real yields as decimals, indexed by date with a column per
@@ -8399,6 +10290,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the market-implied (Q-measure) breakeven inflation of a variety of countries by
@@ -8408,13 +10300,11 @@ class Economics:
         inflation risk premium. See `get_inflation_expectations` for the expectations of
         professional forecasters instead.
 
-        Every curve comes from the official source without an API key:
+        Every curve comes from the official source:
         - United States: the U.S. Department of the Treasury's nominal minus real (TIPS) par
           yields, 5, 7, 10, 20 and 30 years from 2003, plus the 5-year, 5-year forward rate
           ("5Y5Y"), the average inflation expected over the five years starting five years
-          from now, with the formulas FRED uses. When a FRED API key is set (see the
-          `fred_api_key` parameter of the `Economics` class), the same figures come from
-          FRED.
+          from now, with the formulas FRED uses for T5YIE, T10YIE and T5YIFR.
         - United Kingdom: the Bank of England's implied inflation spot curve, 3 to 40 years,
           from 1985. It is measured against the Retail Prices Index (RPI), which index-linked
           gilts pay and which has run above CPI inflation.
@@ -8457,6 +10347,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The breakeven inflation as decimals, indexed by date with a column
@@ -8523,6 +10417,141 @@ class Economics:
         )
 
     @handle_errors
+    def get_yield_decomposition(
+        self,
+        countries: list[str] | str | None = None,
+        maturities: list[str] | str = "10Y",
+        period: str = "daily",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Split the nominal government bond yield of a maturity into the real yield of the
+        inflation-linked bond of that maturity and the breakeven inflation, the part the
+        market demands for inflation, with the change of each part since the previous period:
+
+        - Nominal Yield = Real Yield + Breakeven Inflation
+
+        A rise of the nominal yield is either a rise of real rates (tighter monetary policy,
+        stronger growth, more supply of bonds) or of inflation compensation (a higher
+        expectation of inflation or a larger inflation risk premium), and the split says
+        which: a 5-year US yield up 0.14 with an unchanged breakeven rose on real rates alone.
+
+        The curves are those of `get_real_yield_curve` and
+        `get_breakeven_inflation_expectations`, from the official sources:
+        the U.S. Department of the Treasury (par yields, 5 to 30 years), the Bank of England
+        (spot rates, 3 to 40 years) and, for Germany, the Bundesbank (constant maturities
+        between 3 and 30 years). Each source's breakeven is its nominal yield minus its real
+        yield, so the parts add up to the nominal yield in that source's own compounding. UK
+        breakevens are measured against the Retail Prices Index (RPI) and German ones against
+        euro area inflation (HICP excluding tobacco).
+
+        The changes are the difference with the previous period the country has a curve for,
+        in decimals (0.0014 for 14 basis points), so a market holiday is not a change. The first
+        period of the date range has no change.
+
+        Also known as: real yield and breakeven split, nominal yield decomposition,
+        inflation compensation, real rate versus inflation.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries, from the United
+                States, the United Kingdom and Germany. Defaults to None, which is all three.
+            maturities (list[str] | str, optional): The maturities, such as "5Y" or
+                ["5Y", "10Y"], each one both curves of a country have. Defaults to "10Y".
+            period (str, optional): Whether to return the daily, weekly or monthly data, the
+                curve on the last trading day of each week or month. Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the class (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Nominal Yield, Real Yield, Breakeven Inflation and their Nominal
+            Change, Real Change and Breakeven Change per country and maturity, with the dates
+            as the index.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2026-11-02', end_date='2026-11-10')
+
+        economics.get_yield_decomposition(
+            countries=['United States', 'Germany'], maturities='5Y'
+        ).xs(('United States', '5Y'), axis=1)
+        ```
+
+        Which returns:
+
+        |            |   Nominal Yield |   Real Yield |   Breakeven Inflation |   Nominal Change |   Real Change |   Breakeven Change |
+        |:-----------|----------------:|-------------:|----------------------:|-----------------:|--------------:|-------------------:|
+        | 2026-11-02 |          0.047  |       0.0231 |                0.0239 |         nan      |      nan      |           nan      |
+        | 2026-11-03 |          0.0474 |       0.0235 |                0.0239 |           0.0004 |        0.0004 |             0      |
+        | 2026-11-04 |          0.0469 |       0.0239 |                0.023  |          -0.0005 |        0.0004 |            -0.0009 |
+        | 2026-11-05 |          0.0459 |       0.0233 |                0.0226 |          -0.001  |       -0.0006 |            -0.0004 |
+        | 2026-11-06 |          0.0464 |       0.0235 |                0.0229 |           0.0005 |        0.0002 |             0.0003 |
+        | 2026-11-09 |          0.0467 |       0.0242 |                0.0225 |           0.0003 |        0.0007 |            -0.0004 |
+        | 2026-11-10 |          0.0481 |       0.0256 |                0.0225 |           0.0014 |        0.0014 |             0      |
+        """
+        maturities = [
+            str(maturity).strip().upper()
+            for maturity in helpers.split_values(maturities)
+        ]
+        # Unrounded, so the parts add up and the changes are exact; rounded once at the end.
+        unrounded = 12
+        real_yield = self.get_real_yield_curve(
+            countries=countries, period=period, rounding=unrounded
+        )
+        breakeven_inflation = self.get_breakeven_inflation_expectations(
+            countries=countries, period=period, rounding=unrounded
+        )
+
+        decompositions = {}
+        for country, maturity in itertools.product(
+            dict.fromkeys(real_yield.columns.get_level_values(0)), maturities
+        ):
+            if (country, maturity) not in real_yield.columns or (
+                country,
+                maturity,
+            ) not in breakeven_inflation.columns:
+                logger.warning(
+                    "%s has no %s real yield and breakeven inflation, so it is left out.",
+                    country,
+                    maturity,
+                )
+                continue
+
+            parts = pd.DataFrame(
+                {
+                    "Real Yield": real_yield[(country, maturity)],
+                    "Breakeven Inflation": breakeven_inflation[(country, maturity)],
+                }
+            ).dropna()
+            parts.insert(
+                0, "Nominal Yield", parts["Real Yield"] + parts["Breakeven Inflation"]
+            )
+            changes = parts.diff()
+            changes.columns = ["Nominal Change", "Real Change", "Breakeven Change"]
+            decompositions[(country, maturity)] = pd.concat([parts, changes], axis=1)
+
+        if not decompositions:
+            raise ValueError(
+                f"No country has a {', '.join(maturities)} real yield and breakeven inflation; the "
+                "maturities run from 5 to 30 years for the United States and from 3 years "
+                "for the United Kingdom and Germany."
+            )
+
+        decomposition = pd.concat(decompositions, axis=1)
+        decomposition.columns.names = ["Country", "Maturity", None]
+
+        return apply_rounding(
+            decomposition, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
     def get_inflation_expectations(
         self,
         countries: list[str] | str | None = None,
@@ -8533,6 +10562,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the inflation professional forecasters expect over the longer term, from surveys.
@@ -8540,7 +10570,7 @@ class Economics:
         priced daily and including risk premia, this is the forecasters' own expectation,
         with no inflation risk or liquidity premium in it and a longer history.
 
-        Every series comes from the official source without an API key:
+        Every series comes from the official source:
         - Germany: the inflation Consensus Economics' forecasters expect over 5 and 10 years,
           monthly from 1989. The Bundesbank publishes the expected real interest rate, the
           yield on debt securities outstanding issued by German residents with a residual
@@ -8574,6 +10604,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The expected inflation as decimals, indexed by month or quarter with
@@ -8691,6 +10725,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the implied volatility the option markets price, by market and time to expiry:
@@ -8734,8 +10769,9 @@ class Economics:
             markets (list[str] | str | None, optional): The markets to retrieve, from
                 "US Equity", "Euro Area Equity", "Emerging Markets Equity", "US Equity
                 Volatility", "US Treasury Bonds", "Crude Oil", "Gold", "US Treasury Rates" and
-                "Japan Government Bonds". Defaults to None, which retrieves every market that
-                needs no API key, and the MOVE and JGB VIX as well when an API key is set.
+                "Japan Government Bonds". Defaults to None, which retrieves every market, with
+                "US Treasury Rates" (the MOVE) and "Japan Government Bonds" (the JGB VIX) only
+                when an API key is set.
             period (str, optional): Whether to return the daily, weekly or monthly data.
                 Defaults to "daily".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
@@ -8748,6 +10784,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The implied volatility as decimals, indexed by date with a column per
@@ -8882,6 +10922,7 @@ class Economics:
         countries: list[str] | str | None = None,
         year: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the scenarios regulators publish for their stress tests: documented paths of
@@ -8889,7 +10930,7 @@ class Economics:
         serve as calibration and validation targets for scenario generators and as the
         stresses banks and insurers are tested against.
 
-        Two authorities are available, both without an API key:
+        Two authorities are available:
         - "federal_reserve": the Federal Reserve's supervisory stress test, quarterly over
           13 quarters. For the United States: real and nominal GDP and disposable income
           growth, unemployment, CPI inflation, the 3-month, 5-year and 10-year Treasury
@@ -8931,6 +10972,10 @@ class Economics:
             year (int | None, optional): The year of the Federal Reserve's stress test, from
                 2025. Defaults to None, which takes the latest.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The scenario, indexed by quarter or year with a column per country
@@ -9017,6 +11062,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the Global Supply Chain Pressure Index (GSCPI) of the Federal Reserve Bank of New
@@ -9036,7 +11082,7 @@ class Economics:
         The index is the first principal component of the series after removing the part
         explained by demand, measured in standard deviations from its average: zero is the
         average pressure and 1 is one standard deviation above it. It is not a rate, so it is
-        not a decimal fraction. No API key is needed. The New York Fed re-estimates the whole
+        not a decimal fraction. The New York Fed re-estimates the whole
         history with every release, so past months can change slightly.
 
         See definition: https://www.newyorkfed.org/research/policy/gscpi
@@ -9053,6 +11099,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The index in standard deviations from its average, indexed by month
@@ -9107,6 +11157,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the price of emitting one tonne of CO2 under the EU Emissions Trading System
@@ -9116,7 +11167,7 @@ class Economics:
         risk variable of climate scenarios; see get_climate_scenario for its projected paths.
 
         The price is the average of the day's auctions of general allowances, in euro per
-        tonne of CO2. No API key is needed. Weekly and monthly periods take the price of the
+        tonne of CO2. Weekly and monthly periods take the price of the
         last auction of each period.
 
         See definition: https://www.eex.com/en/markets/environmental-markets/eu-ets-auctions
@@ -9136,6 +11187,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The price in euro per tonne of CO2, indexed by date with a "European
@@ -9199,6 +11254,7 @@ class Economics:
         risk: str = "combined",
         deviation: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the path of an economic or financial variable in a climate scenario of the
@@ -9230,9 +11286,9 @@ class Economics:
         (0.0094 for 0.94 percentage points higher). Rates are decimal fractions (0.041 for
         4.1%).
 
-        The data is the Phase 5 vintage (November 2024), hosted by IIASA and retrieved
-        without an API key; the NGFS licence allows commercial use with attribution but
-        not the redistribution of substantial parts, so it is retrieved when needed rather
+        The data is the Phase 5 vintage (November 2024), hosted by IIASA. The NGFS
+        licence allows commercial use with attribution but not the redistribution of
+        substantial parts, so it is retrieved when needed rather
         than stored with the Finance Toolkit.
 
         See definition: https://www.ngfs.net/ngfs-scenarios-portal/
@@ -9259,6 +11315,10 @@ class Economics:
             deviation (bool, optional): Whether to return the deviation from the baseline
                 instead of the level. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The path of the variable, indexed by year with a column per
@@ -9375,6 +11435,7 @@ class Economics:
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the yearly total returns of equity, housing, government bonds and bills for 18
@@ -9401,7 +11462,7 @@ class Economics:
         purposes with attribution, and its authors expressly exclude commercial data
         providers. Pass accept_licence=True to confirm the use is non-commercial; the data
         is retrieved from macrohistory.net when needed and is not distributed with the
-        Finance Toolkit. No API key is needed.
+        Finance Toolkit.
 
         See definition: https://www.macrohistory.net/database/
 
@@ -9426,6 +11487,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The returns as decimals, indexed by year with a column per country.
@@ -9494,11 +11559,13 @@ class Economics:
     def get_millennium_of_macroeconomic_data(
         self,
         series: list[str] | str | None = None,
+        deflate_with: str | None = None,
         rolling: int | None = None,
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the headline annual series of "A millennium of macroeconomic data for the UK",
@@ -9517,8 +11584,18 @@ class Economics:
         unit in brackets. Rates, growth rates and shares of GDP are decimal fractions (0.05
         for 5%); levels, indices and exchange rates are returned as published.
 
-        The dataset is not updated anymore. No API key is needed; the workbook is large
-        (around 28 MB), so it is cached for a year.
+        The dataset is not updated anymore. The workbook is large (around 28 MB), so it is
+        cached for a year.
+
+        With deflate_with, every series is in real terms: in the money of the latest year of
+        that country's yearly consumer price index up to the end date (see
+        get_consumer_price_index), such as the dollar oil price ("$ Oil prices") in 2025
+        dollars with deflate_with="United States", which compares the oil price of 1864
+        with that of 2008. A year before the first year of the consumer price index has no
+        real value. Only deflate series in money, such as prices, in the currency of that
+        country: rates, indices and growth rates are not amounts of money.
+
+        - Real Value (t) = Value (t) * CPI (latest year) / CPI (t)
 
         See definition: https://www.bankofengland.co.uk/statistics/research-datasets
 
@@ -9529,6 +11606,10 @@ class Economics:
             series (list[str] | str | None, optional): The series to include, matched on
                 (part of) their name without regard to case, e.g. "Bank Rate" or ["consols",
                 "share prices"]. Defaults to None, which includes all of them.
+            deflate_with (str | None, optional): The country whose yearly consumer price index
+                the series are deflated with, e.g. "United States" for the dollar oil price
+                or "United Kingdom" for sterling series. Defaults to None, which returns the
+                series as published.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -9537,6 +11618,10 @@ class Economics:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The series, indexed by year with a column per series.
@@ -9591,6 +11676,19 @@ class Economics:
 
             millennium = millennium[selected]
 
+        if deflate_with is not None:
+            consumer_price_index = self.get_consumer_price_index(
+                countries=deflate_with, period="yearly", rounding=None
+            )
+            if consumer_price_index.empty:
+                raise ValueError(
+                    f"There is no yearly consumer price index for {deflate_with} to deflate "
+                    "the series with."
+                )
+            millennium = helpers.deflate_with_price_index(
+                millennium, consumer_price_index.iloc[:, 0]
+            )
+
         return finalize_dataset(
             dataset=millennium,
             start_date=self._start_date,
@@ -9615,6 +11713,7 @@ class Economics:
         quantiles: list[float] | None = None,
         scenarios: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get a regulator's published scenario set: the thousands of simulated paths of
@@ -9641,7 +11740,7 @@ class Economics:
         scenarios and their mean. With scenarios=True every scenario is returned instead
         (20,000 columns per variable). The set is a large workbook (around 180 MB) that
         takes a minute or two to download and read the first time; it is cached for 30
-        days. No API key is needed.
+        days.
 
         See definition: https://www.dnb.nl/voor-de-sector/open-boek-toezicht/sectoren/pensioenfondsen/
 
@@ -9662,6 +11761,10 @@ class Economics:
             scenarios (bool, optional): Whether to return every scenario instead of the
                 distribution. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Indexed by the year of the horizon, with a column per variable and
@@ -9766,6 +11869,7 @@ class Economics:
         rolling: int | None = None,
         standardize: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the total returns of listed funds that track asset classes without a public
@@ -9812,6 +11916,10 @@ class Economics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result.
                 Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The returns (or prices), indexed by date with a column per asset
@@ -10003,6 +12111,7 @@ class Economics:
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the forward/futures curve for a commodity from Yahoo Finance -- the
@@ -10062,6 +12171,10 @@ class Economics:
                 of the price. Defaults to False.
             lag (int | list[int], optional): The number of trading days to calculate the
                 change over. Defaults to 1.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If `commodity` is not one of the supported names.
@@ -10135,6 +12248,7 @@ class Economics:
         commodity: str | list[str] | None = None,
         generic: bool = True,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Get the term structure of a commodity futures curve per day: the front contract,
@@ -10180,6 +12294,10 @@ class Economics:
             generic (bool, optional): Whether the front and far contract are
                 those of each day's curve, instead of today's. Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Raises:
             ValueError: If `commodity` is not one of the supported names.
@@ -10249,6 +12367,7 @@ class Economics:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves the life tables Eurostat compiles yearly for the countries of the European
@@ -10265,7 +12384,7 @@ class Economics:
         (life_expectancy, ex). Probabilities and rates are fractions; the others are counts
         or years.
 
-        No API key is needed. For countries outside Europe the UN World Population Prospects
+        For countries outside Europe the UN World Population Prospects
         publish life tables for every country (bulk files at population.un.org/wpp), and the
         Human Mortality Database long national histories (with free registration).
 
@@ -10283,6 +12402,10 @@ class Economics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The measure, indexed by year with a column per country and age.
@@ -10359,6 +12482,7 @@ class Economics:
         growth: bool = False,
         lag: int = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Retrieves Robert Shiller's monthly US stock market data from 1871, the data behind
@@ -10382,8 +12506,6 @@ class Economics:
 
         Shiller, R. J. (2015). Irrational Exuberance (3rd ed.). Princeton University Press.
 
-        No API key is needed.
-
         See definition: https://shillerdata.com/
 
         Also known as: Shiller data, CAPE, Shiller PE, long-run stock returns.
@@ -10395,6 +12517,10 @@ class Economics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One column per measure, indexed by month.
@@ -10406,7 +12532,7 @@ class Economics:
 
         economics = Economics(start_date='2026-01-01', end_date='2026-09-30')
 
-        economics.get_shiller_stock_market_data()[['Price', 'Dividend', 'Earnings', 'CAPE']]
+        economics.get_shiller_stock_market_data(show_columns=['Price', 'Dividend', 'Earnings', 'CAPE'])
         ```
 
         Which returns:
@@ -10439,6 +12565,338 @@ class Economics:
         )
 
     @handle_errors
+    def get_commodity_prices(
+        self,
+        commodity: str | list[str] | None = None,
+        deflate_with: str | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Retrieves the World Bank's monthly commodity prices from 1960 (The Pink Sheet): the
+        average price of each month in US dollars of around seventy commodities, among which
+        crude oil (Brent, WTI, Dubai), natural gas, coal, gold, silver, platinum, copper,
+        aluminum, iron ore, nickel, zinc, grains, softs and fertilizers. Futures prices from
+        exchanges reach back to 2000 at most, which leaves out the commodity booms and busts
+        of the 1970s and 1980s, such as gold's peak of January 1980 and the oil shocks.
+
+        With deflate_with, the prices are in real terms: in the money of the latest month of
+        that country's consumer price index up to the end date (see get_consumer_price_index),
+        so that the gold price of 1980 can be compared with today's. A month after the latest
+        month of the consumer price index, which is published a few weeks late, keeps its
+        nominal price, and a month the consumer price index skipped has no real price.
+
+        The formula is as follows:
+
+        - Real Price (t) = Price (t) * CPI (latest month) / CPI (t)
+
+        The units are those of the World Bank: US dollars per barrel ($/bbl) for crude oil,
+        per million British thermal units ($/mmbtu) for natural gas, per troy ounce ($/troy oz)
+        for gold, silver and platinum, per metric ton ($/mt) for coal, base metals, grains, oils
+        and fertilizers, per kilogram ($/kg) for cocoa, coffee, tea, sugar, meat, fruit, cotton
+        and rubber, per dry metric ton unit ($/dmtu) for iron ore, per cubic meter for logs and
+        sawnwood and cents per sheet for plywood. The Natural gas index is an index (2010=100).
+
+        Also known as: Pink Sheet, commodity price history, long-run gold price, real gold
+        price, real oil price, inflation-adjusted commodity prices.
+
+        Args:
+            commodity (str | list[str] | None, optional): The commodities, e.g. "Gold" or
+                ["Gold", "Crude oil Brent"], as named by the World Bank without commas ("Crude
+                oil, Brent" is "Crude oil Brent"), in any casing. Defaults to None, which
+                returns all of them.
+            deflate_with (str | None, optional): The country whose consumer price index the
+                prices are deflated with, e.g. "United States" for US dollar prices. Defaults
+                to None, which returns nominal prices.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            growth (bool, optional): Whether to calculate the growth. Defaults to False.
+            lag (int, optional): The lag in months for the growth, e.g. 12 for the change
+                over a year. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result.
+                Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The monthly prices with a column per commodity.
+
+        Notes:
+        - World Bank, "Commodity Markets: The Pink Sheet", monthly prices, licensed under
+        CC BY 4.0.
+        - The prices are monthly averages: a peak within a month, such as gold's $850 London
+        fix of 21 January 1980, is higher than the average of its month.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date="1979-01-01", end_date="2026-10-31")
+
+        prices = economics.get_commodity_prices(commodity="Gold", deflate_with="United States")
+        prices.loc[["1980-01", "2011-09", "2026-01"]]
+        ```
+
+        Which returns:
+
+        |         |    Gold |
+        |:--------|--------:|
+        | 1980-01 | 2923.32 |
+        | 2011-09 | 2631.5  |
+        | 2026-01 | 4923.8  |
+        """
+        prices = world_bank_model.get_commodity_prices()
+
+        if commodity is not None:
+            requested = helpers.split_values(commodity)
+            by_lowercase = {name.lower(): name for name in prices.columns}
+            missing = [name for name in requested if name.lower() not in by_lowercase]
+            if missing:
+                logger.warning(
+                    "The following commodities are not available: %s. Available are %s.",
+                    ", ".join(f"'{name}'" for name in missing),
+                    ", ".join(prices.columns),
+                )
+            prices = prices[
+                [
+                    by_lowercase[name.lower()]
+                    for name in requested
+                    if name not in missing
+                ]
+            ]
+
+        if deflate_with is not None:
+            consumer_price_index = self.get_consumer_price_index(
+                countries=deflate_with, period="monthly", rounding=None
+            )
+            if consumer_price_index.empty:
+                raise ValueError(
+                    f"There is no monthly consumer price index for {deflate_with} to deflate "
+                    "the prices with."
+                )
+            prices = helpers.deflate_with_price_index(
+                prices, consumer_price_index.iloc[:, 0]
+            )
+
+        return finalize_dataset(
+            dataset=prices,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Commodity Prices",
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_chokepoint_transits(
+        self,
+        chokepoints: str | list[str] | None = None,
+        measure: str = "transits",
+        period: str = "daily",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Retrieves IMF PortWatch's daily ship transits through the world's maritime
+        chokepoints from 2019, such as the Strait of Hormuz, the Suez Canal, the Bab
+        el-Mandeb Strait, the Panama Canal, the Malacca Strait and the Bosporus, 28 in all.
+        For each chokepoint and day it gives the number of ships that passed it (transits)
+        or the estimated cargo they carried (trade volume, in metric tons), by ship
+        category: Container, Dry Bulk, General Cargo, Ro-Ro and Tanker, with Cargo (all
+        but tankers) and Total.
+
+        The transits show disruptions to trade as they happen, weeks before trade
+        statistics are published: tankers through the Strait of Hormuz fell from 36 on 28
+        February 2026 to 5 on 1 March, and when ships avoided the Red Sea, the monthly
+        transits of the Bab el-Mandeb Strait fell from 2,438 in October 2023 to 1,013 in
+        February 2024 while those around the Cape of Good Hope rose from 1,561 to 2,487.
+
+        PortWatch reads the transits from the Automatic Identification System (AIS)
+        signals ships broadcast, as collected by satellites for the UN Global Platform. A
+        ship is counted when it crosses a chokepoint's boundary, once per transit and not
+        again within 48 hours. Its trade volume is its deadweight tonnage (the most it can
+        carry) times its load factor, which PortWatch estimates from the ship's draft and
+        dimensions. It is an estimate: on a day with few transits it can be zero while
+        ships passed.
+
+        With period, the days are summed by week (Monday to Sunday), month, quarter or
+        year. Only complete periods are returned, since PortWatch adds the latest days
+        once a week.
+
+        Also known as: shipping traffic, strait of Hormuz tanker traffic, Suez Canal
+        transits, Red Sea shipping, maritime trade disruptions, oil flows.
+
+        Args:
+            chokepoints (str | list[str] | None, optional): The chokepoints, e.g. "Strait
+                of Hormuz" or ["Suez Canal", "Cape of Good Hope"], in any casing; a part of
+                a name that identifies one chokepoint, such as "Hormuz" or "Suez", works
+                too. Defaults to None, which returns all of them.
+            measure (str, optional): "transits" for the number of ships or "trade_volume"
+                for the estimated cargo they carried in metric tons. Defaults to
+                "transits".
+            period (str, optional): "daily", "weekly", "monthly", "quarterly" or "yearly".
+                Defaults to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            growth (bool, optional): Whether to calculate the growth. Defaults to False.
+            lag (int, optional): The lag in periods for the growth, e.g. 12 with monthly
+                data for the change over a year. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result.
+                Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The transits or trade volumes by day (or period), with a column
+            per ship category, and per chokepoint and ship category when there are several
+            chokepoints.
+
+        Notes:
+        - Sources: UN Global Platform; IMF PortWatch (portwatch.imf.org).
+        - Arslanalp, S., Koepke, R. and Verschuur, J. (2021). "Tracking Trade from Space:
+        An Application to Pacific Island Countries." IMF Working Paper No. 2021/225.
+        - The days are in Coordinated Universal Time (UTC).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date="2026-02-24", end_date="2026-03-03")
+
+        economics.get_chokepoint_transits(chokepoints="Strait of Hormuz", show_columns=["Tanker", "Cargo", "Total"])
+        ```
+
+        Which returns:
+
+        |            |   Tanker |   Cargo |   Total |
+        |:-----------|---------:|--------:|--------:|
+        | 2026-02-24 |       49 |      44 |      93 |
+        | 2026-02-25 |       59 |      57 |     116 |
+        | 2026-02-26 |       45 |      44 |      89 |
+        | 2026-02-27 |       37 |      27 |      64 |
+        | 2026-02-28 |       36 |      21 |      57 |
+        | 2026-03-01 |        5 |      15 |      20 |
+        | 2026-03-02 |        1 |       3 |       4 |
+        | 2026-03-03 |        1 |       3 |       4 |
+        """
+        if measure not in ("transits", "trade_volume"):
+            raise ValueError(
+                f"measure='{measure}' is not available. Choose 'transits' or "
+                "'trade_volume'."
+            )
+
+        frequencies = {
+            "daily": "D",
+            "weekly": "W",
+            "monthly": "M",
+            "quarterly": "Q",
+            "yearly": "Y",
+        }
+
+        if period not in frequencies:
+            raise ValueError(
+                f"period='{period}' is not available. Choose from "
+                f"{', '.join(frequencies)}."
+            )
+
+        available = portwatch_model.get_chokepoint_names()
+
+        if not available:
+            return pd.DataFrame()
+
+        selected: list[str] = []
+
+        # A chokepoint is found by its name, else by a part of it that matches one name.
+        for requested in (
+            available if chokepoints is None else helpers.split_values(chokepoints)
+        ):
+            exact = [name for name in available if name.lower() == requested.lower()]
+            partial = [name for name in available if requested.lower() in name.lower()]
+            matches = exact or partial
+
+            if len(matches) == 1:
+                if matches[0] not in selected:
+                    selected.append(matches[0])
+            else:
+                logger.warning(
+                    "'%s' %s. The chokepoints are: %s.",
+                    requested,
+                    "matches several chokepoints" if matches else "is not a chokepoint",
+                    ", ".join(available),
+                )
+
+        if not selected:
+            return pd.DataFrame()
+
+        prefix = "Transits " if measure == "transits" else "Trade Volume "
+        transits = {}
+
+        for name, data in zip(
+            selected,
+            helpers.run_in_parallel(
+                portwatch_model.get_chokepoint_transits,
+                [(name,) for name in selected],
+            ),
+            strict=True,
+        ):
+            if not data.empty:
+                columns = [
+                    column for column in data.columns if column.startswith(prefix)
+                ]
+                transits[name] = data[columns].rename(
+                    columns=lambda column: column.removeprefix(prefix)
+                )
+
+        if not transits:
+            return pd.DataFrame()
+
+        dataset = pd.concat(transits, axis=1).sort_index()
+
+        if period != "daily":
+            # Only periods whose last day is in the data are complete.
+            last_day = dataset.index[-1].to_timestamp()
+            dataset = dataset.groupby(dataset.index.asfreq(frequencies[period])).sum(
+                min_count=1
+            )
+            dataset = dataset[
+                dataset.index.to_timestamp(how="end").normalize() <= last_day
+            ]
+
+        if len(selected) == 1:
+            dataset = dataset.droplevel(0, axis=1)
+
+        return finalize_dataset(
+            dataset=dataset,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Chokepoint Transits",
+            rounding=rounding,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
     def get_economic_calendar(
         self,
         start_date: str | None = None,
@@ -10447,6 +12905,8 @@ class Economics:
         currencies: str | list[str] | None = None,
         impact: str | list[str] | None = None,
         events: str | list[str] | None = None,
+        as_series: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the scheduled releases of economic data for every country, such as
@@ -10465,7 +12925,34 @@ class Economics:
         "Change %" column, so an unemployment rate of 4.1% is returned as 0.041. Releases
         in other units, such as thousands of jobs or index points, keep their values, as do
         survey levels such as PMIs and confidence indices, which the calendar sometimes
-        labels "%" as well.
+        labels "%" as well. The "Currency" column is the currency of the market a release
+        concerns, not the unit of its value: China's balance of trade is in US dollars
+        while its row shows CNY (the yuan figure is the separate "Balance of Trade Yuan").
+        The "Previous" value is the source's own and can differ from the Actual of the
+        release before it, e.g. after a revision.
+
+        The calendar comes from FinancialModelingPrep and starts in 2013 for most
+        countries; the first release of a series is the first period of its as_series
+        answer.
+
+        With as_series=True the releases become time series: the Actual value of every
+        event by the period it covers, with a column per country and event and the
+        consensus Estimate next to it ("<event> Estimate"). The calendar only names the
+        period in the event, e.g. "Producer Price Index YoY (Oct)", so the period is read
+        from it: a month, a quarter "(Q3)", the day a weekly figure ends "(Oct/10)", a year
+        "(2026)" or, for an event without one (an interest rate decision), the day of the
+        release. The year is that of the release, or the year before when the period starts
+        after the release month (a December figure released in January). Several releases of
+        the same period, such as a flash estimate and the final figure, keep the latest one
+        published. A figure published for two consecutive periods on the same day, such as
+        China's January and February trade figures, is one release of both and is kept once,
+        under the later period (February), leaving January empty; a release without a
+        period, of an event that otherwise has one, is left out. The index is monthly for
+        monthly events, quarterly for quarterly ones and
+        daily, at the last day of each period, when events of different frequencies are
+        combined. The series can be analysed further with `Econometrics(data=...)`, e.g. how
+        unusual the latest value is (get_level_significance) or how long it has been above or
+        below zero (get_streaks).
 
         Without a start_date and end_date the dates this Economics instance was created
         with are used, and without those the last 90 days. The endpoint returns at most 90
@@ -10489,9 +12976,17 @@ class Economics:
             events (str | list[str], optional): Parts of event names to keep, matched without
                 regard to case, e.g. "PMI" for every purchasing managers' index or ["CPI",
                 "Unemployment"]. Defaults to None, which keeps every event.
+            as_series (bool, optional): Whether to return the Actual and Estimate of every
+                event as time series by the period they cover, with (Country, Event) columns,
+                instead of the releases by date. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: The economic data releases, indexed by date.
+            pd.DataFrame: The economic data releases, indexed by date, or with as_series=True
+            the values of every event by the period they cover.
 
         As an example:
 
@@ -10522,7 +13017,7 @@ class Economics:
         """
         helpers.require_api_key(self._api_key, "the economic calendar")
 
-        return economics_fmp_model.get_economic_calendar(
+        economic_calendar = economics_fmp_model.get_economic_calendar(
             api_key=self._api_key,
             start_date=start_date or self._requested_start_date,
             end_date=end_date or self._requested_end_date,
@@ -10532,8 +13027,15 @@ class Economics:
             events=events,
         )
 
+        if as_series:
+            return economics_fmp_model.get_economic_calendar_series(economic_calendar)
+
+        return economic_calendar
+
     @handle_errors
-    def get_market_risk_premium(self) -> pd.DataFrame:
+    def get_market_risk_premium(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Returns the market risk premium per country: the extra return investors demand
         for holding equities over a risk-free investment. It consists of the country risk
@@ -10553,6 +13055,12 @@ class Economics:
         when initializing.
 
         Also known as: equity risk premium, country risk premium, MRP.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The country and total equity risk premium per country, as decimals

@@ -309,7 +309,7 @@ def values_on_or_before(
 
     Args:
         daily (pd.DataFrame): The daily values with a DatetimeIndex and the tickers as
-            columns.
+            columns. Observations may be in any order.
         dates (pd.DataFrame): The dates per ticker (rows) and period (columns).
         tolerance (int, optional): The number of days a value may lie before the date; an
             older value (the ticker had stopped trading, or had not started) is NaN.
@@ -326,6 +326,8 @@ def values_on_or_before(
         series = daily[ticker].dropna()
         if series.empty:
             continue
+        if not series.index.is_monotonic_increasing:
+            series = series.sort_index(kind="stable")
         ticker_dates = pd.DatetimeIndex(dates.loc[ticker])
         positions = series.index.searchsorted(ticker_dates, side="right") - 1
         found = positions >= 0

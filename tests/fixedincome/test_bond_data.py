@@ -432,3 +432,36 @@ def test_get_bond_universe_filters(bond_universe):
 
 def test_get_bond_universe_requires_an_api_key():
     assert fixedincome_controller.FixedIncome().get_bond_universe().empty
+
+
+def test_spreads_at_maturities_interpolate_each_issuer_and_never_extrapolate():
+    bonds = pd.DataFrame(
+        {
+            "Issuer": ["APPLE INC", "APPLE INC", "APPLE INC", "BOEING CO", "BOEING CO"],
+            "Years": [2.0, 6.0, 6.0, 3.0, 9.0],
+            "G-Spread": [0.002, 0.004, 0.006, 0.008, 0.011],
+        }
+    )
+
+    spreads = bond_data_model.get_spreads_at_maturities(bonds, [2, 4, 10])
+
+    # Apple's two six-year bonds count with their average spread, 0.005.
+    assert spreads.loc["APPLE INC", "4Y"] == pytest.approx(0.0035)
+    assert spreads.loc["APPLE INC", "2Y"] == pytest.approx(0.002)
+    assert pd.isna(spreads.loc["APPLE INC", "10Y"])
+    assert pd.isna(spreads.loc["BOEING CO", "2Y"])
+    assert spreads.loc["BOEING CO", "4Y"] == pytest.approx(0.0085)
+    assert spreads.loc["APPLE INC", "Bonds"] == 3
+    assert spreads.loc["BOEING CO", "Longest"] == 9.0
+
+
+def test_programme_markers_are_not_part_of_the_issuer():
+    for name in (
+        "FORD MOTOR CREDIT COMPANY LLC MTN 4.5% 01/01/2031",
+        "FORD MOTOR CREDIT COMPANY LLC (FXD 4.5% 01/01/2031",
+        "FORD MOTOR CREDIT COMPANY LLC 4.5% 01/01/2031",
+    ):
+        assert (
+            bond_data_model.parse_bond_name(name)["Issuer"]
+            == "FORD MOTOR CREDIT COMPANY LLC"
+        )

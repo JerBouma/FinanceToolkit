@@ -6,6 +6,69 @@ import pytest
 from financetoolkit.ratios import valuation_model
 
 
+@pytest.mark.parametrize(
+    "estimated_eps, trailing_eps, years",
+    [
+        (2.0, 0.0, 1),
+        (2.0, 1.0, 0),
+        (0.0, 0.0, 0),
+        (0.0, 1.0, 1),
+        (-2.0, 1.0, 2),
+        (2.0, -1.0, 2),
+        (2.0, 1.0, -1),
+    ],
+)
+def test_estimated_eps_growth_is_missing_for_invalid_scalars(
+    estimated_eps, trailing_eps, years
+):
+    assert np.isnan(
+        valuation_model.get_estimated_eps_growth_rate(
+            estimated_eps, trailing_eps, years
+        )
+    )
+
+
+@pytest.mark.parametrize("years, expected", [(1, 1.25), (2, 0.5)])
+def test_estimated_eps_growth_valid_scalar_formula(years, expected):
+    assert valuation_model.get_estimated_eps_growth_rate(
+        9.0, 4.0, years
+    ) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("zero_input", ["trailing_eps", "years"])
+def test_estimated_eps_growth_broadcasts_an_invalid_scalar(zero_input):
+    estimates = pd.DataFrame({"2024": [2.0, 3.0], "2025": [4.0, 5.0]}, index=["A", "B"])
+    inputs = {"estimated_eps": estimates, "trailing_eps": 1.0, "years": 1}
+    inputs[zero_input] = 0
+
+    result = valuation_model.get_estimated_eps_growth_rate(**inputs)
+
+    pd.testing.assert_frame_equal(result, estimates * np.nan)
+
+
+def test_estimated_eps_growth_preserves_series_alignment():
+    result = valuation_model.get_estimated_eps_growth_rate(
+        estimated_eps=pd.Series([9.0, 2.0], index=["B", "A"]),
+        trailing_eps=pd.Series([1.0, 4.0], index=["A", "B"]),
+        years=pd.Series([0.0, 2.0], index=["A", "B"]),
+    )
+
+    pd.testing.assert_series_equal(result, pd.Series([np.nan, 0.5], index=["A", "B"]))
+
+
+def test_estimated_eps_growth_preserves_dataframe_alignment():
+    estimates = pd.DataFrame(
+        [[9.0, 4.0], [16.0, 25.0]], index=["A", "B"], columns=["2025", "2024"]
+    )
+    trailing = pd.DataFrame(
+        [[1.0, 4.0], [4.0, 9.0]], index=["B", "A"], columns=["2024", "2025"]
+    )
+
+    result = valuation_model.get_estimated_eps_growth_rate(estimates, trailing, years=2)
+
+    pd.testing.assert_frame_equal(result, (estimates / trailing) ** 0.5 - 1)
+
+
 def test_get_earnings_per_share(recorder):
     recorder.capture(
         valuation_model.get_earnings_per_share(
@@ -281,3 +344,39 @@ def test_get_reinvestment_ratio_is_what_is_not_paid_out():
 
     # A payout above earnings means a negative reinvestment.
     pd.testing.assert_series_equal(result, pd.Series([0.75, 1.0, -0.2]))
+
+
+def test_get_basket_market_cap_totals_and_shares():
+    market_cap = pd.DataFrame(
+        {"A": [300.0, 200.0, np.nan], "B": [100.0, 200.0, 50.0]},
+        index=pd.period_range("2021", "2023", freq="Y"),
+    )
+
+    basket = valuation_model.get_basket_market_cap(market_cap)
+    share = valuation_model.get_basket_market_cap(market_cap, share=True)
+
+    # A year without the market cap of one of the companies has no total.
+    assert basket["Total"].tolist()[:2] == [400.0, 400.0]
+    assert pd.isna(basket["Total"].iloc[2])
+    assert share.iloc[0].tolist() == [0.75, 0.25, 1.0]
+    assert share.iloc[2].isna().all()
+
+
+def test_get_market_cap_to_gdp_uses_the_year_before():
+    gross_domestic_product = pd.DataFrame(
+        {"Country": [100.0, 200.0]}, index=pd.period_range("2024", "2025", freq="Y")
+    )
+    daily = pd.Series(
+        [300.0, 400.0, 500.0],
+        index=pd.PeriodIndex(["2025-12-31", "2026-01-02", "2027-01-04"], freq="D"),
+    )
+    yearly = pd.Series([300.0], index=pd.period_range("2025", "2025", freq="Y"))
+
+    result = valuation_model.get_market_cap_to_gdp(daily, gross_domestic_product)
+
+    # 2025 is divided by the 2024 GDP and 2026 by the 2025 GDP; 2026 isn't there for 2027.
+    assert result["Country"].tolist()[:2] == [3.0, 2.0]
+    assert pd.isna(result["Country"].iloc[2])
+    assert valuation_model.get_market_cap_to_gdp(yearly, gross_domestic_product).iloc[
+        0, 0
+    ] == pytest.approx(3.0)

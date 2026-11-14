@@ -82,9 +82,9 @@ def get_yield_curve(start_date: str, end_date: str) -> pd.DataFrame:
     """
     Retrieves the daily Swedish government yield curve from the Riksbank, treasury bills
     from 1 month to 1 year and government bonds from 2 to 10 years. Only the days that are
-    not cached yet are requested. Without a subscription key the API accepts around five
-    requests a minute, so the first retrieval of more than a year waits for the limit to
-    reset once, after which a daily refresh takes two requests.
+    not cached yet are requested. The API accepts around five requests a minute, so the
+    first retrieval of more than a year waits for the limit to reset once, after which a
+    daily refresh takes two requests.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).

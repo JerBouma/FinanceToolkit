@@ -23,9 +23,10 @@ from financetoolkit.risk.risk_model import (
     get_volatility,
 )
 from financetoolkit.utilities import factor_model
-from financetoolkit.utilities.dataframe_model import filter_columns
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
     PERIODS_PER_YEAR,
@@ -69,6 +70,8 @@ FACTOR_COLLECTIONS = {
 STYLE_TICKERS = ["IWD", "IWF", "IWN", "IWO", "AGG", "BIL"]
 
 
+@filter_shown_columns
+@track_sources
 class Performance:
     """
     The Performance module is meant to calculate important performance metrics such
@@ -88,6 +91,7 @@ class Performance:
         intraday_period: str | None = None,
         progress_bar: bool = True,
         returns_function: Callable[[list[str], str], pd.DataFrame] | None = None,
+        market_cap_function: Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Performance Controller Class.
@@ -110,6 +114,9 @@ class Performance:
             returns_function (Callable[[list[str], str], pd.DataFrame] | None, optional): Returns the returns of
                 tickers outside the Toolkit for a period, such as the style indices of
                 `get_style_analysis`. Defaults to None, which only allows the Toolkit's tickers.
+            market_cap_function (Callable[[], pd.DataFrame] | None, optional): Returns the daily market
+                capitalization of the tickers, as `get_beta_implied_return` values the Residual with.
+                Defaults to None, which leaves the Residual Value empty.
 
         As an example:
 
@@ -160,6 +167,7 @@ class Performance:
         self._intraday_period: str | None = intraday_period
         self._portfolio_weights: dict | None = None
         self._returns_function = returns_function
+        self._market_cap_function = market_cap_function
 
         # Historical Data
         self._historical_data = historical_data
@@ -353,6 +361,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates and collects all performance metrics.
@@ -367,6 +376,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Performance metrics calculated based on the specified parameters, with a
@@ -608,6 +621,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Beta, a measurement that assess the systematic risk of a stock or investment.
@@ -661,6 +675,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Beta values.
@@ -679,8 +697,8 @@ class Performance:
         OLS Betas of the tickers in the same period, so it depends on which tickers are passed. A single
         ticker gets a prior mean of 1 (the market's Beta) with a variance of 0.25.
         - The upside and downside Betas show asymmetric market exposure: a stock with a downside Beta above
-        its upside Beta falls harder in down markets than it rises in up markets. They follow empyrical's
-        up_alpha_beta and down_alpha_beta, which pick the observations by the benchmark's direction.
+        its upside Beta falls harder in down markets than it rises in up markets. The benchmark's direction
+        picks the observations: upside uses the periods the benchmark rose, downside those it fell.
         - Every estimator needs at least three observations in a period (Dimson: more than the number of
         slopes plus one), otherwise the period is NaN.
 
@@ -767,6 +785,7 @@ class Performance:
         period: str = "daily",
         beta_window: int = 252,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Beta-Implied Return, the part of an asset's return that its Beta to the
@@ -789,6 +808,20 @@ class Performance:
         the start of the period. With the default daily period every row explains one day's move;
         a monthly or yearly period explains that month or year with the Beta known when it began.
 
+        Three measures put the Residual in context. The Residual Value is the Residual in money: the
+        market value the asset's own move added or took away, the Residual times the market
+        capitalization at the close before the period. The Residual Percentile and the Residual
+        Largest Since measure the Residual against the earlier residuals, as `get_move_significance`
+        does for the return itself: the Percentile is the share of the earlier residuals that were
+        smaller in size and Largest Since the date of the last residual at least as large in the same
+        direction ("the largest stock-specific fall since"), so the whole history counts without
+        returning it.
+
+            - Residual Value = Residual × Market Cap at the previous close
+            - Residual Percentile(t) = Count(|Residual(s)| < |Residual(t)|, s < t) / Count(s < t)
+            - Residual Largest Since(t) = max(s < t : Residual(s) <= Residual(t)) if Residual(t) < 0,
+              and max(s < t : Residual(s) >= Residual(t)) if Residual(t) > 0
+
         See definition: https://en.wikipedia.org/wiki/Single-index_model
 
         Also known as: beta-adjusted return, market-implied move, idiosyncratic return, abnormal return.
@@ -802,11 +835,15 @@ class Performance:
                 changes in the business.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The periods as rows and a MultiIndex of (measure, ticker) as columns, with the
-            measures Beta, Benchmark Return, Implied Return, Actual Return and Residual. All returns are
-            decimals.
+            measures Beta, Benchmark Return, Implied Return, Actual Return, Residual, Residual Value,
+            Residual Percentile and Residual Largest Since (the date as text). All returns are decimals.
 
         Notes:
         - Returns are total returns (Adj Close), the asset's and the benchmark's over the same period.
@@ -817,6 +854,15 @@ class Performance:
           data or a recent listing) has no Beta, so its Implied Return and Residual are empty. Start the
           Toolkit at least `beta_window` trading days before the first period of interest.
         - The Beta is the ordinary least squares Beta of `get_beta`, on the daily returns of the window.
+        - The market cap is that of `get_market_cap` with show_daily=True: the traded split-adjusted Close
+          times the weighted average diluted shares of the latest fiscal period that ended on or before
+          that day, so no shares are used before their period closes. It is in the currency the ticker
+          trades in, and so is the Residual Value. Without shares, as for an ETF or an index, the Residual
+          Value is empty.
+        - The Percentile needs a year of earlier residuals (252 days, 52 weeks or 20 periods otherwise),
+          and Largest Since is empty when no earlier residual was as large, which makes the Residual the
+          largest since the first residual. The residuals start `beta_window` trading days after the
+          Toolkit's start_date, so choose an early start_date for a long history.
 
         As an example:
 
@@ -826,29 +872,54 @@ class Performance:
         toolkit = Toolkit(
             ["NVDA", "KO", "AMD", "TSLA"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
-            start_date="2025-06-01",
+            start_date="2022-01-01",
             end_date="2026-11-05",
         )
 
-        toolkit.performance.get_beta_implied_return().loc["2026-11-05"].unstack()
+        toolkit.performance.get_beta_implied_return().loc["2026-11-05"].unstack(sort=False)
         ```
 
         Which returns:
 
-        |                  |    NVDA |      KO |     AMD |    TSLA |
-        |:-----------------|--------:|--------:|--------:|--------:|
-        | Beta             |  1.8757 | -0.2777 |  3.2846 |  2.1039 |
-        | Benchmark Return | -0.0441 | -0.0441 | -0.0441 | -0.0441 |
-        | Implied Return   | -0.0827 |  0.0122 | -0.1448 | -0.0928 |
-        | Actual Return    | -0.0926 | -0.0007 | -0.1726 | -0.1077 |
-        | Residual         | -0.0099 | -0.0129 | -0.0278 | -0.0149 |
+        |                        | NVDA              | KO               | AMD               | TSLA              |
+        |:-----------------------|:------------------|:-----------------|:------------------|:------------------|
+        | Beta                   | 1.8763            | -0.2785          | 3.2862            | 2.1033            |
+        | Benchmark Return       | -0.0441           | -0.0441          | -0.0441           | -0.0441           |
+        | Implied Return         | -0.0827           | 0.0123           | -0.1449           | -0.0927           |
+        | Actual Return          | -0.0926           | -0.0007          | -0.1726           | -0.1077           |
+        | Residual               | -0.0099           | -0.013           | -0.0277           | -0.015            |
+        | Residual Value         | -48381834809.5885 | -5375271284.7669 | -22181273645.0303 | -20387379231.5616 |
+        | Residual Percentile    | 0.4241            | 0.8493           | 0.7588            | 0.4896            |
+        | Residual Largest Since | 2026-11-04        | 2026-10-27       | 2026-11-04        | 2026-11-04        |
         """
+        returns = self._get_column("daily", "Return", within_period=False)
+
         implied_returns = performance_model.get_beta_implied_return(
-            self._get_column("daily", "Return", within_period=False),
+            returns,
             self._get_column("daily", "Return", within_period=False, benchmark=True),
             period,
             beta_window,
         )
+
+        # The market cap is empty (an empty Series) when no ticker has statements.
+        market_cap = self._market_cap_function() if self._market_cap_function else None
+        residual_value = performance_model.get_residual_value(
+            implied_returns["Residual"],
+            (
+                market_cap.reindex(columns=returns.columns).astype(float)
+                if isinstance(market_cap, pd.DataFrame) and not market_cap.empty
+                else pd.DataFrame(np.nan, index=returns.index, columns=returns.columns)
+            ),
+            period,
+        )
+
+        measures = list(implied_returns.columns.get_level_values(0).unique())
+        measures.insert(measures.index("Residual") + 1, "Residual Value")
+
+        implied_returns = pd.concat(
+            [implied_returns, pd.concat({"Residual Value": residual_value}, axis=1)],
+            axis=1,
+        )[pd.MultiIndex.from_product([measures, returns.columns])]
 
         implied_returns = implied_returns.loc[self._start_date : self._end_date]
 
@@ -867,6 +938,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         CAPM, or the Capital Asset Pricing Model, is a financial model used to estimate the expected return
@@ -919,6 +991,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: CAPM values.
@@ -1022,7 +1098,7 @@ class Performance:
         factors_to_calculate: list[str] | None = None,
         region: str = "United States",
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates factor exposures for each asset.
@@ -1061,8 +1137,10 @@ class Performance:
                 beta. Defaults to "United States".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
-            show_columns (list of str, optional): Restrict the result to these top level columns.
-                Defaults to None, which returns every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Factor Asset Correlations, with a Multi Index of (ticker, factor)
@@ -1159,7 +1237,7 @@ class Performance:
             rounding if rounding is not None else self._rounding,
         ).loc[self._start_date : self._end_date]
 
-        return filter_columns(self._factor_asset_correlations, show_columns)
+        return self._factor_asset_correlations
 
     @handle_errors
     def get_factor_correlations(
@@ -1169,6 +1247,7 @@ class Performance:
         exclude_risk_free: bool = True,
         region: str = "United States",
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates factor correlations between each factor. This is useful to understand how correlated
@@ -1205,6 +1284,10 @@ class Performance:
                 Defaults to "United States".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Factor Correlations. One correlation matrix per period, stacked
@@ -1306,7 +1389,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate Fama and French 5 Factor model scores and residuals for a set of financial assets.
@@ -1385,8 +1468,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            show_columns (list of str, optional): Restrict the result to these top level columns.
-                Defaults to None, which returns every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Fama and French 5 Factor model scores for the specified assets, with a
@@ -1633,24 +1718,21 @@ class Performance:
             ).loc[self._start_date : self._end_date]
 
             return (
-                filter_columns(self._fama_and_french_model, show_columns),
+                self._fama_and_french_model,
                 self._fama_and_french_residuals,
             )
 
-        return filter_columns(
-            finalize_dataset(
-                dataset=self._fama_and_french_model,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                default_rounding=self._rounding,
-                growth=growth,
-                lag=lag,
-                rounding=rounding,
-                standardize=standardize,
-                axis="rows",
-                row_slice=True,
-            ),
-            show_columns,
+        return finalize_dataset(
+            dataset=self._fama_and_french_model,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_portfolio
@@ -1663,7 +1745,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate Carhart Four Factor model scores for a set of financial assets.
@@ -1710,8 +1792,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            show_columns (list of str, optional): Restrict the result to these top level columns.
-                Defaults to None, which returns every column.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Carhart Four Factor model scores for the specified assets, with a Multi
@@ -1832,20 +1916,17 @@ class Performance:
             carhart_model, rounding if rounding is not None else self._rounding
         ).loc[self._start_date : self._end_date]
 
-        return filter_columns(
-            finalize_dataset(
-                dataset=self._carhart_four_factor_model,
-                start_date=self._start_date,
-                end_date=self._end_date,
-                default_rounding=self._rounding,
-                growth=growth,
-                lag=lag,
-                rounding=rounding,
-                standardize=standardize,
-                axis="rows",
-                row_slice=True,
-            ),
-            show_columns,
+        return finalize_dataset(
+            dataset=self._carhart_four_factor_model,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
         )
 
     @handle_errors
@@ -1855,6 +1936,7 @@ class Performance:
         period: str = "monthly",
         window: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the returns-based style analysis (Sharpe, 1992) of every ticker: the mix of
@@ -1904,6 +1986,10 @@ class Performance:
                 which uses every period.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker the weight of every style, the R Squared, the Selection Return
@@ -2019,6 +2105,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Alpha, in a general sense, represents the excess return an investment generates relative to
@@ -2048,6 +2135,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Alpha values.
@@ -2138,6 +2229,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate Jensen's Alpha, a measure of an asset's performance relative to its expected return
@@ -2167,6 +2259,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Jensen's Alpha values.
@@ -2259,6 +2355,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The Treynor Ratio, also known as Treynor's Measure or the Reward-to-Volatility Ratio, is a
@@ -2288,6 +2385,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Treynor Ratio values.
@@ -2382,6 +2483,7 @@ class Performance:
         lag: int | list[int] = 1,
         standardize: bool = False,
         annualize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Sharpe ratio, a measure of risk-adjusted return that evaluates the excess return
@@ -2536,6 +2638,10 @@ class Performance:
                 periods in a year for a rolling Sharpe ratio (e.g. 12 for monthly). Only for method="standard" and "adjusted", since the
                 probabilistic and deflated methods return probabilities; method="lo" is annualized
                 either way. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Sharpe ratio values. For method="probabilistic" and method="deflated"
@@ -2713,6 +2819,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
 
@@ -2767,6 +2874,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Sortino ratio values.
@@ -2847,6 +2958,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Ulcer Performance Index (UPI), alternatively called Martin ratio, a measure of risk-adjusted
@@ -2875,6 +2987,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Ulcer Performance Index values.
@@ -2954,6 +3070,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Calmar Ratio of an investment portfolio or asset's returns.
@@ -2985,6 +3102,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Calmar Ratio values.
@@ -3057,6 +3178,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Sterling Ratio of an investment portfolio or asset's returns.
@@ -3093,6 +3215,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Sterling Ratio values.
@@ -3164,6 +3290,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Burke Ratio of an investment portfolio or asset's returns.
@@ -3195,6 +3322,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Burke Ratio values.
@@ -3272,6 +3403,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The M2 Ratio, also known as the Modigliani-Modigliani Measure, is a financial
@@ -3310,6 +3442,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: M2 ratio values.
@@ -3400,6 +3536,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Tracking Error is a financial metric that quantifies the volatility or dispersion of the
@@ -3434,6 +3571,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Tracking error values.
@@ -3514,6 +3655,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The Information Ratio (IR) is a financial metric that assesses the risk-adjusted
@@ -3557,6 +3699,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Information ratio values.
@@ -3635,6 +3781,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Upside Capture Ratio of an investment portfolio or asset's returns.
@@ -3670,6 +3817,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Upside Capture Ratio values.
@@ -3737,6 +3888,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Downside Capture Ratio of an investment portfolio or asset's returns.
@@ -3766,6 +3918,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Downside Capture Ratio values.
@@ -3833,6 +3989,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Win Rate of an investment portfolio or asset's returns.
@@ -3861,6 +4018,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Win Rate values.
@@ -3927,6 +4088,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Kappa Ratio of an investment portfolio or asset's returns.
@@ -3958,6 +4120,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Kappa Ratio values.
@@ -4029,6 +4195,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Omega Ratio of an investment portfolio or asset's returns.
@@ -4061,6 +4228,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Omega Ratio values.
@@ -4175,6 +4346,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Morningstar Risk-Adjusted Return (MRAR), the measure Morningstar ranks funds
@@ -4226,6 +4398,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The MRAR per period (rows) and ticker (columns) as decimals, or one
@@ -4298,6 +4474,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate Morningstar Risk, the return a risk-averse investor would give up to remove
@@ -4339,6 +4516,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Morningstar Risk per period (rows) and ticker (columns) as decimals,
@@ -4405,6 +4586,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Gain-to-Pain Ratio of an investment portfolio or asset's returns.
@@ -4431,6 +4613,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Gain-to-Pain Ratio values.
@@ -4499,6 +4685,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Kelly Criterion, the share of capital to put at risk that maximizes the
@@ -4506,7 +4693,7 @@ class Performance:
         asset.
 
         The discrete form is Kelly's (1956) bet: a probability of winning and a ratio of the
-        average win to the average loss, as the QuantStats package calculates it from returns.
+        average win to the average loss, calculated from the returns.
         The continuous form is Thorp's (2006) for returns that are close to normally
         distributed: the average excess return over the risk free rate divided by the
         variance of the excess returns. Since investors rarely bet the full Kelly amount,
@@ -4551,6 +4738,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Kelly Criterion values.
@@ -4640,6 +4831,7 @@ class Performance:
         period: str | None = None,
         within_period: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the statistics traders report about the returns of an investment portfolio or
@@ -4661,15 +4853,12 @@ class Performance:
         - Recovery Factor = Cumulative Return / |Maximum Drawdown|
         - Common Sense Ratio = Profit Factor x Tail Ratio (95th / 5th percentile)
 
-        The definitions follow the QuantStats package, except that the Recovery Factor compounds
-        the returns into the cumulative return and keeps its sign (QuantStats takes the absolute
-        value of the summed returns), so a history that lost money does not appear to recover.
+        The Recovery Factor compounds the returns into the cumulative return and keeps its sign,
+        so a history that lost money does not appear to recover.
 
         For more information, see the following sources:
 
         - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd ed., McGraw-Hill.
-        - Aroussi, R. "QuantStats: Portfolio analytics for quants."
-        https://github.com/ranaroussi/quantstats
 
         Args:
             period (str, optional): The period of the returns over the whole history, or with
@@ -4681,6 +4870,10 @@ class Performance:
                 `period` over the whole history. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Over the whole history, the statistics as the index and the tickers as the
@@ -4748,8 +4941,7 @@ class Performance:
     @handle_portfolio
     @handle_errors
     def get_compound_growth_rate(
-        self,
-        rounding: int | None = None,
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
     ):
         """
         This function calculates the Compound Growth Rate (CGR) for different periods: yearly, quarterly, monthly,
@@ -4781,6 +4973,10 @@ class Performance:
         Args:
             rounding (int, optional): The number of decimals to round the results to. If not provided,
             the function will use the default rounding value set in the class instance.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A DataFrame containing the CGR for each period. The DataFrame has the periods
@@ -4859,6 +5055,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Return of an investment portfolio or asset for a given period
@@ -4900,6 +5097,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Return values with time as the index.
@@ -4974,6 +5175,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Excess Return of an investment portfolio or asset for a given period
@@ -5013,6 +5215,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Excess Return values with time as the index.
@@ -5087,6 +5293,7 @@ class Performance:
         self,
         period: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the full pairwise Correlation Matrix across all assets (and the
@@ -5114,6 +5321,10 @@ class Performance:
                 to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The N x N Correlation Matrix, with assets as both the index and
@@ -5161,6 +5372,7 @@ class Performance:
         self,
         period: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the full pairwise Covariance Matrix across all assets (and the
@@ -5183,6 +5395,10 @@ class Performance:
                 to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The N x N Covariance Matrix, with assets as both the index and
@@ -5235,6 +5451,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Appraisal Ratio, i.e. Jensen's Alpha divided by the idiosyncratic
@@ -5274,6 +5491,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Appraisal Ratio values.
@@ -5392,6 +5613,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Fama (1972) decomposition of total excess return into Selectivity
@@ -5435,6 +5657,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Selectivity and Diversification values, with a Multi Index of
@@ -5548,6 +5774,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the STARR (Stable Tail Adjusted Return Ratio) of an investment
@@ -5583,6 +5810,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: STARR Ratio values.
@@ -5660,6 +5891,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Rachev Ratio (R-Ratio) of an investment portfolio or asset's
@@ -5694,6 +5926,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Rachev Ratio values.
@@ -5760,6 +5996,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Treynor-Mazuy market timing model for each asset in the Toolkit
@@ -5792,6 +6029,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Alpha, Beta, Gamma and R Squared values, with a Multi Index of
@@ -5880,6 +6121,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Henriksson-Merton market timing model for each asset in the
@@ -5911,6 +6153,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Alpha, Beta, Up Market Beta and R Squared values, with a Multi Index of
@@ -6001,6 +6247,7 @@ class Performance:
         detail: str | None = None,
         column: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -6059,6 +6306,10 @@ class Performance:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the metrics that take them, e.g. alpha=0.05.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The summary per metric and horizon, or with detail that part of the
@@ -6146,6 +6397,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the standard error of the Sharpe ratio: how far the measured Sharpe ratio may
@@ -6201,6 +6453,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The standard error of the Sharpe ratio per period.
@@ -6274,6 +6530,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Minimum Track Record Length (MinTRL): how many return observations are
@@ -6322,6 +6579,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The minimum number of return observations per period.
@@ -6410,6 +6671,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the co-skewness of each asset with the benchmark: how the asset's return moves
@@ -6457,6 +6719,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The co-skewness of each asset with the benchmark per period.
@@ -6524,6 +6790,7 @@ class Performance:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the co-kurtosis of each asset with the benchmark: how the asset's return moves
@@ -6568,6 +6835,10 @@ class Performance:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The co-kurtosis of each asset with the benchmark per period.

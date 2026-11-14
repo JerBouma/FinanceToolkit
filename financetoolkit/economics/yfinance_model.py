@@ -9,6 +9,7 @@ import yfinance as yf
 
 from financetoolkit.cache import frame_model, policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.utilities.sources_model import record_source
 
 # CME futures month codes, one letter per calendar month.
 _MONTH_CODES: dict[int, str] = {
@@ -131,6 +132,7 @@ def get_commodity_forward_curve(
         )
 
         if not contract_data.empty:
+            record_source(policy_model.YAHOO_FINANCE)
             contract_data.index = pd.to_datetime(contract_data.index).tz_localize(None)
             contract_data = frame_model.slice_frame(
                 contract_data, fetch_start, fetch_end

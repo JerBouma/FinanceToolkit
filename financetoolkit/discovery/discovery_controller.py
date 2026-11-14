@@ -11,7 +11,9 @@ from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
 from financetoolkit.models import damodaran_model
 from financetoolkit.utilities import logger_model, validation_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 
 # ruff: noqa: E501
 
@@ -73,6 +75,8 @@ def _validate_arguments(
 API_KEY: str | None = os.environ.get("FINANCIAL_MODELING_PREP_API_KEY")
 
 
+@filter_shown_columns
+@track_sources
 class Discovery:
     """
     The Discovery module contains a collection of functions that are meant to get
@@ -146,7 +150,10 @@ class Discovery:
 
     @handle_errors
     def search_instruments(
-        self, query: str | None = None, search_method: str = "name"
+        self,
+        query: str | None = None,
+        search_method: str = "name",
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The search instruments function allows you to search for a company or financial instrument
@@ -162,6 +169,10 @@ class Discovery:
             query (str): A query to search for, e.g. 'META'.
             search_method (str, optional): The field to search against. Valid options are 'symbol', 'name',
                 'cik', 'cusip', and 'isin'. Defaults to 'name'.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with all the symbols that match the query.
@@ -228,6 +239,7 @@ class Discovery:
         is_etf: bool | None = None,
         limit: int = 1000,
         primary_only: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Screen stocks based on a set of criteria. This can be useful to find companies that match
@@ -245,12 +257,15 @@ class Discovery:
         many means the list was truncated, which is warned about in the log; narrow the criteria
         or raise the limit to see the remainder.
 
+        Market caps are in each listing's own currency in "Market Cap" and in US dollars in
+        "Market Cap (USD)", which the market cap bounds and the ranking use.
+
         Also known as: filter stocks, financial criteria screener.
 
         Args:
-            market_cap_higher (int): The minimum market capitalization of the stock in US dollars
+            market_cap_higher (int | None): The minimum market capitalization of the stock in US dollars
                 (not in millions), e.g. 1_000_000_000 for $1 billion. Defaults to None, which applies no filter.
-            market_cap_lower (int): The maximum market capitalization of the stock in US dollars.
+            market_cap_lower (int | None): The maximum market capitalization of the stock in US dollars.
                 The screener returns the largest companies first, so this bound is only sent to it
                 when the currency of the listings is known: with an exchange, or with a country and
                 primary_only. Otherwise it is applied to the companies returned. Defaults to None,
@@ -259,9 +274,9 @@ class Discovery:
             price_lower (float | None): The maximum price of the stock. Defaults to None, which applies no filter.
             beta_higher (float | None): The minimum beta of the stock. Defaults to None, which applies no filter.
             beta_lower (float | None): The maximum beta of the stock. Defaults to None, which applies no filter.
-            volume_higher (int): The minimum volume of the stock, in shares traded. Defaults to None, which applies no
-                filter.
-            volume_lower (int): The maximum volume of the stock. Defaults to None, which applies no filter.
+            volume_higher (int | None): The minimum volume of the stock, in shares traded. Defaults to None, which
+                applies no filter.
+            volume_lower (int | None): The maximum volume of the stock. Defaults to None, which applies no filter.
             dividend_higher (float | None): The minimum dividend of the stock, as an amount per share
                 over the last annual period rather than as a yield. Defaults to None, which applies no filter.
             dividend_lower (float | None): The maximum dividend of the stock. Defaults to None, which applies no filter.
@@ -280,9 +295,10 @@ class Discovery:
                 exchange in its own country, the most traded one among several) rather than
                 every listing (e.g. ING in Amsterdam, New York, Toronto and Frankfurt).
                 Defaults to False.
-
-        Market caps are in each listing's own currency in "Market Cap" and in US dollars in
-        "Market Cap (USD)", which the market cap bounds and the ranking use.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with all the symbols that match the query. An empty
@@ -361,10 +377,18 @@ class Discovery:
 
         return stock_screener
 
-    def get_stock_list(self) -> pd.DataFrame:
+    def get_stock_list(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         The stock list function returns a complete list of all the symbols that can be used
         in the Finance Toolkit. These are over 60.000 symbols.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with all the symbols in the toolkit.
@@ -404,12 +428,20 @@ class Discovery:
 
         return stock_list
 
-    def get_stock_shares_float(self) -> pd.DataFrame:
+    def get_stock_shares_float(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Returns the shares float for each company. The shares float is the number of shares
         available for trading for each company. It also includes the number of shares
         outstanding and the date. The free float is the share of the outstanding shares that
         is available for trading, as a decimal (0.85 is 85%).
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the shares float for each company.
@@ -454,6 +486,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the historical performance of every sector, one column per sector.
@@ -467,11 +500,15 @@ class Discovery:
 
         Args:
             start_date (str | None): The start date to filter data with, e.g. "2024-01-01".
-                Defaults to a year ago.
+                Defaults to None, which uses the date a year ago.
             end_date (str | None): The end date to filter data with, e.g. "2024-12-31".
-                Defaults to today.
+                Defaults to None, which uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the sectors performance for each sector.
@@ -510,11 +547,19 @@ class Discovery:
 
         return sectors_performance
 
-    def get_biggest_gainers(self) -> pd.DataFrame:
+    def get_biggest_gainers(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Returns the biggest gainers for the day. This includes the symbol, the name,
         the price, the change and the change percentage. The change percentage ("Change %")
         is a decimal (0.0125 is +1.25%).
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the biggest gainers for the day.
@@ -552,11 +597,19 @@ class Discovery:
 
         return biggest_gainers
 
-    def get_biggest_losers(self) -> pd.DataFrame:
+    def get_biggest_losers(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Returns the biggest losers for the day. This includes the symbol, the name,
         the price, the change and the change percentage. The change percentage ("Change %")
         is a decimal (0.0125 is +1.25%).
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the biggest losers for the day.
@@ -595,11 +648,19 @@ class Discovery:
 
         return biggest_losers
 
-    def get_most_active_stocks(self) -> pd.DataFrame:
+    def get_most_active_stocks(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         Returns the most active stocks for the day. This includes the symbol, the name,
         the price, the change and the change percentage. The change percentage ("Change %")
         is a decimal (0.0125 is +1.25%).
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the most active stocks for the day.
@@ -638,7 +699,12 @@ class Discovery:
 
         return most_active_stocks
 
-    def get_delisted_stocks(self, page: int = 0, limit: int = 100) -> pd.DataFrame:
+    def get_delisted_stocks(
+        self,
+        page: int = 0,
+        limit: int = 100,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
         """
         The delisted stocks function returns a page of delisted stocks including
         the IPO and delisted date.
@@ -650,6 +716,10 @@ class Discovery:
         Args:
             page (int): The page of results to retrieve, starting at 0. Defaults to 0.
             limit (int): The number of results per page, capped at 100 by the API. Defaults to 100.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with one page of delisted stocks.
@@ -692,10 +762,18 @@ class Discovery:
 
         return delisted_stocks
 
-    def get_crypto_list(self) -> pd.DataFrame:
+    def get_crypto_list(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         The crypto list function returns a complete list of all crypto symbols that can be
         used in the Finance Toolkit. These are over 4.000 symbols.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with all the symbols in the toolkit.
@@ -733,10 +811,18 @@ class Discovery:
 
         return crypto_list
 
-    def get_forex_list(self) -> pd.DataFrame:
+    def get_forex_list(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         The forex list function returns a complete list of all forex symbols that can be
         used in the Finance Toolkit. These are over 1.000 symbols.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the forex symbols.
@@ -774,10 +860,18 @@ class Discovery:
 
         return forex_list
 
-    def get_commodity_list(self) -> pd.DataFrame:
+    def get_commodity_list(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         The commodity list function returns a complete list of all commodity symbols that can be
         used in the Finance Toolkit.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with all the commodities available.
@@ -815,10 +909,16 @@ class Discovery:
 
         return commodity_list
 
-    def get_etf_list(self) -> pd.DataFrame:
+    def get_etf_list(self, show_columns: str | list[str] | None = None) -> pd.DataFrame:
         """
         The etf list function returns a complete list of all etf symbols that can be
         used in the Finance Toolkit.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with all the etf symbols.
@@ -857,10 +957,18 @@ class Discovery:
 
         return etf_list
 
-    def get_index_list(self) -> pd.DataFrame:
+    def get_index_list(
+        self, show_columns: str | list[str] | None = None
+    ) -> pd.DataFrame:
         """
         The index list function returns a complete list of all index symbols that can be
         used in the Finance Toolkit.
+
+        Args:
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with all the index symbols.
@@ -899,7 +1007,10 @@ class Discovery:
         return index_list
 
     def get_index_constituents(
-        self, index: str = "S&P 500", date: str | None = None
+        self,
+        index: str = "S&P 500",
+        date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the constituents of an index (the S&P 500, the NASDAQ 100 or the Dow Jones
@@ -926,6 +1037,10 @@ class Discovery:
             date (str | None, optional): The date (YYYY-MM-DD) to list the members of. A
                 change takes effect on its own date, so the members on a change's date include
                 it. Defaults to None, today's members.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The constituents, indexed by symbol. On a past date, the companies
@@ -983,6 +1098,7 @@ class Discovery:
         index: str = "S&P 500",
         start_date: str | None = None,
         end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the dated changes to the members of an index (the S&P 500, the NASDAQ 100 or
@@ -1004,6 +1120,10 @@ class Discovery:
                 Defaults to None, the first change recorded.
             end_date (str | None, optional): The last date (YYYY-MM-DD) to include. Defaults
                 to None, the latest change.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The changes in date order, indexed by date, with the added and
@@ -1062,6 +1182,7 @@ class Discovery:
         limit: int = 100,
         start_date: str | None = None,
         end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the latest stock market news articles. This includes the ticker symbol
@@ -1075,6 +1196,10 @@ class Discovery:
             limit (int, optional): The number of articles to return per page. Defaults to 100.
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the latest stock market news articles.
@@ -1116,7 +1241,12 @@ class Discovery:
 
         return stock_news
 
-    def get_general_news(self, pages: int = 1, limit: int = 100) -> pd.DataFrame:
+    def get_general_news(
+        self,
+        pages: int = 1,
+        limit: int = 100,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
         """
         Returns the latest general news articles, spanning macroeconomic and broad
         market coverage rather than a specific ticker.
@@ -1127,6 +1257,10 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the latest general news articles.
@@ -1170,6 +1304,7 @@ class Discovery:
         limit: int = 100,
         start_date: str | None = None,
         end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the latest official company press releases, such as earnings
@@ -1183,6 +1318,10 @@ class Discovery:
             limit (int, optional): The number of articles to return per page. Defaults to 100.
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the latest company press releases.
@@ -1224,7 +1363,12 @@ class Discovery:
 
         return press_releases
 
-    def get_crypto_news(self, pages: int = 1, limit: int = 100) -> pd.DataFrame:
+    def get_crypto_news(
+        self,
+        pages: int = 1,
+        limit: int = 100,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
         """
         Returns the latest cryptocurrency news articles.
 
@@ -1234,6 +1378,10 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the latest cryptocurrency news articles.
@@ -1271,7 +1419,12 @@ class Discovery:
 
         return crypto_news
 
-    def get_forex_news(self, pages: int = 1, limit: int = 100) -> pd.DataFrame:
+    def get_forex_news(
+        self,
+        pages: int = 1,
+        limit: int = 100,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
         """
         Returns the latest forex news articles.
 
@@ -1281,6 +1434,10 @@ class Discovery:
             pages (int, optional): The number of pages to collect, each page is a
                 separate API call, e.g. pages=5 makes 5 calls. Defaults to 1.
             limit (int, optional): The number of articles to return per page. Defaults to 100.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the latest forex news articles.
@@ -1325,6 +1482,7 @@ class Discovery:
         limit: int = 100,
         start_date: str | None = None,
         end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Searches stock market news articles by one or more ticker symbols.
@@ -1340,6 +1498,10 @@ class Discovery:
             limit (int, optional): The number of articles to return per page. Defaults to 100.
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with stock news articles matching the given symbols.
@@ -1394,6 +1556,7 @@ class Discovery:
         limit: int = 100,
         start_date: str | None = None,
         end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Searches company press releases by one or more ticker symbols.
@@ -1409,6 +1572,10 @@ class Discovery:
             limit (int, optional): The number of articles to return per page. Defaults to 100.
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with press releases matching the given symbols.
@@ -1460,6 +1627,7 @@ class Discovery:
         limit: int = 100,
         start_date: str | None = None,
         end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Searches cryptocurrency news articles by one or more coin/token symbols.
@@ -1475,6 +1643,10 @@ class Discovery:
             limit (int, optional): The number of articles to return per page. Defaults to 100.
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with crypto news articles matching the given symbols.
@@ -1524,6 +1696,7 @@ class Discovery:
         limit: int = 100,
         start_date: str | None = None,
         end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Searches forex news articles by one or more currency pair symbols.
@@ -1539,6 +1712,10 @@ class Discovery:
             limit (int, optional): The number of articles to return per page. Defaults to 100.
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with forex news articles matching the given symbols.
@@ -1594,7 +1771,10 @@ class Discovery:
         return forex_news
 
     def get_ipo_calendar(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the calendar of upcoming and recent initial public offerings (IPOs),
@@ -1608,6 +1788,10 @@ class Discovery:
         Args:
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with upcoming and recent IPOs.
@@ -1646,7 +1830,10 @@ class Discovery:
         return ipo_calendar
 
     def get_ipo_disclosures(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns IPO disclosure filings — the regulatory filings made ahead of an IPO,
@@ -1658,6 +1845,10 @@ class Discovery:
         Args:
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with IPO disclosure filings.
@@ -1696,7 +1887,10 @@ class Discovery:
         return ipo_disclosures
 
     def get_ipo_prospectuses(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns IPO prospectus filings, including public offering price, discounts and
@@ -1708,6 +1902,10 @@ class Discovery:
         Args:
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with IPO prospectus filings.
@@ -1743,7 +1941,10 @@ class Discovery:
         return ipo_prospectuses
 
     def get_stock_splits_calendar(
-        self, start_date: str | None = None, end_date: str | None = None
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the calendar of upcoming and recent stock splits across all companies,
@@ -1757,6 +1958,10 @@ class Discovery:
         Args:
             start_date (str, optional): The start date to filter data with.
             end_date (str, optional): The end date to filter data with.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with upcoming and recent stock splits.
@@ -1801,6 +2006,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns sector performance — the average price change, as a decimal (0.0125 means
@@ -1813,11 +2019,16 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
             sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
-            start_date (str, optional): The start of the history of one sector. Defaults to a year
-                ago.
-            end_date (str, optional): The end of the history of one sector. Defaults to today.
+            start_date (str, optional): The start of the history of one sector. Defaults to None,
+                which uses the date a year ago.
+            end_date (str, optional): The end of the history of one sector. Defaults to None, which
+                uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with sector performance, indexed by Sector
@@ -1870,6 +2081,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns industry performance — the average price change, as a decimal (0.0125 means
@@ -1882,11 +2094,16 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
-            start_date (str, optional): The start of the history of one industry. Defaults to a year
-                ago.
-            end_date (str, optional): The end of the history of one industry. Defaults to today.
+            start_date (str, optional): The start of the history of one industry. Defaults to None,
+                which uses the date a year ago.
+            end_date (str, optional): The end of the history of one industry. Defaults to None, which
+                uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with industry performance, indexed by Industry
@@ -1939,6 +2156,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns sector price-to-earnings (P/E) ratios of the companies listed on an exchange
@@ -1950,11 +2168,16 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
             sector (str, optional): The sector to retrieve the history for, e.g. "Energy". Defaults to None.
-            start_date (str, optional): The start of the history of one sector. Defaults to a year
-                ago.
-            end_date (str, optional): The end of the history of one sector. Defaults to today.
+            start_date (str, optional): The start of the history of one sector. Defaults to None,
+                which uses the date a year ago.
+            end_date (str, optional): The end of the history of one sector. Defaults to None, which
+                uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with sector P/E ratios, indexed by Sector
@@ -2007,6 +2230,7 @@ class Discovery:
         start_date: str | None = None,
         end_date: str | None = None,
         exchange: str = "NASDAQ",
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns industry price-to-earnings (P/E) ratios of the companies listed on an exchange
@@ -2019,11 +2243,16 @@ class Discovery:
         Args:
             date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01". Defaults to None.
             industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology". Defaults to None.
-            start_date (str, optional): The start of the history of one industry. Defaults to a year
-                ago.
-            end_date (str, optional): The end of the history of one industry. Defaults to today.
+            start_date (str, optional): The start of the history of one industry. Defaults to None,
+                which uses the date a year ago.
+            end_date (str, optional): The end of the history of one industry. Defaults to None, which
+                uses today.
             exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
                 or "AMEX". Defaults to "NASDAQ".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with industry P/E ratios, indexed by Industry
@@ -2073,6 +2302,7 @@ class Discovery:
         self,
         dataset: str = "cost_of_capital",
         region: str = "United States",
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns Aswath Damodaran's industry averages: betas, the cost of capital, margins
@@ -2124,6 +2354,10 @@ class Discovery:
             region (str, optional): The region: "United States", "Europe", "Japan",
                 "Australia, New Zealand and Canada", "Emerging Markets", "China", "India" or
                 "Global". Defaults to "United States".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: One row per industry, indexed by Industry, followed by the
@@ -2176,7 +2410,10 @@ class Discovery:
         return damodaran_model.get_industry_statistics(dataset=dataset, region=region)
 
     def get_mergers_acquisitions_latest(
-        self, limit: int = 100, page: int = 0
+        self,
+        limit: int = 100,
+        page: int = 0,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the most recent mergers and acquisitions deal announcements, including
@@ -2187,6 +2424,10 @@ class Discovery:
         Args:
             limit (int, optional): The number of results to return. Defaults to 100.
             page (int, optional): The page number to retrieve. Defaults to 0.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the latest mergers and acquisitions.
@@ -2233,6 +2474,7 @@ class Discovery:
         exchange: str | None = None,
         primary_only: bool = False,
         sort_by: str = "date",
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the earnings releases of all companies in a date range: the reported and
@@ -2247,10 +2489,13 @@ class Discovery:
         of a company appears (Cisco in New York, Frankfurt and Hong Kong). To see the
         largest reporters, keep the primary listing of each company (its most traded one)
         with `primary_only=True` and sort by market cap with `sort_by="market_cap"`, or set
-        a `min_market_cap`. Every listing of a company has the market cap of its primary
-        listing, since the one reported for a depositary receipt or a secondary listing is
-        often far off. The country filter uses the country of the company, so it also keeps
-        a company's listings abroad.
+        a `min_market_cap`. The listings of a company can show a release on different days
+        (Berkshire Hathaway's in Frankfurt two days after New York), so the primary listing
+        is chosen from the releases of the week before and after the range as well. Every
+        listing of a company has the market cap of its primary listing, since the one
+        reported for a depositary receipt or a secondary listing is often far off. The
+        country filter uses the country of the company, so it also keeps a company's
+        listings abroad.
 
         The EPS and revenue figures are in the currency the source reports them in for each
         listing, which is the reporting currency for some listings and the trading currency
@@ -2262,10 +2507,10 @@ class Discovery:
         Also known as: earnings season, earnings release dates, upcoming earnings.
 
         Args:
-            start_date (str, optional): The start date to filter data with. Defaults to today,
-                or to seven days before the end date when only that is given.
-            end_date (str, optional): The end date to filter data with. Defaults to seven days
-                after the start date.
+            start_date (str, optional): The start date to filter data with. Defaults to None,
+                which uses today, or seven days before the end date when only that is given.
+            end_date (str, optional): The end date to filter data with. Defaults to None,
+                which uses seven days after the start date.
             min_market_cap (float, optional): The minimum market cap in US dollars, such as
                 10e9 for ten billion. Releases without a market cap are left out. Defaults to
                 None.
@@ -2279,6 +2524,10 @@ class Discovery:
                 traded one) of each company. Defaults to False.
             sort_by (str, optional): "date" to sort by date and symbol, or "market_cap" to put
                 the largest companies first. Defaults to "date".
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the earnings releases.
@@ -2329,6 +2578,7 @@ class Discovery:
         end_date: str | None = None,
         limit: int = 100,
         page: int = 0,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the most recent 8-K filings with the SEC. Companies file an 8-K to
@@ -2339,10 +2589,16 @@ class Discovery:
         Also known as: current reports, material event filings, SEC filings.
 
         Args:
-            start_date (str, optional): The start date to filter data with. Defaults to 30 days ago.
-            end_date (str, optional): The end date to filter data with. Defaults to today.
+            start_date (str, optional): The start date to filter data with. Defaults to None,
+                which uses the date 30 days ago.
+            end_date (str, optional): The end date to filter data with. Defaults to None, which
+                uses today.
             limit (int, optional): The number of results to return. Defaults to 100.
             page (int, optional): The page number to retrieve. Defaults to 0.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the latest 8-K filings.
@@ -2385,7 +2641,11 @@ class Discovery:
         return filings
 
     def get_insider_trading_latest(
-        self, date: str | None = None, limit: int = 100, page: int = 0
+        self,
+        date: str | None = None,
+        limit: int = 100,
+        page: int = 0,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Returns the most recent trades by company insiders (officers, directors and
@@ -2400,6 +2660,10 @@ class Discovery:
                 which returns the most recent trades.
             limit (int, optional): The number of results to return. Defaults to 100.
             page (int, optional): The page number to retrieve. Defaults to 0.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: A dataframe with the latest insider trades.

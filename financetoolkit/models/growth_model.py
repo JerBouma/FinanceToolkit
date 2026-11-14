@@ -45,9 +45,14 @@ def get_present_value_of_growth_opportunities(
 
     if calculate_daily:
         no_growth_value.index = pd.PeriodIndex(no_growth_value.index, freq="D")
-        no_growth_value = pd.DataFrame(
-            no_growth_value, index=close_prices.index
-        ).ffill()
+        # Fill on the union so observations on non-trading dates are not discarded.
+        no_growth_value = (
+            pd.DataFrame(no_growth_value)
+            .reindex(no_growth_value.index.union(close_prices.index))
+            .sort_index()
+            .ffill()
+            .reindex(close_prices.index)
+        )
 
     return close_prices - no_growth_value
 

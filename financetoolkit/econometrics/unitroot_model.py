@@ -295,9 +295,9 @@ def get_phillips_perron_test(
     This implementation was cross-checked (matching to 5+ decimal places) against the
     independent `arch.unitroot.PhillipsPerron` reference implementation (with the same
     truncation lag) for both `regression="c"` and `regression="ct"`. Only "c" and "ct"
-    are supported -- a "n" (no constant) specification was tried against the same
-    reference during development and did not match to reasonable precision, so it has
-    deliberately been left unimplemented here rather than shipped unverified.
+    are supported -- a "n" (no constant) specification does not match the same reference
+    to reasonable precision, so it is deliberately left unimplemented rather than offered
+    unverified.
 
     For more information about the method, see the following paper:
 
@@ -314,7 +314,7 @@ def get_phillips_perron_test(
         series (pd.Series): A Series of values (e.g. prices, or a spread between two prices).
         regression (str, optional): Which deterministic term to include, one of "c" (constant)
         or "ct" (constant and trend). Defaults to "c". "n" (no constant) is not supported, see
-        Notes above.
+        above.
         lags (int, optional): The truncation lag for the Newey-West long-run variance estimate.
         Defaults to None, meaning the Schwert (1989) rule ceil(12 * (n / 100) ** 0.25) with `n`
         the length of the series, capped for short samples exactly as the ADF lag search is

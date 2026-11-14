@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.models import helpers
+from financetoolkit.models import chs_model, helpers
 
 
 def test_rates_per_period_broadcast_given_rates_and_fill_the_rest_by_period():
@@ -110,3 +110,73 @@ def test_values_on_or_before():
     assert values.loc["BBB", "first"] == 5.0
     assert np.isnan(values.loc["AAA", "second"])
     assert np.isnan(values.loc["BBB", "second"])
+
+
+@pytest.mark.parametrize(
+    "order",
+    [(0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0)],
+)
+@pytest.mark.parametrize("tolerance", [0, 10])
+def test_values_on_or_before_handles_unsorted_history(order, tolerance):
+    daily = pd.DataFrame(
+        {"AAA": [10.0, 20.0, 30.0], "BBB": [1.0, np.nan, 3.0], "EMPTY": np.nan},
+        index=pd.DatetimeIndex(["2024-01-02", "2024-01-03", "2024-01-05"]),
+    ).iloc[list(order)]
+    dates = pd.DataFrame(
+        {
+            "latest": pd.Timestamp("2024-01-05"),
+            "between": pd.Timestamp("2024-01-04"),
+            "first": pd.Timestamp("2024-01-02"),
+            "before": pd.Timestamp("2024-01-01"),
+            "stale": pd.Timestamp("2024-01-16"),
+            "boundary": pd.Timestamp("2024-01-15"),
+            "missing": pd.NaT,
+        },
+        index=pd.Index(["BBB", "AAA", "MISSING", "EMPTY"], name="Ticker"),
+    ).rename_axis("Snapshot", axis=1)
+    original_daily, original_dates = daily.copy(deep=True), dates.copy(deep=True)
+
+    result = helpers.values_on_or_before(daily, dates, tolerance=tolerance)
+
+    expected = pd.DataFrame(np.nan, index=dates.index, columns=dates.columns)
+    expected.loc[["BBB", "AAA"], "latest"] = [3.0, 30.0]
+    expected.loc[["BBB", "AAA"], "first"] = [1.0, 10.0]
+    if tolerance == 10:
+        expected.loc[["BBB", "AAA"], "between"] = [1.0, 20.0]
+        expected.loc[["BBB", "AAA"], "boundary"] = [3.0, 30.0]
+    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(daily, original_daily)
+    pd.testing.assert_frame_equal(dates, original_dates)
+
+
+@pytest.mark.parametrize("order", [(0, 1, 2, 3), (2, 0, 1, 3)])
+def test_values_on_or_before_keeps_last_observation_at_duplicate_dates(order):
+    daily = pd.DataFrame(
+        {"AAA": [10.0, 20.0, 30.0, 40.0]},
+        index=pd.DatetimeIndex(
+            ["2024-01-02", "2024-01-03", "2024-01-03", "2024-01-05"]
+        ),
+    ).iloc[list(order)]
+    dates = pd.DataFrame({"asof": [pd.Timestamp("2024-01-03")]}, index=["AAA"])
+
+    result = helpers.values_on_or_before(daily, dates)
+
+    # Equal dates keep their original order; right-sided lookup chooses the last.
+    expected_value = 30.0 if order == (0, 1, 2, 3) else 20.0
+    assert result.loc["AAA", "asof"] == expected_value
+
+
+def test_monthly_credit_returns_handle_independently_unsorted_histories():
+    days = pd.DatetimeIndex(["2023-12-31", "2024-01-30", "2024-01-31", "2024-02-29"])
+    prices = pd.DataFrame({"AAA": [100.0, 110.0, 120.0, 140.0]}, index=days)
+    index_levels = pd.Series([50.0, 53.0, 55.0, 60.0], index=days)
+    dates = pd.DataFrame({"current": [pd.Timestamp("2024-01-31")]}, index=["AAA"])
+
+    result = chs_model.get_monthly_log_excess_returns(
+        prices.iloc[[2, 0, 3, 1]], index_levels.iloc[[3, 1, 0, 2]], dates, months=1
+    )
+
+    # January ends at 120 and 55, not at the last physical rows or February values.
+    assert len(result) == 1
+    expected = pd.DataFrame({"current": [np.log(1.2) - np.log(1.1)]}, index=["AAA"])
+    pd.testing.assert_frame_equal(result[0], expected)

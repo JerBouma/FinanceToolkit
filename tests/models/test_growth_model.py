@@ -6,6 +6,90 @@ import pytest
 from financetoolkit.models import growth_model
 
 
+@pytest.mark.parametrize(
+    "source_dates, trading_dates",
+    [
+        (
+            ["2024-03-31", "2024-06-30"],
+            ["2024-03-28", "2024-04-01", "2024-06-28", "2024-07-01"],
+        ),
+        (
+            ["2024-03-29", "2024-06-27"],
+            ["2024-03-28", "2024-04-01", "2024-06-26", "2024-07-01"],
+        ),
+    ],
+)
+def test_daily_pvgo_retains_source_dates_outside_the_price_index(
+    source_dates, trading_dates
+):
+    columns = pd.PeriodIndex(source_dates, freq="D")
+    index = pd.PeriodIndex(trading_dates, freq="D", name="Date")
+    earnings = pd.DataFrame([[2.0, 3.0], [4.0, 5.0]], ["A", "B"], columns)
+    costs = pd.DataFrame([[0.1, 0.1], [0.2, 0.2]], ["A", "B"], columns)
+    prices = pd.DataFrame(
+        {"A": [50.0, 51.0, 52.0, 53.0], "B": [40.0, 41.0, 42.0, 43.0]},
+        index=index,
+    )
+
+    result = growth_model.get_present_value_of_growth_opportunities(
+        costs, earnings, prices, calculate_daily=True
+    )
+
+    expected = pd.DataFrame(
+        {"A": [float("nan"), 31.0, 32.0, 23.0], "B": [float("nan"), 21.0, 22.0, 18.0]},
+        index=index,
+    )
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_daily_pvgo_does_not_use_future_earnings():
+    columns = pd.PeriodIndex(["2024-03-31", "2024-06-30"], freq="D")
+    costs = pd.DataFrame([[0.1, 0.1]], ["A"], columns)
+    earnings = pd.DataFrame([[2.0, 3.0]], ["A"], columns)
+    prices = pd.DataFrame(
+        {"A": [51.0, 52.0, 53.0]},
+        index=pd.PeriodIndex(["2024-04-01", "2024-06-28", "2024-07-01"], freq="D"),
+    )
+    original = growth_model.get_present_value_of_growth_opportunities(
+        costs, earnings, prices, calculate_daily=True
+    )
+    earnings.iloc[0, 1] = 100.0
+    changed = growth_model.get_present_value_of_growth_opportunities(
+        costs, earnings, prices, calculate_daily=True
+    )
+
+    pd.testing.assert_frame_equal(original.iloc[:2], changed.iloc[:2])
+    assert original.iloc[0, 0] == pytest.approx(31.0)
+    assert changed.iloc[-1, 0] == pytest.approx(-947.0)
+
+
+def test_daily_pvgo_keeps_the_single_series_dataframe_layout():
+    dates = pd.PeriodIndex(["2024-03-29", "2024-04-01"], freq="D")
+    result = growth_model.get_present_value_of_growth_opportunities(
+        pd.Series([0.1], index=dates[:1]),
+        pd.Series([2.0], index=dates[:1]),
+        pd.DataFrame([50.0, 51.0], index=dates),
+        calculate_daily=True,
+    )
+
+    pd.testing.assert_frame_equal(result, pd.DataFrame([30.0, 31.0], index=dates))
+
+
+def test_daily_pvgo_keeps_existing_forward_fill_of_missing_values():
+    sources = pd.PeriodIndex(["2024-03-29", "2024-04-02"], freq="D")
+    dates = pd.PeriodIndex(["2024-03-29", "2024-04-01", "2024-04-02"], freq="D")
+    result = growth_model.get_present_value_of_growth_opportunities(
+        pd.DataFrame([[0.1, 0.1]], ["A"], sources),
+        pd.DataFrame([[2.0, float("nan")]], ["A"], sources),
+        pd.DataFrame({"A": [50.0, 51.0, 52.0]}, index=dates),
+        calculate_daily=True,
+    )
+
+    pd.testing.assert_frame_equal(
+        result, pd.DataFrame({"A": [30.0, 31.0, 32.0]}, index=dates)
+    )
+
+
 def test_get_present_value_of_growth_opportunities(recorder):
     recorder.capture(
         growth_model.get_present_value_of_growth_opportunities(

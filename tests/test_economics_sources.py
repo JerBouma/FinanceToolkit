@@ -1,5 +1,7 @@
 """Offline tests for the keyless high-frequency Economics sources."""
 
+import json
+
 import pandas as pd
 import pytest
 import requests
@@ -442,11 +444,12 @@ def test_bls_unemployment_is_parsed_into_decimals(monkeypatch):
         "Results": {
             "series": [
                 {
+                    "seriesID": "LNS14000000",
                     "data": [
                         {"year": "2026", "period": "M09", "value": "4.2"},
                         {"year": "2026", "period": "M13", "value": "4.1"},
                         {"year": "2026", "period": "M08", "value": "4.1"},
-                    ]
+                    ],
                 }
             ]
         },
@@ -1023,7 +1026,7 @@ def test_real_interest_rate_and_misery_index_line_up_oecd_and_gmdb_names(monkeyp
         start_date="2022-01-01", end_date="2023-12-31"
     )
 
-    real_rate = economics.get_real_interest_rate(gmdb_source=False)
+    real_rate = economics.get_real_interest_rate(gmdb_source=False, period="yearly")
     misery = economics.get_misery_index(gmdb_source=False)
 
     assert sorted(real_rate.columns) == ["Germany", "Russian Federation"]
@@ -1177,6 +1180,35 @@ def test_department_of_labor_claims_are_posted_for_and_seasonally_adjusted(monke
     assert claims["United States"].iloc[0] == 232000
 
 
+def test_department_of_labor_outage_serves_the_cached_claims(cache, monkeypatch):
+    from financetoolkit.economics import dol_model
+
+    report = (
+        "<r539cyNational><week><weekEnded>10/18/2026</weekEnded><InitialClaims><NSA>"
+        "201,000</NSA><SA>232,000</SA></InitialClaims></week></r539cyNational>"
+    )
+    # What the report answers when its database cannot be reached.
+    outage = (
+        "Unable to connect!<br/>SQLSTATE=HY000, SQLDriverConnect: -25546 [Informix]"
+        "[Informix ODBC Driver][Informix]Invalid ASF assoc_id."
+    )
+    answers = [report]
+    monkeypatch.setattr(
+        dol_model, "get_request", lambda url, **kwargs: FakeResponse(text=answers[-1])
+    )
+    claims = dol_model.get_initial_jobless_claims()
+
+    # Expire the cached claims, then let the database be unreachable: the outage is
+    # retried and answered with the cached claims, not reported as a changed layout.
+    answers.append(outage)
+    monkeypatch.setattr(dol_model, "OUTAGE_DELAY_SECONDS", 0)
+    monkeypatch.setattr(helpers, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(helpers, "STALE_TTL_SECONDS", 10**9)
+    monkeypatch.setattr(cache, "get", _expire_fresh_reads(cache.get))
+
+    assert dol_model.get_initial_jobless_claims().equals(claims)
+
+
 def test_census_retail_sales_leave_out_the_seasonal_factors(monkeypatch):
     from financetoolkit.economics import census_model
 
@@ -1250,7 +1282,12 @@ def test_bls_nonfarm_payrolls_are_dated_on_the_first_of_the_month(monkeypatch):
     payload = {
         "status": "REQUEST_SUCCEEDED",
         "Results": {
-            "series": [{"data": [{"year": "2026", "period": "M09", "value": "159540"}]}]
+            "series": [
+                {
+                    "seriesID": "CES0000000001",
+                    "data": [{"year": "2026", "period": "M09", "value": "159540"}],
+                }
+            ]
         },
     }
     monkeypatch.setattr(
@@ -1405,3 +1442,600 @@ def test_hqm_curve_and_spread_need_no_fred_key(monkeypatch):
         0.0051
     )
     assert with_key.get_hqm_corporate_bond_yield_curve().iloc[-1, 0] == 0.102
+
+
+def test_bank_of_japan_price_indices_are_monthly_index_levels(monkeypatch):
+    payload = {
+        "STATUS": 200,
+        "RESULTSET": [
+            {
+                "VALUES": {
+                    "SURVEY_DATES": [202608, 202609, 202610],
+                    "VALUES": [136.1, 135.7, None],
+                }
+            }
+        ],
+    }
+    urls = []
+
+    def fake(url, timeout):
+        urls.append(url)
+        return FakeResponse(payload)
+
+    monkeypatch.setattr(boj_model, "get_request", fake)
+
+    index = boj_model.collect_price_index("producer")
+
+    assert "db=PR01&code=PRCG20_2200000000&startDate=196001" in urls[0]
+    assert list(index.index) == list(pd.period_range("2026-08", "2026-09", freq="M"))
+    assert index["Japan"].tolist() == [136.1, 135.7]
+
+
+def test_monthly_indices_average_into_complete_periods_only():
+    months = pd.period_range("2026-01", "2026-08", freq="M")
+    data = pd.DataFrame(
+        {"Japan": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]}, index=months
+    )
+
+    quarterly = helpers.average_monthly_index(data, "quarterly")
+    yearly = helpers.average_monthly_index(data, "yearly")
+
+    assert quarterly["Japan"].tolist()[:2] == [2.0, 5.0]
+    assert pd.isna(quarterly.loc[pd.Period("2026Q3", "Q"), "Japan"])
+    assert pd.isna(yearly.iloc[0, 0])
+    assert helpers.average_monthly_index(data, "monthly") is data
+
+
+def test_eurostat_industrial_prices_request_the_headline_scope(monkeypatch):
+    urls = []
+
+    def fake(url, timeout):
+        urls.append(url)
+        return FakeResponse(json_stat(["EA21", "DE"], ["2026-09"], [137.8, 134.9]))
+
+    monkeypatch.setattr(eurostat_model, "get_request", fake)
+
+    producer = eurostat_model.get_industrial_price_index(
+        "producer", "2026-09-01", "2026-09-30"
+    )
+    eurostat_model.get_industrial_price_index("import", "2026-09-01", "2026-09-30")
+
+    assert "sts_inppd_m?" in urls[0] and "nace_r2=B-E36" in urls[0]
+    assert "s_adj=NSA" in urls[0] and "unit=I21" in urls[0]
+    assert "sts_inpi_m?" in urls[1] and "cpa2_1=CPA_B-D" in urls[1]
+    assert producer.loc[pd.Period("2026-09", "M"), "Euro Area"] == 137.8
+
+
+def test_price_indices_combine_their_publishers_and_select_fred_with_a_key(
+    monkeypatch, caplog
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics import bls_model, fred_model
+
+    months = pd.period_range("2025-01", "2026-09", freq="M")
+    rising = [100 + month for month in range(len(months))]
+    monkeypatch.setattr(
+        eurostat_model,
+        "get_industrial_price_index",
+        lambda measure, *args: pd.DataFrame(
+            {"Euro Area": rising, "Germany": rising}, index=months
+        ),
+    )
+    monkeypatch.setattr(
+        boj_model,
+        "collect_price_index",
+        lambda measure: pd.DataFrame({"Japan": rising}, index=months),
+    )
+    monkeypatch.setattr(
+        fred_model,
+        "get_price_index",
+        lambda *args: pd.DataFrame(
+            {"United States": [1.0] * len(months)}, index=months
+        ),
+    )
+    monkeypatch.setattr(
+        bls_model,
+        "get_price_index",
+        lambda measure: pd.DataFrame({"United States": [2.0] * 9}, index=months[-9:]),
+    )
+
+    with_key = Economics(
+        start_date="2025-01-01", end_date="2026-09-30", fred_api_key="key"
+    )
+    without_key = Economics(
+        start_date="2025-01-01", end_date="2026-09-30", fred_api_key=""
+    )
+
+    producer = with_key.get_producer_price_index(
+        countries=["United States", "Euro Area", "Japan", "China"]
+    )
+    assert list(producer.columns) == ["United States", "Euro Area", "Japan"]
+    assert producer["United States"].iloc[-1] == 1.0
+
+    growth = with_key.get_import_price_index(countries=["Japan"], growth=True, lag=12)
+    assert growth.loc[pd.Period("2026-09", "M"), "Japan"] == pytest.approx(
+        120 / 108 - 1, abs=1e-4
+    )
+
+    with caplog.at_level("WARNING"):
+        keyless = without_key.get_export_price_index(countries=["United States"])
+    assert keyless["United States"].dropna().iloc[-1] == 2.0
+    assert "Without a FRED API key" in caplog.text
+
+    quarterly = with_key.get_producer_price_index(
+        countries=["Japan"], period="quarterly"
+    )
+    assert quarterly.loc[pd.Period("2026Q3", "Q"), "Japan"] == pytest.approx(119.0)
+
+
+def test_overnight_rates_compound_over_calendar_days_with_their_day_count():
+    # A Friday and the Monday after: Friday's rate applies over three days.
+    index = pd.PeriodIndex(["2026-09-03", "2026-09-04", "2026-09-07"], freq="D")
+    rates = pd.DataFrame(
+        {"United States": [0.036, 0.0365, 0.037], "Japan": [0.01, None, 0.01]},
+        index=index,
+    )
+
+    growth = helpers.compound_overnight_rate(rates, helpers.OVERNIGHT_RATE_DAY_COUNTS)
+
+    assert growth["United States"].tolist() == pytest.approx(
+        [1.0, 1 + 0.036 / 360, (1 + 0.036 / 360) * (1 + 0.0365 * 3 / 360)]
+    )
+    # A day without a publication stays empty and the rate before it covers the gap.
+    assert growth["Japan"].iloc[0] == 1.0
+    assert pd.isna(growth["Japan"].iloc[1])
+    assert growth["Japan"].iloc[2] == pytest.approx(1 + 0.01 * 4 / 365)
+
+
+def test_rebasing_starts_every_country_at_its_own_first_value():
+    data = pd.DataFrame(
+        {"A": [100.0, 110.0, 121.0], "B": [None, 50.0, 40.0]},
+        index=pd.period_range("2020-01", periods=3, freq="M"),
+    )
+
+    rebased = helpers.rebase_to_first(data)
+
+    assert rebased["A"].tolist() == pytest.approx([1.0, 1.1, 1.21])
+    assert pd.isna(rebased["B"].iloc[0])
+    assert rebased["B"].iloc[1:].tolist() == pytest.approx([1.0, 0.8])
+
+
+def _purchasing_power_economics(monkeypatch):
+    from financetoolkit.economics.economics_controller import Economics
+
+    economics = Economics(start_date="2020-01-01", end_date="2020-03-31")
+    prices = pd.DataFrame(
+        {
+            "United States": [99.0, 100.0, 102.0, 104.0],
+            "Netherlands": [50.0, 50.0, 51.0, None],
+            "Brazil": [10.0, 10.0, 11.0, 12.0],
+        },
+        index=pd.period_range("2019-12", periods=4, freq="M"),
+    )
+    days = pd.period_range("2019-12-31", "2020-04-01", freq="D")
+    rates = pd.DataFrame(
+        {"United States": 0.036, "Euro Area": -0.0036}, index=days, dtype=float
+    )
+    monkeypatch.setattr(
+        economics, "_get_consumer_price_index", lambda *args, **kwargs: prices
+    )
+    monkeypatch.setattr(economics, "_get_overnight_rate", lambda *args: rates)
+
+    return economics, rates
+
+
+def test_purchasing_power_is_100_times_the_first_price_over_the_price(monkeypatch):
+    economics, _ = _purchasing_power_economics(monkeypatch)
+
+    purchasing_power = economics.get_purchasing_power(rounding=6)
+
+    assert purchasing_power["United States"].tolist() == pytest.approx(
+        [100.0, 100 * 100 / 102, 100 * 100 / 104]
+    )
+    assert purchasing_power["Netherlands"].iloc[:2].tolist() == pytest.approx(
+        [100.0, 100 * 50 / 51]
+    )
+
+
+def test_purchasing_power_of_cash_pairs_each_month_with_its_own_prices(
+    monkeypatch,
+):
+    economics, rates = _purchasing_power_economics(monkeypatch)
+
+    cash = economics.get_purchasing_power(
+        countries=["United States", "Netherlands", "Brazil"],
+        overnight_rate=True,
+        rounding=8,
+    )
+
+    # Brazil has no overnight rate here: it is left out rather than an error.
+    assert list(cash.columns) == ["United States", "Netherlands"]
+
+    growth = helpers.compound_overnight_rate(
+        rates.loc["2020-01-01":"2020-03-31"], helpers.OVERNIGHT_RATE_DAY_COUNTS
+    )
+    assert cash.loc["2020-02", "United States"] == pytest.approx(
+        100 * growth.loc["2020-02-29", "United States"] * 100 / 102
+    )
+    # A euro member earns €STR, and a month without its prices is left empty.
+    assert cash.loc["2020-02", "Netherlands"] == pytest.approx(
+        100 * growth.loc["2020-02-29", "Euro Area"] * 50 / 51
+    )
+    assert pd.isna(cash.loc["2020-03", "Netherlands"])
+
+
+def test_purchasing_power_of_cash_is_monthly_only(monkeypatch):
+    economics, _ = _purchasing_power_economics(monkeypatch)
+
+    assert economics.get_purchasing_power(overnight_rate=True, period="yearly").empty
+
+
+def test_world_bank_commodity_prices_are_read_from_the_linked_workbook(
+    cache, monkeypatch
+):
+    import io
+
+    from financetoolkit.economics import world_bank_model
+
+    rows = [
+        ["World Bank Commodity Price Data (The Pink Sheet)", None, None],
+        [None, None, None],
+        [None, None, None],
+        [None, None, None],
+        [None, "Crude oil, Brent", "Beef **"],
+        [None, "($/bbl)", "($/kg)"],
+        ["1960M01", 1.63, "…"],
+        ["1960M02", 1.64, 0.5],
+    ]
+    workbook = io.BytesIO()
+    with pd.ExcelWriter(workbook) as writer:
+        pd.DataFrame(rows).to_excel(
+            writer, sheet_name="Monthly Prices", header=False, index=False
+        )
+    link = "https://thedocs.worldbank.org/en/doc/x-0050012026/related/CMO-Historical-Data-Monthly.xlsx"
+    requested = []
+
+    def fake_get(url, timeout=60):
+        requested.append(url)
+        response = FakeResponse(text=f'<a href="{link}">Monthly prices</a>')
+        if url == link:
+            response.content = workbook.getvalue()
+        return response
+
+    monkeypatch.setattr(world_bank_model, "get_request", fake_get)
+
+    prices = world_bank_model.get_commodity_prices()
+
+    # The link is read from the page, as it changes every year.
+    assert requested == [world_bank_model.PAGE_URL, link]
+    # Names without commas and footnote marks, a missing price as NaN.
+    assert prices.columns.tolist() == ["Crude oil Brent", "Beef"]
+    assert prices.index.tolist() == [
+        pd.Period("1960-01", "M"),
+        pd.Period("1960-02", "M"),
+    ]
+    assert prices.loc["1960-02", "Crude oil Brent"] == 1.64
+    assert pd.isna(prices.loc["1960-01", "Beef"])
+
+
+def test_commodity_prices_are_selected_and_deflated(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import world_bank_model
+
+    months = pd.period_range("2024-01", "2024-04", freq="M")
+    monkeypatch.setattr(
+        world_bank_model,
+        "get_commodity_prices",
+        lambda: pd.DataFrame(
+            {"Gold": [100.0, 110.0, 120.0, 130.0], "Copper": [1.0, 2.0, 3.0, 4.0]},
+            index=months,
+        ),
+    )
+    economics = Economics(start_date="2024-01-01", end_date="2024-04-30", rounding=None)
+    monkeypatch.setattr(
+        economics,
+        "get_consumer_price_index",
+        lambda **_: pd.DataFrame(
+            {"United States": [100.0, 105.0, 110.0]}, index=months[:3]
+        ),
+    )
+
+    nominal = economics.get_commodity_prices(commodity="gold")
+    real = economics.get_commodity_prices(
+        commodity="Gold", deflate_with="United States"
+    )
+
+    assert nominal.columns.tolist() == ["Gold"]
+    # In the money of the latest CPI month (March); April, after it, keeps its price.
+    assert real["Gold"].tolist() == pytest.approx(
+        [110.0, 110.0 * 110 / 105, 120.0, 130.0]
+    )
+
+
+def test_bls_consumer_prices_come_in_one_request(monkeypatch):
+    from financetoolkit.economics import bls_model
+
+    requests_sent = []
+
+    def respond(url, **kwargs):
+        requests_sent.append(json.loads(kwargs["data"]))
+        return FakeResponse(
+            {
+                "status": "REQUEST_SUCCEEDED",
+                "Results": {
+                    "series": [
+                        {
+                            "seriesID": series,
+                            "data": [
+                                {"year": "2026", "period": "M10", "value": "337.511"},
+                                {"year": "2026", "period": "M09", "value": "336.940"},
+                            ],
+                        }
+                        for series in requests_sent[-1]["seriesid"]
+                    ]
+                },
+            }
+        )
+
+    monkeypatch.setattr(bls_model, "get_request", respond)
+
+    prices = bls_model.get_consumer_price_index()
+
+    assert len(requests_sent) == 1
+    assert list(prices.columns) == list(bls_model.CONSUMER_PRICE_SERIES)
+    assert prices.loc[pd.Period("2026-10", "M"), "core"] == pytest.approx(337.511)
+
+
+def test_millennium_series_in_real_terms(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import boe_model
+
+    years = pd.period_range("1861", periods=4, freq="Y")
+    monkeypatch.setattr(
+        boe_model,
+        "get_millennium_data",
+        lambda: pd.DataFrame({"$ Oil prices": [0.49, 1.0, 2.0, 8.06]}, index=years),
+    )
+    monkeypatch.setattr(
+        Economics,
+        "get_consumer_price_index",
+        lambda self, **kwargs: pd.DataFrame(
+            {"United States": [3.7146, 4.2402, 5.2911, 6.623]}, index=years
+        ),
+    )
+
+    real = Economics(
+        start_date="1861-01-01", end_date="1864-12-31"
+    ).get_millennium_of_macroeconomic_data(
+        series="$ Oil prices", deflate_with="United States", rounding=6
+    )
+
+    # In the money of the latest year of the price index, 1864.
+    assert real.loc["1864", "$ Oil prices"] == pytest.approx(8.06)
+    assert real.loc["1861", "$ Oil prices"] == pytest.approx(
+        0.49 * 6.623 / 3.7146, abs=1e-6
+    )
+
+
+def test_eurostat_leaves_out_its_experimental_us_index(monkeypatch):
+    months = pd.period_range("2022-06", periods=2, freq="M")
+    hicp = pd.DataFrame(
+        {"Germany": [8.2, 8.5], "United States": [10.1, 9.8]}, index=months
+    )
+    monkeypatch.setattr(
+        eurostat_model, "collect_eurostat_data", lambda *args, **kwargs: hicp.copy()
+    )
+
+    # The BIS (the CPI-U) is then the only source of the United States, also when both
+    # end in the same month.
+    for prices in (
+        eurostat_model.get_inflation_rate("2022-06-01", "2022-07-31"),
+        eurostat_model.get_consumer_price_index("2022-06-01", "2022-07-31"),
+    ):
+        assert list(prices.columns) == ["Germany"]
+
+
+def test_yield_decomposition_adds_the_parts_and_skips_missing_days(monkeypatch):
+    from financetoolkit import Economics
+
+    days = pd.to_datetime(["2026-11-06", "2026-11-09", "2026-11-10"])
+    columns = pd.MultiIndex.from_tuples(
+        [("United States", "5Y"), ("United States", "10Y")],
+        names=["Country", "Maturity"],
+    )
+    real = pd.DataFrame(
+        [[0.0235, 0.027], [0.0242, 0.0266], [0.0256, 0.0278]],
+        index=days,
+        columns=columns,
+    )
+    # The breakeven has no value on the 9th: the change of the 10th is over two days.
+    breakeven = pd.DataFrame(
+        [[0.0229, 0.0222], [float("nan"), float("nan")], [0.0225, 0.022]],
+        index=days,
+        columns=columns,
+    )
+    monkeypatch.setattr(Economics, "get_real_yield_curve", lambda self, **kwargs: real)
+    monkeypatch.setattr(
+        Economics,
+        "get_breakeven_inflation_expectations",
+        lambda self, **kwargs: breakeven,
+    )
+
+    decomposition = Economics(
+        start_date="2026-11-06", end_date="2026-11-10"
+    ).get_yield_decomposition(maturities="5y", rounding=6)
+    five_year = decomposition[("United States", "5Y")]
+
+    assert list(five_year.index) == [days[0], days[2]]
+    assert five_year.loc[days[2], "Nominal Yield"] == pytest.approx(0.0481)
+    assert five_year.loc[days[2], "Real Change"] == pytest.approx(0.0021)
+    assert five_year.loc[days[2], "Breakeven Change"] == pytest.approx(-0.0004)
+    assert five_year.loc[days[2], "Nominal Change"] == pytest.approx(0.0017)
+    assert ("United States", "10Y") not in decomposition.columns
+
+
+def test_long_run_prices_warn_about_repeated_years_and_hyperinflations(caplog):
+    from financetoolkit.mcp_server.diagnostics_model import missing_data_notes
+
+    years = pd.period_range("1911", "1926", freq="Y")
+    germany = [
+        9.25,
+        9.74,
+        9.74,
+        9.74,
+        13.1,
+        17.5,
+        21.9,
+        30.2,
+        47.7,
+        101.7,
+        130.2,
+        1464.2,
+        1.5e12,
+        1.27e13,
+        1.38e13,
+        1.39e13,
+    ]
+    index = pd.DataFrame(
+        {"Germany": germany, "France": [float(n) for n in range(10, 26)]}, index=years
+    )
+
+    with caplog.at_level("WARNING"):
+        helpers.warn_about_long_run_prices(index, "Germany", "1912", "1930")
+
+    messages = [record.getMessage() for record in caplog.records]
+    # 1913 and 1914 repeat 1912; 1922 and 1923 rose more than tenfold; France is not asked.
+    assert len(messages) == 2
+    assert "1913 and 1914" in messages[0]
+    assert "Prices in Germany rose more than tenfold in 1922 and 1923" in messages[1]
+    # The MCP server passes both on as notes.
+    assert missing_data_notes(messages) == messages
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        helpers.warn_about_long_run_prices(index, None, "1916", "1921")
+    assert not caplog.records
+
+
+def test_portwatch_transits_are_read_in_pages(cache, monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+
+    from financetoolkit.economics import portwatch_model
+
+    monkeypatch.setattr(portwatch_model, "PAGE_SIZE", 2)
+    days = ["2026-02-27", "2026-02-28", "2026-03-01"]
+    queries = []
+
+    def row(day, tankers):
+        fields = {f"n_{category}": 0 for category in portwatch_model.VESSEL_TYPES}
+        fields |= {
+            f"capacity_{category}": 0.0
+            for category in portwatch_model.VESSEL_TYPES
+            if category != "total"
+        }
+        return fields | {
+            "date": day,
+            "n_tanker": tankers,
+            "n_total": tankers + 1,
+            "capacity_tanker": tankers * 1000.0,
+            "capacity": tankers * 1000.0 + 500.0,
+        }
+
+    def fake_get(url, timeout=60):
+        query = {key: value[0] for key, value in parse_qs(urlsplit(url).query).items()}
+        queries.append(query)
+        offset = int(query["resultOffset"])
+        page = [row(day, tankers) for day, tankers in zip(days, [37, 36, 5])][
+            offset : offset + 2
+        ]
+        return FakeResponse(
+            payload={
+                "features": [{"attributes": attributes} for attributes in page],
+                "exceededTransferLimit": offset + 2 < len(days),
+            }
+        )
+
+    monkeypatch.setattr(portwatch_model, "get_request", fake_get)
+
+    transits = portwatch_model.get_chokepoint_transits("Strait of Hormuz")
+
+    # Two pages of at most two days, for the chokepoint by name.
+    assert [query["resultOffset"] for query in queries] == ["0", "2"]
+    assert queries[0]["where"] == "portname='Strait of Hormuz'"
+    assert transits.index.tolist() == [pd.Period(day, "D") for day in days]
+    assert transits["Transits Tanker"].tolist() == [37.0, 36.0, 5.0]
+    assert transits["Transits Total"].tolist() == [38.0, 37.0, 6.0]
+    # capacity is the volume of all ships, named after the Total category.
+    assert transits.loc["2026-03-01", "Trade Volume Total"] == 5500.0
+
+
+def test_portwatch_error_answers_raise(cache, monkeypatch):
+    from financetoolkit.economics import portwatch_model
+
+    monkeypatch.setattr(
+        portwatch_model,
+        "get_request",
+        lambda url, timeout=60: FakeResponse(
+            payload={"error": {"code": 400, "message": "Invalid query"}}
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Invalid query"):
+        portwatch_model.get_chokepoint_transits("Suez Canal")
+
+
+def test_chokepoint_transits_select_measure_and_complete_periods(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics import portwatch_model
+
+    # Two full months and two days of March: March is not complete.
+    days = pd.period_range("2026-01-01", "2026-03-02", freq="D")
+
+    def transits(chokepoint):
+        scale = 1.0 if chokepoint == "Strait of Hormuz" else 10.0
+        return pd.DataFrame(
+            {
+                "Transits Tanker": scale,
+                "Transits Total": 2 * scale,
+                "Trade Volume Tanker": 1000 * scale,
+                "Trade Volume Total": 3000 * scale,
+            },
+            index=days,
+        )
+
+    monkeypatch.setattr(
+        portwatch_model,
+        "get_chokepoint_names",
+        lambda: ["Panama Canal", "Strait of Hormuz", "Suez Canal"],
+    )
+    monkeypatch.setattr(portwatch_model, "get_chokepoint_transits", transits)
+    economics = Economics(start_date="2026-01-01", end_date="2026-03-31", rounding=None)
+
+    # A part of a name selects the chokepoint; one chokepoint has a column per category.
+    daily = economics.get_chokepoint_transits(chokepoints="hormuz")
+    assert daily.columns.tolist() == ["Tanker", "Total"]
+    assert len(daily) == len(days)
+
+    monthly = economics.get_chokepoint_transits(
+        chokepoints=["Strait of Hormuz", "suez canal"],
+        measure="trade_volume",
+        period="monthly",
+    )
+    assert monthly.columns.tolist() == [
+        ("Strait of Hormuz", "Tanker"),
+        ("Strait of Hormuz", "Total"),
+        ("Suez Canal", "Tanker"),
+        ("Suez Canal", "Total"),
+    ]
+    # January and February summed; the incomplete March is left out.
+    assert monthly.index.tolist() == [
+        pd.Period("2026-01", "M"),
+        pd.Period("2026-02", "M"),
+    ]
+    assert monthly[("Suez Canal", "Tanker")].tolist() == [310000.0, 280000.0]
+
+    # A name that matches several chokepoints, or none, is left out.
+    assert economics.get_chokepoint_transits(chokepoints="Canal,Atlantis").empty
+
+    # An unknown measure is reported and gives an empty result.
+    assert economics.get_chokepoint_transits(measure="volume").empty

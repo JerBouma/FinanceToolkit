@@ -4,6 +4,9 @@ Centralized Finance Toolkit provider with SQLite-backed caching.
 
 from __future__ import annotations
 
+import contextlib
+import ctypes
+import gc
 import hashlib
 import inspect
 import json
@@ -34,6 +37,7 @@ from financetoolkit.mcp_server.diagnostics_model import (
 from financetoolkit.portfolio.portfolio_controller import Portfolio
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import collect_sources, record_source
 
 logger = get_logger()
 
@@ -50,6 +54,91 @@ MAXIMUM_TOOLKIT_INSTANCES = 64
 # A Portfolio holds the daily prices and values of all its positions and its benchmark.
 MAXIMUM_PORTFOLIO_INSTANCES = 16
 MAXIMUM_STANDALONE_INSTANCES = 4
+# An instance unused this long is dropped, so a long-running server (a stdio session open
+# for days) gives back the memory of the data it no longer answers from.
+INSTANCE_IDLE_SECONDS = 30 * 60
+
+
+def release_memory() -> None:
+    """
+    Hands memory freed by dropped instances back to the operating system. The C library
+    (glibc) keeps freed memory for later allocations, so without this the process keeps
+    the size of its largest moment, even when it no longer uses it.
+    """
+    gc.collect()
+
+    with contextlib.suppress(OSError, AttributeError):
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+
+
+class InstanceCache(OrderedDict):
+    """
+    The instances the provider reuses, at most `maximum`, the least recently used first. An
+    instance unused for idle_seconds is dropped when the cache is next used.
+    """
+
+    def __init__(self, maximum: int, idle_seconds: float = INSTANCE_IDLE_SECONDS):
+        super().__init__()
+        self.maximum = maximum
+        self.idle_seconds = idle_seconds
+        self._last_used: dict[str, float] = {}
+
+    def recall(self, key: str) -> Any | None:
+        """
+        The instance kept under key, or None.
+
+        Args:
+            key (str): The cache key.
+
+        Returns:
+            Any | None: The instance, now the most recently used.
+        """
+        self.expire()
+        instance = self.get(key)
+
+        if instance is not None:
+            self.move_to_end(key)
+            self._last_used[key] = time.monotonic()
+
+        return instance
+
+    def keep(self, key: str, instance: Any) -> Any:
+        """
+        Keeps an instance, unless one is kept under key already, and drops the least
+        recently used beyond the maximum.
+
+        Args:
+            key (str): The cache key.
+            instance (Any): The instance.
+
+        Returns:
+            Any: The instance kept under key.
+        """
+        instance = self.setdefault(key, instance)
+        self.move_to_end(key)
+        self._last_used[key] = time.monotonic()
+
+        while len(self) > self.maximum:
+            self._last_used.pop(self.popitem(last=False)[0], None)
+
+        return instance
+
+    def expire(self) -> None:
+        """Drops the instances unused for idle_seconds and releases their memory."""
+        now = time.monotonic()
+        expired = False
+
+        # Ordered from least to most recently used, so the stale ones are at the front.
+        while (
+            self
+            and now - self._last_used.get(next(iter(self)), now) > self.idle_seconds
+        ):
+            self._last_used.pop(self.popitem(last=False)[0], None)
+            expired = True
+
+        if expired:
+            release_memory()
+
 
 # Tool responses are computed output, so they sit under their own source.
 MCP_CACHE_SOURCE = policy_model.MCP
@@ -214,9 +303,9 @@ class ToolkitProvider:
 
         # Least recently used first; bounded, as a hosted server meets many distinct requests
         # and an Economics instance holds the Global Macro Database (over 100 MB) per range.
-        self._toolkit_cache: OrderedDict[str, Any] = OrderedDict()
-        self._standalone_cache: OrderedDict[str, Any] = OrderedDict()
-        self._portfolio_cache: OrderedDict[str, Portfolio] = OrderedDict()
+        self._toolkit_cache = InstanceCache(MAXIMUM_TOOLKIT_INSTANCES)
+        self._standalone_cache = InstanceCache(MAXIMUM_STANDALONE_INSTANCES)
+        self._portfolio_cache = InstanceCache(MAXIMUM_PORTFOLIO_INSTANCES)
         self._lock = Lock()
         # One lock per cached Toolkit or module instance, held for the whole call. Tools run
         # in worker threads, and an instance fills its statements, prices and conversions
@@ -241,6 +330,7 @@ class ToolkitProvider:
         quarterly: bool = False,
         benchmark_ticker: str = "SPY",
         toolkit_risk_free_rate: str = "10y",
+        toolkit_basket: bool = False,
         portfolio: dict[str, Any] | None = None,
         **method_kwargs: Any,
     ) -> Any:
@@ -272,6 +362,8 @@ class ToolkitProvider:
                 modules. Defaults to ``"SPY"``.
             toolkit_risk_free_rate (str): The Treasury yield the Toolkit uses as the risk-free
                 rate ("13w", "5y", "10y" or "30y"). Defaults to ``"10y"``.
+            toolkit_basket (bool): Whether the Toolkit adds up the tickers into a "Total"
+                (Toolkit(basket=True)). Defaults to ``False``.
             portfolio (dict[str, Any] | None): The portfolio of a ``"portfolio"`` category
                 call: transactions, holdings, weights or a preset, with optional
                 start_date, initial_value, rebalancing and currency (see
@@ -312,6 +404,7 @@ class ToolkitProvider:
             "quarterly": quarterly,
             "benchmark_ticker": benchmark_ticker,
             "risk_free_rate": toolkit_risk_free_rate,
+            "basket": toolkit_basket,
             "portfolio": portfolio or {},
             # Every keyword argument, whatever its type: filtering to scalars here dropped list-valued arguments from the key entirely, so `lag=[1, 4]` and `lag=[5, 10]` hashed the same and the second call was answered with the first one's frame. The key derivation canonicalises nested structures itself, so nothing has to be excluded to keep it stable.  # noqa: E501
             **method_kwargs,
@@ -356,6 +449,12 @@ class ToolkitProvider:
                             cached_messages.loc[kinds == "input", "Message"].astype(str)
                         )
                     )
+                # The sources of the call that produced it, as nothing is retrieved now.
+                if cached_messages is not None and "Kind" in cached_messages.columns:
+                    for source in cached_messages.loc[
+                        cached_messages["Kind"] == "source", "Message"
+                    ].astype(str):
+                        record_source(source)
                 return cached
 
         logger.info(
@@ -364,84 +463,92 @@ class ToolkitProvider:
         call_messages = current_call_messages()
         first_message = len(call_messages) if call_messages is not None else 0
 
-        if category == "ticker":
-            # Functionality reached through a sub-module property (ratios, models, options).
-            if not tickers:
-                raise ValueError(
-                    f"'{method_name}' requires one or more ticker symbols. "
-                    "Provide them via the `tickers` parameter."
+        # The sources the answer's data comes from (see sources_model.track_sources).
+        with collect_sources() as call_sources:
+            if category == "ticker":
+                # Functionality reached through a sub-module property (ratios, models, options).
+                if not tickers:
+                    raise ValueError(
+                        f"'{method_name}' requires one or more ticker symbols. "
+                        "Provide them via the `tickers` parameter."
+                    )
+                result = self.call_sub_module_functionality(
+                    module_name=module_name,
+                    method_name=method_name,
+                    tickers=tickers,
+                    start_date=start_date,
+                    end_date=end_date,
+                    quarterly=quarterly,
+                    benchmark_ticker=benchmark_ticker,
+                    toolkit_risk_free_rate=toolkit_risk_free_rate,
+                    toolkit_basket=toolkit_basket,
+                    api_key=effective_key,
+                    fred_api_key=effective_fred_key,
+                    **method_kwargs,
                 )
-            result = self.call_sub_module_functionality(
-                module_name=module_name,
-                method_name=method_name,
-                tickers=tickers,
-                start_date=start_date,
-                end_date=end_date,
-                quarterly=quarterly,
-                benchmark_ticker=benchmark_ticker,
-                toolkit_risk_free_rate=toolkit_risk_free_rate,
-                api_key=effective_key,
-                fred_api_key=effective_fred_key,
-                **method_kwargs,
-            )
-        elif category == "toolkit":
-            # Functionality on the Toolkit class itself rather than a sub-module property.
-            if not tickers:
-                raise ValueError(
-                    f"'{method_name}' requires one or more ticker symbols. "
-                    "Provide them via the `tickers` parameter."
+            elif category == "toolkit":
+                # Functionality on the Toolkit class itself rather than a sub-module property.
+                if not tickers:
+                    raise ValueError(
+                        f"'{method_name}' requires one or more ticker symbols. "
+                        "Provide them via the `tickers` parameter."
+                    )
+                result = self.call_toolkit_functionality(
+                    method_name=method_name,
+                    tickers=tickers,
+                    start_date=start_date,
+                    end_date=end_date,
+                    quarterly=quarterly,
+                    benchmark_ticker=benchmark_ticker,
+                    toolkit_risk_free_rate=toolkit_risk_free_rate,
+                    toolkit_basket=toolkit_basket,
+                    api_key=effective_key,
+                    fred_api_key=effective_fred_key,
+                    **method_kwargs,
                 )
-            result = self.call_toolkit_functionality(
-                method_name=method_name,
-                tickers=tickers,
-                start_date=start_date,
-                end_date=end_date,
-                quarterly=quarterly,
-                benchmark_ticker=benchmark_ticker,
-                toolkit_risk_free_rate=toolkit_risk_free_rate,
-                api_key=effective_key,
-                fred_api_key=effective_fred_key,
-                **method_kwargs,
-            )
-        elif category == "standalone":
-            # Module such as Economics or FixedIncome, initialised without the Toolkit.
-            result = self.call_standalone_module_functionality(
-                module_name=module_name,
-                method_name=method_name,
-                start_date=start_date,
-                end_date=end_date,
-                quarterly=quarterly,
-                countries=countries,
-                api_key=effective_key,
-                fred_api_key=effective_fred_key,
-                **method_kwargs,
-            )
-        elif category == "portfolio":
-            # A Portfolio of the caller's transactions, holdings, weights or a preset.
-            result = self.call_portfolio_functionality(
-                method_name=method_name,
-                portfolio=portfolio or {},
-                start_date=start_date,
-                benchmark_ticker=benchmark_ticker,
-                api_key=effective_key,
-                **method_kwargs,
-            )
-        elif category == "discovery":
-            # Also initialisable with the Toolkit, but needs nothing beyond the API key.
-            instance = Discovery(
-                api_key=effective_key, use_cached_data=self._use_cached_data
-            )
-            method = getattr(instance, method_name)
-            # The calendars and filings take a range, passed on only when one is given.
-            accepted = inspect.signature(method).parameters
-            for name, value in (("start_date", start_date), ("end_date", end_date)):
-                if value and name in accepted:
-                    method_kwargs[name] = value
-            result = method(**method_kwargs)
-        else:
-            raise ValueError(
-                f"Unknown category '{category}' for module '{module_name}'"
-            )
+            elif category == "standalone":
+                # Module such as Economics or FixedIncome, initialised without the Toolkit.
+                result = self.call_standalone_module_functionality(
+                    module_name=module_name,
+                    method_name=method_name,
+                    start_date=start_date,
+                    end_date=end_date,
+                    quarterly=quarterly,
+                    countries=countries,
+                    api_key=effective_key,
+                    fred_api_key=effective_fred_key,
+                    **method_kwargs,
+                )
+            elif category == "portfolio":
+                # A Portfolio of the caller's transactions, holdings, weights or a preset.
+                result = self.call_portfolio_functionality(
+                    method_name=method_name,
+                    portfolio=portfolio or {},
+                    start_date=start_date,
+                    benchmark_ticker=benchmark_ticker,
+                    api_key=effective_key,
+                    **method_kwargs,
+                )
+            elif category == "discovery":
+                # Also initialisable with the Toolkit, but needs nothing beyond the API key.
+                instance = Discovery(
+                    api_key=effective_key, use_cached_data=self._use_cached_data
+                )
+                method = getattr(instance, method_name)
+                # The calendars and filings take a range, passed on only when one is given.
+                accepted = inspect.signature(method).parameters
+                for name, value in (("start_date", start_date), ("end_date", end_date)):
+                    if value and name in accepted:
+                        method_kwargs[name] = value
+                result = method(**method_kwargs)
+            else:
+                raise ValueError(
+                    f"Unknown category '{category}' for module '{module_name}'"
+                )
+
+        # Passed on to the tool call's own collection, and kept with a cached answer.
+        for source in call_sources:
+            record_source(source)
 
         # An option chain carries its expiration date as an attribute, which no answer
         # would show; as a column it does, also from the cache.
@@ -487,16 +594,18 @@ class ToolkitProvider:
                 call_messages[first_message:] if call_messages is not None else []
             )
             inputs = call_input_info()
-            if warnings or inputs:
+            sources = sorted(call_sources)
+            if warnings or inputs or sources:
                 self._cache.set(
                     source=MCP_CACHE_SOURCE,
                     dataset=MCP_CACHE_MESSAGES_DATASET,
                     entity=f"{module_name}.{method_name}",
                     data=pd.DataFrame(
                         {
-                            "Message": [*warnings, *inputs],
+                            "Message": [*warnings, *inputs, *sources],
                             "Kind": ["warning"] * len(warnings)
-                            + ["input"] * len(inputs),
+                            + ["input"] * len(inputs)
+                            + ["source"] * len(sources),
                         }
                     ),
                     parameters=cache_params,
@@ -514,14 +623,31 @@ class ToolkitProvider:
         api_key: str = "",
         fred_api_key: str = "",
         toolkit_risk_free_rate: str = "10y",
+        toolkit_basket: bool = False,
     ) -> list[str]:
         """Return human-readable notes describing data transformations applied to
         the most recent result for the given Toolkit instance (benchmark handling,
         fiscal-year relabelling and currency conversion).
 
-        Returns an empty list when no transformations were applied or when the
-        Toolkit instance has not yet fetched any financial statements, apart from
-        the benchmark note, which depends on the request alone.
+        Args:
+            tickers (list[str]): The ticker symbols of the request.
+            start_date (str): The start date of the request (format YYYY-MM-DD).
+            end_date (str): The end date of the request (format YYYY-MM-DD).
+            quarterly (bool): Whether the request is for quarterly (True) or yearly (False) statements.
+            benchmark_ticker (str): The benchmark ticker of the request.
+            api_key (str, optional): FinancialModelingPrep API key, used when the request carries
+                none. Defaults to "".
+            fred_api_key (str, optional): FRED API key, used when the request carries none.
+                Defaults to "".
+            toolkit_risk_free_rate (str, optional): The Treasury yield used as the risk-free rate
+                ("13w", "5y", "10y" or "30y"). Defaults to "10y".
+            toolkit_basket (bool, optional): Whether the Toolkit adds up the tickers into a
+                "Total" (Toolkit(basket=True)). Defaults to False.
+
+        Returns:
+            list[str]: The notes. An empty list when no transformations were applied or
+                when the Toolkit instance has not yet fetched any financial statements,
+                apart from the benchmark note, which depends on the request alone.
         """
         notes: list[str] = []
 
@@ -542,6 +668,7 @@ class ToolkitProvider:
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
                 toolkit_risk_free_rate=toolkit_risk_free_rate,
+                toolkit_basket=toolkit_basket,
                 api_key=effective_key,
                 fred_api_key=effective_fred_key,
             )
@@ -635,6 +762,7 @@ class ToolkitProvider:
         api_key: str = "",
         fred_api_key: str = "",
         toolkit_risk_free_rate: str = "10y",
+        toolkit_basket: bool = False,
     ) -> Toolkit:
         """
         Return a (potentially cached) Toolkit instance for the requested tickers and date range.
@@ -660,6 +788,8 @@ class ToolkitProvider:
                 `.economics`/`.fixedincome` properties. Optional. Defaults to "".
             toolkit_risk_free_rate (str, optional): The Treasury yield used as the risk-free rate
                 ("13w", "5y", "10y" or "30y"). Defaults to "10y".
+            toolkit_basket (bool, optional): Whether the Toolkit adds up the tickers into a
+                "Total" (Toolkit(basket=True)). Defaults to False.
 
         Returns:
             Toolkit: A Toolkit instance configured for the requested tickers and parameters.
@@ -682,14 +812,15 @@ class ToolkitProvider:
         cache_key = (
             f"{','.join(sorted(upper_tickers))}"
             f"|{start_date}|{end_date}|{quarterly}"
-            f"|{benchmark_ticker or 'none'}|{toolkit_risk_free_rate}|{key_hash}"
+            f"|{benchmark_ticker or 'none'}|{toolkit_risk_free_rate}|{toolkit_basket}"
+            f"|{key_hash}"
         )
 
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
-            if cache_key in self._toolkit_cache:
-                self._toolkit_cache.move_to_end(cache_key)
-                return self._toolkit_cache[cache_key]
+            kept = self._toolkit_cache.recall(cache_key)
+            if kept is not None:
+                return kept
 
             if not effective_key:
                 raise ValueError(FMP_KEY_HINT)
@@ -703,17 +834,14 @@ class ToolkitProvider:
                 quarterly=quarterly,
                 benchmark_ticker=benchmark_ticker,
                 risk_free_rate=toolkit_risk_free_rate,
+                basket=toolkit_basket,
                 # The same database the provider opened, or False when running uncached.
                 use_cached_data=self._use_cached_data,
                 # Unrounded, as the answer is rounded to significant digits when formatted,
                 # so small values (a daily variance) keep their precision.
                 rounding=None,
             )
-            self._toolkit_cache[cache_key] = toolkit_instance
-            while len(self._toolkit_cache) > MAXIMUM_TOOLKIT_INSTANCES:
-                self._toolkit_cache.popitem(last=False)
-
-        return toolkit_instance
+            return self._toolkit_cache.keep(cache_key, toolkit_instance)
 
     def call_sub_module_functionality(
         self,
@@ -727,6 +855,7 @@ class ToolkitProvider:
         api_key: str = "",
         fred_api_key: str = "",
         toolkit_risk_free_rate: str = "10y",
+        toolkit_basket: bool = False,
         **kwargs: Any,
     ) -> pd.DataFrame | pd.Series | dict | float | int | str:
         """
@@ -747,6 +876,8 @@ class ToolkitProvider:
                 `.economics`/`.fixedincome` sub-modules. Optional. Defaults to "".
             toolkit_risk_free_rate (str, optional): The Treasury yield used as the risk-free rate
                 ("13w", "5y", "10y" or "30y"). Defaults to "10y".
+            toolkit_basket (bool, optional): Whether the Toolkit adds up the tickers into a
+                "Total" (Toolkit(basket=True)). Defaults to False.
             **kwargs: Arbitrary keyword arguments forwarded to the resolved sub-module method.
 
         Returns:
@@ -762,6 +893,7 @@ class ToolkitProvider:
             api_key=api_key,
             fred_api_key=fred_api_key,
             toolkit_risk_free_rate=toolkit_risk_free_rate,
+            toolkit_basket=toolkit_basket,
         )
         with hold_lock(self.instance_lock(toolkit_instance)):
             module = getattr(toolkit_instance, module_name)
@@ -778,6 +910,7 @@ class ToolkitProvider:
         api_key: str = "",
         fred_api_key: str = "",
         toolkit_risk_free_rate: str = "10y",
+        toolkit_basket: bool = False,
         **kwargs: Any,
     ) -> pd.DataFrame | pd.Series | dict | float | int | str:
         """
@@ -798,6 +931,8 @@ class ToolkitProvider:
             fred_api_key (str, optional): FRED API key. Optional. Defaults to "".
             toolkit_risk_free_rate (str, optional): The Treasury yield used as the risk-free rate
                 ("13w", "5y", "10y" or "30y"). Defaults to "10y".
+            toolkit_basket (bool, optional): Whether the Toolkit adds up the tickers into a
+                "Total" (Toolkit(basket=True)). Defaults to False.
             **kwargs (Any): Additional keyword arguments forwarded to the invoked Toolkit method.
 
         Returns:
@@ -813,6 +948,7 @@ class ToolkitProvider:
             api_key=api_key,
             fred_api_key=fred_api_key,
             toolkit_risk_free_rate=toolkit_risk_free_rate,
+            toolkit_basket=toolkit_basket,
         )
         with hold_lock(self.instance_lock(toolkit_instance)):
             return getattr(toolkit_instance, method_name)(**kwargs)
@@ -854,9 +990,9 @@ class ToolkitProvider:
         ).hexdigest()
 
         with self._lock:
-            if cache_key in self._portfolio_cache:
-                self._portfolio_cache.move_to_end(cache_key)
-                return self._portfolio_cache[cache_key]
+            kept = self._portfolio_cache.recall(cache_key)
+            if kept is not None:
+                return kept
 
         if not effective_key:
             raise ValueError(FMP_KEY_HINT)
@@ -887,12 +1023,7 @@ class ToolkitProvider:
         # Built outside the lock, as building collects prices; a portfolio built twice at
         # once keeps the first one stored.
         with self._lock:
-            instance = self._portfolio_cache.setdefault(cache_key, instance)
-            self._portfolio_cache.move_to_end(cache_key)
-            while len(self._portfolio_cache) > MAXIMUM_PORTFOLIO_INSTANCES:
-                self._portfolio_cache.popitem(last=False)
-
-        return instance
+            return self._portfolio_cache.keep(cache_key, instance)
 
     def call_portfolio_functionality(
         self,
@@ -1015,9 +1146,7 @@ class ToolkitProvider:
 
         # Locked across check-create-store to stop two threads building duplicates.
         with self._lock:
-            instance = self._standalone_cache.get(cache_key)
-            if instance is not None:
-                self._standalone_cache.move_to_end(cache_key)
+            instance = self._standalone_cache.recall(cache_key)
 
             if instance is None:
                 if module_name == "economics":
@@ -1048,9 +1177,7 @@ class ToolkitProvider:
                 else:
                     raise ValueError(f"Unknown standalone module: {module_name}")
 
-                self._standalone_cache[cache_key] = instance
-                while len(self._standalone_cache) > MAXIMUM_STANDALONE_INSTANCES:
-                    self._standalone_cache.popitem(last=False)
+                self._standalone_cache.keep(cache_key, instance)
 
         method = getattr(instance, method_name)
 

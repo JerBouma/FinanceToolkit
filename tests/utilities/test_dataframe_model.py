@@ -111,13 +111,19 @@ def test_filter_columns_flat_columns():
 def test_filter_columns_multiindex_columns():
     """Test filter_columns filters a MultiIndex-column DataFrame by first level."""
     columns = pd.MultiIndex.from_tuples(
-        [("Open", "AAPL"), ("Close", "AAPL"), ("Open", "MSFT")]
+        [("Open", "AAPL"), ("Close", "AAPL"), ("Open", "MSFT"), ("Close", "MSFT")]
     )
-    df = pd.DataFrame([[1, 2, 3]], columns=columns)
+    df = pd.DataFrame([[1, 2, 3, 4]], columns=columns)
 
+    result = dataframe_model.filter_columns(df, ["Open", "Close"])
+
+    assert list(result.columns) == list(columns)
+
+    # One name left on a level is dropped, so the Open prices are indexed by ticker.
     result = dataframe_model.filter_columns(df, ["Open"])
 
-    assert set(result.columns.get_level_values(0)) == {"Open"}
+    assert list(result.columns) == ["AAPL", "MSFT"]
+    assert result.loc[0].tolist() == [1, 3]
 
 
 def test_filter_columns_multiindex_numeric_year():
@@ -129,7 +135,10 @@ def test_filter_columns_multiindex_numeric_year():
 
     result = dataframe_model.filter_columns(df, ["2024"])
 
-    pd.testing.assert_frame_equal(result, df.iloc[:, [0, 2]])
+    # The year is the only value left on its level, so the columns are the line items.
+    pd.testing.assert_frame_equal(
+        result, df.iloc[:, [0, 2]].droplevel(1, axis="columns")
+    )
 
 
 def test_filter_columns_row_index_fallback():
@@ -200,3 +209,73 @@ def test_filtering_one_row_of_one_ticker_keeps_the_ticker():
     quote = pd.DataFrame({"AAPL": [336.64, "Apple Inc."]}, index=["Price", "Name"])
 
     assert filter_columns(quote, ["Price"]).to_dict() == {"AAPL": 336.64}
+
+
+def test_show_columns_parameter_filters_every_method():
+    """A class decorated with filter_shown_columns filters on its show_columns parameter."""
+
+    @dataframe_model.filter_shown_columns
+    class Data:
+        def get_data(self, rounding: int = 2, show_columns=None) -> pd.DataFrame:
+            return pd.DataFrame({"Price": [1.0], "CAPE": [2.0], "Dividend": [3.0]})
+
+        def get_other(self) -> pd.DataFrame:
+            return pd.DataFrame({"Price": [1.0]})
+
+    data = Data()
+
+    assert list(data.get_data().columns) == ["Price", "CAPE", "Dividend"]
+    assert list(data.get_data(show_columns=["CAPE", "Price"]).columns) == [
+        "CAPE",
+        "Price",
+    ]
+    assert list(data.get_data(show_columns="CAPE").columns) == ["CAPE"]
+    assert list(data.get_data(2, ["Dividend"]).columns) == ["Dividend"]
+    assert data.get_other.__name__ == "get_other"
+
+
+def test_every_public_method_takes_show_columns():
+    """Every get_, collect_ and search_ method of the controllers takes show_columns."""
+    import inspect
+
+    from financetoolkit import Economics, Toolkit
+    from financetoolkit.discovery.discovery_controller import Discovery
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+    from financetoolkit.etf.etf_controller import ETF
+    from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
+    from financetoolkit.models.models_controller import Models
+    from financetoolkit.options.options_controller import Options
+    from financetoolkit.performance.performance_controller import Performance
+    from financetoolkit.portfolio.construction_controller import (
+        PortfolioConstruction,
+    )
+    from financetoolkit.portfolio.portfolio_controller import Portfolio
+    from financetoolkit.ratios.ratios_controller import Ratios
+    from financetoolkit.risk.risk_controller import Risk
+    from financetoolkit.technicals.technicals_controller import Technicals
+
+    missing = [
+        f"{cls.__name__}.{name}"
+        for cls in (
+            Toolkit,
+            Economics,
+            Discovery,
+            Econometrics,
+            ETF,
+            FixedIncome,
+            Models,
+            Options,
+            Performance,
+            PortfolioConstruction,
+            Portfolio,
+            Ratios,
+            Risk,
+            Technicals,
+        )
+        for name, member in vars(cls).items()
+        if name.startswith(("get_", "collect_", "search_"))
+        and inspect.isfunction(member)
+        and "show_columns" not in inspect.signature(member).parameters
+    ]
+
+    assert not missing

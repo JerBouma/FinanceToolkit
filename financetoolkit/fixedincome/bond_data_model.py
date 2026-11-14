@@ -22,6 +22,9 @@ BOND_NAME = re.compile(
     r"(?P<maturity>\d{1,2}/\d{1,2}/\d{4})\s*(?:\([^)]*\))?\s*$"
 )
 RULE_144A = re.compile(r"\s+144A\b", re.IGNORECASE)
+# Programme and coupon markers some funds append to the issuer, such as "MTN" (a medium
+# term note) or "(FXD" (a fixed coupon), so a bond is listed under its issuer's name.
+ISSUER_MARKERS = re.compile(r"\s+(MTN\b.*|\((FXD|FIXED)\b[^)]*\)?)$", re.IGNORECASE)
 
 # Holdings whose yield to maturity the coupon and price do not determine are left out, by
 # the reason given: a floating rate note resets its coupon, as does a bank's fixed-to-floating
@@ -70,7 +73,7 @@ def parse_bond_name(name: str) -> dict | None:
     rule_144a = bool(RULE_144A.search(issuer))
 
     return {
-        "Issuer": RULE_144A.sub("", issuer).strip(),
+        "Issuer": ISSUER_MARKERS.sub("", RULE_144A.sub("", issuer).strip()).strip(),
         "Coupon": float(match["coupon"]) / 100,
         "Maturity": maturity,
         "Rule 144A": rule_144a,
@@ -249,3 +252,52 @@ def interpolate_curve(curve: pd.Series, years: pd.Series) -> pd.Series:
         ),
         index=years.index,
     )
+
+
+def get_spreads_at_maturities(
+    bonds: pd.DataFrame, maturity_years: list[float]
+) -> pd.DataFrame:
+    """
+    The G-Spread of each issuer at the same maturities, interpolated linearly between the
+    issuer's own bonds by their years to maturity, so issuers compare at one point of their
+    spread curves rather than on whichever bonds they happen to have.
+
+    The formula is as follows:
+
+    - Spread (issuer, T) = s(a) + (s(b) - s(a)) * (T - a) / (b - a)
+
+    Where a and b are the years to maturity of the issuer's bonds closest below and above
+    T and s their G-Spreads; bonds of the same maturity count with their average spread.
+    A maturity outside the range of the issuer's bonds has no spread, as a spread curve is
+    not extrapolated.
+
+    Args:
+        bonds (pd.DataFrame): The bonds, with their Issuer, years to maturity (Years) and
+            G-Spread (see FixedIncome.get_bond_universe).
+        maturity_years (list[float]): The maturities, in years.
+
+    Returns:
+        pd.DataFrame: Per issuer the spread at each maturity (columns such as "5Y"), the
+        number of Bonds and the Shortest and Longest years to maturity they cover.
+    """
+    rows = {}
+
+    for issuer, group in bonds.dropna(subset=["Years", "G-Spread"]).groupby("Issuer"):
+        curve = group.groupby("Years")["G-Spread"].mean().sort_index()
+        years = curve.index.to_numpy(dtype=float)
+        spreads = curve.to_numpy(dtype=float)
+        row = {
+            f"{maturity:g}Y": (
+                float(np.interp(maturity, years, spreads))
+                if years[0] <= maturity <= years[-1]
+                else np.nan
+            )
+            for maturity in maturity_years
+        }
+        row.update({"Bonds": len(group), "Shortest": years[0], "Longest": years[-1]})
+        rows[issuer] = row
+
+    spreads_table = pd.DataFrame.from_dict(rows, orient="index")
+    spreads_table.index.name = "Issuer"
+
+    return spreads_table

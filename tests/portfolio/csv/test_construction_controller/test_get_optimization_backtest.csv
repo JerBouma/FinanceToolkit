@@ -1,9 +1,9 @@
-Portfolio,Annualized Return,Annualized Volatility,Sharpe Ratio,Maximum Drawdown,Average Turnover,Annualized Costs
-Minimum Variance,0.0315,0.2834,0.1734,-0.32,0.0868,0.001
-Maximum Sharpe,-0.0567,0.3047,-0.1118,-0.3433,0.1735,0.002
-Risk Parity,0.0259,0.2825,0.1535,-0.3027,0.0276,0.0003
-Hierarchical Risk Parity,0.0253,0.2824,0.1515,-0.3055,0.0372,0.0004
-Maximum Diversification,0.0259,0.2825,0.1535,-0.3027,0.0276,0.0003
-Inverse Volatility,0.0259,0.2825,0.1535,-0.3027,0.0276,0.0003
-Equal Weight,0.0263,0.2828,0.1552,-0.2999,0.0227,0.0003
-Benchmark,0.0263,0.1947,0.118,-0.2449,,
+Portfolio,Annualized Return,Annualized Volatility,Sharpe Ratio,Maximum Drawdown,Average Turnover,Annualized Costs,In-Sample Return,In-Sample Sharpe Ratio
+Minimum Variance,0.0315,0.2834,0.1734,-0.32,0.0868,0.001,0.2746,0.9988
+Maximum Sharpe,-0.0567,0.3047,-0.1118,-0.3433,0.1735,0.002,0.3526,1.1742
+Risk Parity,0.0259,0.2825,0.1535,-0.3027,0.0276,0.0003,0.2868,1.0038
+Hierarchical Risk Parity,0.0253,0.2824,0.1515,-0.3055,0.0372,0.0004,0.2852,1.0085
+Maximum Diversification,0.0259,0.2825,0.1535,-0.3027,0.0276,0.0003,0.2868,1.0038
+Inverse Volatility,0.0259,0.2825,0.1535,-0.3027,0.0276,0.0003,0.2868,1.0038
+Equal Weight,0.0263,0.2828,0.1552,-0.2999,0.0227,0.0003,0.2884,0.9975
+Benchmark,0.0263,0.1947,0.118,-0.2449,,,,

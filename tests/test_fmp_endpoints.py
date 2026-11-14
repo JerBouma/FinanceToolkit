@@ -1263,9 +1263,10 @@ def test_price_target_history_pages_back_to_the_start_date(monkeypatch):
         ["NVDA"], "key", start_date="2025-01-01", end_date="2025-03-31"
     )
 
-    # The second page reaches back before the start date, so no third page is requested.
+    # The second page holds the last targets, so no third page is requested; the previous
+    # targets are looked up over the year before the start date.
     assert len(requested) == 2
-    assert "from=2025-01-01" in requested[0] and "to=2025-03-31" in requested[0]
+    assert "from=2024-01-02" in requested[0] and "to=2025-03-31" in requested[0]
     nvda = history.loc["NVDA"]
     assert nvda.index.get_level_values("Analyst Company").tolist() == [
         "Broker",
@@ -1273,7 +1274,69 @@ def test_price_target_history_pages_back_to_the_start_date(monkeypatch):
         "Bank",
     ]
     assert nvda["Implied Upside"].tolist() == pytest.approx([-0.2, 0.0, 0.25])
+    # The Broker's target of December, before the start date, is the previous one.
+    assert nvda["Previous Target"].iloc[0] == 90
+    assert nvda["Previous Date"].iloc[0] == "2024-12-02"
+    assert nvda["Target Change"].iloc[0] == pytest.approx(100 / 90 - 1)
+    # The Bank's first target has no previous one: new coverage.
+    assert pd.isna(nvda["Previous Target"].iloc[1])
+    assert nvda["Target Change"].iloc[2] == pytest.approx(150 / 140 - 1)
     assert missing == []
+
+
+def test_a_previous_target_older_than_a_year_no_longer_stands(monkeypatch):
+    def target(day, price_target):
+        return {
+            "publishedDate": f"{day}T12:00:00.000Z",
+            "analystCompany": "Firm",
+            "newsTitle": f"NVIDIA (NVDA) PT Raised to ${price_target} at Firm",
+            "adjPriceTarget": price_target,
+            "priceWhenPosted": 100,
+        }
+
+    monkeypatch.setattr(
+        fmp_model,
+        "get_financial_data",
+        lambda url, **kwargs: pd.DataFrame(
+            [target("2025-06-02", 150), target("2024-05-01", 120)]
+            if "page=0" in url
+            else []
+        ),
+    )
+
+    history, _ = fmp_model.get_price_target_history("NVDA", "key")
+
+    assert history["Previous Target"].isna().all()
+
+
+def test_targets_listed_under_another_company_are_credited_to_the_named_one():
+    targets = pd.DataFrame(
+        [
+            # Listed under Macquarie, reported at JPMorgan.
+            ("2026-08-27T06:25:00.000Z", "Macquarie", 320, "NVIDIA (NVDA) PT Raised to $320 at JPMorgan"),
+            ("2026-05-21T06:25:00.000Z", "J.P. Morgan", 300, "Nvidia price target raised to $300 at JP Morgan"),
+            ("2026-05-21T06:20:00.000Z", "Macquarie", 310, "Macquarie Reiterates Outperform Rating on NVIDIA"),
+            # One article listed twice: the copy under Wells Fargo is dropped.
+            ("2026-10-02T09:25:00.000Z", "Wells Fargo", 210, "Morgan Stanley Renames NVIDIA (NVDA) to Top Pick"),
+            ("2026-10-02T09:25:00.000Z", "Morgan Stanley", 230, "Morgan Stanley Renames NVIDIA (NVDA) to Top Pick"),
+            ("2026-05-12T10:22:10.000Z", "Wells Fargo", 315, "Nvidia price target raised to $315 at Wells Fargo"),
+            # A title that names no company keeps the listed one.
+            ("2026-06-01T10:00:00.000Z", "Wells Fargo", 320, "Analyst says the AI build-out has years to run"),
+        ],
+        columns=["publishedDate", "analystCompany", "adjPriceTarget", "newsTitle"],
+    )  # fmt: skip
+
+    corrected = fmp_model.correct_analyst_companies(targets)
+
+    assert corrected["analystCompany"].tolist() == [
+        "J.P. Morgan",
+        "J.P. Morgan",
+        "Macquarie",
+        "Morgan Stanley",
+        "Wells Fargo",
+        "Wells Fargo",
+    ]
+    assert corrected["adjPriceTarget"].tolist() == [320, 300, 310, 230, 315, 320]
 
 
 def test_analyst_recommendations_count_the_analysts_and_score_them(responses):
@@ -1539,3 +1602,205 @@ def test_price_targets_without_any_published_target_have_no_latest_date(response
 
     assert pd.isna(measures.loc["Latest Target Date", "NVDA"])
     assert pd.isna(measures.loc["Days Since Latest Target", "NVDA"])
+
+
+@pytest.mark.parametrize(
+    ("event", "release", "expected_event", "expected_period"),
+    [
+        (
+            "Producer Price Index YoY (Oct)",
+            "2026-11-09",
+            "Producer Price Index YoY",
+            "2026-10",
+        ),
+        # A December figure released in January belongs to the previous year.
+        ("Inflation Rate YoY (Dec)", "2026-01-09", "Inflation Rate YoY", "2025-12"),
+        # A flash estimate released in the month it covers keeps the year.
+        ("Inflation Rate YoY (Oct)", "2026-10-31", "Inflation Rate YoY", "2026-10"),
+        ("GDP Growth Rate QoQ (Q4)", "2026-02-14", "GDP Growth Rate QoQ", "2025Q4"),
+        ("GDP Growth Rate QoQ (Q3)", "2026-10-29", "GDP Growth Rate QoQ", "2026Q3"),
+        (
+            "Continuing Jobless Claims (Dec/27)",
+            "2027-01-08",
+            "Continuing Jobless Claims",
+            "2026-12-27",
+        ),
+        ("Budget (2026)", "2026-10-01", "Budget", "2026"),
+        (
+            "Fixed Asset Investment (YTD) YoY (Jul)",
+            "2026-08-15",
+            "Fixed Asset Investment (YTD) YoY",
+            "2026-07",
+        ),
+        # Without a period the release covers its own day.
+        (
+            "Interest Rate Decision",
+            "2026-10-29 13:15",
+            "Interest Rate Decision",
+            "2026-10-29",
+        ),
+    ],
+)
+def test_economic_calendar_reference_periods(
+    event, release, expected_event, expected_period
+):
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    name, period = economics_fmp_model.get_reference_period(
+        event, pd.Timestamp(release)
+    )
+
+    assert name == expected_event
+    assert str(period) == expected_period
+
+
+def test_economic_calendar_as_series():
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    releases = pd.DataFrame(
+        [
+            ("2022-05-11 01:30", "China", "Inflation Rate YoY (Apr)", 0.018, 0.021),
+            (
+                "2022-07-09 01:30",
+                "China",
+                "Producer Price Index YoY (Jun)",
+                0.060,
+                0.061,
+            ),
+            (
+                "2026-01-09 01:30",
+                "China",
+                "Producer Price Index YoY (Dec)",
+                -0.020,
+                -0.019,
+            ),
+            (
+                "2026-10-14 01:30",
+                "China",
+                "Producer Price Index YoY (Sep)",
+                0.045,
+                0.050,
+            ),
+            ("2026-10-31 09:00", "Germany", "Inflation Rate YoY (Oct)", 0.027, 0.028),
+            ("2026-11-09 01:30", "China", "Inflation Rate YoY (Oct)", 0.008, 0.007),
+            (
+                "2026-11-09 01:30",
+                "China",
+                "Producer Price Index YoY (Oct)",
+                0.053,
+                0.057,
+            ),
+            # The final figure after the flash estimate, and a release still to come.
+            ("2026-11-12 07:00", "Germany", "Inflation Rate YoY (Oct)", 0.028, 0.029),
+            ("2026-12-09 01:30", "China", "Producer Price Index YoY (Nov)", 0.06, None),
+        ],
+        columns=["Date", "Country", "Event", "Estimate", "Actual"],
+    )
+    releases["Date"] = pd.to_datetime(releases["Date"])
+    series = economics_fmp_model.get_economic_calendar_series(
+        releases.set_index("Date")
+    )
+
+    assert isinstance(series.index, pd.PeriodIndex) and series.index.freqstr == "M"
+    assert series.columns.names == ["Country", "Event"]
+    ppi = series[("China", "Producer Price Index YoY")]
+    cpi = series[("China", "Inflation Rate YoY")]
+    assert ppi["2026-10"] == pytest.approx(0.057)
+    assert ppi["2026-09"] == pytest.approx(0.050)
+    assert ppi["2022-06"] == pytest.approx(0.061)
+    assert ppi["2025-12"] == pytest.approx(-0.019)
+    assert cpi["2026-10"] == pytest.approx(0.007)
+    assert cpi["2022-04"] == pytest.approx(0.021)
+    # The latest release of a period is kept; the estimate of the next one is there already.
+    assert series.loc["2026-10", ("Germany", "Inflation Rate YoY")] == pytest.approx(
+        0.029
+    )
+    assert pd.isna(ppi["2026-11"])
+    assert series.loc[
+        "2026-11", ("China", "Producer Price Index YoY Estimate")
+    ] == pytest.approx(0.06)
+
+    # Events of different frequencies are placed on the last day of their periods.
+    quarterly = pd.DataFrame(
+        {
+            "Country": ["China", "China"],
+            "Event": ["GDP Growth Rate YoY (Q3)", "Inflation Rate YoY (Oct)"],
+            "Estimate": [None, None],
+            "Actual": [0.048, 0.007],
+        },
+        index=pd.to_datetime(["2026-10-20", "2026-11-09"]),
+    )
+    mixed = economics_fmp_model.get_economic_calendar_series(quarterly)
+    assert [str(period) for period in mixed.index] == ["2026-09-30", "2026-10-31"]
+    assert list(mixed.columns.get_level_values("Event")) == [
+        "GDP Growth Rate YoY",
+        "Inflation Rate YoY",
+    ]
+
+    assert economics_fmp_model.get_economic_calendar_series(pd.DataFrame()).empty
+
+
+def test_calendar_series_keep_a_joint_january_and_february_release_once():
+    from financetoolkit.economics import fmp_model as economics_fmp_model
+
+    releases = pd.DataFrame(
+        [
+            # The same release listed for January and February.
+            ("2020-03-07 03:00", "Imports YoY (Jan)", "Medium", -0.040),
+            ("2020-03-07 03:07", "Imports YoY (Feb)", "Medium", -0.040),
+            # The dollar balance as January, the yuan figure as a low-impact February.
+            ("2024-03-07 03:00", "Balance of Trade (Jan)", "High", 125.16),
+            ("2024-03-07 03:00", "Balance of Trade (Feb)", "Low", 890.86),
+            ("2024-04-12 03:00", "Balance of Trade (Mar)", "High", 58.55),
+            # A release without a period, of an event that has one elsewhere.
+            ("2020-02-07 02:00", "Imports YoY", "Medium", -0.015),
+            ("2020-04-14 03:00", "Imports YoY (Mar)", "Medium", -0.009),
+            # Two months caught up on one day, with their own values.
+            ("2025-12-05 13:30", "Retail Sales MoM (Sep)", "High", 0.002),
+            ("2025-12-05 13:30", "Retail Sales MoM (Oct)", "High", 0.004),
+            # A joint release still to come.
+            ("2027-03-07 03:00", "Exports YoY (Jan)", "High", None),
+            ("2027-03-07 03:00", "Exports YoY (Feb)", "High", None),
+        ],
+        columns=["Date", "Event", "Impact", "Actual"],
+    ).assign(Country="China", Estimate=None)
+    releases["Date"] = pd.to_datetime(releases["Date"])
+
+    series = economics_fmp_model.get_economic_calendar_series(
+        releases.set_index("Date")
+    )
+
+    assert series.index.freqstr == "M"
+    assert not series.index.duplicated().any()
+    imports = series[("China", "Imports YoY")]
+    balance = series[("China", "Balance of Trade")]
+    assert imports["2020-02"] == pytest.approx(-0.040)
+    assert pd.isna(imports.get("2020-01"))
+    assert balance["2024-02"] == pytest.approx(125.16)
+    assert pd.isna(balance.get("2024-01"))
+    retail = series[("China", "Retail Sales MoM")]
+    assert retail["2025-09"] == pytest.approx(0.002)
+    assert retail["2025-10"] == pytest.approx(0.004)
+
+
+def test_futures_are_quoted_under_the_commodity_symbol(responses):
+    canned, requested = responses
+    canned["quote"] = [{"symbol": "BZUSD", "name": "Brent Crude Oil", "price": 91.79}]
+
+    quote, no_data = fmp_model.get_quote(["BZ=F"], api_key="K")
+
+    # Requested as BZUSD, returned under the ticker as given.
+    assert "symbol=BZUSD&" in requested[0]
+    assert quote.loc["Price", "BZ=F"] == pytest.approx(91.79)
+    assert no_data == []
+
+    fmp_model.get_intraday_data(
+        "CL=F", api_key="K", start="2026-11-09", end="2026-11-10"
+    )
+    assert "symbol=CLUSD&" in requested[-1]
+
+    # A future quoted in US cents keeps that unit, and one without a commodity symbol
+    # (Dutch TTF gas) is requested as it is.
+    assert fmp_model.FUTURES_SYMBOLS["KC=F"] == "KCUSX"
+    fmp_model.get_quote(["TTF=F"], api_key="K")
+    assert "symbol=TTF=F&" in requested[-1]

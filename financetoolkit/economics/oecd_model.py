@@ -974,9 +974,9 @@ def get_consumer_price_index(
     The CPI measures the average change over time in the prices paid by consumers for a
     basket of goods and services, and is the standard measure of inflation.
 
-    Unlike the Global Macro Database CPI (see `economics_controller.get_consumer_price_index`
-    without `oecd_source=True`), which is annual-only, this OECD source additionally supports
-    monthly and quarterly frequency, useful for tracking inflation more closely in real time.
+    Unlike the Global Macro Database CPI, which is annual-only, this OECD source also
+    supports monthly and quarterly frequency, useful for tracking inflation more closely
+    in real time.
 
     The index is set to 100 in the base year, which can vary per country. It covers
     all items and is not seasonally adjusted.
@@ -1097,52 +1097,6 @@ def get_household_debt_to_income_ratio(
     household_debt_to_income_ratio = household_debt_to_income_ratio / 100
 
     return household_debt_to_income_ratio
-
-
-def get_producer_price_index(
-    period: str, start_date: str | None = None, end_date: str | None = None
-):
-    """
-    Get the Producer Price Index (PPI) for a variety of countries over time from the OECD.
-    The PPI measures the average change over time in the prices received by domestic
-    producers (manufacturing) for their output. Because producers pass rising input costs
-    on to their customers with a lag, the PPI is generally seen as a leading indicator of
-    upstream cost pressure that later shows up in the Consumer Price Index (CPI).
-
-    The index covers manufacturing output only, is not seasonally adjusted, and is set
-    to 100 in the base year, which can vary per country.
-
-    The OECD stopped updating this series in its Key Economic Indicators dataset during
-    2023: annual values end in 2022, and monthly and quarterly values end in early 2023
-    for all but a couple of countries. A query whose date range starts after that point
-    returns an empty DataFrame.
-
-    Args:
-        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
-        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
-        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
-
-    Returns:
-       pd.DataFrame: A DataFrame containing the manufacturing Producer Price Index for
-        a variety of countries over time.
-    """
-    period = period.lower()
-
-    if period not in ["monthly", "quarterly", "yearly"]:
-        raise ValueError("Period must be one of 'monthly', 'quarterly' or 'yearly'")
-
-    period_data = "M" if period == "monthly" else "Q" if period == "quarterly" else "A"
-
-    oecd_data_string = f"OECD.SDD.STES,DSD_KEI@DF_KEI,4.0/.{period_data}.PP.IX.C._Z._Z"
-
-    producer_price_index = collect_oecd_data(
-        oecd_data_string,
-        "Y" if period_data == "A" else period_data if period_data == "Q" else "M",
-        start_date,
-        end_date,
-    )
-
-    return producer_price_index
 
 
 def get_exchange_rates(

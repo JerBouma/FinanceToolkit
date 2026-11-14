@@ -496,6 +496,12 @@ def get_rank_z_score(frame: pd.DataFrame) -> pd.DataFrame:
     tickers are ranked (the average rank for ties) and the ranks are standardized to a mean
     of 0 and a standard deviation of 1 (ddof=1) across the tickers with a value. Ranks make
     the score robust to outliers, as in Asness, Frazzini and Pedersen (2019).
+
+    Args:
+        frame (pd.DataFrame): the values with the tickers as the index and the periods as the columns.
+
+    Returns:
+        pd.DataFrame: the rank z-scores in the same shape as the input, NaN where a ticker has no value.
     """
     ranks = frame.rank(axis=0)
     return (ranks - ranks.mean(axis=0)) / ranks.std(axis=0)

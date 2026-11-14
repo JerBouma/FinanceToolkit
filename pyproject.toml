@@ -1,6 +1,6 @@
 [project]
 name = "financetoolkit"
-version = "2.3.3"
+version = "2.3.4"
 description = "Transparent and Efficient Financial Analysis"
 license = {text = "MIT"}
 authors = [
@@ -181,13 +181,14 @@ python-version = "3.13"
 
 [tool.ty.rules]
 invalid-argument-type = "ignore"
-invalid-return-type = "ignore"
+invalid-explicit-return = "ignore"
 invalid-assignment = "ignore"
-unresolved-attribute = "ignore"
+missing-attribute = "ignore"
+missing-union-attribute = "ignore"
 no-matching-overload = "ignore"
 
 [tool.codespell]
-ignore-words-list = 'te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund,aer,ois,ihs,hims,ist,sie,acn,sive'
+ignore-words-list = 'ore,te,hsi,amplitud,nam,tha,plaform,ine,daa,pring,pezier,trough,zar,ons,bund,aer,ois,ihs,hims,ist,sie,acn,sive'
 skip = '*.json,./.git,pyproject.toml,poetry.lock'
 
 [tool.pytest.ini_options]

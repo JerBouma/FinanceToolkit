@@ -70,11 +70,26 @@ def _to_daily_periods(index: pd.Index) -> pd.PeriodIndex:
 
 
 def looks_like_dates(index: pd.Index) -> bool:
-    """Whether an index holds dates or periods (or strings and numbers that read as years or dates)."""
+    """
+    Whether an index holds dates or periods (or strings and numbers that read as years or dates).
+
+    Args:
+        index (pd.Index): The index to check.
+
+    Returns:
+        bool: True when the index holds dates or periods, False otherwise (also for a
+        MultiIndex or an empty index).
+    """
     if isinstance(index, pd.PeriodIndex | pd.DatetimeIndex):
         return True
     if isinstance(index, pd.MultiIndex) or len(index) == 0:
         return False
+    # Periods of different frequencies combined (weekly next to daily) are no longer one
+    # PeriodIndex, and a weekly period reads as "2026-10-31/2026-11-06" in text.
+    if all(
+        isinstance(value, pd.Period | datetime.date | np.datetime64) for value in index
+    ):
+        return True
     try:
         pd.to_datetime(index.astype(str), format="mixed")
     except (ValueError, TypeError, OverflowError):

@@ -19,6 +19,23 @@ HICP_DATASET = "prc_hicp_minr"
 UNEMPLOYMENT_DATASET = "une_rt_m"
 GDP_DATASET = "namq_10_gdp"
 
+# The short-term business statistics on industrial prices, each not seasonally adjusted
+# with 2021 = 100. The producer and export price indices cover industry except
+# construction, sewerage and waste management (B-E36), the scope of the euro area
+# headline. Import prices are only compiled for mining, manufacturing and energy supply
+# (B-D), which is what is published for the euro area and most members.
+INDUSTRIAL_PRICE_DATASETS = {
+    "producer": (
+        "sts_inppd_m",
+        {"indic_bt": "PRC_PRR_DOM", "nace_r2": "B-E36"},
+    ),
+    "export": (
+        "sts_inppnd_m",
+        {"indic_bt": "PRC_PRR_NDOM", "nace_r2": "B-E36"},
+    ),
+    "import": ("sts_inpi_m", {"indic_bt": "PRC_IMP", "cpa2_1": "CPA_B-D"}),
+}
+
 # The euro area is published as "EA" (changing composition) in some datasets and only
 # under its current membership, e.g. "EA21" since Bulgaria joined in 2026, in others.
 # A yearly period is written as its four-digit year.
@@ -266,7 +283,28 @@ def collect_eurostat_data(
     )
 
 
-def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
+# The HICP special aggregates per measure: all items, the core index (all items
+# excluding energy, food, alcohol and tobacco), energy, food including alcohol and
+# tobacco, goods and services.
+HICP_AGGREGATES = {
+    "all": "TOTAL",
+    "core": "TOT_X_NRG_FOOD",
+    "energy": "NRG",
+    "food": "FOOD",
+    "goods": "GD",
+    "services": "SERV",
+}
+
+
+# Eurostat's HICP dataset also holds an experimental US index (BLS data on the HICP concept,
+# leaving out owner-occupied housing, until 2024), which differs from the CPI-U by up to a
+# percentage point and would win from the BIS when both end in the same month.
+NOT_HICP_COUNTRIES = ["United States"]
+
+
+def get_inflation_rate(
+    start_date: str, end_date: str, measure: str = "all"
+) -> pd.DataFrame:
     """
     Retrieves the monthly annual rate of change of the Harmonised Index of Consumer
     Prices (HICP) for the euro area and the countries of the European Economic Area.
@@ -278,6 +316,7 @@ def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
     Args:
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
+        measure (str): The aggregate, a key of HICP_AGGREGATES. Defaults to "all".
 
     Returns:
         pd.DataFrame: The annual inflation rate as a decimal (0.038 for 3.8%), indexed by
@@ -285,17 +324,19 @@ def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
     """
     inflation_rate = collect_eurostat_data(
         HICP_DATASET,
-        {"freq": "M", "unit": "RCH_A", "coicop18": "TOTAL"},
-        "HICP annual inflation rate",
+        {"freq": "M", "unit": "RCH_A", "coicop18": HICP_AGGREGATES[measure]},
+        f"HICP annual inflation rate ({measure})",
         start_date,
         end_date,
     )
 
     # Eurostat publishes the rate in percent.
-    return inflation_rate / 100
+    return inflation_rate.drop(columns=NOT_HICP_COUNTRIES, errors="ignore") / 100
 
 
-def get_consumer_price_index(start_date: str, end_date: str) -> pd.DataFrame:
+def get_consumer_price_index(
+    start_date: str, end_date: str, measure: str = "all"
+) -> pd.DataFrame:
     """
     Retrieves the monthly Harmonised Index of Consumer Prices (HICP) for the euro area
     and the countries of the European Economic Area, with 2015 = 100.
@@ -303,14 +344,47 @@ def get_consumer_price_index(start_date: str, end_date: str) -> pd.DataFrame:
     Args:
         start_date (str): The start date (YYYY-MM-DD).
         end_date (str): The end date (YYYY-MM-DD).
+        measure (str): The aggregate, a key of HICP_AGGREGATES. Defaults to "all".
 
     Returns:
-        pd.DataFrame: The all-items index, indexed by month with a column per country.
+        pd.DataFrame: The index, indexed by month with a column per country.
     """
     return collect_eurostat_data(
         HICP_DATASET,
-        {"freq": "M", "unit": "I15", "coicop18": "TOTAL"},
-        "HICP index",
+        {"freq": "M", "unit": "I15", "coicop18": HICP_AGGREGATES[measure]},
+        f"HICP index ({measure})",
+        start_date,
+        end_date,
+    ).drop(columns=NOT_HICP_COUNTRIES, errors="ignore")
+
+
+def get_industrial_price_index(
+    measure: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    """
+    Retrieves a monthly industrial price index for the euro area, the European Union and
+    the countries Eurostat covers, not seasonally adjusted, with 2021 = 100:
+
+    - "producer": the producer prices of industry on the domestic market (sts_inppd_m),
+      the industrial producer price index Eurostat headlines.
+    - "export": the producer prices of industry on the non-domestic market
+      (sts_inppnd_m), the prices received for sales abroad.
+    - "import": the import prices of industrial products (sts_inpi_m).
+
+    Args:
+        measure (str): "producer", "export" or "import".
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The index, indexed by month with a column per country.
+    """
+    dataset, filters = INDUSTRIAL_PRICE_DATASETS[measure]
+
+    return collect_eurostat_data(
+        dataset,
+        {"freq": "M", "s_adj": "NSA", "unit": "I21", **filters},
+        f"{measure} price index",
         start_date,
         end_date,
     )

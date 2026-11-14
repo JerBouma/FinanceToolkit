@@ -8,7 +8,11 @@ from functools import cache, cached_property
 import numpy as np
 import pandas as pd
 
-from financetoolkit.helpers import LazyDict
+from financetoolkit.helpers import (
+    LazyDict,
+    add_score_zone,
+    get_goodwill_and_intangible_assets,
+)
 from financetoolkit.models import (
     altman_model,
     beneish_model,
@@ -34,9 +38,10 @@ from financetoolkit.models import (
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import liquidity_model, profitability_model, valuation_model
 from financetoolkit.utilities import factor_model
-from financetoolkit.utilities.dataframe_model import concat_frames, filter_columns
+from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
@@ -88,6 +93,8 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["scores"] + [
 ]
 
 
+@filter_shown_columns
+@track_sources
 class Models:
     """
     The Models module is meant to execute well-known models such
@@ -215,6 +222,14 @@ class Models:
         )
 
     @cached_property
+    def _peer_tickers(self) -> list[str]:
+        """
+        The tickers the scores that rank or compare the tickers with each other use: the
+        Total of a basket is not a peer of the tickers it adds up.
+        """
+        return [ticker for ticker in self._tickers if ticker != "Total"]
+
+    @cached_property
     def _period_end_dates(self) -> pd.DataFrame | None:
         """The fiscal period end dates, retrieved when get_factor_analysis first needs them."""
         source = self._period_end_dates_source
@@ -262,7 +277,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Perform a Dupont analysis to breakdown the return on equity (ROE) into its components.
@@ -295,8 +310,10 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
-            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
-                which shows all columns.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing Dupont analysis results, including Net Profit Margin, Asset
@@ -386,9 +403,7 @@ class Models:
         if len(self._tickers) == 1:
             dupont_analysis = dupont_analysis.droplevel(level=0)
 
-        return filter_columns(
-            dupont_analysis.loc[:, self._start_date : self._end_date], show_columns
-        )
+        return dupont_analysis.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_extended_dupont_analysis(
@@ -398,7 +413,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Perform an Extended Dupont analysis to breakdown the return on equity (ROE) into its components,
@@ -430,8 +445,10 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
-            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
-                which shows all columns.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing Extended Dupont analysis results, including the Interest
@@ -555,10 +572,7 @@ class Models:
         if len(self._tickers) == 1:
             extended_dupont_analysis = extended_dupont_analysis.droplevel(level=0)
 
-        return filter_columns(
-            extended_dupont_analysis.loc[:, self._start_date : self._end_date],
-            show_columns,
-        )
+        return extended_dupont_analysis.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_enterprise_value_breakdown(
@@ -568,7 +582,7 @@ class Models:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Enterprise Value (EV) breakdown, providing a detailed view of its components.
@@ -609,8 +623,10 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
-                which shows all columns.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Enterprise Value breakdown, including the calculated components.
@@ -713,10 +729,7 @@ class Models:
         if len(self._tickers) == 1:
             enterprise_value_breakdown = enterprise_value_breakdown.droplevel(level=0)
 
-        return filter_columns(
-            enterprise_value_breakdown.loc[:, self._start_date : self._end_date],
-            show_columns,
-        )
+        return enterprise_value_breakdown.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_tobins_q_ratio(
@@ -727,7 +740,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate Tobin's Q Ratio, a valuation metric developed by economist James Tobin that
@@ -764,8 +777,10 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Market Value of Equity, Total Liabilities,
@@ -875,7 +890,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(tobins_q_results, show_columns)
+        return tobins_q_results
 
     def _earnings_before_interest_and_taxes(
         self, trailing: int | None = None
@@ -1079,7 +1094,7 @@ class Models:
         standardize: bool = False,
         trailing: int | None = None,
         market_risk_premium: float | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The Weighted Average Cost of Capital (WACC) is a financial metric used to estimate
@@ -1146,8 +1161,10 @@ class Models:
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
                 not available, the benchmark's average return above the risk-free rate over the data.
-            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
-                which shows all columns.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the WACC values.
@@ -1194,9 +1211,9 @@ class Models:
 
         |      |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|
-        | T    | 0.0453 | 0.0457 | 0.0358 | 0.0411 |
-        | TMUS | 0.047  | 0.0437 | 0.0447 | 0.0425 |
-        | VZ   | 0.0304 | 0.0406 | 0.036  | 0.0358 |
+        | T    | 0.0453 | 0.0458 | 0.0358 | 0.0411 |
+        | TMUS | 0.0469 | 0.0437 | 0.0447 | 0.0425 |
+        | VZ   | 0.0304 | 0.0407 | 0.036  | 0.0358 |
         """
         weighted_average_cost_of_capital = self._weighted_average_cost_of_capital(
             diluted=diluted,
@@ -1234,10 +1251,9 @@ class Models:
                 weighted_average_cost_of_capital.droplevel(level=0)
             )
 
-        return filter_columns(
-            weighted_average_cost_of_capital.loc[:, self._start_date : self._end_date],
-            show_columns,
-        )
+        return weighted_average_cost_of_capital.loc[
+            :, self._start_date : self._end_date
+        ]
 
     @handle_errors
     def get_economic_value_added(
@@ -1248,7 +1264,7 @@ class Models:
         standardize: bool = False,
         trailing: int | None = None,
         market_risk_premium: float | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Economic Value Added (EVA) is a measure of a company's financial performance that
@@ -1281,8 +1297,10 @@ class Models:
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
                 not available, the benchmark's average return above the risk-free rate over the data.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the EVA and its components.
@@ -1324,9 +1342,9 @@ class Models:
 
         |    |        2022 |        2023 |        2024 |          2025 |
         |:---|------------:|------------:|------------:|--------------:|
-        | HD | 1.51584e+10 | 1.23683e+10 | 1.21347e+10 | nan           |
-        | MA | 9.17363e+09 | 1.03441e+10 | 1.21321e+10 |   1.32974e+10 |
-        | V  | 1.14101e+10 | 1.30222e+10 | 1.54505e+10 |   1.53159e+10 |
+        | HD | 1.51594e+10 | 1.23711e+10 | 1.21373e+10 | nan           |
+        | MA | 9.17378e+09 | 1.03453e+10 | 1.21332e+10 |   1.32984e+10 |
+        | V  | 1.14114e+10 | 1.30249e+10 | 1.54532e+10 |   1.53188e+10 |
         """
         eva = {}
 
@@ -1420,7 +1438,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(eva_results, show_columns)
+        return eva_results
 
     @handle_errors
     def get_market_value_added(
@@ -1431,7 +1449,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Market Value Added (MVA) is a measure of a company's financial performance that
@@ -1458,8 +1476,10 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the MVA and its components.
@@ -1597,7 +1617,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(mva_results, show_columns)
+        return mva_results
 
     @handle_errors
     def get_intrinsic_valuation(
@@ -1610,6 +1630,7 @@ class Models:
         trailing: int | None = None,
         historical: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Intrinsic value is a fundamental concept in finance and investing that represents the
@@ -1678,6 +1699,10 @@ class Models:
             flow ending in it and the cash, debt and shares reported at its end. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value and its components for each ticker, or
@@ -1720,9 +1745,9 @@ class Models:
 
         |      |   Periods = 5 |
         |:-----|--------------:|
-        | ADBE |      212.536  |
-        | CRM  |       67.9382 |
-        | INTU |      173.485  |
+        | ADBE |      212.653  |
+        | CRM  |       67.9487 |
+        | INTU |      173.559  |
 
         And the same valuation for every period with `historical=True`:
 
@@ -1830,6 +1855,12 @@ class Models:
                 "weighted average cost of capital",
             ):
                 continue
+            # A value per share needs the shares, which the Total of a basket has none of.
+            shares_outstanding = self._income_statement.loc[
+                ticker, "Weighted Average Shares Diluted"
+            ].dropna()
+            if shares_outstanding.empty:
+                continue
             cash_flow_series = cash_flows.loc[ticker].dropna()
 
             intrinsic_values_dict[ticker] = intrinsic_model.get_intrinsic_value(
@@ -1863,11 +1894,7 @@ class Models:
                     .any()
                     else 0.0
                 ),
-                shares_outstanding=self._income_statement.loc[
-                    ticker, "Weighted Average Shares Diluted"
-                ]
-                .dropna()
-                .iloc[-1],
+                shares_outstanding=shares_outstanding.iloc[-1],
                 periods=periods,
             )
             intrinsic_values_dict[ticker] = intrinsic_values_dict[ticker].pipe(
@@ -1965,7 +1992,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Free Cash Flow to the Firm (FCFF) is the cash flow available to all providers of
@@ -1991,8 +2018,10 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the FCFF and its components.
@@ -2119,7 +2148,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(fcff_results, show_columns)
+        return fcff_results
 
     @handle_errors
     def get_free_cash_flow_to_equity(
@@ -2129,7 +2158,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Free Cash Flow to Equity (FCFE) is the cash flow available to a company's common
@@ -2153,8 +2182,10 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the FCFE and its components.
@@ -2266,7 +2297,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(fcfe_results, show_columns)
+        return fcfe_results
 
     def _complete_period_dividends(self) -> pd.DataFrame:
         """
@@ -2326,6 +2357,7 @@ class Models:
         growth_rate: float | list | dict[str, float] | None = None,
         project_periods: int = 5,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         The Gordon Growth Model, also known as the Dividend Discount Model (DDM) with Constant Growth,
@@ -2373,6 +2405,10 @@ class Models:
                 last complete period. Defaults to 5.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value for each ticker over time.
@@ -2410,16 +2446,16 @@ class Models:
 
         |      |       KO |
         |:-----|---------:|
-        | 2021 | 133.98   |
-        | 2022 |  68.3625 |
-        | 2023 |  59.2227 |
-        | 2024 | 102.938  |
-        | 2025 | 104.472  |
-        | 2026 | 107.084  |
-        | 2027 | 109.761  |
-        | 2028 | 112.505  |
-        | 2029 | 115.318  |
-        | 2030 | 118.201  |
+        | 2021 | 133.744  |
+        | 2022 |  68.4186 |
+        | 2023 |  59.3591 |
+        | 2024 | 102.976  |
+        | 2025 | 104.728  |
+        | 2026 | 107.347  |
+        | 2027 | 110.03   |
+        | 2028 | 112.781  |
+        | 2029 | 115.601  |
+        | 2030 | 118.491  |
         """
         dividends_per_share = self._annual_dividends_per_share()
 
@@ -2501,6 +2537,7 @@ class Models:
         high_growth_periods: int = 5,
         transition_periods: int = 0,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The Two-Stage Dividend Discount Model extends the (single-stage) Gordon Growth Model
@@ -2552,6 +2589,10 @@ class Models:
             Discount Model). Defaults to 0, no transition phase.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the intrinsic value and its components for
@@ -2593,9 +2634,9 @@ class Models:
 
         |     |   High-Growth Periods = 5 |
         |:----|--------------------------:|
-        | JNJ |                   295.957 |
-        | PEP |                   294.465 |
-        | PG  |                   200.93  |
+        | JNJ |                   296.375 |
+        | PEP |                   294.698 |
+        | PG  |                   201.233 |
         """
         dividends_per_share = self._annual_dividends_per_share()
 
@@ -2658,6 +2699,7 @@ class Models:
         stable_growth_rate: float | list | dict[str, float] | None = None,
         high_growth_periods: int = 10,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The H-Model of Fuller and Hsia (1984) values a stock whose dividend growth starts at
@@ -2698,6 +2740,10 @@ class Models:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
                 otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The intrinsic value per share for each period (rows) and ticker
@@ -2737,10 +2783,10 @@ class Models:
 
         |      |       KO |     PEP |
         |:-----|---------:|--------:|
-        | 2022 |  75.9054 | 210.913 |
-        | 2023 |  65.4444 | 203.503 |
-        | 2024 | 115.057  | 382.112 |
-        | 2025 | 117.078  | 291.965 |
+        | 2022 |  75.9677 | 211.132 |
+        | 2023 |  65.5951 | 203.877 |
+        | 2024 | 115.099  | 382.255 |
+        | 2025 | 117.365  | 292.194 |
         """
         dividends_per_share = self._annual_dividends_per_share()
 
@@ -2809,7 +2855,7 @@ class Models:
         diluted: bool = True,
         trailing: int | None = None,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The justified multiples are the Price-to-Earnings and Price-to-Book ratios the
@@ -2848,8 +2894,10 @@ class Models:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
                 otherwise).
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the Payout Ratio, Return on Equity, Growth
@@ -2890,9 +2938,9 @@ class Models:
         | Payout Ratio            |  0.7422 |  0.7982 |  0.7422 |  0.7863 |  0.6698 |
         | Return on Equity        |  0.4591 |  0.3838 |  0.4149 |  0.3869 |  0.497  |
         | Growth Rate             |  0.025  |  0.025  |  0.025  |  0.025  |  0.025  |
-        | Justified Trailing P/E  | 59.1899 | 31.0022 | 23.8889 | 41.721  | 34.3015 |
-        | Justified Leading P/E   | 57.7463 | 30.2461 | 23.3062 | 40.7035 | 33.4648 |
-        | Justified P/B           | 33.7732 | 13.5978 | 12.2419 | 18.7325 | 23.5827 |
+        | Justified Trailing P/E  | 59.0857 | 31.0277 | 23.9439 | 41.7365 | 34.3856 |
+        | Justified Leading P/E   | 57.6446 | 30.2709 | 23.3599 | 40.7185 | 33.5469 |
+        | Justified P/B           | 33.7137 | 13.609  | 12.2701 | 18.7394 | 23.6405 |
         | Price-to-Earnings Ratio | 26.2994 | 28.9985 | 23.8657 | 25.2999 | 23.0046 |
         | Price-to-Book Ratio     | 11.1732 | 11.4791 |  9.8569 | 10.8209 |  9.3731 |
         """
@@ -2955,9 +3003,7 @@ class Models:
             "Price-to-Book Ratio": prices / (equity / shares),
         }
 
-        return self._finish_score(
-            results, rounding, show_columns, first_columns=trailing or 1
-        )
+        return self._finish_score(results, rounding, first_columns=trailing or 1)
 
     @handle_errors
     def get_residual_income(
@@ -2968,7 +3014,7 @@ class Models:
         standardize: bool = False,
         trailing: int | None = None,
         market_risk_premium: float | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Residual Income is a measure of the profit a company generates in excess of the
@@ -2996,8 +3042,10 @@ class Models:
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
                 not available, the benchmark's average return above the risk-free rate over the data.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Residual Income and its components.
@@ -3043,9 +3091,9 @@ class Models:
 
         |     |        2022 |        2023 |        2024 |        2025 |
         |:----|------------:|------------:|------------:|------------:|
-        | AXP | 5.6287e+09  | 5.94485e+09 | 7.56011e+09 | 7.62486e+09 |
-        | MA  | 9.35646e+09 | 1.06974e+10 | 1.23824e+10 | 1.44718e+10 |
-        | V   | 1.24384e+10 | 1.48241e+10 | 1.71898e+10 | 1.69421e+10 |
+        | AXP | 5.62881e+09 | 5.94452e+09 | 7.56109e+09 | 7.62666e+09 |
+        | MA  | 9.35653e+09 | 1.06972e+10 | 1.23826e+10 | 1.44721e+10 |
+        | V   | 1.24393e+10 | 1.48221e+10 | 1.71906e+10 | 1.69441e+10 |
         """
         residual_income = {}
 
@@ -3112,7 +3160,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(residual_income_results, show_columns)
+        return residual_income_results
 
     @handle_errors
     def get_altman_z_score(
@@ -3124,7 +3172,8 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        zone: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the Altman Z-Score, a financial metric used to predict the likelihood of a company going bankrupt.
@@ -3181,8 +3230,13 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
-            show_columns (list[str] | None, optional): Restrict the result to these columns. Defaults to None,
-                which shows all columns.
+            zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below the lower cut-off of
+                the chosen model, "Grey" up to the upper one and "Safe" from it (see above). Not with growth or
+                standardize. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Altman Z-Score of the chosen model and its components.
@@ -3380,13 +3434,21 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(altman_results, show_columns)
+        if zone and not growth and not standardize:
+            altman_results = add_score_zone(
+                altman_results,
+                "Altman Z-Score",
+                list(altman_model.ALTMAN_CUT_OFFS[model]),
+                ["Distress", "Grey", "Safe"],
+            )
+
+        return altman_results
 
     @handle_errors
     def get_piotroski_score(
         self,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Piotroski Score, a comprehensive financial assessment tool that helps investors and analysts
@@ -3464,8 +3526,10 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all columns
-                will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Piotroski F-Score and its components.
@@ -3694,9 +3758,7 @@ class Models:
         if not piotroski_results.isna().to_numpy().any():
             piotroski_results = piotroski_results.astype(int)
 
-        return filter_columns(
-            piotroski_results.loc[:, self._start_date : self._end_date], show_columns
-        )
+        return piotroski_results.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_beneish_m_score(
@@ -3706,7 +3768,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The Beneish M-Score is a probabilistic model, developed by Messod Beneish, that uses eight
@@ -3752,8 +3814,10 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Beneish M-Score and its components.
@@ -3961,7 +4025,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(beneish_results, show_columns)
+        return beneish_results
 
     @handle_errors
     def get_ohlson_o_score(
@@ -3971,7 +4035,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the Ohlson O-Score, a financial metric used to predict the likelihood of a company
@@ -4020,8 +4084,10 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Ohlson O-Score, its bankruptcy probability, and its
@@ -4245,7 +4311,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(ohlson_results, show_columns)
+        return ohlson_results
 
     @handle_errors
     def get_zmijewski_score(
@@ -4255,7 +4321,8 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        zone: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the Zmijewski Score, a financial metric used to predict the likelihood of a company
@@ -4290,8 +4357,13 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" from a score of 0, a
+                bankruptcy probability of 0.5 and up (Zmijewski's classification), "Safe" below it. Not with
+                growth or standardize. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Zmijewski Score, its bankruptcy probability, and its
@@ -4434,7 +4506,12 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(zmijewski_results, show_columns)
+        if zone and not growth and not standardize:
+            zmijewski_results = add_score_zone(
+                zmijewski_results, "Zmijewski Score", [0.0], ["Safe", "Distress"]
+            )
+
+        return zmijewski_results
 
     @handle_errors
     def get_springate_score(
@@ -4444,7 +4521,8 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        zone: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the Springate Score, a financial metric used to predict the likelihood of
@@ -4479,8 +4557,12 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below Springate's cut-off
+                of 0.862, "Safe" from it. Not with growth or standardize. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Springate Score and its components.
@@ -4513,11 +4595,11 @@ class Models:
 
         Which returns:
 
-        |     |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:----|-------:|-------:|-------:|-------:|-------:|
-        | GAP | 0.8575 | 0.6249 | 0.9346 | 1.1942 | 1.1859 |
-        | KSS | 1.2226 | 0.5896 | 0.809  | 0.6373 | 0.759  |
-        | M   | 1.2937 | 1.1721 | 0.7495 | 0.9653 | 1.015  |
+        |     |   2021 |   2022 |   2023 |   2024 |
+        |:----|-------:|-------:|-------:|-------:|
+        | GAP | 0.8575 | 0.6249 | 0.9346 | 1.1942 |
+        | KSS | 1.2226 | 0.5896 | 0.809  | 0.6373 |
+        | M   | 1.2937 | 1.1721 | 0.7495 | 0.9653 |
         """
         # The score was estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
@@ -4626,7 +4708,12 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(springate_results, show_columns)
+        if zone and not growth and not standardize:
+            springate_results = add_score_zone(
+                springate_results, "Springate Score", [0.862], ["Distress", "Safe"]
+            )
+
+        return springate_results
 
     @handle_errors
     def get_grover_score(
@@ -4636,7 +4723,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the Grover Score, a financial metric used to predict the likelihood of a
@@ -4671,8 +4758,10 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Grover Score and its components.
@@ -4800,7 +4889,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(grover_results, show_columns)
+        return grover_results
 
     @handle_errors
     def get_fulmer_h_score(
@@ -4810,7 +4899,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the Fulmer H-Score, a financial metric used to predict the likelihood of a
@@ -4852,8 +4941,10 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
                 None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
                 yearly statements.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Fulmer H-Score and its components.
@@ -4966,14 +5057,12 @@ class Models:
             else self._balance_sheet_statement.loc[:, "Retained Earnings", :]
         )
         goodwill_and_intangible_assets = (
-            self._balance_sheet_statement.loc[:, "Goodwill and Intangible Assets", :]
+            get_goodwill_and_intangible_assets(self._balance_sheet_statement)
             .T.rolling(trailing)
             .mean()
             .T
             if trailing
-            else self._balance_sheet_statement.loc[
-                :, "Goodwill and Intangible Assets", :
-            ]
+            else get_goodwill_and_intangible_assets(self._balance_sheet_statement)
         )
         revenue = (
             self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
@@ -5116,7 +5205,7 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(fulmer_results, show_columns)
+        return fulmer_results
 
     @handle_errors
     def get_taffler_z_score(
@@ -5126,7 +5215,8 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
-        show_columns: list[str] | None = None,
+        zone: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates the Taffler z-score, a discriminant model of financial distress estimated on UK listed
@@ -5161,8 +5251,12 @@ class Models:
             trailing (int | None, optional): The trailing period to use for the calculation: flows are
                 summed and balances averaged over it. Defaults to None, which is 4 on quarterly data (a
                 trailing twelve months), as the score was estimated on yearly statements.
-            show_columns (list[str] | None, optional): List of columns to show in the results. If None, all
-                columns will be shown. Defaults to None.
+            zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below zero (Taffler's at
+                risk profile), "Safe" from it. Not with growth or standardize. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Taffler z-score and its components.
@@ -5291,7 +5385,12 @@ class Models:
             axis="columns",
         )
 
-        return filter_columns(taffler_results, show_columns)
+        if zone and not growth and not standardize:
+            taffler_results = add_score_zone(
+                taffler_results, "Taffler Z-Score", [0.0], ["Distress", "Safe"]
+            )
+
+        return taffler_results
 
     @handle_errors
     def get_present_value_of_growth_opportunities(
@@ -5305,6 +5404,7 @@ class Models:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The Present Value of Growth Opportunities (PVGO) is a financial metric that represents the
@@ -5337,6 +5437,10 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the PVGO values.
@@ -5370,10 +5474,10 @@ class Models:
 
         | Date   |     ADI |     NVDA |      TXN |
         |:-------|--------:|---------:|---------:|
-        | 2022   | 103.667 |  13.2452 |  44.5164 |
-        | 2023   | 129.843 |  40.3354 |  96.3598 |
-        | 2024   | 183.868 | 116.003  | 136.601  |
-        | 2025   | 230.98  | nan      | 119.94   |
+        | 2022   | 103.653 |  13.245  |  44.4637 |
+        | 2023   | 129.817 |  40.3285 |  96.3362 |
+        | 2024   | 183.861 | 115.999  | 136.661  |
+        | 2025   | 230.965 | nan      | 119.911  |
         """
         # Full precision, so that the rounding of the display does not move the no-growth value.
         cost_of_equity = self._weighted_average_cost_of_capital(
@@ -5466,6 +5570,7 @@ class Models:
         trailing: int | None = None,
         logarithmic: bool = False,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The Return Decomposition splits the share price return over a window into the growth of
@@ -5509,6 +5614,10 @@ class Models:
                 simple returns, which multiply. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The Price Return, EPS Growth, P/E Change, Dividend Return and Total
@@ -5617,6 +5726,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The Sustainable Growth Rate (SGR) is the maximum rate at which a company can grow its
@@ -5643,6 +5753,10 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Sustainable Growth Rate.
@@ -5675,11 +5789,11 @@ class Models:
 
         Which returns:
 
-        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:-----|-------:|-------:|-------:|-------:|-------:|
-        | DECK | 0.3129 | 0.3359 | 0.4302 | 0.4584 | 0.4075 |
-        | LULU | 0.3812 | 0.312  | 0.4923 | 0.4288 | 0.3652 |
-        | NKE  | 0.3297 | 0.2001 | 0.2521 | 0.0637 | 0.0531 |
+        |      |   2021 |   2022 |   2023 |   2024 |
+        |:-----|-------:|-------:|-------:|-------:|
+        | DECK | 0.3129 | 0.3359 | 0.4302 | 0.4584 |
+        | LULU | 0.3812 | 0.312  | 0.4923 | 0.4288 |
+        | NKE  | 0.3297 | 0.2001 | 0.2521 | 0.0637 |
         """
         return_on_equity, dividend_payout_ratio = self._return_on_equity_and_payout(
             trailing
@@ -5750,6 +5864,7 @@ class Models:
         lag: int | list[int] = 1,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The Internal Growth Rate (IGR) is the maximum rate at which a company can grow its
@@ -5772,6 +5887,10 @@ class Models:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Internal Growth Rate.
@@ -5804,11 +5923,11 @@ class Models:
 
         Which returns:
 
-        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
-        |:-----|-------:|-------:|-------:|-------:|-------:|
-        | ADBE | 0.2151 | 0.2122 | 0.2229 | 0.2254 | 0.3188 |
-        | ADSK | 0.0613 | 0.0955 | 0.1006 | 0.1144 | 0.0991 |
-        | INTU | 0.1004 | 0.0489 | 0.0569 | 0.0639 | 0.0782 |
+        |      |   2021 |   2022 |   2023 |   2024 |     2025 |
+        |:-----|-------:|-------:|-------:|-------:|---------:|
+        | ADBE | 0.2151 | 0.2122 | 0.2229 | 0.2254 |   0.3188 |
+        | ADSK | 0.0613 | 0.0955 | 0.1006 | 0.1144 | nan      |
+        | INTU | 0.1004 | 0.0489 | 0.0569 | 0.0639 |   0.0782 |
         """
         net_income = (
             self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
@@ -5864,6 +5983,7 @@ class Models:
         growth: bool = False,
         lag: int | list[int] = 1,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Graham Number, a conservative estimate of a stock's fair value
@@ -5899,6 +6019,10 @@ class Models:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DataFrame containing the Graham Number values.
@@ -6287,6 +6411,7 @@ class Models:
         cash_flow_type: str = "Free Cash Flow to Firm",
         trailing: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the growth rate the share price implies, a reverse Discounted Cash Flow
@@ -6333,6 +6458,10 @@ class Models:
                 the latest year otherwise, as the projection periods are years.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker the Share Price, the Cash Flow used, the Weighted
@@ -6438,6 +6567,7 @@ class Models:
         periods: int = 5,
         trailing: int | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Earnings Power Value (EPV), the value of a company's current earnings
@@ -6478,6 +6608,10 @@ class Models:
                 trailing twelve months) for quarterly data and the yearly figures otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker the Average Operating Margin, Normalized Operating
@@ -6597,6 +6731,7 @@ class Models:
         trailing: int | None = None,
         seed: int | None = 0,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the distribution of the intrinsic value per share when the inputs of the
@@ -6652,6 +6787,10 @@ class Models:
                 can be reproduced. Defaults to 0; None gives different draws every time.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker the Mean, Standard Deviation and the 5th, 25th, 50th,
@@ -6677,8 +6816,8 @@ class Models:
 
         |      |     Mean |   Standard Deviation |   5th Percentile |   25th Percentile |   50th Percentile |   75th Percentile |   95th Percentile |   Share Price |   Probability Undervalued |
         |:-----|---------:|---------------------:|-----------------:|------------------:|------------------:|------------------:|------------------:|--------------:|--------------------------:|
-        | AAPL |  82.5131 |              16.2376 |          60.9873 |           71.2762 |           80.2102 |           91.0734 |            112.25 |        271.86 |                    0      |
-        | MSFT | 201.173  |              54.5108 |         137.44   |          165.612  |          191.216  |          225.004  |            297.14 |        483.62 |                    0.0025 |
+        | AAPL |  82.5536 |              16.2524 |          61.0122 |            71.306 |           80.2468 |           91.1154 |           112.314 |        271.86 |                    0      |
+        | MSFT | 201.341  |              54.6203 |         137.524  |           165.728 |          191.35   |          225.201  |           297.467 |        483.62 |                    0.0026 |
         """
         operating_growth = cache(lambda: self._latest(self._operating_growth()))
         growth = helpers.rates_per_ticker(
@@ -6749,7 +6888,7 @@ class Models:
         self,
         time_horizon: float = 1.0,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the distance to default and probability of default with the Merton
@@ -6791,8 +6930,10 @@ class Models:
                 measured. Defaults to 1.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the Equity Value, Equity Volatility, Default
@@ -6825,11 +6966,11 @@ class Models:
         |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----------------------|------------:|------------:|------------:|------------:|------------:|
         | Equity Value           | 8.37862e+10 | 4.66828e+10 | 4.92598e+10 | 3.98079e+10 | 5.22045e+10 |
-        | Equity Volatility      | 0.4163      | 0.491       | 0.355       | 0.36        | 0.3319      |
+        | Equity Volatility      | 0.4163      | 0.491       | 0.3549      | 0.36        | 0.3319      |
         | Default Point          | 9.3892e+10  | 9.45665e+10 | 9.945e+10   | 1.07294e+11 | 1.1133e+11  |
-        | Asset Value            | 1.76267e+11 | 1.3761e+11  | 1.44934e+11 | 1.42307e+11 | 1.58997e+11 |
-        | Asset Volatility       | 0.1979      | 0.1675      | 0.1207      | 0.1008      | 0.109       |
-        | Distance to Default    | 3.1592      | 2.3878      | 3.3814      | 3.2062      | 3.5969      |
+        | Asset Value            | 1.76332e+11 | 1.38452e+11 | 1.44842e+11 | 1.42679e+11 | 1.58862e+11 |
+        | Asset Volatility       | 0.1979      | 0.1665      | 0.1207      | 0.1005      | 0.1091      |
+        | Distance to Default    | 3.1586      | 2.3846      | 3.3822      | 3.2046      | 3.598       |
         | Probability of Default | 0.0008      | 0.0085      | 0.0004      | 0.0007      | 0.0002      |
         """
         balance = self._balance_sheet_statement
@@ -6894,15 +7035,13 @@ class Models:
             merton, rounding if rounding is not None else self._rounding
         )
 
-        return filter_columns(
-            merton.loc[:, self._start_date : self._end_date], show_columns
-        )
+        return merton.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_campbell_hilscher_szilagyi_score(
         self,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the probability of failure of Campbell, Hilscher and Szilagyi (2008), a
@@ -6958,8 +7097,10 @@ class Models:
         Args:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the eight variables as they enter the model,
@@ -7196,16 +7337,14 @@ class Models:
         ).dropna(axis=1, how="all")
         chs = apply_rounding(chs, rounding if rounding is not None else self._rounding)
 
-        return filter_columns(
-            chs.loc[:, self._start_date : self._end_date], show_columns
-        )
+        return chs.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_synthetic_credit_rating(
         self,
         firm_type: str = "auto",
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate a synthetic credit rating and the cost of debt that comes with it, from the
@@ -7238,8 +7377,10 @@ class Models:
                 capitalization of every period. Defaults to "auto".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the Interest Coverage Ratio, Rating, Default
@@ -7275,18 +7416,18 @@ class Models:
         | ('AAPL', 'Interest Coverage Ratio') | 41.1905  | 40.7496 | 29.062  | nan     | nan     |
         | ('AAPL', 'Rating')                  | Aaa/AAA  | Aaa/AAA | Aaa/AAA | Aaa/AAA | Aaa/AAA |
         | ('AAPL', 'Default Spread')          | 0.004    | 0.004   | 0.004   | 0.004   | 0.004   |
-        | ('AAPL', 'Risk Free Rate')          | 0.0151   | 0.0388  | 0.0387  | 0.0457  | 0.0416  |
-        | ('AAPL', 'Pre-tax Cost of Debt')    | 0.0191   | 0.0428  | 0.0427  | 0.0497  | 0.0456  |
+        | ('AAPL', 'Risk Free Rate')          | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
+        | ('AAPL', 'Pre-tax Cost of Debt')    | 0.0184   | 0.0336  | 0.0437  | 0.0461  | 0.0469  |
         | ('F', 'Interest Coverage Ratio')    | 2.7915   | 5.0905  | 4.1306  | 4.5695  | 2.0191  |
         | ('F', 'Rating')                     | Baa2/BBB | A2/A    | A3/A-   | A2/A    | Ba2/BB  |
         | ('F', 'Default Spread')             | 0.0111   | 0.0078  | 0.0089  | 0.0078  | 0.0184  |
-        | ('F', 'Risk Free Rate')             | 0.0151   | 0.0388  | 0.0387  | 0.0457  | 0.0416  |
-        | ('F', 'Pre-tax Cost of Debt')       | 0.0262   | 0.0466  | 0.0476  | 0.0535  | 0.06    |
+        | ('F', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
+        | ('F', 'Pre-tax Cost of Debt')       | 0.0255   | 0.0374  | 0.0486  | 0.0499  | 0.0613  |
         | ('T', 'Interest Coverage Ratio')    | 3.8675   | -0.7472 | 3.7011  | 3.5969  | 3.6743  |
         | ('T', 'Rating')                     | A3/A-    | D2/D    | A3/A-   | A3/A-   | A3/A-   |
         | ('T', 'Default Spread')             | 0.0089   | 0.19    | 0.0089  | 0.0089  | 0.0089  |
-        | ('T', 'Risk Free Rate')             | 0.0151   | 0.0388  | 0.0387  | 0.0457  | 0.0416  |
-        | ('T', 'Pre-tax Cost of Debt')       | 0.024    | 0.2288  | 0.0476  | 0.0546  | 0.0505  |
+        | ('T', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
+        | ('T', 'Pre-tax Cost of Debt')       | 0.0233   | 0.2196  | 0.0486  | 0.051   | 0.0518  |
         """
         firm_type = firm_type.lower()
         if firm_type not in ("auto", "large", "small", "financial"):
@@ -7365,15 +7506,14 @@ class Models:
             level=1, key=lambda names: names.map(order), sort_remaining=False
         ).reindex(self._tickers, level=0)
 
-        return filter_columns(
-            result.loc[:, self._start_date : self._end_date], show_columns
-        )
+        return result.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_peer_comparison(
         self,
         peers: dict[str, list[str]] | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Compare every company with its peers on valuation, profitability, growth and
@@ -7409,6 +7549,10 @@ class Models:
                 similar size).
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and metric the Company value, the Peer Median and Peer
@@ -7439,18 +7583,18 @@ class Models:
 
         |                                        |   Company |   Peer Median |   Peer Mean |   Percentile |   Peers |
         |:---------------------------------------|----------:|--------------:|------------:|-------------:|--------:|
-        | ('MSFT', 'Price-to-Earnings')          |   29.2276 |       30.5776 |     27.5171 |          0.5 |      10 |
-        | ('MSFT', 'EV-to-EBITDA')               |   20.7309 |       19.8087 |     17.9245 |          0.5 |      10 |
-        | ('MSFT', 'Price-to-Book')              |    8.8365 |        7.2576 |      6.1536 |          0.6 |      10 |
-        | ('MSFT', 'Price-to-Sales')             |   11.7803 |        6.1724 |      4.2807 |          0.9 |      10 |
-        | ('MSFT', 'Gross Margin')               |    0.6794 |        0.6242 |      0.6164 |          0.6 |      10 |
-        | ('MSFT', 'Operating Margin')           |    0.4678 |        0.1998 |      0.2226 |          1   |      10 |
+        | ('MSFT', 'Price-to-Earnings')          |   29.5676 |       30.6062 |     27.9825 |          0.5 |      10 |
+        | ('MSFT', 'EV-to-EBITDA')               |   20.677  |       19.9245 |     18.115  |          0.5 |      10 |
+        | ('MSFT', 'Price-to-Book')              |    8.9393 |        7.3435 |      6.2418 |          0.6 |      10 |
+        | ('MSFT', 'Price-to-Sales')             |   11.9173 |        6.1931 |      4.3639 |          0.9 |      10 |
+        | ('MSFT', 'Gross Margin')               |    0.6794 |        0.6243 |      0.6164 |          0.6 |      10 |
+        | ('MSFT', 'Operating Margin')           |    0.4678 |        0.1999 |      0.2226 |          1   |      10 |
         | ('MSFT', 'Net Profit Margin')          |    0.4031 |        0.1682 |      0.187  |          1   |      10 |
-        | ('MSFT', 'Return on Equity')           |    0.3404 |        0.2392 |      0.287  |          0.6 |      10 |
-        | ('MSFT', 'Return on Invested Capital') |    0.209  |        0.1001 |      0.1434 |          0.8 |      10 |
-        | ('MSFT', 'Revenue Growth')             |    0.1779 |        0.1146 |      0.128  |          0.8 |      10 |
-        | ('MSFT', 'Debt-to-Equity')             |    0.2912 |        0.3313 |      0.7928 |          0.5 |      10 |
-        | ('MSFT', 'Dividend Yield')             |    0.0052 |        0.0088 |      0.0096 |          0.4 |      10 |
+        | ('MSFT', 'Return on Equity')           |    0.3404 |        0.2392 |      0.2864 |          0.6 |      10 |
+        | ('MSFT', 'Return on Invested Capital') |    0.2437 |        0.1307 |      0.166  |          0.8 |      10 |
+        | ('MSFT', 'Revenue Growth')             |    0.1779 |        0.1145 |      0.1197 |          0.9 |      10 |
+        | ('MSFT', 'Debt-to-Equity')             |    0.2912 |        0.3313 |      0.7927 |          0.5 |      10 |
+        | ('MSFT', 'Dividend Yield')             |    0.0051 |        0.0094 |      0.01   |          0.4 |      10 |
         """
         if self._peer_function is None:
             raise ValueError("Peer data is not available for this Toolkit.")
@@ -7522,7 +7666,6 @@ class Models:
         self,
         results: dict[str, pd.DataFrame],
         rounding: int | None,
-        show_columns: list[str] | None,
         first_columns: int = 1,
         name: str | None = None,
     ) -> pd.DataFrame:
@@ -7545,9 +7688,7 @@ class Models:
         combined = apply_rounding(
             combined, rounding if rounding is not None else self._rounding
         )
-        return filter_columns(
-            combined.loc[:, self._start_date : self._end_date], show_columns
-        )
+        return combined.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_magic_formula(
@@ -7555,7 +7696,7 @@ class Models:
         diluted: bool = True,
         trailing: int | None = None,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate Joel Greenblatt's Magic Formula ranking. Companies are ranked on two
@@ -7585,8 +7726,10 @@ class Models:
                 quarterly data (a year of operating income) and 1 otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the Earnings Yield, Return on Capital, their
@@ -7645,17 +7788,18 @@ class Models:
         ) - (inputs["Total Current Liabilities"] - inputs["Short Term Debt"].fillna(0))
 
         results = quality_model.get_magic_formula(
-            operating_income=inputs["Operating Income"],
-            enterprise_value=enterprise_value,
-            net_working_capital=net_working_capital,
-            net_fixed_assets=inputs["Property, Plant and Equipment"],
+            operating_income=inputs["Operating Income"].reindex(self._peer_tickers),
+            enterprise_value=enterprise_value.reindex(self._peer_tickers),
+            net_working_capital=net_working_capital.reindex(self._peer_tickers),
+            net_fixed_assets=inputs["Property, Plant and Equipment"].reindex(
+                self._peer_tickers
+            ),
         )
         # The ranks need the operating income of a full trailing sum, so the periods before
         # the first one are left out (and the result is empty, with a warning, without one).
         return self._finish_score(
             results,
             rounding,
-            show_columns,
             first_columns=(trailing - 1) if trailing else 0,
             name="The Magic Formula",
         )
@@ -7666,7 +7810,7 @@ class Models:
         variance_periods: int = 5,
         trailing: int | None = None,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate Partha Mohanram's G-Score, a score from 0 to 8 that separates winners
@@ -7711,8 +7855,10 @@ class Models:
                 compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the eight signals and the G-Score.
@@ -7748,18 +7894,21 @@ class Models:
 
         |       |   2023 |   2024 |   2025 |
         |:------|-------:|-------:|-------:|
-        | AAPL  |      4 |      4 |      3 |
+        | AAPL  |      4 |      4 |      2 |
         | ADBE  |      5 |      5 |      5 |
         | GOOGL |      4 |      4 |      6 |
         | META  |      6 |      5 |      4 |
-        | MSFT  |      4 |      5 |      4 |
-        | NVDA  |      3 |      3 |      3 |
+        | MSFT  |      4 |      5 |      3 |
+        | NVDA  |      3 |      3 |    nan |
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
         if trailing is None and self._quarterly:
             trailing = 4
-        inputs = self._score_inputs(trailing)
+        inputs = {
+            name: frame.reindex(self._peer_tickers)
+            for name, frame in self._score_inputs(trailing).items()
+        }
         lag = trailing or 1
         results = quality_model.get_mohanram_g_score(
             net_income=inputs["Net Income"],
@@ -7781,7 +7930,6 @@ class Models:
         return self._finish_score(
             results,
             rounding,
-            show_columns,
             first_columns=first_columns,
             name="The Mohanram G-Score",
         )
@@ -7791,7 +7939,7 @@ class Models:
         self,
         trailing: int | None = None,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Dechow F-Score, the probability that a company's financial statements
@@ -7829,8 +7977,10 @@ class Models:
                 compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the seven inputs, the Predicted Value, the
@@ -7867,9 +8017,9 @@ class Models:
 
         |      |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|
-        | AAPL | 0.4226 | 0.3916 | 0.4136 | 0.4214 |
+        | AAPL | 0.4226 | 0.3916 | 0.3913 | 0.3962 |
         | MSFT | 0.811  | 0.7759 | 1.018  | 0.8628 |
-        | SMCI | 2.8035 | 0.6471 | 6.128  | 0.8275 |
+        | SMCI | 2.797  | 0.6471 | 6.128  | 0.8275 |
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
@@ -7907,7 +8057,6 @@ class Models:
         return self._finish_score(
             results,
             rounding,
-            show_columns,
             first_columns=first_columns,
             name="The Dechow F-Score",
         )
@@ -7917,7 +8066,7 @@ class Models:
         self,
         trailing: int | None = None,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate James Montier's C-Score, a count from 0 to 6 of warning signs that a
@@ -7949,8 +8098,10 @@ class Models:
                 compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the six signals and the C-Score.
@@ -7984,9 +8135,9 @@ class Models:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | AAPL |      4 |      2 |      3 |      2 |      3 |
+        | AAPL |      4 |      2 |      3 |      3 |      3 |
         | MSFT |      5 |      2 |      5 |      3 |      2 |
-        | SMCI |      3 |      5 |      2 |      5 |      2 |
+        | SMCI |      5 |      5 |      2 |      5 |      2 |
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
@@ -8019,7 +8170,6 @@ class Models:
         return self._finish_score(
             results,
             rounding,
-            show_columns,
             first_columns=first_columns,
             name="The Montier C-Score",
         )
@@ -8030,7 +8180,7 @@ class Models:
         growth_years: int = 5,
         trailing: int | None = None,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         The Quality Score follows the Quality Minus Junk (QMJ) score of Asness, Frazzini and
@@ -8067,8 +8217,10 @@ class Models:
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
                 otherwise).
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the z-scores of Profitability, Growth, Safety
@@ -8106,22 +8258,22 @@ class Models:
 
         Which returns:
 
-        |       |    2020 |    2021 |    2022 |    2023 |    2024 |     2025 |
-        |:------|--------:|--------:|--------:|--------:|--------:|---------:|
-        | AAPL  |  0.6124 |  1.0206 |  1.4289 |  0.6124 |  0.6124 |   1.3363 |
-        | GOOGL | -1.0206 |  0.2041 |  0.6124 |  1.0206 |  1.0206 |   0.8018 |
-        | IBM   | -1.4289 | -0.6124 | -0.6124 | -0.6124 | -0.6124 |  -0.2673 |
-        | INTC  | -0.6124 | -1.0206 | -1.4289 | -1.4289 | -1.4289 |  -1.3363 |
-        | META  |  1.4289 |  1.4289 |  0.2041 | -0.2041 |  0.2041 |   0.2673 |
-        | MSFT  |  1.0206 |  0.6124 |  1.0206 |  0.2041 | -0.2041 |  -0.8018 |
-        | NVDA  |  0.2041 | -0.2041 | -0.2041 |  1.4289 |  1.4289 | nan      |
-        | ORCL  | -0.2041 | -1.4289 | -1.0206 | -1.0206 | -1.0206 | nan      |
+        |       |    2019 |    2020 |    2021 |    2022 |    2023 |    2024 |     2025 |
+        |:------|--------:|--------:|--------:|--------:|--------:|--------:|---------:|
+        | AAPL  |  0.6124 |  0.6124 |  1.0206 |  1.4289 |  0.6124 |  0.6124 |   1.3363 |
+        | GOOGL | -1.0206 | -1.0206 |  0.2041 |  0.6124 |  1.0206 |  1.0206 |   0.8018 |
+        | IBM   | -1.4289 | -1.4289 | -0.6124 | -0.6124 | -0.6124 | -0.6124 |  -0.2673 |
+        | INTC  | -0.6124 | -0.6124 | -1.0206 | -1.4289 | -1.4289 | -1.4289 |  -1.3363 |
+        | META  |  1.0206 |  1.4289 |  1.4289 |  0.2041 | -0.2041 |  0.2041 |   0.2673 |
+        | MSFT  |  0.2041 |  1.0206 |  0.6124 |  1.0206 |  0.2041 | -0.2041 |  -0.8018 |
+        | NVDA  |  1.4289 |  0.2041 | -0.2041 | -0.2041 |  1.4289 |  1.4289 | nan      |
+        | ORCL  | -0.2041 | -0.2041 | -1.4289 | -1.0206 | -1.0206 | -1.0206 | nan      |
         """
-        if len(self._tickers) < quality_model.QUALITY_MINIMUM_TICKERS:
+        if len(self._peer_tickers) < quality_model.QUALITY_MINIMUM_TICKERS:
             logger.warning(
                 "The Quality Score ranks the tickers against each other and needs at least "
                 "three tickers, while %s were given.",
-                len(self._tickers),
+                len(self._peer_tickers),
             )
             return pd.DataFrame()
 
@@ -8213,17 +8365,22 @@ class Models:
 
         results = quality_model.get_quality_minus_junk(
             {
-                "Profitability": profitability,
-                "Growth": growth,
-                "Safety": safety,
-                "Payout": payout,
+                component: {
+                    name: frame.reindex(self._peer_tickers)
+                    for name, frame in measures.items()
+                }
+                for component, measures in {
+                    "Profitability": profitability,
+                    "Growth": growth,
+                    "Safety": safety,
+                    "Payout": payout,
+                }.items()
             }
         )
 
         return self._finish_score(
             results,
             rounding,
-            show_columns,
             first_columns=growth_lag + ((trailing or 1) - 1),
             name="The Quality Score",
         )
@@ -8233,7 +8390,7 @@ class Models:
         self,
         trailing: int | None = None,
         rounding: int | None = None,
-        show_columns: list[str] | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the accruals ratios: the part of earnings that is not backed by cash,
@@ -8278,8 +8435,10 @@ class Models:
                 compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
-            show_columns (list[str] | None, optional): The periods to show. Defaults to None,
-                all periods.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Per ticker and period the Balance Sheet Accruals Ratio and the Cash
@@ -8328,9 +8487,7 @@ class Models:
             lag=trailing or 1,
         )
         # The balance sheet changes look a year back, by when the trailing sums are complete.
-        return self._finish_score(
-            results, rounding, show_columns, first_columns=trailing or 1
-        )
+        return self._finish_score(results, rounding, first_columns=trailing or 1)
 
     @handle_errors
     def get_factor_analysis(
@@ -8343,6 +8500,7 @@ class Models:
         detail: str | None = None,
         column: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -8401,6 +8559,10 @@ class Models:
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the models that take them, e.g. trailing=4 or
                 diluted=False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The summary per model and horizon, or with detail that part of the
@@ -8444,8 +8606,8 @@ class Models:
         Which returns:
         |                                      |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:-------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_piotroski_score', '12 Months') |    -0.146 |                  0.3791 |                -0.3852 |       -3.6131 |    0.0005 |           0.2841 |             88 |            -0.1812 |              0.0794 |                 0.9301 |
-        | ('get_altman_z_score', '12 Months')  |     0.121 |                  0.3923 |                 0.3085 |        3.0853 |    0.0026 |           0.7    |            100 |             0.1264 |              0.0285 |                 0.9941 |
+        | ('get_piotroski_score', '12 Months') |   -0.1352 |                  0.3685 |                -0.3669 |       -3.6693 |    0.0004 |             0.31 |            100 |            -0.1482 |              0.0787 |                 0.93   |
+        | ('get_altman_z_score', '12 Months')  |    0.1209 |                  0.3923 |                 0.3082 |        3.0824 |    0.0027 |             0.7  |            100 |             0.1264 |              0.0285 |                 0.9941 |
         """
         factors = factor_model.get_daily_factors(
             self,

@@ -19,6 +19,7 @@ AAPL,SBC to Revenue Ratio,0.0249,0.0216,0.0229,0.0283
 AAPL,Deferred Revenue Ratio,0.0242,0.0208,0.0201,0.021
 AAPL,Working Capital Turnover Ratio,,15.346,-85.519,-37.7268
 AAPL,Capex Intensity,0.0266,0.0303,0.0272,0.0286
+AAPL,Net Capital Expenditure,-3747000000.0,-199000000.0,-396000000.0,-560000000.0
 AAPL,Capex to Depreciation,0.6611,0.9824,0.9643,0.9514
 AAPL,Asset Growth,,0.0837,0.005,-0.0005
 AAPL,Net Operating Assets,,0.3865,0.3488,0.3166
@@ -133,6 +134,7 @@ MSFT,SBC to Revenue Ratio,0.037,0.0364,0.0378,0.0454
 MSFT,Deferred Revenue Ratio,0.2517,0.247,0.2297,0.2402
 MSFT,Working Capital Turnover Ratio,,1.6371,2.3278,2.7395
 MSFT,Capex Intensity,0.108,0.1227,0.1205,0.1326
+MSFT,Net Capital Expenditure,2645000000.0,8936000000.0,9426000000.0,14246000000.0
 MSFT,Capex to Depreciation,1.2067,1.7647,1.6519,2.0278
 MSFT,Asset Growth,,0.1078,0.0931,0.1292
 MSFT,Net Operating Assets,,0.2319,0.3343,0.3898
@@ -173,7 +175,7 @@ MSFT,Free Cash Flow Conversion,1.0215,0.9159,0.8957,0.8219
 MSFT,Free Cash Flow to EBITDA,0.6879,0.6877,0.6659,0.5809
 MSFT,Percent Accruals,-0.3702,-0.2525,-0.2241,-0.2103
 MSFT,Debt-to-Assets Ratio,0.2356,0.2031,0.1679,0.1456
-MSFT,Asset Coverage Ratio,3.1791,3.6207,4.2632,5.0648
+MSFT,Asset Coverage Ratio,2.5685,2.8872,3.1612,3.9327
 MSFT,Debt-to-Equity Ratio,0.6001,0.4773,0.3679,0.2908
 MSFT,Debt Service Coverage Ratio,10.3715,7.8328,20.3331,14.1904
 MSFT,Equity Multiplier,,2.4399,2.2643,2.0839

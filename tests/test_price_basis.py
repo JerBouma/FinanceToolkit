@@ -65,3 +65,31 @@ def test_options_inputs_do_not_change_with_later_data(test_toolkit):
         truncated["MSFT"].iloc[-252:].std() * np.sqrt(252)
     )
     assert isinstance(pd.Period(date), pd.Period)
+
+
+def test_fmp_adjusted_close_is_not_rounded_to_two_decimals():
+    from financetoolkit import fmp_model
+
+    days = pd.period_range("2026-11-05", periods=4, freq="D")
+    close = pd.Series([1.1219, 1.1141, 1.1224, 1.1165], index=days)
+    rounded = close.round(2)
+
+    # A currency pair pays no dividends: the adjusted close is the close itself.
+    assert fmp_model._unrounded_adjusted_close(close, rounded, None).equals(close)
+    no_dividends = pd.Series(0.0, index=days)
+    assert fmp_model._unrounded_adjusted_close(close, rounded, no_dividends).equals(
+        close
+    )
+
+    # A dividend of 0.2775 on the third day: the closes before it are multiplied by
+    # 1 - 0.2775 / 24.87, so the ex-dividend return is 22.18 / (24.87 - 0.2775) - 1.
+    shares = pd.Series([24.47, 24.87, 22.18, 22.49], index=days)
+    dividends = pd.Series([0.0, 0.0, 0.2775, 0.0], index=days)
+    adjusted = fmp_model._unrounded_adjusted_close(
+        shares, shares.round(2) * 0.99, dividends
+    )
+    assert adjusted.iloc[2:].tolist() == [22.18, 22.49]
+    assert adjusted.iloc[2] / adjusted.iloc[1] - 1 == pytest.approx(
+        22.18 / (24.87 - 0.2775) - 1
+    )
+    assert adjusted.iloc[1] / adjusted.iloc[0] == pytest.approx(24.87 / 24.47)

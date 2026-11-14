@@ -16,12 +16,15 @@ from financetoolkit.performance.helpers import get_newey_west_lags
 from financetoolkit.risk import cvar_model
 from financetoolkit.risk.risk_model import (
     apply_to_stacked_windows,
+    get_move_significance,
     get_tail_ratio,
     get_wealth_and_peak,
 )
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.sources_model import record_url
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
+    PERIODS_PER_YEAR,
     by_own_trading_days,
     drop_non_finite,
     to_period_index,
@@ -210,6 +213,12 @@ def get_beta_implied_return(
     estimate the beta that explains it. The period returns compound the daily returns,
     as `get_returns` does.
 
+    Each Residual is also set against the residuals before it, as `get_move_significance`
+    sets a return against the earlier returns: the Residual Percentile is the share of the
+    earlier residuals with a smaller size (once a year of them, at least 20, is available)
+    and the Residual Largest Since the date of the last residual at least as large in the
+    same direction, NaN when no earlier residual was.
+
     Args:
         returns (pd.DataFrame): The daily asset returns, a daily PeriodIndex.
         benchmark_returns (pd.Series): The daily benchmark returns on the same index.
@@ -218,7 +227,8 @@ def get_beta_implied_return(
 
     Returns:
         pd.DataFrame: The periods as rows and a MultiIndex of (measure, ticker) as columns,
-        with the measures Beta, Benchmark Return, Implied Return, Actual Return and Residual.
+        with the measures Beta, Benchmark Return, Implied Return, Actual Return, Residual,
+        Residual Percentile and Residual Largest Since (the date as text).
     """
     # The window ends on the day before: the shift keeps a day out of its own beta.
     daily_beta = get_rolling_beta(returns, benchmark_returns, beta_window).shift(1)
@@ -240,6 +250,16 @@ def get_beta_implied_return(
         columns=returns.columns,
     )
     implied_return = beta.reindex(actual_return.index) * benchmark
+    residual = actual_return - implied_return
+
+    # The residual against its own history, with the window get_move_significance uses by
+    # default: the percentile needs a year of earlier residuals (at least 20).
+    significance = {
+        ticker: get_move_significance(
+            residual[ticker], window=max(PERIODS_PER_YEAR[period], 20)
+        )
+        for ticker in residual.columns
+    }
 
     return pd.concat(
         {
@@ -247,9 +267,55 @@ def get_beta_implied_return(
             "Benchmark Return": benchmark,
             "Implied Return": implied_return,
             "Actual Return": actual_return,
-            "Residual": actual_return - implied_return,
+            "Residual": residual,
+            **{
+                f"Residual {measure}": pd.DataFrame(
+                    {
+                        ticker: measures[measure]
+                        for ticker, measures in significance.items()
+                    }
+                )
+                for measure in ("Percentile", "Largest Since")
+            },
         },
         axis=1,
+    )
+
+
+def get_residual_value(
+    residual: pd.DataFrame, market_cap: pd.DataFrame, period: str
+) -> pd.DataFrame:
+    """
+    Translate the Residual of each period into money: the residual return times the market
+    capitalization at the close before the period started.
+
+        - Residual Value = Residual × Market Cap at the previous close
+
+    The previous close is the last close of the period before, so for daily periods the
+    close of the trading day before; the value is what the asset's own move added to or
+    took from the company's market value, in the currency of the market cap.
+
+    Args:
+        residual (pd.DataFrame): The residual return per period (rows) and ticker (columns),
+            with the PeriodIndex of `period`.
+        market_cap (pd.DataFrame): The daily market capitalization per ticker, a daily
+            PeriodIndex. NaN where it is unknown, which keeps the value NaN.
+        period (str): The period of the residuals: daily, weekly, monthly, quarterly or yearly.
+
+    Returns:
+        pd.DataFrame: The Residual Value per period and ticker, NaN without a market cap.
+    """
+    labels = to_period_index(market_cap.index)
+
+    if period != "daily":
+        labels = labels.asfreq(PERIOD_TRANSLATION[period])
+
+    # The last market cap of every period (the latest close with known shares), carried to
+    # the period after it.
+    previous_market_cap = market_cap.groupby(labels).last().shift(1)
+
+    return residual * previous_market_cap.reindex(
+        index=residual.index, columns=residual.columns
     )
 
 
@@ -321,8 +387,8 @@ def _beta_of_sample(
         if method in ("ols", "blume", "vasicek"):
             betas[column], variances[column] = _slope(asset, market)
         elif method in ("upside", "downside"):
-            # The benchmark's direction picks the observations, as in empyrical's
-            # up_alpha_beta and down_alpha_beta; a flat benchmark falls in neither.
+            # The benchmark's direction picks the observations; a flat benchmark falls in
+            # neither.
             direction = market > 0 if method == "upside" else market < 0
             betas[column] = _slope(asset[direction], market[direction])[0]
         elif method == "dimson":
@@ -658,6 +724,7 @@ def download_factor_file(url: str) -> bytes:
     downloaded = _factor_files.get(url)
 
     if downloaded and time.monotonic() - downloaded[0] < FACTOR_FILE_LIFETIME_SECONDS:
+        record_url(url)
         return downloaded[1]
 
     content = get_request(url, timeout=10).content
@@ -833,7 +900,7 @@ def get_factor_asset_correlations(
 
     Args:
         factors (pd.DataFrame): the factor dataset with each factor in a column.
-        excess_returns (pd.Series): the excess returns.
+        excess_return (pd.Series): the excess return of the asset.
 
     Returns:
         pd.Series: the correlation of each factor with the excess return.
@@ -1351,8 +1418,7 @@ def get_probabilistic_sharpe_ratio(
     defaults to `fisher=True` (excess kurtosis, Normal = 0); either call it with
     `fisher=False` before passing the result in here, or add 3 to a Fisher/excess
     kurtosis value. Getting this convention backwards silently shifts every PSR value
-    (via the ((γ₄ − 1) / 4) term), which is exactly the kind of sign/convention bug this
-    codebase has been bitten by before, so double check which convention is being fed in.
+    (via the ((γ₄ − 1) / 4) term), so double check which convention is being fed in.
 
     For more information about the method, see the following paper:
 
@@ -1367,7 +1433,7 @@ def get_probabilistic_sharpe_ratio(
         skewness (pd.Series | pd.DataFrame | float): The skewness (γ₃) of the same
         returns used to compute `sharpe_ratio`.
         kurtosis (pd.Series | pd.DataFrame | float): The non-excess (raw) kurtosis (γ₄)
-        of the same returns used to compute `sharpe_ratio`. See the Notes above — a
+        of the same returns used to compute `sharpe_ratio`. See the note above — a
         Normal distribution has a kurtosis of 3 under this convention, not 0.
         n_observations (pd.Series | pd.DataFrame | float | int): The number of return
         observations used to compute `sharpe_ratio`.
@@ -1509,8 +1575,7 @@ def get_sortino_ratio(
 
     Where N is the *total* number of observations (not just the number of negative
     ones) -- periods with a non-negative excess return contribute 0 to the sum, but
-    still count towards N, exactly as in Sortino & Price (1994) and the equivalent
-    empyrical/pyfolio `downside_risk` implementation. This is deliberately not the same
+    still count towards N, exactly as in Sortino & Price (1994). This is deliberately not the same
     as `excess_returns[excess_returns < 0].std()`: that alternative would divide by
     (number of negative observations - 1) and measure the dispersion of the losses
     around *their own mean*, rather than their root-mean-square distance below the MAR
@@ -2450,17 +2515,13 @@ def get_return_statistics(returns: pd.Series) -> pd.Series:
         - Common Sense Ratio = Profit Factor x Tail Ratio (95th / 5th percentile)
 
     A return of exactly zero is neither a win nor a loss: it is left out of the win rate
-    and ends a streak. The definitions follow the QuantStats package, except that the
-    Recovery Factor compounds the returns into the cumulative return (QuantStats sums them),
-    so that it relates the same wealth path to the drawdown measured on it.
+    and ends a streak. The Recovery Factor compounds the returns into the cumulative
+    return, so that it relates the same wealth path to the drawdown measured on it.
 
     For more information, see the following sources:
 
     - Tharp, V.K. (2006). "Trade Your Way to Financial Freedom." 2nd ed., McGraw-Hill.
     (Expectancy and the payoff ratio as the basis of evaluating a trading system.)
-    - Aroussi, R. "QuantStats: Portfolio analytics for quants."
-    https://github.com/ranaroussi/quantstats (profit factor, payoff ratio, consecutive
-    wins and losses, recovery factor and common sense ratio).
 
     Args:
         returns (pd.Series): A Series of returns; missing returns are left out.
@@ -2565,8 +2626,8 @@ def get_kelly_criterion(
         - Continuous: Kelly = Average Excess Return / Variance of the Excess Returns
 
     The discrete form is Kelly's (1956) bet with a probability of winning and a ratio of the
-    average win to the average loss, as the QuantStats package calculates it from returns
-    (a zero return counting as neither). The continuous form is Thorp's (2006) for returns
+    average win to the average loss, calculated from the returns (a zero return counting
+    as neither). The continuous form is Thorp's (2006) for returns
     that are (close to) normally distributed, on excess returns over the risk free rate,
     with the sample variance (ddof=1); its value does not depend on the return frequency,
     since the average and the variance scale alike. A value above 1 means borrowing to
@@ -3220,8 +3281,7 @@ def get_adjusted_sharpe_ratio(
     a Fisher/excess kurtosis value first. Getting this convention backwards flips the sign
     of the ((K - 3) / 24) * SR^2 term for any return series that is actually close to
     Normal (where raw kurtosis is close to 3 but excess/Fisher kurtosis is close to 0),
-    silently turning a near-zero adjustment into a large, wrong one — exactly the kind of
-    sign/convention bug this codebase has been bitten by before, so double check which
+    silently turning a near-zero adjustment into a large, wrong one, so double check which
     convention is being fed in.
 
     For more information about the method, see the following paper:
@@ -3236,7 +3296,7 @@ def get_adjusted_sharpe_ratio(
         skewness (pd.Series | pd.DataFrame | float): The skewness (γ₃) of the same returns
         used to compute `sharpe_ratio`.
         kurtosis (pd.Series | pd.DataFrame | float): The non-excess (raw) kurtosis (γ₄) of
-        the same returns used to compute `sharpe_ratio`. See the Notes above — a Normal
+        the same returns used to compute `sharpe_ratio`. See the note above — a Normal
         distribution has a kurtosis of 3 under this convention, not 0.
 
     Returns:
@@ -3294,7 +3354,7 @@ def get_starr_ratio(
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
         the risk-free rate subtracted, already aggregated to one value per period (see
-        Notes above).
+        above).
         returns (pd.Series | pd.DataFrame): The corresponding raw (non-excess) returns,
         from which the CVaR denominator is computed. When this has a "within period" Multi
         Index (period, date), the resulting per-period CVaR is rescaled to the period

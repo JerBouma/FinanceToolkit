@@ -14,6 +14,7 @@ import importlib
 import inspect
 import json
 import math
+import os
 import re
 import time
 import traceback
@@ -32,6 +33,7 @@ from pydantic import (
 
 from financetoolkit.cache import policy_model
 from financetoolkit.fmp_model import parse_fiscal_period
+from financetoolkit.helpers import rank_across_tickers
 from financetoolkit.mcp_server import series_model
 from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thread
 from financetoolkit.mcp_server.coercion_model import (
@@ -49,19 +51,23 @@ from financetoolkit.mcp_server.diagnostics_model import (
     summarize_reasons,
 )
 from financetoolkit.mcp_server.formatting_model import (
+    convert_to_period,
     country_names,
+    filled_day_notes,
     format_result,
     has_period_columns,
     is_time_index_of,
     is_yearly,
     select_rows,
     signal_rows,
+    skipped_periods_note,
 )
 from financetoolkit.mcp_server.inspection_controller import ControllerInspector
 from financetoolkit.mcp_server.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger, redact
+from financetoolkit.utilities.sources_model import collect_sources, readable_sources
 from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
@@ -115,6 +121,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
     "risk_free_rate": (
         "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' "
         "(default) or '30y'."
+    ),
+    "basket": (
+        "Also analyse the tickers as one company, 'Total': its statements are the sums of "
+        "theirs and its ratios are calculated on those sums (per-share figures stay empty)."
     ),
     "growth": "Return period-over-period growth rates instead of absolute values.",
     "lag": "Number of periods to lag when computing growth rates.",
@@ -249,6 +259,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "which makes them comparable across countries (Global Macro Database)."
     ),
     "component": ("Part of final consumption: 'total', 'household' or 'government'."),
+    "functions": (
+        "Functions of government (COFOG), comma-separated, e.g. 'Defence,Health,Education'; "
+        "'Public Debt Transactions' or 'Total' also work. Defaults to the ten divisions."
+    ),
     "level": (
         "Level of government: 'consolidated' (longest history), 'general' (central, "
         "state and local government and social security) or 'central'."
@@ -276,6 +290,19 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "diagnostics use) are calculated: 'percentage' (default), 'log', 'difference' (for "
         "rates and ratios) or 'none' (the series are changes already). The series "
         "themselves are the 'Adj Close' column the unit root and cointegration tests use."
+    ),
+    "deflate_with": (
+        "With series: the country whose consumer price index the indicators that take "
+        "deflate_with are deflated with, e.g. 'United States' for "
+        "'macroeconomics:get_commodity_prices:Gold' in real terms."
+    ),
+    "rank": (
+        "true ranks the tickers (or countries) within every period, from the highest value "
+        "(rank 1) to the lowest, and compares each with its neighbour toward the middle of "
+        "the ranking: the Difference (in points for returns) and the Multiple (only when "
+        "both have the same sign), so the first and last rank show how far the best and the "
+        "worst stand apart, e.g. a fall more than twice as large as the next one. Needs a "
+        "value per period and ticker; pick one field with show_columns where there are more."
     ),
     "show_columns": (
         "Comma-separated names to filter the output. "
@@ -493,6 +520,62 @@ def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
         schema.pop("title", None)
 
 
+# With FT_MCP_COMPACT_TOOLS=1 a tool's description is its first sentence and its parameters
+# have no descriptions: a client that loads several tools (an agent searching for its tools
+# on every run) reads a few hundred characters per tool instead of tens of thousands.
+# search_metrics with an indicator's name gives what it calculates and its parameters.
+COMPACT_TOOLS_ENVIRONMENT_VARIABLE = "FT_MCP_COMPACT_TOOLS"
+
+
+def compact_tools_enabled() -> bool:
+    """Whether the tools are listed without their long descriptions.
+
+    Returns:
+        bool: True when FT_MCP_COMPACT_TOOLS is 1, true, yes or on.
+    """
+    return os.environ.get(COMPACT_TOOLS_ENVIRONMENT_VARIABLE, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _compact_description(description: str, first_indicator: str) -> str:
+    """The first clause of a tool description and where the rest can be found.
+
+    Args:
+        description (str): The full description of the tool.
+        first_indicator (str): An indicator of the tool, for the example.
+
+    Returns:
+        str: The compact description.
+    """
+    clause = re.split(r" \(|\. |: ", description, maxsplit=1)[0].rstrip(".")
+
+    return (
+        f"{clause}. Pass the indicator by name; search_metrics with an indicator's name "
+        f"(e.g. '{first_indicator}') says what it calculates and which parameters it takes."
+    )
+
+
+def _strip_schema_descriptions(mcp: Any, tool_name: str) -> None:
+    """Drop the parameter descriptions of a tool, except that of the indicator.
+
+    Args:
+        mcp (Any): The FastMCP server.
+        tool_name (str): The tool whose input schema to trim.
+    """
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tool = tool_manager.get_tool(tool_name) if tool_manager is not None else None
+    if tool is None:
+        return
+
+    for name, schema in tool.parameters.get("properties", {}).items():
+        if name != "indicator":
+            schema.pop("description", None)
+
+
 def _summarize_docstring(docstring: str) -> dict[str, str]:
     """The first sentence of a docstring and its "Also known as" aliases.
 
@@ -514,6 +597,67 @@ def _summarize_docstring(docstring: str) -> dict[str, str]:
     )
 
     return {"summary": summary, "aliases": aliases.group(1).strip() if aliases else ""}
+
+
+def _describe_docstring(docstring: str) -> dict[str, Any]:
+    """What an indicator calculates and its parameters, for search_metrics by name.
+
+    Args:
+        docstring (str): The cleaned docstring of an indicator.
+
+    Returns:
+        dict[str, Any]: The ``description`` (the first paragraph) and the ``parameters``
+            (per argument, its description).
+    """
+    paragraphs = docstring.split("\n\n")
+    description = " ".join(paragraphs[0].split())
+    # A paragraph that introduces a formula or list ends with a colon; it goes with it.
+    if description.endswith(":") and len(paragraphs) > 1:
+        description += "\n\n" + paragraphs[1].strip()
+
+    return {"description": description, "parameters": _docstring_arguments(docstring)}
+
+
+def _rank_result(result: object, is_country: bool) -> pd.DataFrame | None:
+    """The result ranked across its tickers (or countries) per period, if it has that shape.
+
+    A table with the periods as rows and a column per ticker is ranked as it is; one with
+    the periods as columns (ratios) is turned around first. A second level with a single
+    field (historical data with show_columns='Return', ratios with one metric) is dropped.
+
+    Args:
+        result (object): The answer of the indicator.
+        is_country (bool): Whether the columns are countries rather than tickers.
+
+    Returns:
+        pd.DataFrame | None: The ranking, or None when the result has no such shape.
+    """
+    if isinstance(result, pd.Series) and isinstance(result.index, pd.MultiIndex):
+        result = result.unstack(level=-1)
+    if not isinstance(result, pd.DataFrame) or result.empty:
+        return None
+    if has_period_columns(result):
+        result = result.T
+    if result.columns.nlevels == 2:  # noqa: PLR2004
+        # (field, ticker) for historical data, (ticker, metric) for turned-around ratios
+        single_level = [
+            level
+            for level in range(2)
+            if len(set(result.columns.get_level_values(level))) == 1
+        ]
+        if not single_level:
+            return None
+        result = result.droplevel(single_level[0], axis=1)
+    if (
+        result.columns.nlevels != 1
+        or not is_time_index_of(result)
+        or result.columns.size < 2  # noqa: PLR2004
+    ):
+        return None
+    result = result.copy()
+    result.columns.name = "Country" if is_country else "Ticker"
+
+    return rank_across_tickers(result)
 
 
 def _unmatched_columns(
@@ -640,8 +784,8 @@ def _unclosed_session_note(result: object) -> str | None:
         result (object): The value returned by the indicator.
 
     Returns:
-        str | None: The note, or None when the last row is a closed session (or the
-            rows are no daily dates).
+        str | None: The note, or None when the last row is a closed session, a date
+            after today or the rows are no daily dates.
     """
     if (
         not isinstance(result, pd.DataFrame | pd.Series)
@@ -660,7 +804,12 @@ def _unclosed_session_note(result: object) -> str | None:
 
     last_date = dates.max().date()
 
-    if last_date <= policy_model.get_last_closed_session():
+    # A date after today is a scheduled event (the next earnings release or dividend in a
+    # calendar), not a session.
+    if (
+        last_date <= policy_model.get_last_closed_session()
+        or last_date > pd.Timestamp.today().date()
+    ):
         return None
 
     return (
@@ -878,7 +1027,7 @@ class RouterGroupSpec(NamedTuple):
     the tool on the FastMCP instance.
 
     Args:
-        tool_name (str): Unique name for the FastMCP tool (e.g. "get_valuation_ratios").
+        tool_name (str): Unique name for the FastMCP tool (e.g. "valuation").
         display_name (str): Human-readable label shown in tool descriptions.
         module_name (str): Key into module_class_map identifying the controller class.
         category (str): Dispatch category ("ticker", "standalone", "toolkit",
@@ -898,6 +1047,9 @@ class RouterGroupSpec(NamedTuple):
         risk_free_rate (bool): Whether the tool takes the Toolkit's risk_free_rate, for the
             modules that use a risk-free rate (performance, risk, models, portfolio). The
             options methods take a risk_free_rate of their own (the rate as a number).
+        basket (bool): Whether the tool takes the Toolkit's basket, for the tools that read
+            the financial statements (the statements, ratios and models, and the series of
+            econometrics), which then add up the tickers into a "Total".
     """
 
     tool_name: str
@@ -910,6 +1062,7 @@ class RouterGroupSpec(NamedTuple):
     index_category: str | None = None
     description: str | None = None
     risk_free_rate: bool = False
+    basket: bool = False
 
 
 def _split_values(value: object) -> list[str]:
@@ -1222,7 +1375,7 @@ class ToolRegistry:
         self._provider = provider
         self._inspector = inspector
         self._tool_index: dict[str, list[dict[str, str]]] = {}
-        self._indicator_index: list[dict[str, str]] = []
+        self._indicator_index: list[dict[str, Any]] = []
         # The module and category of every indicator per tool, for the indicators an
         # econometrics call names as its series.
         self._routes: dict[str, dict[str, tuple[str, str]]] = {}
@@ -1291,7 +1444,7 @@ class ToolRegistry:
         """
         return self._tool_index
 
-    def get_indicator_index(self) -> list[dict[str, str]]:
+    def get_indicator_index(self) -> list[dict[str, Any]]:
         """Return every registered indicator with its tool, summary and aliases.
 
         Returns:
@@ -1330,6 +1483,7 @@ class ToolRegistry:
                     index_category=raw.get("index_category"),
                     description=raw.get("description"),
                     risk_free_rate=bool(raw.get("risk_free_rate")),
+                    basket=bool(raw.get("basket")),
                 )
             )
         return specifications
@@ -1341,6 +1495,9 @@ class ToolRegistry:
         end_date: str,
         quarterly: bool,
         benchmark_ticker: str,
+        period: str | None = None,
+        basket: bool = False,
+        deflate_with: str | None = None,
     ) -> pd.DataFrame:
         """
         Retrieves the indicators an econometrics call names as its series, each through
@@ -1353,6 +1510,16 @@ class ToolRegistry:
             end_date (str): The end date of the call.
             quarterly (bool): Whether quarterly data is asked for.
             benchmark_ticker (str): The benchmark of the call.
+            period (str | None, optional): The period the call asks for, passed on to every
+                indicator that takes one and is published at it, so a monthly analysis reads
+                the monthly series its source publishes (a monthly average, for some rates)
+                rather than the last daily value of each month. Defaults to None, each
+                indicator's own default.
+            basket (bool, optional): Whether the indicators by ticker also add up the tickers
+                into a "Total", which becomes a series of its own. Defaults to False.
+            deflate_with (str | None, optional): The country whose consumer price index is
+                passed on to every indicator that takes deflate_with, for its values in
+                real terms. Defaults to None, nominal values.
 
         Returns:
             pd.DataFrame: The series, a column each, by date.
@@ -1417,18 +1584,38 @@ class ToolRegistry:
                     for entity in reference.entities
                 ]
             )
-            result = self._provider.call_method(
-                module_name=module,
-                method_name=reference.indicator,
-                category=category,
-                tickers=entities if by_ticker else None,
-                countries=None if by_ticker else entities,
-                start_date=start_date,
-                end_date=end_date,
-                quarterly=quarterly,
-                benchmark_ticker=benchmark_ticker,
+            arguments = {
+                "module_name": module,
+                "method_name": reference.indicator,
+                "category": category,
+                "tickers": entities if by_ticker else None,
+                "countries": None if by_ticker else entities,
+                "start_date": start_date,
+                "end_date": end_date,
+                "quarterly": quarterly,
+                "benchmark_ticker": benchmark_ticker,
+                "toolkit_basket": basket and by_ticker,
+            }
+            parameters = self._inspector.get_method_param_names(
+                self._module_class_map.get(module), reference.indicator
             )
-            resolved = reference._replace(entities=entities)
+            # An indicator that lists records (the economic calendar's releases) is asked
+            # for them as series by the period they cover.
+            if "as_series" in parameters:
+                arguments["as_series"] = True
+            if deflate_with and "deflate_with" in parameters:
+                arguments["deflate_with"] = deflate_with
+            result = None
+            if period and "period" in parameters:
+                result = self._provider.call_method(**arguments, period=period)
+            # An indicator that is not published at the period (a monthly series asked for
+            # weekly) is read at its own frequency instead, which the analysis resamples.
+            if result is None or getattr(result, "empty", False):
+                result = self._provider.call_method(**arguments)
+            # The Total of a basket is a series of its own, next to the tickers.
+            resolved = reference._replace(
+                entities=entities + (["Total"] if arguments["toolkit_basket"] else [])
+            )
             frames.append((resolved, series_model.to_series_columns(result, resolved)))
         return series_model.combine_series(frames)
 
@@ -1634,6 +1821,11 @@ class ToolRegistry:
             changes = (
                 kwargs.pop("changes", None) if module_name == "econometrics" else None
             ) or "percentage"
+            deflate_with = (
+                kwargs.pop("deflate_with", None)
+                if module_name == "econometrics"
+                else None
+            )
             # A tool argument is text, so 'none' stands for changes=None (the series are
             # changes already).
             changes = None if str(changes).lower() == "none" else changes
@@ -1753,6 +1945,16 @@ class ToolRegistry:
                         f"{', '.join(validation_model.RISK_FREE_RATE_OPTIONS)}."
                     )
 
+            # The Toolkit's own setting as well, so the Total is part of every statement.
+            toolkit_basket = bool(
+                spec.basket and to_boolean(kwargs.pop("basket", False))
+            )
+
+            # rank is handled here as well, unless the indicator ranks itself.
+            rank_tickers = "rank" not in method_param_names.get(
+                method_name, set()
+            ) and to_boolean(kwargs.pop("rank", False))
+
             # show_columns is handled entirely here — never forwarded to methods
             raw_show_columns = kwargs.pop("show_columns", None)
             show_columns = (
@@ -1806,6 +2008,7 @@ class ToolRegistry:
             # named in the answer, so a caller does not believe they were used.
             ignored_params: list[str] = []
             given_params: set[str] = set()
+            requested_period: str | None = None
             for pname, pann, pdefault in param_meta:
                 if pname in kwargs:
                     val = kwargs.pop(pname)
@@ -1823,6 +2026,8 @@ class ToolRegistry:
                     ):
                         if pname in given_params:
                             ignored_params.append(pname)
+                            if pname == "period":
+                                requested_period = str(val)
                         continue
                     # A disputed parameter is advertised as unset, so an unset value means "no preference" and must reach the indicator's own default rather than another indicator's.  # noqa: E501
                     if pname in disputed_params and val in (None, ""):
@@ -1988,8 +2193,12 @@ class ToolRegistry:
             try:
                 call_started = time.perf_counter()
                 # The warnings and errors logged during the call explain an empty result,
-                # e.g. a missing API key, so they are passed on rather than lost.
-                with capture_call_messages() as call_messages:
+                # e.g. a missing API key, so they are passed on rather than lost. The
+                # sources of the data are named with the answer.
+                with (
+                    capture_call_messages() as call_messages,
+                    collect_sources() as call_sources,
+                ):
                     if raw_series:
                         result = provider.call_econometrics_with_data(
                             method_name,
@@ -1999,6 +2208,13 @@ class ToolRegistry:
                                 end_date=end_date,
                                 quarterly=quarterly,
                                 benchmark_ticker=benchmark_ticker,
+                                period=(
+                                    method_kwargs.get("period")
+                                    if "period" in given_params
+                                    else None
+                                ),
+                                basket=toolkit_basket,
+                                deflate_with=deflate_with,
                             ),
                             changes=changes,
                             **method_kwargs,
@@ -2019,6 +2235,7 @@ class ToolRegistry:
                             **call_arguments,
                             benchmark_ticker=benchmark_ticker,
                             toolkit_risk_free_rate=toolkit_risk_free_rate,
+                            toolkit_basket=toolkit_basket,
                             **method_kwargs,
                         )
                         upper_tickers = {ticker.upper() for ticker in tickers or []}
@@ -2035,6 +2252,7 @@ class ToolRegistry:
                                 **call_arguments,
                                 benchmark_ticker=None,
                                 toolkit_risk_free_rate=toolkit_risk_free_rate,
+                                toolkit_basket=toolkit_basket,
                                 **method_kwargs,
                             )
                     input_info = call_input_info()
@@ -2060,7 +2278,25 @@ class ToolRegistry:
                             strict=False,
                         )
                     )
+                # An indicator without a period of its own is converted to the requested
+                # one, so a long daily or weekly history fits a yearly answer.
+                period_note = None
+                if (
+                    requested_period
+                    and isinstance(result, pd.DataFrame | pd.Series)
+                    and (converted := convert_to_period(result, requested_period))
+                    is not None
+                ):
+                    result = converted
+                    ignored_params.remove("period")
+                    period_note = (
+                        f"`{method_name}` has no period parameter, so period="
+                        f"'{requested_period}' shows the last value of every period "
+                        "(end of period), not an average."
+                    )
                 unmatched_columns: list[str] = []
+                # Read before show_columns can leave out the Volume and Return they need.
+                filled_days = filled_day_notes(result)
                 if show_columns is not None:
                     # Matched in any casing ("close" for Close), as the names are shown
                     # in a response and typed back by hand.
@@ -2089,10 +2325,11 @@ class ToolRegistry:
                         api_key=provider._api_key,
                         fred_api_key=provider._fred_api_key,
                         toolkit_risk_free_rate=toolkit_risk_free_rate,
+                        toolkit_basket=toolkit_basket,
                     )
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
-                notes = list(notes) + missing_data_notes(call_messages)
+                notes = list(notes) + filled_days + missing_data_notes(call_messages)
                 # A ticker the sources do not know is dropped from the answer; when the
                 # others are there, say which one is missing rather than leave it out quietly.
                 if (
@@ -2104,8 +2341,10 @@ class ToolRegistry:
                         pname.endswith(("_ticker", "_tickers"))
                         for pname in method_kwargs
                     )
-                    # A factor analysis answers for the tickers together, not per ticker.
-                    and method_name != "get_factor_analysis"
+                    # A factor analysis and the market cap to GDP of a basket answer for the
+                    # tickers together, not per ticker.
+                    and method_name
+                    not in ("get_factor_analysis", "get_market_cap_to_gdp")
                 ):
                     # An empty column of its own counts as missing too.
                     if isinstance(result, pd.DataFrame) and result.columns.nlevels == 1:
@@ -2261,6 +2500,17 @@ class ToolRegistry:
                                 f"limit={row_selection - 1 if row_selection < 0 else row_selection + 1} "
                                 "includes one more period."
                             )
+                # After the row selection, so limit=-1 ranks the latest period only.
+                if rank_tickers:
+                    ranking = _rank_result(result, is_country=bool(countries))
+                    if ranking is None:
+                        notes.append(
+                            "rank=true was not applied: it needs a value per period and "
+                            "ticker (or country) for two or more of them; pick one field "
+                            "with show_columns where there are more."
+                        )
+                    else:
+                        result = ranking
                 # Most economic series are yearly only, whatever quarterly asks for.
                 if (
                     quarterly
@@ -2273,6 +2523,12 @@ class ToolRegistry:
                     )
                 if indicator_note:
                     notes.insert(0, indicator_note)
+                if period_note:
+                    notes.append(period_note)
+                if isinstance(result, pd.DataFrame | pd.Series) and (
+                    skipped_note := skipped_periods_note(result)
+                ):
+                    notes.append(skipped_note)
                 # The inputs an option model used, which it only logs.
                 if method_kwargs.get("show_input_info"):
                     notes.extend(input_info)
@@ -2315,6 +2571,7 @@ class ToolRegistry:
                 formatted = format_result(
                     result,
                     notes=notes or None,
+                    sources=readable_sources(call_sources),
                     reason=summarize_reasons(call_messages)
                     or _short_window_reason(dispatch_category, start_date, end_date),
                     max_characters=None if full_text else max_response_characters,
@@ -2387,6 +2644,8 @@ class ToolRegistry:
                     ],
                 )
             )
+        if spec.basket:
+            common.append(P("basket", POS, default=False, annotation=bool))
         portfolio_tool = category == inspector.categories.get("portfolio", "portfolio")
         sig_params = [indicator_param] + [
             P(
@@ -2462,10 +2721,19 @@ class ToolRegistry:
                     default=None,
                     annotation=_annotate_with_description(name, str | None),
                 )
-                for name in ("series", "changes")
+                for name in ("series", "changes", "deflate_with")
             )
 
         # Appended last so it does not disturb positional ordering of other params.
+        if "rank" not in {p.name for p in sig_params}:
+            sig_params.append(
+                P(
+                    "rank",
+                    POS,
+                    default=False,
+                    annotation=_annotate_with_description("rank", bool),
+                )
+            )
         sig_params.append(
             P(
                 "show_columns",
@@ -2580,6 +2848,9 @@ class ToolRegistry:
                     **_summarize_docstring(
                         inspect.getdoc(getattr(owner, method_name, None)) or ""
                     ),
+                    **_describe_docstring(
+                        inspect.getdoc(getattr(owner, method_name, None)) or ""
+                    ),
                 }
             )
 
@@ -2588,6 +2859,9 @@ class ToolRegistry:
         # does not repeat them; the category listing (search_by_category) does show them.
         description = spec.description or f"{spec.display_name}."
         index_description = f"{description}\n\nAvailable indicators: {method_list}."
+        compact = compact_tools_enabled()
+        if compact:
+            description = _compact_description(description, group_methods[0])
 
         try:
             fn = self._build_router_wrapper(
@@ -2623,6 +2897,8 @@ class ToolRegistry:
                 {"tool": spec.tool_name, "description": index_description}
             )
             _strip_schema_titles(self._mcp, spec.tool_name)
+            if compact:
+                _strip_schema_descriptions(self._mcp, spec.tool_name)
             return True
         except Exception as exc:
             logger.warning(f"Failed to register group '{spec.tool_name}': {exc}")

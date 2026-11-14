@@ -713,7 +713,7 @@ class LazyDict(dict):
 
     def get(
         self, key: str, default: Any = None
-    ) -> Any:  # ty: ignore[invalid-method-override]
+    ) -> Any:  # ty: ignore[incompatible-method-override]
         try:
             return self[key]
         except KeyError:
@@ -928,3 +928,214 @@ def require_fred_api_key(fred_api_key: str | None, data: str) -> None:
             "https://fred.stlouisfed.org/docs/api/api_key.html and pass it via the "
             "fred_api_key argument or set the FRED_API_KEY environment variable."
         )
+
+
+def get_goodwill_and_intangible_assets(balance_sheet: pd.DataFrame) -> pd.DataFrame:
+    """
+    Selects the goodwill and other intangible assets on a balance sheet, the assets the
+    tangible measures (tangible assets, tangible book value, asset coverage) deduct.
+
+    The row that combines them is used where the data provider reports it. Where it is
+    missing, the separate Goodwill and Intangible Assets rows are added up, with a missing
+    one counting as zero: a company that reports goodwill but no other intangibles (or the
+    reverse) still gets a value. The result is NaN only when none of the three is reported.
+
+    Args:
+        balance_sheet (pd.DataFrame): The balance sheet statement, with the tickers and the
+            line items as its index and the periods as its columns.
+
+    Returns:
+        pd.DataFrame: The goodwill and intangible assets, one row per ticker.
+    """
+    separate = balance_sheet.loc[:, "Goodwill", :].add(
+        balance_sheet.loc[:, "Intangible Assets", :], fill_value=0
+    )
+
+    return balance_sheet.loc[:, "Goodwill and Intangible Assets", :].fillna(separate)
+
+
+def add_basket_total(
+    statement: pd.DataFrame, tickers: list[str], not_summed: list[str]
+) -> pd.DataFrame:
+    """
+    Adds the tickers up into one company named "Total", so that a group of companies (a
+    basket) can be analysed as if it were one: its financial statements are the sums of
+    theirs, and every ratio calculated from them is the ratio of those sums.
+
+    A figure of the Total is missing for a period when a ticker has no value for it, as the
+    sum of the others would understate the basket. Figures that do not add up across
+    companies (per-share amounts and share counts) are left empty.
+
+    Notes: All the figures must be in the same currency.
+
+    Args:
+        statement (pd.DataFrame): The financial statement, with the tickers and the line
+            items as its index and the periods as its columns.
+        tickers (list[str]): The tickers to add up.
+        not_summed (list[str]): The line items that are left empty for the Total.
+
+    Returns:
+        pd.DataFrame: The financial statement with the Total added after the tickers.
+    """
+    figures = statement.loc[tickers]
+    total = figures.groupby(level=1, sort=False).sum(min_count=len(tickers))
+    total.loc[total.index.isin(not_summed)] = np.nan
+    total.index = pd.MultiIndex.from_product(
+        [["Total"], total.index], names=statement.index.names
+    )
+
+    return pd.concat([statement, total])
+
+
+def deflate_with_price_index(
+    values: pd.DataFrame, price_index: pd.Series
+) -> pd.DataFrame:
+    """
+    Expresses monthly or yearly values in the money of one period, the latest period of a
+    price index such as the consumer price index, so that values from decades apart can be
+    compared in real terms ("in September 2026 dollars").
+
+    The formula is as follows:
+
+    - Real Value (t) = Nominal Value (t) * Price Index (latest month) / Price Index (t)
+
+    A month after the latest month of the price index, which statistics offices publish a few
+    weeks late, keeps its nominal value: it is in the money of that latest month already but
+    for the inflation since. A month before the first month of the price index has no real
+    value.
+
+    Args:
+        values (pd.DataFrame): The nominal values, with periods (a PeriodIndex) as index.
+        price_index (pd.Series): The price index, with the same periods as index.
+
+    Returns:
+        pd.DataFrame: The values in the money of the latest period of the price index.
+    """
+    price_index = price_index.dropna()
+    monthly = price_index.reindex(values.index)
+    # Months after the latest month of the price index take that month's level.
+    monthly = monthly.where(values.index <= price_index.index[-1], price_index.iloc[-1])
+
+    return values.mul(price_index.iloc[-1] / monthly, axis=0)
+
+
+def add_score_zone(
+    results: pd.DataFrame, score: str, cut_offs: list[float], zones: list[str]
+) -> pd.DataFrame:
+    """
+    Adds a "Zone" row after each ticker's rows that names the zone its score falls in, such
+    as "Distress", "Grey" or "Safe" for the Altman Z-Score, so a score does not have to be
+    compared with the cut-offs of its model by hand.
+
+    A score equal to a cut-off falls in the zone above it. A period without a score has no
+    zone.
+
+    Args:
+        results (pd.DataFrame): The model's results, with (ticker, item) rows and periods as
+            columns.
+        score (str): The row with the score, e.g. "Altman Z-Score".
+        cut_offs (list[float]): The cut-offs between the zones, in increasing order.
+        zones (list[str]): The zones from the lowest scores to the highest, one more than
+            there are cut-offs.
+
+    Returns:
+        pd.DataFrame: The results with a "Zone" row per ticker.
+    """
+    scores = results.xs(score, level=1)
+    zone = scores.apply(
+        lambda row: pd.cut(
+            row, bins=[-np.inf, *cut_offs, np.inf], labels=zones, right=False
+        ).astype(object),
+        axis=1,
+    ).where(scores.notna())
+    zone.index = pd.MultiIndex.from_product([zone.index, ["Zone"]])
+
+    tickers = list(dict.fromkeys(results.index.get_level_values(0)))
+
+    return pd.concat([results.astype(object), zone]).reindex(tickers, level=0)
+
+
+def calendar_end_date(end_date: str | None) -> str | None:
+    """
+    Returns the date a calendar of scheduled events (earnings releases, dividends) is cut
+    off at. A window that reaches today also keeps the events scheduled after it: the
+    upcoming release is what a calendar is read for, and the Toolkit's end date defaults
+    to today. A window that ends in the past is cut off at its end date.
+
+    Args:
+        end_date (str | None): The end date of the window (YYYY-MM-DD), or None.
+
+    Returns:
+        str | None: The end date, or None when the window reaches today and nothing is cut
+            off.
+    """
+    if end_date is None or pd.Timestamp(end_date) >= pd.Timestamp.today().normalize():
+        return None
+
+    return end_date
+
+
+def rank_across_tickers(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ranks the tickers within every period, from the highest value (rank 1) to the lowest,
+    and compares each ticker with its neighbour in the ranking toward the middle: the
+    ticker ranked just below it in the top half and the one ranked just above it in the
+    bottom half. The first and last rank therefore show how far the best and the worst
+    stand apart from the rest, e.g. an index that fell more than twice as far as the next
+    worst.
+
+    The Difference is the ticker's value minus its neighbour's, in the units of the values
+    (a difference of returns in decimals is in points). The Multiple is the ticker's value
+    divided by its neighbour's, only when both have the same sign (a multiple of a loss and
+    a gain says nothing). A ticker without a value in a period is left out of its ranking,
+    and tickers with the same value share the higher rank.
+
+    Args:
+        data (pd.DataFrame): The values with the periods as rows and a column per ticker.
+
+    Returns:
+        pd.DataFrame: A row per period and ticker, ordered by rank, with the Rank, Value,
+            Compared With, Difference and Multiple.
+    """
+    rankings = {}
+    for period, row in data.iterrows():
+        values = (
+            pd.to_numeric(row, errors="coerce")
+            .dropna()
+            .sort_values(ascending=False, kind="stable")
+        )
+        count = len(values)
+        if not count:
+            continue
+        middle = (count - 1) / 2
+        neighbours = [
+            position + 1 if position <= middle else position - 1
+            for position in range(count)
+        ]
+        compared = values.iloc[neighbours] if count > 1 else pd.Series([np.nan])
+        compared_values = compared.to_numpy(dtype=float)
+        same_sign = np.sign(values.to_numpy()) == np.sign(compared_values)
+        rankings[period] = pd.DataFrame(
+            {
+                "Rank": values.rank(ascending=False, method="min").astype(int),
+                "Value": values,
+                "Compared With": list(compared.index) if count > 1 else [None],
+                "Difference": values.to_numpy() - compared_values,
+                "Multiple": np.where(
+                    same_sign & (compared_values != 0),
+                    values.to_numpy()
+                    / np.where(compared_values == 0, np.nan, compared_values),
+                    np.nan,
+                ),
+            },
+            index=pd.Index(values.index, name=data.columns.name or "Ticker"),
+        )
+
+    if not rankings:
+        return pd.DataFrame(
+            columns=["Rank", "Value", "Compared With", "Difference", "Multiple"]
+        )
+
+    return pd.concat(
+        rankings, names=[data.index.name or "Date", data.columns.name or "Ticker"]
+    )

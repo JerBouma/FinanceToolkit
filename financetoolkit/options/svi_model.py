@@ -230,7 +230,7 @@ def check_calendar_arbitrage(
             parameters (see `get_svi_parameters`) for each expiry, keyed by time to
             expiration in years.
         log_moneyness_grid (pd.Series | np.ndarray, optional): The log-moneyness
-            grid to check the condition on. Defaults to a grid from -1 to 1 (strikes
+            grid to check the condition on. Defaults to None, which uses a grid from -1 to 1 (strikes
             from 63% below to 172% above the forward price, since e^-1 = 0.37 and
             e^1 = 2.72) with 200 points.
 

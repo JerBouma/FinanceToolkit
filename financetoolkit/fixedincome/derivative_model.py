@@ -218,7 +218,8 @@ def get_black_price(
         years_to_maturity (float): years to maturity of the swaption.
         risk_free_rate (float): The risk-free interest rate.
         notional (float, optional): Notional amount of the swap. Default is 10,000,000.
-        tenor (float | None, optional): Tenor of the underlying swap. Defaults to being equal to years to maturity.
+        tenor (float | None, optional): Tenor of the underlying swap. Defaults to None, which uses the years to
+            maturity.
         payment_frequency (int, optional): Number of fixed-leg payments per year on the underlying swap
         (e.g. 1 for annual, 2 for semi-annual, 4 for quarterly). Defaults to 2 (semi-annual).
         is_receiver (bool, optional): Boolean indicating if the swaption holder is receiver. Default is True.
@@ -326,7 +327,8 @@ def get_bachelier_price(
         years_to_maturity (float): years to maturity of the swaption.
         risk_free_rate (float): The risk-free interest rate.
         notional (float, optional): Notional amount of the swap. Default is 10,000,000.
-        tenor (float | None, optional): Tenor of the underlying swap. Defaults to being equal to years to maturity.
+        tenor (float | None, optional): Tenor of the underlying swap. Defaults to None, which uses the years to
+            maturity.
         payment_frequency (int, optional): Number of fixed-leg payments per year on the underlying swap
         (e.g. 1 for annual, 2 for semi-annual, 4 for quarterly). Defaults to 2 (semi-annual).
         is_receiver (bool, optional): Boolean indicating if the swaption holder is receiver. Default is True.

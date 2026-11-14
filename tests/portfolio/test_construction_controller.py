@@ -4,8 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.portfolio import optimization_model
-from financetoolkit.portfolio.construction_controller import PortfolioConstruction
+from financetoolkit.portfolio.construction.construction_controller import (
+    PortfolioConstruction,
+)
+from financetoolkit.portfolio.construction.optimization import optimization_model
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
 

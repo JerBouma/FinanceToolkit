@@ -185,7 +185,7 @@ module_class_map:
   performance:  "financetoolkit.performance.performance_controller.Performance"
   risk:         "financetoolkit.risk.risk_controller.Risk"
   econometrics: "financetoolkit.econometrics.econometrics_controller.Econometrics"
-  portfolio:    "financetoolkit.portfolio.construction_controller.PortfolioConstruction"
+  portfolio:    "financetoolkit.portfolio.construction.construction_controller.PortfolioConstruction"
   portfolio_performance: "financetoolkit.portfolio.portfolio_controller.Portfolio"
   options:      "financetoolkit.options.options_controller.Options"
   etf:          "financetoolkit.etf.etf_controller.ETF"

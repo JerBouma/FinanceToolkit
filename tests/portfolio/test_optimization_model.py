@@ -9,7 +9,7 @@ from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.optimize import minimize
 from scipy.spatial.distance import pdist, squareform
 
-from financetoolkit.portfolio import optimization_model
+from financetoolkit.portfolio.construction.optimization import optimization_model
 
 # pylint: disable=missing-function-docstring
 

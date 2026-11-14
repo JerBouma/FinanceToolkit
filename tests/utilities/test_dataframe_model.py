@@ -246,7 +246,7 @@ def test_every_public_method_takes_show_columns():
     from financetoolkit.models.models_controller import Models
     from financetoolkit.options.options_controller import Options
     from financetoolkit.performance.performance_controller import Performance
-    from financetoolkit.portfolio.construction_controller import (
+    from financetoolkit.portfolio.construction.construction_controller import (
         PortfolioConstruction,
     )
     from financetoolkit.portfolio.portfolio_controller import Portfolio

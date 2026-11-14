@@ -934,7 +934,6 @@ def test_quarterly_oecd_indicators_default_to_quarterly_data(monkeypatch):
 
 def test_the_government_bond_yield_defaults_to_monthly(monkeypatch):
     from financetoolkit import FixedIncome  # noqa: PLC0415
-    from financetoolkit.fixedincome import fixedincome_controller  # noqa: PLC0415
 
     requested = []
 
@@ -943,9 +942,7 @@ def test_the_government_bond_yield_defaults_to_monthly(monkeypatch):
         index = pd.period_range("2023-01", periods=2, freq="M")
         return pd.DataFrame({"Netherlands": [0.03, 0.031]}, index=index)
 
-    monkeypatch.setattr(
-        fixedincome_controller.oecd_model, "get_long_term_interest_rate", fetch
-    )
+    monkeypatch.setattr(oecd_model, "get_long_term_interest_rate", fetch)
 
     FixedIncome(start_date="2023-01-01").get_government_bond_yield()
     # The MCP server creates the class with quarterly=False, which must not mean yearly.
@@ -1347,7 +1344,7 @@ def hqm_spot_sheet() -> list[list]:
 
 
 def test_hqm_spot_rates_keep_the_named_maturities_in_decimals(monkeypatch):
-    from financetoolkit.fixedincome import hqm_model
+    from financetoolkit.fixedincome.sources import hqm_model
 
     requested = []
 
@@ -1369,7 +1366,7 @@ def test_hqm_spot_rates_keep_the_named_maturities_in_decimals(monkeypatch):
 
 
 def test_hqm_par_yields_and_the_spread_over_treasury_averages(monkeypatch):
-    from financetoolkit.fixedincome import hqm_model
+    from financetoolkit.fixedincome.sources import hqm_model
 
     rows = [
         ["HQM Par Yields", None, None, None, None, None],
@@ -1408,7 +1405,7 @@ def test_hqm_par_yields_and_the_spread_over_treasury_averages(monkeypatch):
 
 def test_hqm_curve_and_spread_need_no_fred_key(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import fred_model, hqm_model
+    from financetoolkit.fixedincome.sources import fred_model, hqm_model
 
     months = pd.period_range("2026-08", periods=2, freq="M")
     curve = pd.DataFrame({"10Y": [0.05, 0.051]}, index=months)

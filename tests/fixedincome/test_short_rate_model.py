@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.fixedincome import short_rate_model
+from financetoolkit.fixedincome.short_rates import short_rate_model
 
 ZERO_MATURITIES = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30.0])
 ZERO_RATES = np.array(

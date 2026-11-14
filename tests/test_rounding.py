@@ -123,8 +123,8 @@ def test_the_largest_holdings_of_a_fund(unrounded_toolkit):
 
 
 def test_the_key_maturities_of_the_eiopa_curve(monkeypatch):
-    from financetoolkit.fixedincome import eiopa_model
     from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
+    from financetoolkit.fixedincome.sources import eiopa_model
 
     curve = pd.DataFrame(
         [[0.02] * 150],

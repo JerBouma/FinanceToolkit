@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.fixedincome import fiscaldata_model
+from financetoolkit.fixedincome.sources import fiscaldata_model
 
 
 @pytest.fixture(autouse=True)

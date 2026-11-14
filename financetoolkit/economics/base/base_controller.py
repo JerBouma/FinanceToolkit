@@ -32,9 +32,7 @@ from financetoolkit.economics.sources import (
     ons_model,
     sbj_model,
 )
-from financetoolkit.fixedincome import (
-    fed_model,
-)
+from financetoolkit.fixedincome.sources import fed_model
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.logger_model import get_logger

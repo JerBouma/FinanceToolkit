@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.fixedincome import ecb_model as fixedincome_ecb_model
+from financetoolkit.fixedincome.sources import ecb_model as fixedincome_ecb_model
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +40,7 @@ def _workbook(sheets: dict[str, list[list]]) -> bytes:
 
 
 def test_eiopa_release_is_parsed_per_country_and_maturity(monkeypatch):
-    from financetoolkit.fixedincome import eiopa_model
+    from financetoolkit.fixedincome.sources import eiopa_model
 
     rows = [[None] * 4 for _ in range(10)]
     rows[1] = [None, "Main menu", "Euro", "Czechia"]
@@ -234,7 +234,7 @@ def test_inflation_curves_pick_countries_with_a_column_per_country_and_maturity(
 ):
     from financetoolkit import Economics
     from financetoolkit.economics.sources import boe_model, treasury_model
-    from financetoolkit.fixedincome import bundesbank_model
+    from financetoolkit.fixedincome.sources import bundesbank_model
 
     monkeypatch.setattr(
         treasury_model,
@@ -285,7 +285,7 @@ def test_inflation_curves_pick_countries_with_a_column_per_country_and_maturity(
 def test_inflation_expectations_hold_each_survey_round_until_the_next(monkeypatch):
     from financetoolkit import Economics
     from financetoolkit.economics.sources import ecb_model
-    from financetoolkit.fixedincome import bundesbank_model
+    from financetoolkit.fixedincome.sources import bundesbank_model
 
     monkeypatch.setattr(
         ecb_model,
@@ -319,7 +319,7 @@ def test_inflation_expectations_hold_each_survey_round_until_the_next(monkeypatc
 def test_eiopa_shocked_curves_are_computed_from_the_base_curve_and_the_shocks(
     monkeypatch,
 ):
-    from financetoolkit.fixedincome import eiopa_model
+    from financetoolkit.fixedincome.sources import eiopa_model
 
     base = [[None] * 4 for _ in range(10)]
     base[1] = [None, "Main menu", "Euro", "Czechia"]

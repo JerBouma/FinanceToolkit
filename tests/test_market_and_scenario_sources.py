@@ -224,7 +224,7 @@ def test_esrb_scenario_reads_the_country_panel(monkeypatch):
 
 def test_corporate_bond_yields_and_spreads(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import bundesbank_model, rba_model
+    from financetoolkit.fixedincome.sources import bundesbank_model, rba_model
 
     bundesbank = (
         "BBK_SEIS_ISSUER_CLASS;TIME_PERIOD;OBS_VALUE;OBS_STATUS\n"
@@ -354,7 +354,7 @@ def test_carbon_price_averages_the_days_general_allowance_auctions(monkeypatch):
 
 def test_rating_transition_matrix_is_withdrawal_adjusted(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import esma_model
+    from financetoolkit.fixedincome.sources import esma_model
 
     matrix = (
         "BOP\\EOP;AAA;AA;A;D;Withdrawals\n"
@@ -396,7 +396,7 @@ def test_rating_transition_matrix_is_withdrawal_adjusted(monkeypatch):
 
 def test_default_rates_start_at_the_first_year_with_a_default(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import esma_model
+    from financetoolkit.fixedincome.sources import esma_model
 
     def fake_default_rates(agency, rating_type, start, end, region=None):
         if start.year < 2001:
@@ -634,7 +634,7 @@ def test_asset_class_proxies_are_period_returns(monkeypatch):
 
 def test_eiopa_symmetric_adjustment_reads_the_daily_history(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import eiopa_model
+    from financetoolkit.fixedincome.sources import eiopa_model
 
     rows = [[None] * 7 for _ in range(8)]
     rows += [

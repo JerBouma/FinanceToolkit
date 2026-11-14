@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.risk import realized_volatility_model
+from financetoolkit.risk.volatility import realized_volatility_model
 
 # How far apart the four range-based estimators may sit on a calm path.
 MAGNITUDE_AGREEMENT_RATIO = 2

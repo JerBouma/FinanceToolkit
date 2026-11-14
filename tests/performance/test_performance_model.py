@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.performance import performance_model
-from financetoolkit.risk import cvar_model
+from financetoolkit.risk.value_at_risk import cvar_model
 
 RESIDUAL_STD_TOLERANCE = 0.002
 

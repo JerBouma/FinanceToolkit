@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from scipy import stats
 
-from financetoolkit.risk import var_model
+from financetoolkit.risk.value_at_risk import var_model
 
 # How close Cornish-Fisher VaR must sit to gaussian VaR on near-normal data.
 CLOSE_TO_GAUSSIAN_TOLERANCE = 0.001

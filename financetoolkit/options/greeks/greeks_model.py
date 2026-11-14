@@ -5,7 +5,7 @@ __docformat__ = "google"
 import numpy as np
 from scipy.stats import norm
 
-from financetoolkit.options import black_scholes_model
+from financetoolkit.options.pricing import black_scholes_model
 
 
 @np.errstate(divide="ignore", invalid="ignore")

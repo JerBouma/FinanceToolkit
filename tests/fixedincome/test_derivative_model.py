@@ -1,6 +1,6 @@
 """Derivative Model Tests""" ""
 
-from financetoolkit.fixedincome import derivative_model
+from financetoolkit.fixedincome.bonds import derivative_model
 
 
 def test_get_annuity_factor(recorder):

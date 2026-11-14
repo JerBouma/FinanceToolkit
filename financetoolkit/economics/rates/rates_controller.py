@@ -29,7 +29,7 @@ from financetoolkit.economics.sources import (
     oecd_model,
     treasury_model,
 )
-from financetoolkit.fixedincome import (
+from financetoolkit.fixedincome.sources import (
     bundesbank_model,
     ecb_model as ecb_rates_model,
 )

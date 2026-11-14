@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.fixedincome import loan_model
+from financetoolkit.fixedincome.loans import loan_model
 
 
 def test_get_loan_payment():

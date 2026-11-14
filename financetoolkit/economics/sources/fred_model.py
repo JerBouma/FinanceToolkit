@@ -4,7 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.fixedincome.fred_model import fetch_single_series
+from financetoolkit.fixedincome.sources.fred_model import fetch_single_series
 
 FRED_SERIES_COLUMN = "United States"
 

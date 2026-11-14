@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.fixedincome import bond_model
+from financetoolkit.fixedincome.bonds import bond_model
 
 TAYLOR_APPROXIMATION_TOLERANCE = 0.0001
 

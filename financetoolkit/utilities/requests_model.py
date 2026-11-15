@@ -9,6 +9,7 @@ import ssl
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from financetoolkit.cache.request_model import CREDENTIAL_PARAMETERS, redact_credentials
 from financetoolkit.utilities import logger_model
@@ -72,9 +73,17 @@ def build_session() -> requests.Session:
     """
     session = requests.Session()
 
+    retries = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=[500, 502, 503, 504],
+        raise_on_status=False,
+    )
+
     adapter = HTTPAdapter(
         pool_connections=CONNECTION_POOL_SIZE,
         pool_maxsize=CONNECTION_POOL_SIZE,
+        max_retries=retries,
     )
 
     session.mount("https://", adapter)

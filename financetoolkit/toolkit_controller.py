@@ -816,7 +816,7 @@ class Toolkit:
         def compare_with_peers(peers: dict[str, list[str]] | None) -> pd.DataFrame:
             # Imported when first used, as only the peer comparison needs them.
             from financetoolkit.fmp_model import get_stock_peers  # noqa: PLC0415
-            from financetoolkit.models import peers_model  # noqa: PLC0415
+            from financetoolkit.models.valuation import peers_model  # noqa: PLC0415
 
             tickers = self._get_statement_tickers("Models")
 

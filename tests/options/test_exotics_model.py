@@ -2,12 +2,12 @@
 
 import pytest
 
-from financetoolkit.options import exotics_model
+from financetoolkit.options.pricing import exotics_model
 
 
 def test_barrier_option_once_the_barrier_is_breached():
     """A breached knock-out pays its rebate and a breached knock-in is a regular option."""
-    from financetoolkit.options import black_scholes_model
+    from financetoolkit.options.pricing import black_scholes_model
 
     arguments = {
         "stock_price": 90,
@@ -41,7 +41,7 @@ def test_svi_fit_keeps_the_total_variance_non_negative():
     """Gatheral's a + b * sigma * sqrt(1 - rho^2) >= 0 holds, even for a smile touching zero."""
     import numpy as np
 
-    from financetoolkit.options import svi_model
+    from financetoolkit.options.volatility import svi_model
 
     log_moneyness = np.linspace(-0.4, 0.4, 15)
     smiles = [
@@ -71,7 +71,7 @@ def test_risk_neutral_density_recovers_the_lognormal_density():
     import numpy as np
     from scipy.stats import lognorm
 
-    from financetoolkit.options import risk_neutral_density_model
+    from financetoolkit.options.volatility import risk_neutral_density_model
 
     stock_price, risk_free_rate, dividend_yield, time, volatility = (
         100.0,

@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.models import chs_model, helpers
+from financetoolkit.models import helpers
+from financetoolkit.models.distress import chs_model
 
 
 def test_rates_per_period_broadcast_given_rates_and_fill_the_rest_by_period():

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.econometrics import diagnostics_model
+from financetoolkit.econometrics.diagnostics import diagnostics_model
 
 # Thresholds for asserting significance, or the lack of it, in the tests below.
 HIGH_P_VALUE_THRESHOLD = 0.05

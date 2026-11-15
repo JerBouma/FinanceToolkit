@@ -20,7 +20,7 @@ from financetoolkit.risk.risk_model import (
     get_wealth_and_peak,
 )
 from financetoolkit.risk.value_at_risk import cvar_model
-from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 from financetoolkit.utilities.sources_model import record_url
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
@@ -727,7 +727,9 @@ def download_factor_file(url: str) -> bytes:
         record_url(url)
         return downloaded[1]
 
-    content = get_request(url, timeout=10).content
+    # Dartmouth answers a request that presents itself as a browser without being one with
+    # a 404, so the Finance Toolkit names itself.
+    content = get_request(url, timeout=10, extra_headers=TOOLKIT_HEADERS).content
     _factor_files[url] = (time.monotonic(), content)
 
     return content

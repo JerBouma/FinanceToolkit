@@ -956,7 +956,7 @@ def test_get_difference_in_differences_without_control_data(
 
 
 def test_get_wls_estimates_feasible_weights_by_default(econometrics_module):
-    from financetoolkit.econometrics import regression_model  # noqa: PLC0415
+    from financetoolkit.econometrics.regression import regression_model  # noqa: PLC0415
 
     returns = econometrics_module._get_series_column("weekly", "Return")[
         ["AAPL", "MSFT"]
@@ -974,7 +974,7 @@ def test_get_wls_estimates_feasible_weights_by_default(econometrics_module):
 
 
 def test_get_gls_estimates_an_ar1_structure_by_default(econometrics_module):
-    from financetoolkit.econometrics import regression_model  # noqa: PLC0415
+    from financetoolkit.econometrics.regression import regression_model  # noqa: PLC0415
 
     returns = econometrics_module._get_series_column("weekly", "Return")
     omega = pd.DataFrame(

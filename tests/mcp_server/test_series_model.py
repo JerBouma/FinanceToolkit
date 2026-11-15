@@ -6,8 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.mcp_server import mcp_controller, series_model
-from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.mcp_server import mcp_controller
+from financetoolkit.mcp_server.registry import series_model
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
 
 def test_references_are_parsed():

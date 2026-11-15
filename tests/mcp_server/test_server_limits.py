@@ -11,10 +11,11 @@ import pandas as pd
 import pytest
 import requests
 
-from financetoolkit.mcp_server import analytics_model, mcp_controller
-from financetoolkit.mcp_server.coercion_model import size_limit_problem
-from financetoolkit.mcp_server.formatting_model import format_result
-from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.mcp_server import mcp_controller
+from financetoolkit.mcp_server.analytics import analytics_model
+from financetoolkit.mcp_server.registry.coercion_model import size_limit_problem
+from financetoolkit.mcp_server.registry.formatting_model import format_result
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 from financetoolkit.utilities import requests_model
 
 
@@ -157,7 +158,7 @@ def test_series_references_are_held_to_the_entity_limit(captured):
 
 def test_a_large_table_is_cut_before_its_records_are_built(monkeypatch):
     """The records of a table of millions of rows would not fit in memory."""
-    from financetoolkit.mcp_server import formatting_model
+    from financetoolkit.mcp_server.registry import formatting_model
 
     built = []
     to_records = formatting_model._df_to_records

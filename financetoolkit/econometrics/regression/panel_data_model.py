@@ -350,7 +350,7 @@ def get_fixed_effects(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import panel_data_model, regression_model
+    from financetoolkit.econometrics.regression import panel_data_model, regression_model
 
     rng = np.random.default_rng(42)
     entities = [f"E{i}" for i in range(6)]
@@ -518,7 +518,7 @@ def get_random_effects(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import panel_data_model, regression_model
+    from financetoolkit.econometrics.regression import panel_data_model, regression_model
 
     rng = np.random.default_rng(42)
     entities = [f"E{i}" for i in range(6)]
@@ -643,7 +643,7 @@ def get_hausman_test(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import panel_data_model
+    from financetoolkit.econometrics.regression import panel_data_model
 
     rng = np.random.default_rng(1)
     entities = [f"E{i}" for i in range(300)]

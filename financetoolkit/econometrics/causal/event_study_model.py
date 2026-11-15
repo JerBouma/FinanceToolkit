@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from financetoolkit.econometrics import regression_model
+from financetoolkit.econometrics.regression import regression_model
 
 
 def get_event_study(

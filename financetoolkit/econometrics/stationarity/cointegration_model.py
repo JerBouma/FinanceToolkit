@@ -9,7 +9,7 @@ import pandas as pd
 from statsmodels.tsa.stattools import coint
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
-from financetoolkit.econometrics.unitroot_model import (
+from financetoolkit.econometrics.stationarity.unitroot_model import (
     MINIMUM_TEST_OBSERVATIONS,
     default_max_lag,
 )

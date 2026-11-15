@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from statsmodels.stats.weightstats import ttest_ind
 
-from financetoolkit.econometrics.regression_model import (
+from financetoolkit.econometrics.regression.regression_model import (
     _to_design_matrix,
     _to_target_vector,
     get_ols,

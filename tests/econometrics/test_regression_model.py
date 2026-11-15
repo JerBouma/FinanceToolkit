@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import regression_model
+from financetoolkit.econometrics.regression import regression_model
 
 
 def test_get_ols_recovers_known_coefficients(recorder):

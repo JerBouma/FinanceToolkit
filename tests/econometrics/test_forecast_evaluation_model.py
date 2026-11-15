@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics import forecast_evaluation_model
+from financetoolkit.econometrics.forecasting import forecast_evaluation_model
 
 SIGNIFICANCE_LEVEL = 0.05
 
@@ -203,7 +203,7 @@ def test_get_out_of_sample_validation_naive_forecaster_hand_computed():
 
 def test_get_out_of_sample_validation_plugged_into_arima(recorder):
     # End-to-end wiring check against a real Part-1 forecasting function.
-    from financetoolkit.econometrics import time_series_model
+    from financetoolkit.econometrics.forecasting import time_series_model
 
     rng = np.random.default_rng(1)
     n = 200

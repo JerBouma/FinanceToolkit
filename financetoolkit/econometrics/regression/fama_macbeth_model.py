@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from financetoolkit.econometrics import regression_model
+from financetoolkit.econometrics.regression import regression_model
 
 # Second-pass identification needs strictly more assets than coefficients.
 MINIMUM_ASSET_BUFFER = 1
@@ -127,7 +127,7 @@ def get_fama_macbeth_regression(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import fama_macbeth_model
+    from financetoolkit.econometrics.regression import fama_macbeth_model
 
     rng = np.random.default_rng(1)
     n_periods, n_assets = 200, 25

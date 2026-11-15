@@ -8,7 +8,7 @@ from linearmodels.iv import IV2SLS
 from scipy import stats
 from scipy.optimize import minimize
 
-from financetoolkit.econometrics.regression_model import (
+from financetoolkit.econometrics.regression.regression_model import (
     _to_design_matrix,
     _to_target_vector,
     get_logistic_regression,
@@ -103,7 +103,8 @@ def get_iv_2sls(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import causal_inference_model, regression_model
+    from financetoolkit.econometrics.causal import causal_inference_model
+    from financetoolkit.econometrics.regression import regression_model
 
     rng = np.random.default_rng(42)
     n = 2000
@@ -272,7 +273,8 @@ def get_difference_in_differences(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import causal_inference_model, regression_model
+    from financetoolkit.econometrics.causal import causal_inference_model
+    from financetoolkit.econometrics.regression import regression_model
 
     rng = np.random.default_rng(1)
     n_units, n_periods = 100, 2
@@ -458,7 +460,7 @@ def get_regression_discontinuity(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import causal_inference_model
+    from financetoolkit.econometrics.causal import causal_inference_model
 
     rng = np.random.default_rng(7)
     n = 2000
@@ -681,7 +683,7 @@ def get_propensity_score_matching(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import causal_inference_model
+    from financetoolkit.econometrics.causal import causal_inference_model
 
     rng = np.random.default_rng(3)
     n = 2000
@@ -961,7 +963,7 @@ def get_synthetic_control(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import causal_inference_model
+    from financetoolkit.econometrics.causal import causal_inference_model
 
     rng = np.random.default_rng(1)
     n_periods = 40

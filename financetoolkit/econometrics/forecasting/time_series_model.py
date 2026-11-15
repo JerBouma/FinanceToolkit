@@ -9,7 +9,8 @@ import pandas as pd
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.vector_ar.vecm import VECM
 
-from financetoolkit.econometrics import cointegration_model, regression_model
+from financetoolkit.econometrics.regression import regression_model
+from financetoolkit.econometrics.stationarity import cointegration_model
 
 # A margin beyond the estimated parameters, guarding against a degenerate fit.
 MINIMUM_ARIMA_OBSERVATIONS_BUFFER = 5
@@ -140,7 +141,7 @@ def get_arima_forecast(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import time_series_model
+    from financetoolkit.econometrics.forecasting import time_series_model
 
     rng = np.random.default_rng(1)
     e = rng.standard_normal(300)
@@ -382,7 +383,7 @@ def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> 
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import time_series_model
+    from financetoolkit.econometrics.forecasting import time_series_model
 
     rng = np.random.default_rng(1)
     n = 300
@@ -637,7 +638,7 @@ def get_impulse_response_function(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import time_series_model
+    from financetoolkit.econometrics.forecasting import time_series_model
 
     rng = np.random.default_rng(1)
     n = 300
@@ -761,7 +762,7 @@ def get_variance_decomposition(var_result: dict, periods: int = 10) -> dict:
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import time_series_model
+    from financetoolkit.econometrics.forecasting import time_series_model
 
     rng = np.random.default_rng(1)
     n = 300
@@ -912,7 +913,7 @@ def get_vecm_forecast(
     ```python
     import numpy as np
     import pandas as pd
-    from financetoolkit.econometrics import time_series_model
+    from financetoolkit.econometrics.forecasting import time_series_model
 
     rng = np.random.default_rng(3)
     n = 300

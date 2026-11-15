@@ -64,7 +64,9 @@ def test_obtain_fama_and_french_dataset(monkeypatch):
         archive.writestr("F-F_Research_Data_5_Factors_2x3_daily.csv", text)
     requested = []
 
-    def fake_get_request(url, timeout):  # noqa: ARG001
+    def fake_get_request(url, timeout, extra_headers):  # noqa: ARG001
+        # Dartmouth turns away requests that present themselves as a browser.
+        assert extra_headers == performance_model.TOOLKIT_HEADERS
         requested.append(url)
         return type("Response", (), {"content": buffer.getvalue()})()
 
@@ -656,7 +658,7 @@ def test_a_factor_file_is_downloaded_once_per_session(monkeypatch):
     """Every factor model call reads the file, which is downloaded only once."""
     downloads = []
 
-    def fake_get_request(url, timeout):  # noqa: ARG001
+    def fake_get_request(url, timeout, extra_headers):  # noqa: ARG001
         downloads.append(url)
         return type("Response", (), {"content": b"zip"})()
 

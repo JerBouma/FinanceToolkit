@@ -85,7 +85,7 @@ if TYPE_CHECKING:
     from financetoolkit.models.models_controller import Models
     from financetoolkit.options.options_controller import Options
     from financetoolkit.performance.performance_controller import Performance
-    from financetoolkit.portfolio.construction_controller import (
+    from financetoolkit.portfolio.construction.construction_controller import (
         PortfolioConstruction,
     )
     from financetoolkit.ratios.ratios_controller import Ratios
@@ -816,7 +816,7 @@ class Toolkit:
         def compare_with_peers(peers: dict[str, list[str]] | None) -> pd.DataFrame:
             # Imported when first used, as only the peer comparison needs them.
             from financetoolkit.fmp_model import get_stock_peers  # noqa: PLC0415
-            from financetoolkit.models import peers_model  # noqa: PLC0415
+            from financetoolkit.models.valuation import peers_model  # noqa: PLC0415
 
             tickers = self._get_statement_tickers("Models")
 
@@ -1450,7 +1450,7 @@ class Toolkit:
         ```
         """
         # Imported when first used, so the Finance Toolkit loads only what is needed.
-        from financetoolkit.portfolio.construction_controller import (  # noqa: PLC0415
+        from financetoolkit.portfolio.construction.construction_controller import (  # noqa: PLC0415
             PortfolioConstruction,
         )
 

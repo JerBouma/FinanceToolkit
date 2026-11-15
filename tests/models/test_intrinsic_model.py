@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.models import intrinsic_model
+from financetoolkit.models.valuation import intrinsic_model
 
 
 def test_get_intrinsic_value(recorder):

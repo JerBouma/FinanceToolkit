@@ -1868,7 +1868,7 @@ def test_yield_decomposition_adds_the_parts_and_skips_missing_days(monkeypatch):
 
 
 def test_long_run_prices_warn_about_repeated_years_and_hyperinflations(caplog):
-    from financetoolkit.mcp_server.diagnostics_model import missing_data_notes
+    from financetoolkit.mcp_server.registry.diagnostics_model import missing_data_notes
 
     years = pd.period_range("1911", "1926", freq="Y")
     germany = [
@@ -1975,6 +1975,51 @@ def test_portwatch_error_answers_raise(cache, monkeypatch):
 
     with pytest.raises(ValueError, match="Invalid query"):
         portwatch_model.get_chokepoint_transits("Suez Canal")
+
+
+def test_portwatch_rate_limit_serves_the_cached_copy(cache, monkeypatch):
+    from financetoolkit.economics.sources import portwatch_model
+
+    attributes = {f"n_{category}": 3 for category in portwatch_model.VESSEL_TYPES}
+    attributes |= {
+        f"capacity_{category}": 100.0
+        for category in portwatch_model.VESSEL_TYPES
+        if category != "total"
+    }
+    answers = [
+        {
+            "features": [
+                {"attributes": attributes | {"date": "2026-03-01", "capacity": 600.0}}
+            ]
+        }
+    ]
+    requests_made = []
+
+    def fake_get(url, timeout=60):
+        requests_made.append(url)
+        return FakeResponse(payload=answers[-1])
+
+    monkeypatch.setattr(portwatch_model, "get_request", fake_get)
+    transits = portwatch_model.get_chokepoint_transits("Suez Canal")
+
+    # Expire the cached transits, then let PortWatch answer with its rate limit, which
+    # arrives with status 200 and the 429 in the body: the cached transits are served,
+    # and the source is not asked again.
+    answers.append(
+        {
+            "error": {
+                "code": 429,
+                "message": "Unable to perform query. Too many requests.",
+                "details": [],
+            }
+        }
+    )
+    monkeypatch.setattr(helpers, "STALE_TTL_SECONDS", 10**9)
+    monkeypatch.setattr(cache, "get", _expire_fresh_reads(cache.get))
+    requests_made.clear()
+
+    assert portwatch_model.get_chokepoint_transits("Suez Canal").equals(transits)
+    assert len(requests_made) == 1
 
 
 def test_chokepoint_transits_select_measure_and_complete_periods(monkeypatch):

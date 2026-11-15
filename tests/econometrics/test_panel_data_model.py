@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.econometrics import panel_data_model, regression_model
+from financetoolkit.econometrics.regression import panel_data_model, regression_model
 
 
 def _make_panel(
@@ -228,7 +228,7 @@ def test_get_random_effects_matches_pooled_ols_when_no_entity_variance():
 
     re_result = panel_data_model.get_random_effects(y, x)
 
-    from financetoolkit.econometrics.regression_model import get_ols
+    from financetoolkit.econometrics.regression.regression_model import get_ols
 
     pooled = get_ols(y.to_numpy(), x.to_numpy(), add_constant=True)
 

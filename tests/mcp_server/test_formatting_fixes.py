@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from financetoolkit.mcp_server.formatting_model import _df_to_records
+from financetoolkit.mcp_server.registry.formatting_model import _df_to_records
 
 
 def test_levels_with_the_same_names_say_which_level_a_key_is():
@@ -27,7 +27,7 @@ def test_levels_with_the_same_names_say_which_level_a_key_is():
 
 
 def test_skipped_periods_are_named_in_a_note():
-    from financetoolkit.mcp_server.formatting_model import skipped_periods_note
+    from financetoolkit.mcp_server.registry.formatting_model import skipped_periods_note
 
     result = pd.DataFrame(
         {"United States": [1.0, None, 2.0, None], "Germany": [1.0, 1.5, 2.0, 2.5]},
@@ -43,7 +43,7 @@ def test_skipped_periods_are_named_in_a_note():
 
 
 def test_a_series_without_a_period_parameter_is_converted_to_the_period():
-    from financetoolkit.mcp_server.formatting_model import convert_to_period
+    from financetoolkit.mcp_server.registry.formatting_model import convert_to_period
 
     weeks = pd.date_range("2023-01-05", "2024-12-26", freq="W-THU")
     rates = pd.DataFrame({"United States": range(len(weeks))}, index=weeks)
@@ -60,7 +60,7 @@ def test_a_series_without_a_period_parameter_is_converted_to_the_period():
 
 
 def test_days_a_ticker_did_not_trade_are_named():
-    from financetoolkit.mcp_server.formatting_model import filled_day_notes
+    from financetoolkit.mcp_server.registry.formatting_model import filled_day_notes
 
     days = pd.period_range("2026-10-01", periods=4, freq="D")
     prices = pd.concat(

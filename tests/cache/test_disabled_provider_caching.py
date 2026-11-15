@@ -3,7 +3,7 @@
 import pandas as pd
 
 from financetoolkit.cache import cache_controller
-from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
 
 def build_provider(tmp_path, enabled):

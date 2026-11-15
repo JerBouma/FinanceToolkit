@@ -36,7 +36,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit import finra_model, historical_model, yfinance_model
-from financetoolkit.economics.economics_controller import ASSET_CLASS_PROXIES
+from financetoolkit.economics.history.history_controller import ASSET_CLASS_PROXIES
 from financetoolkit.economics.sources import (
     bea_model,
     bis_model,
@@ -86,7 +86,7 @@ from financetoolkit.fixedincome.sources import (
     riksbank_model,
     treasurydirect_model,
 )
-from financetoolkit.models import damodaran_model
+from financetoolkit.models.valuation import damodaran_model
 from financetoolkit.options import options_model
 from financetoolkit.performance import performance_model
 

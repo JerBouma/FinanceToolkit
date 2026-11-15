@@ -34,9 +34,9 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
-# Some official sources (the Reserve Bank of Australia, De Nederlandsche Bank) turn away
-# requests that present themselves as a browser without being one, so for those the
-# Finance Toolkit names itself.
+# Some official sources (the Reserve Bank of Australia, De Nederlandsche Bank, Kenneth French's
+# data library at Dartmouth) turn away requests that present themselves as a browser without
+# being one, so for those the Finance Toolkit names itself.
 TOOLKIT_HEADERS = {
     "User-Agent": "financetoolkit (+https://github.com/JerBouma/FinanceToolkit)"
 }

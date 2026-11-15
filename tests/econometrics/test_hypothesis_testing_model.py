@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from financetoolkit.econometrics import hypothesis_testing_model, regression_model
+from financetoolkit.econometrics.regression import regression_model
+from financetoolkit.econometrics.testing import hypothesis_testing_model
 
 
 def test_get_two_sample_t_test_detects_known_large_difference(recorder):

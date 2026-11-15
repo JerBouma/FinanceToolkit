@@ -4,7 +4,7 @@ import pandas as pd
 
 from financetoolkit.economics import helpers as economics_helpers
 from financetoolkit.helpers import run_in_parallel
-from financetoolkit.mcp_server.formatting_model import format_result
+from financetoolkit.mcp_server.registry.formatting_model import format_result
 from financetoolkit.utilities import sources_model
 from financetoolkit.utilities.sources_model import (
     collect_sources,

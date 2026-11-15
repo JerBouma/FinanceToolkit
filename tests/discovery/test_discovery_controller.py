@@ -393,7 +393,7 @@ def test_get_mergers_acquisitions_latest(recorder):
 
 def test_get_industry_statistics_reads_the_dataset_of_the_region():
     with patch(
-        "financetoolkit.models.damodaran_model.get_industry_statistics"
+        "financetoolkit.models.valuation.damodaran_model.get_industry_statistics"
     ) as mock_statistics:
         mock_statistics.return_value = pd.DataFrame(
             {"Number of Firms": [66], "Cost of Capital": [0.0983]},

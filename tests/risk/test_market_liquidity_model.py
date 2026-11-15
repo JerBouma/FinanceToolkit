@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.risk import market_liquidity_model
+from financetoolkit.risk.liquidity import market_liquidity_model
 
 ROLL_SPREAD_RECOVERY_TOLERANCE = 0.05
 

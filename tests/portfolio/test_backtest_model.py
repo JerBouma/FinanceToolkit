@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.portfolio import backtest_model, optimization_model
+from financetoolkit.portfolio.construction.analysis import backtest_model
+from financetoolkit.portfolio.construction.optimization import optimization_model
 
 # pylint: disable=missing-function-docstring
 

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.portfolio import attribution_model
+from financetoolkit.portfolio.construction.attribution import attribution_model
 
 
 def test_brinson_effects_add_up_to_the_excess_return():

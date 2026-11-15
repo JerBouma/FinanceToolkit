@@ -13,13 +13,13 @@ from scipy.stats import linregress
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.performance.helpers import get_newey_west_lags
-from financetoolkit.risk import cvar_model
 from financetoolkit.risk.risk_model import (
     apply_to_stacked_windows,
     get_move_significance,
     get_tail_ratio,
     get_wealth_and_peak,
 )
+from financetoolkit.risk.value_at_risk import cvar_model
 from financetoolkit.utilities.requests_model import get_request
 from financetoolkit.utilities.sources_model import record_url
 from financetoolkit.utilities.statistics_model import (
@@ -3327,7 +3327,7 @@ def get_starr_ratio(
         - STARR Ratio = Excess Return / |CVaR(alpha)|
 
     Where CVaR is computed on the raw (non-excess) `returns` using the historical method
-    (see `financetoolkit.risk.cvar_model.get_cvar_historic`), which this function calls
+    (see `financetoolkit.risk.value_at_risk.cvar_model.get_cvar_historic`), which this function calls
     directly rather than reimplementing the CVaR calculation. `excess_returns` is divided
     by CVaR elementwise (e.g. per period), so pass already-aggregated excess returns (e.g.
     one value per period) rather than a raw daily series if a mean excess return per period
@@ -3407,7 +3407,7 @@ def get_rachev_ratio(
         - ES_left(alpha) = -E[Return | Return <= Quantile(alpha)]
 
     Both tail expected shortfalls are computed by calling the existing
-    `financetoolkit.risk.cvar_model.get_cvar_historic` function — the left tail directly on
+    `financetoolkit.risk.value_at_risk.cvar_model.get_cvar_historic` function — the left tail directly on
     `returns`, and the right tail on `-returns` (which turns the upper tail of `returns`
     into the lower tail of the negated series, letting the same CVaR machinery compute it
     without reimplementing any tail-averaging logic) — rather than duplicating the CVaR

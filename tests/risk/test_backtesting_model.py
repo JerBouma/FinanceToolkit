@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats as spstats
 
-from financetoolkit.risk import backtesting_model
+from financetoolkit.risk.value_at_risk import backtesting_model
 
 SIGNIFICANCE_LEVEL = 0.05
 

@@ -192,3 +192,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 articles/
+
+# Created by the release for the MCP bundle
+financetoolkit/mcp_server/mcpb/uv.lock

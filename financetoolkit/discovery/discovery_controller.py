@@ -9,7 +9,7 @@ import pandas as pd
 from financetoolkit import fmp_model
 from financetoolkit.cache import cache_controller
 from financetoolkit.discovery import discovery_model
-from financetoolkit.models import damodaran_model
+from financetoolkit.models.valuation import damodaran_model
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors

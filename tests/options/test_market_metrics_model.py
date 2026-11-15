@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from financetoolkit.options import black_scholes_model, market_metrics_model
+from financetoolkit.options.market import market_metrics_model
+from financetoolkit.options.pricing import black_scholes_model
 
 STOCK_PRICE = 100.0
 TIME = 30 / 365

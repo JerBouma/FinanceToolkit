@@ -9,7 +9,7 @@ import pandas as pd
 from scipy import optimize, signal
 from statsmodels.tsa.statespace.mlemodel import MLEModel
 
-from financetoolkit.risk import garch_model
+from financetoolkit.risk.volatility import garch_model
 
 
 class _TimeVaryingRegression(MLEModel):

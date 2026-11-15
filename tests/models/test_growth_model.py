@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.models import growth_model
+from financetoolkit.models.profitability import growth_model
 
 
 @pytest.mark.parametrize(

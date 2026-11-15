@@ -15,7 +15,7 @@ from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.testclient import TestClient
 
-from financetoolkit.mcp_server.auth_model import (
+from financetoolkit.mcp_server.auth.auth_model import (
     MCPAuthMiddleware,
     get_api_key_from_request,
     issue_token,
@@ -45,7 +45,9 @@ def setup_env() -> Generator[None, None, None]:
 
 def _signed_jwt(payload: dict, expires_in: int) -> str:
     """A signed, unencrypted HS256 JWT access token, as clients may still hold."""
-    from financetoolkit.mcp_server.auth_model import get_secret_key  # noqa: PLC0415
+    from financetoolkit.mcp_server.auth.auth_model import (
+        get_secret_key,
+    )  # noqa: PLC0415
 
     def encode(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
@@ -606,7 +608,7 @@ def test_an_expired_or_foreign_access_token_gets_invalid_token() -> None:
 
 
 def test_the_secret_file_is_private_and_read_once(monkeypatch, tmp_path):
-    from financetoolkit.mcp_server import auth_model
+    from financetoolkit.mcp_server.auth import auth_model
 
     monkeypatch.delenv("FT_MCP_SECRET_KEY", raising=False)
     monkeypatch.setattr(auth_model, "_secret_key", None)
@@ -643,7 +645,7 @@ def test_authorization_fields_are_bounded_and_the_challenge_is_s256_shaped() -> 
 
 def test_a_full_code_store_makes_way_for_new_codes(monkeypatch) -> None:
     """A full store drops its oldest code, so a flood cannot block every sign-in."""
-    from financetoolkit.mcp_server import auth_model
+    from financetoolkit.mcp_server.auth import auth_model
 
     monkeypatch.setattr(auth_model, "_MAX_PENDING_CODES", 1)
     monkeypatch.setattr(auth_model, "_auth_codes", {})
@@ -670,7 +672,7 @@ def test_a_full_code_store_makes_way_for_new_codes(monkeypatch) -> None:
 
 
 def test_one_client_address_has_a_limited_number_of_pending_codes(monkeypatch) -> None:
-    from financetoolkit.mcp_server import auth_model
+    from financetoolkit.mcp_server.auth import auth_model
 
     monkeypatch.setattr(auth_model, "_MAX_PENDING_CODES_PER_CLIENT", 2)
     monkeypatch.setattr(auth_model, "_auth_codes", {})
@@ -689,7 +691,7 @@ def test_one_client_address_has_a_limited_number_of_pending_codes(monkeypatch) -
 
 
 def test_private_use_schemes_without_a_host_are_accepted() -> None:
-    from financetoolkit.mcp_server.auth_model import validate_redirect_uri
+    from financetoolkit.mcp_server.auth.auth_model import validate_redirect_uri
 
     assert validate_redirect_uri("com.example.app:/oauth2redirect") == ""
     assert validate_redirect_uri("cursor://anysphere.cursor/cb") == ""
@@ -698,7 +700,7 @@ def test_private_use_schemes_without_a_host_are_accepted() -> None:
 
 
 def test_an_existing_secret_is_kept_and_a_short_one_is_replaced(monkeypatch, tmp_path):
-    from financetoolkit.mcp_server import auth_model
+    from financetoolkit.mcp_server.auth import auth_model
 
     monkeypatch.delenv("FT_MCP_SECRET_KEY", raising=False)
     monkeypatch.setattr(auth_model, "get_global_env_path", lambda: tmp_path / ".env")
@@ -879,7 +881,7 @@ def test_a_refresh_token_renews_the_access_token() -> None:
 
 
 def test_the_pages_send_security_headers_and_only_run_their_own_script() -> None:
-    from financetoolkit.mcp_server.auth_model import AUTHORIZE_SCRIPT_HASH
+    from financetoolkit.mcp_server.auth.auth_model import AUTHORIZE_SCRIPT_HASH
 
     client = _oauth_client()
     page = _authorize_page(

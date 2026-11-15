@@ -26,18 +26,21 @@ from mcp.types import Icon
 from starlette.middleware.cors import CORSMiddleware
 
 from financetoolkit.cache import policy_model
-from financetoolkit.mcp_server import analytics_model, setup_model
-from financetoolkit.mcp_server.auth_model import (
+from financetoolkit.mcp_server.analytics import analytics_model
+from financetoolkit.mcp_server.auth.auth_model import (
     MCPAuthMiddleware,
     get_secret_key,
     register_auth_routes,
     resolve_api_key,
     resolve_fred_api_key,
 )
-from financetoolkit.mcp_server.inspection_controller import ControllerInspector
-from financetoolkit.mcp_server.provider_model import ToolkitProvider
-from financetoolkit.mcp_server.registry_controller import ToolRegistry
-from financetoolkit.mcp_server.tools_model import UtilityToolRegistry
+from financetoolkit.mcp_server.inspection.inspection_controller import (
+    ControllerInspector,
+)
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+from financetoolkit.mcp_server.registry.registry_controller import ToolRegistry
+from financetoolkit.mcp_server.registry.tools_model import UtilityToolRegistry
+from financetoolkit.mcp_server.setup import setup_model
 from financetoolkit.utilities import requests_model
 from financetoolkit.utilities.logger_model import (
     add_redaction,

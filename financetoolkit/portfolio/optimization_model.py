@@ -13,7 +13,8 @@ from scipy.optimize import Bounds, LinearConstraint, linprog, milp, minimize
 from scipy.spatial.distance import pdist, squareform
 
 from financetoolkit.performance import performance_model
-from financetoolkit.risk import cvar_model, risk_model, var_model
+from financetoolkit.risk import risk_model
+from financetoolkit.risk.value_at_risk import cvar_model, var_model
 
 # pylint: disable=too-many-arguments,too-many-locals
 

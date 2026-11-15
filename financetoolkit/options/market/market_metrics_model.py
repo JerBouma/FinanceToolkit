@@ -5,7 +5,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.options import greeks_model
+from financetoolkit.options.greeks import greeks_model
 
 # One option contract covers one hundred shares.
 CONTRACT_SIZE = 100

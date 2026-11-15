@@ -5,6 +5,7 @@ __docformat__ = "google"
 from urllib.parse import urlencode
 
 import pandas as pd
+import requests
 
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data
@@ -18,6 +19,7 @@ QUERY_URL = (
     "Daily_Chokepoints_Data/FeatureServer/0/query"
 )
 PAGE_SIZE = 1000
+TOO_MANY_REQUESTS = 429
 
 # The ship categories, as PortWatch counts them (n_*) and estimates their trade volume
 # (capacity_*), with the names the Finance Toolkit gives them. Cargo is every category
@@ -44,16 +46,30 @@ def _query(parameters: dict) -> dict:
         dict: The JSON answer.
 
     Raises:
-        ValueError: When the service answers with an error, which means it changed.
+        requests.exceptions.HTTPError: When the service limits the number of requests.
+        ValueError: When the service answers with any other error, which means it changed.
     """
     response = get_request(
         f"{QUERY_URL}?{urlencode({**parameters, 'f': 'json'})}", timeout=60
     ).json()
 
     if "error" in response:
+        error = response["error"]
+        message = error.get("message", error)
+
+        # ArcGIS answers a rate limit with status 200 and the 429 in the body. It is raised as a request
+        # error, so the cached copy is served (or the source reported as unreachable) instead of the
+        # answer being taken for a format change. A rate limit is not retried, as for the other sources.  # noqa: E501
+        if (
+            error.get("code") == TOO_MANY_REQUESTS
+            or "too many requests" in str(message).lower()
+        ):
+            raise requests.exceptions.HTTPError(
+                f"IMF PortWatch limited the number of requests: {message}"
+            )
+
         raise ValueError(
-            f"IMF PortWatch answered the chokepoint query with an error: "
-            f"{response['error'].get('message', response['error'])}"
+            f"IMF PortWatch answered the chokepoint query with an error: {message}"
         )
 
     return response

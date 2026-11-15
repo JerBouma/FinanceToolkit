@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.models import eva_model
+from financetoolkit.models.valuation import eva_model
 
 
 def test_get_net_operating_profit_after_taxes(recorder):

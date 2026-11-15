@@ -2588,7 +2588,9 @@ class Portfolio:
         | Portfolio | 134711     |   8568.1   |   35730.9   |      968688    | 2000-01-07          |                  0.1763 |
         """
         # Imported here: the attribution model is only needed for this calculation.
-        from financetoolkit.portfolio import attribution_model  # noqa: PLC0415
+        from financetoolkit.portfolio.construction.attribution import (  # noqa: PLC0415
+            attribution_model,
+        )
 
         overview = self.get_portfolio_overview()
         # Every transaction, sales included; the transactions overview leaves sold

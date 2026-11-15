@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from financetoolkit.risk import copula_model
+from financetoolkit.risk.dependence import copula_model
 
 INDEPENDENCE_TOLERANCE = 0.02
 STUDENT_T_TAIL_DEPENDENCE_MINIMUM = 0.3

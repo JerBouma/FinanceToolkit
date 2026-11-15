@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from financetoolkit.risk import risk_model, var_model
+from financetoolkit.risk import risk_model
+from financetoolkit.risk.value_at_risk import var_model
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import by_own_trading_days
 

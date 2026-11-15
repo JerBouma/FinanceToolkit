@@ -5,7 +5,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.options import black_scholes_model, svi_model
+from financetoolkit.options.pricing import black_scholes_model
+from financetoolkit.options.volatility import svi_model
 
 
 def get_risk_neutral_density(

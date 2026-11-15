@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.models import enterprise_model
+from financetoolkit.models.valuation import enterprise_model
 
 
 def test_get_enterprise_value_breakdown(recorder):

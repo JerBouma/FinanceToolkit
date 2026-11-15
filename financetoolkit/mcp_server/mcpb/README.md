@@ -13,12 +13,13 @@ This directory contains the source for `financetoolkit.mcpb`, an [MCP Bundle](ht
 
 ## Releases
 
-Every release builds `financetoolkit.mcpb` from this directory and attaches it to the GitHub release (see `.github/workflows/release.yml`). The bundle holds no code of its own: it installs the `financetoolkit[mcp]` version pinned in `pyproject.toml` from PyPI. `manifest.json` lists the server's tools with the descriptions from `financetoolkit/mcp_server/config.yaml`, and the tests check that both stay the same.
+Every release builds `financetoolkit.mcpb` from this directory and attaches it to the GitHub release (see `.github/workflows/release.yml`). The bundle holds no code of its own: it installs the `financetoolkit[mcp]` version pinned in `pyproject.toml` from PyPI, with every dependency fixed by a `uv.lock` that the release creates once that version is on PyPI. `manifest.json` lists the server's tools with the descriptions from `financetoolkit/mcp_server/config.yaml`, and the tests check that both stay the same.
 
 ## Building and Testing Locally
 
 1. Install the [MCPB CLI](https://github.com/modelcontextprotocol/mcpb) with `npm install -g @anthropic-ai/mcpb`.
-2. Build the bundle from the repository root with `mcpb pack financetoolkit/mcp_server/mcpb dist/financetoolkit.mcpb`.
-3. Double-click `dist/financetoolkit.mcpb` to install it into Claude Desktop.
+2. Lock the dependencies with `uv lock --directory financetoolkit/mcp_server/mcpb` (the lock isn't committed; the release creates it).
+3. Build the bundle from the repository root with `mcpb pack financetoolkit/mcp_server/mcpb dist/financetoolkit.mcpb`.
+4. Double-click `dist/financetoolkit.mcpb` to install it into Claude Desktop.
 
 The bundle installs the pinned version from PyPI, so it runs the latest release rather than local changes. To test local changes, run the server from your checkout with `uv run financetoolkit-mcp` instead.

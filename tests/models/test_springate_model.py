@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.models import springate_model
+from financetoolkit.models.distress import springate_model
 
 
 def test_get_working_capital_to_total_assets_ratio(recorder):

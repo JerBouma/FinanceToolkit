@@ -44,7 +44,7 @@ def _not_found(url):
 
 def test_implied_volatility_is_a_decimal_per_market_and_maturity(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import cboe_model, fmp_model, stoxx_model
+    from financetoolkit.economics.sources import cboe_model, fmp_model, stoxx_model
 
     days = ("2026-09-29", "2026-09-30")
     cboe = {
@@ -103,7 +103,7 @@ def test_implied_volatility_is_a_decimal_per_market_and_maturity(monkeypatch):
 
 
 def test_federal_reserve_scenario_is_split_by_region_in_decimals(monkeypatch):
-    from financetoolkit.economics import frb_model
+    from financetoolkit.economics.sources import frb_model
 
     domestic = (
         "Scenario Name,Date,Real GDP growth,10-year Treasury yield,"
@@ -147,7 +147,7 @@ def test_federal_reserve_scenario_is_split_by_region_in_decimals(monkeypatch):
 
 
 def test_esrb_scenario_reads_the_country_panel(monkeypatch):
-    from financetoolkit.economics import esrb_model
+    from financetoolkit.economics.sources import esrb_model
 
     gdp = [[None] * 9 for _ in range(3)]
     gdp[1] = [None, "Real GDP"] + [None] * 7
@@ -270,7 +270,7 @@ def test_corporate_bond_yields_and_spreads(monkeypatch):
 
 def test_carbon_price_averages_the_days_general_allowance_auctions(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import eex_model
+    from financetoolkit.economics.sources import eex_model
 
     rows = [[None] * 7 for _ in range(5)]
     rows += [
@@ -425,7 +425,7 @@ def test_default_rates_start_at_the_first_year_with_a_default(monkeypatch):
 
 def test_climate_scenario_applies_the_deviation_to_the_baseline(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import ngfs_model
+    from financetoolkit.economics.sources import ngfs_model
 
     runs = pd.DataFrame(
         {
@@ -474,7 +474,7 @@ def test_climate_scenario_applies_the_deviation_to_the_baseline(monkeypatch):
 
 def test_long_run_asset_returns_require_accepting_the_licence(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import macrohistory_model
+    from financetoolkit.economics.sources import macrohistory_model
 
     data = pd.DataFrame(
         {
@@ -508,7 +508,7 @@ def test_long_run_asset_returns_require_accepting_the_licence(monkeypatch):
 
 def test_millennium_data_names_second_columns_by_their_unit(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import boe_model
+    from financetoolkit.economics.sources import boe_model
 
     rows = [[None] * 5 for _ in range(7)]
     rows[3] = ["Description", "Bank Rate", None, "Share prices", "Consumer price index"]
@@ -545,7 +545,7 @@ def test_dnb_scenario_set_derives_zero_rates_from_the_state_variables(monkeypatc
     import openpyxl
 
     from financetoolkit import Economics
-    from financetoolkit.economics import dnb_model
+    from financetoolkit.economics.sources import dnb_model
 
     book = openpyxl.Workbook()
     book.remove(book.active)
@@ -689,7 +689,7 @@ def test_eiopa_symmetric_adjustment_reads_the_daily_history(monkeypatch):
 def test_option_chains_fall_back_to_cboe_when_yahoo_has_none(monkeypatch):
     import yfinance as yf
 
-    from financetoolkit.economics import cboe_model
+    from financetoolkit.economics.sources import cboe_model
     from financetoolkit.options import options_model
 
     payload = {
@@ -757,7 +757,7 @@ def test_option_chains_fall_back_to_cboe_when_yahoo_has_none(monkeypatch):
 
 
 def test_federal_reserve_scenario_files_named_after_their_table(monkeypatch):
-    from financetoolkit.economics import frb_model
+    from financetoolkit.economics.sources import frb_model
 
     text = (
         "Scenario Name,Date,Real GDP growth\n"

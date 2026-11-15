@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
+from financetoolkit.fixedincome import ecb_model as fixedincome_ecb_model
 
 
 @pytest.fixture(autouse=True)
@@ -75,7 +76,7 @@ def test_eiopa_release_is_parsed_per_country_and_maturity(monkeypatch):
 
 
 def test_bank_of_england_spot_curve_finds_its_worksheet_by_name():
-    from financetoolkit.economics import boe_model
+    from financetoolkit.economics.sources import boe_model
 
     rows = [
         [None, "UK real spot curve"],
@@ -93,7 +94,7 @@ def test_bank_of_england_spot_curve_finds_its_worksheet_by_name():
 
 
 def test_eurostat_life_table_has_a_column_per_country_and_age(monkeypatch):
-    from financetoolkit.economics import eurostat_model
+    from financetoolkit.economics.sources import eurostat_model
 
     payload = {
         "id": ["freq", "indic_de", "sex", "age", "geo", "time"],
@@ -130,7 +131,7 @@ def test_eurostat_life_table_has_a_column_per_country_and_age(monkeypatch):
 
 
 def test_bis_exchange_rates_and_property_series_selection(monkeypatch):
-    from financetoolkit.economics import bis_model
+    from financetoolkit.economics.sources import bis_model
 
     fx = "FREQ,REF_AREA,CURRENCY,COLLECTION,TIME_PERIOD,OBS_VALUE\nM,GB,GBP,E,2026-08,0.7386\nM,JP,JPY,E,2026-08,159.73\n"
     property_prices = (
@@ -152,7 +153,7 @@ def test_bis_exchange_rates_and_property_series_selection(monkeypatch):
 
 
 def test_imf_observations_are_read_and_named(monkeypatch):
-    from financetoolkit.economics import imf_model
+    from financetoolkit.economics.sources import imf_model
 
     structure = (
         '<str:Codelist id="CL_COUNTRY"><str:Code id="PAK"><com:Name xml:lang="en">Pakistan</com:Name></str:Code>'
@@ -177,7 +178,7 @@ def test_imf_observations_are_read_and_named(monkeypatch):
 
 
 def test_shiller_dates_read_october_correctly():
-    from financetoolkit.economics import shiller_model
+    from financetoolkit.economics.sources import shiller_model
 
     assert shiller_model._to_month(1871.01) == pd.Period("1871-01", "M")
     assert shiller_model._to_month(2023.1) == pd.Period("2023-10", "M")
@@ -185,7 +186,7 @@ def test_shiller_dates_read_october_correctly():
 
 
 def test_ecb_series_by_area_name_the_euro_area(monkeypatch):
-    from financetoolkit.economics import ecb_model
+    from financetoolkit.economics.sources import ecb_model
 
     text = (
         "KEY,TIME_PERIOD,OBS_VALUE\n"
@@ -232,7 +233,7 @@ def test_inflation_curves_pick_countries_with_a_column_per_country_and_maturity(
     monkeypatch, caplog
 ):
     from financetoolkit import Economics
-    from financetoolkit.economics import boe_model, treasury_model
+    from financetoolkit.economics.sources import boe_model, treasury_model
     from financetoolkit.fixedincome import bundesbank_model
 
     monkeypatch.setattr(
@@ -283,7 +284,7 @@ def test_inflation_curves_pick_countries_with_a_column_per_country_and_maturity(
 
 def test_inflation_expectations_hold_each_survey_round_until_the_next(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import ecb_model
+    from financetoolkit.economics.sources import ecb_model
     from financetoolkit.fixedincome import bundesbank_model
 
     monkeypatch.setattr(
@@ -366,7 +367,7 @@ def test_eiopa_shocked_curves_are_computed_from_the_base_curve_and_the_shocks(
 
 
 def test_life_table_keeps_one_column_for_age_85(monkeypatch):
-    from financetoolkit.economics import eurostat_model
+    from financetoolkit.economics.sources import eurostat_model
 
     columns = pd.MultiIndex.from_tuples(
         [("Germany", 84), ("Germany", 85), ("Germany", "Y_GE85"), ("Germany", 95)]
@@ -394,9 +395,9 @@ def test_life_table_keeps_one_column_for_age_85(monkeypatch):
 
 
 def test_imf_country_names_match_the_other_sources(monkeypatch):
-    from financetoolkit.economics import imf_model
     from financetoolkit.economics.helpers import COUNTRY_CODES
-    from financetoolkit.economics.oecd_model import CODE_TO_COUNTRY
+    from financetoolkit.economics.sources import imf_model
+    from financetoolkit.economics.sources.oecd_model import CODE_TO_COUNTRY
 
     structure = (
         '<str:Codelist id="CL_COUNTRY">'
@@ -433,7 +434,7 @@ def test_imf_country_names_match_the_other_sources(monkeypatch):
 
 
 def test_bis_credit_statistics_are_decimals_per_country(monkeypatch):
-    from financetoolkit.economics import bis_model
+    from financetoolkit.economics.sources import bis_model
 
     requested = []
     # The credit-to-GDP gap of two countries and the BIS aggregate of all reporting
@@ -475,7 +476,7 @@ def test_the_borrowers_select_the_bis_series(
     monkeypatch, method, borrowers, dataflow, key
 ):
     from financetoolkit import Economics
-    from financetoolkit.economics import bis_model
+    from financetoolkit.economics.sources import bis_model
 
     requested = []
 
@@ -500,7 +501,7 @@ def test_the_borrowers_select_the_bis_series(
 
 def test_an_unknown_sector_of_borrowers_gives_no_data(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import bis_model
+    from financetoolkit.economics.sources import bis_model
 
     monkeypatch.setattr(
         bis_model,
@@ -527,7 +528,7 @@ def _imf_series(attributes: str, observations: dict[str, float]) -> str:
 
 
 def test_imf_interest_ratios_cover_the_last_four_quarters(monkeypatch):
-    from financetoolkit.economics import imf_model
+    from financetoolkit.economics.sources import imf_model
 
     structure = (
         '<str:Codelist id="CL_COUNTRY"><str:Code id="USA"><com:Name xml:lang="en">'
@@ -585,7 +586,7 @@ def test_imf_interest_ratios_cover_the_last_four_quarters(monkeypatch):
 def test_imf_expenditure_by_function_has_a_column_per_country_and_function(
     monkeypatch,
 ):
-    from financetoolkit.economics import imf_model
+    from financetoolkit.economics.sources import imf_model
     from financetoolkit.utilities.statistics_model import finalize_dataset
 
     structure = (
@@ -642,7 +643,7 @@ def test_imf_expenditure_by_function_has_a_column_per_country_and_function(
 
 def test_us_inflation_curves_come_from_the_treasury_with_a_fred_key(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import treasury_model
+    from financetoolkit.economics.sources import treasury_model
 
     monkeypatch.setattr(
         treasury_model,
@@ -663,7 +664,7 @@ def test_us_inflation_curves_come_from_the_treasury_with_a_fred_key(monkeypatch)
 
 def test_policy_rates_add_the_days_since_the_latest_bis_update(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import bis_model, boe_model, economics_controller
+    from financetoolkit.economics.sources import bis_model, boe_model
 
     days = pd.PeriodIndex(pd.bdate_range("2026-10-26", "2026-11-03"), freq="D")
     monkeypatch.setattr(
@@ -687,7 +688,7 @@ def test_policy_rates_add_the_days_since_the_latest_bis_update(monkeypatch):
     # The ECB lists every calendar day; a different rate than the BIS on the shared
     # days means another series, so the euro area is not extended with it.
     monkeypatch.setattr(
-        economics_controller.ecb_rates_model,
+        fixedincome_ecb_model,
         "get_deposit_facility",
         lambda: pd.Series(
             0.0265, index=pd.period_range("2026-10-01", "2026-11-09", freq="D")
@@ -746,7 +747,7 @@ def test_real_interest_rate_is_monthly_with_the_policy_rate(monkeypatch):
 
 def test_us_consumer_prices_add_the_bls_months_after_the_bis(monkeypatch):
     from financetoolkit import Economics
-    from financetoolkit.economics import bls_model
+    from financetoolkit.economics.sources import bls_model
 
     months = pd.period_range("2025-08", "2026-09", freq="M")
     # The BIS republishes the BLS index on 2010 = 100, about 0.4578 of the BLS level.

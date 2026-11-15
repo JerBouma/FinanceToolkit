@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.economics.helpers import COUNTRY_CODES
-from financetoolkit.economics.oecd_model import CODE_TO_COUNTRY
+from financetoolkit.economics.sources.oecd_model import CODE_TO_COUNTRY
 from financetoolkit.utilities.logger_model import get_logger
 
 logger = get_logger()

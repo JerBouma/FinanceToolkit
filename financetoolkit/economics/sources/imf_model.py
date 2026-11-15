@@ -9,7 +9,7 @@ import pandas as pd
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data, collect_ranged_data
-from financetoolkit.economics.oecd_model import CODE_TO_COUNTRY
+from financetoolkit.economics.sources.oecd_model import CODE_TO_COUNTRY
 from financetoolkit.utilities.requests_model import get_request
 
 BASE_URL = "https://api.imf.org/external/sdmx/2.1/"

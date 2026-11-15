@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache import cache_controller
-from financetoolkit.economics import gmdb_model, oecd_model
+from financetoolkit.economics.sources import gmdb_model, oecd_model
 from financetoolkit.fixedincome import fed_model, fred_model, helpers
 
 

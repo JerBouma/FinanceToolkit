@@ -914,7 +914,7 @@ def economics_module(live_mode):
 @pytest.fixture(autouse=True)
 def fresh_global_macro_database():
     """Every test reads its own Global Macro Database rather than the process-wide copy."""
-    from financetoolkit.economics import gmdb_model
+    from financetoolkit.economics.sources import gmdb_model
 
     gmdb_model._SHARED_DATASETS.clear()
     yield

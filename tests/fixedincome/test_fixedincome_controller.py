@@ -112,7 +112,7 @@ def test_maturity_in_years_reads_days_and_weeks():
 @pytest.fixture
 def weekly_mortgage_rates(monkeypatch):
     """The 30-year mortgage rate of three survey dates, read without a FRED API key."""
-    from financetoolkit.economics import freddie_mac_model
+    from financetoolkit.economics.sources import freddie_mac_model
 
     monkeypatch.delenv("FRED_API_KEY", raising=False)
     dates = pd.PeriodIndex(["2021-01-07", "2023-10-26", "2026-11-05"], freq="D")

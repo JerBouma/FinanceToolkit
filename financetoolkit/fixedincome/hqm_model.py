@@ -9,8 +9,8 @@ import pandas as pd
 
 from financetoolkit import helpers
 from financetoolkit.cache import policy_model
-from financetoolkit.economics import treasury_model
 from financetoolkit.economics.helpers import collect_cached_data
+from financetoolkit.economics.sources import treasury_model
 from financetoolkit.helpers import round_half_up
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 

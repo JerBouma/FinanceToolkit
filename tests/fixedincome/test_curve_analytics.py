@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.economics import ecb_model as economics_ecb_model
+from financetoolkit.economics.sources import ecb_model as economics_ecb_model
 from financetoolkit.fixedincome import curve_model, fiscaldata_model, fred_model
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 

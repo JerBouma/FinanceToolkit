@@ -15,7 +15,13 @@ from financetoolkit import (
     helpers,
 )
 from financetoolkit.cache.cache_controller import Cache, resolve_cache, set_active_cache
-from financetoolkit.economics import (
+from financetoolkit.economics.helpers import (
+    average_monthly_index,
+    buffered_start_date,
+    resample_to_period,
+    validate_period,
+)
+from financetoolkit.economics.sources import (
     boe_model,
     ecb_model as economics_ecb_model,
     frb_model,
@@ -25,12 +31,6 @@ from financetoolkit.economics import (
     nyfed_model,
     oecd_model,
     treasury_model,
-)
-from financetoolkit.economics.helpers import (
-    average_monthly_index,
-    buffered_start_date,
-    resample_to_period,
-    validate_period,
 )
 from financetoolkit.fixedincome import (
     boc_model,

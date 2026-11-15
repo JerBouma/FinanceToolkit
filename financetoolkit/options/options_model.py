@@ -6,7 +6,7 @@ import yfinance as yf
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
-from financetoolkit.economics import cboe_model
+from financetoolkit.economics.sources import cboe_model
 from financetoolkit.options.helpers import validate_numeric_inputs
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source

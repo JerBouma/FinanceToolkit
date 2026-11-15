@@ -1981,7 +1981,7 @@ def test_portwatch_error_answers_raise(cache, monkeypatch):
 
 
 def test_portwatch_rate_limit_serves_the_cached_copy(cache, monkeypatch):
-    from financetoolkit.economics import portwatch_model
+    from financetoolkit.economics.sources import portwatch_model
 
     attributes = {f"n_{category}": 3 for category in portwatch_model.VESSEL_TYPES}
     attributes |= {

@@ -1,7 +1,7 @@
 """Dupont Model Tests""" ""
 import pandas as pd
 
-from financetoolkit.models import dupont_model
+from financetoolkit.models.profitability import dupont_model
 
 
 def test_get_dupont_analysis(recorder):

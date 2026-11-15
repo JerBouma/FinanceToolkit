@@ -3,13 +3,13 @@ name: Release
 # Releases a version when its release PR is merged into main. A release PR has the head branch
 # feature/vX.Y.Z; any other PR is ignored. The release has three stages:
 #
-# 1. Prepare: checks the release (versions, notes, tag, approval) and builds the package and
-#    financetoolkit.mcpb from the merge commit. Nothing is published yet. Prepare also runs on an open
+# 1. Prepare: checks the release (versions, notes, tag, approval), builds the package and validates the
+#    bundle manifest from the merge commit. Nothing is published yet. Prepare also runs on an open
 #    release PR as a dry run, so a release that isn't ready shows before the merge; the built files
 #    are kept with the run.
 # 2. Publish: waits for an approval on the "release" environment, then publishes the package to PyPI,
-#    creates the tag vX.Y.Z and the release "FinanceToolkit vX.Y.Z" with the PR description as its text
-#    and attaches financetoolkit.mcpb.
+#    locks and builds financetoolkit.mcpb against the published version, creates the tag vX.Y.Z and the
+#    release "FinanceToolkit vX.Y.Z" with the PR description as its text and attaches the bundle.
 # 3. MCP Registry: publishes server.json.
 #
 # Every publishing step skips what already exists (a version already on PyPI, an existing tag or
@@ -75,13 +75,10 @@ jobs:
         with:
           node-version: "22"
 
-      # The bundle installs financetoolkit[mcp]==X.Y.Z from PyPI when it starts, so it holds no code of
-      # its own and can be built before the package is published.
-      - name: Build financetoolkit.mcpb
+      # The bundle is locked and built in Publish, once PyPI serves the version it pins.
+      - name: Validate the bundle manifest
         if: steps.release.outputs.release == 'true'
-        run: |
-          npx --yes @anthropic-ai/mcpb@2.1.2 validate financetoolkit/mcp_server/mcpb/manifest.json
-          npx --yes @anthropic-ai/mcpb@2.1.2 pack financetoolkit/mcp_server/mcpb bundle/financetoolkit.mcpb
+        run: npx --yes @anthropic-ai/mcpb@2.1.2 validate financetoolkit/mcp_server/mcpb/manifest.json
 
       - name: Upload the release files
         if: steps.release.outputs.release == 'true'
@@ -90,9 +87,11 @@ jobs:
           name: release
           path: |
             dist/
-            bundle/financetoolkit.mcpb
+            financetoolkit/mcp_server/mcpb/
             release-notes.md
           if-no-files-found: error
+          # Keeps the bundle's .mcpbignore.
+          include-hidden-files: true
 
   publish:
     name: Publish
@@ -141,6 +140,31 @@ jobs:
           done
           echo "::error::financetoolkit $VERSION did not appear on PyPI within 10 minutes."
           exit 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      # The bundle installs financetoolkit[mcp]==X.Y.Z from PyPI when it starts. Its uv.lock fixes every
+      # dependency at the versions current at release time, so a later major release of one (such as mcp
+      # 2.x, which dropped mcp.server.fastmcp) can't break an installed bundle. PyPI's index can trail its
+      # JSON API by a few minutes, so the lock is retried until it resolves the new version.
+      - name: Lock and build financetoolkit.mcpb
+        working-directory: financetoolkit/mcp_server/mcpb
+        run: |
+          for attempt in $(seq 1 30); do
+            if uv lock --refresh-package financetoolkit; then
+              break
+            fi
+            sleep 10
+          done
+          if ! grep -A1 '^name = "financetoolkit"$' uv.lock | grep -qx "version = \"$VERSION\""; then
+            echo "::error::The bundle's uv.lock does not hold financetoolkit $VERSION."
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/bundle"
+          npx --yes @anthropic-ai/mcpb@2.1.2 pack . "$GITHUB_WORKSPACE/bundle/financetoolkit.mcpb"
 
       - name: Create the tag and the release
         run: |

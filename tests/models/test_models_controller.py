@@ -198,8 +198,8 @@ def test_capital_asset_pricing_inputs_cover_the_trailing_span():
     import pandas as pd
     import pytest
 
-    from financetoolkit.models import intrinsic_model, wacc_model
     from financetoolkit.models.models_controller import Models
+    from financetoolkit.models.valuation import intrinsic_model, wacc_model
 
     quarters = pd.period_range("2023Q1", "2024Q4", freq="Q")
     risk_free_rate = pd.Series(0.04, index=quarters)
@@ -279,7 +279,7 @@ def test_cost_of_equity_follows_trailing(models_module):
 def test_intrinsic_valuation_discounts_the_free_cash_flow_to_firm(models_module):
     import pandas as pd
 
-    from financetoolkit.models import intrinsic_model
+    from financetoolkit.models.valuation import intrinsic_model
 
     valuation = models_module.get_intrinsic_valuation(
         growth_rate=0.05,
@@ -478,7 +478,7 @@ def test_dividend_discount_models_drop_an_unfinished_period():
 def test_operating_profit_after_taxes_uses_the_wacc_tax_rate(models_module):
     import pandas as pd
 
-    from financetoolkit.models import wacc_model
+    from financetoolkit.models.valuation import wacc_model
 
     income = models_module._income_statement
     tax_rate = wacc_model.get_corporate_tax_rate(
@@ -505,7 +505,7 @@ def test_quarterly_dividend_discount_models_use_an_annual_dividend(
     import pandas as pd
     import pytest
 
-    from financetoolkit.models import intrinsic_model
+    from financetoolkit.models.valuation import intrinsic_model
 
     monkeypatch.setattr(models_module, "_quarterly", True)
 
@@ -792,7 +792,7 @@ def test_get_merton_distance_to_default(recorder, models_module):
 def test_get_synthetic_credit_rating(recorder, models_module, monkeypatch):
     import pandas as pd  # noqa: PLC0415
 
-    from financetoolkit.models import damodaran_model  # noqa: PLC0415
+    from financetoolkit.models.valuation import damodaran_model  # noqa: PLC0415
 
     bounds = [
         -100000,
@@ -1111,7 +1111,7 @@ def test_quarterly_valuations_use_a_year_of_cash_flow_and_revenue():
     import numpy as np  # noqa: PLC0415
     import pytest  # noqa: PLC0415
 
-    from financetoolkit.models import intrinsic_model  # noqa: PLC0415
+    from financetoolkit.models.valuation import intrinsic_model  # noqa: PLC0415
 
     models = synthetic_models(growing_company())
     g = GROWTH ** np.arange(QUARTERS)
@@ -1170,7 +1170,7 @@ def test_synthetic_credit_rating_without_interest_expense(models_module, monkeyp
     import numpy as np  # noqa: PLC0415
     import pandas as pd  # noqa: PLC0415
 
-    from financetoolkit.models import damodaran_model  # noqa: PLC0415
+    from financetoolkit.models.valuation import damodaran_model  # noqa: PLC0415
 
     table = pd.DataFrame(
         {
@@ -1200,7 +1200,7 @@ def test_valuations_default_to_the_free_cash_flow_to_firm():
     import numpy as np  # noqa: PLC0415
     import pytest  # noqa: PLC0415
 
-    from financetoolkit.models import intrinsic_model  # noqa: PLC0415
+    from financetoolkit.models.valuation import intrinsic_model  # noqa: PLC0415
 
     items = growing_company()
     # A use of cash of 5 for working capital: an increase in net working capital.
@@ -1240,7 +1240,7 @@ def test_valuations_default_to_the_free_cash_flow_to_firm():
 
 
 def test_short_quarterly_scores_warn_how_many_quarters_they_need(monkeypatch):
-    from financetoolkit.models import models_controller  # noqa: PLC0415
+    from financetoolkit.models.base import base_controller  # noqa: PLC0415
 
     items = {
         row: {ticker: values[:6] for ticker, values in tickers.items()}
@@ -1249,7 +1249,7 @@ def test_short_quarterly_scores_warn_how_many_quarters_they_need(monkeypatch):
     models = synthetic_models(items)
     warnings = []
     monkeypatch.setattr(
-        models_controller.logger,
+        base_controller.logger,
         "warning",
         lambda message, *args: warnings.append(message % args),
     )
@@ -1320,11 +1320,11 @@ def test_quarterly_valuations_skip_trailing_sums_with_a_missing_quarter():
 def test_magic_formula_on_a_short_quarterly_window(monkeypatch):
     import pandas as pd  # noqa: PLC0415
 
-    from financetoolkit.models import models_controller  # noqa: PLC0415
+    from financetoolkit.models.base import base_controller  # noqa: PLC0415
 
     warnings = []
     monkeypatch.setattr(
-        models_controller.logger,
+        base_controller.logger,
         "warning",
         lambda message, *args: warnings.append(message % args),
     )

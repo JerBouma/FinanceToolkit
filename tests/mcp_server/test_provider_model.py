@@ -9,8 +9,8 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.mcp_server import provider_model
-from financetoolkit.mcp_server.provider_model import (
+from financetoolkit.mcp_server.registry import provider_model
+from financetoolkit.mcp_server.registry.provider_model import (
     ToolkitProvider,
     resolve_benchmark_ticker,
 )
@@ -190,7 +190,7 @@ def test_calls_on_one_cached_toolkit_run_one_at_a_time(monkeypatch, tmp_path):
     import threading
     import time
 
-    from financetoolkit.mcp_server.provider_model import ToolkitProvider
+    from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
     class SlowToolkit:
         def __init__(self):

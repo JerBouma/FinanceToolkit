@@ -8,14 +8,11 @@ import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
 from financetoolkit.economics.sources import treasury_model
-from financetoolkit.fixedincome import (
-    bond_data_model,
-    bond_model,
-    fixedincome_controller,
-    helpers,
-    treasurydirect_model,
-    yieldcurve_model,
-)
+from financetoolkit.fixedincome import fixedincome_controller, helpers
+from financetoolkit.fixedincome.bonds import bond_model, bonds_controller
+from financetoolkit.fixedincome.curves import yieldcurve_model
+from financetoolkit.fixedincome.markets import bond_data_model
+from financetoolkit.fixedincome.sources import treasurydirect_model
 
 PRICE_DATE = date(2026, 11, 5)
 
@@ -149,7 +146,7 @@ def test_every_bond_calculator_works_without_arguments(fixedincome):
         result = getattr(fixedincome, method)()
         assert result.index.tolist() == BENCHMARKS, method
         assert result[column].notna().all(), method
-        assert result.columns[:6].tolist() == fixedincome_controller.BOND_COLUMNS
+        assert result.columns[:6].tolist() == bonds_controller.BOND_COLUMNS
 
 
 def test_maturity_range_selects_every_fixed_coupon_treasury(fixedincome):

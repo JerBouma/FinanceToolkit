@@ -6,9 +6,15 @@ import pytest
 import requests
 
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.fixedincome import (
+from financetoolkit.economics.sources import (
+    ecb_model as economics_ecb_model,
+    nyfed_model,
+    treasury_model,
+)
+from financetoolkit.fixedincome.sources import (
     boc_model,
     bundesbank_model,
+    fmp_model as fixedincome_fmp_model,
     norgesbank_model,
     riksbank_model,
 )
@@ -138,12 +144,11 @@ def test_riksbank_waits_for_the_rate_limit(monkeypatch):
 
 def test_curve_combines_countries_sorted_by_maturity(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import fixedincome_controller
 
     days = pd.period_range("2026-09-30", "2026-10-01", freq="D")
     norway = pd.DataFrame({"10Y": [0.046, 0.0464], "3Y": [0.048, 0.0485]}, index=days)
     monkeypatch.setattr(
-        fixedincome_controller.norgesbank_model,
+        norgesbank_model,
         "get_yield_curve",
         lambda start, end: norway,
     )
@@ -159,20 +164,17 @@ def test_curve_combines_countries_sorted_by_maturity(monkeypatch):
 
 def test_treasury_rates_fall_back_without_a_working_key(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import fixedincome_controller
 
     days = pd.period_range("2026-10-01", periods=1, freq="D")
     curve = pd.DataFrame(
         {"1 Mo": [0.0417], "1.5 Month": [0.0418], "10 Yr": [0.0528]}, index=days
     )
-    monkeypatch.setattr(
-        fixedincome_controller.treasury_model, "get_yield_curve", lambda *args: curve
-    )
+    monkeypatch.setattr(treasury_model, "get_yield_curve", lambda *args: curve)
 
     def refused(**kwargs):
         raise ValueError("Your plan does not include this endpoint")
 
-    monkeypatch.setattr(fixedincome_controller.fmp_model, "get_treasury_rates", refused)
+    monkeypatch.setattr(fixedincome_fmp_model, "get_treasury_rates", refused)
 
     for api_key in ("", "key"):
         rates = FixedIncome(
@@ -207,14 +209,13 @@ def test_convergence_yields_keep_the_euro_series_of_adopters(monkeypatch):
 
 def test_monthly_curve_includes_other_eu_members(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import fixedincome_controller
 
     months = pd.period_range("2026-07", "2026-08", freq="M")
     convergence = pd.DataFrame(
         {"France": [0.0385, 0.04], "Italy": [0.0388, 0.0399]}, index=months
     )
     monkeypatch.setattr(
-        fixedincome_controller.economics_ecb_model,
+        economics_ecb_model,
         "get_long_term_convergence_yields",
         lambda start, end: convergence,
     )
@@ -228,7 +229,7 @@ def test_monthly_curve_includes_other_eu_members(monkeypatch):
 
 
 def test_hqm_curve_and_spread_are_monthly_decimals(monkeypatch):
-    from financetoolkit.fixedincome import fred_model
+    from financetoolkit.fixedincome.sources import fred_model
 
     days = pd.PeriodIndex(["2026-07-01", "2026-08-01"], freq="D")
 
@@ -252,7 +253,7 @@ def test_hqm_curve_and_spread_are_monthly_decimals(monkeypatch):
 
 
 def test_moodys_monthly_spreads_include_the_default_spread(monkeypatch):
-    from financetoolkit.fixedincome import fred_model
+    from financetoolkit.fixedincome.sources import fred_model
 
     days = pd.PeriodIndex(["2026-08-01"], freq="D")
     values = {"AAA": 6.03, "BAA": 6.47, "GS10": 4.83}
@@ -460,7 +461,7 @@ def test_an_unreadable_span_serves_the_cached_history(tmp_path):
 
 
 def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch):
-    from financetoolkit.fixedincome import fred_model
+    from financetoolkit.fixedincome.sources import fred_model
 
     def refused(url, **kwargs):  # noqa: ARG001
         raise requests.exceptions.ConnectionError(
@@ -479,7 +480,6 @@ def test_a_failed_fred_request_does_not_show_the_api_key(monkeypatch):
 
 def test_the_term_premium_keeps_the_requested_maturities_at_month_end(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import fixedincome_controller
 
     days = pd.period_range("2026-09-29", "2026-10-01", freq="D")
     columns = pd.MultiIndex.from_tuples(
@@ -492,9 +492,7 @@ def test_the_term_premium_keeps_the_requested_maturities_at_month_end(monkeypatc
     term_premium = pd.DataFrame(
         np.arange(27, dtype=float).reshape(3, 9) / 1000, index=days, columns=columns
     )
-    monkeypatch.setattr(
-        fixedincome_controller.nyfed_model, "get_term_premium", lambda: term_premium
-    )
+    monkeypatch.setattr(nyfed_model, "get_term_premium", lambda: term_premium)
 
     fixedincome = FixedIncome(start_date="2026-09-01", end_date="2026-10-31")
     monthly = fixedincome.get_term_premium(period="monthly", maturity_years="2,10")
@@ -511,7 +509,6 @@ def test_the_term_premium_keeps_the_requested_maturities_at_month_end(monkeypatc
 
 def test_treasury_rates_keep_the_maturities_asked_for(monkeypatch):
     from financetoolkit import FixedIncome
-    from financetoolkit.fixedincome import fixedincome_controller
 
     days = pd.period_range("2026-10-01", periods=1, freq="D")
     curve = pd.DataFrame(
@@ -524,9 +521,7 @@ def test_treasury_rates_keep_the_maturities_asked_for(monkeypatch):
         },
         index=days,
     )
-    monkeypatch.setattr(
-        fixedincome_controller.treasury_model, "get_yield_curve", lambda *args: curve
-    )
+    monkeypatch.setattr(treasury_model, "get_yield_curve", lambda *args: curve)
     fixedincome = FixedIncome(start_date="2026-09-01", end_date="2026-10-02")
 
     # Labels as the other curve methods take them, or years, in the order asked for.

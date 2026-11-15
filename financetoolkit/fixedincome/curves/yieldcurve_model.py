@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.fixedincome import bond_model
+from financetoolkit.fixedincome.bonds import bond_model
 
 
 def get_forward_rate(

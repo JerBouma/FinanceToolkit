@@ -6,7 +6,7 @@ import pytest
 from financetoolkit import fmp_model, yfinance_model
 from financetoolkit.cache import cache_controller, request_model
 from financetoolkit.discovery import discovery_model
-from financetoolkit.fixedincome import fmp_model as fixedincome_fmp_model
+from financetoolkit.fixedincome.sources import fmp_model as fixedincome_fmp_model
 
 
 @pytest.fixture(name="cache")

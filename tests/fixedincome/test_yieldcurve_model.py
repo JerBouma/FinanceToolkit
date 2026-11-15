@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from financetoolkit.fixedincome import yieldcurve_model
+from financetoolkit.fixedincome.curves import yieldcurve_model
 
 FLAT_CURVE_RATE = 0.05
 
@@ -130,7 +130,7 @@ def test_get_breakeven_inflation_rate_type_error():
 
 def test_get_par_yield_prices_at_par_between_coupon_dates():
     """A bond with the par yield as coupon prices at par on the same curve, at any maturity."""
-    from financetoolkit.fixedincome import bond_model
+    from financetoolkit.fixedincome.bonds import bond_model
 
     spot_rates = pd.Series({1: 0.03, 2: 0.032, 5: 0.038, 10: 0.044})
 

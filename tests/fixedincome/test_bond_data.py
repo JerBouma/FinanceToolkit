@@ -6,13 +6,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit import fmp_model as toolkit_fmp_model
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.fixedincome import (
-    bond_data_model,
-    bond_model,
-    fixedincome_controller,
-    treasurydirect_model,
-)
+from financetoolkit.fixedincome import fixedincome_controller
+from financetoolkit.fixedincome.bonds import bond_model
+from financetoolkit.fixedincome.markets import bond_data_model
+from financetoolkit.fixedincome.sources import treasurydirect_model
 
 
 @pytest.fixture(autouse=True)
@@ -369,7 +368,7 @@ HOLDINGS = pd.DataFrame(
 @pytest.fixture
 def bond_universe(monkeypatch):
     monkeypatch.setattr(
-        fixedincome_controller.toolkit_fmp_model,
+        toolkit_fmp_model,
         "get_etf_holdings",
         lambda funds, api_key: (
             HOLDINGS.loc[[fund for fund in funds if fund in ("LQD", "SCHZ")]],

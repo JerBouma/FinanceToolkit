@@ -71,7 +71,7 @@ from financetoolkit.economics.sources import (
     world_bank_model,
     yfinance_model as futures_model,
 )
-from financetoolkit.fixedincome import (
+from financetoolkit.fixedincome.sources import (
     boc_model,
     bundesbank_model,
     ecb_model as ecb_policy_model,

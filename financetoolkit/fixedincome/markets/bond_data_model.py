@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
-from financetoolkit.fixedincome import bond_model, curve_model
+from financetoolkit.fixedincome.bonds import bond_model
+from financetoolkit.fixedincome.curves import curve_model
 
 # US Treasuries and corporate bonds pay their coupon twice a year.
 FREQUENCY = 2

@@ -164,7 +164,7 @@ lint.ignore = [
 exclude = ["conftest.py"]
 
 [tool.ruff.lint.per-file-ignores]
-"financetoolkit/mcp_server/auth_model.py" = ["E501"]
+"financetoolkit/mcp_server/auth/auth_model.py" = ["E501"]
 "tests/**" = ["PLR2004", "PLC0415"]
 
 [tool.ruff.lint.isort]

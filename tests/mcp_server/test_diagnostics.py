@@ -5,8 +5,8 @@ import json
 import pandas as pd
 
 from financetoolkit import helpers
-from financetoolkit.mcp_server import diagnostics_model
-from financetoolkit.mcp_server.formatting_model import format_result
+from financetoolkit.mcp_server.registry import diagnostics_model
+from financetoolkit.mcp_server.registry.formatting_model import format_result
 from financetoolkit.utilities.logger_model import get_logger
 
 
@@ -75,7 +75,7 @@ def test_a_response_without_data_carries_the_reason():
 
 
 def test_an_empty_result_is_not_cached(tmp_path, monkeypatch):
-    from financetoolkit.mcp_server.provider_model import ToolkitProvider
+    from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
     provider = ToolkitProvider(
         cache_ttl=3600, database_location=str(tmp_path / "cache.db")

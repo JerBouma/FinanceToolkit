@@ -26,9 +26,12 @@ from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.discovery.discovery_controller import Discovery
 from financetoolkit.economics.economics_controller import Economics
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
-from financetoolkit.mcp_server.analytics_model import hold_lock
-from financetoolkit.mcp_server.auth_model import resolve_api_key, resolve_fred_api_key
-from financetoolkit.mcp_server.diagnostics_model import (
+from financetoolkit.mcp_server.analytics.analytics_model import hold_lock
+from financetoolkit.mcp_server.auth.auth_model import (
+    resolve_api_key,
+    resolve_fred_api_key,
+)
+from financetoolkit.mcp_server.registry.diagnostics_model import (
     FMP_KEY_HINT,
     add_call_input_info,
     call_input_info,

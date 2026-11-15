@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.mcp_server import mcp_controller
-from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
 
 @pytest.fixture
@@ -552,7 +552,7 @@ def test_daily_style_analysis_is_not_blocked(captured):
 
 
 def test_default_dates_follow_the_day_of_the_call(captured, monkeypatch):
-    from financetoolkit.mcp_server import inspection_controller
+    from financetoolkit.mcp_server.inspection import inspection_controller
 
     tool = asyncio.run(mcp_controller.mcp.list_tools())
     schema = next(t for t in tool if t.name == "valuation").inputSchema["properties"]

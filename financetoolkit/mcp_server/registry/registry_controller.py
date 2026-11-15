@@ -34,9 +34,15 @@ from pydantic import (
 from financetoolkit.cache import policy_model
 from financetoolkit.fmp_model import parse_fiscal_period
 from financetoolkit.helpers import rank_across_tickers
-from financetoolkit.mcp_server import series_model
-from financetoolkit.mcp_server.analytics_model import UsageAnalytics, run_in_thread
-from financetoolkit.mcp_server.coercion_model import (
+from financetoolkit.mcp_server.analytics.analytics_model import (
+    UsageAnalytics,
+    run_in_thread,
+)
+from financetoolkit.mcp_server.inspection.inspection_controller import (
+    ControllerInspector,
+)
+from financetoolkit.mcp_server.registry import series_model
+from financetoolkit.mcp_server.registry.coercion_model import (
     accepts_text_only,
     coerce_value,
     size_limit_problem,
@@ -44,13 +50,13 @@ from financetoolkit.mcp_server.coercion_model import (
     to_boolean,
     validate_date,
 )
-from financetoolkit.mcp_server.diagnostics_model import (
+from financetoolkit.mcp_server.registry.diagnostics_model import (
     call_input_info,
     capture_call_messages,
     missing_data_notes,
     summarize_reasons,
 )
-from financetoolkit.mcp_server.formatting_model import (
+from financetoolkit.mcp_server.registry.formatting_model import (
     convert_to_period,
     country_names,
     filled_day_notes,
@@ -62,8 +68,7 @@ from financetoolkit.mcp_server.formatting_model import (
     signal_rows,
     skipped_periods_note,
 )
-from financetoolkit.mcp_server.inspection_controller import ControllerInspector
-from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger, redact

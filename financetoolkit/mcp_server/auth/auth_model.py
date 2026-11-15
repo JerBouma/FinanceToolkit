@@ -23,7 +23,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from financetoolkit.mcp_server.setup_model import (
+from financetoolkit.mcp_server.setup.setup_model import (
     get_global_env_path,
 )
 from financetoolkit.utilities.logger_model import get_logger
@@ -1457,7 +1457,9 @@ def register_auth_routes(mcp: Any) -> None:
     async def health(request: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
-    _icon_path = pathlib.Path(__file__).parent / "mcpb" / "finance_toolkit_icon.png"
+    _icon_path = (
+        pathlib.Path(__file__).parent.parent / "mcpb" / "finance_toolkit_icon.png"
+    )
 
     @mcp.custom_route("/oauth/icon", methods=["GET"])
     async def oauth_icon(request: Request) -> Response:

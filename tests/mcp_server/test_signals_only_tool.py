@@ -6,7 +6,7 @@ import json
 import pytest
 
 from financetoolkit.mcp_server import mcp_controller
-from financetoolkit.mcp_server.provider_model import ToolkitProvider
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
 
 @pytest.fixture

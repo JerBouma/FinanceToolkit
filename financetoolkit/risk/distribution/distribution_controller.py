@@ -594,8 +594,10 @@ class DistributionRisk:
         - Variance = Var(Daily Returns within the period) * Trading Days per Period
 
         Where Var is the sample variance (ddof=1) and the trading days per period are 252 / 52 (weekly),
-        252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly). With `rolling`, the result is the sample
-        variance of the last `rolling` returns of the chosen period itself, without scaling.
+        252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly). A ticker with returns on weekends, such as a
+        cryptocurrency, has a return on every calendar day and uses 365 days a year instead (365 / 52 weekly).
+        With `rolling`, the result is the sample variance of the last `rolling` returns of the chosen period
+        itself, without scaling.
 
         Also known as: dispersion, spread.
 

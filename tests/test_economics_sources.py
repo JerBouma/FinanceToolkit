@@ -912,6 +912,15 @@ def test_quarterly_oecd_indicators_default_to_quarterly_data(monkeypatch):
     ):
         monkeypatch.setattr(oecd_model, name, fake(name))
 
+    # China's house prices come from the BIS.
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        bis_model,
+        "get_residential_property_prices",
+        lambda *args, **kwargs: pd.Series(name="China", dtype=float),
+    )
+
     economics = Economics(start_date="2023-01-01", use_cached_data=False)
 
     # Without arguments, the quarterly OECD data, also for house prices whose default
@@ -2077,3 +2086,58 @@ def test_chokepoint_transits_select_measure_and_complete_periods(monkeypatch):
 
     # An unknown measure is reported and gives an empty result.
     assert economics.get_chokepoint_transits(measure="volume").empty
+
+
+def test_house_prices_of_china_come_from_the_bis(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import bis_model, oecd_model
+
+    quarters = pd.period_range("2015Q1", "2016Q4", freq="Q")
+    oecd = pd.DataFrame(
+        {"China": [200.0] * 8, "Japan": [100.0 + i for i in range(8)]}, index=quarters
+    )
+    # The BIS index has 2010 = 100: 2015 averages 125, so it is rebased by 0.8.
+    bis = pd.Series(
+        [120.0, 124.0, 126.0, 130.0, 128.0, 126.0, 124.0, 122.0],
+        index=quarters,
+        name="China",
+    )
+    requested = {}
+
+    def fake_oecd(quarterly, **kwargs):
+        return oecd.copy() if quarterly else oecd.groupby(oecd.index.asfreq("Y")).mean()
+
+    monkeypatch.setattr(oecd_model, "get_house_prices", fake_oecd)
+
+    def fake_bis(country_code, inflation_adjusted, start_date, end_date):
+        requested.update(
+            country=country_code, real=inflation_adjusted, start=start_date
+        )
+        return bis.copy()
+
+    monkeypatch.setattr(bis_model, "get_residential_property_prices", fake_bis)
+    economics = Economics(
+        start_date="2016-01-01",
+        end_date="2016-12-31",
+        rounding=None,
+        use_cached_data=False,
+    )
+
+    quarterly = economics.get_house_prices(quarterly=True, inflation_adjusted=True)
+
+    assert requested == {"country": "CN", "real": True, "start": "2015-01-01"}
+    assert quarterly["China"].tolist() == pytest.approx([102.4, 100.8, 99.2, 97.6])
+    assert quarterly["Japan"].tolist() == [104.0, 105.0, 106.0, 107.0]
+
+    yearly = economics.get_house_prices(quarterly=False, gmdb_source=False)
+
+    assert yearly.loc["2016", "China"] == pytest.approx(100.0)
+
+    # When the BIS can't be reached, China is left out rather than taken from the OECD.
+    monkeypatch.setattr(
+        bis_model,
+        "get_residential_property_prices",
+        lambda *args, **kwargs: pd.Series(name="China", dtype=float),
+    )
+
+    assert "China" not in economics.get_house_prices(quarterly=True).columns

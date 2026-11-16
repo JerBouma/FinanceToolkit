@@ -272,17 +272,25 @@ MONTHS = [
 ]
 
 
+# A survey is published at most a month ahead of the month it covers (a consumer climate
+# for November at the end of October); every other release covers a past period.
+MONTHS_PUBLISHED_AHEAD = 1
+
+
 def get_reference_period(event: str, release: pd.Timestamp) -> tuple[str, pd.Period]:
     """
     Reads the event and the period a release covers from the event name of the economic
     calendar, e.g. "Producer Price Index YoY (Oct)" released on 2026-11-09 is the
     Producer Price Index YoY of October 2026.
 
-    The name only gives the month or quarter, so the year is the year of the release, or
-    the year before when the period starts after the release month: a December figure
-    released in January belongs to the previous year, as does a fourth quarter released
-    in February. A name without a period (an interest rate decision) covers the day of
-    its release.
+    The name only gives the month or quarter, so the year is the one that puts the period
+    between ten months before and one month after the release month. Most releases cover
+    a past period: a December figure released in January belongs to the previous year, as
+    does a fourth quarter released in February. A survey can be published ahead of the
+    month it covers: Germany's consumer climate for November, released at the end of
+    October, belongs to the same year, and a January survey released in December to the
+    next. A name without a period (an interest rate decision) covers the day of its
+    release.
 
     Args:
         event (str): The event name, e.g. "GDP Growth Rate QoQ (Q3)".
@@ -303,8 +311,7 @@ def get_reference_period(event: str, release: pd.Timestamp) -> tuple[str, pd.Per
         return name, pd.Period(int(match["year"]), freq="Y")
 
     if match["quarter"]:
-        first_month = 3 * int(match["quarter"]) - 2
-        year = release.year - (first_month > release.month)
+        year = _reference_year(3 * int(match["quarter"]) - 2, release)
         return name, pd.Period(year=year, quarter=int(match["quarter"]), freq="Q")
 
     month = MONTHS.index(match["month"]) + 1
@@ -314,9 +321,30 @@ def get_reference_period(event: str, release: pd.Timestamp) -> tuple[str, pd.Per
         year = release.year - ((month, day) > (release.month, release.day))
         return name, pd.Period(year=year, month=month, day=day, freq="D")
 
-    return name, pd.Period(
-        year=release.year - (month > release.month), month=month, freq="M"
-    )
+    return name, pd.Period(year=_reference_year(month, release), month=month, freq="M")
+
+
+def _reference_year(month: int, release: pd.Timestamp) -> int:
+    """
+    Returns the year of a period that starts in the given month, as the year that puts it
+    between ten months before and one month after the release month.
+
+    Args:
+        month (int): The first month of the period (1 to 12).
+        release (pd.Timestamp): The release date.
+
+    Returns:
+        int: The year of the period.
+    """
+    months_ahead = month - release.month
+
+    if months_ahead > MONTHS_PUBLISHED_AHEAD:
+        return release.year - 1
+
+    if months_ahead < MONTHS_PUBLISHED_AHEAD - 11:
+        return release.year + 1
+
+    return release.year
 
 
 IMPACT_RANK = {"low": 1, "medium": 2, "high": 3}

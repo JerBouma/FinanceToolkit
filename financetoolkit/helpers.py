@@ -947,11 +947,20 @@ def get_goodwill_and_intangible_assets(balance_sheet: pd.DataFrame) -> pd.DataFr
     Returns:
         pd.DataFrame: The goodwill and intangible assets, one row per ticker.
     """
-    separate = balance_sheet.loc[:, "Goodwill", :].add(
-        balance_sheet.loc[:, "Intangible Assets", :], fill_value=0
-    )
+    tickers = balance_sheet.index.unique(level=0)
+    items = balance_sheet.index.get_level_values(1)
 
-    return balance_sheet.loc[:, "Goodwill and Intangible Assets", :].fillna(separate)
+    # A supplied balance sheet can hold the combined row without the separate ones (or the
+    # reverse), so a row that isn't there counts as not reported for every ticker.
+    def select(item: str) -> pd.DataFrame:
+        if item not in items:
+            return pd.DataFrame(np.nan, index=tickers, columns=balance_sheet.columns)
+
+        return balance_sheet.loc[:, item, :].reindex(tickers)
+
+    separate = select("Goodwill").add(select("Intangible Assets"), fill_value=0)
+
+    return select("Goodwill and Intangible Assets").fillna(separate)
 
 
 def add_basket_total(
@@ -962,8 +971,8 @@ def add_basket_total(
     basket) can be analysed as if it were one: its financial statements are the sums of
     theirs, and every ratio calculated from them is the ratio of those sums.
 
-    A figure of the Total is missing for a period when a ticker has no value for it, as the
-    sum of the others would understate the basket. Figures that do not add up across
+    A figure of the Total is missing for a period when a ticker has no value for it, or no
+    statement at all, as the sum of the others would understate the basket. Figures that do not add up across
     companies (per-share amounts and share counts) are left empty.
 
     Notes: All the figures must be in the same currency.
@@ -977,7 +986,7 @@ def add_basket_total(
     Returns:
         pd.DataFrame: The financial statement with the Total added after the tickers.
     """
-    figures = statement.loc[tickers]
+    figures = statement.loc[statement.index.get_level_values(0).isin(tickers)]
     total = figures.groupby(level=1, sort=False).sum(min_count=len(tickers))
     total.loc[total.index.isin(not_summed)] = np.nan
     total.index = pd.MultiIndex.from_product(

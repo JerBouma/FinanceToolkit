@@ -10,7 +10,10 @@ import pandas as pd
 
 from financetoolkit.econometrics import data_model
 from financetoolkit.helpers import LazyDict
-from financetoolkit.risk.helpers import determine_within_historical_data
+from financetoolkit.risk.helpers import (
+    determine_within_historical_data,
+    mask_non_trading_days,
+)
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -18,6 +21,9 @@ from financetoolkit.utilities.sources_model import track_sources
 # ruff: noqa: E501
 
 logger = get_logger()
+
+# The price columns the Toolkit carries forward on the dates a ticker did not trade.
+PRICE_COLUMNS = ("Open", "High", "Low", "Close", "Adj Close")
 
 # The synthetic benchmark series, excluded unless `include_benchmark=True`.
 BENCHMARK_TICKER = "Benchmark"
@@ -128,6 +134,9 @@ class EconometricsBase:
         # Mirrors the Risk controller: the Toolkit always passes the period dict, and an
         # explicit empty dict keeps the lookups raising a plain KeyError.
         self._historical_data = historical_data if historical_data is not None else {}
+        # The Toolkit's prices carry a ticker's last price forward on the dates only another
+        # ticker traded; series given with data= hold their own observations only.
+        self._fills_non_trading_days = data is None
         self._tickers_source = tickers
         self._quarterly = quarterly
         self._rounding: int | None = rounding
@@ -177,6 +186,10 @@ class EconometricsBase:
         down to the shared dates. Methods that combine series date by date (regressions,
         VAR, cointegration systems) pass the `tickers` they use and keep the dates all of
         those series have, so a series outside the model never removes dates.
+
+        The Toolkit's prices are NaN on the dates a ticker did not trade (an exchange
+        holiday next to a benchmark that traded), see `helpers.mask_non_trading_days`: the
+        carried-forward price is not an observation.
         """
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(
@@ -190,9 +203,14 @@ class EconometricsBase:
 
         if key not in self._data_cache:
             # Historical data supplied to the Toolkit can reach beyond its date range.
-            data = self._historical_data[period][column].loc[
-                self._start_date : self._end_date
-            ]
+            frame = self._historical_data[period]
+            data = (
+                mask_non_trading_days(frame, column)
+                if self._fills_non_trading_days
+                and column in PRICE_COLUMNS
+                and "Return" in frame.columns
+                else frame[column]
+            ).loc[self._start_date : self._end_date]
             self._data_cache[key] = (
                 data.dropna(how="all") if tickers is None else data[tickers].dropna()
             )

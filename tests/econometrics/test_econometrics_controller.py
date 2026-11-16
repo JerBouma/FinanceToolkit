@@ -1036,3 +1036,57 @@ def test_get_move_significance_measures_yield_moves_in_points():
     assert latest.loc["2 Year", "Return"] == pytest.approx(0.0017)
     assert latest.loc["2 Year", "Largest Since"] == str(days[30].date())
     assert latest.loc["2 Year", "Volatility Multiple"] > 3  # noqa: PLR2004
+
+
+def _prices_with_a_holiday():
+    """
+    Three days of a Toolkit price history in which ASML did not trade on the second day
+    while the benchmark did: the last close is carried forward without a Return.
+    """
+    dates = pd.period_range("2025-04-30", periods=3, freq="D")
+    close = pd.DataFrame(
+        {"ASML": [582.5, 582.5, 608.9], "Benchmark": [554.54, 558.47, 566.76]},
+        index=dates,
+    )
+    returns = pd.DataFrame(
+        {"ASML": [np.nan, np.nan, 0.0453], "Benchmark": [np.nan, 0.0071, 0.0148]},
+        index=dates,
+    )
+
+    return pd.concat({"Close": close, "Return": returns}, axis=1)
+
+
+def test_a_carried_forward_price_is_not_an_observation():
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+    from financetoolkit.risk.helpers import mask_non_trading_days
+
+    frame = _prices_with_a_holiday()
+
+    # The first price has no Return by construction and is kept; the filled day is not.
+    masked = mask_non_trading_days(frame, "Close")
+    assert masked["ASML"].tolist()[0] == 582.5
+    assert np.isnan(masked["ASML"].tolist()[1])
+    assert masked["Benchmark"].notna().all()
+
+    econometrics = Econometrics(
+        tickers=["ASML", "Benchmark"], historical_data={"daily": frame}, rounding=None
+    )
+    significance = econometrics.get_level_significance(period="daily")
+
+    assert significance.loc["ASML", "Observations"] == 2
+    assert significance.loc["ASML", "Start Date"] == "2025-04-30"
+
+
+def test_a_data_series_keeps_its_observations():
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+    # Series given with data= hold their own observations: an unchanged value is one.
+    series = pd.Series(
+        [1.0, 1.0, 2.0], index=pd.period_range("2025-04-30", periods=3, freq="D")
+    )
+    econometrics = Econometrics(data={"Rate": series}, rounding=None)
+
+    assert (
+        econometrics.get_level_significance(period="daily").loc["Rate", "Observations"]
+        == 3
+    )

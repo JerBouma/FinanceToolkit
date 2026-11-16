@@ -667,11 +667,11 @@ def test_the_treasury_yield_is_converted_to_continuous_compounding(
 
 
 def test_a_stale_spot_next_to_live_chains_is_reported(options_module, monkeypatch):
-    from financetoolkit.options.base import base_controller
+    from financetoolkit.options import options_controller
 
     warnings = []
     monkeypatch.setattr(
-        base_controller.logger, "warning", lambda *args: warnings.append(args)
+        options_controller.logger, "warning", lambda *args: warnings.append(args)
     )
     monkeypatch.setattr(
         options_module, "_stale_spot_warning_shown", False, raising=False

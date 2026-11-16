@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.options import options_model
-from financetoolkit.options.base.base_controller import OptionsBase, _days_to_expiration
+from financetoolkit.options.helpers import get_days_to_expiration
 from financetoolkit.options.market import market_metrics_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -30,7 +30,7 @@ _CHAIN_INPUTS_FROM_HISTORY = (
 
 @filter_shown_columns
 @track_sources
-class MarketOptions(OptionsBase):
+class MarketOptions:
     """
     Metrics from the option chains: the put-call ratio, max pain, gamma exposure, the implied volatility term structure and skew, the implied move, the model-free implied volatility and the volatility risk premium.
     """
@@ -51,7 +51,7 @@ class MarketOptions(OptionsBase):
                     f"{ticker}. Choose from {', '.join(available)}"
                 )
             return list(expiration_dates)
-        upcoming = [date for date in available if _days_to_expiration(date) > 0]
+        upcoming = [date for date in available if get_days_to_expiration(date) > 0]
         return upcoming[:number_of_expirations]
 
     def _warn_if_history_is_stale(self, purpose: str) -> None:
@@ -98,7 +98,7 @@ class MarketOptions(OptionsBase):
             if quoted(cboe_calls) + quoted(cboe_puts) > quoted(calls) + quoted(puts):
                 calls, puts = cboe_calls, cboe_puts
         stock_price = self._spot_price(ticker, calls, puts)
-        time_to_expiration = max(_days_to_expiration(expiration_date), 0.5) / 365
+        time_to_expiration = max(get_days_to_expiration(expiration_date), 0.5) / 365
         risk_free_rate = float(self._risk_free_rate.dropna().iloc[-1])
         dividend_yield = (
             float(self._dividend_yield[ticker].iloc[-1])
@@ -146,7 +146,11 @@ class MarketOptions(OptionsBase):
                 rows[(ticker, expiration_date)] = pd.concat(
                     [
                         pd.Series(
-                            {"Days to Expiration": _days_to_expiration(expiration_date)}
+                            {
+                                "Days to Expiration": get_days_to_expiration(
+                                    expiration_date
+                                )
+                            }
                         ),
                         result,
                     ]
@@ -725,7 +729,7 @@ class MarketOptions(OptionsBase):
         usable = [
             date
             for date in options_model.get_option_expiry_dates(ticker)
-            if _days_to_expiration(date) >= market_metrics_model.MINIMUM_DAYS
+            if get_days_to_expiration(date) >= market_metrics_model.MINIMUM_DAYS
         ]
         if len(usable) < 2:  # noqa: PLR2004
             raise ValueError(
@@ -734,15 +738,17 @@ class MarketOptions(OptionsBase):
 
         # Beyond the furthest expiry there is nothing to interpolate towards, and holding
         # the last expiry's variance would present it as the volatility of a longer span.
-        if days > _days_to_expiration(usable[-1]):
+        if days > get_days_to_expiration(usable[-1]):
             raise ValueError(
                 f"The longest usable expiry of {ticker} is {usable[-1]} "
-                f"({_days_to_expiration(usable[-1])} days), shorter than days={days}."
+                f"({get_days_to_expiration(usable[-1])} days), shorter than days={days}."
             )
 
         # A target shorter than the nearest usable expiry is extrapolated from the two
         # nearest terms, as the Cboe does when no expiry lies before the 30 days.
-        near_candidates = [date for date in usable if _days_to_expiration(date) <= days]
+        near_candidates = [
+            date for date in usable if get_days_to_expiration(date) <= days
+        ]
         near = near_candidates[-1] if near_candidates else usable[0]
         following = [date for date in usable if date > near]
         next_term = following[0] if following else near
@@ -756,7 +762,7 @@ class MarketOptions(OptionsBase):
             variance, forward = market_metrics_model.get_model_free_variance(
                 calls, puts, time, rate
             )
-            terms[label] = (date, variance, forward, _days_to_expiration(date))
+            terms[label] = (date, variance, forward, get_days_to_expiration(date))
 
         near_date, near_variance, forward, near_days = terms["Near-Term"]
         next_date, next_variance, _, next_days = terms["Next-Term"]

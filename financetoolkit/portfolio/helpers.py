@@ -154,3 +154,9 @@ def convert_column_to_float(column: pd.Series) -> pd.Series:
     )
 
     return column.apply(convert_to_float, decimal_comma=not thousands_comma)
+
+
+BENCHMARK_TICKER = "Benchmark"
+
+
+PORTFOLIO_TICKER = "Portfolio"

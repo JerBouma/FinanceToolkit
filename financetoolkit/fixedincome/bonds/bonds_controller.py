@@ -5,12 +5,10 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit import (
-    helpers,
-)
+from financetoolkit import helpers
 from financetoolkit.fixedincome import helpers as fixedincome_helpers
-from financetoolkit.fixedincome.base.base_controller import _maturities
 from financetoolkit.fixedincome.bonds import bond_model
+from financetoolkit.fixedincome.helpers import parse_maturities
 from financetoolkit.fixedincome.markets import bond_data_model
 from financetoolkit.fixedincome.markets.markets_controller import MarketsFixedIncome
 from financetoolkit.utilities import logger_model
@@ -1022,7 +1020,9 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         # The maturities of the curve to shock, all of them when none are given.
         key_rates = (
-            None if key_rate_maturity is None else _maturities(key_rate_maturity, [])
+            None
+            if key_rate_maturity is None
+            else parse_maturities(key_rate_maturity, [])
         )
 
         durations: dict[str, dict] = {}

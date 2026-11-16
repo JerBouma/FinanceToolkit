@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.models.base.base_controller import ModelsBase
 from financetoolkit.models.profitability import dupont_model, growth_model
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -22,7 +21,7 @@ from financetoolkit.utilities.statistics_model import (
 
 @filter_shown_columns
 @track_sources
-class ProfitabilityModels(ModelsBase):
+class ProfitabilityModels:
     """
     Return decompositions and growth: the DuPont analyses, the return decomposition and the sustainable and internal growth rates.
     """

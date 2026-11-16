@@ -7,7 +7,6 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
-from financetoolkit.risk.base.base_controller import RiskBase
 from financetoolkit.risk.volatility import garch_model, realized_volatility_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -22,7 +21,7 @@ from financetoolkit.utilities.statistics_model import (
 
 @filter_shown_columns
 @track_sources
-class VolatilityRisk(RiskBase):
+class VolatilityRisk:
     """
     Volatility: GARCH, GJR-GARCH and EGARCH fits and forecasts, realized and EWMA volatility, the HAR-RV forecast, excess volatility and the downside deviation.
     """

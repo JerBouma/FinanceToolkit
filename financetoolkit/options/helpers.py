@@ -387,3 +387,20 @@ def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:
                 if arrays
                 else f"{name} must be a float or int, received {type(value).__name__}."
             )
+
+
+def get_days_to_expiration(expiration_date: str) -> int:
+    """
+    Counts the calendar days from today to an option's expiration date. Counting whole
+    days, rather than from the current time of day, keeps an option that expires tomorrow
+    at one day instead of rounding it down to none.
+
+    Args:
+        expiration_date (str): The expiration date (YYYY-MM-DD).
+
+    Returns:
+        int: The number of days, zero for an option that expires today.
+    """
+    return (
+        pd.Timestamp(expiration_date).normalize() - pd.Timestamp.today().normalize()
+    ).days

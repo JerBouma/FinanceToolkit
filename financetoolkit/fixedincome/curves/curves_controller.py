@@ -8,9 +8,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from financetoolkit import (
-    helpers,
-)
+from financetoolkit import helpers
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     resample_to_period,
@@ -24,12 +22,8 @@ from financetoolkit.economics.sources import (
     treasury_model,
 )
 from financetoolkit.fixedincome import helpers as fixedincome_helpers
-from financetoolkit.fixedincome.base.base_controller import (
-    FixedIncomeBase,
-    _maturities,
-    _maturity_key,
-)
 from financetoolkit.fixedincome.curves import curve_model, yieldcurve_model
+from financetoolkit.fixedincome.helpers import maturity_key, parse_maturities
 from financetoolkit.fixedincome.sources import eiopa_model, fmp_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -78,7 +72,7 @@ CURVE_COVERAGE = 0.9
 
 @filter_shown_columns
 @track_sources
-class CurvesFixedIncome(FixedIncomeBase):
+class CurvesFixedIncome:
     """
     Yield curves: government bond yields and curves, Treasury rates, forward rates, par yields, spreads, breakeven inflation, zero-coupon curves, Nelson-Siegel-Svensson fits, principal components, the term premium, the Bank of England curves and the EIOPA risk-free rates.
     """
@@ -107,7 +101,7 @@ class CurvesFixedIncome(FixedIncomeBase):
 
         return pd.Series(
             zero_curve.to_numpy(dtype=float),
-            index=[_maturity_key(label) for label in zero_curve.index],
+            index=[maturity_key(label) for label in zero_curve.index],
         )
 
     @handle_errors
@@ -186,8 +180,8 @@ class CurvesFixedIncome(FixedIncomeBase):
         |               5 | nan      | 0.0524 | 0.056  |
         """
         zero_curve = self._latest_zero_curve(country, date)
-        near = _maturities(near_maturity, range(1, 6))
-        far = _maturities(far_maturity, range(5, 11))
+        near = parse_maturities(near_maturity, range(1, 6))
+        far = parse_maturities(far_maturity, range(5, 11))
 
         def zero_rate(maturity: float) -> float:
             return float(np.interp(maturity, zero_curve.index, zero_curve.to_numpy()))
@@ -298,7 +292,7 @@ class CurvesFixedIncome(FixedIncomeBase):
                     years_to_maturity=years,
                     frequency=frequency,
                 )
-                for years in _maturities(years_to_maturity, range(1, 31))
+                for years in parse_maturities(years_to_maturity, range(1, 31))
             },
             name="Par Yield",
             dtype=float,
@@ -379,15 +373,15 @@ class CurvesFixedIncome(FixedIncomeBase):
         | 30Y             | 0.0108 | 0.0079 |
         """
         par_curve = self._latest_yield_curve(country, date)
-        maturities = [_maturity_key(label) for label in par_curve.index]
+        maturities = [maturity_key(label) for label in par_curve.index]
 
         def par_yield(maturity: float) -> float:
             return float(
                 np.interp(maturity, maturities, par_curve.to_numpy(dtype=float))
             )
 
-        long = _maturities(long_maturity, [5, 10, 30])
-        short = _maturities(short_maturity, [0.25, 2])
+        long = parse_maturities(long_maturity, [5, 10, 30])
+        short = parse_maturities(short_maturity, [0.25, 2])
         spreads = pd.DataFrame(
             {
                 fixedincome_helpers.maturity_label(short_years): {
@@ -990,8 +984,8 @@ class CurvesFixedIncome(FixedIncomeBase):
                 column: f"{column.split()[0]}{column.split()[1][0]}"
                 for column in treasury_rates.columns
             }
-            columns = {_maturity_key(label): column for column, label in labels.items()}
-            requested = _maturities(maturities, [])
+            columns = {maturity_key(label): column for column, label in labels.items()}
+            requested = parse_maturities(maturities, [])
             if unknown := [
                 maturity for maturity in requested if maturity not in columns
             ]:

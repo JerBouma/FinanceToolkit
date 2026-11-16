@@ -3,26 +3,19 @@
 __docformat__ = "google"
 
 from financetoolkit import helpers
-from financetoolkit.economics.base.base_controller import EconomicsBase
-from financetoolkit.economics.helpers import (
-    validate_period,
-)
+from financetoolkit.economics.helpers import validate_period
 from financetoolkit.economics.sources import imf_model, oecd_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
 
 @filter_shown_columns
 @track_sources
-class GovernmentEconomics(EconomicsBase):
+class GovernmentEconomics:
     """
     Government finances: debt, revenue, tax revenue, expenditure (also by function), the deficit, interest expenditure and trust in government.
     """

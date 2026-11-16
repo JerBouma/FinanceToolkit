@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.models import helpers
 from financetoolkit.models.profitability import dupont_model, growth_model
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -108,35 +109,19 @@ class ProfitabilityModels:
         | Equity Multiplier | 1.4317 | 1.4269 | 1.4228 | 1.4013 | 1.4122 |
         | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
-        if trailing:
-            dupont_analysis = dupont_model.get_dupont_analysis(
-                self._income_statement.loc[:, "Net Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-            )
-        else:
-            dupont_analysis = dupont_model.get_dupont_analysis(
-                self._income_statement.loc[:, "Net Income", :],
-                self._income_statement.loc[:, "Revenue", :],
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(2)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .T.rolling(2)
-                .mean()
-                .T,
-            )
+        # Without trailing, the balances are averaged over the period's opening and closing balance.
+        dupont_analysis = dupont_model.get_dupont_analysis(
+            helpers.trailing_sum(
+                self._income_statement.loc[:, "Net Income", :], trailing
+            ),
+            helpers.trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+            helpers.trailing_mean(
+                self._balance_sheet_statement.loc[:, "Total Assets", :], trailing or 2
+            ),
+            helpers.trailing_mean(
+                self._balance_sheet_statement.loc[:, "Total Equity", :], trailing or 2
+            ),
+        )
 
         if growth:
             dupont_analysis = calculate_growth(
@@ -253,56 +238,25 @@ class ProfitabilityModels:
         | Equity Multiplier       | 2.4399 | 2.2643 | 2.0839 | 1.9468 | 1.8484 |
         | Return on Equity        | 0.4708 | 0.4715 | 0.3882 | 0.3713 | 0.3328 |
         """
-        if trailing:
-            extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-                operating_income=self._income_statement.loc[:, "Operating Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                net_income=self._income_statement.loc[:, "Net Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                total_revenue=self._income_statement.loc[:, "Revenue", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                average_total_assets=self._balance_sheet_statement.loc[
-                    :, "Total Assets", :
-                ]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                average_total_equity=self._balance_sheet_statement.loc[
-                    :, "Total Equity", :
-                ]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-            )
-        else:
-            extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-                operating_income=self._income_statement.loc[:, "Operating Income", :],
-                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
-                net_income=self._income_statement.loc[:, "Net Income", :],
-                total_revenue=self._income_statement.loc[:, "Revenue", :],
-                average_total_assets=self._balance_sheet_statement.loc[
-                    :, "Total Assets", :
-                ]
-                .T.rolling(2)
-                .mean()
-                .T,
-                average_total_equity=self._balance_sheet_statement.loc[
-                    :, "Total Equity", :
-                ]
-                .T.rolling(2)
-                .mean()
-                .T,
-            )
+        # Without trailing, the balances are averaged over the period's opening and closing balance.
+        income = self._income_statement
+        balance = self._balance_sheet_statement
+        extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
+            operating_income=helpers.trailing_sum(
+                income.loc[:, "Operating Income", :], trailing
+            ),
+            income_before_tax=helpers.trailing_sum(
+                income.loc[:, "Income Before Tax", :], trailing
+            ),
+            net_income=helpers.trailing_sum(income.loc[:, "Net Income", :], trailing),
+            total_revenue=helpers.trailing_sum(income.loc[:, "Revenue", :], trailing),
+            average_total_assets=helpers.trailing_mean(
+                balance.loc[:, "Total Assets", :], trailing or 2
+            ),
+            average_total_equity=helpers.trailing_mean(
+                balance.loc[:, "Total Equity", :], trailing or 2
+            ),
+        )
 
         if growth:
             extended_dupont_analysis = calculate_growth(
@@ -436,9 +390,8 @@ class ProfitabilityModels:
         | ('MSFT', 'Dividend Return') |  0.0076 |  0.0116 |  0.0082 |  0.0081 |
         | ('MSFT', 'Total Return')    | -0.2794 |  0.5796 |  0.1291 |  0.1554 |
         """
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
         lag = lag if lag is not None else (4 if self._quarterly else 1)
 
         if not isinstance(lag, int) or lag < 1:
@@ -446,15 +399,20 @@ class ProfitabilityModels:
                 "The lag is the number of periods of the window: 1 or more."
             )
 
-        shares = self._rows(
-            self._income_statement,
-            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+        shares = helpers.trailing_mean(
+            self._rows(
+                self._income_statement,
+                (
+                    "Weighted Average Shares Diluted"
+                    if diluted
+                    else "Weighted Average Shares"
+                ),
+            ),
+            trailing,
         )
-        net_income = self._rows(self._income_statement, "Net Income")
-
-        if trailing:
-            net_income = net_income.T.rolling(trailing).sum().T
-            shares = shares.T.rolling(trailing).mean().T
+        net_income = helpers.trailing_sum(
+            self._rows(self._income_statement, "Net Income"), trailing
+        )
 
         earnings_per_share = valuation_model.get_earnings_per_share(
             net_income=net_income,
@@ -661,20 +619,13 @@ class ProfitabilityModels:
         | ADSK | 0.0613 | 0.0955 | 0.1006 | 0.1144 | nan      |
         | INTU | 0.1004 | 0.0489 | 0.0569 | 0.0639 |   0.0782 |
         """
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
         # The ROA * b / (1 - ROA * b) form of the Internal Growth Rate measures ROA on the ending assets.
         ending_total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
-        dividends = (
-            self._cash_flow_statement.loc[:, "Dividends Paid", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Dividends Paid", :]
+        dividends = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
         )
 
         return_on_assets = profitability_model.get_return_on_assets(

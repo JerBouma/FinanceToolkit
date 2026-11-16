@@ -21,7 +21,7 @@ from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.statistics_model import apply_rounding, finalize_dataset
 
 logger = get_logger()
 
@@ -215,11 +215,7 @@ class ModelsBase:
         """
         operating_income = self._income_statement.loc[:, "Operating Income", :]
 
-        return (
-            operating_income.T.rolling(trailing).sum().T
-            if trailing
-            else operating_income
-        )
+        return helpers.trailing_sum(operating_income, trailing)
 
     def _return_on_equity_and_payout(
         self, trailing: int | None
@@ -230,22 +226,15 @@ class ModelsBase:
         dividend payout ratio, per ticker and period, as the sustainable growth rate and the
         justified multiples use them.
         """
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
         # Higgins measures the Return on Equity on the equity at the beginning of the period.
         beginning_total_equity = self._balance_sheet_statement.loc[
             :, "Total Equity", :
-        ].shift(trailing if trailing else 1, axis=1)
-        dividends = (
-            self._cash_flow_statement.loc[:, "Dividends Paid", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Dividends Paid", :]
+        ].shift(trailing or 1, axis=1)
+        dividends = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
         )
 
         return_on_equity = profitability_model.get_return_on_equity(
@@ -284,14 +273,35 @@ class ModelsBase:
         prices.index = prices.index.asfreq(columns.freq)
         return prices.reindex(columns).T
 
-    def _combine(self, results: dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """Per-period results as ticker and metric (rows) by period (columns)."""
-        combined = concat_frames(results).swaplevel(0, 1)
-        order = {name: position for position, name in enumerate(results)}
-        combined = combined.sort_index(
-            level=1, key=lambda names: names.map(order), sort_remaining=False
+    def _finalize_components(
+        self,
+        components: dict[str, pd.DataFrame],
+        rounding: int | None,
+        growth: bool,
+        lag: int | list[int],
+        standardize: bool,
+    ) -> pd.DataFrame:
+        """
+        A model's components per ticker and period as ticker and component (rows) by period
+        (columns), without the periods none of them has, finalized as every model result.
+        """
+        combined = (
+            concat_frames(components)
+            .dropna(axis=1, how="all")
+            .swaplevel(0, 1)
+            .reindex(self._tickers, level=0)
         )
-        return combined.reindex(self._tickers, level=0)
+        return finalize_dataset(
+            dataset=combined,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
 
     def _calendar(self, frame: pd.DataFrame) -> pd.DataFrame:
         """
@@ -318,7 +328,16 @@ class ModelsBase:
         statements hold no more periods than the comparison needs, the result is empty, and
         a warning says how many periods `start_date` must cover.
         """
-        combined = self._combine(results)
+        # Ticker and metric (rows) by period (columns), the metrics in the order of `results`.
+        order = {metric: position for position, metric in enumerate(results)}
+        combined = (
+            concat_frames(results)
+            .swaplevel(0, 1)
+            .sort_index(
+                level=1, key=lambda names: names.map(order), sort_remaining=False
+            )
+            .reindex(self._tickers, level=0)
+        )
         if name and len(combined.columns) <= first_columns:
             logger.warning(
                 "%s needs at least %s %s of statements and %s were available, so it could "

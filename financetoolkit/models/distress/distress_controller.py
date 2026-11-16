@@ -22,13 +22,12 @@ from financetoolkit.models.distress import (
 )
 from financetoolkit.models.valuation import damodaran_model
 from financetoolkit.ratios import liquidity_model, valuation_model
-from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
-    finalize_dataset,
 )
 
 # ruff: noqa: E501
@@ -179,8 +178,9 @@ class DistressModels:
 
         def balance_item(item: str) -> pd.DataFrame:
             """A balance sheet item, averaged over the trailing periods when given."""
-            values = self._balance_sheet_statement.loc[:, item, :]
-            return values.T.rolling(trailing).mean().T if trailing else values
+            return helpers.trailing_mean(
+                self._balance_sheet_statement.loc[:, item, :], trailing
+            )
 
         total_assets = balance_item("Total Assets")
         total_liabilities = balance_item("Total Liabilities")
@@ -221,18 +221,20 @@ class DistressModels:
                 .T
             )
 
-            average_shares = (
-                self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-                if diluted
-                else self._income_statement.loc[:, "Weighted Average Shares", :]
-            )
+            average_shares = self._income_statement.loc[
+                :,
+                (
+                    "Weighted Average Shares Diluted"
+                    if diluted
+                    else "Weighted Average Shares"
+                ),
+                :,
+            ]
 
             market_cap = valuation_model.get_market_cap(
                 share_price=share_prices,
                 total_shares_outstanding=(
-                    average_shares.T.rolling(trailing).mean().T
-                    if trailing
-                    else average_shares
+                    helpers.trailing_mean(average_shares, trailing)
                 ),
             )
 
@@ -257,7 +259,7 @@ class DistressModels:
             revenue = self._income_statement.loc[:, "Revenue", :]
             altman_z_score["Sales to Total Assets"] = (
                 altman_model.get_sales_to_total_assets_ratio(
-                    sales=revenue.T.rolling(trailing).sum().T if trailing else revenue,
+                    sales=helpers.trailing_sum(revenue, trailing),
                     total_assets=total_assets,
                 )
             )
@@ -275,13 +277,6 @@ class DistressModels:
             equity_to_total_liabilities_ratio=altman_z_score[equity_ratio_name],
             sales_to_total_assets_ratio=altman_z_score.get("Sales to Total Assets"),
             model=model,
-        )
-
-        altman_results = (
-            concat_frames(altman_z_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
         )
 
         # The models were estimated on non-financial companies. A company without any cost
@@ -303,16 +298,8 @@ class DistressModels:
                 ", ".join(not_applicable),
             )
 
-        altman_results = finalize_dataset(
-            dataset=altman_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
+        altman_results = self._finalize_components(
+            altman_z_score, rounding, growth, lag, standardize
         )
 
         if zone and not growth and not standardize:
@@ -447,50 +434,24 @@ class DistressModels:
             trailing = 4
         ohlson_o_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :], trailing
         )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        current_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+            trailing,
         )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
         )
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        total_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
         )
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
-        operating_cash_flow = (
-            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        operating_cash_flow = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
 
         working_capital = liquidity_model.get_working_capital(
@@ -590,26 +551,9 @@ class DistressModels:
             )
         )
 
-        ohlson_results = (
-            concat_frames(ohlson_o_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            ohlson_o_score, rounding, growth, lag, standardize
         )
-
-        ohlson_results = finalize_dataset(
-            dataset=ohlson_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return ohlson_results
 
     @handle_errors
     def get_zmijewski_score(
@@ -708,42 +652,21 @@ class DistressModels:
             trailing = 4
         zmijewski_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :], trailing
         )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        current_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+            trailing,
         )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
         )
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        total_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
         )
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
 
         zmijewski_score["Net Income to Total Assets"] = (
@@ -785,23 +708,8 @@ class DistressModels:
             )
         )
 
-        zmijewski_results = (
-            concat_frames(zmijewski_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        zmijewski_results = finalize_dataset(
-            dataset=zmijewski_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
+        zmijewski_results = self._finalize_components(
+            zmijewski_score, rounding, growth, lag, standardize
         )
 
         if zone and not growth and not standardize:
@@ -905,42 +813,21 @@ class DistressModels:
             trailing = 4
         springate_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :], trailing
         )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        current_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+            trailing,
         )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
         )
-        income_before_tax = (
-            self._income_statement.loc[:, "Income Before Tax", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Before Tax", :]
+        income_before_tax = helpers.trailing_sum(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        revenue = (
-            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Revenue", :]
+        revenue = helpers.trailing_sum(
+            self._income_statement.loc[:, "Revenue", :], trailing
         )
 
         working_capital = liquidity_model.get_working_capital(
@@ -987,23 +874,8 @@ class DistressModels:
             sales_to_total_assets_ratio=springate_score["Sales to Total Assets"],
         )
 
-        springate_results = (
-            concat_frames(springate_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        springate_results = finalize_dataset(
-            dataset=springate_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
+        springate_results = self._finalize_components(
+            springate_score, rounding, growth, lag, standardize
         )
 
         if zone and not growth and not standardize:
@@ -1106,34 +978,18 @@ class DistressModels:
             trailing = 4
         grover_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :], trailing
         )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        current_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+            trailing,
         )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
         )
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
 
         working_capital = liquidity_model.get_working_capital(
@@ -1168,26 +1024,9 @@ class DistressModels:
             return_on_assets_ratio=grover_score["Return on Assets"],
         )
 
-        grover_results = (
-            concat_frames(grover_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            grover_score, rounding, growth, lag, standardize
         )
-
-        grover_results = finalize_dataset(
-            dataset=grover_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return grover_results
 
     @handle_errors
     def get_fulmer_h_score(
@@ -1298,98 +1137,42 @@ class DistressModels:
             trailing = 4
         fulmer_h_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Assets", :], trailing
         )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        current_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
+            trailing,
         )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
         )
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        total_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
         )
-        total_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
+        total_debt = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
         )
-        total_equity = (
-            self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Equity", :]
+        total_equity = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Equity", :], trailing
         )
-        retained_earnings = (
-            self._balance_sheet_statement.loc[:, "Retained Earnings", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Retained Earnings", :]
+        retained_earnings = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Retained Earnings", :], trailing
         )
-        goodwill_and_intangible_assets = (
-            get_goodwill_and_intangible_assets(self._balance_sheet_statement)
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else get_goodwill_and_intangible_assets(self._balance_sheet_statement)
+        goodwill_and_intangible_assets = helpers.trailing_mean(
+            get_goodwill_and_intangible_assets(self._balance_sheet_statement), trailing
         )
-        revenue = (
-            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Revenue", :]
+        revenue = helpers.trailing_sum(
+            self._income_statement.loc[:, "Revenue", :], trailing
         )
-        income_before_tax = (
-            self._income_statement.loc[:, "Income Before Tax", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Before Tax", :]
+        income_before_tax = helpers.trailing_sum(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        interest_expense = (
-            self._income_statement.loc[:, "Interest Expense", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Interest Expense", :]
+        interest_expense = helpers.trailing_sum(
+            self._income_statement.loc[:, "Interest Expense", :], trailing
         )
-        operating_cash_flow = (
-            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        operating_cash_flow = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
 
         working_capital = liquidity_model.get_working_capital(
@@ -1484,26 +1267,9 @@ class DistressModels:
             ],
         )
 
-        fulmer_results = (
-            concat_frames(fulmer_h_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            fulmer_h_score, rounding, growth, lag, standardize
         )
-
-        fulmer_results = finalize_dataset(
-            dataset=fulmer_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return fulmer_results
 
     @handle_errors
     def get_taffler_z_score(
@@ -1607,13 +1373,15 @@ class DistressModels:
 
         def balance_item(item: str) -> pd.DataFrame:
             """A balance sheet item, averaged over the trailing periods when given."""
-            values = self._balance_sheet_statement.loc[:, item, :]
-            return values.T.rolling(trailing).mean().T if trailing else values
+            return helpers.trailing_mean(
+                self._balance_sheet_statement.loc[:, item, :], trailing
+            )
 
         def income_item(item: str) -> pd.DataFrame:
             """An income statement item, summed over the trailing periods when given."""
-            values = self._income_statement.loc[:, item, :]
-            return values.T.rolling(trailing).sum().T if trailing else values
+            return helpers.trailing_sum(
+                self._income_statement.loc[:, item, :], trailing
+            )
 
         current_assets = balance_item("Total Current Assets")
         current_liabilities = balance_item("Total Current Liabilities")
@@ -1664,23 +1432,8 @@ class DistressModels:
             no_credit_interval=taffler_score["No-Credit Interval"],
         )
 
-        taffler_results = (
-            concat_frames(taffler_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        taffler_results = finalize_dataset(
-            dataset=taffler_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
+        taffler_results = self._finalize_components(
+            taffler_score, rounding, growth, lag, standardize
         )
 
         if zone and not growth and not standardize:
@@ -1847,12 +1600,7 @@ class DistressModels:
                 for metric in model_metrics:
                     results[metric].loc[ticker, period] = model[metric]
 
-        merton = self._combine(results).dropna(axis=1, how="all")
-        merton = apply_rounding(
-            merton, rounding if rounding is not None else self._rounding
-        )
-
-        return merton.loc[:, self._start_date : self._end_date]
+        return self._finish_score(results, rounding, first_columns=0)
 
     @handle_errors
     def get_campbell_hilscher_szilagyi_score(
@@ -2149,12 +1897,11 @@ class DistressModels:
             "Failure Probability": chs_model.get_chs_failure_probability(chs_score),
         }
 
-        chs = self._combine(
-            {name: frame.astype(float) for name, frame in results.items()}
-        ).dropna(axis=1, how="all")
-        chs = apply_rounding(chs, rounding if rounding is not None else self._rounding)
-
-        return chs.loc[:, self._start_date : self._end_date]
+        return self._finish_score(
+            {name: frame.astype(float) for name, frame in results.items()},
+            rounding,
+            first_columns=0,
+        )
 
     @handle_errors
     def get_synthetic_credit_rating(

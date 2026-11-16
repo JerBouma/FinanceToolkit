@@ -5,6 +5,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.models import helpers
 from financetoolkit.models.distress.distress_controller import DistressModels
 from financetoolkit.models.quality import beneish_model, piotroski_model, quality_model
 from financetoolkit.performance.performance_model import get_beta
@@ -12,7 +13,6 @@ from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -151,39 +151,20 @@ class QualityModels(DistressModels):
         # Every change-based criterion compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the signal.  # noqa: E501
         comparison_lag = 4 if self._quarterly else 1
 
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
-        operating_cashflow = (
-            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        operating_cashflow = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
-        revenue = (
-            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Revenue", :]
+        revenue = helpers.trailing_sum(
+            self._income_statement.loc[:, "Revenue", :], trailing
         )
-        cost_of_goods_sold = (
-            self._income_statement.loc[:, "Cost of Goods Sold", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Cost of Goods Sold", :]
+        cost_of_goods_sold = helpers.trailing_sum(
+            self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
         )
-        common_stock_issued = (
-            self._cash_flow_statement.loc[:, "Common Stock Issued", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Common Stock Issued", :]
+        common_stock_issued = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Common Stock Issued", :], trailing
         )
         # Piotroski (2000) takes the balance sheet items at the fiscal period end, so they stay point in time while the flows above cover the trailing window.  # noqa: E501
         total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
@@ -456,18 +437,11 @@ class QualityModels(DistressModels):
 
         # Beneish (1999) takes the balance sheet items at the fiscal period end, so they stay point in time while the flows cover the trailing window.  # noqa: E501
         net_receivables = self._balance_sheet_statement.loc[:, "Net Receivables", :]
-        revenue = (
-            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Revenue", :]
+        revenue = helpers.trailing_sum(
+            self._income_statement.loc[:, "Revenue", :], trailing
         )
-        cost_of_goods_sold = (
-            self._income_statement.loc[:, "Cost of Goods Sold", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Cost of Goods Sold", :]
+        cost_of_goods_sold = helpers.trailing_sum(
+            self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
         )
         total_current_assets = self._balance_sheet_statement.loc[
             :, "Total Current Assets", :
@@ -476,42 +450,24 @@ class QualityModels(DistressModels):
             :, "Property, Plant and Equipment", :
         ]
         total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
-        depreciation_and_amortization = (
-            self._income_statement.loc[:, "Depreciation and Amortization", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        depreciation_and_amortization = helpers.trailing_sum(
+            self._income_statement.loc[:, "Depreciation and Amortization", :], trailing
         )
-        selling_general_and_administrative_expenses = (
+        selling_general_and_administrative_expenses = helpers.trailing_sum(
             self._income_statement.loc[
                 :, "Selling, General and Administrative Expenses", :
-            ]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[
-                :, "Selling, General and Administrative Expenses", :
-            ]
+            ],
+            trailing,
         )
         total_current_liabilities = self._balance_sheet_statement.loc[
             :, "Total Current Liabilities", :
         ]
         long_term_debt = self._balance_sheet_statement.loc[:, "Long Term Debt", :]
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
-        cash_flow_from_operations = (
-            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        cash_flow_from_operations = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
 
         beneish_m_score["Days Sales in Receivables Index"] = (
@@ -588,26 +544,9 @@ class QualityModels(DistressModels):
             ],
         )
 
-        beneish_results = (
-            concat_frames(beneish_m_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            beneish_m_score, rounding, growth, lag, standardize
         )
-
-        beneish_results = finalize_dataset(
-            dataset=beneish_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return beneish_results
 
     def _score_inputs(self, trailing: int | None) -> dict[str, pd.DataFrame]:
         """
@@ -619,8 +558,7 @@ class QualityModels(DistressModels):
         """
 
         def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
-            frame = self._rows(statement, row)
-            return frame.T.rolling(trailing).sum().T if trailing else frame
+            return helpers.trailing_sum(self._rows(statement, row), trailing)
 
         balance_rows = [
             "Total Assets",
@@ -1260,10 +1198,6 @@ class QualityModels(DistressModels):
         growth_lag = growth_years * year
         inputs = self._score_inputs(trailing)
 
-        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
-            frame = self._rows(statement, row)
-            return frame.T.rolling(trailing).sum().T if trailing else frame
-
         total_assets = inputs["Total Assets"]
         net_income = inputs["Net Income"]
         operating_cash_flow = inputs["Operating Cash Flow"]
@@ -1329,9 +1263,16 @@ class QualityModels(DistressModels):
             previous = frame.shift(year, axis=1)
             return np.log(frame.where(frame > 0) / previous.where(previous > 0))
 
+        cash_flow = self._cash_flow_statement
+        dividends = helpers.trailing_sum(
+            self._rows(cash_flow, "Dividends Paid"), trailing
+        )
+        buybacks = helpers.trailing_sum(
+            self._rows(cash_flow, "Common Stock Purchased"), trailing
+        )
         net_payout = (
-            flow(self._cash_flow_statement, "Dividends Paid").abs().fillna(0)
-            + flow(self._cash_flow_statement, "Common Stock Purchased").abs().fillna(0)
+            dividends.abs().fillna(0)
+            + buybacks.abs().fillna(0)
             - inputs["Common Stock Issued"].abs().fillna(0)
         )
         payout = {

@@ -16,7 +16,7 @@ from financetoolkit.models.valuation import (
 )
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.ratios import profitability_model, valuation_model
-from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -142,11 +142,11 @@ class ValuationModels:
         | Cash and Cash Equivalents | 2.054e+10   | 2.5134e+10  | 2.4862e+10  | 2.2935e+10  | 2.3356e+10  |
         | Enterprise Value          | 1.73781e+11 | 1.43012e+11 | 1.60221e+11 | 1.62345e+11 | 1.81318e+11 |
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
@@ -292,11 +292,11 @@ class ValuationModels:
         """
         tobins_q_ratio = {}
 
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
@@ -307,30 +307,16 @@ class ValuationModels:
             .T
         )
 
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        total_liabilities = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
         )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_assets = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
         )
 
         market_cap = valuation_model.get_market_cap(
             share_price=share_prices,
-            total_shares_outstanding=(
-                average_shares.T.rolling(trailing).mean().T
-                if trailing
-                else average_shares
-            ),
+            total_shares_outstanding=(helpers.trailing_mean(average_shares, trailing)),
         )
 
         tobins_q_ratio["Market Value of Equity"] = market_cap
@@ -342,26 +328,9 @@ class ValuationModels:
             total_assets=total_assets,
         )
 
-        tobins_q_results = (
-            concat_frames(tobins_q_ratio)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            tobins_q_ratio, rounding, growth, lag, standardize
         )
-
-        tobins_q_results = finalize_dataset(
-            dataset=tobins_q_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return tobins_q_results
 
     @handle_errors
     def _capital_asset_pricing_inputs(
@@ -405,7 +374,7 @@ class ValuationModels:
             per ticker when the premium differs per company.
         """
         periods_per_year = 4 if self._quarterly else 1
-        span = trailing if trailing else 1
+        span = trailing or 1
 
         risk_free_rate = risk_free_rate / periods_per_year
         historical_premium = (benchmark_returns - risk_free_rate).mean()
@@ -462,11 +431,11 @@ class ValuationModels:
         Returns:
             pd.DataFrame: The WACC and its components per ticker (rows) and period (columns).
         """
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
         years = self._cash_flow_statement.columns
         begin, end = str(years[0]), str(years[-1])
@@ -491,46 +460,25 @@ class ValuationModels:
             risk_free_rate, benchmark_returns, market_risk_premium, trailing
         )
 
-        if trailing:
-            return wacc_model.get_weighted_average_cost_of_capital(
-                share_price=share_prices,
-                total_shares_outstanding=average_shares.T.rolling(trailing).mean().T,
-                interest_expense=self._income_statement.loc[:, "Interest Expense", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                risk_free_rate=risk_free_rate,
-                beta=beta,
-                benchmark_returns=benchmark_returns,
-                income_tax_expense=self._income_statement.loc[
-                    :, "Income Tax Expense", :
-                ]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-            )
-        else:
-            return wacc_model.get_weighted_average_cost_of_capital(
-                share_price=share_prices,
-                total_shares_outstanding=average_shares,
-                interest_expense=self._income_statement.loc[:, "Interest Expense", :],
-                total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
-                risk_free_rate=risk_free_rate,
-                beta=beta,
-                benchmark_returns=benchmark_returns,
-                income_tax_expense=self._income_statement.loc[
-                    :, "Income Tax Expense", :
-                ],
-                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
-            )
+        return wacc_model.get_weighted_average_cost_of_capital(
+            share_price=share_prices,
+            total_shares_outstanding=helpers.trailing_mean(average_shares, trailing),
+            interest_expense=helpers.trailing_sum(
+                self._income_statement.loc[:, "Interest Expense", :], trailing
+            ),
+            total_debt=helpers.trailing_mean(
+                self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
+            ),
+            risk_free_rate=risk_free_rate,
+            beta=beta,
+            benchmark_returns=benchmark_returns,
+            income_tax_expense=helpers.trailing_sum(
+                self._income_statement.loc[:, "Income Tax Expense", :], trailing
+            ),
+            income_before_tax=helpers.trailing_sum(
+                self._income_statement.loc[:, "Income Before Tax", :], trailing
+            ),
+        )
 
     @handle_errors
     def get_weighted_average_cost_of_capital(
@@ -797,43 +745,17 @@ class ValuationModels:
         """
         eva = {}
 
-        income_tax_expense = (
-            self._income_statement.loc[:, "Income Tax Expense", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Tax Expense", :]
+        income_tax_expense = helpers.trailing_sum(
+            self._income_statement.loc[:, "Income Tax Expense", :], trailing
         )
-        income_before_tax = (
-            self._income_statement.loc[:, "Income Before Tax", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Before Tax", :]
+        income_before_tax = helpers.trailing_sum(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        total_equity = (
-            self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(2)
-            .mean()
-            .T
+        total_equity = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Equity", :], trailing or 2
         )
-        total_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(2)
-            .mean()
-            .T
+        total_debt = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Debt", :], trailing or 2
         )
 
         ebit = self._earnings_before_interest_and_taxes(trailing)
@@ -868,26 +790,7 @@ class ValuationModels:
             invested_capital=eva["Invested Capital"],
         )
 
-        eva_results = (
-            concat_frames(eva)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        eva_results = finalize_dataset(
-            dataset=eva_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return eva_results
+        return self._finalize_components(eva, rounding, growth, lag, standardize)
 
     @handle_errors
     def get_market_value_added(
@@ -985,52 +888,27 @@ class ValuationModels:
             .T
         )
 
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
-        total_equity = (
-            self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(2)
-            .mean()
-            .T
+        total_equity = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Equity", :], trailing or 2
         )
-        total_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(2)
-            .mean()
-            .T
+        total_debt = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Debt", :], trailing or 2
         )
 
         market_cap = valuation_model.get_market_cap(
             share_price=share_prices,
-            total_shares_outstanding=(
-                average_shares.T.rolling(trailing).mean().T
-                if trailing
-                else average_shares
-            ),
+            total_shares_outstanding=(helpers.trailing_mean(average_shares, trailing)),
         )
 
         # A market value is a point-in-time quantity, so the closing balance of Total Debt is used as its proxy — not the averaged balance that Invested Capital is built from, which would otherwise cancel the debt out of the Market Value Added entirely  # noqa: E501
-        market_value_of_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
+        market_value_of_debt = helpers.trailing_mean(
+            self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
         )
 
         mva["Market Value of Equity"] = market_cap
@@ -1047,26 +925,7 @@ class ValuationModels:
             invested_capital=mva["Invested Capital"],
         )
 
-        mva_results = (
-            concat_frames(mva)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        mva_results = finalize_dataset(
-            dataset=mva_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return mva_results
+        return self._finalize_components(mva, rounding, growth, lag, standardize)
 
     @handle_errors
     def get_intrinsic_valuation(
@@ -1368,9 +1227,7 @@ class ValuationModels:
         period (ticker by period frames), so that no period uses figures reported after it.
         """
         cash_flows = cash_flows.reindex(self._tickers)
-        base_cash_flows = (
-            cash_flows.T.rolling(trailing).sum().T if trailing else cash_flows
-        )
+        base_cash_flows = helpers.trailing_sum(cash_flows, trailing)
         cash = self._rows(self._balance_sheet_statement, "Cash and Cash Equivalents")
         debt = self._rows(self._balance_sheet_statement, "Total Debt")
         # Added back with the cash, as get_enterprise_value_breakdown deducts both.
@@ -1513,45 +1370,25 @@ class ValuationModels:
         """
         fcff = {}
 
-        income_tax_expense = (
-            self._income_statement.loc[:, "Income Tax Expense", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Tax Expense", :]
+        income_tax_expense = helpers.trailing_sum(
+            self._income_statement.loc[:, "Income Tax Expense", :], trailing
         )
-        income_before_tax = (
-            self._income_statement.loc[:, "Income Before Tax", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Before Tax", :]
+        income_before_tax = helpers.trailing_sum(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        depreciation_and_amortization = (
-            self._income_statement.loc[:, "Depreciation and Amortization", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        depreciation_and_amortization = helpers.trailing_sum(
+            self._income_statement.loc[:, "Depreciation and Amortization", :], trailing
         )
         capital_expenditure = -1 * (
-            self._cash_flow_statement.loc[:, "Capital Expenditure", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Capital Expenditure", :]
+            helpers.trailing_sum(
+                self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+            )
         )
         change_in_net_working_capital = -1 * (
-            self._cash_flow_statement.loc[:, "Change in Working Capital", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Change in Working Capital", :]
+            helpers.trailing_sum(
+                self._cash_flow_statement.loc[:, "Change in Working Capital", :],
+                trailing,
+            )
         )
 
         ebit = self._earnings_before_interest_and_taxes(trailing)
@@ -1578,26 +1415,7 @@ class ValuationModels:
             change_in_net_working_capital=fcff["Change in Net Working Capital"],
         )
 
-        fcff_results = (
-            concat_frames(fcff)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        fcff_results = finalize_dataset(
-            dataset=fcff_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return fcff_results
+        return self._finalize_components(fcff, rounding, growth, lag, standardize)
 
     @handle_errors
     def get_free_cash_flow_to_equity(
@@ -1675,42 +1493,25 @@ class ValuationModels:
         """
         fcfe = {}
 
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
-        depreciation_and_amortization = (
-            self._income_statement.loc[:, "Depreciation and Amortization", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Depreciation and Amortization", :]
+        depreciation_and_amortization = helpers.trailing_sum(
+            self._income_statement.loc[:, "Depreciation and Amortization", :], trailing
         )
         capital_expenditure = -1 * (
-            self._cash_flow_statement.loc[:, "Capital Expenditure", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Capital Expenditure", :]
+            helpers.trailing_sum(
+                self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+            )
         )
         change_in_net_working_capital = -1 * (
-            self._cash_flow_statement.loc[:, "Change in Working Capital", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Change in Working Capital", :]
+            helpers.trailing_sum(
+                self._cash_flow_statement.loc[:, "Change in Working Capital", :],
+                trailing,
+            )
         )
-        net_borrowing = (
-            self._cash_flow_statement.loc[:, "Net Debt Issued", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Net Debt Issued", :]
+        net_borrowing = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Net Debt Issued", :], trailing
         )
 
         fcfe["Net Income"] = net_income
@@ -1727,26 +1528,7 @@ class ValuationModels:
             net_borrowing=fcfe["Net Borrowing"],
         )
 
-        fcfe_results = (
-            concat_frames(fcfe)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        fcfe_results = finalize_dataset(
-            dataset=fcfe_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return fcfe_results
+        return self._finalize_components(fcfe, rounding, growth, lag, standardize)
 
     def _complete_period_dividends(self) -> pd.DataFrame:
         """
@@ -2426,8 +2208,7 @@ class ValuationModels:
             )
 
         net_income = self._rows(self._income_statement, "Net Income")
-        if trailing:
-            net_income = net_income.T.rolling(trailing).sum().T
+        net_income = helpers.trailing_sum(net_income, trailing)
         shares = self._rows(
             self._income_statement,
             "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
@@ -2546,16 +2327,14 @@ class ValuationModels:
         """
         residual_income = {}
 
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
         # The capital charge applies to the book value the shareholders had invested at the start of the period (Ohlson, 1995): the closing balance of the previous period, or of `trailing` periods back for a trailing sum of Net Income.  # noqa: E501
         beginning_book_value_of_equity = (
             self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
             - self._balance_sheet_statement.loc[:, "Preferred Stock", :]
-        ).shift(trailing if trailing else 1, axis=1)
+        ).shift(trailing or 1, axis=1)
 
         years = self._balance_sheet_statement.columns
         begin, end = str(years[0]), str(years[-1])
@@ -2590,26 +2369,9 @@ class ValuationModels:
             book_value_of_equity=residual_income["Book Value of Equity"],
         )
 
-        residual_income_results = (
-            concat_frames(residual_income)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            residual_income, rounding, growth, lag, standardize
         )
-
-        residual_income_results = finalize_dataset(
-            dataset=residual_income_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return residual_income_results
 
     @handle_errors
     def get_present_value_of_growth_opportunities(
@@ -2703,31 +2465,25 @@ class ValuationModels:
             trailing=trailing, market_risk_premium=market_risk_premium
         ).xs("Cost of Equity", level=1)
 
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
         # Preferred Dividends Paid is reported on the cash flow statement using the cash-flow-impact convention (an outflow is negative), while the Earnings per Share formula subtracts a positive-magnitude figure — without the absolute value the preferred dividends would be added back to Net Income instead of deducted from it  # noqa: E501
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
 
         if include_dividends:
             dividends = self._cash_flow_statement.loc[
                 :, "Preferred Dividends Paid", :
             ].abs()
-            preferred_dividends = (
-                dividends.T.rolling(trailing).sum().T if trailing else dividends
-            )
+            preferred_dividends = helpers.trailing_sum(dividends, trailing)
         else:
             preferred_dividends = 0
-        avg_shares = (
-            average_shares.T.rolling(trailing).mean().T if trailing else average_shares
-        )
+        avg_shares = helpers.trailing_mean(average_shares, trailing)
 
         earnings_per_share = valuation_model.get_earnings_per_share(
             net_income=net_income,
@@ -2871,20 +2627,16 @@ class ValuationModels:
         if trailing is None and self._quarterly:
             trailing = 4
 
-        average_shares = (
-            self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-            if diluted
-            else self._income_statement.loc[:, "Weighted Average Shares", :]
-        )
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
 
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
-        avg_shares = (
-            average_shares.T.rolling(trailing).mean().T if trailing else average_shares
-        )
+        avg_shares = helpers.trailing_mean(average_shares, trailing)
 
         earnings_per_share = valuation_model.get_earnings_per_share(
             net_income=net_income,
@@ -3087,8 +2839,9 @@ class ValuationModels:
         Without min_periods every window must be complete, so a missing period leaves the
         sums that include it NaN instead of letting them span more periods.
         """
-        frame = self._calendar(self._rows(statement, row))
-        return frame.T.rolling(trailing).sum().T if trailing else frame
+        return helpers.trailing_sum(
+            self._calendar(self._rows(statement, row)), trailing
+        )
 
     def _latest_capital(self, ticker: str) -> dict[str, float]:
         """The latest cash, total debt and diluted shares of a ticker, as a DCF takes them."""

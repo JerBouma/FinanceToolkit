@@ -1029,6 +1029,48 @@ class PricesEconomics(EconomicsBase):
             dropna=True,
         )
 
+    def _with_bis_house_prices_of_china(
+        self, house_prices: pd.DataFrame, quarterly: bool, inflation_adjusted: bool
+    ) -> pd.DataFrame:
+        """
+        Replaces China's OECD house price index with the BIS one.
+
+        The OECD's index for China kept rising after 2021, while the National Bureau of
+        Statistics' prices of newly built homes in 70 cities, which the BIS publishes and
+        the Global Macro Database follows, fell from 2022 and were below a year earlier in
+        almost every month since. China's index therefore comes from the BIS, rebased to
+        2015 = 100 like the OECD indices; a year is the average of its four quarters. When the BIS can't be reached, China is left
+        out rather than shown with the OECD index.
+
+        Args:
+            house_prices (pd.DataFrame): The OECD house price indices, a column per country.
+            quarterly (bool): Whether the indices are quarterly (else yearly).
+            inflation_adjusted (bool): Whether the indices are real (else nominal).
+
+        Returns:
+            pd.DataFrame: The house price indices with China's from the BIS.
+        """
+        house_prices = house_prices.drop(columns="China", errors="ignore")
+        # Read from 2015, the base year, whatever the start date.
+        start_date = min(self._start_date or "2015-01-01", "2015-01-01")
+        china = bis_model.get_residential_property_prices(
+            "CN",
+            inflation_adjusted=inflation_adjusted,
+            start_date=start_date,
+            end_date=self._end_date or pd.Timestamp.today().strftime("%Y-%m-%d"),
+        )
+
+        if china.empty:
+            return house_prices
+
+        china = china / china[china.index.year == 2015].mean() * 100  # noqa: PLR2004
+
+        if not quarterly:
+            years = china.groupby(china.index.asfreq("Y"))
+            china = years.mean()[years.count() == 4]  # noqa: PLR2004
+
+        return house_prices.join(china.rename("China"), how="outer")
+
     @handle_errors
     def get_house_prices(
         self,
@@ -1057,7 +1099,10 @@ class PricesEconomics(EconomicsBase):
 
         In the OECD data, the real house price index is given by the ratio of the nominal
         house price index to the consumers' expenditure deflator in each country from the
-        OECD national accounts database. Both indices are seasonally adjusted.
+        OECD national accounts database. Both indices are seasonally adjusted. China's
+        index comes from the BIS instead: the National Bureau of Statistics' prices of newly
+        built homes in 70 cities (nominal, or deflated by consumer prices), rebased to
+        2015 = 100. The OECD's own index for China kept rising while these prices fell.
 
         Both are an index based on 2015 = 100.
 
@@ -1154,6 +1199,9 @@ class PricesEconomics(EconomicsBase):
                 inflation_adjusted=inflation_adjusted,
                 start_date=self._start_date,
                 end_date=self._end_date,
+            )
+            house_prices = self._with_bis_house_prices_of_china(
+                house_prices, quarterly=quarterly, inflation_adjusted=inflation_adjusted
             )
 
         return finalize_dataset(

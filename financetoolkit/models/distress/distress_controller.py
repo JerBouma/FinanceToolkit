@@ -1975,23 +1975,23 @@ class DistressModels:
 
         Which returns:
 
-        |                                     | 2021     | 2022    | 2023    | 2024    | 2025    |
-        |:------------------------------------|:---------|:--------|:--------|:--------|:--------|
-        | ('AAPL', 'Interest Coverage Ratio') | 41.1905  | 40.7496 | 29.062  | nan     | nan     |
-        | ('AAPL', 'Rating')                  | Aaa/AAA  | Aaa/AAA | Aaa/AAA | Aaa/AAA | Aaa/AAA |
-        | ('AAPL', 'Default Spread')          | 0.004    | 0.004   | 0.004   | 0.004   | 0.004   |
-        | ('AAPL', 'Risk Free Rate')          | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
-        | ('AAPL', 'Pre-tax Cost of Debt')    | 0.0184   | 0.0336  | 0.0437  | 0.0461  | 0.0469  |
-        | ('F', 'Interest Coverage Ratio')    | 2.7915   | 5.0905  | 4.1306  | 4.5695  | 2.0191  |
-        | ('F', 'Rating')                     | Baa2/BBB | A2/A    | A3/A-   | A2/A    | Ba2/BB  |
-        | ('F', 'Default Spread')             | 0.0111   | 0.0078  | 0.0089  | 0.0078  | 0.0184  |
-        | ('F', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
-        | ('F', 'Pre-tax Cost of Debt')       | 0.0255   | 0.0374  | 0.0486  | 0.0499  | 0.0613  |
-        | ('T', 'Interest Coverage Ratio')    | 3.8675   | -0.7472 | 3.7011  | 3.5969  | 3.6743  |
-        | ('T', 'Rating')                     | A3/A-    | D2/D    | A3/A-   | A3/A-   | A3/A-   |
-        | ('T', 'Default Spread')             | 0.0089   | 0.19    | 0.0089  | 0.0089  | 0.0089  |
-        | ('T', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
-        | ('T', 'Pre-tax Cost of Debt')       | 0.0233   | 0.2196  | 0.0486  | 0.051   | 0.0518  |
+        |                                     | 2021     | 2022    | 2023    | 2024     | 2025    |
+        |:------------------------------------|:---------|:--------|:--------|:---------|:--------|
+        | ('AAPL', 'Interest Coverage Ratio') | 41.1905  | 40.7496 | 29.062  | nan      | nan     |
+        | ('AAPL', 'Rating')                  | Aaa/AAA  | Aaa/AAA | Aaa/AAA | Aaa/AAA  | Aaa/AAA |
+        | ('AAPL', 'Default Spread')          | 0.004    | 0.004   | 0.004   | 0.004    | 0.004   |
+        | ('AAPL', 'Risk Free Rate')          | 0.0144   | 0.0296  | 0.0397  | 0.0421   | 0.0429  |
+        | ('AAPL', 'Pre-tax Cost of Debt')    | 0.0184   | 0.0336  | 0.0437  | 0.0461   | 0.0469  |
+        | ('F', 'Interest Coverage Ratio')    | 2.7915   | 5.0905  | 4.1306  | 4.5695   | 2.0191  |
+        | ('F', 'Rating')                     | Baa2/BBB | A2/A    | A3/A-   | A2/A     | Ba2/BB  |
+        | ('F', 'Default Spread')             | 0.0111   | 0.0078  | 0.0089  | 0.0078   | 0.0184  |
+        | ('F', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421   | 0.0429  |
+        | ('F', 'Pre-tax Cost of Debt')       | 0.0255   | 0.0374  | 0.0486  | 0.0499   | 0.0613  |
+        | ('T', 'Interest Coverage Ratio')    | 3.856    | -0.7472 | 3.7011  | 2.8183   | 3.5511  |
+        | ('T', 'Rating')                     | A3/A-    | D2/D    | A3/A-   | Baa2/BBB | A3/A-   |
+        | ('T', 'Default Spread')             | 0.0089   | 0.19    | 0.0089  | 0.0111   | 0.0089  |
+        | ('T', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421   | 0.0429  |
+        | ('T', 'Pre-tax Cost of Debt')       | 0.0233   | 0.2196  | 0.0486  | 0.0532   | 0.0518  |
         """
         firm_type = firm_type.lower()
         if firm_type not in ("auto", "large", "small", "financial"):

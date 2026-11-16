@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+from financetoolkit.portfolio.helpers import divide_by_capital
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import drop_non_finite, to_period_index
 
@@ -13,29 +14,6 @@ logger = logger_model.get_logger()
 TRADING_DAYS_PER_YEAR = 252
 # Units left to sell below this are floating point residue of the volumes, not an oversold position.
 OVERSOLD_TOLERANCE = 1e-9
-
-
-def _safe_divide(
-    numerator: pd.Series | pd.DataFrame, denominator: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
-    """
-    Divide two objects, returning NaN wherever the denominator is zero or negative.
-
-    A return is only defined against capital that was actually deployed. Dividing by a
-    zero or negative denominator produces an infinite or sign-flipped number that reads
-    as a real result, so those cases are reported as missing instead.
-
-    Args:
-        numerator (pd.Series | pd.DataFrame): The numerator of the division.
-        denominator (pd.Series | pd.DataFrame): The denominator of the division.
-
-    Returns:
-        pd.Series | pd.DataFrame: The element-wise division with non-positive
-            denominators replaced by NaN.
-    """
-    result = numerator / denominator.where(denominator > 0)
-
-    return drop_non_finite(result)
 
 
 def _per_transaction(values: pd.Series | None, length: int) -> np.ndarray:
@@ -448,7 +426,7 @@ def create_portfolio_overview(
         2,
         "Price",
         # The volume-weighted price actually paid for the units that were bought.
-        _safe_divide(
+        divide_by_capital(
             portfolio_overview_grouped["Buy Value"],
             portfolio_overview_grouped["Buy Volume"],
         ),
@@ -473,11 +451,11 @@ def create_portfolio_overview(
         + portfolio_overview_grouped["Dividends"]
         - portfolio_overview_grouped["Invested"]
     )
-    portfolio_overview_grouped["Return"] = _safe_divide(
+    portfolio_overview_grouped["Return"] = divide_by_capital(
         portfolio_overview_grouped["Return Value"],
         portfolio_overview_grouped["Invested"],
     )
-    portfolio_overview_grouped["Benchmark Return"] = _safe_divide(
+    portfolio_overview_grouped["Benchmark Return"] = divide_by_capital(
         benchmark_latest_value
         + portfolio_overview_grouped["Proceeds"]
         - portfolio_overview_grouped["Invested"],
@@ -825,7 +803,7 @@ def create_transactions_performance(
     period_performance_grouped.insert(
         1,
         price_column,
-        _safe_divide(
+        divide_by_capital(
             period_performance_grouped["Buy Value"],
             period_performance_grouped["Buy Volume"],
         ),
@@ -839,14 +817,14 @@ def create_transactions_performance(
     # A period in which nothing was bought deployed no capital, so there is no return to report on it.
     bought_in_period = period_performance_grouped["Buy Value"] > 0
 
-    period_performance_grouped["Return"] = _safe_divide(
+    period_performance_grouped["Return"] = divide_by_capital(
         period_performance_grouped["Current Value"]
         + period_performance_grouped["Dividends"]
         - period_performance_grouped["Invested Amount"],
         period_performance_grouped["Invested Amount"],
     ).where(bought_in_period)
 
-    period_performance_grouped["Benchmark Return"] = _safe_divide(
+    period_performance_grouped["Benchmark Return"] = divide_by_capital(
         period_performance_grouped["Benchmark Value"]
         - period_performance_grouped["Invested Amount"],
         period_performance_grouped["Invested Amount"],
@@ -1007,7 +985,7 @@ def create_positions_overview(
     positions["Current Value"] = (positions["Volume"] * closing_prices).where(
         positions["Volume"] != 0, 0.0
     )
-    positions["Cumulative Return"] = _safe_divide(
+    positions["Cumulative Return"] = divide_by_capital(
         positions["Current Value"]
         + positions["Realized Proceeds"]
         + positions["Dividends"]
@@ -1113,7 +1091,7 @@ def create_portfolio_performance(
         else 0.0
     )
 
-    positions_dataset_grouped["Return"] = _safe_divide(
+    positions_dataset_grouped["Return"] = divide_by_capital(
         positions_dataset_grouped["Current Value"]
         + positions_dataset_grouped["Realized Proceeds"]
         + dividends_received

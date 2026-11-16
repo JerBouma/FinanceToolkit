@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.models import helpers
-from financetoolkit.models.distress.distress_controller import DistressModels
 from financetoolkit.models.quality import beneish_model, piotroski_model, quality_model
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
@@ -21,7 +20,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class QualityModels(DistressModels):
+class QualityModels:
     """
     Quality and earnings manipulation scores: Piotroski, Beneish, Mohanram, Dechow, Montier, the magic formula, the quality score and the accruals ratio.
     """

@@ -5,7 +5,6 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit import helpers
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
     OVERNIGHT_RATE_DAY_COUNTS,
     average_monthly_index,
@@ -32,9 +31,7 @@ from financetoolkit.economics.sources import (
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     EURO_AREA_MEMBERS,
     finalize_dataset,
@@ -47,7 +44,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class PricesEconomics(EconomicsBase):
+class PricesEconomics:
     """
     Prices: consumer prices and inflation, purchasing power, producer, export and import prices, house, rent and commercial real estate prices, and commodity prices.
     """

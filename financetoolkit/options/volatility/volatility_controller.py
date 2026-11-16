@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.options import helpers
-from financetoolkit.options.base.base_controller import OptionsBase, _days_to_expiration
+from financetoolkit.options.helpers import get_days_to_expiration
 from financetoolkit.options.pricing import black_scholes_model
 from financetoolkit.options.volatility import risk_neutral_density_model, svi_model
 from financetoolkit.utilities import logger_model
@@ -33,7 +33,7 @@ MINIMUM_EXPIRATIONS_FOR_CALENDAR_CHECK = 2
 
 @filter_shown_columns
 @track_sources
-class VolatilityOptions(OptionsBase):
+class VolatilityOptions:
     """
     Implied volatility, the SVI volatility surface and the risk-neutral density.
     """
@@ -199,7 +199,7 @@ class VolatilityOptions(OptionsBase):
                 (
                     date
                     for date in self.get_option_chains(show_expiration_dates=True)
-                    if _days_to_expiration(date) >= 1
+                    if get_days_to_expiration(date) >= 1
                 ),
                 None,
             )
@@ -241,7 +241,7 @@ class VolatilityOptions(OptionsBase):
 
             for strike_price, row in option_chain.iterrows():
                 # Days to expiration feed the time to expiration in the Black-Scholes model.
-                days_to_expiration = _days_to_expiration(option_chains.name)
+                days_to_expiration = get_days_to_expiration(option_chains.name)
 
                 # Numerically finds the volatility matching the market option price.
                 implied_volatility_value = black_scholes_model.get_implied_volatility(
@@ -491,7 +491,7 @@ class VolatilityOptions(OptionsBase):
         }
 
         for expiration_date in expiration_dates:
-            time_to_expiration = _days_to_expiration(expiration_date) / 365
+            time_to_expiration = get_days_to_expiration(expiration_date) / 365
 
             if time_to_expiration <= 0:
                 continue
@@ -811,7 +811,7 @@ class VolatilityOptions(OptionsBase):
             if risk_free_rate is not None
             else self._risk_free_rate.loc[current_period]
         )
-        time_to_expiration = _days_to_expiration(expiration_date) / 365
+        time_to_expiration = get_days_to_expiration(expiration_date) / 365
 
         density: dict[str, pd.Series] = {}
 

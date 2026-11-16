@@ -9,7 +9,6 @@ from financetoolkit.helpers import (
     get_goodwill_and_intangible_assets,
 )
 from financetoolkit.models import helpers
-from financetoolkit.models.base.base_controller import ModelsBase
 from financetoolkit.models.distress import (
     altman_model,
     chs_model,
@@ -39,7 +38,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class DistressModels(ModelsBase):
+class DistressModels:
     """
     Bankruptcy and credit risk models: the Altman, Ohlson, Zmijewski, Springate, Grover, Fulmer, Taffler and Campbell-Hilscher-Szilagyi scores, Merton's distance to default and the synthetic credit rating.
     """

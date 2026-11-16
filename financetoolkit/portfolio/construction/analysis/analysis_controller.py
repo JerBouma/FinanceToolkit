@@ -8,12 +8,8 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.portfolio.construction.analysis import backtest_model
-from financetoolkit.portfolio.construction.base.base_controller import (
-    BENCHMARK_TICKER,
-    PORTFOLIO_TICKER,
-    PortfolioConstructionBase,
-)
 from financetoolkit.portfolio.construction.optimization import optimization_model
+from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -51,7 +47,7 @@ DEFAULT_BACKTEST_METHODS = (
 
 @filter_shown_columns
 @track_sources
-class AnalysisConstruction(PortfolioConstructionBase):
+class AnalysisConstruction:
     """
     Analysis of a set of weights: risk contributions, diversification and risk metrics, the discrete allocation and the walk-forward optimization backtest.
     """

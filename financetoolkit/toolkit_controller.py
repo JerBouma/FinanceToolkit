@@ -1651,10 +1651,11 @@ class Toolkit:
         if not self._basket or statement.empty:
             return statement
 
+        # The basket is made of the tickers requested, not of the tickers that have statements:
+        # a ticker without any leaves the Total empty, as a missing value does, rather than
+        # the Total quietly becoming the sum of the others.
         tickers = [
-            ticker
-            for ticker in statement.index.unique(level=0)
-            if ticker not in ("Portfolio", "Total")
+            ticker for ticker in self._tickers if ticker not in ("Portfolio", "Total")
         ]
         if len(tickers) < 2:  # noqa: PLR2004
             logger.warning(
@@ -1685,6 +1686,18 @@ class Toolkit:
                 listed,
             )
             return statement
+
+        without_statements = [
+            ticker
+            for ticker in tickers
+            if ticker not in statement.index.unique(level=0)
+        ]
+        if without_statements:
+            logger.warning(
+                "%s has no financial statements, so the Total of the basket is left empty, "
+                "as the sum of the other tickers would understate it.",
+                ", ".join(without_statements),
+            )
 
         return add_basket_total(
             statement,

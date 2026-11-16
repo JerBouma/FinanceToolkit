@@ -7,14 +7,11 @@ import itertools
 import numpy as np
 import pandas as pd
 
-from financetoolkit.risk.base.base_controller import RiskBase
 from financetoolkit.risk.dependence import copula_model, covar_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import (
-    apply_rounding,
-)
+from financetoolkit.utilities.statistics_model import apply_rounding
 
 # ruff: noqa: E501
 
@@ -23,7 +20,7 @@ MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 
 @filter_shown_columns
 @track_sources
-class DependenceRisk(RiskBase):
+class DependenceRisk:
     """
     Dependence between assets: copula fits, simulations and the best fitting copula, the tail dependence coefficient and CoVaR.
     """

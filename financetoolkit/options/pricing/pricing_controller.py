@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.options import helpers, options_model
-from financetoolkit.options.base.base_controller import OptionsBase
 from financetoolkit.options.pricing import (
     binomial_trees_model,
     black_scholes_model,
@@ -28,7 +27,7 @@ logger = logger_model.get_logger()
 
 @filter_shown_columns
 @track_sources
-class PricingOptions(OptionsBase):
+class PricingOptions:
     """
     Option pricing: Black-Scholes, binomial trees, Monte Carlo, Garman-Kohlhagen, Bjerksund-Stensland, binary, barrier and Asian options, put-call parity and strategy payoffs.
     """

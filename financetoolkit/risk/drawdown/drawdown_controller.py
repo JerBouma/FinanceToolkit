@@ -6,20 +6,17 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
-from financetoolkit.risk.base.base_controller import RiskBase
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
 
 @filter_shown_columns
 @track_sources
-class DrawdownRisk(RiskBase):
+class DrawdownRisk:
     """
     Drawdowns: the maximum drawdown, its duration and recovery time, the drawdown series and table, the conditional drawdown at risk and the ulcer index.
     """

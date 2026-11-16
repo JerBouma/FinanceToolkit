@@ -4,11 +4,8 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import (
-    BENCHMARK_TICKER,
-    EconometricsBase,
-)
 from financetoolkit.econometrics.causal import causal_inference_model, event_study_model
+from financetoolkit.econometrics.helpers import BENCHMARK_TICKER
 from financetoolkit.econometrics.regression import regression_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -20,7 +17,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 
 @filter_shown_columns
 @track_sources
-class CausalEconometrics(EconometricsBase):
+class CausalEconometrics:
     """
     Causal designs: instrumental variables, difference-in-differences, regression discontinuity, propensity score matching, synthetic control and the event study.
     """

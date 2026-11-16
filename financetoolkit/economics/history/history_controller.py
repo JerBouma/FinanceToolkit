@@ -23,12 +23,8 @@ from financetoolkit.economics.sources import (
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 

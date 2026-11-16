@@ -5,12 +5,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.portfolio.construction.base.base_controller import (
-    BENCHMARK_TICKER,
-    PORTFOLIO_TICKER,
-    PortfolioConstructionBase,
-)
 from financetoolkit.portfolio.construction.optimization import optimization_model
+from financetoolkit.portfolio.helpers import BENCHMARK_TICKER, PORTFOLIO_TICKER
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -24,7 +20,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class OptimizationConstruction(PortfolioConstructionBase):
+class OptimizationConstruction:
     """
     Portfolio optimizers: minimum variance, maximum Sharpe, mean-variance, the efficient frontier, risk parity, hierarchical and nested clustered methods, inverse volatility, CVaR, drawdown, Omega, diversification, tracking error, growth optimal, resampled and Black-Litterman weights.
     """

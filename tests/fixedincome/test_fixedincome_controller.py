@@ -8,7 +8,7 @@ import pytest
 from financetoolkit.fixedincome import fixedincome_controller
 from financetoolkit.fixedincome.sources import fred_model as fixedincome_fred_model
 from financetoolkit.fixedincome.sources import ecb_model as fixedincome_ecb_model
-from financetoolkit.fixedincome.base import base_controller
+from financetoolkit.fixedincome.helpers import maturity_in_years
 
 
 def test_fixedincome_controller_initialization(recorder):
@@ -102,14 +102,14 @@ def test_ice_bofa_option_adjusted_spread_is_decimal(monkeypatch):
 
 def test_maturity_in_years_reads_days_and_weeks():
     """Day and week labels, which the MCP server accepts, count calendar days of a 365-day year."""
-    assert base_controller._maturity_in_years("1D") == 1 / 365
-    assert base_controller._maturity_in_years("1W") == 7 / 365
-    assert base_controller._maturity_in_years("2w") == 14 / 365
-    assert base_controller._maturity_in_years("36M") == 3.0
-    assert base_controller._maturity_in_years("10Y") == 10.0
-    assert base_controller._maturity_in_years("6M") == 0.5
+    assert maturity_in_years("1D") == 1 / 365
+    assert maturity_in_years("1W") == 7 / 365
+    assert maturity_in_years("2w") == 14 / 365
+    assert maturity_in_years("36M") == 3.0
+    assert maturity_in_years("10Y") == 10.0
+    assert maturity_in_years("6M") == 0.5
     with pytest.raises(ValueError):
-        base_controller._maturity_in_years("ten years")
+        maturity_in_years("ten years")
 
 
 @pytest.fixture

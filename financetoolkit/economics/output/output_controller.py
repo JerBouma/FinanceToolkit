@@ -2,10 +2,7 @@
 
 __docformat__ = "google"
 
-from financetoolkit.economics.base.base_controller import EconomicsBase
-from financetoolkit.economics.helpers import (
-    buffered_start_date,
-)
+from financetoolkit.economics.helpers import buffered_start_date
 from financetoolkit.economics.sources import (
     eurostat_model,
     gmdb_model,
@@ -15,12 +12,8 @@ from financetoolkit.economics.sources import (
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -29,7 +22,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class OutputEconomics(EconomicsBase):
+class OutputEconomics:
     """
     National accounts and trade: GDP, its growth and deflator, real GDP per capita, the output gap, consumption, investment, exports, imports, the trade balance and the current account.
     """

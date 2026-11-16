@@ -1618,6 +1618,21 @@ def test_price_targets_without_any_published_target_have_no_latest_date(response
         # A flash estimate released in the month it covers keeps the year.
         ("Inflation Rate YoY (Oct)", "2026-10-31", "Inflation Rate YoY", "2026-10"),
         ("GDP Growth Rate QoQ (Q4)", "2026-02-14", "GDP Growth Rate QoQ", "2025Q4"),
+        # A survey published ahead of its month keeps the year, or takes the next one.
+        (
+            "Consumer Confidence (Nov)",
+            "2025-10-28 07:00",
+            "Consumer Confidence",
+            "2025-11",
+        ),
+        (
+            "Consumer Confidence (Jan)",
+            "2025-12-23 07:00",
+            "Consumer Confidence",
+            "2026-01",
+        ),
+        # A figure two months later than the release month is last year's.
+        ("Retail Sales YoY (Dec)", "2026-10-15", "Retail Sales YoY", "2025-12"),
         ("GDP Growth Rate QoQ (Q3)", "2026-10-29", "GDP Growth Rate QoQ", "2026Q3"),
         (
             "Continuing Jobless Claims (Dec/27)",

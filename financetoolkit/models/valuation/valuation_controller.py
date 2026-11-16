@@ -7,7 +7,6 @@ from functools import cache
 import pandas as pd
 
 from financetoolkit.models import helpers
-from financetoolkit.models.base.base_controller import ModelsBase
 from financetoolkit.models.profitability import growth_model
 from financetoolkit.models.valuation import (
     enterprise_model,
@@ -41,7 +40,7 @@ LONG_RUN_GROWTH_RATE = 0.025
 
 @filter_shown_columns
 @track_sources
-class ValuationModels(ModelsBase):
+class ValuationModels:
     """
     Valuation models: intrinsic value, discounted cash flows, dividend discount models, the cost of capital, economic value added and peer comparison.
     """

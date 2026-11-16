@@ -6,7 +6,6 @@ import itertools
 
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import EconometricsBase
 from financetoolkit.econometrics.stationarity import (
     causality_model,
     cointegration_model,
@@ -26,7 +25,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class StationarityEconometrics(EconometricsBase):
+class StationarityEconometrics:
     """
     Unit root tests (ADF, KPSS, Phillips-Perron, Zivot-Andrews), Engle-Granger and Johansen cointegration and Granger causality.
     """

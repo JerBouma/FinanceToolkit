@@ -7,7 +7,6 @@ import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.risk import risk_model
-from financetoolkit.risk.base.base_controller import RiskBase
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -22,7 +21,7 @@ from financetoolkit.utilities.statistics_model import (
 
 @filter_shown_columns
 @track_sources
-class DistributionRisk(RiskBase):
+class DistributionRisk:
     """
     The shape of the return distribution: variance, skewness, kurtosis, the Hill estimator, the tail ratio, the mean absolute deviation, the coefficient of variation, autocorrelation, the Hurst exponent and the significance of a move.
     """

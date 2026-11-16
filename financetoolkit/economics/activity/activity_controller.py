@@ -5,10 +5,7 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit import helpers
-from financetoolkit.economics.base.base_controller import EconomicsBase
-from financetoolkit.economics.helpers import (
-    check_period_type,
-)
+from financetoolkit.economics.helpers import check_period_type
 from financetoolkit.economics.sources import (
     bea_model,
     census_model,
@@ -23,12 +20,8 @@ from financetoolkit.economics.sources import (
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -37,7 +30,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class ActivityEconomics(EconomicsBase):
+class ActivityEconomics:
     """
     Activity and sentiment: consumer and business confidence, the composite leading indicator, share prices, retail sales, industrial production, housing starts, real personal income, the recession indicator, supply chain pressure, chokepoint transits and the economic calendar.
     """

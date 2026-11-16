@@ -8,7 +8,6 @@ from financetoolkit.economics.helpers import (
     resample_to_period,
     validate_period,
 )
-from financetoolkit.fixedincome.base.base_controller import FixedIncomeBase
 from financetoolkit.fixedincome.sources import ecb_model, euribor_model, fed_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -23,7 +22,7 @@ logger = logger_model.get_logger()
 
 @filter_shown_columns
 @track_sources
-class PolicyFixedIncome(FixedIncomeBase):
+class PolicyFixedIncome:
     """
     Money market and policy rates: EURIBOR, the European Central Bank rates and the Federal Reserve rates.
     """

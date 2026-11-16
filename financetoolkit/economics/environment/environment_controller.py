@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     resample_to_period,
@@ -14,12 +13,8 @@ from financetoolkit.economics.sources import eex_model, ngfs_model, oecd_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -28,7 +23,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class EnvironmentEconomics(EconomicsBase):
+class EnvironmentEconomics:
     """
     Environment and climate: renewable energy, the carbon footprint, the EU carbon price and the NGFS climate scenarios.
     """

@@ -626,6 +626,58 @@ def test_goodwill_and_intangible_assets_fall_back_on_the_separate_rows():
     assert result.loc["B", "2024"] == 0
 
 
+def test_goodwill_and_intangible_assets_without_some_of_the_rows():
+    """
+    A supplied balance sheet can hold the combined row without the separate ones, or the
+    separate ones without the combined row: what is there is used.
+    """
+    periods = ["2022", "2023"]
+    combined_only = pd.DataFrame(
+        [[100.0, 110.0], [50.0, np.nan], [1000.0, 1100.0]],
+        index=pd.MultiIndex.from_tuples(
+            [
+                ("A", "Goodwill and Intangible Assets"),
+                ("B", "Goodwill and Intangible Assets"),
+                ("A", "Total Assets"),
+            ]
+        ),
+        columns=periods,
+    )
+
+    result = helpers.get_goodwill_and_intangible_assets(combined_only)
+
+    assert result.loc["A"].tolist() == [100.0, 110.0]
+    assert result.loc["B", "2022"] == 50.0
+    assert np.isnan(result.loc["B", "2023"])
+
+    separate_only = pd.DataFrame(
+        [[60.0, 70.0], [40.0, np.nan]],
+        index=pd.MultiIndex.from_tuples(
+            [("A", "Goodwill"), ("A", "Intangible Assets")]
+        ),
+        columns=periods,
+    )
+
+    assert helpers.get_goodwill_and_intangible_assets(separate_only).loc[
+        "A"
+    ].tolist() == [100.0, 70.0]
+
+
+def test_add_basket_total_is_empty_for_a_ticker_without_statements():
+    """A ticker with no statement at all leaves the Total empty, as a missing value does."""
+    statement = pd.DataFrame(
+        {"2023": [10.0, 30.0], "2024": [12.0, 33.0]},
+        index=pd.MultiIndex.from_product([["AAPL", "MSFT"], ["Revenue"]]),
+    )
+
+    result = helpers.add_basket_total(
+        statement, ["AAPL", "MSFT", "NVDA"], not_summed=[]
+    )
+
+    assert result.loc[("Total", "Revenue")].isna().all()
+    assert result.loc[("AAPL", "Revenue"), "2024"] == 12.0
+
+
 def test_add_basket_total_sums_the_tickers_per_item():
     statement = pd.DataFrame(
         {

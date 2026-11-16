@@ -8,7 +8,10 @@ from functools import cached_property
 import pandas as pd
 
 from financetoolkit.helpers import LazyDict, handle_portfolio
-from financetoolkit.risk.helpers import determine_within_historical_data
+from financetoolkit.risk.helpers import (
+    determine_within_historical_data,
+    mask_non_trading_days,
+)
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
@@ -164,23 +167,16 @@ class RiskBase:
         self, column: str, period: str = "daily", within_period: bool = False
     ) -> pd.DataFrame:
         """
-        The `column` prices on the dates each ticker traded.
-
-        On a date only another ticker or the benchmark traded, a ticker's last price is
-        carried forward as a flat bar without a Return (see
-        `historical_model.fill_non_trading_days`). A measure on the prices themselves (a
-        daily range, a price change) would count it as a day without a move, so the price
-        is NaN there, as its Return is.
+        The `column` prices on the dates each ticker traded, see
+        `helpers.mask_non_trading_days`.
         """
         frame = (
             self._within_historical_data[period]
             if within_period
             else self._historical_data[period]
         )
-        has_return = frame["Return"].notna()
-        inside = has_return.cummax() & has_return[::-1].cummax()[::-1]
 
-        return frame[column].mask(~has_return & inside)
+        return mask_non_trading_days(frame, column)
 
     def _get_price_column(self, period: str, column: str) -> pd.DataFrame:
         # Reads the plain period-frequency history rather than the "within period" multi-index, so period="daily" simply means daily observations here and (unlike every within-period method above) needs no intraday data.  # noqa: E501

@@ -79,6 +79,32 @@ def determine_within_historical_data(
     return period_data
 
 
+def mask_non_trading_days(frame: pd.DataFrame, column: str) -> pd.DataFrame:
+    """
+    The `column` prices of a historical data frame on the dates each ticker traded.
+
+    On a date only another ticker or the benchmark traded, a ticker's last price is
+    carried forward as a flat bar without a Return (see
+    `historical_model.fill_non_trading_days`). A measure on the prices themselves (a daily
+    range, a price change, the number of observations) would count it as a day without a
+    move, so the price is NaN there, as its Return is. A ticker's first price has no
+    Return by construction and is kept, as is everything after its last Return.
+
+    Args:
+        frame (pd.DataFrame): The historical data of one period, with "Return" and `column`.
+        column (str): The price column, e.g. "Close".
+
+    Returns:
+        pd.DataFrame: The prices, NaN on the dates the ticker did not trade.
+    """
+    prices = frame[column]
+    has_return = frame["Return"].reindex(columns=prices.columns).notna()
+    after_first_price = prices.notna().cumsum() > 1
+    up_to_last_return = has_return[::-1].cummax()[::-1]
+
+    return prices.mask(~has_return & after_first_price & up_to_last_return)
+
+
 def as_float(value: float | np.ndarray | pd.Series | pd.DataFrame) -> float:
     """
     Reduces a single-value estimate to a float. The Student-t and Extreme Value Theory

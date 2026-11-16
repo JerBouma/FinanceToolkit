@@ -1589,3 +1589,26 @@ def test_residual_value_uses_the_market_cap_of_the_previous_close():
     # February is valued at the last close of January (31 January: 120).
     assert np.isnan(monthly.loc["2024-01", "A"])
     assert monthly.loc["2024-02", "A"] == pytest.approx(0.2 * 120.0)
+
+
+def test_get_appraisal_ratio_with_a_rolling_residual_standard_deviation():
+    index = pd.period_range("2020-01", periods=24, freq="M")
+    rng = np.random.default_rng(3)
+    residuals = pd.DataFrame({"A": rng.normal(0, 0.02, 24)}, index=index)
+    jensens_alpha = pd.DataFrame({"A": rng.normal(0.01, 0.01, 24)}, index=index)
+
+    ratio = performance_model.get_appraisal_ratio(jensens_alpha, residuals, 12)
+
+    # Each ratio divides by the residuals of its own window only.
+    expected = jensens_alpha / residuals.rolling(12).std()
+    pd.testing.assert_frame_equal(ratio, expected)
+    assert ratio.iloc[:11].isna().all().all()
+
+
+def test_get_jensens_alpha_needs_matching_types():
+    returns = pd.DataFrame({"A": [0.01, 0.02]})
+
+    with pytest.raises(TypeError):
+        performance_model.get_jensens_alpha(
+            returns, 0.0, pd.Series([1.0, 1.0]), pd.Series([0.01, 0.01])
+        )

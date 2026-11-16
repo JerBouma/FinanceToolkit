@@ -11,7 +11,13 @@ import pandas as pd
 
 from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.performance import performance_model
-from financetoolkit.performance.helpers import determine_within_dataset
+from financetoolkit.performance.helpers import (
+    compound_risk_free_rate,
+    determine_within_dataset,
+    get_observations_per_year,
+    get_risk_free_rate_per_date,
+    get_risk_free_rate_per_observation,
+)
 from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.risk.risk_model import (
     get_kurtosis,
@@ -103,7 +109,9 @@ class Performance:
         Args:
             tickers (list[str] | Callable[[], list[str]]): The tickers to use for the calculations.
             historical_data (dict[str, pd.DataFrame]): The historical data to use for the calculations.
-            risk_free_rate_data (dict[str, pd.Series]): The annualized risk free rate per period frequency.
+            risk_free_rate_data (dict[str, pd.Series]): The annualized risk free rate per period frequency. The
+                daily rate is compounded into the risk free return of every period; the other periods are
+                only used without daily historical data.
             quarterly (bool | None, optional): Whether to use quarterly data. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to 4.
             start_date (str | None, optional): The start date to use for the calculations. Defaults to None.
@@ -171,12 +179,9 @@ class Performance:
 
         # Historical Data
         self._historical_data = historical_data
-        # The risk free rate is quoted as an annualized yield, so it is converted to the matching frequency. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
-        self._risk_free_rate_data = LazyDict(
-            lambda frequency: convert_annualized_rate_to_period(
-                risk_free_rate_data[frequency], frequency
-            )
-        )
+        # The risk free rate is quoted as an annualized yield, so it is converted to the risk free return of each period: compounded over the dates in each period that hold a return, as the period's return compounds them, so a partial period (such as the current year) earns the rate of the dates it covers. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
+        self._annualized_risk_free_rate_data = risk_free_rate_data
+        self._risk_free_rate_data = LazyDict(self._get_risk_free_rate)
 
         # Fama and French
         # The Fama and French factors per region, retrieved once each.
@@ -218,6 +223,60 @@ class Performance:
         """The tickers other than the Portfolio."""
         return [ticker for ticker in self._tickers if ticker != "Portfolio"]
 
+    @cached_property
+    def _daily_returns(self) -> pd.DataFrame:
+        """The daily returns of every column, including the Benchmark."""
+        daily_historical_data = self._historical_data["daily"]
+
+        if daily_historical_data.empty or "Return" not in daily_historical_data:
+            return pd.DataFrame()
+
+        return daily_historical_data["Return"]
+
+    @cached_property
+    def _risk_free_rate_per_date(self) -> pd.Series:
+        """
+        The risk free return earned on each date of the daily returns since the date before,
+        see `financetoolkit.performance.helpers.get_risk_free_rate_per_date`.
+        """
+        return get_risk_free_rate_per_date(
+            self._annualized_risk_free_rate_data["daily"], self._daily_returns
+        )
+
+    def _get_risk_free_rate(self, period: str) -> pd.Series:
+        """
+        The risk free return per period, the rate subtracted from the returns of that period.
+
+        For period="daily" this is the risk free return of each date since the date before.
+        The other periods compound it over the dates in each period that hold a return, as the
+        return of a period compounds the daily returns within it, so a period the data covers
+        in part earns the risk free rate of the dates it covers. Without daily returns the
+        annualized rate of the period is converted with the periods in a year instead.
+
+        Args:
+            period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
+
+        Returns:
+            pd.Series: The risk free return per period, as a decimal.
+
+        Raises:
+            KeyError: For any other period, as a dictionary of the periods would.
+        """
+        if period not in PERIODS_PER_YEAR:
+            raise KeyError(period)
+
+        if self._daily_returns.empty:
+            return convert_annualized_rate_to_period(
+                self._annualized_risk_free_rate_data[period], period
+            )
+
+        if period == "daily":
+            return self._risk_free_rate_per_date
+
+        return compound_risk_free_rate(
+            self._risk_free_rate_per_date, self._daily_returns, period
+        )
+
     def _add_excess_return(self, period: str) -> pd.DataFrame:
         """
         The daily or intraday historical data with an "Excess Return" block, the data the
@@ -237,8 +296,14 @@ class Performance:
             return self._add_intraday_excess_return(intraday_historical_data.copy())
 
         daily_historical_data = self._historical_data["daily"]
-        excess_return = performance_model.get_excess_return(
-            daily_historical_data["Return"], self._risk_free_rate_data["daily"]
+        # Each ticker earns the risk free rate per observation of its own calendar: a
+        # trading day of it per return, or the calendar days since its previous return
+        # for a ticker that trades on weekends.
+        excess_return = daily_historical_data["Return"] - (
+            get_risk_free_rate_per_observation(
+                self._annualized_risk_free_rate_data["daily"],
+                daily_historical_data["Return"],
+            )
         )
         excess_return.columns = pd.MultiIndex.from_product(
             [["Excess Return"], excess_return.columns]
@@ -286,31 +351,42 @@ class Performance:
 
         return pd.concat([intraday_data, excess_return], axis=1)
 
-    def _get_observations_per_year(self, period: str) -> float:
+    def _get_observations_per_year(self, period: str) -> pd.Series:
         """
-        The number of observations in a year of the returns nested within `period`, used to
-        annualize a ratio computed from them. Those are daily returns (252 a year), except
-        for period="daily" and "intraday", which nest the intraday bars: a year then holds
-        252 trading days times the median number of bars per day.
+        The number of observations in a year of the returns nested within `period`, per
+        ticker, used to annualize a ratio computed from them. Those are daily returns: 252 a
+        year for a ticker that trades on trading days, and the observations per year of its
+        365 for a ticker that also trades on weekends, such as a cryptocurrency
+        (see `financetoolkit.performance.helpers.get_observations_per_year`). For
+        period="daily" and "intraday", which nest the intraday bars, a year holds those days
+        times the median number of bars per day.
 
         Args:
             period (str): The period whose within-period observations are annualized.
 
         Returns:
-            float: The number of within-period observations per year.
+            pd.Series: The number of within-period observations per year, indexed by ticker.
         """
+        observations_per_year = (
+            get_observations_per_year(self._daily_returns)
+            if not self._daily_returns.empty
+            else pd.Series(
+                float(PERIODS_PER_YEAR["daily"]), index=self._tickers_without_portfolio
+            )
+        )
+
         if (
             period not in ("daily", "intraday")
             or self._historical_data["intraday"].empty
         ):
-            return PERIODS_PER_YEAR["daily"]
+            return observations_per_year
 
         bars = self._get_within_historical_data(period).index.get_level_values(1)
         bars_per_day = (
             pd.Series(1, index=bars).groupby(bars.asfreq("D")).size().median()
         )
 
-        return PERIODS_PER_YEAR["daily"] * float(bars_per_day)
+        return observations_per_year * float(bars_per_day)
 
     def _get_within_historical_data(self, period: str) -> pd.DataFrame:
         """
@@ -1027,11 +1103,11 @@ class Performance:
 
         | Date   |     JPM |      GS |      MS |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.2426 |  0.2808 |  0.3177 |
-        | 2022   | -0.1567 | -0.173  | -0.1915 |
-        | 2023   |  0.2334 |  0.276  |  0.3055 |
-        | 2024   |  0.2077 |  0.28   |  0.2632 |
-        | 2025   |  0.1702 |  0.221  |  0.2174 |
+        | 2021   |  0.2426 |  0.2807 |  0.3175 |
+        | 2022   | -0.1567 | -0.173  | -0.1912 |
+        | 2023   |  0.2332 |  0.2759 |  0.3057 |
+        | 2024   |  0.2076 |  0.2801 |  0.2632 |
+        | 2025   |  0.1702 |  0.2211 |  0.2174 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2295,11 +2371,11 @@ class Performance:
 
         | Date   |     UNH |     JNJ |     PFE |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.2601 | -0.0093 |  0.6493 |
-        | 2022   |  0.1608 |  0.0945 | -0.0261 |
-        | 2023   | -0.0951 | -0.2013 | -0.5539 |
-        | 2024   | -0.0911 | -0.0803 | -0.1158 |
-        | 2025   | -0.4155 |  0.4249 | -0.0976 |
+        | 2021   |  0.2601 | -0.0093 |  0.6494 |
+        | 2022   |  0.1609 |  0.0946 | -0.0262 |
+        | 2023   | -0.0949 | -0.2011 | -0.5534 |
+        | 2024   | -0.0911 | -0.0802 | -0.1162 |
+        | 2025   | -0.4152 |  0.4253 | -0.0973 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2421,11 +2497,11 @@ class Performance:
 
         | Date   |     UNP |     UPS |     FDX |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.2344 |  0.3677 | -0.0077 |
-        | 2022   | -0.2789 | -0.2134 | -0.3426 |
-        | 2023   |  0.2003 | -0.0898 |  0.4279 |
-        | 2024   | -0.163  | -0.3386 |  0.1571 |
-        | 2025   | -0.0065 | -0.2648 |  0.008  |
+        | 2021   |  0.2342 |  0.3679 | -0.0077 |
+        | 2022   | -0.2787 | -0.2133 | -0.3425 |
+        | 2023   |  0.2008 | -0.0896 |  0.4283 |
+        | 2024   | -0.1628 | -0.3384 |  0.1571 |
+        | 2025   | -0.0059 | -0.2644 |  0.0084 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2581,11 +2657,13 @@ class Performance:
         documented approximation, `Var[SR_trials]` is estimated from the variance of an auxiliary
         *rolling* Sharpe ratio series (see `get_rolling_sharpe_ratio`) computed over a
         `trials_window`-sized window across the full return history, and `n_trials` defaults to the
-        number of valid (non-NaN) values in that same rolling series. That series is built from the
+        number of non-overlapping `trials_window`-sized windows in that return history (at least 1):
+        overlapping windows share most of their returns, so counting each of them as a trial would
+        overstate N (Bailey and Lopez de Prado, 2014). That series is built from the
         same returns as the Sharpe ratio being deflated, so both are on the same scale: the daily
         excess returns (the observations within each period) for the Sharpe ratio per period, and
-        the excess returns of `period` itself for a rolling Sharpe ratio. This treats each rolling
-        window as if it were one "trial" — a reasonable proxy for how dispersed the Sharpe ratio
+        the excess returns of `period` itself for a rolling Sharpe ratio. This treats each window
+        as if it were one "trial" — a reasonable proxy for how dispersed the Sharpe ratio
         could plausibly have been under different choices, but not a substitute for passing the
         actual number of variations tried (via `n_trials`) when that is known, since the quality of
         the correction depends directly on it.
@@ -2601,6 +2679,7 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling period to use for the calculation. If you select
             period = 'monthly' and set rolling to 12 you obtain the rolling 12-month Sharpe Ratio.
+            Defaults to None, which calculates the Sharpe ratio within each period.
             method (str, optional): Which Sharpe ratio to calculate, one of "standard", "lo",
             "adjusted", "probabilistic" or "deflated", as described above. Defaults to "standard".
             benchmark_sharpe_ratio (float, optional): The hypothesized or benchmark Sharpe ratio
@@ -2617,9 +2696,10 @@ class Performance:
             n_trials (int, optional): The number of independent (or effectively independent)
             strategy variations, parameter combinations, or lookback windows tried before
             arriving at the reported Sharpe ratio. Only used when method="deflated". Defaults to
-            None, which falls back to the number of valid values in the auxiliary rolling Sharpe
-            ratio series described above. Pass this explicitly whenever the actual number of trials
-            is known.
+            None, which falls back to the number of non-overlapping windows of `trials_window`
+            observations the returns hold (at least 1), since the overlapping windows of the
+            auxiliary rolling Sharpe ratio series are not independent trials. Pass this explicitly
+            whenever the actual number of trials is known.
             lags (int, optional): The number of autocorrelation lags in Lo's η(q). Only used when
             method="lo". Defaults to None, which uses the Newey and West (1994) rule
             floor(4 * (n / 100)^(2/9)) on the n observations (4 for a year of daily returns),
@@ -2633,9 +2713,12 @@ class Performance:
                 values. Defaults to False.
             annualize (bool, optional): Whether to annualize the Sharpe ratio, multiplying it by
                 the square root of the number of observations in a year: 252 for the daily
-                returns within each period, 252 times the median number of bars per day for the
-                intraday returns within a day (period="daily" with an intraday_period), or the
-                periods in a year for a rolling Sharpe ratio (e.g. 12 for monthly). Only for method="standard" and "adjusted", since the
+                returns within each period (365 for a ticker that trades on weekends, such as a
+                cryptocurrency), those
+                days times the median number of bars per day for the intraday returns within a
+                day (period="daily" with an intraday_period), or the periods in a year for a
+                rolling Sharpe ratio (e.g. 12 for monthly, and the daily observations per year
+                of each ticker for daily). Only for method="standard" and "adjusted", since the
                 probabilistic and deflated methods return probabilities; method="lo" is annualized
                 either way. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2681,11 +2764,11 @@ class Performance:
 
         | Date   |     SPY |     TLT |     GLD |   BTCUSD |
         |:-------|--------:|--------:|--------:|---------:|
-        | 2021   |  1.9355 | -0.2283 | -0.6241 |   0.6316 |
-        | 2022   | -0.608  | -0.9215 |  0.4971 |  -1.1891 |
-        | 2023   |  1.1567 |  0.7714 |  0.8362 |   1.6139 |
-        | 2024   |  1.5203 | -0.6917 |  1.4238 |   1.3959 |
-        | 2025   |  0.3606 |  0.2664 |  1.7105 |  -0.1906 |
+        | 2021   |  2.022  | -0.3656 | -0.5163 |   0.9441 |
+        | 2022   | -0.8297 | -1.8879 | -0.1655 |  -1.3294 |
+        | 2023   |  1.5607 |  0.03   |  0.6757 |   2.2623 |
+        | 2024   |  1.5037 | -0.811  |  1.3751 |   1.666  |
+        | 2025   |  0.7247 |  0.0591 |  2.3919 |  -0.0457 |
         """
         if method not in ("standard", "lo", "adjusted", "probabilistic", "deflated"):
             raise ValueError(
@@ -2717,20 +2800,49 @@ class Performance:
             )
             sharpe_ratio = performance_model.get_sharpe_ratio(excess_return)
 
+        # The observations in a year of the returns the ratio is computed from, per ticker:
+        # the periods in a year for a rolling ratio (the daily observations of each ticker
+        # for period="daily", as a ticker trading on weekends has more), the daily (or
+        # intraday) returns within each period otherwise.
+        if rolling:
+            observations_per_year = (
+                get_observations_per_year(self._daily_returns)
+                if period == "daily"
+                else pd.Series(
+                    float(PERIODS_PER_YEAR[period]), index=excess_return.columns
+                )
+            )
+        else:
+            observations_per_year = self._get_observations_per_year(period)
+        observations_per_year = observations_per_year.reindex(
+            excess_return.columns
+        ).fillna(float(PERIODS_PER_YEAR["daily"]))
+
         if method == "standard":
             result = sharpe_ratio
         elif method == "lo":
-            # Lo's ratio is annualized by construction, over the observations of a year:
-            # the period returns for a rolling ratio, the daily (or intraday) returns
-            # within each period otherwise.
-            if rolling:
-                result = performance_model.get_rolling_lo_sharpe_ratio(
-                    excess_return, rolling, PERIODS_PER_YEAR[period], lags
-                )
-            else:
-                result = performance_model.get_lo_sharpe_ratio(
-                    excess_return, self._get_observations_per_year(period), lags
-                )
+            # Lo's ratio is annualized by construction, with q the observations in a year
+            # of each ticker.
+            result = pd.concat(
+                [
+                    (
+                        performance_model.get_rolling_lo_sharpe_ratio(
+                            excess_return[[column]],
+                            rolling,
+                            observations_per_year[column],
+                            lags,
+                        )
+                        if rolling
+                        else performance_model.get_lo_sharpe_ratio(
+                            excess_return[[column]],
+                            observations_per_year[column],
+                            lags,
+                        )
+                    )
+                    for column in excess_return.columns
+                ],
+                axis=1,
+            ).set_axis(excess_return.columns, axis=1)
         else:
             if rolling:
                 skewness = get_rolling_skewness(excess_return, rolling)
@@ -2773,8 +2885,14 @@ class Performance:
                     trials_returns,
                     trials_window if trials_window is not None else default_window,
                 )
+                # Overlapping windows share most of their returns, so they are not
+                # independent trials (Bailey and Lopez de Prado, 2014): the default counts
+                # the non-overlapping windows the returns hold.
+                window = trials_window if trials_window is not None else default_window
                 trials = (
-                    n_trials if n_trials is not None else trials_sharpe_ratio.count()
+                    n_trials
+                    if n_trials is not None
+                    else (trials_returns.count() // window).clip(lower=1)
                 )
 
                 result = performance_model.get_deflated_sharpe_ratio(
@@ -2790,9 +2908,7 @@ class Performance:
             # The rolling ratio uses the returns of each period, the one per period the
             # observations within it: daily returns, or intraday bars within a day.
             result = result * np.sqrt(
-                PERIODS_PER_YEAR[period]
-                if rolling
-                else self._get_observations_per_year(period)
+                observations_per_year.reindex(result.columns).to_numpy()
             )
 
         return finalize_dataset(
@@ -2911,11 +3027,11 @@ class Performance:
 
         | Date   |       V |      MA |     AXP |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.0058 |  0.0163 |  0.1221 |
-        | 2022   | -0.0049 | -0.001  | -0.0138 |
-        | 2023   |  0.129  |  0.1007 |  0.0922 |
-        | 2024   |  0.0911 |  0.1065 |  0.1909 |
-        | 2025   |  0.038  |  0.0273 |  0.0726 |
+        | 2021   |  0.0057 |  0.0164 |  0.1224 |
+        | 2022   | -0.0051 | -0.0011 | -0.0138 |
+        | 2023   |  0.1287 |  0.1004 |  0.0924 |
+        | 2024   |  0.0911 |  0.1066 |  0.1909 |
+        | 2025   |  0.0374 |  0.0273 |  0.0726 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2953,7 +3069,7 @@ class Performance:
     def get_ulcer_performance_index(
         self,
         period: str | None = None,
-        rolling: int = 14,
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2967,8 +3083,8 @@ class Performance:
         The formula is as follows:
 
         - Ulcer Performance Index = (Period Return - Risk-Free Rate) / Ulcer Index
-        - Ulcer Index = SQRT(MEAN(Drawdown^2)), with each day's drawdown measured from the highest value of the
-        trailing `rolling` days within the period
+        - Ulcer Index = SQRT(MEAN(Drawdown^2)), with each day's drawdown measured from the highest value since
+        the start of the period (Martin's definition), or of the trailing `rolling` days within the period
 
         It measures the excess return earned per unit of drawdown pain: the depth and the duration of the declines
         both weigh in, where the Sharpe Ratio treats upward and downward swings alike. Similar to the Sharpe Ratio,
@@ -2979,7 +3095,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
-            rolling (int): The rolling period to use to calculate the Ulcer Index. Defaults to 14.
+            rolling (int | None, optional): The number of trailing days whose highest value each day's drawdown
+                is measured from. Defaults to None, which measures it from the highest value since the start of
+                the period, as Martin (1987) defines the Ulcer Index.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -3021,11 +3139,11 @@ class Performance:
 
         | Date   |      VZ |       T |    TMUS |
         |:-------|--------:|--------:|--------:|
-        | 2021   | -3.7069 | -2.0886 | -3.7462 |
-        | 2022   | -4.3869 |  0.7109 |  4.3646 |
-        | 2023   | -0.3236 | -1.4171 |  3.5546 |
-        | 2024   |  2.6617 | 15.933  | 13.5977 |
-        | 2025   |  1.4725 |  2.6824 | -2.3337 |
+        | 2021   | -1.3286 | -0.567  | -1.2683 |
+        | 2022   | -1.2498 |  0.2852 |  3.6941 |
+        | 2023   | -0.0979 | -0.3581 |  1.6599 |
+        | 2024   |  1.8772 | 11.6307 | 11.5463 |
+        | 2025   |  0.767  |  1.2916 | -0.7867 |
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -3358,11 +3476,11 @@ class Performance:
 
         | Date   |      BA |     LMT |     RTX |
         |:-------|--------:|--------:|--------:|
-        | 2021   | -0.0305 |  0.014  |  0.3334 |
-        | 2022   | -0.0181 |  0.3247 |  0.109  |
-        | 2023   |  0.2136 | -0.0588 | -0.0744 |
-        | 2024   | -0.0697 |  0.0508 |  0.6619 |
-        | 2025   |  0.1203 | -0.0134 |  1.0527 |
+        | 2021   | -0.0305 |  0.014  |  0.3337 |
+        | 2022   | -0.0181 |  0.3253 |  0.1089 |
+        | 2023   |  0.214  | -0.0586 | -0.0743 |
+        | 2024   | -0.0697 |  0.0509 |  0.6627 |
+        | 2025   |  0.1205 | -0.0131 |  1.0522 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3478,10 +3596,10 @@ class Performance:
 
         | Date   |      HD |     LOW |
         |:-------|--------:|--------:|
-        | 2021   |  0.39   |  0.3481 |
+        | 2021   |  0.3901 |  0.348  |
         | 2022   | -0.1634 | -0.1482 |
-        | 2023   |  0.0932 |  0.0955 |
-        | 2024   |  0.1083 |  0.0921 |
+        | 2023   |  0.0931 |  0.0954 |
+        | 2024   |  0.1082 |  0.0921 |
         | 2025   | -0.0718 |  0.0055 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -4102,7 +4220,8 @@ class Performance:
         The formula is as follows:
 
         - Daily Excess Return = Daily Return - Daily Risk Free Rate, with Daily Risk Free Rate =
-          (1 + Annual Risk Free Rate)^(1/252) - 1
+          (1 + Annual Risk Free Rate)^(1/252) - 1 (compounded over the calendar days since the previous return,
+          on 365 days a year, when a ticker trades on weekends)
         - Lower Partial Moment (LPM) = MEAN(MAX(-Daily Excess Return, 0)^Order), averaged over all days in the
           period (days with a non-negative excess return count as 0)
         - Kappa Ratio = MEAN(Daily Excess Return) / LPM^(1/Order), per period and not annualized, with Order
@@ -4438,11 +4557,11 @@ class Performance:
 
         | Date   |     VOO |     QQQ |    SCHD |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.3176 |  0.278  |  0.3201 |
-        | 2022   | -0.235  | -0.3837 | -0.0851 |
-        | 2023   |  0.1796 |  0.4298 | -0.023  |
-        | 2024   |  0.1793 |  0.1826 |  0.0485 |
-        | 2025   |  0.1198 |  0.135  | -0.01   |
+        | 2021   |  0.3176 |  0.278  |  0.3208 |
+        | 2022   | -0.2351 | -0.3838 | -0.085  |
+        | 2023   |  0.18   |  0.4303 | -0.0226 |
+        | 2024   |  0.1793 |  0.1826 |  0.0483 |
+        | 2025   |  0.1202 |  0.1355 | -0.0095 |
         """
         mrar = self._get_morningstar_risk_adjusted_return(
             gamma, period, within_period, rolling
@@ -4549,10 +4668,10 @@ class Performance:
 
         | Date   |    VOO |    QQQ |   SCHD |
         |:-------|-------:|-------:|-------:|
-        | 2021   | 0.0148 | 0.0205 | 0.0214 |
-        | 2022   | 0.0375 | 0.0449 | 0.0339 |
-        | 2023   | 0.023  | 0.0445 | 0.0183 |
-        | 2024   | 0.0121 | 0.0145 | 0.016  |
+        | 2021   | 0.0148 | 0.0205 | 0.0215 |
+        | 2022   | 0.0375 | 0.0449 | 0.0338 |
+        | 2023   | 0.023  | 0.0444 | 0.0183 |
+        | 2024   | 0.0122 | 0.0147 | 0.0161 |
         | 2025   | 0.0125 | 0.0256 | 0.0126 |
         """
         morningstar_return = self._get_morningstar_risk_adjusted_return(
@@ -4773,11 +4892,11 @@ class Performance:
 
         |      |    AAPL |    MSFT |      KO |
         |:-----|--------:|--------:|--------:|
-        | 2021 |  0.1113 |  0.1649 |  0.0911 |
-        | 2022 | -0.056  | -0.0611 |  0.0557 |
-        | 2023 |  0.1639 |  0.1547 | -0.0248 |
-        | 2024 |  0.1137 |  0.0601 |  0.061  |
-        | 2025 |  0.0433 |  0.0694 |  0.0717 |
+        | 2021 |  0.1112 |  0.165  |  0.0913 |
+        | 2022 | -0.0559 | -0.061  |  0.0559 |
+        | 2023 |  0.1637 |  0.154  | -0.0245 |
+        | 2024 |  0.1135 |  0.0601 |  0.0606 |
+        | 2025 |  0.0434 |  0.0697 |  0.0716 |
         """
         if method not in ("discrete", "continuous"):
             raise ValueError("Please choose a method of 'discrete' or 'continuous'.")
@@ -4971,8 +5090,8 @@ class Performance:
         Also known as: CAGR, compound annual growth rate, annualized return.
 
         Args:
-            rounding (int, optional): The number of decimals to round the results to. If not provided,
-            the function will use the default rounding value set in the class instance.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -5188,8 +5307,11 @@ class Performance:
         The formula is as follows:
 
         - Period Return = ((1 + Daily Return 1) * (1 + Daily Return 2) * ... * (1 + Daily Return N)) - 1
-        - Period Risk Free Rate = (1 + Average Annual Risk Free Rate)^(1 / Periods per Year) - 1, with the
-          average taken over the daily Treasury yields within the period
+        - Daily Risk Free Rate = (1 + Annual Risk Free Rate)^(1 / 252) - 1, or (1 + Annual Risk Free Rate)^(Calendar
+          Days / 365) - 1 when a ticker trades on weekends, with the Treasury yield of each day
+        - Period Risk Free Rate = ((1 + Daily Risk Free Rate 1) * ... * (1 + Daily Risk Free Rate N)) - 1, over the same
+          N days as the Period Return, so a period the data covers in part (such as the current year) earns the
+          risk free rate of the days it covers
         - Excess Return = Period Return - Period Risk Free Rate
         - Cumulative Excess Return = (1 + Excess Return 1) * (1 + Excess Return 2) * ... * (1 + Excess Return N)
 
@@ -5251,11 +5373,11 @@ class Performance:
 
         | Date   |     MCD |    SBUX |     CMG |   Benchmark |
         |:-------|--------:|--------:|--------:|------------:|
-        | 2021   |  0.2901 |  0.1399 |  0.3099 |      0.2912 |
-        | 2022   | -0.0255 | -0.1604 | -0.2359 |     -0.2112 |
-        | 2023   |  0.1112 | -0.0511 |  0.6093 |      0.222  |
-        | 2024   | -0.0405 | -0.0669 |  0.2772 |      0.2071 |
-        | 2025   |  0.0359 | -0.0956 | -0.4292 |      0.1347 |
+        | 2021   |  0.29   |  0.1389 |  0.3113 |      0.2907 |
+        | 2022   | -0.0244 | -0.1612 | -0.2359 |     -0.2112 |
+        | 2023   |  0.1113 | -0.0512 |  0.609  |      0.2224 |
+        | 2024   | -0.0407 | -0.0669 |  0.2763 |      0.2068 |
+        | 2025   |  0.0364 | -0.0952 | -0.4289 |      0.1347 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5481,9 +5603,9 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
-            rolling (int, optional): The rolling window size to use for the Beta component of the
-            calculation. If set, Beta is estimated over a rolling window of this many periods across
-            the full return history instead of per `period`. Defaults to None.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, Beta and
+            the residual standard deviation are estimated over a rolling window of this many periods
+            across the full return history instead of per `period`. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5526,11 +5648,11 @@ class Performance:
 
         | Date   |    ADBE |     CRM |    ORCL |
         |:-------|--------:|--------:|--------:|
-        | 2021   | -1.1711 | -0.8087 |  0.5274 |
-        | 2022   | -0.4641 | -0.6351 |  0.5198 |
-        | 2023   |  1.5758 |  2.7157 |  0.1366 |
-        | 2024   | -1.6901 | -0.1944 |  0.9946 |
-        | 2025   | -1.4152 | -1.4877 | -0.1032 |
+        | 2021   | -1.1713 | -0.8078 |  0.5274 |
+        | 2022   | -0.4646 | -0.6352 |  0.5196 |
+        | 2023   |  1.5754 |  2.7165 |  0.1372 |
+        | 2024   | -1.6891 | -0.1947 |  0.9941 |
+        | 2025   | -1.4147 | -1.4877 | -0.1035 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5585,8 +5707,10 @@ class Performance:
             period_returns, risk_free_rate, beta, benchmark_period_returns
         )
 
+        # A rolling Alpha is divided by the residual standard deviation over the same
+        # rolling window, so each ratio only uses the returns up to its own date.
         appraisal_ratio = performance_model.get_appraisal_ratio(
-            jensens_alpha, capm_residuals
+            jensens_alpha, capm_residuals, rolling
         )
 
         return finalize_dataset(
@@ -5647,9 +5771,10 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
-            rolling (int, optional): The rolling window size to use for the Beta component of the
-            calculation. If set, Beta is estimated over a rolling window of this many periods across
-            the full return history instead of per `period`. Defaults to None.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, Beta and
+            the standard deviations of the asset and the benchmark are estimated from the returns per
+            `period` over a rolling window of this many periods across the full return history,
+            instead of from the daily returns within each `period`. Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5693,11 +5818,11 @@ class Performance:
 
         | Date   |     QQQ |     IWM |     XLE |
         |:-------|--------:|--------:|--------:|
-        | 2021   | -0.123  | -0.3304 | -0.1035 |
-        | 2022   | -0.0751 |  0.0106 |  0.9216 |
-        | 2023   |  0.2052 | -0.2125 | -0.4352 |
-        | 2024   | -0.0824 | -0.2697 | -0.28   |
-        | 2025   |  0.0022 | -0.0738 | -0.1338 |
+        | 2021   | -0.123  | -0.3306 | -0.1031 |
+        | 2022   | -0.0751 |  0.0105 |  0.9386 |
+        | 2023   |  0.2053 | -0.2124 | -0.4354 |
+        | 2024   | -0.0826 | -0.2698 | -0.2804 |
+        | 2025   |  0.0021 | -0.0739 | -0.1336 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5724,13 +5849,22 @@ class Performance:
             period, "Return", within_period=False, benchmark=True
         )
 
-        daily_returns = self._get_column("daily", "Return", within_period=False)
-        daily_benchmark_returns = self._get_column(
-            "daily", "Return", within_period=False, benchmark=True
-        )
+        if rolling:
+            # The standard deviations of the same period returns and rolling window as the
+            # rolling Beta, so that Total Risk Beta = Asset Standard Deviation / Benchmark
+            # Standard Deviation is at least |Beta| (the correlation is at most 1).
+            asset_standard_deviation = returns.rolling(rolling).std()
+            benchmark_standard_deviation = benchmark_returns.rolling(rolling).std()
+        else:
+            daily_returns = self._get_column("daily", "Return", within_period=False)
+            daily_benchmark_returns = self._get_column(
+                "daily", "Return", within_period=False, benchmark=True
+            )
 
-        asset_standard_deviation = get_volatility(daily_returns, period)
-        benchmark_standard_deviation = get_volatility(daily_benchmark_returns, period)
+            asset_standard_deviation = get_volatility(daily_returns, period)
+            benchmark_standard_deviation = get_volatility(
+                daily_benchmark_returns, period
+            )
 
         selectivity, diversification = performance_model.get_fama_decomposition(
             period_returns,
@@ -5848,11 +5982,11 @@ class Performance:
 
         | Date   |    CAT |      DE |     HON |
         |:-------|-------:|--------:|--------:|
-        | 2021   | 0.287  |  0.4693 | -0.0376 |
-        | 2022   | 0.2125 |  0.2897 |  0.0386 |
-        | 2023   | 0.3701 | -0.1499 | -0.0915 |
-        | 2024   | 0.3598 |  0.063  |  0.1513 |
-        | 2025   | 0.8327 |  0.1243 | -0.1867 |
+        | 2021   | 0.287  |  0.4694 | -0.0376 |
+        | 2022   | 0.2128 |  0.2899 |  0.0391 |
+        | 2023   | 0.3706 | -0.1495 | -0.0624 |
+        | 2024   | 0.3596 |  0.063  |  0.1478 |
+        | 2025   | 0.8333 |  0.1251 | -0.1876 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -6490,11 +6624,11 @@ class Performance:
 
         | Date   |    SPY |    TLT |    GLD |   BTCUSD |
         |:-------|-------:|-------:|-------:|---------:|
-        | 2021   | 0.0586 | 0.0585 | 0.0635 |   0.0605 |
-        | 2022   | 0.0602 | 0.0567 | 0.0624 |   0.0589 |
-        | 2023   | 0.0635 | 0.0564 | 0.0609 |   0.0605 |
-        | 2024   | 0.0645 | 0.063  | 0.0617 |   0.0585 |
-        | 2025   | 0.0554 | 0.0611 | 0.0623 |   0.0634 |
+        | 2021   | 0.0586 | 0.0584 | 0.0634 |   0.0506 |
+        | 2022   | 0.0602 | 0.0567 | 0.0624 |   0.0497 |
+        | 2023   | 0.0635 | 0.0564 | 0.0609 |   0.0533 |
+        | 2024   | 0.0645 | 0.0629 | 0.0617 |   0.0506 |
+        | 2025   | 0.0554 | 0.0611 | 0.0623 |   0.047  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -6614,10 +6748,10 @@ class Performance:
 
         | Date   |      SPY |    TLT |      GLD |   BTCUSD |
         |:-------|---------:|-------:|---------:|---------:|
-        | 2021   |  176.151 |    nan |  nan     | 1701.64  |
-        | 2023   |  282.904 | 627999 | 1490.71  |  247.195 |
-        | 2024   |  319.167 |    nan |  381.29  |  337.604 |
-        | 2025   | 1220.25  | 197659 |  135.453 |  nan     |
+        | 2021   |  176.667 |    nan |  nan     | 1102.59  |
+        | 2023   |  282.689 | 755917 | 1474.87  |  178.459 |
+        | 2024   |  320.09  |    nan |  380.932 |  344.545 |
+        | 2025   | 1227.15  | 195160 |  134.903 |  nan     |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 

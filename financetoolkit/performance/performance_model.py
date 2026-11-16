@@ -756,8 +756,8 @@ def obtain_fama_and_french_dataset(
     It is also possible to read other datasets from Fama and French with this functionality.
 
     Args:
-        fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is provided, the
-        5 factor file of the region is used.
+        fama_and_french_url (str | None, optional): the URL of the ZIP file that contains the dataset.
+        Defaults to None, which uses the 5 factor file of the region.
         region (str, optional): The region whose factors to use, one of FACTOR_REGIONS: "United States",
         "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America".
         Every region's factors are U.S. dollar returns with the U.S. one-month Treasury bill as the
@@ -817,8 +817,8 @@ def obtain_fama_and_french_three_factor_dataset(
     Model extends the *three* factor model, so it must be estimated against this file.
 
     Args:
-        fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is
-        provided, the 3 factor file of the region is used.
+        fama_and_french_url (str | None, optional): the URL of the ZIP file that contains the dataset.
+        Defaults to None, which uses the 3 factor file of the region.
         region (str, optional): The region whose factors to use, see
         `obtain_fama_and_french_dataset`. Defaults to "United States".
 
@@ -844,8 +844,8 @@ def obtain_carhart_momentum_dataset(
     basis. The dataset is packaged in a ZIP file, so it needs to be extracted first.
 
     Args:
-        momentum_url (str): the URL of the ZIP file that contains the dataset. If no URL is
-        provided, the momentum file of the region is used.
+        momentum_url (str | None, optional): the URL of the ZIP file that contains the dataset.
+        Defaults to None, which uses the momentum file of the region.
         region (str, optional): The region whose factor to use, see
         `obtain_fama_and_french_dataset`. Defaults to "United States".
 
@@ -1245,7 +1245,7 @@ def get_jensens_alpha(
                 risk_free_rate + beta[column] * (benchmark_returns - risk_free_rate)
             )
     elif isinstance(beta, (pd.Series | float)) and isinstance(
-        beta, (pd.Series | float)
+        asset_returns, (pd.Series | float)
     ):
         jensens_alpha = asset_returns - (
             risk_free_rate + beta * (benchmark_returns - risk_free_rate)
@@ -3052,6 +3052,7 @@ def get_capm_residuals(
 def get_appraisal_ratio(
     jensens_alpha: pd.Series | pd.DataFrame,
     capm_residuals: pd.Series | pd.DataFrame,
+    window_size: int | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Appraisal Ratio, i.e. Jensen's Alpha divided by the idiosyncratic
@@ -3092,7 +3093,11 @@ def get_appraisal_ratio(
         (residual) standard deviation is derived. When this has a "within period" Multi
         Index (period, date), the standard deviation is computed separately within each
         period and rescaled to the period frequency (see Notes below); otherwise it is
-        computed over the entire series at once.
+        computed over the entire series at once, or over a rolling window with `window_size`.
+        window_size (int | None, optional): The number of residuals in the rolling window the
+        residual standard deviation of each date is computed over, the window of a rolling
+        `jensens_alpha`, so each ratio only uses the residuals up to its own date. Defaults to
+        None, which uses every residual (or the residuals within each period).
 
     Returns:
         pd.Series | pd.DataFrame: Appraisal Ratio values.
@@ -3120,6 +3125,8 @@ def get_appraisal_ratio(
         residual_standard_deviation = residual_standard_deviation * np.sqrt(
             observations_per_period
         )
+    elif window_size:
+        residual_standard_deviation = capm_residuals.rolling(window_size).std()
     else:
         residual_standard_deviation = capm_residuals.std()
 

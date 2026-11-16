@@ -7,7 +7,6 @@ import itertools
 import pandas as pd
 
 from financetoolkit import helpers
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
     OVERNIGHT_RATE_DAY_COUNTS,
     buffered_start_date,
@@ -53,7 +52,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class RatesEconomics(EconomicsBase):
+class RatesEconomics:
     """
     Interest rates and money: policy, overnight, short and long-term and real interest rates, the yield curve slope, the 30-year mortgage rate, real yields, breakeven and expected inflation, the yield decomposition, the money supply and exchange rates.
     """

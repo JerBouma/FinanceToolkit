@@ -5,7 +5,6 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
-from financetoolkit.risk.base.base_controller import RiskBase
 from financetoolkit.risk.liquidity import market_liquidity_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -20,7 +19,7 @@ from financetoolkit.utilities.statistics_model import (
 
 @filter_shown_columns
 @track_sources
-class LiquidityRisk(RiskBase):
+class LiquidityRisk:
     """
     Market liquidity: the Amihud illiquidity measure and the Roll spread.
     """

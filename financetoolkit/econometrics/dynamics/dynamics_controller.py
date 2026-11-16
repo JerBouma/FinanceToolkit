@@ -4,15 +4,12 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import (
-    BENCHMARK_TICKER,
-    EconometricsBase,
-)
 from financetoolkit.econometrics.dynamics import (
     pairs_trading_model,
     regime_model,
     state_space_model,
 )
+from financetoolkit.econometrics.helpers import BENCHMARK_TICKER
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
@@ -23,7 +20,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 
 @filter_shown_columns
 @track_sources
-class DynamicsEconometrics(EconometricsBase):
+class DynamicsEconometrics:
     """
     Regimes and changing relationships: Markov regime switching, structural breaks, the time-varying beta, DCC-GARCH and pairs trading.
     """

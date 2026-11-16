@@ -5,7 +5,6 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.options import helpers
-from financetoolkit.options.base.base_controller import OptionsBase
 from financetoolkit.options.greeks import greeks_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -20,7 +19,7 @@ from financetoolkit.utilities.statistics_model import (
 
 @filter_shown_columns
 @track_sources
-class GreeksOptions(OptionsBase):
+class GreeksOptions:
     """
     The first, second and third order Greeks of the Black-Scholes model.
     """

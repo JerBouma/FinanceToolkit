@@ -6,9 +6,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from financetoolkit import (
-    helpers,
-)
+from financetoolkit import helpers
 from financetoolkit.economics.helpers import (
     average_monthly_index,
     buffered_start_date,
@@ -19,7 +17,6 @@ from financetoolkit.economics.sources import (
     ecb_model as economics_ecb_model,
     frb_model,
 )
-from financetoolkit.fixedincome.base.base_controller import FixedIncomeBase
 from financetoolkit.fixedincome.short_rates import short_rate_model
 from financetoolkit.fixedincome.sources import (
     bundesbank_model,
@@ -41,7 +38,7 @@ logger = logger_model.get_logger()
 
 @filter_shown_columns
 @track_sources
-class CreditFixedIncome(FixedIncomeBase):
+class CreditFixedIncome:
     """
     Credit: ICE BofA corporate bond indices, HQM and Moody's corporate yields, corporate bond yields by country, rating transitions, default rates, implied default probabilities, the excess bond premium, corporate borrowing costs and the financial stress index.
     """

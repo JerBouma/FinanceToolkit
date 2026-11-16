@@ -5,7 +5,6 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import EconometricsBase
 from financetoolkit.econometrics.diagnostics import diagnostics_model
 from financetoolkit.risk import risk_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -18,7 +17,7 @@ from financetoolkit.utilities.statistics_model import PERIODS_PER_YEAR, apply_ro
 
 @filter_shown_columns
 @track_sources
-class SignificanceEconometrics(EconometricsBase):
+class SignificanceEconometrics:
     """
     How unusual a level or a change is: the level and move significance, the change over the same window every year and streaks.
     """

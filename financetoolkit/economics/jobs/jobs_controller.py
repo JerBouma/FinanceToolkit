@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     check_period_type,
@@ -28,9 +27,7 @@ from financetoolkit.utilities.sources_model import (
     collect_sources,
     track_sources,
 )
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -39,7 +36,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class JobsEconomics(EconomicsBase):
+class JobsEconomics:
     """
     Labour and society: unemployment, nonfarm payrolls, jobless claims, the misery index, labour productivity, income inequality, poverty, population, life tables and household savings and debt.
     """

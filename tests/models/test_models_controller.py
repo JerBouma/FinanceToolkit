@@ -1240,7 +1240,7 @@ def test_valuations_default_to_the_free_cash_flow_to_firm():
 
 
 def test_short_quarterly_scores_warn_how_many_quarters_they_need(monkeypatch):
-    from financetoolkit.models.base import base_controller  # noqa: PLC0415
+    from financetoolkit.models import models_controller  # noqa: PLC0415
 
     items = {
         row: {ticker: values[:6] for ticker, values in tickers.items()}
@@ -1249,7 +1249,7 @@ def test_short_quarterly_scores_warn_how_many_quarters_they_need(monkeypatch):
     models = synthetic_models(items)
     warnings = []
     monkeypatch.setattr(
-        base_controller.logger,
+        models_controller.logger,
         "warning",
         lambda message, *args: warnings.append(message % args),
     )
@@ -1320,11 +1320,11 @@ def test_quarterly_valuations_skip_trailing_sums_with_a_missing_quarter():
 def test_magic_formula_on_a_short_quarterly_window(monkeypatch):
     import pandas as pd  # noqa: PLC0415
 
-    from financetoolkit.models.base import base_controller  # noqa: PLC0415
+    from financetoolkit.models import models_controller  # noqa: PLC0415
 
     warnings = []
     monkeypatch.setattr(
-        base_controller.logger,
+        models_controller.logger,
         "warning",
         lambda message, *args: warnings.append(message % args),
     )

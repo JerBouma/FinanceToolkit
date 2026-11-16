@@ -5,7 +5,6 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import EconometricsBase
 from financetoolkit.econometrics.regression import regression_model
 from financetoolkit.econometrics.testing import (
     hypothesis_testing_model,
@@ -21,7 +20,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 
 @filter_shown_columns
 @track_sources
-class TestingEconometrics(EconometricsBase):
+class TestingEconometrics:
     """
     Hypothesis tests (two-sample t, F, likelihood ratio, Wald, Hausman-Wu) and specification tests (Breusch-Pagan, White, Durbin-Watson, VIF, Ramsey RESET, Chow).
     """

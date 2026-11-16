@@ -4,10 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import (
-    BENCHMARK_TICKER,
-    EconometricsBase,
-)
+from financetoolkit.econometrics.helpers import BENCHMARK_TICKER
 from financetoolkit.econometrics.regression import (
     fama_macbeth_model,
     panel_data_model,
@@ -23,7 +20,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 
 @filter_shown_columns
 @track_sources
-class RegressionEconometrics(EconometricsBase):
+class RegressionEconometrics:
     """
     Regressions: OLS, WLS, GLS, logistic, probit and quantile regressions, Fama-MacBeth, and fixed and random effects panels with the Hausman test.
     """

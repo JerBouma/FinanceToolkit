@@ -6,9 +6,6 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.portfolio.construction.attribution import attribution_model
-from financetoolkit.portfolio.construction.base.base_controller import (
-    PortfolioConstructionBase,
-)
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -24,7 +21,7 @@ START_PRICE_TOLERANCE_DAYS = 5
 
 @filter_shown_columns
 @track_sources
-class AttributionConstruction(PortfolioConstructionBase):
+class AttributionConstruction:
     """
     Exposures and attribution: the stress test, the look-through exposure and the Brinson attribution.
     """

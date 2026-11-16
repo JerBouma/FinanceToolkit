@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import EconometricsBase
 from financetoolkit.econometrics.forecasting import (
     forecast_evaluation_model,
     time_series_model,
@@ -23,7 +22,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class ForecastingEconometrics(EconometricsBase):
+class ForecastingEconometrics:
     """
     Forecasts and their evaluation: ARIMA, VAR and VECM forecasts, impulse responses, variance decomposition, RMSE, MAE, out-of-sample validation and the Diebold-Mariano test.
     """

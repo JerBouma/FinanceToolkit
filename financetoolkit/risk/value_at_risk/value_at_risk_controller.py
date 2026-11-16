@@ -5,7 +5,6 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
-from financetoolkit.risk.base.base_controller import RiskBase
 from financetoolkit.risk.helpers import as_float
 from financetoolkit.risk.value_at_risk import (
     backtesting_model,
@@ -96,7 +95,7 @@ def _get_out_of_sample_estimates(
 
 @filter_shown_columns
 @track_sources
-class ValueAtRiskRisk(RiskBase):
+class ValueAtRiskRisk:
     """
     Value at Risk and its relatives: conditional and entropic VaR, marginal and component VaR, and the VaR and expected shortfall backtests.
     """

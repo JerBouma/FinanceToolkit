@@ -5,9 +5,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.economics.helpers import (
-    validate_period,
-)
+from financetoolkit.economics.helpers import validate_period
 from financetoolkit.fixedincome.curves import curve_model
 from financetoolkit.fixedincome.curves.curves_controller import CurvesFixedIncome
 from financetoolkit.fixedincome.short_rates import short_rate_model

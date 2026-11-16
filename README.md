@@ -540,7 +540,7 @@ https://github.com/user-attachments/assets/96ad5288-d83d-4497-a345-1841c48c29d5
 
 ### Remote server
 
-Connect directly to the hosted server at `https://financetoolkit.jeroenbouma.com/mcp`. Nothing needs to be installed locally. On first connection your client opens an OAuth consent page asking for your FMP API key; enter it once and the server handles authentication from there.
+Connect directly to the hosted server at `https://financetoolkit.jeroenbouma.com/mcp`. Nothing needs to be installed locally. On first connection your client opens an OAuth consent page asking for your FMP API key (and, optionally, a FRED API key for the corporate bond series); enter it once and the server handles authentication from there.
 
 | Client | Steps |
 |:---|:---|
@@ -548,8 +548,8 @@ Connect directly to the hosted server at `https://financetoolkit.jeroenbouma.com
 | **Claude.ai** | Customize → Connectors → Add custom connector → paste the URL |
 | **Claude Code** | `claude mcp add --transport http finance-toolkit https://financetoolkit.jeroenbouma.com/mcp` |
 | **VS Code** | Command Palette → MCP: Add Server → HTTP → paste the URL |
-| **Cursor** | Settings → Features → MCP Servers → Add new → http → paste the URL |
-| **Windsurf** | Settings → MCP Servers → Add Server → Remote/HTTP → paste the URL |
+| **Cursor** | Cursor Settings → Tools & MCP → New MCP Server → add `"finance-toolkit": { "url": "<URL>" }` |
+| **Windsurf** | Cascade panel → MCPs → Configure → add `"finance-toolkit": { "serverUrl": "<URL>" }` and refresh |
 
 ### Local installation
 
@@ -731,6 +731,7 @@ The Finance Toolkit has been mentioned in various blogposts, research papers, ne
 - [Fundamental Analysis using Muli-Agent System and Agentic RAG](https://connect.cfauk.org/HigherLogic/System/DownloadDocumentFile.ashx?DocumentFileKey=3ae6f3fc-593a-04ec-c3b8-be5643cab479&forceDialog=0)
 
 **Newsletters & Social Media**
+- [Stack to Street podcast: Your AI Shouldn't Guess the Formula](https://www.stacktostreet.com/episodes/financetoolkit/)
 - [LinkedIn #1](https://www.linkedin.com/posts/jerry-liu-64390071_this-is-an-extremely-comprehensive-100-activity-7340897396471623681-plI4?utm_source=share&utm_medium=member_desktop&rcm=ACoAABhYAQUBkaNnlBjz_IYBRfaurU68rfoZPE8) and [Linkedin #2](https://www.linkedin.com/posts/pyquant-news_getting-clean-fundamental-data-used-to-be-activity-7314273012927651841-KXP3?utm_source=share&utm_medium=member_desktop&rcm=ACoAABhYAQUBkaNnlBjz_IYBRfaurU68rfoZPE8)
 - [Facebook](https://www.facebook.com/groups/techtitansgroup/posts/1515790739748239/)
 - [Quant Seeker](https://www.quantseeker.com/p/weekly-research-recap)

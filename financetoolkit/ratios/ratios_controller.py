@@ -12,7 +12,7 @@ import pandas as pd
 from financetoolkit.cache import policy_model, ticker_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estimates
-from financetoolkit.helpers import handle_portfolio
+from financetoolkit.helpers import get_goodwill_and_intangible_assets, handle_portfolio
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
@@ -22,7 +22,9 @@ from financetoolkit.ratios import (
 )
 from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.utilities import factor_model, logger_model
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
@@ -148,6 +150,7 @@ FACTOR_COLLECTIONS = {
         "get_working_capital_turnover_ratio",
         "get_capex_intensity",
         "get_capex_to_depreciation_ratio",
+        "get_net_capital_expenditure",
         "get_asset_growth",
         "get_net_operating_assets",
     ],
@@ -160,6 +163,8 @@ FACTOR_COLLECTIONS["all"] = [
 # ruff: noqa: E501
 
 
+@filter_shown_columns
+@track_sources
 class Ratios:
     """
     The Ratios Module contains over 50+ ratios that can be used to analyse companies.
@@ -184,6 +189,8 @@ class Ratios:
         user_subscription: str = "Free",
         analyst_estimates_cache: dict | None = None,
         period_end_dates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
+        currency_function: Callable[[], pd.Series] | None = None,
+        gross_domestic_product_function: Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -229,6 +236,15 @@ class Ratios:
                 point_in_time). Daily ratios (show_daily=True) apply each period's figures from that
                 day on. Defaults to None, which applies them from the end of the calendar period the
                 column is labelled with.
+            currency_function (Callable[[], pd.Series], optional): A function without arguments
+                that returns the currency each ticker is listed in, which the market cap of a
+                basket checks before summing. Defaults to None, which leaves the currencies
+                unchecked.
+            gross_domestic_product_function (Callable[[], pd.DataFrame], optional): A function
+                without arguments that returns the annual nominal Gross Domestic Product in
+                millions of US dollars, with the years as index and the countries as columns,
+                for the market cap to GDP ratio. Defaults to None, which leaves that ratio
+                unavailable.
 
         As an example:
 
@@ -278,6 +294,8 @@ class Ratios:
         self._income_source = income
         self._cash_source = cash
         self._period_end_dates_source = period_end_dates
+        self._currency_function = currency_function
+        self._gross_domestic_product_function = gross_domestic_product_function
         self._historical = historical
         self._api_key: str = api_key
         self._sleep_timer: bool = sleep_timer
@@ -443,6 +461,70 @@ class Ratios:
             .T
         )
 
+    def _add_basket_market_cap(
+        self, market_cap: pd.DataFrame, show_daily: bool, share: bool = False
+    ) -> pd.DataFrame:
+        """
+        Sets the market cap of the Total of a basket to the sum of those of the tickers, as
+        the Total has no shares or share price of its own, so that the ratios of the Total
+        built on the market cap use it. With share, each ticker becomes its share of that sum
+        (also without a basket).
+
+        Args:
+            market_cap (pd.DataFrame): The market caps, with the tickers as index and the
+                periods as columns, or the dates as index and the tickers as columns with
+                show_daily.
+            show_daily (bool): Whether the market caps are daily.
+            share (bool, optional): Whether to return each ticker's share of the sum instead.
+                Defaults to False.
+
+        Returns:
+            pd.DataFrame: The market caps (or shares) with the Total.
+        """
+        if "Total" not in self._tickers and not share:
+            return market_cap
+
+        self._get_basket_currency()
+
+        # The model takes the dates (or periods) as index, as the daily market caps have.
+        market_cap = valuation_model.get_basket_market_cap(
+            (market_cap if show_daily else market_cap.T).drop(
+                columns="Total", errors="ignore"
+            ),
+            share=share,
+        )
+        return market_cap if show_daily else market_cap.T
+
+    def _get_basket_currency(self) -> str | None:
+        """
+        Returns the one currency the tickers are listed in, so that their market caps can be
+        summed.
+
+        Returns:
+            str | None: The currency, or None when the currencies are unknown.
+
+        Raises:
+            ValueError: When the tickers are listed in different currencies.
+        """
+        if self._currency_function is None:
+            return None
+
+        currencies = (
+            self._currency_function().reindex(self._tickers_without_portfolio).dropna()
+        )
+
+        if len(set(currencies)) > 1:
+            listed = ", ".join(
+                f"{ticker} ({currency})" for ticker, currency in currencies.items()
+            )
+            raise ValueError(
+                "The market caps of a basket are summed in one currency, but the tickers are "
+                f"listed in different currencies: {listed}. Choose tickers listed in the same "
+                "currency."
+            )
+
+        return currencies.iloc[0] if not currencies.empty else None
+
     def _get_cash_and_short_term_investments(self) -> pd.DataFrame:
         """
         Returns the cash and short-term investments (marketable securities) of every period,
@@ -510,6 +592,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects all ratios based on the provided data.
@@ -536,6 +619,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Ratios calculated based on the specified parameters.
@@ -670,6 +757,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates all Custom Ratios based on the data provided.
@@ -691,6 +779,10 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Custom ratios calculated based on the specified parameters.
@@ -933,6 +1025,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.Series | pd.DataFrame:
         """
         Calculates and collects all Efficiency Ratios based on the provided data.
@@ -955,6 +1048,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series or pd.DataFrame: Efficiency ratios calculated based on the specified parameters.
@@ -981,29 +1078,32 @@ class Ratios:
 
         Which returns:
 
-        |                                      |     2021 |     2022 |     2023 |     2024 |     2025 |
-        |:-------------------------------------|---------:|---------:|---------:|---------:|---------:|
-        | Days of Inventory Outstanding        |   9.1181 |   9.4097 |   9.6109 |  11.814  |  10.7405 |
-        | Days of Sales Outstanding            |  21.1517 |  25.2057 |  27.4699 |  29.3645 |  32.0949 |
-        | Operating Cycle                      |  30.2698 |  34.6154 |  37.0808 |  41.1785 |  42.8354 |
-        | Days of Accounts Payable Outstanding |  83.1683 |  97.0504 | 108.003  | 114.15   | 114.657  |
-        | Cash Conversion Cycle                | -52.8985 | -62.435  | -70.9225 | -72.9716 | -71.8218 |
-        | Cash Conversion Efficiency           |   0.2844 |   0.3098 |   0.2884 |   0.3024 |   0.2679 |
-        | Receivables Turnover                 |  17.2563 |  14.4808 |  13.2873 |  12.43   |  11.3725 |
-        | Inventory Turnover Ratio             |  40.0303 |  38.7899 |  37.9777 |  30.8955 |  33.9834 |
-        | Accounts Payable Turnover Ratio      |   4.3887 |   3.7609 |   3.3795 |   3.1975 |   3.1834 |
-        | SGA-to-Revenue Ratio                 |   0.0601 |   0.0636 |   0.065  |   0.0667 |   0.0663 |
-        | Fixed Asset Turnover                 |   7.7125 |   7.7273 |   7.1702 |   7.091  |   7.1167 |
-        | Asset Turnover Ratio                 |   1.0841 |   1.1206 |   1.0868 |   1.0899 |   1.1493 |
-        | Operating Ratio                      |   0.7022 |   0.6971 |   0.7018 |   0.6849 |   0.6803 |
-        | R&D Intensity Ratio                  |   0.0599 |   0.0666 |   0.078  |   0.0802 |   0.083  |
-        | S&M to Revenue Ratio                 |   0      |   0      |   0      |   0.0477 |   0.0469 |
-        | G&A to Revenue Ratio                 |   0      |   0      |   0      |   0.0191 |   0.0194 |
-        | SBC to Revenue Ratio                 |   0.0216 |   0.0229 |   0.0283 |   0.0299 |   0.0309 |
-        | Deferred Revenue Ratio               |   0.0208 |   0.0201 |   0.021  |   0.0211 |   0.0218 |
-        | Working Capital Turnover Ratio       |  15.346  | -85.519  | -37.7268 | -31.0999 | -20.2615 |
-        | Capex Intensity                      |   0.0303 |   0.0272 |   0.0286 |   0.0242 |   0.0306 |
-        | Capex to Depreciation                |   0.9824 |   0.9643 |   0.9514 |   0.8254 |   1.0869 |
+        |                                      |       2021 |       2022 |      2023 |        2024 |        2025 |
+        |:-------------------------------------|-----------:|-----------:|----------:|------------:|------------:|
+        | Days of Inventory Outstanding        |   9.1181   |   9.4097   |   9.6109  |  11.814     |  10.7405    |
+        | Days of Sales Outstanding            |  21.1517   |  25.2057   |  27.4699  |  29.3645    |  32.0949    |
+        | Operating Cycle                      |  30.2698   |  34.6154   |  37.0808  |  41.1785    |  42.8354    |
+        | Days of Accounts Payable Outstanding |  83.1683   |  97.0504   | 108.003   | 114.15      | 114.657     |
+        | Cash Conversion Cycle                | -52.8985   | -62.435    | -70.9225  | -72.9716    | -71.8218    |
+        | Cash Conversion Efficiency           |   0.2844   |   0.3098   |   0.2884  |   0.3024    |   0.2679    |
+        | Receivables Turnover                 |  17.2563   |  14.4808   |  13.2873  |  12.43      |  11.3725    |
+        | Inventory Turnover Ratio             |  40.0303   |  38.7899   |  37.9777  |  30.8955    |  33.9834    |
+        | Accounts Payable Turnover Ratio      |   4.3887   |   3.7609   |   3.3795  |   3.1975    |   3.1834    |
+        | SGA-to-Revenue Ratio                 |   0.0601   |   0.0636   |   0.065   |   0.0667    |   0.0663    |
+        | Fixed Asset Turnover                 |   7.7125   |   7.7273   |   7.1702  |   7.091     |   7.1167    |
+        | Asset Turnover Ratio                 |   1.0841   |   1.1206   |   1.0868  |   1.0899    |   1.1493    |
+        | Operating Ratio                      |   0.7022   |   0.6971   |   0.7018  |   0.6849    |   0.6803    |
+        | R&D Intensity Ratio                  |   0.0599   |   0.0666   |   0.078   |   0.0802    |   0.083     |
+        | S&M to Revenue Ratio                 |   0        |   0        |   0       |   0.0477    |   0.0469    |
+        | G&A to Revenue Ratio                 |   0        |   0        |   0       |   0.0191    |   0.0194    |
+        | SBC to Revenue Ratio                 |   0.0216   |   0.0229   |   0.0283  |   0.0299    |   0.0309    |
+        | Deferred Revenue Ratio               |   0.0208   |   0.0201   |   0.021   |   0.0211    |   0.0218    |
+        | Working Capital Turnover Ratio       |  15.346    | -85.519    | -37.7268  | -31.0999    | -20.2615    |
+        | Capex Intensity                      |   0.0303   |   0.0272   |   0.0286  |   0.0242    |   0.0306    |
+        | Net Capital Expenditure              |  -1.99e+08 |  -3.96e+08 |  -5.6e+08 |  -1.998e+09 |   1.017e+09 |
+        | Capex to Depreciation                |   0.9824   |   0.9643   |   0.9514  |   0.8254    |   1.0869    |
+        | Asset Growth                         |   0.0837   |   0.005    |  -0.0005  |   0.0352    |  -0.0157    |
+        | Net Operating Assets                 |   0.3865   |   0.3488   |   0.3166  |   0.2791    |   0.3225    |
         """
         self._load_statements()
 
@@ -1068,6 +1168,9 @@ class Ratios:
         )
         efficiency_ratios_dict["Capex Intensity"] = self.get_capex_intensity(
             trailing=trailing
+        )
+        efficiency_ratios_dict["Net Capital Expenditure"] = (
+            self.get_net_capital_expenditure(trailing=trailing)
         )
         efficiency_ratios_dict["Capex to Depreciation"] = (
             self.get_capex_to_depreciation_ratio(trailing=trailing)
@@ -1149,6 +1252,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the asset turnover ratio, an efficiency ratio that measures how
@@ -1181,6 +1285,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Asset turnover ratio values.
@@ -1254,6 +1362,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the inventory turnover ratio, an efficiency ratio that measures
@@ -1294,6 +1403,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.Series: Inventory turnover ratio values.
@@ -1368,6 +1481,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the days sales in inventory ratio, an efficiency ratio that measures
@@ -1403,6 +1517,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Days sales in inventory ratio values.
@@ -1485,6 +1603,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the days of sales outstanding ratio, an efficiency ratio that measures
@@ -1529,6 +1648,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Days of sales outstanding ratio values.
@@ -1608,6 +1731,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cycle ratio, an efficiency ratio that measures the average
@@ -1642,6 +1766,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Operating cycle ratio values.
@@ -1742,6 +1870,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the accounts payable turnover ratio, an efficiency ratio that measures how
@@ -1775,6 +1904,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Accounts payable turnover ratio values.
@@ -1854,6 +1987,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the days payables outstanding, an efficiency ratio that measures the
@@ -1889,6 +2023,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Days payables outstanding (DPO) ratio values.
@@ -1972,6 +2110,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Cash Conversion Cycle, which measures the amount of time it takes for a company to convert
@@ -2014,6 +2153,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash Conversion Cycle (CCC) values.
@@ -2136,6 +2279,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the cash conversion efficiency, an efficiency ratio that measures how
@@ -2168,6 +2312,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash conversion efficiency ratio values.
@@ -2246,6 +2394,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the receivables turnover, a ratio that measures how efficiently a
@@ -2279,6 +2428,11 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
         Returns:
             pd.DataFrame: Receivables turnover ratio values.
 
@@ -2351,6 +2505,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the sales, general, and administrative (SG&A) expenses to revenue ratio,
@@ -2382,6 +2537,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: SG&A to revenue ratio values.
@@ -2457,6 +2616,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Fixed Asset Turnover ratio, an efficiency ratio that
@@ -2492,6 +2652,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Fixed Asset Turnover ratio values.
@@ -2568,6 +2732,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the working capital turnover ratio, an efficiency ratio that
@@ -2607,6 +2772,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Working capital turnover ratio values.
@@ -2684,6 +2853,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating ratio, a financial metric that measures the efficiency
@@ -2723,6 +2893,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Operating ratio values.
@@ -2797,6 +2971,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the research and development (R&D) intensity ratio, an efficiency
@@ -2835,6 +3010,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: R&D intensity ratio values.
@@ -2908,6 +3087,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the selling and marketing (S&M) expenses to revenue ratio, an
@@ -2939,6 +3119,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: S&M to revenue ratio values.
@@ -3014,6 +3198,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the general and administrative (G&A) expenses to revenue ratio, an
@@ -3045,6 +3230,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: G&A to revenue ratio values.
@@ -3123,6 +3312,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the stock-based compensation (SBC) to revenue ratio, an efficiency
@@ -3154,6 +3344,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: SBC to revenue ratio values.
@@ -3225,6 +3419,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the deferred revenue ratio, an efficiency ratio that measures the
@@ -3260,6 +3455,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Deferred revenue ratio values.
@@ -3333,6 +3532,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the capital expenditure intensity, the share of revenue a company
@@ -3369,6 +3569,10 @@ class Ratios:
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
                 months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
                 None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Capex intensity values.
@@ -3431,6 +3635,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the capital expenditure to depreciation ratio, which compares what a
@@ -3441,7 +3646,8 @@ class Ratios:
         around 1 that it is maintaining them, and a ratio persistently below 1 that it is
         underinvesting, which flatters the free cash flow for a while but erodes the
         business. Damodaran's net capital expenditure (capital expenditure minus
-        depreciation) is the same comparison as a difference. Acquisitions are not capital
+        depreciation, see get_net_capital_expenditure) is the same comparison as a
+        difference. Acquisitions are not capital
         expenditure, so a company that grows by buying others can show a low ratio while
         its assets grow.
 
@@ -3468,6 +3674,10 @@ class Ratios:
                 items) over. E.g. 4 with quarterly data gives the trailing twelve months (TTM)
                 and 3 with annual data a three-year cumulative figure. Defaults to None, which
                 uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Capex to depreciation values.
@@ -3528,6 +3738,119 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
+    def get_net_capital_expenditure(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the net capital expenditure, what a company invests in its assets beyond
+        what wears off them.
+
+        Depreciation and amortization approximate the investment needed to keep the asset
+        base as it is, so the capital expenditure above it is the investment in growth.
+        Damodaran's net capital expenditure is this difference, which with the change in
+        working capital makes up the reinvestment of a company. It is the same comparison as
+        the capex to depreciation ratio (see get_capex_to_depreciation_ratio), as an amount:
+        a ratio of 3 says that capex is three times depreciation, the net capital expenditure
+        how much money that is. A negative value means the company invests less than its
+        assets depreciate. Acquisitions are not capital expenditure, so a company that grows
+        by buying others can show a low or negative value while its assets grow.
+
+        The formula is as follows:
+
+        - Net Capital Expenditure = |Capital Expenditure| - Depreciation and Amortization
+
+        Capital expenditure is reported as a negative cash outflow, so its magnitude is used.
+
+        Also known as: net capex, net investment, growth capex, capex minus depreciation.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (cash flow statement
+                items) over. E.g. 4 with quarterly data gives the trailing twelve months (TTM)
+                and 3 with annual data a three-year cumulative figure. Defaults to None, which
+                uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Net capital expenditure values.
+
+        Notes:
+        - Damodaran, A., "Investment Valuation," 3rd edition, Wiley, 2012 (net capital
+        expenditure and reinvestment).
+        - Depreciation and amortization include the amortization of acquired intangibles,
+        which is no wear of the assets that capital expenditure replaces, so the net capital
+        expenditure is low for companies with large acquired intangibles.
+        - If `growth` is set to True, the method calculates the growth of the values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MSFT", "AMZN", "GOOGL", "META"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+            basket=True,
+        )
+
+        toolkit.ratios.get_net_capital_expenditure()
+        ```
+
+        Which returns:
+
+        |       |       2021 |       2022 |       2023 |        2024 |        2025 |
+        |:------|-----------:|-----------:|-----------:|------------:|------------:|
+        | AMZN  | 2.662e+10  | 2.1724e+10 | 4.066e+09  | 3.0204e+10  | 6.6063e+10  |
+        | GOOGL | 1.2199e+10 | 1.801e+10  | 2.0305e+10 | 3.7224e+10  | 7.0311e+10  |
+        | META  | 1.06e+10   | 2.2745e+10 | 1.6088e+10 | 2.1758e+10  | 5.1075e+10  |
+        | MSFT  | 8.936e+09  | 9.426e+09  | 1.4246e+10 | 2.219e+10   | 3.0398e+10  |
+        | Total | 5.8355e+10 | 7.1905e+10 | 5.4705e+10 | 1.11376e+11 | 2.17847e+11 |
+        """
+        net_capital_expenditure = efficiency_model.get_net_capital_expenditure(
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
+            ),
+            self._sum_trailing(
+                self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
+                trailing,
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=net_capital_expenditure,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_asset_growth(
         self,
         rounding: int | None = None,
@@ -3536,6 +3859,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the asset growth of Cooper, Gulen and Schill (2008): the change in total
@@ -3574,6 +3898,10 @@ class Ratios:
                 over. E.g. 3 with annual data gives the growth over three years. Defaults to
                 None, which uses a year: 4 quarters with quarterly data and 1 year with annual
                 data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Asset growth values.
@@ -3642,6 +3970,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the net operating assets of Hirshleifer, Hou, Teoh and Zhang (2004): the
@@ -3684,6 +4013,10 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Net operating assets values.
@@ -3756,6 +4089,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Liquidity Ratios based on the provided data.
@@ -3775,6 +4109,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Liquidity ratios calculated based on the specified parameters.
@@ -3909,6 +4247,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the current ratio, a liquidity ratio that measures a company's ability
@@ -3947,6 +4286,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Current ratio values.
@@ -4021,6 +4364,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the quick ratio (also known as the acid-test ratio), a more stringent
@@ -4056,6 +4400,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Quick ratio values.
@@ -4142,6 +4490,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the cash ratio, a liquidity ratio that measures a company's ability
@@ -4173,6 +4522,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash ratio values.
@@ -4254,6 +4607,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the working capital, which is the difference between a company's current assets
@@ -4284,6 +4638,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Working capital values.
@@ -4358,6 +4716,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cash flow ratio, a liquidity ratio that measures a company's
@@ -4388,6 +4747,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Operating cash flow ratio values.
@@ -4462,6 +4825,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating cash flow to sales ratio, a liquidity ratio that
@@ -4492,6 +4856,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Operating cash flow to sales ratio values.
@@ -4569,6 +4937,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the short-term coverage ratio, a liquidity ratio that measures a company's
@@ -4598,6 +4967,13 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Short-term coverage ratio values.
 
         As an example:
 
@@ -4661,6 +5037,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the defensive interval ratio (DIR), a liquidity ratio that measures
@@ -4708,6 +5085,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Defensive interval ratio values, expressed in days.
@@ -4815,6 +5196,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Profitability Ratios based on the provided data.
@@ -4834,6 +5216,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Profitability ratios calculated based on the specified parameters.
@@ -5051,6 +5437,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the gross margin, a profitability ratio that measures the percentage of
@@ -5088,6 +5475,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Gross margin ratio values.
@@ -5173,6 +5564,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating margin, a profitability ratio that measures the percentage of
@@ -5209,6 +5601,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Operating margin ratio values.
@@ -5279,6 +5675,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the net profit margin, a profitability ratio that measures the percentage
@@ -5309,6 +5706,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Net profit margin ratio values.
@@ -5379,6 +5780,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the EBITDA margin, a profitability ratio that measures the
@@ -5413,6 +5815,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EBITDA margin values.
@@ -5489,6 +5895,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Compute the Interest Burden Ratio, the component of the extended (five-step)
@@ -5530,6 +5937,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Interest Burden Ratio values.
@@ -5600,6 +6011,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Pretax Profit Margin, which is the ratio of a company's pre-tax profit to
@@ -5629,6 +6041,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Pretax Profit Margin values.
@@ -5703,6 +6119,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the effective tax rate, a financial ratio that measures the
@@ -5741,6 +6158,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Effective tax rate values.
@@ -5809,6 +6230,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the return on assets (ROA), a profitability ratio that measures how
@@ -5846,6 +6268,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Return on assets (ROA) values.
@@ -5920,6 +6346,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the cash return on assets (Cash ROA), a profitability ratio that
@@ -5954,6 +6381,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash return on assets (Cash ROA) values.
@@ -6027,6 +6458,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the return on equity (ROE), a profitability ratio that measures how
@@ -6070,6 +6502,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Return on equity (ROE) values.
@@ -6142,6 +6578,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the return on invested capital (ROIC), a financial ratio that measures
@@ -6182,6 +6619,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Return on invested capital (ROIC) values.
@@ -6273,6 +6714,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the income quality ratio, a financial metric that measures the cash flow from
@@ -6310,6 +6752,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Income quality ratio values.
@@ -6379,6 +6825,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the return on tangible assets, a financial ratio that measures the amount of profit
@@ -6414,6 +6861,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Return on tangible assets (ROTA) values.
@@ -6456,9 +6907,9 @@ class Ratios:
                         trailing,
                     ),
                     self._mean_trailing(
-                        self._balance_sheet_statement.loc[
-                            :, "Goodwill and Intangible Assets", :
-                        ],
+                        get_goodwill_and_intangible_assets(
+                            self._balance_sheet_statement
+                        ),
                         trailing,
                     ),
                 )
@@ -6471,9 +6922,7 @@ class Ratios:
                     .T.rolling(2)
                     .mean()
                     .T,
-                    self._balance_sheet_statement.loc[
-                        :, "Goodwill and Intangible Assets", :
-                    ]
+                    get_goodwill_and_intangible_assets(self._balance_sheet_statement)
                     .T.rolling(2)
                     .mean()
                     .T,
@@ -6502,6 +6951,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the return on capital employed (ROCE), a profitability ratio that measures the amount of return
@@ -6542,6 +6992,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Return on capital employed (ROCE) values.
@@ -6625,6 +7079,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the net income per earnings before taxes (EBT), a profitability ratio that measures
@@ -6660,6 +7115,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Net income per earnings before taxes (EBT) values.
@@ -6730,6 +7189,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the free cash flow to operating cash flow ratio, a profitability ratio that measures
@@ -6761,6 +7221,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Free cash flow to operating cash flow ratio values.
@@ -6837,6 +7301,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the free cash flow margin, a profitability ratio that measures the
@@ -6868,6 +7333,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Free cash flow margin values.
@@ -6938,6 +7407,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the tax burden ratio, which is the ratio of a company's
@@ -6972,6 +7442,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Tax burden ratio values.
@@ -7040,6 +7514,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the EBT to EBIT ratio, which shows how much of a company's earnings before
@@ -7072,6 +7547,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EBT to EBIT ratio values.
@@ -7152,6 +7631,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the EBIT per Revenue, which is the ratio of a company's earnings
@@ -7190,6 +7670,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EBIT to Revenue ratio values.
@@ -7266,6 +7750,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the cash tax rate, which measures the percentage of pretax income
@@ -7302,6 +7787,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash tax rate values.
@@ -7370,6 +7859,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the tax rate divergence, which measures the difference between the
@@ -7409,6 +7899,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Tax rate divergence values.
@@ -7469,6 +7963,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the gross profitability of Novy-Marx (2013), the gross profit a company
@@ -7507,6 +8002,10 @@ class Ratios:
                 sold over; the total assets stay those at the end of the last period. Defaults to
                 None, which uses the trailing twelve months (4 quarters) with quarterly data and
                 single years with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Gross profitability values.
@@ -7575,6 +8074,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the operating profitability of Fama and French (2015), the measure behind
@@ -7618,6 +8118,10 @@ class Ratios:
                 over; the book equity stays that at the end of the last period. Defaults to None,
                 which uses the trailing twelve months (4 quarters) with quarterly data and single
                 years with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Operating profitability values.
@@ -7693,6 +8197,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the cash-based operating profitability of Ball, Gerakos, Linnainmaa and
@@ -7743,6 +8248,10 @@ class Ratios:
                 number of periods the total assets are taken before. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash-based operating profitability values.
@@ -7839,6 +8348,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the cash return on invested capital (CROIC), the free cash flow a company
@@ -7876,6 +8386,10 @@ class Ratios:
                 single-period flows (per quarter and not annualized with quarterly data) against
                 the average of the opening and closing invested capital, as for the return on
                 invested capital.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash return on invested capital values.
@@ -7950,6 +8464,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the free cash flow conversion, the share of net income that a company
@@ -7987,6 +8502,10 @@ class Ratios:
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
                 months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
                 None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Free cash flow conversion values.
@@ -8051,6 +8570,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the free cash flow to EBITDA ratio, the share of EBITDA that remains as
@@ -8086,6 +8606,10 @@ class Ratios:
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
                 months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
                 None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Free cash flow to EBITDA values.
@@ -8158,6 +8682,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the percent accruals of Hafzalla, Lundholm and Van Winkle (2011): the
@@ -8196,6 +8721,10 @@ class Ratios:
             trailing (int, optional): The number of periods to sum the net income and cash
                 flow from operations over. Defaults to None, which uses the trailing twelve
                 months (4 quarters) with quarterly data and single years with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Percent accruals values.
@@ -8266,6 +8795,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Solvency Ratios based on the provided data.
@@ -8286,6 +8816,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Solvency ratios calculated based on the specified parameters.
@@ -8478,6 +9012,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the debt to assets ratio, a solvency ratio that measures the proportion
@@ -8510,6 +9045,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Debt to assets ratio values.
@@ -8578,6 +9117,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the asset coverage ratio, a solvency ratio that measures how well a
@@ -8594,7 +9134,7 @@ class Ratios:
 
         The formula is as follows:
 
-        - Asset Coverage Ratio = [(Total Assets - Intangible Assets) -
+        - Asset Coverage Ratio = [(Total Assets - Goodwill - Intangible Assets) -
           (Total Current Liabilities - Short Term Debt)] / Total Debt
 
         Args:
@@ -8612,6 +9152,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Asset coverage ratio values.
@@ -8639,19 +9183,20 @@ class Ratios:
 
         |     |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:----|-------:|-------:|-------:|-------:|-------:|
-        | KMI | 1.9926 | 2.0029 | 2.0193 | 2.0582 | 2.1545 |
-        | OKE | 1.5362 | 1.6077 | 1.8371 | 1.7765 | 1.8112 |
-        | WMB | 1.5739 | 1.6223 | 1.6147 | 1.649  | 1.6245 |
+        | KMI | 1.4053 | 1.3851 | 1.4027 | 1.4371 | 1.5344 |
+        | OKE | 1.4978 | 1.5692 | 1.6095 | 1.526  | 1.5656 |
+        | WMB | 1.5739 | 1.6223 | 1.5972 | 1.6317 | 1.6245 |
         """
+        intangible_assets = get_goodwill_and_intangible_assets(
+            self._balance_sheet_statement
+        )
+
         if trailing:
             asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
                 self._mean_trailing(
                     self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
                 ),
-                self._mean_trailing(
-                    self._balance_sheet_statement.loc[:, "Intangible Assets", :],
-                    trailing,
-                ),
+                self._mean_trailing(intangible_assets, trailing),
                 self._mean_trailing(
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
@@ -8668,7 +9213,7 @@ class Ratios:
         else:
             asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
                 self._balance_sheet_statement.loc[:, "Total Assets", :],
-                self._balance_sheet_statement.loc[:, "Intangible Assets", :],
+                intangible_assets,
                 self._balance_sheet_statement.loc[:, "Total Current Liabilities", :],
                 self._balance_sheet_statement.loc[:, "Short Term Debt", :],
                 self._balance_sheet_statement.loc[:, "Total Debt", :],
@@ -8696,6 +9241,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the debt to equity ratio, a solvency ratio that measures the
@@ -8737,6 +9283,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Debt to equity ratio values.
@@ -8805,6 +9355,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the interest coverage ratio, a solvency ratio that measures a company's
@@ -8844,6 +9395,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Interest coverage ratio values.
@@ -8912,6 +9467,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the equity multiplier, a solvency ratio that measures the degree to which
@@ -8950,6 +9506,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Equity multiplier values.
@@ -9024,6 +9584,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the debt service coverage ratio, a solvency ratio that measures how well a
@@ -9064,6 +9625,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Debt service coverage ratio values.
@@ -9158,6 +9723,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the free cash flow yield ratio, which measures the free cash flow
@@ -9201,6 +9767,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Free cash flow yield ratio values.
@@ -9268,7 +9838,9 @@ class Ratios:
             )
 
         # The market cap uses the close at the end of the period (or on the day), not an average.
-        market_cap = valuation_model.get_market_cap(share_prices, average_shares)
+        market_cap = self._add_basket_market_cap(
+            valuation_model.get_market_cap(share_prices, average_shares), show_daily
+        )
 
         free_cash_flow_yield = solvency_model.get_free_cash_flow_yield(
             free_cash_flow, market_cap
@@ -9298,6 +9870,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the net debt to EBITDA ratio, which measures the net debt of the company
@@ -9333,6 +9906,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Net debt to EBITDA ratio values.
@@ -9408,6 +9985,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the gross debt to EBITDA ratio, which measures the total (gross)
@@ -9441,6 +10019,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Gross debt to EBITDA ratio values.
@@ -9516,6 +10098,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the cash flow coverage ratio, a solvency ratio that measures a company's
@@ -9544,6 +10127,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash flow coverage ratio values.
@@ -9613,6 +10200,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the capital expenditure coverage ratio, a solvency ratio that
@@ -9645,6 +10233,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Capital expenditure coverage ratio values.
@@ -9714,6 +10306,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the dividend paid and capital expenditure coverage ratio, a solvency ratio
@@ -9748,6 +10341,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Dividend paid and capex coverage ratio values.
@@ -9828,6 +10425,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the debt to capital ratio, a solvency ratio that measures the
@@ -9860,6 +10458,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Debt to capital ratio values.
@@ -9928,6 +10530,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the preferred dividend coverage ratio, a solvency ratio that
@@ -9955,6 +10558,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Preferred dividend coverage ratio values.
@@ -10031,6 +10638,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the interest paid to interest expense ratio, which measures how
@@ -10070,6 +10678,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Interest paid to interest expense ratio values.
@@ -10142,6 +10754,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the EBITDA interest coverage ratio, the number of times the earnings before
@@ -10178,6 +10791,10 @@ class Ratios:
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
                 months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
                 None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EBITDA interest coverage values.
@@ -10246,6 +10863,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the EBITDA minus capital expenditure interest coverage ratio, the number of
@@ -10280,6 +10898,10 @@ class Ratios:
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
                 months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
                 None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: (EBITDA - CapEx) interest coverage values.
@@ -10356,6 +10978,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the cash interest coverage ratio, the number of times the operating cash
@@ -10391,6 +11014,10 @@ class Ratios:
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
                 months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
                 None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Cash interest coverage values.
@@ -10459,6 +11086,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the funds from operations (FFO) to debt ratio, one of the two core ratios
@@ -10503,6 +11131,10 @@ class Ratios:
                 stays that at the end of the last period. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: FFO to debt values.
@@ -10589,6 +11221,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the discretionary cash flow (DCF) to debt ratio, a supplementary ratio of
@@ -10629,6 +11262,10 @@ class Ratios:
                 stays that at the end of the last period. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: DCF to debt values.
@@ -10710,6 +11347,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the degree of operating leverage (DOL), the percentage change in operating
@@ -10747,6 +11385,10 @@ class Ratios:
             trailing (int, optional): The number of periods to sum the flows over before their
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
                 with those a year earlier. Defaults to None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Degree of operating leverage values.
@@ -10810,6 +11452,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the degree of financial leverage (DFL), the percentage change in net income
@@ -10848,6 +11491,10 @@ class Ratios:
             trailing (int, optional): The number of periods to sum the flows over before their
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
                 with those a year earlier. Defaults to None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Degree of financial leverage values.
@@ -10913,6 +11560,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the degree of total leverage (DTL), the percentage change in net income for
@@ -10948,6 +11596,10 @@ class Ratios:
             trailing (int, optional): The number of periods to sum the flows over before their
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
                 with those a year earlier. Defaults to None, which uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Degree of total leverage values.
@@ -11012,6 +11664,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculates and collects all Valuation Ratios based on the provided data.
@@ -11034,6 +11687,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Valuation ratios calculated based on the specified parameters.
@@ -11336,6 +11993,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the earnings per share (EPS), a valuation ratio that measures the amount
@@ -11374,6 +12032,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Earnings per share (EPS) values.
@@ -11432,6 +12094,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the revenue per share, a valuation ratio that measures the amount
@@ -11463,6 +12126,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Revenue per share values.
@@ -11539,6 +12206,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the price earnings ratio (P/E), a valuation ratio that compares a
@@ -11585,6 +12253,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Price earnings ratio (P/E) values.
@@ -11665,6 +12337,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the price earnings to growth (PEG) ratio, a valuation metric that
@@ -11708,6 +12381,10 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Price earnings to growth (PEG) ratio values.
@@ -11910,6 +12587,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the forward price earnings ratio (forward P/E), a valuation ratio that compares
@@ -11953,6 +12631,10 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The current share price divided by the consensus EPS estimate of each
@@ -12034,6 +12716,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the forward price earnings to growth (forward PEG) ratio, a valuation metric
@@ -12079,6 +12762,10 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Forward PEG ratio for each period covered by the analyst estimates.
@@ -12263,6 +12950,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the book value per share, a valuation ratio that measures the
@@ -12293,6 +12981,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Book value per share values.
@@ -12352,6 +13044,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the price to book ratio, a valuation ratio that compares a
@@ -12395,6 +13088,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Price to book ratio values.
@@ -12481,6 +13178,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the interest debt per share, a valuation ratio that measures a company's
@@ -12510,6 +13208,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Interest debt per share values.
@@ -12589,6 +13291,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the capex per share, a valuation ratio that measures the amount of
@@ -12626,6 +13329,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Capex per share values.
@@ -12701,6 +13408,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the dividend yield ratio, a valuation ratio that measures the
@@ -12741,6 +13449,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Dividend yield values.
@@ -12842,6 +13554,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the weighted dividend yield ratio, a valuation ratio that measures the
@@ -12878,6 +13591,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Weighted dividend yield values.
@@ -12979,6 +13696,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the price to cash flow ratio, a valuation ratio that compares a
@@ -13015,6 +13733,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Price to cash flow ratio values.
@@ -13098,6 +13820,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the price to free cash flow ratio, a valuation ratio that compares a
@@ -13132,6 +13855,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Price to free cash flow ratio values.
@@ -13217,6 +13944,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the price to sales ratio (P/S), a valuation ratio that compares a
@@ -13256,6 +13984,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Price to sales ratio values.
@@ -13333,11 +14065,13 @@ class Ratios:
         self,
         show_daily: bool = False,
         diluted: bool = True,
+        share: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the market capitalization of the company.
@@ -13360,7 +14094,19 @@ class Ratios:
         come from the fiscal year. With show_daily, each day uses the shares of the latest
         period that has ended.
 
-        Also known as: market capitalization.
+        When the Toolkit analyses the tickers as a basket (Toolkit(basket=True)), a "Total" row
+        (a column with show_daily) adds up their market caps, for example to compare a group of
+        companies with a country (see get_market_cap_to_gdp). The total of a period is left
+        empty when a ticker has no market cap in it, as the sum of the others would understate
+        the basket. With share, each ticker is its share of that total (a decimal, the Total is
+        1). Market caps are summed in the currency the tickers are listed in, so a basket of
+        tickers listed in different currencies is refused.
+
+        - Basket Market Capitalization = Sum of the Market Capitalizations of the Tickers
+        - Share of the Basket = Market Capitalization / Basket Market Capitalization
+
+        Also known as: market capitalization, basket market cap, aggregate market value,
+        market cap weight.
 
         Args:
             show_daily (bool, optional): Whether to show daily values: the close of each trading day
@@ -13368,6 +14114,8 @@ class Ratios:
                 that day (also when it ended before the start date), so no figures are used before
                 their period closes. Defaults to False.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            share (bool, optional): Whether to return each ticker's share of the total market cap
+                of the tickers instead of its market cap, with the "Total" as 1. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -13377,9 +14125,13 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Market capitalization values.
+            pd.DataFrame: Market capitalization values, or each ticker's share of the total.
 
         As an example:
 
@@ -13387,10 +14139,11 @@ class Ratios:
         from financetoolkit import Toolkit
 
         toolkit = Toolkit(
-            ["NVDA", "AAPL", "MSFT"],
+            ["AAPL", "MSFT", "GOOGL"],
             api_key="FINANCIAL_MODELING_PREP_KEY",
             start_date="2021-01-01",
             end_date="2025-12-31",
+            basket=True,
         )
 
         toolkit.ratios.get_market_cap()
@@ -13398,11 +14151,12 @@ class Ratios:
 
         Which returns:
 
-        |      |        2021 |        2022 |        2023 |        2024 |        2025 |
-        |:-----|------------:|------------:|------------:|------------:|------------:|
-        | AAPL | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
-        | MSFT | 2.55872e+12 | 1.80824e+12 | 2.80977e+12 | 3.14818e+12 | 3.61022e+12 |
-        | NVDA | 7.45569e+11 | 3.66373e+11 | 1.23508e+12 | 3.33093e+12 | 4.57186e+12 |
+        |       |        2021 |        2022 |        2023 |        2024 |        2025 |
+        |:------|------------:|------------:|------------:|------------:|------------:|
+        | AAPL  | 2.9947e+12  | 2.12121e+12 | 3.04439e+12 | 3.8585e+12  | 4.07918e+12 |
+        | GOOGL | 1.96322e+12 | 1.16102e+12 | 1.77714e+12 | 2.35622e+12 | 3.82799e+12 |
+        | MSFT  | 2.55872e+12 | 1.80824e+12 | 2.80977e+12 | 3.14818e+12 | 3.61022e+12 |
+        | Total | 7.51665e+12 | 5.09048e+12 | 7.6313e+12  | 9.3629e+12  | 1.15174e+13 |
         """
         average_shares = (
             self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
@@ -13427,8 +14181,158 @@ class Ratios:
 
         market_cap = valuation_model.get_market_cap(share_prices, average_shares)
 
+        market_cap = self._add_basket_market_cap(market_cap, show_daily, share=share)
+
         return finalize_dataset(
             dataset=market_cap,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows" if show_daily else "columns",
+            row_slice=show_daily,
+        )
+
+    @handle_errors
+    def get_market_cap_to_gdp(
+        self,
+        country: str = "United States",
+        show_daily: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the market capitalization to Gross Domestic Product (GDP) ratio of the tickers
+        as one basket: their total market cap divided by a country's nominal GDP in US dollars.
+
+        This is the Buffett indicator, which Warren Buffett called "probably the best single
+        measure of where valuations stand at any given moment" (Fortune, 2001): the value of a
+        country's whole stock market against the annual output of its economy. Its classic form
+        divides the total US market (the Wilshire 5000) by US GDP, which is why the United States
+        is the default country. A basket of tickers is a part of a market, so its ratio is the
+        market value of that basket as a share of an economy's annual output, for example the
+        largest technology companies against the GDP of China. Market cap is a stock (a value at
+        a moment) and GDP a flow (the output of a year), so the ratio compares a value with a
+        year of income rather than two values.
+
+        The formula is as follows:
+
+        - Market Cap to GDP = Basket Market Capitalization / Nominal GDP (last complete year)
+
+        The basket market cap is the sum of the market caps of the tickers, as get_market_cap
+        returns it for a basket Toolkit (the traded close times the weighted average diluted shares),
+        so the tickers must be listed in US dollars. The GDP is the nominal GDP in current US
+        dollars of the Global Macro Database. GDP is annual and comes without publication dates,
+        so each date (or period) is divided by the GDP of the calendar year before the year it
+        falls in, the last complete year: the close of 9 November 2026 by the GDP of 2025, the
+        2025 value by the GDP of 2024. The first estimate of a year is published in the first
+        months of the next year, so in those months the ratio uses a GDP that was about to be
+        published.
+
+        Also known as: Buffett indicator, market cap to GDP, stock market capitalization to GDP,
+        basket market cap to GDP.
+
+        Args:
+            country (str, optional): The country whose GDP the basket is divided by, as named in
+                toolkit.economics.get_gross_domestic_product. Defaults to "United States".
+            show_daily (bool, optional): Whether to show daily values: the close of each trading
+                day against the shares of the latest period that has ended and the GDP of the
+                last complete year. Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The market cap to GDP ratio with the country as row (as column with
+            show_daily).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NVDA", "MSFT", "GOOGL", "AMZN", "META", "AVGO", "TSM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2026-11-06",
+        )
+
+        toolkit.ratios.get_market_cap_to_gdp(country="China", show_daily=True).tail()
+        ```
+
+        Which returns:
+
+        | Date       |   China |
+        |:-----------|--------:|
+        | 2026-11-02 |  1.0252 |
+        | 2026-11-03 |  1.0458 |
+        | 2026-11-04 |  1.0621 |
+        | 2026-11-05 |  1.0009 |
+        | 2026-11-06 |  1.0132 |
+        """
+        currency = self._get_basket_currency()
+
+        if currency not in (None, "USD"):
+            raise ValueError(
+                f"The GDP is in US dollars, but the tickers are listed in {currency}. Choose "
+                "tickers listed in US dollars."
+            )
+
+        if self._gross_domestic_product_function is None:
+            raise ValueError(
+                "The market cap to GDP ratio needs the Gross Domestic Product, which the "
+                "Toolkit provides (toolkit.ratios)."
+            )
+
+        # Millions of US dollars, as the GDP is published, to US dollars.
+        gross_domestic_product = self._gross_domestic_product_function() * 1_000_000
+
+        if country not in gross_domestic_product.columns:
+            raise ValueError(
+                f"There is no GDP in US dollars for {country}. Choose a country as named in "
+                "toolkit.economics.get_gross_domestic_product(usd=True)."
+            )
+
+        market_cap = self.get_market_cap(
+            show_daily=show_daily, diluted=diluted, rounding=None
+        )
+
+        if market_cap.empty:
+            raise ValueError("There is no market cap for the tickers.")
+
+        # The market caps by date, with their Total (already there for a basket Toolkit).
+        market_cap = market_cap if show_daily else market_cap.T
+        if "Total" not in market_cap.columns:
+            market_cap = valuation_model.get_basket_market_cap(market_cap)
+        basket_market_cap = market_cap["Total"]
+
+        market_cap_to_gdp = valuation_model.get_market_cap_to_gdp(
+            basket_market_cap, gross_domestic_product[[country]]
+        )
+
+        return finalize_dataset(
+            dataset=market_cap_to_gdp if show_daily else market_cap_to_gdp.T,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -13452,6 +14356,7 @@ class Ratios:
         lag: int | list[int] = 1,
         compound: bool = False,
         standardize: bool = False,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculates the Enterprise Value (EV) of a company. The Enterprise Value (EV)
@@ -13491,6 +14396,10 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Enterprise Value values.
@@ -13575,6 +14484,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the EV to sales ratio, a valuation ratio that compares a company's
@@ -13611,6 +14521,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EV to Sales Ratio values.
@@ -13690,6 +14604,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the enterprise value over EBITDA ratio, a valuation ratio that
@@ -13732,6 +14647,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EV to EBITDA Ratio values.
@@ -13821,6 +14740,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the enterprise value over operating cash flow ratio, a valuation ratio that
@@ -13856,6 +14776,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EV to Operating Cash Flow Ratio values.
@@ -13938,6 +14862,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the earnings yield ratio, a valuation ratio that measures the earnings per share
@@ -13977,6 +14902,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Earnings Yield Ratio values.
@@ -14049,6 +14978,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Dividend payout ratio, a financial metric that measures the proportion
@@ -14087,6 +15017,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Payout Ratio values.
@@ -14151,6 +15085,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the Reinvestment rate, a financial metric that measures the proportion
@@ -14183,6 +15118,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Reinvestment Rate values.
@@ -14243,6 +15182,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the tangible asset value, a financial metric that represents the book value
@@ -14271,6 +15211,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Tangible Asset Value values.
@@ -14308,9 +15252,7 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
             ),
             self._mean_trailing(
-                self._balance_sheet_statement.loc[
-                    :, "Goodwill and Intangible Assets", :
-                ],
+                get_goodwill_and_intangible_assets(self._balance_sheet_statement),
                 trailing,
             ),
         )
@@ -14337,6 +15279,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the net current asset value, a conservative liquidation-value metric introduced
@@ -14369,6 +15312,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Net Current Asset Value values.
@@ -14437,6 +15384,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the enterprise value over earnings before interest and taxes (EBIT) ratio,
@@ -14474,6 +15422,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Enterprise Value over EBIT values.
@@ -14551,6 +15503,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the EV to free cash flow ratio, a valuation ratio that compares a
@@ -14587,6 +15540,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EV to free cash flow ratio values.
@@ -14664,6 +15621,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the buyback yield, a valuation ratio that measures the net amount
@@ -14704,6 +15662,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Buyback yield values.
@@ -14776,6 +15738,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the total shareholder yield, a valuation ratio that combines the
@@ -14810,6 +15773,10 @@ class Ratios:
                 with annual data a three-year cumulative figure. Defaults to None, which uses the
                 trailing twelve months (4 quarters) with quarterly data and single years with
                 annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Shareholder yield values.
@@ -14887,6 +15854,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ):
         """
         Calculate the stock-based compensation (SBC) adjusted free cash flow, which
@@ -14920,6 +15888,10 @@ class Ratios:
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: SBC-adjusted free cash flow values.
@@ -14995,6 +15967,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the free cash flow payout ratio, the share of free cash flow paid out as
@@ -15029,6 +16002,10 @@ class Ratios:
                 items) over. E.g. 4 with quarterly data gives the trailing twelve months (TTM)
                 and 3 with annual data a three-year cumulative figure. Defaults to None, which
                 uses single-period flows.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Free cash flow payout ratio values.
@@ -15095,6 +16072,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the enterprise value to invested capital ratio, the market value of a
@@ -15138,6 +16116,10 @@ class Ratios:
             trailing (int, optional): The number of period ends to average the balance sheet
                 items over, as for the price to book ratio. Defaults to None, which uses the
                 balance sheet at the end of each period.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: EV to invested capital values.
@@ -15229,6 +16211,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the price to tangible book ratio, the market value of the common equity
@@ -15270,6 +16253,10 @@ class Ratios:
             trailing (int, optional): The number of period ends to average the balance sheet
                 items over, as for the price to book ratio. Defaults to None, which uses the
                 balance sheet at the end of each period.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Price to tangible book values.
@@ -15314,9 +16301,7 @@ class Ratios:
                 self._balance_sheet_statement.loc[:, "Preferred Stock", :], trailing
             ),
             "goodwill_and_intangible_assets": self._mean_trailing(
-                self._balance_sheet_statement.loc[
-                    :, "Goodwill and Intangible Assets", :
-                ],
+                get_goodwill_and_intangible_assets(self._balance_sheet_statement),
                 trailing,
             ),
         }
@@ -15361,6 +16346,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the net share issuance of Pontiff and Woodgate (2008): the log change in
@@ -15401,6 +16387,10 @@ class Ratios:
             trailing (int, optional): The number of periods the shares are compared over.
                 E.g. 5 with annual data gives the five-year issuance. Defaults to None, which
                 uses a year: 4 quarters with quarterly data and 1 year with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Net share issuance values.
@@ -15473,6 +16463,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the composite equity issuance of Daniel and Titman (2006): the growth in
@@ -15516,6 +16507,10 @@ class Ratios:
             trailing (int, optional): The number of periods of the window. E.g. 1 with annual
                 data gives the issuance over a year. Defaults to None, which uses five years:
                 20 quarters with quarterly data and 5 years with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Composite equity issuance values.
@@ -15603,6 +16598,7 @@ class Ratios:
         compound: bool = False,
         standardize: bool = False,
         trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the net external financing of Bradshaw, Richardson and Sloan (2006): the
@@ -15647,6 +16643,10 @@ class Ratios:
                 items over, with the total assets averaged over the start and the end of that
                 window. Defaults to None, which uses the trailing twelve months (4 quarters)
                 with quarterly data and single years with annual data.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: Net external financing values.
@@ -15728,6 +16728,7 @@ class Ratios:
         detail: str | None = None,
         column: str | None = None,
         rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -15784,6 +16785,10 @@ class Ratios:
                 Defaults to None, which uses the Toolkit's rounding.
             **kwargs: Parameters passed to the ratios that take them, e.g. trailing=4 or
                 diluted=False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
             pd.DataFrame: The summary per ratio and horizon, or with detail that part of the
@@ -15827,9 +16832,9 @@ class Ratios:
         Which returns:
         |                                              |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:---------------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_price_to_earnings_ratio', '12 Months') |    0.0495 |                  0.2919 |                 0.1697 |        1.7636 |    0.0807 |           0.5648 |            108 |             0.0842 |              0.0896 |                 0.95   |
-        | ('get_price_to_book_ratio', '12 Months')     |    0.1156 |                  0.2966 |                 0.3898 |        4.0507 |    0.0001 |           0.6759 |            108 |             0.1691 |              0.0501 |                 0.978  |
-        | ('get_return_on_equity', '12 Months')        |    0.0425 |                  0.355  |                 0.1198 |        1.1976 |    0.2339 |           0.5    |            100 |             0.065  |              0.0517 |                 0.9671 |
+        | ('get_price_to_earnings_ratio', '12 Months') |    0.0505 |                  0.2917 |                 0.173  |        1.7981 |    0.075  |           0.5741 |            108 |             0.0854 |              0.0872 |                 0.9499 |
+        | ('get_price_to_book_ratio', '12 Months')     |    0.1163 |                  0.2959 |                 0.393  |        4.0845 |    0.0001 |           0.6759 |            108 |             0.1699 |              0.0476 |                 0.978  |
+        | ('get_return_on_equity', '12 Months')        |    0.0423 |                  0.3551 |                 0.1191 |        1.1915 |    0.2363 |           0.5    |            100 |             0.065  |              0.0517 |                 0.9671 |
         """
         factors = factor_model.get_daily_factors(
             self,

@@ -23,9 +23,15 @@ from pandas.tseries.holiday import (
 from financetoolkit.cache import frame_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.cache.request_model import redact_credentials
+from financetoolkit.helpers import split_values
 from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.sources_model import record_source
 
 logger = get_logger()
+
+# A rise in prices of more than tenfold (1,000%) in a year, the hyperinflations of the long
+# run price indices.
+HYPERINFLATION_RISE = 9.0
 
 # Two-letter country codes (ISO 3166, as used by Eurostat, the BIS and the economic
 # calendar) named as elsewhere in the Economics module, so a country is one column no
@@ -93,7 +99,13 @@ def to_gmdb_country_names(data: pd.DataFrame) -> pd.DataFrame:
 
 # The periods a high-frequency series can be returned in, with the PeriodIndex frequency
 # each one maps to. Weekly periods end on Friday, the last trading day of the week.
-PERIOD_FREQUENCIES = {"daily": "D", "weekly": "W-FRI", "monthly": "M"}
+PERIOD_FREQUENCIES = {
+    "daily": "D",
+    "weekly": "W-FRI",
+    "monthly": "M",
+    "quarterly": "Q",
+    "yearly": "Y",
+}
 
 # History requested before the start date, so growth, lag and rolling windows can be
 # computed for the first periods shown (finalize_dataset slices the result afterwards).
@@ -458,6 +470,76 @@ def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> 
         )
 
 
+def warn_about_long_run_prices(
+    consumer_price_index: pd.DataFrame,
+    countries: list[str] | str | None,
+    start_date: str | None,
+    end_date: str | None,
+) -> None:
+    """
+    Warns about the years of the Global Macro Database's yearly consumer price index, in
+    the date range, that its inflation rate does not describe as it reads:
+
+    - A value repeated in consecutive years, which the source carried forward rather
+      than measured, so that the inflation of those years is 0 by construction. Germany's
+      index repeats its 1912 value in 1913 and 1914, where the Jordà-Schularick-Taylor
+      Macrohistory Database has prices rising 0.7% and 2.8%.
+    - A hyperinflation (prices rising more than tenfold in a year). Yearly figures are
+      averages over the year, so the year after one still shows a large rise from that
+      average when a currency reform ended it within the year, as Germany's Rentenmark
+      did in November 1923 (1924: +723%). The index is chained across currency reforms
+      and redenominations, in today's currency, so it has no break at the reform.
+
+    Args:
+        consumer_price_index (pd.DataFrame): The yearly index, a column per country.
+        countries (list[str] | str | None): The requested countries, all when None.
+        start_date (str | None): The start of the date range.
+        end_date (str | None): The end of the date range.
+    """
+    selected = (
+        consumer_price_index.columns
+        if countries is None
+        else [
+            country
+            for country in split_values(countries)
+            if country in consumer_price_index.columns
+        ]
+    )
+    window = consumer_price_index.loc[start_date:end_date, selected]
+
+    def years(index: pd.Index) -> str:
+        names = [str(year) for year in index]
+        return " and ".join(
+            [", ".join(names[:-1]), names[-1]] if len(names) > 1 else names
+        )
+
+    for country in window.columns:
+        index = window[country].dropna()
+        repeated = index.index[1:][(index.to_numpy()[1:] == index.to_numpy()[:-1])]
+
+        if len(repeated):
+            logger.warning(
+                "The Global Macro Database repeats the %s consumer price index of the "
+                "year before in %s: a value carried forward rather than measured, so the "
+                "inflation rate of those years is 0 by construction.",
+                country,
+                years(repeated),
+            )
+
+        hyperinflation = index.index[index.pct_change() > HYPERINFLATION_RISE]
+
+        if len(hyperinflation):
+            logger.warning(
+                "Prices in %s rose more than tenfold in %s. Yearly figures are averages "
+                "over the year, so the year after shows a large rise from that average "
+                "even when a currency reform ended the hyperinflation within the year; "
+                "the index is chained across currency reforms and redenominations, in "
+                "today's currency.",
+                country,
+                years(hyperinflation),
+            )
+
+
 def to_us_series(observations: dict, source: str, description: str) -> pd.DataFrame:
     """
     Turns the dated observations of a US-only series into the single "United States"
@@ -535,14 +617,93 @@ def validate_period(period: str, supported: list[str], indicator: str) -> str:
     return period
 
 
+def change_over_periods(
+    data: pd.DataFrame | pd.Series, periods: int
+) -> pd.DataFrame | pd.Series:
+    """
+    The relative change over a number of periods (12 months, 4 quarters) on consecutive
+    periods: a period a source skipped becomes empty first, so the change compares the
+    same period a year earlier rather than the row that many places back, and the skipped
+    period and the one a year after it are empty.
+
+    Args:
+        data (pd.DataFrame | pd.Series): The values, indexed by a monthly, quarterly or
+            yearly PeriodIndex.
+        periods (int): The number of periods to compare with, e.g. 12 for monthly data.
+
+    Returns:
+        pd.DataFrame | pd.Series: The change as a decimal, on consecutive periods.
+    """
+    if data.empty:
+        return data
+
+    consecutive = data.reindex(
+        pd.period_range(
+            data.index.min(),
+            data.index.max(),
+            freq=data.index.freq,
+            name=data.index.name,
+        )
+    )
+
+    return consecutive.pct_change(periods, fill_method=None)
+
+
+CONSUMER_PRICE_MEASURES = [
+    "all",
+    "core",
+    "energy",
+    "food",
+    "goods",
+    "services",
+    "shelter",
+]
+
+
+def validate_consumer_price_measure(
+    measure: str, period: str, oecd_source: bool = False
+) -> str:
+    """
+    Normalises the measure of a consumer price indicator and checks that it exists for the
+    requested data: the core index and the components are monthly and not from the OECD.
+
+    Args:
+        measure (str): The requested measure, e.g. "core".
+        period (str): The period of the request.
+        oecd_source (bool): Whether the OECD is the source. Defaults to False.
+
+    Returns:
+        str: The measure in lower case.
+
+    Raises:
+        ValueError: When the measure does not exist, or not at that period or source.
+    """
+    measure = measure.lower()
+
+    if measure not in CONSUMER_PRICE_MEASURES:
+        raise ValueError(
+            f"The measure '{measure}' does not exist. Choose from "
+            f"{', '.join(repr(option) for option in CONSUMER_PRICE_MEASURES)}."
+        )
+
+    if measure != "all" and (period.lower() != "monthly" or oecd_source):
+        raise ValueError(
+            f"The measure '{measure}' is monthly only, without oecd_source. Use "
+            "period='monthly'."
+        )
+
+    return measure
+
+
 def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
-    Converts a daily series to a weekly or monthly one by taking the last observation of
-    every period, the end-of-period convention central banks and the BIS use for rates.
+    Converts a daily series to a weekly, monthly, quarterly or yearly one by taking the
+    last observation of every period, the end-of-period convention central banks and the
+    BIS use for rates.
 
     Args:
         data (pd.DataFrame): The daily series, indexed by a daily PeriodIndex.
-        period (str): "daily", "weekly" or "monthly".
+        period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
 
     Returns:
         pd.DataFrame: The series at the requested frequency.
@@ -559,6 +720,59 @@ def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     resampled.index.name = None
 
     return resampled
+
+
+def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
+    """
+    Converts a monthly index to a quarterly or yearly one by averaging the months of
+    every period, the convention statistical offices use for the quarterly and annual
+    values of a price index. A period is only averaged once all of its months are
+    published, so a partial quarter or year is not mistaken for a full one.
+
+    Args:
+        data (pd.DataFrame): The monthly index, indexed by a monthly PeriodIndex.
+        period (str): "monthly", "quarterly" or "yearly".
+
+    Returns:
+        pd.DataFrame: The index at the requested frequency, NaN for incomplete periods.
+    """
+    if data.empty or period == "monthly":
+        return data
+
+    periods = data.index.asfreq("Q" if period == "quarterly" else "Y")
+    grouped = data.groupby(periods)
+
+    return grouped.mean().where(grouped.count() == (3 if period == "quarterly" else 12))
+
+
+def choose_sources(sources: list[pd.DataFrame]) -> dict[str, int]:
+    """
+    Per country, the position of the source with the most recent observation and, when
+    sources are equally recent, the first in the list (see combine_sources).
+
+    Args:
+        sources (list[pd.DataFrame]): The sources, most preferred first, each indexed by
+            period with one column per country.
+
+    Returns:
+        dict[str, int]: Per country, the position of its source in the list.
+    """
+    chosen: dict[str, tuple[pd.Period, int]] = {}
+
+    for position, source in enumerate(sources):
+        if source is None or source.empty:
+            continue
+
+        for country in source.columns:
+            last_observation = source[country].last_valid_index()
+
+            if last_observation is None:
+                continue
+
+            if country not in chosen or last_observation > chosen[country][0]:
+                chosen[country] = (last_observation, position)
+
+    return {country: position for country, (_, position) in chosen.items()}
 
 
 def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
@@ -580,29 +794,13 @@ def combine_sources(sources: list[pd.DataFrame]) -> pd.DataFrame:
     Returns:
         pd.DataFrame: One column per country, indexed by period.
     """
-    chosen: dict[str, tuple[pd.Period, int]] = {}
-
-    for position, source in enumerate(sources):
-        if source is None or source.empty:
-            continue
-
-        for country in source.columns:
-            last_observation = source[country].last_valid_index()
-
-            if last_observation is None:
-                continue
-
-            if country not in chosen or last_observation > chosen[country][0]:
-                chosen[country] = (last_observation, position)
+    chosen = choose_sources(sources)
 
     if not chosen:
         return pd.DataFrame()
 
     combined = pd.concat(
-        [
-            sources[position][country]
-            for country, (_, position) in sorted(chosen.items())
-        ],
+        [sources[position][country] for country, position in sorted(chosen.items())],
         axis=1,
     ).sort_index()
 
@@ -616,7 +814,10 @@ EXTENSION_TOLERANCE = 0.0005
 
 
 def extend_with_recent(
-    history: pd.DataFrame, recent: pd.DataFrame, country: str
+    history: pd.DataFrame,
+    recent: pd.DataFrame,
+    country: str,
+    recent_sources: set[str] | None = None,
 ) -> pd.DataFrame:
     """
     Extends a country's series with the months a faster publisher of the same figures
@@ -631,6 +832,9 @@ def extend_with_recent(
         history (pd.DataFrame): The full series, one column per country.
         recent (pd.DataFrame): The faster publisher's recent observations for the country.
         country (str): The column to extend.
+        recent_sources (set[str] | None): The sources of the recent observations, held
+            back with sources_model.collect_sources, which are recorded only when they
+            extend the history. Defaults to None.
 
     Returns:
         pd.DataFrame: The history with the newer observations added to that column.
@@ -670,4 +874,71 @@ def extend_with_recent(
     extended = history.reindex(history.index.union(additions.index))
     extended.loc[additions.index, country] = additions
 
+    for source in recent_sources or ():
+        record_source(source)
+
     return extended
+
+
+# The day count of each overnight rate in its money market: interest accrues over 360
+# days a year for the euro and the US dollar and over 365 for sterling and the yen.
+OVERNIGHT_RATE_DAY_COUNTS = {
+    "Euro Area": 360,
+    "United States": 360,
+    "United Kingdom": 365,
+    "Japan": 365,
+}
+
+
+def compound_overnight_rate(
+    rates: pd.DataFrame, day_counts: dict[str, int]
+) -> pd.DataFrame:
+    """
+    Compounds daily overnight rates into the growth of 1 deposited on the first day, the
+    method of the compounded indices the European Central Bank and the New York Fed
+    publish for €STR and SOFR:
+
+    - Growth (t) = Growth (t-1) × (1 + Rate (t-1) × Days (t-1) / Day Count)
+
+    where Days (t-1) is the number of calendar days the rate of the previous publication
+    day applies to, three over a weekend, and the Day Count is 360 or 365. The value on a
+    day includes the interest up to that day, so the first day is 1. Each country is
+    compounded over its own publication days.
+
+    Args:
+        rates (pd.DataFrame): The daily rates as decimals, indexed by a daily PeriodIndex
+            with a column per country.
+        day_counts (dict[str, int]): The day count of every country's rate.
+
+    Returns:
+        pd.DataFrame: The growth of 1 per country, NaN on days without a publication.
+    """
+    growth = {}
+
+    for country in rates.columns:
+        rate = rates[country].dropna()
+        days = (
+            pd.Series(rate.index.to_timestamp(), index=rate.index)
+            .diff()
+            .shift(-1)
+            .dt.days
+        )
+        growth[country] = (
+            (1 + rate * days / day_counts[country]).shift(1, fill_value=1.0).cumprod()
+        )
+
+    return pd.DataFrame(growth, index=rates.index, columns=rates.columns)
+
+
+def rebase_to_first(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Divides every column by its first value, so each series is the growth of 1 since its
+    first observation (a country that starts later starts from its own first value).
+
+    Args:
+        data (pd.DataFrame): The series, a column per country.
+
+    Returns:
+        pd.DataFrame: The growth of 1 per column.
+    """
+    return data if data.empty else data / data.bfill().iloc[0]

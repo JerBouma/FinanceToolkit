@@ -7,15 +7,12 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.economics import treasury_model
-from financetoolkit.fixedincome import (
-    bond_data_model,
-    bond_model,
-    fixedincome_controller,
-    helpers,
-    treasurydirect_model,
-    yieldcurve_model,
-)
+from financetoolkit.economics.sources import treasury_model
+from financetoolkit.fixedincome import fixedincome_controller, helpers
+from financetoolkit.fixedincome.bonds import bond_model, bonds_controller
+from financetoolkit.fixedincome.curves import yieldcurve_model
+from financetoolkit.fixedincome.markets import bond_data_model
+from financetoolkit.fixedincome.sources import treasurydirect_model
 
 PRICE_DATE = date(2026, 11, 5)
 
@@ -149,7 +146,7 @@ def test_every_bond_calculator_works_without_arguments(fixedincome):
         result = getattr(fixedincome, method)()
         assert result.index.tolist() == BENCHMARKS, method
         assert result[column].notna().all(), method
-        assert result.columns[:6].tolist() == fixedincome_controller.BOND_COLUMNS
+        assert result.columns[:6].tolist() == bonds_controller.BOND_COLUMNS
 
 
 def test_maturity_range_selects_every_fixed_coupon_treasury(fixedincome):
@@ -363,3 +360,59 @@ def test_breakeven_inflation_rate(fixedincome, monkeypatch):
     assert rates.loc["10 Year", "Breakeven Inflation Rate"] == pytest.approx(0.0224)
     assert rates.loc["5 Year", "Nominal Yield"] == pytest.approx(0.046)
     assert np.isnan(rates.loc["30 Year", "Breakeven Inflation Rate"])
+
+
+def test_taylor_price_change_from_an_earlier_day(fixedincome, monkeypatch):
+    earlier_day = date(2026, 10, 28)
+    # A day before: every price a point lower, and the newest 2-year note not issued yet.
+    earlier_prices = PRICES[PRICES["CUSIP"] != "91282CRU7"].assign(
+        Price=lambda prices: prices["Price"] - 1
+    )
+    monkeypatch.setattr(
+        treasurydirect_model,
+        "get_treasury_prices",
+        lambda price_date: (
+            (earlier_prices.copy(), earlier_day)
+            if price_date == "2026-10-28"
+            else (PRICES.copy(), PRICE_DATE)
+        ),
+    )
+
+    changes = fixedincome.get_taylor_price_change(
+        from_date="2026-10-28", date="2026-11-05"
+    )
+
+    # The benchmarks of the earlier day: the newest 2-year note was not issued yet.
+    assert "91282CRU7" not in changes.index
+    assert set(changes["From Date"]) == {"2026-10-28"}
+    assert set(changes["Price Date"]) == {"2026-11-05"}
+
+    bond = changes.loc["91282CRF0"]
+    years = bond_data_model.get_years_to_maturity(earlier_day, date(2036, 8, 15))
+    earlier_yield, _ = bond_data_model.get_bond_analytics(0.04625, years, 97.4375)
+    later_yield, _ = bond_data_model.get_bond_analytics(
+        0.04625,
+        bond_data_model.get_years_to_maturity(PRICE_DATE, date(2036, 8, 15)),
+        98.4375,
+    )
+    assert bond["Yield Change"] == pytest.approx(later_yield - earlier_yield)
+    # The Taylor estimate starts from the earlier day's yield, duration and convexity.
+    assert bond["Price Change"] == pytest.approx(
+        bond_model.get_taylor_price_change(
+            100, 0.04625, years, earlier_yield, 2, later_yield - earlier_yield
+        )
+    )
+    assert bond["Realised Price Change"] == pytest.approx(98.4375 / 97.4375 - 1)
+    # A one-point rise in price is a fall in yield, which the estimate gets close to.
+    assert (changes["Yield Change"] < 0).all()
+    assert changes["Price Change"].to_numpy() == pytest.approx(
+        changes["Realised Price Change"].to_numpy(), abs=0.002
+    )
+
+    # A yield change of your own or the bonds' own, not both; and the earlier day first.
+    assert fixedincome.get_taylor_price_change(
+        yield_change=0.01, from_date="2026-10-28"
+    ).empty
+    assert fixedincome.get_taylor_price_change(
+        from_date="2026-11-05", date="2026-10-28"
+    ).empty

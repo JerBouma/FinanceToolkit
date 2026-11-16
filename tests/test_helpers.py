@@ -4,6 +4,7 @@
 
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -594,3 +595,139 @@ def test_a_fiscal_year_ending_in_the_first_days_of_june_belongs_to_the_previous_
     )
 
     assert [str(label) for label in labels] == ["2022", "2023"]
+
+
+def test_goodwill_and_intangible_assets_fall_back_on_the_separate_rows():
+    """
+    The combined row is used where it is reported; elsewhere goodwill and the other
+    intangibles are added up with a missing one counting as zero, and only a period
+    without any of the three is NaN.
+    """
+    nan = np.nan
+    periods = ["2021", "2022", "2023", "2024"]
+    rows = {
+        ("A", "Goodwill and Intangible Assets"): [100, nan, nan, nan],
+        ("A", "Goodwill"): [60, 70, nan, nan],
+        ("A", "Intangible Assets"): [40, 20, 15, nan],
+        ("B", "Goodwill and Intangible Assets"): [nan, nan, nan, 0],
+        ("B", "Goodwill"): [5, nan, 3, nan],
+        ("B", "Intangible Assets"): [nan, nan, 2, nan],
+    }
+    balance_sheet = pd.DataFrame.from_dict(rows, orient="index", columns=periods)
+    balance_sheet.index = pd.MultiIndex.from_tuples(balance_sheet.index)
+
+    result = helpers.get_goodwill_and_intangible_assets(balance_sheet)
+
+    assert result.loc["A"].tolist()[:3] == [100, 90, 15]
+    assert np.isnan(result.loc["A", "2024"])
+    assert result.loc["B", "2021"] == 5
+    assert np.isnan(result.loc["B", "2022"])
+    assert result.loc["B", "2023"] == 5
+    assert result.loc["B", "2024"] == 0
+
+
+def test_add_basket_total_sums_the_tickers_per_item():
+    statement = pd.DataFrame(
+        {
+            "2023": [10.0, 2.0, 5.0, 30.0, 4.0, np.nan],
+            "2024": [12.0, 2.0, 6.0, 33.0, 4.0, 7.0],
+        },
+        index=pd.MultiIndex.from_product(
+            [["AAPL", "MSFT"], ["Revenue", "EPS", "Capex"]]
+        ),
+    )
+
+    result = helpers.add_basket_total(statement, ["AAPL", "MSFT"], not_summed=["EPS"])
+
+    # The tickers stay as they are and the Total follows them.
+    pd.testing.assert_frame_equal(result.loc[["AAPL", "MSFT"]], statement)
+    assert result.loc["Total"].index.tolist() == ["Revenue", "EPS", "Capex"]
+    assert result.loc[("Total", "Revenue")].tolist() == [40.0, 45.0]
+    # A per-share figure does not add up, and a missing value leaves the Total empty.
+    assert result.loc[("Total", "EPS")].isna().all()
+    assert np.isnan(result.loc[("Total", "Capex"), "2023"])
+    assert result.loc[("Total", "Capex"), "2024"] == 13.0
+
+
+def test_deflate_with_price_index_uses_the_latest_month_as_base():
+    months = pd.period_range("2024-01", "2024-04", freq="M")
+    values = pd.DataFrame({"Gold": [100.0, 100.0, 100.0, 100.0]}, index=months)
+    price_index = pd.Series([50.0, np.nan, 100.0], index=months[[0, 1, 2]])
+
+    real = helpers.deflate_with_price_index(values, price_index)
+
+    # January's prices were worth twice as much in March money; a month the index skipped
+    # has no real value and a month after its latest keeps its nominal value.
+    assert real["Gold"].iloc[0] == 200.0
+    assert np.isnan(real["Gold"].iloc[1])
+    assert real["Gold"].iloc[2:].tolist() == [100.0, 100.0]
+
+
+def test_change_over_periods_compares_the_same_period_a_year_earlier():
+    from financetoolkit.economics.helpers import change_over_periods
+
+    months = pd.period_range("2024-01", "2025-12", freq="M").delete(21)
+    index = pd.DataFrame({"Japan": range(100, 100 + len(months))}, index=months)
+
+    change = change_over_periods(index, 12)
+
+    # October 2025 is missing: it and the month a year later are not compared with
+    # whichever row is twelve places back.
+    assert pd.isna(change.loc[pd.Period("2025-10", "M"), "Japan"])
+    assert change.loc[pd.Period("2025-11", "M"), "Japan"] == pytest.approx(
+        121 / 110 - 1
+    )
+
+
+def test_add_score_zone_names_the_zone_of_each_score():
+    results = pd.DataFrame(
+        {"2024": [0.5, 1.5, 0.1, 3.0], "2025": [0.6, 2.99, 0.2, np.nan]},
+        index=pd.MultiIndex.from_product([["BA", "AAPL"], ["X1", "Altman Z-Score"]]),
+    )
+
+    zoned = helpers.add_score_zone(
+        results, "Altman Z-Score", [1.81, 2.99], ["Distress", "Grey", "Safe"]
+    )
+
+    assert zoned.index.tolist() == [
+        ("BA", "X1"),
+        ("BA", "Altman Z-Score"),
+        ("BA", "Zone"),
+        ("AAPL", "X1"),
+        ("AAPL", "Altman Z-Score"),
+        ("AAPL", "Zone"),
+    ]
+    assert zoned.loc[("BA", "Zone")].tolist() == ["Distress", "Safe"]
+    assert zoned.loc[("AAPL", "Zone"), "2024"] == "Safe"
+    # A period without a score has no zone.
+    assert pd.isna(zoned.loc[("AAPL", "Zone"), "2025"])
+
+
+def test_rank_across_tickers_compares_with_the_neighbour_toward_the_middle():
+    returns = pd.DataFrame(
+        {
+            "^KS11": [-0.162, 0.01],
+            "BTC-USD": [-0.073, 0.02],
+            "^HSI": [-0.054, np.nan],
+            "BZ=F": [0.136, 0.03],
+            "GC=F": [0.02, 0.01],
+        },
+        index=pd.PeriodIndex(["2026-10", "2026-11"], freq="M", name="Date"),
+    )
+
+    ranking = helpers.rank_across_tickers(returns)
+    october = ranking.loc["2026-10"]
+
+    assert october.index.tolist() == ["BZ=F", "GC=F", "^HSI", "BTC-USD", "^KS11"]
+    assert october["Rank"].tolist() == [1, 2, 3, 4, 5]
+    # The best is compared with the second, the worst with the next worst.
+    assert october.loc["BZ=F", "Compared With"] == "GC=F"
+    assert october.loc["^KS11", "Compared With"] == "BTC-USD"
+    assert october.loc["^KS11", "Difference"] == pytest.approx(-0.089)
+    assert october.loc["^KS11", "Multiple"] == pytest.approx(0.162 / 0.073)
+    # A gain against a loss has no multiple.
+    assert pd.isna(october.loc["GC=F", "Multiple"])
+    # A ticker without a value is left out of that period; ties share the higher rank.
+    november = ranking.loc["2026-11"]
+    assert "^HSI" not in november.index
+    assert november.loc[["^KS11", "GC=F"], "Rank"].tolist() == [3, 3]

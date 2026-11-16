@@ -6,8 +6,8 @@ import pandas as pd
 import pytest
 
 from financetoolkit.mcp_server import mcp_controller
-from financetoolkit.mcp_server.provider_model import ToolkitProvider
-from financetoolkit.mcp_server.registry_controller import MAX_TRANSACTIONS
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+from financetoolkit.mcp_server.registry.registry_controller import MAX_TRANSACTIONS
 
 
 @pytest.fixture
@@ -189,7 +189,7 @@ def test_the_provider_builds_the_portfolio_from_its_inputs(monkeypatch, tmp_path
         def get_portfolio_overview(self, **kwargs):
             return pd.DataFrame({"Return": [0.1]}, index=["Portfolio"])
 
-    from financetoolkit.mcp_server import provider_model  # noqa: PLC0415
+    from financetoolkit.mcp_server.registry import provider_model  # noqa: PLC0415
 
     monkeypatch.setattr(provider_model, "Portfolio", FakePortfolio)
     provider = ToolkitProvider(

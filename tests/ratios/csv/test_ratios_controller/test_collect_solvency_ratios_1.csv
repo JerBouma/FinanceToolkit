@@ -22,7 +22,7 @@ AAPL,Degree of Operating Leverage,,,-0.3617,0.2431
 AAPL,Degree of Financial Leverage,,,-0.4427,0.164
 AAPL,Degree of Total Leverage,,,-0.6443,0.4471
 MSFT,Debt-to-Assets Ratio,,-0.1379,-0.1733,-0.1328
-MSFT,Asset Coverage Ratio,,0.1389,0.1775,0.188
+MSFT,Asset Coverage Ratio,,0.1241,0.0949,0.2441
 MSFT,Debt-to-Equity Ratio,,-0.2046,-0.2292,-0.2096
 MSFT,Debt Service Coverage Ratio,,-0.2448,1.5959,-0.3021
 MSFT,Equity Multiplier,,,-0.072,-0.0797

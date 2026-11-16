@@ -119,11 +119,12 @@ def get_estimated_eps_growth_rate(
     Returns:
         float | pd.Series | pd.DataFrame: The annualized estimated EPS growth rate.
     """
-    eps_ratio = estimated_eps / trailing_eps
-
     valid = (estimated_eps > 0) & (trailing_eps > 0) & (years > 0)
 
-    growth_rate = eps_ratio ** (1 / years) - 1
+    # NumPy division also handles scalar zero denominators, which are masked below.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        eps_ratio = np.divide(estimated_eps, trailing_eps)
+        growth_rate = np.power(eps_ratio, np.divide(1, years)) - 1
 
     if isinstance(growth_rate, pd.Series | pd.DataFrame):
         return growth_rate.where(valid)
@@ -338,6 +339,66 @@ def get_market_cap(
         float | pd.Series: The market capitalization of the company.
     """
     return share_price * total_shares_outstanding
+
+
+def get_basket_market_cap(
+    market_cap: pd.DataFrame, share: bool = False
+) -> pd.DataFrame:
+    """
+    Adds the total market capitalization of a basket of companies, or expresses each company
+    as its share of that total.
+
+    The total of a date is missing when a company of the basket has no market cap on that
+    date, as the sum of the others would understate the basket.
+
+    Notes: All the market caps must be in the same currency.
+
+    Args:
+        market_cap (pd.DataFrame): The market capitalization with the dates (or periods) as
+            index and the companies as columns.
+        share (bool, optional): Whether to return each company's share of the total (the
+            Total is then 1) instead of the market caps. Defaults to False.
+
+    Returns:
+        pd.DataFrame: The market caps (or shares) with a "Total" column added.
+    """
+    total = market_cap.sum(axis=1, skipna=False)
+
+    basket = market_cap.div(total, axis=0) if share else market_cap.copy()
+    basket["Total"] = total.div(total) if share else total
+
+    return basket
+
+
+def get_market_cap_to_gdp(
+    market_cap: pd.Series,
+    gross_domestic_product: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Calculates the market capitalization to Gross Domestic Product (GDP) ratio, the
+    Buffett indicator: a market value divided by the annual output of an economy.
+
+    Each date (or period) is divided by the GDP of the calendar year before the year it
+    falls in, the last complete year, so that no GDP is used before its year has ended.
+
+    Notes: The market cap and GDP must be in the same currency and unit.
+
+    Args:
+        market_cap (pd.Series): The market capitalization with dates (DatetimeIndex) or
+            periods (PeriodIndex) as index.
+        gross_domestic_product (pd.DataFrame): The annual GDP with years (PeriodIndex) as
+            index and the countries as columns.
+
+    Returns:
+        pd.DataFrame: The ratio with the dates (or periods) as index and the countries as
+        columns.
+    """
+    previous_year_gdp = gross_domestic_product.set_axis(
+        gross_domestic_product.index.year
+    ).reindex(market_cap.index.year - 1)
+    previous_year_gdp.index = market_cap.index
+
+    return previous_year_gdp.rdiv(market_cap, axis=0)
 
 
 def get_enterprise_value(

@@ -1,0 +1,1437 @@
+"""OECD Model"""
+
+__docformat__ = "google"
+
+from datetime import datetime
+from io import StringIO
+
+import pandas as pd
+import requests
+
+from financetoolkit.cache import frame_model, policy_model
+from financetoolkit.cache.cache_controller import get_active_cache
+from financetoolkit.utilities.logger_model import get_logger
+from financetoolkit.utilities.requests_model import get_request
+
+logger = get_logger()
+
+# Module-level cross-cutting policy: the OECD allows 60 downloads/hour.
+_ALLOW_STALE_CACHE_ON_RATE_LIMIT = True
+
+
+def configure_oecd_cache(allow_stale_on_rate_limit: bool = True) -> None:
+    """
+    Set whether a rate-limited OECD call may fall back on the cache past the point
+    where the cache would normally consider the stored response due for a refresh.
+
+    The cache itself is the shared one published by the controllers; only this
+    policy is specific to the OECD.
+
+    Args:
+        allow_stale_on_rate_limit (bool): serve the last successfully cached
+            response for a query when the OECD API returns 429 (Too Many
+            Requests), rather than an empty DataFrame. The served data may
+            not be the most up-to-date -- it's whatever was last
+            successfully fetched for that exact query, which could be
+            arbitrarily old the first time this is ever enabled.
+    """
+    global _ALLOW_STALE_CACHE_ON_RATE_LIMIT  # noqa: PLW0603
+    _ALLOW_STALE_CACHE_ON_RATE_LIMIT = allow_stale_on_rate_limit
+
+
+BASE_URL = "https://sdmx.oecd.org/public/rest/data/"
+EXTENSIONS = "?dimensionAtObservation=AllDimensions&format=csvfilewithlabels"
+
+CODE_TO_COUNTRY = {
+    "AGO": "Angola",
+    "ALB": "Albania",
+    "ARE": "United Arab Emirates",
+    "ARG": "Argentina",
+    "ARM": "Armenia",
+    "AUS": "Australia",
+    "AUT": "Austria",
+    "AZE": "Azerbaijan",
+    "BEL": "Belgium",
+    "BEN": "Benin",
+    "BFA": "Burkina Faso",
+    "BGD": "Bangladesh",
+    "BGR": "Bulgaria",
+    "BHR": "Bahrain",
+    "BIH": "Bosnia and Herzegovina",
+    "BLR": "Belarus",
+    "BOL": "Bolivia",
+    "BRA": "Brazil",
+    "BRN": "Brunei",
+    "BWA": "Botswana",
+    "CAN": "Canada",
+    "CHE": "Switzerland",
+    "CHL": "Chile",
+    "CHN": "China",
+    "CIV": "Ivory Coast",
+    "CMR": "Cameroon",
+    "COD": "Democratic Republic of the Congo",
+    "COG": "Republic of the Congo",
+    "COL": "Colombia",
+    "CRI": "Costa Rica",
+    "CUB": "Cuba",
+    "CYP": "Cyprus",
+    "CZE": "Czech Republic",
+    "DEU": "Germany",
+    "DEW": "Former Federal Republic of Germany",
+    "DNK": "Denmark",
+    "DOM": "Dominican Republic",
+    "DZA": "Algeria",
+    "EA": "Euro Area",
+    "EA17": "Euro Area 17",
+    "EA19": "Euro Area 19",
+    "ECU": "Ecuador",
+    "EGY": "Egypt",
+    "ERI": "Eritrea",
+    "ESP": "Spain",
+    "EST": "Estonia",
+    "ETH": "Ethiopia",
+    "EU": "European Union",
+    "EU27_2020": "European Union 27",
+    "EU28": "European Union 28",
+    "FIN": "Finland",
+    "FJI": "Fiji",
+    "FRA": "France",
+    "G-20": "G20",
+    "G-7": "G7",
+    "G7M": "G7M",
+    "GAB": "Gabon",
+    "GBR": "United Kingdom",
+    "GEO": "Georgia",
+    "GHA": "Ghana",
+    "GNQ": "Equatorial Guinea",
+    "GRC": "Greece",
+    "GTM": "Guatemala",
+    "HKG": "Hong Kong",
+    "HND": "Honduras",
+    "HRV": "Croatia",
+    "HTI": "Haiti",
+    "HUN": "Hungary",
+    "IDN": "Indonesia",
+    "IND": "India",
+    "IRL": "Ireland",
+    "IRN": "Iran",
+    "IRQ": "Iraq",
+    "ISL": "Iceland",
+    "ISR": "Israel",
+    "ITA": "Italy",
+    "JAM": "Jamaica",
+    "JOR": "Jordan",
+    "JPN": "Japan",
+    "KAZ": "Kazakhstan",
+    "KEN": "Kenya",
+    "KGZ": "Kyrgyzstan",
+    "KHM": "Cambodia",
+    "KOR": "South Korea",
+    "KWT": "Kuwait",
+    "LAO": "Laos",
+    "LBN": "Lebanon",
+    "LBY": "Libya",
+    "LIE": "Liechtenstein",
+    "LKA": "Sri Lanka",
+    "LSO": "Lesotho",
+    "LTU": "Lithuania",
+    "LUX": "Luxembourg",
+    "LVA": "Latvia",
+    "MAR": "Morocco",
+    "MDA": "Moldova",
+    "MDG": "Madagascar",
+    "MEX": "Mexico",
+    "MKD": "Macedonia",
+    "MLI": "Mali",
+    "MLT": "Malta",
+    "MMR": "Myanmar",
+    "MNE": "Montenegro",
+    "MNG": "Mongolia",
+    "MOZ": "Mozambique",
+    "MRT": "Mauritania",
+    "MUS": "Mauritius",
+    "MWI": "Malawi",
+    "MYS": "Malaysia",
+    "NAM": "Namibia",
+    "NER": "Niger",
+    "NGA": "Nigeria",
+    "NIC": "Nicaragua",
+    "NLD": "Netherlands",
+    "NMEC": "Non-OECD Economies",
+    "NOR": "Norway",
+    "NPL": "Nepal",
+    "NZL": "New Zealand",
+    "OAVG": "OECD - Average",
+    "OECD": "OECD - Total",
+    "OECDE": "OECD - Europe",
+    "OEU": "OECD - Europe",
+    "OMN": "Oman",
+    "PAK": "Pakistan",
+    "PAN": "Panama",
+    "PER": "Peru",
+    "PHL": "Philippines",
+    "PNG": "Papua New Guinea",
+    "POL": "Poland",
+    "PRK": "North Korea",
+    "PRT": "Portugal",
+    "PRY": "Paraguay",
+    "PSE": "Palestine",
+    "QAT": "Qatar",
+    "ROU": "Romania",
+    "RUS": "Russia",
+    "RWA": "Rwanda",
+    "SAU": "Saudi Arabia",
+    "SDN": "Sudan",
+    "SEN": "Senegal",
+    "SGP": "Singapore",
+    "SLE": "Sierra Leone",
+    "SLV": "El Salvador",
+    "SRB": "Serbia",
+    "SVK": "Slovakia",
+    "SVN": "Slovenia",
+    "SWE": "Sweden",
+    "SWZ": "Swaziland",
+    "SYR": "Syria",
+    "TCD": "Chad",
+    "TGO": "Togo",
+    "THA": "Thailand",
+    "TJK": "Tajikistan",
+    "TKM": "Turkmenistan",
+    "TTO": "Trinidad and Tobago",
+    "TUN": "Tunisia",
+    "TUR": "Turkey",
+    "TWN": "Taiwan",
+    "TZA": "Tanzania",
+    "UGA": "Uganda",
+    "UKR": "Ukraine",
+    "URY": "Uruguay",
+    "USA": "United States",
+    "UZB": "Uzbekistan",
+    "VEN": "Venezuela",
+    "VNM": "Vietnam",
+    "WLD": "World",
+    "YEM": "Yemen",
+    "ZAF": "South Africa",
+    "ZMB": "Zambia",
+    "ZWE": "Zimbabwe",
+}
+
+
+# Extra history before start_date so rolling and growth rows compute correctly.
+START_BUFFER_PERIODS = {"Y": 10, "Q": 16, "M": 24}
+
+# Columns the OECD's labelled CSV writer emits that are not part of the series key. Everything else is a dimension, and every dimension must resolve to a single code for a query to identify exactly one series per country.  # noqa: E501
+NON_DIMENSION_COLUMNS = {
+    "STRUCTURE",
+    "STRUCTURE_ID",
+    "STRUCTURE_NAME",
+    "ACTION",
+    "TIME_PERIOD",
+    "OBS_VALUE",
+    "OBS_STATUS",
+    "UNIT_MULT",
+    "DECIMALS",
+    "BASE_PER",
+    "CONF_STATUS",
+    "COMMENT_OBS",
+    "COMMENT_TS",
+}
+
+
+def _validate_single_series_per_country(
+    oecd_data: pd.DataFrame, oecd_data_string: str
+) -> None:
+    """
+    Verify that the query identified exactly one series per country and period.
+
+    An SDMX key with an empty slot matches *every* code in that dimension, so a query
+    that does not pin, say, `UNIT_MEASURE` or `AGE` silently returns several series
+    per country. Because the caller keeps only the first row it sees for each
+    (period, country) pair, whichever series the OECD happens to write out first would
+    then decide the measure, unit, adjustment or price basis that is returned -- a
+    different number than the one the method promises, with nothing to signal it.
+
+    This raises instead, since an unpinned dimension is a defect in the query rather
+    than a gap in the data. The condition checked is the one that actually causes the
+    wrong number to be returned -- more than one row for the same country and period --
+    so an attribute that legitimately varies over time does not trip it.
+
+    Args:
+        oecd_data (pd.DataFrame): The labelled CSV as returned by the OECD API.
+        oecd_data_string (str): The dataset id and key the data was requested with,
+            used to name the offending query in the error message.
+
+    Raises:
+        ValueError: If a country has more than one observation for the same period,
+            meaning the query matches multiple series per country.
+    """
+    duplicated = oecd_data.duplicated(subset=["TIME_PERIOD", "REF_AREA"], keep=False)
+
+    if not duplicated.any():
+        return
+
+    competing_series = oecd_data[duplicated]
+    ambiguous_dimensions = {}
+
+    for column in competing_series.columns:
+        if column in NON_DIMENSION_COLUMNS or column != column.upper():
+            continue
+        if column == "REF_AREA":
+            continue
+
+        codes = competing_series[column].dropna().unique()
+
+        if len(codes) > 1:
+            ambiguous_dimensions[column] = sorted(str(code) for code in codes)
+
+    if not ambiguous_dimensions:
+        raise ValueError(
+            f"The OECD query '{oecd_data_string}' returned more than one observation "
+            "for the same country and period, so the value used would depend on the "
+            "order the API happened to write its rows in."
+        )
+
+    reported = ", ".join(
+        dimension + " (" + "/".join(codes) + ")"
+        for dimension, codes in ambiguous_dimensions.items()
+    )
+
+    raise ValueError(
+        f"The OECD query '{oecd_data_string}' does not identify a single series "
+        f"per country: the dimensions {reported} each matched more than one code. "
+        "Pin every dimension in the query key so that the returned measure, unit "
+        "and adjustment are the documented ones."
+    )
+
+
+def _validate_no_country_name_collision(
+    oecd_data: pd.DataFrame, original_areas: pd.Series, oecd_data_string: str
+) -> None:
+    """
+    Verify that no two REF_AREA codes in the response map to the same country name.
+
+    `CODE_TO_COUNTRY` translates the API's area codes into readable column names. When two
+    codes in the same response translate to one name -- for example a current aggregate and
+    a legacy code for the same grouping -- the two distinct series become one column, and
+    the de-duplication that follows keeps whichever the API happened to write first. That is
+    the same silent, order-dependent wrong answer that
+    `_validate_single_series_per_country` exists to prevent, except it is caused by the
+    name mapping rather than by the query key, so it survives that check.
+
+    Args:
+        oecd_data (pd.DataFrame): The response after REF_AREA has been renamed.
+        original_areas (pd.Series): The REF_AREA column as the API returned it, before
+            the rename, used to report which codes collided.
+        oecd_data_string (str): The dataset id and key the data was requested with.
+
+    Raises:
+        ValueError: If two or more distinct area codes map to the same country name.
+    """
+    collisions = {}
+
+    for name, codes in original_areas.groupby(oecd_data["REF_AREA"]):
+        distinct = sorted(str(code) for code in codes.unique())
+
+        if len(distinct) > 1:
+            collisions[str(name)] = distinct
+
+    if not collisions:
+        return
+
+    reported = ", ".join(
+        f"{name} (from {'/'.join(codes)})" for name, codes in collisions.items()
+    )
+
+    raise ValueError(
+        f"The OECD query '{oecd_data_string}' returned several area codes that "
+        f"CODE_TO_COUNTRY maps onto the same name: {reported}. One of the series would "
+        "be discarded without a trace, so the mapping needs a distinct name per code."
+    )
+
+
+def _shifted_period(date: str, period_code: str, buffer_periods: int = 0) -> pd.Period:
+    """
+    Parse a YYYY-MM-DD date string into a pandas Period of the given frequency,
+    shifted back by `buffer_periods` periods.
+
+    Args:
+        date (str): A date in YYYY-MM-DD format.
+        period_code (str): The period code of the data ('M', 'Q' or 'Y').
+        buffer_periods (int): Number of periods to subtract. Defaults to 0.
+
+    Returns:
+        pd.Period: The shifted period.
+
+    Raises:
+        ValueError: If the date does not parse to a period (pandas hands back NaT
+            rather than raising for an empty or 'NaT' string).
+    """
+    period = pd.Period(date, freq=period_code)
+
+    if not isinstance(period, pd.Period):
+        raise ValueError(f"'{date}' is not a valid date, expected YYYY-MM-DD.")
+
+    # A range ending at the period is the typed way to step back: Period arithmetic
+    # is described by the stubs as possibly yielding an offset instead.
+    return pd.period_range(end=period, periods=buffer_periods + 1)[0]
+
+
+def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) -> str:
+    """
+    Convert a YYYY-MM-DD date string into the OECD API's period format for the given
+    frequency, optionally shifted back by `buffer_periods` periods first.
+
+    Args:
+        date (str): A date in YYYY-MM-DD format.
+        period_code (str): The period code of the data. Can be 'M' for monthly,
+            'Q' for quarterly or 'Y' for yearly.
+        buffer_periods (int): Number of periods to subtract before formatting.
+            Defaults to 0.
+
+    Returns:
+        str: The OECD-formatted period string (e.g. "2020", "2020-Q2" or "2020-05").
+    """
+    period = _shifted_period(date, period_code, buffer_periods)
+
+    if period_code == "Y":
+        return str(period.year)
+    if period_code == "Q":
+        return f"{period.year}-Q{period.quarter}"
+
+    return f"{period.year}-{period.month:02d}"
+
+
+def collect_oecd_data(
+    oecd_data_string: str,
+    period_code: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """
+    Collect the data from the OECD API and return it as a DataFrame. This is
+    a helper function for the other functions in this module.
+
+    Args:
+        oecd_data_string (str): The string that is appended to the base URL to
+            get the data from the OECD API.
+        period_code (str): The period code of the data. Can be 'M' for monthly,
+            'Q' for quarterly or 'Y' for yearly.
+        start_date (str | None): Restrict the query to observations at or after this
+            date (YYYY-MM-DD), via the API's `startPeriod` parameter. A buffer of
+            several periods is subtracted first (see `START_BUFFER_PERIODS`) so that
+            downstream rolling/trailing/growth calculations still have enough history
+            before the display window. The exact requested range is still enforced
+            afterwards by the caller (`finalize_dataset`). Defaults to None (fetch
+            full history).
+        end_date (str | None): Restrict the query to observations at or before this
+            date (YYYY-MM-DD), via the API's `endPeriod` parameter. Defaults to None
+            (fetch up to the latest available observation).
+
+    Returns:
+       pd.DataFrame: A DataFrame indexed by period with one column per country. An empty
+       DataFrame is returned, with a warning, when the query matches no observations
+       (HTTP 404), when the API is rate limiting and no cached response is available,
+       or when the API cannot be reached at all.
+
+    Raises:
+        ValueError: If the response cannot be parsed as CSV, is missing the columns the
+            rest of the pipeline needs, or matches more than one series per country --
+            all of which are defects in the query or a change in the API rather than a
+            gap in the data, and none of which may be answered with a plausible-looking
+            number.
+    """
+    extensions = EXTENSIONS
+    buffered_start_date = start_date
+
+    if start_date:
+        buffer_periods = START_BUFFER_PERIODS.get(period_code, 0)
+        buffered_period = _shifted_period(start_date, period_code, buffer_periods)
+        buffered_start_date = buffered_period.to_timestamp().strftime("%Y-%m-%d")
+        extensions += (
+            f"&startPeriod="
+            f"{_format_oecd_period(start_date, period_code, buffer_periods)}"
+        )
+    if end_date:
+        extensions += f"&endPeriod={_format_oecd_period(end_date, period_code)}"
+
+    # The dataset id and filters identify a query; the period is tracked as coverage.
+    cache = get_active_cache()
+    cache_entity = oecd_data_string
+    cache_parameters = {"period_code": period_code}
+    cached_data = None
+
+    # Both ends need a concrete date, or the coverage gap can never be closed.
+    coverage_start = buffered_start_date or "1900-01-01"
+    coverage_end = end_date or datetime.today().strftime("%Y-%m-%d")
+
+    if cache is not None:
+        plan = cache.plan(
+            source=policy_model.OECD,
+            dataset="query",
+            entities=[cache_entity],
+            start=coverage_start,
+            end=coverage_end,
+            parameters=cache_parameters,
+        )
+        cached_data = plan.cached_frame(cache_entity)
+
+        if plan.fully_cached and cached_data is not None and not cached_data.empty:
+            return cached_data
+
+    try:
+        response = get_request(f"{BASE_URL}{oecd_data_string}{extensions}", timeout=300)
+    except requests.exceptions.HTTPError as error:
+        status_code = error.response.status_code if error.response is not None else None
+
+        if status_code == 404:  # noqa: PLR2004
+            # The OECD answers a key that matches nothing with 404 NoRecordsFound, which is an empty result rather than a failure of the request itself.  # noqa: E501
+            logger.warning(
+                "The OECD API returned no records for the query '%s' over the requested "
+                "period. The series may not cover these dates, or may have been "
+                "discontinued.",
+                oecd_data_string,
+            )
+            return pd.DataFrame()
+
+        if status_code == 429:  # noqa
+            if (
+                _ALLOW_STALE_CACHE_ON_RATE_LIMIT
+                and cached_data is not None
+                and not cached_data.empty
+            ):
+                logger.warning(
+                    "OECD API rate limit reached (429 Too Many Requests) -- serving the most "
+                    "recently cached response for this query instead (opted in via "
+                    "configure_oecd_cache); this may not be the most up-to-date data."
+                )
+                return cached_data
+            logger.warning(
+                "OECD API rate limit reached (429 Too Many Requests). "
+                "Please wait a moment before retrying."
+            )
+            return pd.DataFrame()
+        raise
+    except requests.exceptions.RequestException as error:
+        # A connection failure, timeout or DNS error. The cache fallback applies for the same reason it does on a rate limit: the query is fine, the network is not.  # noqa: E501
+        if cached_data is not None and not cached_data.empty:
+            logger.warning(
+                "Could not reach the OECD API (%s) -- serving the most recently cached "
+                "response for this query instead; this may not be the most up-to-date "
+                "data.",
+                error,
+            )
+            return cached_data
+
+        logger.error(
+            "Could not reach the OECD API to retrieve '%s' (%s). No data is returned "
+            "for this indicator.",
+            oecd_data_string,
+            error,
+        )
+        return pd.DataFrame()
+
+    try:
+        oecd_data = pd.read_csv(StringIO(response.text))
+    except pd.errors.ParserError as error:
+        raise ValueError(
+            f"The OECD response for the query '{oecd_data_string}' is not readable as "
+            f"CSV ({error}), which means the API returned something other than the "
+            "requested format."
+        ) from error
+
+    if oecd_data.empty:
+        logger.warning(
+            "The OECD API returned an empty response for the query '%s'.",
+            oecd_data_string,
+        )
+        return pd.DataFrame()
+
+    if not {"TIME_PERIOD", "REF_AREA", "OBS_VALUE"}.issubset(oecd_data.columns):
+        raise ValueError(
+            f"The OECD response for the query '{oecd_data_string}' is missing one of "
+            "the TIME_PERIOD, REF_AREA and OBS_VALUE columns, which means the API's "
+            "CSV schema has changed and the response cannot be interpreted."
+        )
+
+    # Guards against an unpinned dimension quietly deciding which measure is returned.
+    _validate_single_series_per_country(oecd_data, oecd_data_string)
+
+    original_areas = oecd_data["REF_AREA"]
+    oecd_data["REF_AREA"] = original_areas.replace(CODE_TO_COUNTRY)
+
+    # CODE_TO_COUNTRY has to stay injective over the codes present in a single response. Two distinct REF_AREA codes that map to the same country name would survive the check above (they are different series to the API) but collide here, and the drop_duplicates below would then silently discard one of them -- reintroducing exactly the "whichever row came first wins" failure that check exists to prevent.  # noqa: E501
+    _validate_no_country_name_collision(oecd_data, original_areas, oecd_data_string)
+
+    oecd_data = oecd_data[["TIME_PERIOD", "REF_AREA", "OBS_VALUE"]]
+
+    oecd_data = oecd_data.drop_duplicates(subset=["TIME_PERIOD", "REF_AREA"])
+
+    oecd_data = oecd_data.pivot(
+        index="TIME_PERIOD", columns="REF_AREA", values="OBS_VALUE"
+    )
+
+    oecd_data.index.name = None
+    oecd_data.columns.name = None
+
+    oecd_data.index = pd.PeriodIndex(oecd_data.index, freq=period_code)
+
+    # Only remove data if all of it is NaN or it is NaT
+    oecd_data = oecd_data.dropna(axis=1, how="all")
+    oecd_data = oecd_data[~oecd_data.index.isna()]
+
+    # Stored on every success, since a later rate-limit fallback serves this back.
+    if cache is not None and not oecd_data.empty:
+        cache.store(
+            source=policy_model.OECD,
+            dataset="query",
+            entity=cache_entity,
+            data=oecd_data,
+            start=coverage_start,
+            end=coverage_end,
+            parameters=cache_parameters,
+        )
+
+        if cached_data is not None and not cached_data.empty:
+            oecd_data = frame_model.merge_frames(cached_data, oecd_data)
+            oecd_data = frame_model.slice_frame(
+                oecd_data, buffered_start_date, end_date
+            )
+
+    return oecd_data
+
+
+def get_annual_gross_domestic_product(
+    start_date: str | None = None, end_date: str | None = None
+) -> pd.DataFrame:
+    """
+    Get the Gross Domestic Product for a variety of countries over
+    time from the OECD. The Gross Domestic Product is the total value
+    of goods produced and services provided in a country during one year.
+
+    The data is displayed as per capita which is the GDP divided by the
+    population of the country, expressed in US dollars per person at current
+    prices converted with Purchasing Power Parities (PPPs), which is what makes
+    the level comparable across countries. Data is annual.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the Gross Domestic Product per capita, in
+       current-price PPP-converted US dollars per person, for a variety of countries
+       over time.
+    """
+    oecd_data_string = (
+        "OECD.SDD.NAD,DSD_NAMAIN10@DF_TABLE1_EXPENDITURE_HCPC,/"
+        "A..S1.S1.B1GQ_POP._Z._Z._Z.USD_PPP_PS.V.N.T0102"
+    )
+
+    gross_domestic_product = collect_oecd_data(
+        oecd_data_string, "Y", start_date, end_date
+    )
+
+    return gross_domestic_product
+
+
+def get_consumer_confidence_index(
+    start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Get the Consumer Confidence Index for a variety of countries over
+    time from the OECD. The Consumer Confidence Index is an indicator
+    that measures the degree of optimism that consumers feel about
+    the overall state of the economy and their personal financial
+    situation. Data is defined in months.
+
+    The series returned is the OECD-harmonised, amplitude-adjusted index, which
+    oscillates around a long-run average of 100: a value above 100 signals consumer
+    optimism relative to that average and a value below 100 signals pessimism.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the monthly, amplitude-adjusted Consumer
+        Confidence Index (long-run average = 100) for a variety of countries over time.
+    """
+    oecd_data_string = "OECD.SDD.STES,DSD_STES@DF_CLI,4.1/.M.CCICP.IX._Z.AA.IX._Z.H"
+
+    consumer_confidence_index = collect_oecd_data(
+        oecd_data_string, "M", start_date, end_date
+    )
+
+    return consumer_confidence_index
+
+
+def get_business_confidence_index(
+    start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Get the Business Confidence Index for a variety of countries over
+    time from the OECD. The Business Confidence Index is an indicator
+    that measures the degree of optimism that businesses feel about
+    the overall state of the economy and their personal financial
+    situation. Data is defined in months.
+
+    The series returned is the OECD-harmonised, amplitude-adjusted index, which
+    oscillates around a long-run average of 100: a value above 100 signals business
+    optimism relative to that average and a value below 100 signals pessimism.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the monthly, amplitude-adjusted Business
+        Confidence Index (long-run average = 100) for a variety of countries over time.
+    """
+    oecd_data_string = "OECD.SDD.STES,DSD_STES@DF_CLI,4.1/.M.BCICP.IX._Z.AA.IX._Z.H"
+
+    business_confidence_index = collect_oecd_data(
+        oecd_data_string, "M", start_date, end_date
+    )
+
+    return business_confidence_index
+
+
+def get_composite_leading_indicator(
+    start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Get the Composite Leading Indicator for a variety of countries over
+    time from the OECD. The Composite Leading Indicator is an indicator
+    that tries to determine the turning points in business cycles.
+    Data is defined in months.
+
+    The series returned is the OECD-harmonised, amplitude-adjusted index, which
+    oscillates around a long-run average of 100: readings above 100 point to
+    above-trend activity ahead and readings below 100 to below-trend activity.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the monthly, amplitude-adjusted Composite
+        Leading Indicator (long-run average = 100) for a variety of countries over time.
+    """
+    oecd_data_string = "OECD.SDD.STES,DSD_STES@DF_CLI,4.1/.M.LI.IX._Z.AA.IX._Z.H"
+
+    composite_leading_indicator = collect_oecd_data(
+        oecd_data_string, "M", start_date, end_date
+    )
+
+    return composite_leading_indicator
+
+
+def get_house_prices(
+    quarterly: bool | None = False,
+    inflation_adjusted: bool = True,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """
+    Residential Property Prices Indices (RPPIs), also named House price indices (HPIs),
+    are index numbers that measure the prices of residential properties over time. RPPIs
+    are key statistics not only for citizens and households across the world, but also
+    for economic and monetary policy makers. They can help, for example, to monitor
+    potential macroeconomic imbalances and the risk exposure of the household
+    and financial sectors.
+
+    The series returned is seasonally adjusted and expressed as an index with
+    2015 = 100 for every country.
+
+    Args:
+        quarterly (bool): Whether to return the quarterly data or the yearly data.
+        inflation_adjusted (bool): Whether to return the real (inflation-adjusted) house
+            price indices (RHP) or the nominal house price indices (HPI). Defaults to True.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the seasonally adjusted house price index
+        for a variety of countries over time.
+    """
+    if inflation_adjusted:
+        # RHP = Real house price indices (inflation-adjusted)
+        oecd_data_string = f"OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES,1.0/.{'Q' if quarterly else 'A'}.RHP.IX"
+    else:
+        # HPI = Nominal house price indices
+        oecd_data_string = f"OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES,1.0/.{'Q' if quarterly else 'A'}.HPI.IX"
+
+    house_prices = collect_oecd_data(
+        oecd_data_string, "Q" if quarterly else "Y", start_date, end_date
+    )
+
+    return house_prices
+
+
+def get_rent_prices(
+    quarterly: bool | None = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """
+    Covers the Rent Prices as an index number that measures the prices of residential
+    properties over time. Rent Prices are key statistics not only for citizens and
+    households across the world, but also for economic and monetary policy makers.
+
+    The series returned is seasonally adjusted and expressed as an index with
+    2015 = 100 for every country.
+
+    Args:
+        quarterly (bool): Whether to return the quarterly data or the yearly data.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the seasonally adjusted rent price index
+        for a variety of countries over time.
+    """
+    oecd_data_string = f"OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES,1.0/.{'Q' if quarterly else 'A'}.RPI.IX"
+
+    rent_prices = collect_oecd_data(
+        oecd_data_string, "Q" if quarterly else "Y", start_date, end_date
+    )
+
+    return rent_prices
+
+
+def get_unemployment_rate(
+    period: str, start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Get the unemployment rate for a variety of countries over time from the OECD.
+    The unemployment rate is the share of the total labour force aged 15 and over
+    that is unemployed. The series is calendar and seasonally adjusted, and covers
+    both sexes.
+
+    Args:
+        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the unemployment rate as a decimal
+        fraction of the labour force (e.g. 0.036 for 3.6%) for a variety of countries
+        over time.
+    """
+    period = period.lower()
+
+    if period not in ["monthly", "quarterly", "yearly"]:
+        raise ValueError("Period must be one of 'monthly', 'quarterly' or 'yearly'")
+
+    period_data = "M" if period == "monthly" else "Q" if period == "quarterly" else "A"
+
+    oecd_data_string = (
+        f"OECD.SDD.TPS,DSD_LFS@DF_IALFS_UNE_M,/"
+        f".UNE_LF_M.PT_LF_SUB._Z.Y._T.Y_GE15._Z.{period_data}"
+    )
+
+    unemployment_rate = collect_oecd_data(
+        oecd_data_string,
+        "Y" if period_data == "A" else period_data,
+        start_date,
+        end_date,
+    )
+
+    # Divide by 100 to convert the percentage into a decimal
+    unemployment_rate = unemployment_rate / 100
+
+    return unemployment_rate
+
+
+def get_long_term_interest_rate(
+    period: str, start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Get the long term interest rate for a variety of countries over time from the OECD.
+    The long term interest rate is defined as the yield on government bonds with a
+    residual maturity of about 10 years, measured on the national definition, and
+    quoted as a percent per annum.
+
+    Args:
+        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the long term interest rate as a decimal
+        fraction per annum (e.g. 0.0353 for 3.53%) for a variety of countries over time.
+    """
+    period = period.lower()
+
+    if period not in ["monthly", "quarterly", "yearly"]:
+        raise ValueError("Period must be one of 'monthly', 'quarterly' or 'yearly'")
+
+    period_data = "M" if period == "monthly" else "Q" if period == "quarterly" else "A"
+
+    oecd_data_string = (
+        f"OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/.{period_data}.IRLT.PA._Z._Z._Z._Z.N"
+    )
+
+    long_term_interest_rate = collect_oecd_data(
+        oecd_data_string,
+        "Y" if period_data == "A" else period_data if period_data == "Q" else "M",
+        start_date,
+        end_date,
+    )
+
+    # Divide by 100 to convert the percentage into a decimal
+    long_term_interest_rate = long_term_interest_rate / 100
+
+    return long_term_interest_rate
+
+
+def get_short_term_interest_rate(
+    period: str, start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Get the short term interest rate for a variety of countries over time from the OECD.
+    The short term interest rate returned here is the 3-month interbank offered rate
+    (the rate at which banks lend to one another for three months, e.g. EURIBOR for the
+    euro area), on the national definition and quoted as a percent per annum. It is not
+    a government bill yield, and for most countries it tracks the central bank's policy
+    rate closely.
+
+    Args:
+        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the short term interest rate as a decimal
+        fraction per annum (e.g. 0.0461 for 4.61%) for a variety of countries over time.
+    """
+    period = period.lower()
+
+    if period not in ["monthly", "quarterly", "yearly"]:
+        raise ValueError("Period must be one of 'monthly', 'quarterly' or 'yearly'")
+
+    period_data = "M" if period == "monthly" else "Q" if period == "quarterly" else "A"
+
+    oecd_data_string = (
+        f"OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/.{period_data}.IR3TIB.PA._Z._Z._Z._Z.N"
+    )
+
+    short_term_interest_rate = collect_oecd_data(
+        oecd_data_string,
+        "Y" if period_data == "A" else period_data if period_data == "Q" else "M",
+        start_date,
+        end_date,
+    )
+
+    # Divide by 100 to convert the percentage into a decimal
+    short_term_interest_rate = short_term_interest_rate / 100
+
+    return short_term_interest_rate
+
+
+def get_gross_domestic_product_growth(
+    year_over_year: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """
+    Get the quarterly growth of real gross domestic product (GDP) for a variety of
+    countries from the OECD's Quarterly National Accounts. The growth is measured in
+    chain-linked volumes and is seasonally and calendar adjusted. The quarter-on-quarter
+    growth is not annualized, so it is about a quarter of the annualized rate some
+    statistical offices, such as the U.S. Bureau of Economic Analysis, headline.
+
+    Args:
+        year_over_year (bool): Whether to return the change on the same quarter a year
+            earlier instead of on the previous quarter. Defaults to False.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: The growth as a decimal (0.006 for 0.6%), indexed by quarter with a
+        column per country.
+    """
+    transformation = "GY" if year_over_year else "G1"
+
+    oecd_data_string = (
+        "OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD,/"
+        f"Q.Y..S1..B1GQ._Z...PC.L.{transformation}."
+    )
+
+    gross_domestic_product_growth = collect_oecd_data(
+        oecd_data_string, "Q", start_date, end_date
+    )
+
+    # The OECD publishes the growth in percent.
+    return gross_domestic_product_growth / 100
+
+
+def get_consumer_price_index(
+    period: str, start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Get the Consumer Price Index (CPI) for a variety of countries over time from the OECD.
+    The CPI measures the average change over time in the prices paid by consumers for a
+    basket of goods and services, and is the standard measure of inflation.
+
+    Unlike the Global Macro Database CPI, which is annual-only, this OECD source also
+    supports monthly and quarterly frequency, useful for tracking inflation more closely
+    in real time.
+
+    The index is set to 100 in the base year, which can vary per country. It covers
+    all items and is not seasonally adjusted.
+
+    Args:
+        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the all-items Consumer Price Index for a
+        variety of countries over time.
+    """
+    period = period.lower()
+
+    if period not in ["monthly", "quarterly", "yearly"]:
+        raise ValueError("Period must be one of 'monthly', 'quarterly' or 'yearly'")
+
+    period_data = "M" if period == "monthly" else "Q" if period == "quarterly" else "A"
+
+    oecd_data_string = f"OECD.SDD.STES,DSD_KEI@DF_KEI,4.0/.{period_data}.CP.IX._Z._Z._Z"
+
+    consumer_price_index = collect_oecd_data(
+        oecd_data_string,
+        "Y" if period_data == "A" else period_data if period_data == "Q" else "M",
+        start_date,
+        end_date,
+    )
+
+    return consumer_price_index
+
+
+def get_household_savings_rate(
+    quarterly: bool | None = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """
+    Get the Gross Household Savings Rate for a variety of countries over time from the
+    OECD's Household Dashboard. The household savings rate is the share of household
+    gross disposable income (adjusted for the net change in pension entitlements) that
+    is saved rather than spent on final consumption.
+
+    It is a key input to consumption-smoothing and life-cycle/permanent-income theories
+    of household behaviour, and a closely watched signal of both near-term consumption
+    momentum (a falling savings rate can temporarily prop up spending even as income
+    growth slows) and a household sector's buffer against future income shocks.
+
+    See definition: https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_HHDASH%40DF_HHDASH_INDIC
+
+    Also known as: household savings ratio, personal savings rate.
+
+    Args:
+        quarterly (bool): Whether to return the quarterly data or the yearly data.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the gross household savings rate as a
+        decimal fraction of adjusted gross disposable income (e.g. 0.1177 for 11.77%),
+        seasonally adjusted, for a variety of countries over time.
+    """
+    oecd_data_string = (
+        f"OECD.SDD.NAD,DSD_HHDASH@DF_HHDASH_INDIC,/"
+        f"{'Q' if quarterly else 'A'}..B8GS1M_B6GA.PT_B6GA_S1M"
+    )
+
+    household_savings_rate = collect_oecd_data(
+        oecd_data_string, "Q" if quarterly else "Y", start_date, end_date
+    )
+
+    # Divide by 100 to convert the percentage into a decimal
+    household_savings_rate = household_savings_rate / 100
+
+    return household_savings_rate
+
+
+def get_household_debt_to_income_ratio(
+    quarterly: bool | None = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """
+    Get the Household Debt to Disposable Income Ratio for a variety of countries over
+    time from the OECD's Household Dashboard. This expresses total household gross debt
+    (loans and debt securities) as a percentage of household gross disposable income.
+
+    It is a standard household-leverage indicator used in financial-stability analysis:
+    a high or rapidly rising ratio signals households are more exposed to income shocks
+    or interest rate increases (debt-servicing costs rise directly with rates on
+    variable-rate or refinanced debt), and has historically preceded credit-cycle
+    downturns (e.g. in the lead-up to the 2008 financial crisis).
+
+    See definition: https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_HHDASH%40DF_HHDASH_INDIC
+
+    Also known as: household leverage ratio, debt-to-income ratio.
+
+    Args:
+        quarterly (bool): Whether to return the quarterly data or the yearly data.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing total household gross debt as a decimal
+        fraction of gross disposable income (e.g. 0.9607 for 96.07%) for a variety of
+        countries over time.
+    """
+    oecd_data_string = (
+        f"OECD.SDD.NAD,DSD_HHDASH@DF_HHDASH_INDIC,/"
+        f"{'Q' if quarterly else 'A'}..LES1M_FD4.PT_B6G_S1M"
+    )
+
+    household_debt_to_income_ratio = collect_oecd_data(
+        oecd_data_string, "Q" if quarterly else "Y", start_date, end_date
+    )
+
+    # Divide by 100 to convert the percentage into a decimal
+    household_debt_to_income_ratio = household_debt_to_income_ratio / 100
+
+    return household_debt_to_income_ratio
+
+
+def get_exchange_rates(
+    period: str, start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Get the exchange rates for a variety of countries over time from the OECD.
+    The exchange rate is defined as the number of units of the national currency
+    that are needed to purchase one unit of US dollars.
+
+    Args:
+        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the nominal exchange rate, in units of
+        national currency per US dollar, for a variety of countries over time. The
+        United States itself is therefore not part of this dataset.
+    """
+    period = period.lower()
+
+    if period not in ["monthly", "quarterly", "yearly"]:
+        raise ValueError("Period must be one of 'monthly', 'quarterly' or 'yearly'")
+
+    period_data = "M" if period == "monthly" else "Q" if period == "quarterly" else "A"
+
+    oecd_data_string = (
+        f"OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/.{period_data}.CC.XDC_USD._Z._Z._Z._Z.N"
+    )
+
+    exchange_rates = collect_oecd_data(
+        oecd_data_string,
+        "Y" if period_data == "A" else period_data if period_data == "Q" else "M",
+        start_date,
+        end_date,
+    )
+
+    return exchange_rates
+
+
+def get_share_prices(
+    period: str, start_date: str | None = None, end_date: str | None = None
+):
+    """
+    Share price indices are calculated from the prices of common shares of
+    companies traded on national or foreign stock exchanges. They are usually
+    determined by the stock exchange, using the closing daily values for the
+    monthly data, and normally expressed as simple arithmetic averages of
+    the daily data.
+
+    The series is a price index (it excludes dividends) with 2015 = 100 for every
+    country, so a level shows the change since 2015 and is not comparable across
+    countries as a price; growth rates are.
+
+    Args:
+        period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the share price index for a variety
+        of countries over time.
+    """
+    period = period.lower()
+
+    if period not in ["monthly", "quarterly", "yearly"]:
+        raise ValueError("Period must be one of 'monthly', 'quarterly' or 'yearly'")
+
+    period_data = "M" if period == "monthly" else "Q" if period == "quarterly" else "A"
+
+    oecd_data_string = (
+        f"OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/.{period_data}.SHARE.IX._Z._Z._Z._Z.N"
+    )
+
+    share_prices = collect_oecd_data(
+        oecd_data_string,
+        "Y" if period_data == "A" else period_data,
+        start_date,
+        end_date,
+    )
+
+    return share_prices
+
+
+def get_labour_productivity(start_date: str | None = None, end_date: str | None = None):
+    """
+    GDP per hour worked is a measure of labour productivity. It measures
+    how efficiently labour input is combined with other factors of production
+    and used in the production process. Labour input is defined as total hours
+    worked of all persons engaged in production. Labour productivity only partially
+    reflects the productivity of labour in terms of the personal capacities of
+    workers or the intensity of their effort.
+
+    The level is expressed in US dollars per hour worked at constant prices, converted
+    with Purchasing Power Parities (PPPs) so that it is comparable across countries,
+    and covers the total economy. Data is annual.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing GDP per hour worked, in constant-price
+         PPP-converted US dollars per hour, for a variety of countries over time.
+    """
+    oecd_data_string = (
+        "OECD.SDD.TPS,DSD_PDB@DF_PDB,2.0/.A.GDPHRS._T.USD_PPP_H.LR.N._Z.PPP"
+    )
+
+    labour_productivity = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
+
+    return labour_productivity
+
+
+def get_output_gap(start_date: str | None = None, end_date: str | None = None):
+    """
+    Get the Output Gap for a variety of countries over time from the OECD Economic Outlook.
+    The output gap is the difference between actual Gross Domestic Product (GDP) and estimated
+    potential GDP, expressed as a percentage of potential GDP. Potential GDP is the level of
+    output an economy can sustain over the long term without generating excess inflationary or
+    disinflationary pressure, based on the full, non-inflationary use of its productive resources
+    (labour, capital and technology).
+
+    A positive output gap indicates the economy is running above its long-run potential (a
+    "boom", typically associated with rising inflationary pressure), while a negative output gap
+    indicates the economy is running below potential (a "slack", typically associated with rising
+    unemployment and disinflationary pressure).
+
+    This data is only available on a yearly basis, since the OECD Economic Outlook is published
+    as a set of annual projections and estimates.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the output gap as a decimal fraction of
+        potential GDP (e.g. -0.001987 for a gap of -0.1987%) for a variety of countries
+        over time.
+
+    Notes:
+        The OECD publishes this as a percentage of potential GDP; it is returned as a decimal
+        fraction so it combines directly with the other economics series. Multiply by 100 to
+        recover the published figure.
+    """
+    oecd_data_string = "OECD.ECO.MAD,DSD_EO@DF_EO,1.5/.GAP.A"
+
+    output_gap = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
+
+    # Published as a percentage of potential GDP; every other rate and ratio in this package is a decimal fraction, so convert rather than leave the odd one out.  # noqa: E501
+    return output_gap / 100
+
+
+def get_population(
+    gender: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    """
+    Population is defined as all nationals present in, or temporarily absent
+    from a country, and aliens permanently settled in a country.
+
+    The total across all age groups is returned, as a count of persons, on an
+    annual basis. The historical (observed) series is used rather than the OECD's
+    demographic projections.
+
+    Args:
+        gender (str): specify the population based on gender.
+            Defaults to None which returns the total population.
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the total population, as a number of
+            persons, for a variety of countries over time.
+    """
+    if gender is not None and gender not in ["men", "women"]:
+        raise ValueError("Please choose either 'men' or 'women'.")
+    gender_parameter = "M" if gender == "men" else "F" if gender == "women" else "_T"
+
+    # AGE must be pinned to _T: this dataflow publishes 24 age brackets per country, and leaving the slot open returned whichever bracket the OECD wrote out first.  # noqa: E501
+    oecd_data_string = (
+        f"OECD.ELS.SAE,DSD_POPULATION@DF_POP_HIST,/.POP.PS.{gender_parameter}._T.H"
+    )
+
+    population = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
+
+    return population
+
+
+def get_income_inequality(start_date: str | None = None, end_date: str | None = None):
+    """
+    Income is defined as household disposable income in a particular year.
+    It consists of earnings, self-employment and capital income and public
+    cash transfers; income taxes and social security contributions paid by
+    households are deducted.
+
+    This uses the GINI coefficient which is a measure of statistical dispersion
+    intended to represent the income inequality or wealth inequality within
+    a nation or any other group of people.
+
+    The coefficient is reported on a 0 to 1 scale, where 0 is perfect equality and 1
+    is perfect inequality, for the total population and on the OECD's current income
+    definition (in use since 2012).
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the Gini coefficient of disposable income,
+        on a 0 to 1 scale, for a variety of countries over time.
+    """
+    oecd_data_string = (
+        "OECD.WISE.INE,DSD_WISE_IDD@DF_IDD,/"
+        ".A.INC_DISP_GINI._Z.0_TO_1._T.METH2012.D_CUR._Z"
+    )
+
+    income_inequality = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
+
+    return income_inequality
+
+
+def get_poverty_rate(start_date: str | None = None, end_date: str | None = None):
+    """
+    The poverty rate is the ratio of the number of people whose income falls
+    below the poverty line.
+
+    The poverty line used is the OECD's headline definition, 50% of the national
+    median disposable income, applied to the total population and on the OECD's
+    current income definition (in use since 2012). The dataflow also publishes a
+    60% line, which is the Eurostat convention and yields a materially higher rate,
+    so the line has to be pinned rather than left to the API's row order.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the poverty rate as a decimal fraction of
+        the population (e.g. 0.1808 for 18.08%) for a variety of countries over time.
+    """
+    oecd_data_string = (
+        "OECD.WISE.INE,DSD_WISE_IDD@DF_IDD,/"
+        ".A.PR_INC_DISP._Z.PT_POP._T.METH2012.D_CUR.PL_50"
+    )
+
+    poverty_rate = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
+
+    # Divide by 100 to convert the percentage into a decimal
+    poverty_rate = poverty_rate / 100
+
+    return poverty_rate
+
+
+def get_trust_in_government(start_date: str | None = None, end_date: str | None = None):
+    """
+    Trust in government refers to the share of people who report
+    having confidence in the national government.
+
+    The population-wide figure is returned: both sexes, all education levels, aged 15
+    and over. The dataflow also publishes the same indicator broken down by sex and by
+    education level, and those subgroups differ from the total by tens of percentage
+    points, so the breakdown dimensions have to be pinned rather than left to the API's
+    row order.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the share of the population aged 15 and
+        over reporting confidence in the national government, as a decimal fraction
+        (e.g. 0.3933 for 39.33%), for a variety of countries over time.
+    """
+    oecd_data_string = (
+        "OECD.WISE.WDP,DSD_HSL@DF_HSL_FWB,/.14_3.PT_POP_Y_GE15._T._T._T.HSL_14"
+    )
+
+    trust_in_government = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
+
+    # Divide by 100 to convert the percentage into a decimal
+    trust_in_government = trust_in_government / 100
+
+    return trust_in_government
+
+
+def get_renewable_energy(start_date: str | None = None, end_date: str | None = None):
+    """
+    Renewable energy is defined as the contribution of renewables
+    to total primary energy supply (TPES).
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the renewable share of total primary
+        energy supply as a decimal fraction (e.g. 0.0872 for 8.72%) for a variety of
+        countries over time.
+    """
+    oecd_data_string = (
+        "OECD.WISE.WDP,DSD_HSL@DF_HSL_FWB,/.12_10.PT_SUP_NRG._T._T._T.HSL_12"
+    )
+
+    renewable_energy = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
+
+    # Divide by 100 to convert the percentage into a decimal
+    renewable_energy = renewable_energy / 100
+
+    return renewable_energy
+
+
+def get_carbon_footprint(start_date: str | None = None, end_date: str | None = None):
+    """
+    The carbon footprint is a measure of the total amount of greenhouse gases
+    produced to directly and indirectly support human activities, usually
+    expressed in equivalent tons of carbon dioxide (CO2) per capita.
+
+    The series is annual and currently ends in 2020, so a date range that starts after
+    that point returns an empty DataFrame.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: A DataFrame containing the carbon footprint, in tonnes of
+        CO2-equivalent per person, for a variety of countries over time.
+    """
+    oecd_data_string = (
+        "OECD.WISE.WDP,DSD_HSL@DF_HSL_FWB,/.12_9.T_CO2E_PS._T._T._T.HSL_12"
+    )
+
+    carbon_footprint = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
+
+    return carbon_footprint

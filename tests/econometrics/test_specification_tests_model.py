@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from financetoolkit.econometrics import regression_model, specification_tests_model
+from financetoolkit.econometrics.regression import regression_model
+from financetoolkit.econometrics.testing import specification_tests_model
 
 
 def test_get_breusch_pagan_test_detects_heteroskedasticity(recorder):

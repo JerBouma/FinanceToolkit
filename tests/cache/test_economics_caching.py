@@ -5,8 +5,9 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache import cache_controller
-from financetoolkit.economics import gmdb_model, oecd_model
-from financetoolkit.fixedincome import fed_model, fred_model, helpers
+from financetoolkit.economics.sources import gmdb_model, oecd_model
+from financetoolkit.fixedincome import helpers
+from financetoolkit.fixedincome.sources import fed_model, fred_model
 
 
 @pytest.fixture(name="cache")

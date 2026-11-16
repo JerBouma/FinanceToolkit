@@ -837,9 +837,9 @@ def get_sectors_performance(
     Args:
         api_key (str): the API key from Financial Modeling Prep.
         start_date (str, optional): The start date to filter data with, e.g. "2024-01-01".
-            Defaults to a year ago.
+            Defaults to None, which uses the date a year ago.
         end_date (str, optional): The end date to filter data with, e.g. "2024-12-31".
-            Defaults to today.
+            Defaults to None, which uses today.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
@@ -2117,8 +2117,10 @@ def get_sector_performance(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
-        end_date (str, optional): The end of the history of one sector. Defaults to today.
+        start_date (str, optional): The start of the history of one sector. Defaults to None,
+            which uses the date a year ago.
+        end_date (str, optional): The end of the history of one sector. Defaults to None, which uses
+            today.
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
 
@@ -2190,8 +2192,10 @@ def get_industry_performance(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
-        end_date (str, optional): The end of the history of one industry. Defaults to today.
+        start_date (str, optional): The start of the history of one industry. Defaults to None,
+            which uses the date a year ago.
+        end_date (str, optional): The end of the history of one industry. Defaults to None, which uses
+            today.
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
 
@@ -2263,8 +2267,10 @@ def get_sector_pe(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         sector (str, optional): The sector to retrieve the history for, e.g. "Energy".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        start_date (str, optional): The start of the history of one sector. Defaults to a year ago.
-        end_date (str, optional): The end of the history of one sector. Defaults to today.
+        start_date (str, optional): The start of the history of one sector. Defaults to None,
+            which uses the date a year ago.
+        end_date (str, optional): The end of the history of one sector. Defaults to None, which uses
+            today.
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
 
@@ -2330,8 +2336,10 @@ def get_industry_pe(
         date (str, optional): The date to retrieve a snapshot for, e.g. "2024-02-01".
         industry (str, optional): The industry to retrieve the history for, e.g. "Biotechnology".
         user_subscription (str, optional): The user subscription level. Defaults to "Free".
-        start_date (str, optional): The start of the history of one industry. Defaults to a year ago.
-        end_date (str, optional): The end of the history of one industry. Defaults to today.
+        start_date (str, optional): The start of the history of one industry. Defaults to None,
+            which uses the date a year ago.
+        end_date (str, optional): The end of the history of one industry. Defaults to None, which uses
+            today.
         exchange (str, optional): The exchange whose companies are averaged, "NASDAQ", "NYSE"
             or "AMEX". Defaults to "NASDAQ".
 
@@ -2446,6 +2454,10 @@ EARNINGS_CALENDAR_LIMIT = 4000
 # The number of symbols asked for in one batch quote request.
 QUOTE_BATCH_SIZE = 1000
 
+# The days before and after the range whose releases also decide each company's primary
+# listing, as a company's listings abroad can show a release a few days after its home one.
+PRIMARY_LISTING_MARGIN = pd.Timedelta(days=7)
+
 # The exchanges that quote prices in a minor unit (London in pence, Johannesburg in cents,
 # Tel Aviv in agorot) while their market caps are in the major one. The batch quote has no
 # currency, so the unit follows from the exchange, as the company profile reports it.
@@ -2491,14 +2503,16 @@ def get_earnings_calendar(
     the market cap of a depositary receipt or a secondary listing is often far off. The
     listings of one company are those with the same name, so share classes with names of
     their own (such as "Alphabet Inc." and "Alphabet Inc. Class C") count as separate
-    companies, each with its own primary listing.
+    companies, each with its own primary listing. The listings of a company can show a
+    release on different days, so the primary listing is chosen from the releases of the
+    week before and the week after the range as well.
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with. Defaults to today, or
-            to seven days before the end date when only that is given.
-        end_date (str, optional): The end date to filter data with. Defaults to seven days
-            after the start date.
+        start_date (str, optional): The start date to filter data with. Defaults to None, which
+            uses today, or seven days before the end date when only that is given.
+        end_date (str, optional): The end date to filter data with. Defaults to None, which
+            uses seven days after the start date.
         min_market_cap (float, optional): The minimum market cap in US dollars. Releases
             without a market cap are left out. Defaults to None.
         country (str, optional): The country of the company, as a two-letter code ("DE") or
@@ -2529,10 +2543,22 @@ def get_earnings_calendar(
     if end_date is None:
         end_date = f"{pd.Timestamp(start_date) + week:%Y-%m-%d}"
 
+    # The listings of one company are not dated alike: Berkshire Hathaway reported on a
+    # Saturday in New York and its Frankfurt and Vienna listings show the release on the
+    # Monday after. The primary listing is chosen from the releases of the weeks around the
+    # range too, so a listing abroad in the range is not taken for the primary one when the
+    # home listing reported just before it; only the releases in the range are returned.
+    window_start, window_end = pd.Timestamp(start_date), pd.Timestamp(end_date)
+    day = pd.Timedelta(days=1)
+
     # A range that returns the maximum number of releases is cut at its earliest dates, so
     # it is asked for in two halves until each fits.
     releases = []
-    ranges = [(pd.Timestamp(start_date), pd.Timestamp(end_date))]
+    ranges = [
+        (window_start - PRIMARY_LISTING_MARGIN, window_start - day),
+        (window_start, window_end),
+        (window_end + day, window_end + PRIMARY_LISTING_MARGIN),
+    ]
     while ranges:
         start, end = ranges.pop()
         response = get_cached_financial_data(
@@ -2573,6 +2599,9 @@ def get_earnings_calendar(
         }
     ).set_index("Symbol")
     earnings_calendar["Date"] = pd.to_datetime(earnings_calendar["Date"])
+
+    if not earnings_calendar["Date"].between(window_start, window_end).any():
+        return pd.DataFrame()
 
     symbols = list(dict.fromkeys(earnings_calendar.index))
     quotes = pd.concat(
@@ -2661,6 +2690,10 @@ def get_earnings_calendar(
         listings[["Name", "Exchange Code", "Market Cap (USD)", "Primary"]]
     )
 
+    earnings_calendar = earnings_calendar[
+        earnings_calendar["Date"].between(window_start, window_end)
+    ]
+
     if min_market_cap is not None:
         earnings_calendar = earnings_calendar[
             earnings_calendar["Market Cap (USD)"] >= min_market_cap
@@ -2732,8 +2765,10 @@ def get_sec_filings_8k(
 
     Args:
         api_key (str): the API key from Financial Modeling Prep.
-        start_date (str, optional): The start date to filter data with. Defaults to 30 days ago.
-        end_date (str, optional): The end date to filter data with. Defaults to today.
+        start_date (str, optional): The start date to filter data with. Defaults to None, which
+            uses the date 30 days ago.
+        end_date (str, optional): The end date to filter data with. Defaults to None, which uses
+            today.
         limit (int, optional): The number of results to return. Defaults to 100.
         page (int, optional): The page number to retrieve. Defaults to 0.
         user_subscription (str, optional): The user subscription level. Defaults to "Free".

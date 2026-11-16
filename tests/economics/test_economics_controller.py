@@ -1,5 +1,7 @@
 """Economics Controller Tests"""
 
+import pytest
+
 
 def test_get_gross_domestic_product(recorder, economics_module):
     recorder.capture(economics_module.get_gross_domestic_product())
@@ -338,16 +340,20 @@ def test_get_producer_price_index(recorder, economics_module):
 
 
 def test_get_real_interest_rate(recorder, economics_module):
-    recorder.capture(economics_module.get_real_interest_rate())
-    recorder.capture(economics_module.get_real_interest_rate(growth=True))
+    recorder.capture(economics_module.get_real_interest_rate(period="yearly"))
+    recorder.capture(
+        economics_module.get_real_interest_rate(period="yearly", growth=True)
+    )
     recorder.capture(
         economics_module.get_real_interest_rate(
-            countries=["United States", "Germany", "Japan"], rate_type="short_term"
+            countries=["United States", "Germany", "Japan"],
+            rate_type="short_term",
+            period="yearly",
         )
     )
     recorder.capture(
         economics_module.get_real_interest_rate(
-            countries=["United States", "Germany"], gmdb_source=False
+            countries=["United States", "Germany"], gmdb_source=False, period="yearly"
         )
     )
 
@@ -440,3 +446,129 @@ def test_get_nonfarm_payrolls_requires_fred_api_key():
     result = economics.get_nonfarm_payrolls()
 
     assert result.empty
+
+
+def test_get_export_price_index(recorder, economics_module):
+    recorder.capture(economics_module.get_export_price_index())
+    recorder.capture(
+        economics_module.get_export_price_index(
+            countries=["United States", "Japan", "Euro Area"], growth=True, lag=12
+        )
+    )
+
+
+def test_get_import_price_index(recorder, economics_module):
+    recorder.capture(economics_module.get_import_price_index())
+    recorder.capture(
+        economics_module.get_import_price_index(
+            countries=["United States", "Japan", "Germany"], period="quarterly"
+        )
+    )
+
+
+def test_get_purchasing_power(recorder, economics_module):
+    countries = ["United States", "Euro Area", "Netherlands", "Japan"]
+    purchasing_power = economics_module.get_purchasing_power(
+        countries=countries, rounding=8
+    )
+    prices = economics_module.get_consumer_price_index(
+        countries=countries, cumulative=True, rounding=8
+    )
+
+    # The purchasing power is the inverse of the growth in prices.
+    assert (purchasing_power * prices / 100).stack().tolist() == pytest.approx(
+        [1.0] * prices.stack().size, rel=1e-6
+    )
+    assert purchasing_power.iloc[0].tolist() == pytest.approx([100.0] * 4)
+
+    recorder.capture(purchasing_power)
+    recorder.capture(
+        economics_module.get_purchasing_power(
+            countries=countries + ["Brazil"], overnight_rate=True
+        )
+    )
+    recorder.capture(economics_module.get_purchasing_power(period="yearly"))
+
+
+def test_get_overnight_rate_cumulative(recorder, economics_module):
+    growth = economics_module.get_overnight_rate(cumulative=True)
+
+    assert growth.bfill().iloc[0].tolist() == pytest.approx([1.0] * growth.shape[1])
+
+    recorder.capture(growth)
+    recorder.capture(
+        economics_module.get_overnight_rate(cumulative=True, period="monthly")
+    )
+
+
+def test_get_government_interest_expenditure(recorder, economics_module):
+    recorder.capture(economics_module.get_government_interest_expenditure())
+    recorder.capture(
+        economics_module.get_government_interest_expenditure(
+            countries="United States", period="yearly", growth=True
+        )
+    )
+
+
+def test_get_government_interest_expenditure_to_gdp_ratio(recorder, economics_module):
+    ratio = economics_module.get_government_interest_expenditure_to_gdp_ratio(
+        countries=["United States", "Germany"], period="yearly"
+    )
+
+    # General government interest payable is a few percent of GDP, as a decimal.
+    assert 0.01 < ratio["United States"].dropna().iloc[-1] < 0.08
+    assert 0 < ratio["Germany"].dropna().iloc[-1] < 0.04
+
+    recorder.capture(
+        economics_module.get_government_interest_expenditure_to_gdp_ratio()
+    )
+
+
+def test_get_government_interest_expenditure_to_revenue_ratio(
+    recorder, economics_module
+):
+    recorder.capture(
+        economics_module.get_government_interest_expenditure_to_revenue_ratio()
+    )
+
+
+def test_get_government_expenditure_by_function(recorder, economics_module):
+    expenditure = economics_module.get_government_expenditure_by_function(
+        countries="United States"
+    )
+
+    assert "Defence" in expenditure["United States"].columns
+
+    recorder.capture(
+        economics_module.get_government_expenditure_by_function(
+            countries=["United States", "Germany"], functions="Defence,Health"
+        )
+    )
+
+
+def test_get_government_expenditure_by_function_to_gdp_ratio(
+    recorder, economics_module
+):
+    defence = economics_module.get_government_expenditure_by_function_to_gdp_ratio(
+        countries="United States", functions="Defence"
+    )
+
+    # US defence is around 3% of GDP, as a decimal.
+    assert 0.02 < defence[("United States", "Defence")].dropna().iloc[-1] < 0.05
+
+    recorder.capture(
+        economics_module.get_government_expenditure_by_function_to_gdp_ratio(
+            functions="Total"
+        )
+    )
+
+
+def test_get_government_expenditure_by_function_refuses_unknown_functions():
+    from financetoolkit.economics.economics_controller import Economics
+
+    economics = Economics(start_date="2020-01-01")
+
+    # @handle_errors swallows the ValueError and returns an empty Series.
+    assert economics.get_government_expenditure_by_function(
+        functions="Space Exploration"
+    ).empty

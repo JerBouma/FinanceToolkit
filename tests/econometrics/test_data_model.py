@@ -196,3 +196,26 @@ def test_changes_none_keeps_the_series_as_they_are():
     assert data_model.get_changes(levels, None).equals(levels)
     with pytest.raises(ValueError, match="or None"):
         data_model.get_changes(levels, "none")
+
+
+def test_weekly_and_daily_periods_combined_in_one_frame():
+    # A weekly series (weeks ending Friday) next to a daily one is an index of periods of
+    # two frequencies; each week becomes its last day.
+    daily = pd.DataFrame(
+        {"Mortgage": [0.0724, 0.0718]},
+        index=pd.PeriodIndex(["2026-10-29", "2026-11-05"], freq="D"),
+    )
+    weekly = pd.DataFrame(
+        {"Treasury": [0.0494, 0.0486]},
+        index=pd.period_range("2026-10-30", periods=2, freq="W-FRI"),
+    )
+    combined = pd.concat([daily, weekly], axis=1)
+    assert data_model.looks_like_dates(combined.index)
+
+    frame = data_model.to_series_frame(combined)
+    assert [str(day) for day in frame.index] == [
+        "2026-10-29",
+        "2026-10-30",
+        "2026-11-05",
+        "2026-11-06",
+    ]

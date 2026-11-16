@@ -22,7 +22,7 @@ from financetoolkit.cache import (
     serialization_model,
 )
 from financetoolkit.cache.sqlite_model import SCHEMA_VERSION, SQLiteBackend
-from financetoolkit.utilities import logger_model
+from financetoolkit.utilities import logger_model, sources_model
 
 logger = logger_model.get_logger()
 
@@ -433,8 +433,8 @@ class Cache:
             parameters (dict[str, Any] | None): Parameters that change the data.
             date_axis (int): 0 when the index holds the dates, 1 when the columns do. Defaults to 0.
             reference_date (date | None): The date the revision window is measured
-                back from when the requested range has no end or ends after it. Defaults to today;
-                mainly useful for testing.
+                back from when the requested range has no end or ends after it. Defaults to None,
+                which uses today; mainly useful for testing.
 
         Returns:
             CachePlan: The cached data per entity and the gaps still to be fetched.
@@ -528,6 +528,9 @@ class Cache:
                     # Removed with its coverage, so the rows fetched now are not recorded as merged with ranges that are no longer held.  # noqa: E501
                     with contextlib.suppress(Exception):
                         self._backend.delete_entity(key, entity)
+
+        if plan.cached:
+            sources_model.record_source(source)
 
         return plan
 
@@ -682,7 +685,12 @@ class Cache:
             if time.time() - updated_at > effective_ttl:
                 return None
 
-            return serialization_model.decode_object(payload)
+            value = serialization_model.decode_object(payload)
+            # A cached MCP answer names the sources it was computed from itself.
+            if source != policy_model.MCP:
+                sources_model.record_source(source)
+
+            return value
         except Exception as error:
             # Any read failure is reported as a miss, so the caller falls back to the source.
             logger.debug(

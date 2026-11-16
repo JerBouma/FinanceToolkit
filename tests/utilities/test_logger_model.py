@@ -294,3 +294,34 @@ def test_keys_in_logged_exceptions_and_tracebacks_are_redacted():
     assert "fmp_api_key=***" in output
     assert "Traceback" in output
     assert "Inline message" in output
+
+
+def test_redaction_keeps_the_arguments_formatters_read():
+    """
+    A record without a credential keeps its arguments, and a credential inside an argument is
+    replaced there, so formatters that read the arguments themselves (uvicorn's access log
+    unpacks client, method, path, version and status) still work.
+    """
+    redacting = logger_model.RedactingFilter()
+
+    def record(msg, args):
+        return logging.LogRecord(
+            "uvicorn.access", logging.INFO, __file__, 1, msg, args, None
+        )
+
+    access = '%s - "%s %s HTTP/%s" %d'
+    clean = record(access, ("1.2.3.4:5", "GET", "/health", "1.1", 200))
+    assert redacting.filter(clean)
+    assert clean.args == ("1.2.3.4:5", "GET", "/health", "1.1", 200)
+    assert clean.getMessage() == '1.2.3.4:5 - "GET /health HTTP/1.1" 200'
+
+    keyed = record(access, ("1.2.3.4:5", "GET", "/mcp?apikey=secret123", "1.1", 200))
+    assert redacting.filter(keyed)
+    assert keyed.args == ("1.2.3.4:5", "GET", "/mcp?apikey=***", "1.1", 200)
+    assert "secret123" not in keyed.getMessage()
+
+    # A key split over the message and its argument can only be removed from the whole message.
+    split = record("https://example.com/quote?apikey=%s", ("secret123",))
+    assert redacting.filter(split)
+    assert split.args is None
+    assert split.getMessage() == "https://example.com/quote?apikey=***"

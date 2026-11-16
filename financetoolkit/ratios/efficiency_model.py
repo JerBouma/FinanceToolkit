@@ -495,6 +495,35 @@ def get_capex_to_depreciation_ratio(
     )
 
 
+def get_net_capital_expenditure(
+    capital_expenditure: pd.Series | pd.DataFrame,
+    depreciation_and_amortization: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the net capital expenditure: what a company invests in its assets beyond
+    what wears off them, the growth part of its capital expenditure.
+
+    The formula is as follows:
+
+        Net Capital Expenditure = |Capital Expenditure| - Depreciation and Amortization
+
+    Capital expenditure is reported as a negative cash outflow, so its magnitude is
+    used. A negative value means the company invests less than its assets depreciate.
+
+    Also known as: net capex, net investment, growth capex.
+
+    Args:
+        capital_expenditure (float or pd.Series): Capital expenditure of the company,
+            as reported in the Cash Flow Statement.
+        depreciation_and_amortization (float or pd.Series): Depreciation and
+            amortization of the company.
+
+    Returns:
+        float | pd.Series: The net capital expenditure.
+    """
+    return abs(capital_expenditure) - depreciation_and_amortization
+
+
 def get_asset_growth(
     total_assets: pd.Series | pd.DataFrame,
     beginning_total_assets: pd.Series | pd.DataFrame,

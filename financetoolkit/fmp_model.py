@@ -25,6 +25,7 @@ from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.utilities import error_model, logger_model
 from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.sources_model import record_source
 
 logger = logger_model.get_logger()
 
@@ -65,6 +66,57 @@ def determine_retry_delay(attempt: int) -> float:
     delay = min(RETRY_BASE_DELAY_SECONDS * 2**attempt, RETRY_MAX_DELAY_SECONDS)
 
     return delay * (1 + random.uniform(0, 0.5))  # noqa: S311
+
+
+# The continuous front-month futures of Yahoo Finance (BZ=F) and the commodity symbols
+# FinancialModelingPrep carries them under (BZUSD), in the same unit: USD, or US cents (USX)
+# for the grains, softs and livestock, as Yahoo Finance quotes them. Quotes and intraday bars
+# exist only at FinancialModelingPrep, so these are requested under its symbol. The daily
+# history keeps Yahoo Finance's own series of the ticker, which rolls to the next contract
+# on other days than FinancialModelingPrep does, so the two differ around a roll (Brent on
+# 31 March 2026: 118.35 against 103.97) and agree in between. Futures without a symbol here,
+# such as Dutch TTF gas (TTF=F), have no quote or intraday bars.
+FUTURES_SYMBOLS: dict[str, str] = {
+    "ALI=F": "ALIUSD",
+    "BZ=F": "BZUSD",
+    "CC=F": "CCUSD",
+    "CL=F": "CLUSD",
+    "CT=F": "CTUSX",
+    "DC=F": "DCUSD",
+    "ES=F": "ESUSD",
+    "GC=F": "GCUSD",
+    "GF=F": "GFUSX",
+    "HE=F": "HEUSX",
+    "HG=F": "HGUSD",
+    "HO=F": "HOUSD",
+    "KC=F": "KCUSX",
+    "KE=F": "KEUSX",
+    "LBR=F": "LBUSD",
+    "LE=F": "LEUSX",
+    "MGC=F": "MGCUSD",
+    "NG=F": "NGUSD",
+    "NQ=F": "NQUSD",
+    "OJ=F": "OJUSX",
+    "PA=F": "PAUSD",
+    "PL=F": "PLUSD",
+    "RB=F": "RBUSD",
+    "RTY=F": "RTYUSD",
+    "SB=F": "SBUSX",
+    "SI=F": "SIUSD",
+    "SIL=F": "SILUSD",
+    "YM=F": "YMUSD",
+    "ZB=F": "ZBUSD",
+    "ZC=F": "ZCUSX",
+    "ZF=F": "ZFUSD",
+    "ZL=F": "ZLUSX",
+    "ZM=F": "ZMUSD",
+    "ZN=F": "ZNUSD",
+    "ZO=F": "ZOUSX",
+    "ZQ=F": "ZQUSD",
+    "ZR=F": "ZRUSD",
+    "ZS=F": "ZSUSX",
+    "ZT=F": "ZTUSD",
+}
 
 
 # The symbol or symbols parameter runs up to the next parameter (an "&" followed by a name
@@ -510,6 +562,57 @@ def get_financial_statement(
 # A Free plan receives only the latest dividend payments.
 FREE_DIVIDEND_LIMIT = 5
 
+# FMP rounds its dividend-adjusted prices to two decimals, which for a currency pair (1.1165
+# becomes 1.12), a cryptocurrency or a share below a few dollars changes every daily return.
+ADJUSTED_PRICE_ROUNDING = 0.005
+
+
+def _unrounded_adjusted_close(
+    close: pd.Series,
+    adjusted_close: pd.Series,
+    dividends: pd.Series | None,
+    rounding: float = ADJUSTED_PRICE_ROUNDING,
+) -> pd.Series:
+    """
+    The dividend-adjusted close without FMP's rounding to two decimals.
+
+    With the dividends, the close is adjusted the way FMP and Yahoo Finance adjust it: every
+    ex-dividend date multiplies the closes before it by one minus the dividend divided by
+    the close of the day before, so the return of an ex-dividend day is Close / (Previous
+    Close - Dividend) - 1. Without the dividends, FMP's adjusted close is kept, unless it
+    only differs from the close by its rounding (no dividends in the range: currencies,
+    cryptocurrencies, indices and shares that pay none), in which case it is the close.
+
+    Formula:
+
+    - Adj Close (t) = Close (t) × Π over ex-dividend dates e > t of (1 - Dividend (e) / Close (e - 1))
+
+    Args:
+        close (pd.Series): The split-adjusted close, unrounded.
+        adjusted_close (pd.Series): FMP's dividend-adjusted close.
+        dividends (pd.Series | None): The split-adjusted dividends on their ex-dividend
+            dates, or None when they were not retrieved.
+        rounding (float): The largest difference the rounding can make, in the units of
+            the prices. Defaults to ADJUSTED_PRICE_ROUNDING.
+
+    Returns:
+        pd.Series: The adjusted close, empty where FMP's is.
+    """
+    if dividends is not None:
+        paid = dividends.reindex(close.index).fillna(0)
+        step = (1 - paid / close.shift(1)).where(paid > 0).fillna(1)
+        # The factor of a day is the product of the steps of the ex-dividend dates after it.
+        factor = step[::-1].cumprod()[::-1].shift(-1, fill_value=1.0)
+
+        return (close * factor).where(adjusted_close.notna())
+
+    known = adjusted_close.notna() & close.notna()
+
+    if ((adjusted_close - close)[known].abs() <= rounding * (1 + 1e-9)).all():
+        return close.where(adjusted_close.notna())
+
+    return adjusted_close
+
 
 def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
     """
@@ -551,6 +654,7 @@ def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
         older = pd.Series(dtype=float)
 
     if not older.empty:
+        record_source(policy_model.YAHOO_FINANCE)
         older.index = pd.DatetimeIndex(older.index).tz_localize(None).to_period("D")
         older = older[older.index < first_payment]
 
@@ -798,6 +902,15 @@ def get_historical_data(
         ~historical_data.index.duplicated(keep="first")
     ]
 
+    if adjusted_data is not None and "Adj Close" in historical_data:
+        historical_data["Adj Close"] = _unrounded_adjusted_close(
+            historical_data["Close"],
+            historical_data["Adj Close"],
+            historical_data.get("Dividends") if include_dividends else None,
+            # The prices may have been divided, e.g. from percentages.
+            rounding=ADJUSTED_PRICE_ROUNDING / (divide_ohlc_by or 1),
+        )
+
     historical_data = helpers.enrich_historical_data(
         historical_data=historical_data,
         start=start,
@@ -877,7 +990,8 @@ def get_intraday_data(
 
     historical_data_url = (
         f"https://financialmodelingprep.com/stable/historical-chart/{interval}"
-        f"?symbol={ticker}&from={start_date_string}&to={end_date_string}&apikey={api_key}"
+        f"?symbol={FUTURES_SYMBOLS.get(ticker.upper(), ticker)}&from={start_date_string}"
+        f"&to={end_date_string}&apikey={api_key}"
     )
 
     try:
@@ -1384,7 +1498,7 @@ def get_profile(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "AAPL")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1501,7 +1615,7 @@ def get_quote(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "AMD")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1509,7 +1623,10 @@ def get_quote(
     """
 
     def worker(ticker):
-        url = f"https://financialmodelingprep.com/stable/quote?symbol={ticker}&apikey={api_key}"
+        url = (
+            "https://financialmodelingprep.com/stable/quote"
+            f"?symbol={FUTURES_SYMBOLS.get(ticker.upper(), ticker)}&apikey={api_key}"
+        )
         quote_data = get_financial_data(url=url, user_subscription=user_subscription)
 
         if quote_data.empty:
@@ -1599,7 +1716,7 @@ def get_rating(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         user_subscription (str): The subscription type of the user. Defaults to "Free".
 
     Returns:
@@ -1683,7 +1800,7 @@ def get_earnings_calendar(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         actual_dates (bool): Whether to return the actual reporting dates (True) or the fiscal quarters they
@@ -1722,8 +1839,9 @@ def get_earnings_calendar(
 
             earnings_calendar = earnings_calendar.rename(columns=naming)
 
+            # A window that reaches today keeps the scheduled dates after it.
             earnings_calendar = earnings_calendar.sort_index(axis=0).truncate(
-                before=start_date, after=end_date, axis=0
+                before=start_date, after=helpers.calendar_end_date(end_date), axis=0
             )
 
             return ticker, earnings_calendar[naming.values()], True
@@ -1787,7 +1905,7 @@ def get_dividend_calendar(
     Args:
         tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
@@ -1834,8 +1952,9 @@ def get_dividend_calendar(
                     pd.to_numeric(dividend_calendar["Yield"], errors="coerce") / 100
                 )
 
+            # A window that reaches today keeps the scheduled dates after it.
             dividend_calendar = dividend_calendar.sort_index(axis=0).truncate(
-                before=start_date, after=end_date, axis=0
+                before=start_date, after=helpers.calendar_end_date(end_date), axis=0
             )
 
             return ticker, dividend_calendar[naming.values()], True
@@ -1904,7 +2023,7 @@ def get_esg_scores(
         tickers (list[str] | str): the company ticker or tickers (for example: "MSFT")
         quarter (bool): whether to retrieve quarterly data. Defaults to False.
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         sleep_timer (bool): Whether to set a sleep timer when the rate limit is reached. Note that this only works
@@ -2002,7 +2121,7 @@ def get_market_risk_premium(api_key: str) -> pd.DataFrame:
 
     Args:
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
 
     Returns:
         pd.DataFrame: the market risk premium by country, indexed by country and including
@@ -2126,7 +2245,7 @@ def get_commitment_of_traders(
     Args:
         tickers (list[str] | str): the ticker or tickers (for example: "NG" for Natural Gas futures)
         api_key (string): the API Key obtained from
-        https://www.jeroenbouma.com/fmp
+            https://www.jeroenbouma.com/fmp
         start_date (str): The start date to filter data with.
         end_date (str): The end date to filter data with.
         user_subscription (str): The subscription type of the user. Defaults to "Free".
@@ -3239,6 +3358,84 @@ def add_price_target_metrics(
     return pd.concat(parts + [targets.drop(index=target_rows)])
 
 
+# The first word of an analyst company stands for the company in news titles ("Stifel" for
+# Stifel Nicolaus) when it has at least this many letters; shorter ones ("Loop", "Bank") are
+# too common.
+SHORTEST_COMPANY_WORD = 5
+
+
+def correct_analyst_companies(targets: pd.DataFrame) -> pd.DataFrame:
+    """
+    Credits each price target to the analyst company its news article names. The price
+    target news occasionally names another company than the article: a target reported as
+    "PT Raised to $320 at JPMorgan" can be listed under Macquarie, which then shows as a
+    jump in that company's targets. When the title does not name the listed company but
+    names exactly one other company that covers the stock, the target is credited to that
+    company, or dropped when the same article already lists that company (one article
+    listed twice, e.g. "Morgan Stanley Renames NVIDIA to Top Pick" under both Morgan
+    Stanley and Wells Fargo). Titles that name no company (general news) keep the listed
+    company.
+
+    Args:
+        targets (pd.DataFrame): The price target news of one ticker with the analystCompany
+            and newsTitle columns.
+
+    Returns:
+        pd.DataFrame: The price target news with the analystCompany corrected.
+    """
+    if not {"analystCompany", "newsTitle"} <= set(targets.columns):
+        return targets
+
+    def names(company: str) -> list[str]:
+        # "J.P. Morgan" appears as "JP Morgan" and "JPMorgan", "Stifel Nicolaus" as
+        # "Stifel"; a short or common first word ("Morgan", "Robert") would match others.
+        spaced = re.sub(r"[^a-z0-9 ]", "", company.lower()).strip()
+        first = spaced.split(" ")[0]
+        variants = {spaced, spaced.replace(" ", "")}
+        if len(first) >= SHORTEST_COMPANY_WORD and first not in {
+            "morgan",
+            "robert",
+            "industrial",
+        }:
+            variants.add(first)
+        return [variant for variant in variants if variant]
+
+    companies = {
+        company: names(company)
+        for company in targets["analystCompany"].dropna().unique()
+    }
+
+    def named_in(title: str, company: str) -> bool:
+        return any(
+            re.search(rf"\b{re.escape(variant)}\b", title)
+            for variant in companies[company]
+        )
+
+    def credited_company(row: pd.Series) -> str:
+        company = row["analystCompany"]
+        if not isinstance(company, str) or not isinstance(row["newsTitle"], str):
+            return company
+        title = re.sub(r"[^a-z0-9 ]", "", row["newsTitle"].lower())
+        if named_in(title, company):
+            return company
+        others = [
+            other for other in companies if other != company and named_in(title, other)
+        ]
+        return others[0] if len(others) == 1 else company
+
+    credited = targets.apply(credited_company, axis=1)
+    corrected = credited != targets["analystCompany"]
+    targets = targets.assign(analystCompany=credited)
+
+    # The news can list one article twice, under the named company with its target and
+    # under another with a different one; the corrected copy is then dropped.
+    duplicate = targets.duplicated(
+        ["publishedDate", "newsTitle", "analystCompany"], keep=False
+    )
+
+    return targets[~(corrected & duplicate)]
+
+
 def get_price_target_history(
     tickers: list[str] | str,
     api_key: str,
@@ -3249,10 +3446,14 @@ def get_price_target_history(
 ) -> tuple[pd.DataFrame, list[str]]:
     """
     Retrieves every published analyst price target of each ticker: per date and analyst
-    company the split-adjusted target and the share price when it was published.
+    company the split-adjusted target, the share price when it was published and the
+    company's previous target, so that revisions can be told apart from new coverage.
 
     The endpoint returns the most recent hundred targets per page and ignores the date
-    range, so pages are requested until they reach back before the start date.
+    range, so pages are requested until they reach a year before the start date: the
+    previous target of a company is looked up over the year before each target, the
+    horizon of a price target. Targets the news lists under another company than the
+    article names are credited to the named company (see correct_analyst_companies).
 
     Args:
         tickers (list[str] | str): The tickers to retrieve the price targets for.
@@ -3269,9 +3470,10 @@ def get_price_target_history(
     page_size = 100
     start = pd.Timestamp(start_date) if start_date else None
     end = pd.Timestamp(end_date) if end_date else None
-    date_range = (f"&from={start_date}" if start_date else "") + (
-        f"&to={end_date}" if end_date else ""
-    )
+    lookback = start - pd.Timedelta(days=365) if start is not None else None
+    date_range = (
+        f"&from={lookback.strftime('%Y-%m-%d')}" if lookback is not None else ""
+    ) + (f"&to={end_date}" if end_date else "")
 
     def worker(ticker):
         pages = []
@@ -3291,10 +3493,10 @@ def get_price_target_history(
             pages.append(targets)
             oldest = pd.to_datetime(targets["publishedDate"]).min().tz_localize(None)
 
-            if len(targets) < page_size or (start is not None and oldest < start):
+            if len(targets) < page_size or (lookback is not None and oldest < lookback):
                 break
 
-        targets = pd.concat(pages, ignore_index=True)
+        targets = correct_analyst_companies(pd.concat(pages, ignore_index=True))
         # The publication time is in UTC; the day is what the targets are compared on.
         targets["Date"] = (
             pd.to_datetime(targets["publishedDate"]).dt.tz_localize(None).dt.normalize()
@@ -3313,6 +3515,19 @@ def get_price_target_history(
             / targets["Price When Posted"].where(targets["Price When Posted"] > 0)
             - 1
         )
+        # The company's previous target, when it published one in the year before: a price
+        # target looks a year ahead, so an older one no longer stands.
+        targets = targets.sort_values("Date", kind="stable")
+        companies = targets.groupby("Analyst Company", sort=False)
+        previous_date = companies["Date"].shift(1)
+        recent = (targets["Date"] - previous_date) <= pd.Timedelta(days=365)
+        targets["Previous Target"] = companies["Price Target"].shift(1).where(recent)
+        targets["Previous Date"] = previous_date.where(recent).dt.strftime("%Y-%m-%d")
+        targets["Target Change"] = (
+            targets["Price Target"]
+            / targets["Previous Target"].where(targets["Previous Target"] > 0)
+            - 1
+        )
         targets = targets.set_index(["Date", "Analyst Company"]).sort_index()
         targets = targets.loc[
             start
@@ -3320,7 +3535,14 @@ def get_price_target_history(
             or targets.index.get_level_values(0).max()
         ]  # noqa: E501
 
-        columns = ["Price Target", "Price When Posted", "Implied Upside"]
+        columns = [
+            "Price Target",
+            "Price When Posted",
+            "Implied Upside",
+            "Previous Target",
+            "Previous Date",
+            "Target Change",
+        ]
 
         return ticker, targets[columns], not targets.empty
 

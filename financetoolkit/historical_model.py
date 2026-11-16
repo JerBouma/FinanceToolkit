@@ -245,9 +245,9 @@ def get_historical_data(
     the current date.
 
     It intelligently uses both Financial Modeling Prep and Yahoo Finance to retrieve the data. If the data
-    is not available from Financial Modeling Prep, it will use Yahoo Finance instead. This is because
-    opposes limits to Free plans (e.g. no tickers from outside the American exchanges) and in some cases
-    Yahoo Finance has a broader universe.
+    is not available from Financial Modeling Prep, it will use Yahoo Finance instead. This is because Financial
+    Modeling Prep imposes limits on Free plans (e.g. no tickers from outside the American exchanges) and in some
+    cases Yahoo Finance has a broader universe.
 
     By using a bounded pool of worker threads (see helpers.run_in_parallel), multiple API calls can
     be made at the same time, which speeds up the process significantly for larger ticker universes.
@@ -268,14 +268,14 @@ def get_historical_data(
         historical data. Defaults to True.
         fill_nan (bool, optional): A boolean representing whether to fill NaN values with the previous
         value. Defaults to True.
-        divide_ohlc_by (int, optional): An intege   r representing the value to divide the OHLC data by.
+        divide_ohlc_by (int, optional): An integer representing the value to divide the OHLC data by.
         This is useful if the OHLC data is presented in percentages or similar. Defaults to None.
         rounding (int, optional): The number of decimal places to round the data to. Defaults to None.
         sleep_timer (bool, optional): A boolean representing whether to introduce a sleep timer to prevent
         rate limit errors. Defaults to True.
         show_ticker_separation (bool, optional): A boolean representing whether to show which tickers
         acquired data from FinancialModelingPrep and which tickers acquired data from YahooFinance.
-        show_errors (bool, optional): A boolean representing whether to show errors. Defaults to True.
+        show_errors (bool, optional): A boolean representing whether to show errors. Defaults to False.
         log_message (str, optional): A string representing the message to show in the log output.
         user_subscription (str, optional): The FinancialModelingPrep plan, which governs the retry
         behaviour and the available history. Defaults to "Free".
@@ -287,9 +287,9 @@ def get_historical_data(
         ValueError: If the start date is after the end date.
 
     Returns:
-        pd.DataFrame: A pandas DataFrame object containing the historical stock data for the given ticker(s).
-        The index of the DataFrame is the date of the data and the columns are a multi-index
-        with the column (Open, High, Low, Close, Adj Close, Volume, Return, Cumulative Return)
+        tuple[pd.DataFrame, list[str]]: A pandas DataFrame object containing the historical stock data for the given
+        ticker(s) and the tickers without data. The index of the DataFrame is the date of the data and the columns
+        are a multi-index with the column (Open, High, Low, Close, Adj Close, Volume, Return, Cumulative Return)
         as the first level and the ticker symbol(s) as the second level.
     """
     # Resolved here, so the placeholder frame below and the cached ranges have both ends.
@@ -1043,15 +1043,15 @@ def get_historical_statistics(
     Args:
         tickers (list of str): A list of one or more ticker symbols to retrieve data for.
         api_key (str, optional): The API key to use to retrieve the data from FinancialModelingPrep.
-        show_errors (bool, optional): A boolean representing whether to show errors. Defaults to True.
+        show_errors (bool, optional): A boolean representing whether to show errors. Defaults to False.
         log_message (str, optional): A string representing the message to show in the log output.
         user_subscription (str, optional): The FinancialModelingPrep plan, used when reporting
         retrieval errors. Defaults to "Free".
 
     Returns:
-        pd.DataFrame: A pandas DataFrame object containing the statistics for the given ticker(s).
-        The index of the DataFrame is the date of the data and the columns are a multi-index
-        with the ticker symbol(s) as the first level and the statistics as the second level.
+        tuple[pd.DataFrame, list[str]]: A pandas DataFrame object containing the statistics for the given
+        ticker(s) and the tickers without data. The index of the DataFrame holds the statistics and the
+        columns are the ticker symbol(s).
     """
 
     def worker(ticker):

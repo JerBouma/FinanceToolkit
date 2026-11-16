@@ -564,6 +564,13 @@ def align_exchange_rate(rate: pd.Series, index: pd.Index) -> pd.Series:
     last one before it when the rate has no quote that day (exchanges and the currency
     market close on different holidays). For weekly to yearly prices, which hold the last
     price of each period, it is the last rate of each period.
+
+    Args:
+        rate (pd.Series): The daily exchange rate.
+        index (pd.Index): The dates of the price series.
+
+    Returns:
+        pd.Series: The exchange rate on each date of the index.
     """
     rate = rate.dropna()
     if (

@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.performance import performance_model
-from financetoolkit.risk import cvar_model
+from financetoolkit.risk.value_at_risk import cvar_model
 
 RESIDUAL_STD_TOLERANCE = 0.002
 
@@ -64,7 +64,9 @@ def test_obtain_fama_and_french_dataset(monkeypatch):
         archive.writestr("F-F_Research_Data_5_Factors_2x3_daily.csv", text)
     requested = []
 
-    def fake_get_request(url, timeout):  # noqa: ARG001
+    def fake_get_request(url, timeout, extra_headers):  # noqa: ARG001
+        # Dartmouth turns away requests that present themselves as a browser.
+        assert extra_headers == performance_model.TOOLKIT_HEADERS
         requested.append(url)
         return type("Response", (), {"content": buffer.getvalue()})()
 
@@ -656,7 +658,7 @@ def test_a_factor_file_is_downloaded_once_per_session(monkeypatch):
     """Every factor model call reads the file, which is downloaded only once."""
     downloads = []
 
-    def fake_get_request(url, timeout):  # noqa: ARG001
+    def fake_get_request(url, timeout, extra_headers):  # noqa: ARG001
         downloads.append(url)
         return type("Response", (), {"content": b"zip"})()
 
@@ -1547,3 +1549,57 @@ def test_sharpe_ratio_series_keeps_within_period_groups():
     pd.testing.assert_series_equal(actual, expected)
     frame_result = performance_model.get_sharpe_ratio(returns.to_frame())["AAPL"]
     pd.testing.assert_series_equal(actual, frame_result)
+
+
+def test_beta_implied_return_sets_the_residual_against_its_history():
+    days = pd.period_range("2024-01-01", periods=400, freq="D")
+    rng = np.random.default_rng(3)
+    market = pd.Series(rng.normal(0, 0.01, len(days)), index=days)
+    own = rng.normal(0, 0.01, len(days))
+    # A large stock-specific fall on the last day, the largest since day 120.
+    own[120], own[-1] = -0.2, -0.15
+    returns = pd.DataFrame({"A": market + own}, index=days)
+
+    result = performance_model.get_beta_implied_return(
+        returns, market, "daily", beta_window=50
+    )
+
+    assert result[("Residual Largest Since", "A")].iloc[-1] == str(days[120])
+    residuals = result[("Residual", "A")].dropna()
+    # The share of the earlier residuals with a smaller size.
+    assert result[("Residual Percentile", "A")].iloc[-1] == pytest.approx(
+        np.mean(residuals.abs().iloc[:-1] < abs(residuals.iloc[-1]))
+    )
+    # A year of residuals is needed first: the first 252 have no percentile.
+    assert (
+        result[("Residual Percentile", "A")].dropna().index[0] == residuals.index[252]
+    )
+
+
+def test_residual_value_uses_the_market_cap_of_the_previous_close():
+    days = pd.period_range("2024-01-29", periods=8, freq="D")
+    market_cap = pd.DataFrame(
+        {"A": [100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0], "B": np.nan},
+        index=days,
+    )
+    residual = pd.DataFrame({"A": 0.01, "B": 0.02}, index=days)
+
+    daily = performance_model.get_residual_value(residual, market_cap, "daily")
+
+    assert np.isnan(daily["A"].iloc[0])
+    assert daily["A"].iloc[1:].to_numpy() == pytest.approx(
+        0.01 * market_cap["A"].iloc[:-1].to_numpy()
+    )
+    # Without a market cap the value is NaN, not 0.
+    assert daily["B"].isna().all()
+
+    monthly_residual = pd.DataFrame(
+        {"A": [0.1, 0.2], "B": [0.1, 0.2]},
+        index=pd.PeriodIndex(["2024-01", "2024-02"], freq="M"),
+    )
+    monthly = performance_model.get_residual_value(
+        monthly_residual, market_cap, "monthly"
+    )
+    # February is valued at the last close of January (31 January: 120).
+    assert np.isnan(monthly.loc["2024-01", "A"])
+    assert monthly.loc["2024-02", "A"] == pytest.approx(0.2 * 120.0)

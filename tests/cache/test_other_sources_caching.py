@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.cache import cache_controller
-from financetoolkit.economics import yfinance_model as economics_yfinance_model
+from financetoolkit.economics.sources import yfinance_model as economics_yfinance_model
 from financetoolkit.options import options_model
 from financetoolkit.performance import performance_model
 

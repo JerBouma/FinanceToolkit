@@ -5,7 +5,9 @@ from datetime import date, timedelta
 import pandas as pd
 
 from financetoolkit.cache import policy_model
-from financetoolkit.mcp_server.registry_controller import _unclosed_session_note
+from financetoolkit.mcp_server.registry.registry_controller import (
+    _unclosed_session_note,
+)
 
 
 def prices(last_day: date) -> pd.DataFrame:
@@ -37,3 +39,16 @@ def test_a_closed_session_or_a_yearly_period_is_not_noted(monkeypatch):
         {"Beta": [1.2]}, index=pd.period_range(end=today, periods=1, freq="Y")
     )
     assert _unclosed_session_note(yearly) is None
+
+
+def test_a_scheduled_date_after_today_is_not_noted(monkeypatch):
+    today = date.today()
+    monkeypatch.setattr(
+        policy_model, "get_last_closed_session", lambda now=None: today - timedelta(1)
+    )
+    calendar = pd.DataFrame(
+        {"Estimated EPS": [2.22, 2.47]},
+        index=pd.DatetimeIndex([today - timedelta(80), today + timedelta(4)]),
+    )
+
+    assert _unclosed_session_note(calendar) is None

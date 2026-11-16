@@ -956,7 +956,7 @@ def test_get_difference_in_differences_without_control_data(
 
 
 def test_get_wls_estimates_feasible_weights_by_default(econometrics_module):
-    from financetoolkit.econometrics import regression_model  # noqa: PLC0415
+    from financetoolkit.econometrics.regression import regression_model  # noqa: PLC0415
 
     returns = econometrics_module._get_series_column("weekly", "Return")[
         ["AAPL", "MSFT"]
@@ -974,7 +974,7 @@ def test_get_wls_estimates_feasible_weights_by_default(econometrics_module):
 
 
 def test_get_gls_estimates_an_ar1_structure_by_default(econometrics_module):
-    from financetoolkit.econometrics import regression_model  # noqa: PLC0415
+    from financetoolkit.econometrics.regression import regression_model  # noqa: PLC0415
 
     returns = econometrics_module._get_series_column("weekly", "Return")
     omega = pd.DataFrame(
@@ -998,3 +998,41 @@ def test_get_wald_test_takes_lists(econometrics_module):
 
     assert not from_lists.empty
     pd.testing.assert_series_equal(from_lists, from_arrays)
+
+
+def test_level_significance_measures_the_ratio_of_two_series():
+    from financetoolkit import Econometrics
+
+    months = pd.period_range("2026-01", "2026-06", freq="M")
+    data = pd.DataFrame(
+        {"Exports": [10.0, 12, 14, 16, 18, 20], "GDP": [100.0] * 6}, index=months
+    )
+
+    significance = Econometrics(data=data).get_level_significance(
+        spread_over="GDP", ratio=True
+    )
+
+    assert significance.index.tolist() == ["Exports / GDP"]
+    assert significance.loc["Exports / GDP", "Latest Value"] == pytest.approx(0.2)
+
+
+def test_get_move_significance_measures_yield_moves_in_points():
+    from financetoolkit import Econometrics
+
+    days = pd.bdate_range("2025-01-01", periods=60)
+    rng = np.random.default_rng(1)
+    yields = pd.DataFrame(
+        {"2 Year": 0.04 + np.cumsum(rng.normal(0, 0.0003, len(days)))}, index=days
+    )
+    # Day 30 rises 0.002, the last day 0.0017: the largest rise since day 30.
+    yields.iloc[30:, 0] += 0.002
+    yields.iloc[-1, 0] = yields.iloc[-2, 0] + 0.0017
+
+    significance = Econometrics(
+        data=yields, changes="difference"
+    ).get_move_significance(window=20, rounding=6)
+
+    latest = significance.iloc[-1].unstack(level=0)
+    assert latest.loc["2 Year", "Return"] == pytest.approx(0.0017)
+    assert latest.loc["2 Year", "Largest Since"] == str(days[30].date())
+    assert latest.loc["2 Year", "Volatility Multiple"] > 3  # noqa: PLR2004

@@ -216,16 +216,18 @@ def initialize_statements_and_normalization(
 
 def read_normalization_file(statement: str, format_location: str = ""):
     """
-    This function copies the normalization files as found inside the environment and saves them
-    to a custom location defined by the user. This is designed to make it possible to edit these files
-    and supply them to the financial statement functions and within the Analyzer class.
+    Reads the normalization file of a statement, which maps the row names of the source data onto the
+    names the Finance Toolkit works with. The file is read from a custom location when it holds one
+    for the statement and from the files packaged with the Finance Toolkit otherwise.
 
     Args:
-        statement (string): the type of statement you wish to read (balance, income, or cash).
+        statement (string): the type of statement you wish to read: balance, income, cash or statistics,
+            or balance_yf, income_yf, cash_yf or statistics_yf for the Yahoo Finance mappings.
         format_location (string): the folder to read the file from. When the folder has no file
-            for the statement, the packaged file is read.
+            for the statement, the packaged file is read. Defaults to "", which reads the packaged file.
+
     Returns:
-        A pandas Series containing the line items for the desired statement.
+        pd.Series: the line items for the desired statement, or an empty Series when the file is not found.
     """
     if statement not in [
         "balance_yf",
@@ -449,13 +451,17 @@ def copy_normalization_files(
     """
     This function copies the normalization files as found inside the environment and saves them
     to a custom location defined by the user. This is designed to make it possible to edit these files
-    and supply them to the financial statement functions and within the Analyzer class.
+    and supply them to the financial statement functions and to the Toolkit class.
 
     Args:
-        format_location (string): the location to read the file from.
-        save_location (string): the location you wish to save the files to.
+        format_location (string): the folder to read the files from. Defaults to "", which copies the
+            packaged files.
+        save_location (string | Path): the folder you wish to save the files to. When it cannot be
+            written to, the files are saved to the current working directory. Defaults to the
+            'Downloads' folder in the home directory.
+
     Returns:
-        Three csv files saved to the desired location.
+        None: four csv files (balance, income, cash and statistics) are saved to the desired location.
     """
     logger.info(
         "Files are being saved to %s. Please see the following: "
@@ -519,7 +525,7 @@ def get_normalization_files(path: str | Path = ""):
     datasets guide for a worked example:
     https://www.jeroenbouma.com/projects/financetoolkit/docs/external-datasets
 
-    No Toolkit instance (and no API key) is needed to get the files.
+    The files are copied straight from the package, so no Toolkit instance is needed.
 
     Args:
         path (str | Path, optional): The folder to save the files to. Defaults to "", which

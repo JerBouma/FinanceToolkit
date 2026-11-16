@@ -1033,3 +1033,38 @@ def test_rounding_applies_to_the_results_not_to_the_data():
         .performance.get_beta(method="downside", period="weekly")
         .round(1),
     )
+
+
+def test_basket_adds_no_total_for_tickers_in_different_currencies(
+    basket_toolkit, caplog
+):
+    statement = basket_toolkit._cash_flow_statement.drop(index="Total", level=0)
+    statistics = pd.DataFrame(
+        {"2022": ["USD", "EUR"]},
+        index=pd.MultiIndex.from_product([["AAPL", "MSFT"], ["Reported Currency"]]),
+    )
+    original = basket_toolkit._statistics_statement
+    basket_toolkit._statistics_statement = statistics
+    try:
+        result = basket_toolkit._add_basket_total(statement)
+    finally:
+        basket_toolkit._statistics_statement = original
+
+    # Figures in different currencies cannot be summed.
+    assert "Total" not in result.index.get_level_values(0)
+    assert "different currencies: AAPL (USD), MSFT (EUR)" in caplog.text
+
+
+def test_basket_statements_hold_the_sum_of_the_tickers(test_toolkit, basket_toolkit):
+    statement = test_toolkit.get_income_statement(rounding=None)
+    basket = basket_toolkit.get_income_statement(rounding=None)
+
+    pd.testing.assert_frame_equal(basket.drop(index="Total", level=0), statement)
+    pd.testing.assert_series_equal(
+        basket.loc[("Total", "Revenue")],
+        statement.loc[("AAPL", "Revenue")] + statement.loc[("MSFT", "Revenue")],
+        check_names=False,
+    )
+    # Per-share figures and share counts do not add up across companies.
+    assert basket.loc[("Total", "EPS")].isna().all()
+    assert basket.loc[("Total", "Weighted Average Shares Diluted")].isna().all()

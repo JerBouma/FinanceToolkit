@@ -15,7 +15,7 @@ def read_excel(location: str):
     This function reads and loads data from an Excel or CSV file located at the specified 'location'
     into a Pandas DataFrame.
 
-    Parameters:
+    Args:
         location (str): The file path of the Excel or CSV file to read.
 
     Returns:
@@ -45,7 +45,7 @@ def read_yaml_file(location: str):
     a Python dictionary. It handles exceptions for file not found, YAML parsing errors, and other
     general exceptions.
 
-    Parameters:
+    Args:
         location (str): The file path of the YAML file to read and parse.
 
     Returns:

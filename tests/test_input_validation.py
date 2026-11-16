@@ -9,10 +9,8 @@ import pytest
 
 from financetoolkit import Discovery, Economics, FixedIncome
 from financetoolkit.cache.cache_controller import clear_active_cache
-from financetoolkit.economics import (
-    fmp_model as economics_fmp_model,
-    helpers,
-)
+from financetoolkit.economics import helpers
+from financetoolkit.economics.sources import fmp_model as economics_fmp_model
 from financetoolkit.mcp_server import mcp_controller
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.statistics_model import finalize_dataset
@@ -198,7 +196,7 @@ def test_mcp_requires_countries_for_country_indicators():
 
 
 def test_mcp_accepts_countries_as_a_list(monkeypatch):
-    from financetoolkit.mcp_server.provider_model import ToolkitProvider
+    from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 
     received = {}
 

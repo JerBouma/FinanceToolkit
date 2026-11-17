@@ -133,3 +133,22 @@ def test_a_term_without_bids_has_no_variance():
     assert np.isnan(
         market_metrics_model.get_constant_maturity_volatility(-1e-5, 20, 0.04, 40, 30)
     )
+
+
+def test_the_time_to_expiration_runs_to_four_in_the_afternoon_in_new_york():
+    from financetoolkit.options import helpers
+
+    # 30 hours before the close of the next day.
+    now = pd.Timestamp("2026-11-17 10:00")
+    assert helpers.get_time_to_expiration("2026-11-18", now) == pytest.approx(
+        30 * 60 / 525_600
+    )
+    assert helpers.get_days_to_expiration("2026-11-18", now) == 1
+    # A time in another time zone is converted: 15:00 UTC is 10:00 in New York.
+    utc = pd.Timestamp("2026-11-17 15:00", tz="UTC")
+    assert helpers.get_time_to_expiration("2026-11-18", utc) == pytest.approx(
+        30 * 60 / 525_600
+    )
+    # After the close the option has expired.
+    assert helpers.get_time_to_expiration("2026-11-17", now + pd.Timedelta(hours=7)) < 0
+    assert helpers.get_days_to_expiration("2026-11-17", now) == 0

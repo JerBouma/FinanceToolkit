@@ -8,7 +8,7 @@ from functools import cached_property
 import numpy as np
 import pandas as pd
 
-from financetoolkit.options import options_model
+from financetoolkit.options import helpers, options_model
 from financetoolkit.options.greeks.greeks_controller import GreeksOptions
 from financetoolkit.options.market.market_controller import MarketOptions
 from financetoolkit.options.pricing.pricing_controller import PricingOptions
@@ -131,6 +131,9 @@ class OptionsBase:
         self._start_date: str | None = start_date
         self._end_date: str | None = end_date
         self._earnings_function = earnings_function
+        # The time the live option chains are valued at; None follows the clock, a fixed
+        # time (New York time when it has no time zone) makes the results reproducible.
+        self._valuation_time: pd.Timestamp | None = None
 
     @cached_property
     def _daily_historical(self) -> pd.DataFrame:
@@ -360,27 +363,15 @@ class OptionsBase:
 
         |   Strike Price |   Bid |   Ask |
         |---------------:|------:|------:|
-        |          500   | 23.45 | 25.15 |
-        |          502.5 | 21    | 23.35 |
-        |          505   | 18.5  | 21    |
-        |          507.5 | 16.15 | 18.5  |
-        |          510   | 13.7  | 16.1  |
-        |          512.5 | 11.85 | 13.65 |
-        |          515   |  9.7  | 11.6  |
-        |          517.5 |  7.65 |  8.9  |
-        |          520   |  5.8  |  6.75 |
-        |          522.5 |  4.2  |  4.9  |
-        |          525   |  2.87 |  3.15 |
-        |          527.5 |  1.83 |  2.18 |
-        |          530   |  1.07 |  1.19 |
-        |          532.5 |  0.69 |  0.7  |
-        |          535   |  0.32 |  0.37 |
-        |          537.5 |  0.16 |  0.24 |
-        |          540   |  0.09 |  0.12 |
-        |          542.5 |  0.05 |  0.08 |
-        |          545   |  0.03 |  0.05 |
-        |          547.5 |  0.02 |  0.03 |
-        |          550   |  0.01 |  0.03 |
+        |          502.5 | 16.6  | 18.75 |
+        |          507.5 | 13.25 | 14.4  |
+        |          512.5 |  9.7  | 10.55 |
+        |          517.5 |  6.8  |  7.35 |
+        |          522.5 |  4.25 |  4.8  |
+        |          527.5 |  2.6  |  2.88 |
+        |          532.5 |  1.45 |  1.6  |
+        |          537.5 |  0.71 |  0.98 |
+        |          542.5 |  0.34 |  0.4  |
         """
         expiry_dates = options_model.get_option_expiry_dates(ticker=self._tickers[0])
 
@@ -430,6 +421,18 @@ class OptionsBase:
         option_chains.name = expiration_date
 
         return option_chains
+
+    def _current_time(self) -> pd.Timestamp:
+        """
+        The time the live option chains are valued at: the current time in New York, or
+        _valuation_time when it is set. The time to expiration runs from it to 16:00 New
+        York time on the expiration date.
+        """
+        return (
+            helpers.get_current_time()
+            if self._valuation_time is None
+            else pd.Timestamp(self._valuation_time)
+        )
 
     def _spot_price(self, ticker: str, *chains: pd.DataFrame) -> float:
         """

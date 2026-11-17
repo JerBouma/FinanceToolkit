@@ -4,6 +4,8 @@ Prices European swaptions (options to enter an interest rate swap) with Black-76
 Bachelier (normal) model. Caps, floors and bond options are not implemented.
 """
 
+import math
+
 import numpy as np
 from scipy.special import ndtr
 
@@ -134,13 +136,15 @@ def _get_annuity_factor(
 
         Annuity = SUM_(k=1)^(n) [ accrual * DiscountFactor(years_to_maturity + k * accrual) ]
 
-    Where accrual = 1 / payment_frequency and n = tenor * payment_frequency is the
-    number of payments made over the life of the underlying swap. The discount factors are
-    continuously compounded, DiscountFactor(t) = exp(-risk_free_rate * t), on a flat curve.
+    Where accrual = 1 / payment_frequency and n = tenor * payment_frequency, rounded up, is
+    the number of payments made over the life of the underlying swap. A tenor that is not a
+    whole number of periods ends with a short period: its last payment falls at the end of the
+    tenor and accrues tenor - (n - 1) * accrual. The discount factors are continuously
+    compounded, DiscountFactor(t) = exp(-risk_free_rate * t), on a flat curve.
 
     Args:
         risk_free_rate (float): The risk-free interest rate used to discount each
-        payment date, assumed flat across the curve.
+        payment date, continuously compounded and assumed flat across the curve.
         years_to_maturity (float): Years to expiration of the swaption, i.e. the time
         at which the underlying swap would start if exercised.
         tenor (float): The tenor (length in years) of the underlying swap.
@@ -150,11 +154,20 @@ def _get_annuity_factor(
     Returns:
         float: The annuity factor (PVBP) of the underlying swap.
     """
-    number_of_payments = max(round(tenor * payment_frequency), 1)
+    # A whole number of periods in floating point noise (2.9999999999999996) is not a short period.  # noqa: E501
+    periods = tenor * payment_frequency
+    number_of_payments = max(
+        round(periods) if math.isclose(periods, round(periods)) else math.ceil(periods),
+        1,
+    )
     accrual = 1 / payment_frequency
-    payment_times = years_to_maturity + accrual * np.arange(1, number_of_payments + 1)
 
-    return accrual * np.sum(np.exp(-risk_free_rate * payment_times))
+    # Every period is a full one except the last, which ends at the end of the tenor.
+    accruals = np.full(number_of_payments, accrual)
+    accruals[-1] = tenor - (number_of_payments - 1) * accrual
+    payment_times = years_to_maturity + np.cumsum(accruals)
+
+    return float(np.sum(accruals * np.exp(-risk_free_rate * payment_times)))
 
 
 def _intrinsic_payoff(
@@ -216,7 +229,8 @@ def get_black_price(
         `volatility_type` and defaulting to the lognormal (relative) convention this model
         is defined in.
         years_to_maturity (float): years to maturity of the swaption.
-        risk_free_rate (float): The risk-free interest rate.
+        risk_free_rate (float): The risk-free interest rate, continuously compounded and
+            assumed flat over the swap's payment dates, which it discounts.
         notional (float, optional): Notional amount of the swap. Default is 10,000,000.
         tenor (float | None, optional): Tenor of the underlying swap. Defaults to None, which uses the years to
             maturity.
@@ -325,7 +339,8 @@ def get_bachelier_price(
         `volatility_type` and defaulting to the normal (absolute, basis point) convention
         this model is defined in.
         years_to_maturity (float): years to maturity of the swaption.
-        risk_free_rate (float): The risk-free interest rate.
+        risk_free_rate (float): The risk-free interest rate, continuously compounded and
+            assumed flat over the swap's payment dates, which it discounts.
         notional (float, optional): Notional amount of the swap. Default is 10,000,000.
         tenor (float | None, optional): Tenor of the underlying swap. Defaults to None, which uses the years to
             maturity.

@@ -579,7 +579,8 @@ def _unrounded_adjusted_close(
     With the dividends, the close is adjusted the way FMP and Yahoo Finance adjust it: every
     ex-dividend date multiplies the closes before it by one minus the dividend divided by
     the close of the day before, so the return of an ex-dividend day is Close / (Previous
-    Close - Dividend) - 1. Without the dividends, FMP's adjusted close is kept, unless it
+    Close - Dividend) - 1. Without the dividends (not retrieved, or only some of them, such
+    as the latest payments of a Free plan), FMP's adjusted close is kept, unless it
     only differs from the close by its rounding (no dividends in the range: currencies,
     cryptocurrencies, indices and shares that pay none), in which case it is the close.
 
@@ -590,8 +591,8 @@ def _unrounded_adjusted_close(
     Args:
         close (pd.Series): The split-adjusted close, unrounded.
         adjusted_close (pd.Series): FMP's dividend-adjusted close.
-        dividends (pd.Series | None): The split-adjusted dividends on their ex-dividend
-            dates, or None when they were not retrieved.
+        dividends (pd.Series | None): Every split-adjusted dividend in the range on its
+            ex-dividend date, or None when they were not all retrieved.
         rounding (float): The largest difference the rounding can make, in the units of
             the prices. Defaults to ADJUSTED_PRICE_ROUNDING.
 
@@ -614,7 +615,9 @@ def _unrounded_adjusted_close(
     return adjusted_close
 
 
-def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
+def _complete_older_dividends(
+    ticker: str, dividends: pd.Series
+) -> tuple[pd.Series, bool]:
     """
     Adds the dividends paid before the latest payments a Free plan receives, from Yahoo
     Finance, which reports them split-adjusted as FinancialModelingPrep's adjDividend is.
@@ -627,8 +630,9 @@ def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
             daily PeriodIndex.
 
     Returns:
-        pd.Series: The earlier Yahoo Finance payments followed by the given ones, or the
-        given ones with a warning when Yahoo Finance has none.
+        tuple[pd.Series, bool]: The earlier Yahoo Finance payments followed by the given
+        ones and True, or the given ones and False (with a warning) when Yahoo Finance has
+        none, so the caller knows the earlier payments are missing.
     """
     # Imported when first used, as only a Free plan with a long dividend history needs it.
     import yfinance as yf  # noqa: PLC0415
@@ -666,9 +670,9 @@ def _complete_older_dividends(ticker: str, dividends: pd.Series) -> pd.Series:
             first_payment,
             FREE_DIVIDEND_LIMIT,
         )
-        return dividends
+        return dividends, False
 
-    return pd.concat([older, dividends]).sort_index()
+    return pd.concat([older, dividends]).sort_index(), True
 
 
 def get_historical_data(
@@ -845,11 +849,8 @@ def get_historical_data(
         ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
     ]
 
-    if divide_ohlc_by:
-        # NaN divided by divide_ohlc_by is fine, so those warnings are ignored.
-        # In case tickers are presented in percentages or similar
-        with np.errstate(divide="ignore", invalid="ignore"):
-            historical_data = historical_data.div(divide_ohlc_by)
+    # Without every dividend in the range, a dividend-adjusted close rebuilt from the close would leave out the missing payments (all of them when the request failed), so FMP's adjusted close is kept instead.  # noqa: E501
+    dividends_complete = True
 
     if include_dividends:
         dividends = None
@@ -886,17 +887,30 @@ def get_historical_data(
                         and len(paid) >= FREE_DIVIDEND_LIMIT
                         and paid.index.min() > historical_data.index.min()
                     ):
-                        paid = _complete_older_dividends(ticker, paid)
+                        paid, dividends_complete = _complete_older_dividends(
+                            ticker, paid
+                        )
 
                     historical_data["Dividends"] = paid
                 else:
                     historical_data["Dividends"] = 0
             except KeyError:
+                # An error message or no records at all: FMP's adjusted close holds
+                # whatever dividends there are.
                 incomplete = incomplete or _failed_temporarily(dividends)
+                dividends_complete = False
                 historical_data["Dividends"] = 0
         except (HTTPError, URLError, RemoteDisconnected):
             incomplete = True
+            dividends_complete = False
             historical_data["Dividends"] = 0
+
+    if divide_ohlc_by:
+        # NaN divided by divide_ohlc_by is fine, so those warnings are ignored. In case
+        # tickers are presented in percentages or similar; the dividends are divided as
+        # well, so a dividend yield (dividend / close) is unaffected.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            historical_data = historical_data.div(divide_ohlc_by)
 
     historical_data = historical_data.loc[
         ~historical_data.index.duplicated(keep="first")
@@ -906,7 +920,11 @@ def get_historical_data(
         historical_data["Adj Close"] = _unrounded_adjusted_close(
             historical_data["Close"],
             historical_data["Adj Close"],
-            historical_data.get("Dividends") if include_dividends else None,
+            (
+                historical_data.get("Dividends")
+                if include_dividends and dividends_complete
+                else None
+            ),
             # The prices may have been divided, e.g. from percentages.
             rounding=ADJUSTED_PRICE_ROUNDING / (divide_ohlc_by or 1),
         )

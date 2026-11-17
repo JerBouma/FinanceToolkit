@@ -1,16 +1,16 @@
 ,,2020,2021,2022,2023
-AAPL,Earnings per Share,,,0.321,0.0448
+AAPL,Earnings per Share,,,0.321,0.0447
 AAPL,Revenue per Share,,,0.2263,0.0562
 AAPL,Price-to-Earnings,,,-0.4461,
-AAPL,Price-to-Earnings-Growth,,,4.3968,
+AAPL,Price-to-Earnings-Growth,,,4.396,
 AAPL,Book Value per Share,,,-0.0821,0.0242
-AAPL,Price-to-Book,,,-0.2028,
+AAPL,Price-to-Book,,0.3335,-0.1181,
 AAPL,Interest Debt per Share,,,0.0759,-0.0515
-AAPL,CAPEX per Share,,,-0.2239,-0.0264
-AAPL,Earnings Yield,,,0.8051,
-AAPL,Dividend Payout Ratio,,,-0.1971,0.0073
-AAPL,Dividend Yield,,-0.0051,-0.301,
-AAPL,Weighted Dividend Yield,,,0.4526,
+AAPL,CAPEX per Share,,,-0.2239,-0.0265
+AAPL,Earnings Yield,,,0.8053,
+AAPL,Dividend Payout Ratio,,,-0.1972,0.0071
+AAPL,Dividend Yield,,,-0.3029,
+AAPL,Weighted Dividend Yield,,,0.4494,
 AAPL,Price-to-Cash-Flow,,,-0.4216,
 AAPL,Price-to-Free-Cash-Flow,,,-0.4236,
 AAPL,Price-to-Sales,,,-0.4033,
@@ -23,27 +23,27 @@ AAPL,EV-to-Operating-Cash-Flow,,,-0.4131,
 AAPL,Tangible Asset Value,,,-0.1142,-0.0083
 AAPL,Net Current Asset Value,,,-0.1935,0.0194
 AAPL,EV-to-Free-Cash-Flow,,,-0.4152,
-AAPL,Buyback Yield,,,0.5747,
-AAPL,Shareholder Yield,,,0.3343,
+AAPL,Buyback Yield,,,0.5736,
+AAPL,Shareholder Yield,,,0.3344,
 AAPL,SBC-Adjusted Free Cash Flow,,,0.2366,0.0198
-AAPL,Free Cash Flow Payout Ratio,,,-0.1643,-0.0132
-AAPL,EV-to-Invested-Capital,,,-0.3822,
-AAPL,Price-to-Tangible-Book,,,-0.2004,
-AAPL,Net Share Issuance,,,,0.1285
+AAPL,Free Cash Flow Payout Ratio,,,-0.1646,-0.013
+AAPL,EV-to-Invested-Capital,,-0.0812,-0.27,
+AAPL,Price-to-Tangible-Book,,0.3335,-0.1181,
+AAPL,Net Share Issuance,,,,0.1286
 AAPL,Composite Equity Issuance,,,,
-AAPL,Net External Financing,,,,-0.0068
+AAPL,Net External Financing,,,,-0.0067
 MSFT,Earnings per Share,,,0.2811,0.0926
 MSFT,Revenue per Share,,,0.1882,0.1298
 MSFT,Price-to-Earnings,,,-0.4434,
-MSFT,Price-to-Earnings-Growth,,,0.1951,
+MSFT,Price-to-Earnings-Growth,,,0.1954,
 MSFT,Book Value per Share,,,0.1965,0.2191
-MSFT,Price-to-Book,,,-0.404,
+MSFT,Price-to-Book,,0.2476,-0.3975,
 MSFT,Interest Debt per Share,,,-0.0638,-0.0536
 MSFT,CAPEX per Share,,,-0.2453,-0.1788
-MSFT,Earnings Yield,,,0.7942,
-MSFT,Dividend Payout Ratio,,,-0.1377,0.0108
-MSFT,Dividend Yield,,0.3936,0.542,
-MSFT,Weighted Dividend Yield,,,0.5484,
+MSFT,Earnings Yield,,,0.7965,
+MSFT,Dividend Payout Ratio,,,-0.1378,0.011
+MSFT,Dividend Yield,,,0.5461,
+MSFT,Weighted Dividend Yield,,,0.549,
 MSFT,Price-to-Cash-Flow,,,-0.4142,
 MSFT,Price-to-Free-Cash-Flow,,,-0.4094,
 MSFT,Price-to-Sales,,,-0.3999,
@@ -51,17 +51,17 @@ MSFT,Market Cap,,0.4973,-0.2933,
 MSFT,Enterprise Value,,0.519,-0.293,
 MSFT,EV-to-Sales,,,-0.3997,
 MSFT,EV-to-EBIT,,,-0.4333,
-MSFT,EV-to-EBITDA,,,-0.4194,
+MSFT,EV-to-EBITDA,,,-0.4195,
 MSFT,EV-to-Operating-Cash-Flow,,,-0.414,
 MSFT,Tangible Asset Value,,,0.13,0.2584
 MSFT,Net Current Asset Value,,,-3.2467,-0.392
 MSFT,EV-to-Free-Cash-Flow,,,-0.4091,
-MSFT,Buyback Yield,,,0.6919,
-MSFT,Shareholder Yield,,,0.6349,
+MSFT,Buyback Yield,,,0.6911,
+MSFT,Shareholder Yield,,,0.6311,
 MSFT,SBC-Adjusted Free Cash Flow,,,0.1968,-0.0013
 MSFT,Free Cash Flow Payout Ratio,,,-0.0851,0.0651
-MSFT,EV-to-Invested-Capital,,,-0.5383,
-MSFT,Price-to-Tangible-Book,,,-0.3746,
-MSFT,Net Share Issuance,,,,0.106
+MSFT,EV-to-Invested-Capital,,0.0083,-0.5433,
+MSFT,Price-to-Tangible-Book,,0.2038,-0.3194,
+MSFT,Net Share Issuance,,,,0.1074
 MSFT,Composite Equity Issuance,,,,
-MSFT,Net External Financing,,,,0.1329
+MSFT,Net External Financing,,,,0.1328

@@ -65,3 +65,57 @@ def get_real_personal_income() -> pd.DataFrame:
         fetch=fetch,
         description=description,
     )
+
+
+# Every annual series of the National Income and Product Accounts, in the layout of the
+# monthly file: A001RD,2025,"128.801".
+ANNUAL_URL = "https://apps.bea.gov/national/Release/TXT/NipaDataA.txt"
+
+# The implicit price deflator of the gross national product (NIPA table 1.7.9, line 4,
+# 2017 = 100), the price-level index of Ohlson's (1980) O-Score.
+GROSS_NATIONAL_PRODUCT_DEFLATOR = "A001RD"
+
+
+def get_gross_national_product_deflator() -> pd.DataFrame:
+    """
+    Retrieves the yearly implicit price deflator of the US gross national product (2017 =
+    100) from the U.S. Bureau of Economic Analysis, from 1929.
+
+    Returns:
+        pd.DataFrame: A single "United States" column indexed by year.
+
+    Raises:
+        ValueError: When the file has no rows for the series, which means its layout
+            changed.
+    """
+    description = "gross national product deflator"
+    row_pattern = re.compile(
+        rf'^{GROSS_NATIONAL_PRODUCT_DEFLATOR},(\d{{4}}),"?([\d,.\-]+)"?\s*$', re.M
+    )
+
+    def fetch() -> pd.DataFrame:
+        # The file holds every annual NIPA series (about 12 MB), so only the rows of this
+        # series are kept from the text.
+        text = get_request(ANNUAL_URL, timeout=300, extra_headers=TOOLKIT_HEADERS).text
+        observations = {
+            pd.Period(year, freq="Y"): float(value.replace(",", ""))
+            for year, value in row_pattern.findall(text)
+        }
+        if not observations:
+            raise ValueError(
+                f"BEA's NIPA file has no {description} "
+                f"({GROSS_NATIONAL_PRODUCT_DEFLATOR}), which means its layout changed."
+            )
+
+        return pd.DataFrame(
+            {"United States": list(observations.values())},
+            index=pd.PeriodIndex(list(observations), freq="Y", name="Date"),
+        ).sort_index()
+
+    return collect_cached_data(
+        source=policy_model.BUREAU_OF_ECONOMIC_ANALYSIS,
+        dataset="series",
+        entity=GROSS_NATIONAL_PRODUCT_DEFLATOR,
+        fetch=fetch,
+        description=description,
+    )

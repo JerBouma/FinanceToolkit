@@ -7,6 +7,7 @@ Python types required by controller methods, as well as date-string validation.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import re
@@ -72,7 +73,7 @@ def coerce_value(val: Any, annotation: Any) -> Any:
     with its elements converted, since the MCP schema advertises such parameters as a
     string. A single value stays a single value when the annotation also accepts one, and
     becomes a list of one otherwise. A list of objects (option strategy legs) is passed on
-    as given.
+    as given, or read from its JSON text.
 
     If conversion fails or the target type is not recognised, the original value is returned.
 
@@ -98,8 +99,18 @@ def coerce_value(val: Any, annotation: Any) -> Any:
     )
 
     lists = [a for a in args if a is list or get_origin(a) is list]
-    item_type = get_args(lists[0])[0] if lists and get_args(lists[0]) else str
     scalars = [a for a in args if a in (bool, int, float, str)]
+    # A bare list next to a number and no text (a rate, or one per ticker) holds numbers.
+    item_type = (
+        get_args(lists[0])[0]
+        if lists and get_args(lists[0])
+        else next((a for a in scalars if a in (int, float) and str not in scalars), str)
+    )
+
+    # A list of objects written as JSON text ('[{"strike_price": 340}]') is read as JSON.
+    if lists and get_origin(item_type) is dict and isinstance(val, str):
+        with contextlib.suppress(json.JSONDecodeError):
+            return json.loads(val)
 
     if lists and get_origin(item_type) is not dict:
         if isinstance(val, list):

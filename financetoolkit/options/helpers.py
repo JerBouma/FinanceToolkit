@@ -22,24 +22,27 @@ MAX_STRIKES = 10_000
 def define_strike_prices(
     tickers: list[str],
     stock_price: pd.DataFrame,
-    strike_step_size: int,
+    strike_step_size: float,
     strike_price_range: float,
 ):
     """
-    Define strike prices for each ticker in the tickers list. The strike prices are defined as a range from
-    strike_price_range% below the current stock price to strike_price_range% above the current stock price, with a
-    step size of strike_step_size. The numbers are rounded to the nearest strike_step_size.
-
+    Define strike prices for each ticker in the tickers list. The strike prices run from
+    strike_price_range below the current stock price, rounded down to a multiple of
+    strike_step_size, up to and including strike_price_range above it, rounded up, so the
+    whole range is covered (a price of 100 with a range of 0.25 and a step of 5 gives 75, 80,
+    ..., 125). Strikes are positive: a range that reaches zero starts at the first step, and a
+    price below the step size still gets the strike of one step. With a range of 0 the only
+    strike is the multiple of strike_step_size nearest to the price.
 
     Args:
         tickers (list[str]): the list of tickers.
         stock_price (pd.DataFrame): the current stock price for each ticker.
-        strike_step_size (int): the strike step size.
-        strike_price_range (float): the strike price range.
+        strike_step_size (float): the strike step size, a whole number (5) or a fraction (2.5).
+        strike_price_range (float): the strike price range as a fraction of the price.
 
     Returns:
         dict: a dictionary of strike prices for each ticker, without the tickers that have no
-        price.
+        price. The strikes are integers when the step size is an integer.
     """
     if strike_price_range < 0 or strike_step_size < 0:
         raise ValueError(
@@ -49,6 +52,10 @@ def define_strike_prices(
         raise ValueError("The strike price range must be between 0 and 1.")
     if strike_step_size == 0:
         raise ValueError("The strike step size must be greater than 0.")
+
+    # Integer steps give integer strikes (100 rather than 100.0); fractional steps are
+    # rounded to remove the floating point noise of step multiples such as 3 * 0.1.
+    whole_steps = float(strike_step_size).is_integer()
 
     strike_prices_per_ticker = {}
 
@@ -62,11 +69,11 @@ def define_strike_prices(
                 stock_price.name,
             )
             continue
+
+        price = float(stock_price.loc[ticker])
+
         if (
-            strike_count := 2
-            * strike_price_range
-            * float(stock_price.loc[ticker])
-            / strike_step_size
+            strike_count := 2 * strike_price_range * price / strike_step_size
         ) > MAX_STRIKES:
             raise ValueError(
                 f"The strike prices of {ticker} would be about {strike_count:,.0f} prices; at "
@@ -74,27 +81,28 @@ def define_strike_prices(
                 "strike_step_size or a smaller strike_price_range."
             )
 
+        # Strikes are counted in steps, so the grid is exact whatever the step size: the
+        # lowest is the step at or below the bottom of the range (at least one step, since a
+        # strike of zero or below has no option), the highest the step at or above its top.
+        # The tolerance keeps a bound that is a multiple of the step (100 * 1.25 / 5) from
+        # moving a step out through floating point error.
+        lowest_step = max(
+            np.floor(price * (1 - strike_price_range) / strike_step_size + 1e-9), 1
+        )
+        highest_step = max(
+            np.ceil(price * (1 + strike_price_range) / strike_step_size - 1e-9),
+            lowest_step,
+        )
         if strike_price_range == 0:
-            strike_prices_per_ticker[ticker] = [
-                strike_step_size
-                * round(int(stock_price.loc[ticker]) / strike_step_size)
-            ]
-        else:
-            strike_prices_per_ticker[ticker] = list(
-                range(
-                    strike_step_size
-                    * round(
-                        int(stock_price.loc[ticker] * (1 - strike_price_range))
-                        / strike_step_size
-                    ),
-                    strike_step_size
-                    * round(
-                        int(stock_price.loc[ticker] * (1 + strike_price_range))
-                        / strike_step_size
-                    ),
-                    strike_step_size,
-                )
-            )
+            lowest_step = highest_step = max(round(price / strike_step_size), 1)
+
+        strikes = np.arange(lowest_step, highest_step + 1) * strike_step_size
+
+        strike_prices_per_ticker[ticker] = (
+            [int(round(strike)) for strike in strikes]
+            if whole_steps
+            else [round(float(strike), 10) for strike in strikes]
+        )
 
     return strike_prices_per_ticker
 
@@ -389,18 +397,130 @@ def validate_numeric_inputs(arrays: bool = False, **kwargs) -> None:
             )
 
 
-def get_days_to_expiration(expiration_date: str) -> int:
+# Listed options expire at the close of trading on their expiration date, 16:00 in New York,
+# and the time to expiration is counted in minutes over the 525,600 minutes of a 365-day year,
+# as the Cboe does for the VIX. The AM-settled monthly index options (such as the standard SPX
+# expiry) settle at the open instead, which this close slightly overstates.
+EXPIRATION_TIMEZONE = "America/New_York"
+EXPIRATION_HOUR = 16
+MINUTES_PER_YEAR = 525_600
+
+
+def get_current_time() -> pd.Timestamp:
     """
-    Counts the calendar days from today to an option's expiration date. Counting whole
-    days, rather than from the current time of day, keeps an option that expires tomorrow
-    at one day instead of rounding it down to none.
+    The current time in New York, the time zone of the expiration times.
+
+    Returns:
+        pd.Timestamp: The current time, aware of the New York time zone.
+    """
+    return pd.Timestamp.now(tz=EXPIRATION_TIMEZONE)
+
+
+def _in_new_york(current_time: pd.Timestamp | None) -> pd.Timestamp:
+    """The given time (New York time when it has no time zone), or the current time."""
+    if current_time is None:
+        return get_current_time()
+    current_time = pd.Timestamp(current_time)
+    if current_time.tzinfo is None:
+        # A wall-clock time that a daylight saving change skips or repeats takes the later one.
+        return current_time.tz_localize(
+            EXPIRATION_TIMEZONE, ambiguous=False, nonexistent="shift_forward"
+        )
+    return current_time.tz_convert(EXPIRATION_TIMEZONE)
+
+
+def get_time_to_expiration(
+    expiration_date: str, current_time: pd.Timestamp | None = None
+) -> float:
+    """
+    The time from the current time to an option's expiration in years: the minutes up to 16:00 New York
+    time on the expiration date over the 525,600 minutes of a year. Counting to the time of
+    expiration, rather than in whole days, keeps an option that expires this afternoon from
+    being priced as if a full day remained.
 
     Args:
         expiration_date (str): The expiration date (YYYY-MM-DD).
+        current_time (pd.Timestamp | None, optional): The time to count from, New York time
+            when it has no time zone. Defaults to None, which uses the current time.
+
+    Returns:
+        float: The time to expiration in years, zero or negative once the option expired.
+    """
+    expiration_time = (
+        pd.Timestamp(expiration_date).normalize() + pd.Timedelta(hours=EXPIRATION_HOUR)
+    ).tz_localize(EXPIRATION_TIMEZONE)
+    minutes = (expiration_time - _in_new_york(current_time)).total_seconds() / 60
+    return minutes / MINUTES_PER_YEAR
+
+
+def get_days_to_expiration(
+    expiration_date: str, current_time: pd.Timestamp | None = None
+) -> int:
+    """
+    Counts the calendar days from today in New York to an option's expiration date, which
+    labels and selects expiries. Prices use get_time_to_expiration, the exact time left.
+
+    Args:
+        expiration_date (str): The expiration date (YYYY-MM-DD).
+        current_time (pd.Timestamp | None, optional): The time to count from, New York time
+            when it has no time zone. Defaults to None, which uses the current time.
 
     Returns:
         int: The number of days, zero for an option that expires today.
     """
-    return (
-        pd.Timestamp(expiration_date).normalize() - pd.Timestamp.today().normalize()
-    ).days
+    today = _in_new_york(current_time).tz_localize(None).normalize()
+    return (pd.Timestamp(expiration_date).normalize() - today).days
+
+
+def apply_expiration_limit(
+    value,
+    limit,
+    stock_price,
+    strike_price,
+    time_to_expiration,
+    risk_free_rate,
+    volatility,
+    dividend_yield=0.0,
+):
+    """
+    Replace a Greek by its limit where no uncertainty is left, at expiration or without
+    volatility, and the forward lies off the strike. The closed forms then divide zero by
+    zero (or infinity by infinity), while the option is simply worth its discounted
+    intrinsic value: the Greeks of the curvature (Gamma, Speed, Vanna, Color and the like)
+    are 0 and those of time follow from the intrinsic value. At the strike itself the limit
+    is infinite or undefined, so the value of the closed form is kept there.
+
+    Args:
+        value: The Greek from its closed form (float, np.ndarray, pd.Series or pd.DataFrame).
+        limit: The limit where no uncertainty is left, a number or an array of the same shape.
+        stock_price: The stock price.
+        strike_price: The strike price.
+        time_to_expiration: The time to expiration in years.
+        risk_free_rate: The risk free rate.
+        volatility: The volatility.
+        dividend_yield: The dividend yield. Defaults to 0.0.
+
+    Returns:
+        The Greek, of the same type as value, with the limit where no uncertainty is left.
+    """
+    spread = volatility * np.sqrt(time_to_expiration)
+    riskless = np.asarray(spread) == 0
+    if not np.any(riskless):
+        return value
+
+    # The forward against the strike, as in d1: above it a call ends in the money.
+    log_forward_moneyness = np.asarray(
+        np.log(stock_price / strike_price)
+        + (risk_free_rate - dividend_yield) * time_to_expiration,
+        dtype=float,
+    )
+    values = np.where(
+        riskless & (log_forward_moneyness != 0),
+        np.asarray(limit, dtype=float),
+        np.asarray(value, dtype=float),
+    )
+    if isinstance(value, pd.Series):
+        return pd.Series(values, index=value.index, name=value.name)
+    if isinstance(value, pd.DataFrame):
+        return pd.DataFrame(values, index=value.index, columns=value.columns)
+    return float(values) if np.ndim(values) == 0 else values

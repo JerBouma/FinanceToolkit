@@ -14,9 +14,9 @@ AAPL,Days of Accounts Payable Outstanding,Lag 3,,,,
 AAPL,Cash Conversion Cycle,Lag 1,,,-0.1803,-0.1359
 AAPL,Cash Conversion Cycle,Lag 2,,,,-0.3407
 AAPL,Cash Conversion Cycle,Lag 3,,,,
-AAPL,Cash Conversion Efficiency,Lag 1,,-0.0323,0.0893,-0.0691
+AAPL,Cash Conversion Efficiency,Lag 1,,-0.0323,0.0892,-0.069
 AAPL,Cash Conversion Efficiency,Lag 2,,,0.0541,0.0141
-AAPL,Cash Conversion Efficiency,Lag 3,,,,-0.0187
+AAPL,Cash Conversion Efficiency,Lag 3,,,,-0.0186
 AAPL,Receivables Turnover,Lag 1,,,-0.1608,-0.0824
 AAPL,Receivables Turnover,Lag 2,,,,-0.23
 AAPL,Receivables Turnover,Lag 3,,,,
@@ -24,10 +24,10 @@ AAPL,Inventory Turnover Ratio,Lag 1,,,-0.031,-0.0209
 AAPL,Inventory Turnover Ratio,Lag 2,,,,-0.0513
 AAPL,Inventory Turnover Ratio,Lag 3,,,,
 AAPL,Accounts Payable Turnover Ratio,Lag 1,,,-0.143,-0.1014
-AAPL,Accounts Payable Turnover Ratio,Lag 2,,,,-0.23
+AAPL,Accounts Payable Turnover Ratio,Lag 2,,,,-0.2299
 AAPL,Accounts Payable Turnover Ratio,Lag 3,,,,
-AAPL,SGA-to-Revenue Ratio,Lag 1,,-0.171,0.0582,0.022
-AAPL,SGA-to-Revenue Ratio,Lag 2,,,-0.1228,0.0815
+AAPL,SGA-to-Revenue Ratio,Lag 1,,-0.1721,0.0595,0.0222
+AAPL,SGA-to-Revenue Ratio,Lag 2,,,-0.1228,0.083
 AAPL,SGA-to-Revenue Ratio,Lag 3,,,,-0.1034
 AAPL,Fixed Asset Turnover,Lag 1,,,0.0019,-0.0721
 AAPL,Fixed Asset Turnover,Lag 2,,,,-0.0703
@@ -35,41 +35,41 @@ AAPL,Fixed Asset Turnover,Lag 3,,,,
 AAPL,Asset Turnover Ratio,Lag 1,,,0.0337,-0.0302
 AAPL,Asset Turnover Ratio,Lag 2,,,,0.0025
 AAPL,Asset Turnover Ratio,Lag 3,,,,
-AAPL,Operating Ratio,Lag 1,,-0.0749,-0.0061,0.0059
-AAPL,Operating Ratio,Lag 2,,,-0.0805,-0.0003
-AAPL,Operating Ratio,Lag 3,,,,-0.0751
-AAPL,R&D Intensity Ratio,Lag 1,,-0.123,0.1119,0.1712
-AAPL,R&D Intensity Ratio,Lag 2,,,-0.0249,0.3022
-AAPL,R&D Intensity Ratio,Lag 3,,,,0.142
+AAPL,Operating Ratio,Lag 1,,-0.0749,-0.0062,0.0059
+AAPL,Operating Ratio,Lag 2,,,-0.0806,-0.0003
+AAPL,Operating Ratio,Lag 3,,,,-0.0752
+AAPL,R&D Intensity Ratio,Lag 1,,-0.123,0.1113,0.1724
+AAPL,R&D Intensity Ratio,Lag 2,,,-0.0254,0.3029
+AAPL,R&D Intensity Ratio,Lag 3,,,,0.1426
 AAPL,S&M to Revenue Ratio,Lag 1,,,,
 AAPL,S&M to Revenue Ratio,Lag 2,,,,
 AAPL,S&M to Revenue Ratio,Lag 3,,,,
 AAPL,G&A to Revenue Ratio,Lag 1,,,,
 AAPL,G&A to Revenue Ratio,Lag 2,,,,
 AAPL,G&A to Revenue Ratio,Lag 3,,,,
-AAPL,SBC to Revenue Ratio,Lag 1,,-0.1325,0.0602,0.2358
-AAPL,SBC to Revenue Ratio,Lag 2,,,-0.0803,0.3102
-AAPL,SBC to Revenue Ratio,Lag 3,,,,0.1365
-AAPL,Deferred Revenue Ratio,Lag 1,,-0.1405,-0.0337,0.0448
-AAPL,Deferred Revenue Ratio,Lag 2,,,-0.1694,0.0096
-AAPL,Deferred Revenue Ratio,Lag 3,,,,-0.1322
+AAPL,SBC to Revenue Ratio,Lag 1,,-0.1312,0.0605,0.2331
+AAPL,SBC to Revenue Ratio,Lag 2,,,-0.0787,0.3078
+AAPL,SBC to Revenue Ratio,Lag 3,,,,0.1362
+AAPL,Deferred Revenue Ratio,Lag 1,,-0.1401,-0.0357,0.0482
+AAPL,Deferred Revenue Ratio,Lag 2,,,-0.1709,0.0107
+AAPL,Deferred Revenue Ratio,Lag 3,,,,-0.1309
 AAPL,Working Capital Turnover Ratio,Lag 1,,,-6.5727,0.5588
 AAPL,Working Capital Turnover Ratio,Lag 2,,,,-3.4584
 AAPL,Working Capital Turnover Ratio,Lag 3,,,,
-AAPL,Capex Intensity,Lag 1,,0.1391,-0.1023,0.0515
-AAPL,Capex Intensity,Lag 2,,,0.0226,-0.0561
-AAPL,Capex Intensity,Lag 3,,,,0.0752
+AAPL,Capex Intensity,Lag 1,,0.1381,-0.1039,0.0529
+AAPL,Capex Intensity,Lag 2,,,0.0199,-0.0564
+AAPL,Capex Intensity,Lag 3,,,,0.0739
 AAPL,Net Capital Expenditure,Lag 1,,0.9469,-0.9899,-0.4141
 AAPL,Net Capital Expenditure,Lag 2,,,0.8943,-1.8141
 AAPL,Net Capital Expenditure,Lag 3,,,,0.8505
 AAPL,Capex to Depreciation,Lag 1,,0.486,-0.0184,-0.0134
-AAPL,Capex to Depreciation,Lag 2,,,0.4586,-0.0316
+AAPL,Capex to Depreciation,Lag 2,,,0.4587,-0.0315
 AAPL,Capex to Depreciation,Lag 3,,,,0.4391
-AAPL,Asset Growth,Lag 1,,,-0.9403,-1.1
-AAPL,Asset Growth,Lag 2,,,,-1.006
+AAPL,Asset Growth,Lag 1,,,-0.9403,-1.0976
+AAPL,Asset Growth,Lag 2,,,,-1.0058
 AAPL,Asset Growth,Lag 3,,,,
-AAPL,Net Operating Assets,Lag 1,,,-0.0975,-0.0923
-AAPL,Net Operating Assets,Lag 2,,,,-0.1809
+AAPL,Net Operating Assets,Lag 1,,,-0.0974,-0.0924
+AAPL,Net Operating Assets,Lag 2,,,,-0.1808
 AAPL,Net Operating Assets,Lag 3,,,,
 MSFT,Days of Inventory Outstanding,Lag 1,,,0.1736,-0.0691
 MSFT,Days of Inventory Outstanding,Lag 2,,,,0.0925
@@ -86,8 +86,8 @@ MSFT,Days of Accounts Payable Outstanding,Lag 3,,,,
 MSFT,Cash Conversion Cycle,Lag 1,,,-0.0641,-0.0508
 MSFT,Cash Conversion Cycle,Lag 2,,,,-0.1182
 MSFT,Cash Conversion Cycle,Lag 3,,,,
-MSFT,Cash Conversion Efficiency,Lag 1,,0.0759,-0.0162,-0.0797
-MSFT,Cash Conversion Efficiency,Lag 2,,,0.0584,-0.0946
+MSFT,Cash Conversion Efficiency,Lag 1,,0.0761,-0.0164,-0.0797
+MSFT,Cash Conversion Efficiency,Lag 2,,,0.0585,-0.0948
 MSFT,Cash Conversion Efficiency,Lag 3,,,,-0.0259
 MSFT,Receivables Turnover,Lag 1,,,0.004,-0.0536
 MSFT,Receivables Turnover,Lag 2,,,,-0.0498
@@ -98,48 +98,48 @@ MSFT,Inventory Turnover Ratio,Lag 3,,,,
 MSFT,Accounts Payable Turnover Ratio,Lag 1,,,-0.0277,-0.0318
 MSFT,Accounts Payable Turnover Ratio,Lag 2,,,,-0.0586
 MSFT,Accounts Payable Turnover Ratio,Lag 3,,,,
-MSFT,SGA-to-Revenue Ratio,Lag 1,,-0.1314,-0.0686,0.0236
-MSFT,SGA-to-Revenue Ratio,Lag 2,,,-0.191,-0.0466
-MSFT,SGA-to-Revenue Ratio,Lag 3,,,,-0.1719
+MSFT,SGA-to-Revenue Ratio,Lag 1,,-0.1314,-0.0682,0.0237
+MSFT,SGA-to-Revenue Ratio,Lag 2,,,-0.1906,-0.0461
+MSFT,SGA-to-Revenue Ratio,Lag 3,,,,-0.1715
 MSFT,Fixed Asset Turnover,Lag 1,,,-0.0785,-0.1432
 MSFT,Fixed Asset Turnover,Lag 2,,,,-0.2105
 MSFT,Fixed Asset Turnover,Lag 3,,,,
-MSFT,Asset Turnover Ratio,Lag 1,,,0.0724,-0.0388
-MSFT,Asset Turnover Ratio,Lag 2,,,,0.0308
+MSFT,Asset Turnover Ratio,Lag 1,,,0.0723,-0.0388
+MSFT,Asset Turnover Ratio,Lag 2,,,,0.0307
 MSFT,Asset Turnover Ratio,Lag 3,,,,
-MSFT,Operating Ratio,Lag 1,,-0.0724,-0.008,0.005
-MSFT,Operating Ratio,Lag 2,,,-0.0799,-0.0031
+MSFT,Operating Ratio,Lag 1,,-0.0725,-0.0079,0.0049
+MSFT,Operating Ratio,Lag 2,,,-0.0798,-0.003
 MSFT,Operating Ratio,Lag 3,,,,-0.0753
-MSFT,R&D Intensity Ratio,Lag 1,,-0.0854,0.0032,0.038
-MSFT,R&D Intensity Ratio,Lag 2,,,-0.0824,0.0414
+MSFT,R&D Intensity Ratio,Lag 1,,-0.0853,0.0031,0.038
+MSFT,R&D Intensity Ratio,Lag 2,,,-0.0824,0.0413
 MSFT,R&D Intensity Ratio,Lag 3,,,,-0.0475
-MSFT,S&M to Revenue Ratio,Lag 1,,-0.1263,-0.0802,-0.0245
-MSFT,S&M to Revenue Ratio,Lag 2,,,-0.1964,-0.1028
-MSFT,S&M to Revenue Ratio,Lag 3,,,,-0.2161
-MSFT,G&A to Revenue Ratio,Lag 1,,-0.1485,-0.0197,0.198
-MSFT,G&A to Revenue Ratio,Lag 2,,,-0.1653,0.1743
-MSFT,G&A to Revenue Ratio,Lag 3,,,,0.0
-MSFT,SBC to Revenue Ratio,Lag 1,,-0.0162,0.0385,0.2011
-MSFT,SBC to Revenue Ratio,Lag 2,,,0.0216,0.2473
-MSFT,SBC to Revenue Ratio,Lag 3,,,,0.227
-MSFT,Deferred Revenue Ratio,Lag 1,,-0.0187,-0.07,0.0457
-MSFT,Deferred Revenue Ratio,Lag 2,,,-0.0874,-0.0275
-MSFT,Deferred Revenue Ratio,Lag 3,,,,-0.0457
+MSFT,S&M to Revenue Ratio,Lag 1,,-0.1266,-0.0802,-0.0243
+MSFT,S&M to Revenue Ratio,Lag 2,,,-0.1967,-0.1026
+MSFT,S&M to Revenue Ratio,Lag 3,,,,-0.2163
+MSFT,G&A to Revenue Ratio,Lag 1,,-0.1498,-0.0206,0.2012
+MSFT,G&A to Revenue Ratio,Lag 2,,,-0.1673,0.1765
+MSFT,G&A to Revenue Ratio,Lag 3,,,,0.0002
+MSFT,SBC to Revenue Ratio,Lag 1,,-0.0158,0.0396,0.1986
+MSFT,SBC to Revenue Ratio,Lag 2,,,0.0231,0.246
+MSFT,SBC to Revenue Ratio,Lag 3,,,,0.2264
+MSFT,Deferred Revenue Ratio,Lag 1,,-0.0186,-0.0703,0.0458
+MSFT,Deferred Revenue Ratio,Lag 2,,,-0.0876,-0.0277
+MSFT,Deferred Revenue Ratio,Lag 3,,,,-0.0458
 MSFT,Working Capital Turnover Ratio,Lag 1,,,0.4219,0.1769
 MSFT,Working Capital Turnover Ratio,Lag 2,,,,0.6734
 MSFT,Working Capital Turnover Ratio,Lag 3,,,,
-MSFT,Capex Intensity,Lag 1,,0.1361,-0.0179,0.1004
-MSFT,Capex Intensity,Lag 2,,,0.1157,0.0807
-MSFT,Capex Intensity,Lag 3,,,,0.2278
+MSFT,Capex Intensity,Lag 1,,0.1363,-0.018,0.1009
+MSFT,Capex Intensity,Lag 2,,,0.1158,0.0811
+MSFT,Capex Intensity,Lag 3,,,,0.2285
 MSFT,Net Capital Expenditure,Lag 1,,2.3784,0.0548,0.5114
 MSFT,Net Capital Expenditure,Lag 2,,,2.5637,0.5942
 MSFT,Net Capital Expenditure,Lag 3,,,,4.386
 MSFT,Capex to Depreciation,Lag 1,,0.4624,-0.0639,0.2276
 MSFT,Capex to Depreciation,Lag 2,,,0.3689,0.1491
-MSFT,Capex to Depreciation,Lag 3,,,,0.6805
-MSFT,Asset Growth,Lag 1,,,-0.1364,0.3878
-MSFT,Asset Growth,Lag 2,,,,0.1985
+MSFT,Capex to Depreciation,Lag 3,,,,0.6804
+MSFT,Asset Growth,Lag 1,,,-0.1364,0.3883
+MSFT,Asset Growth,Lag 2,,,,0.199
 MSFT,Asset Growth,Lag 3,,,,
-MSFT,Net Operating Assets,Lag 1,,,0.4416,0.166
-MSFT,Net Operating Assets,Lag 2,,,,0.6809
+MSFT,Net Operating Assets,Lag 1,,,0.4414,0.166
+MSFT,Net Operating Assets,Lag 2,,,,0.6807
 MSFT,Net Operating Assets,Lag 3,,,,

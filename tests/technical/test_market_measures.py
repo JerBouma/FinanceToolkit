@@ -54,7 +54,9 @@ def test_relative_strength_and_rating(prices):
     relative, mansfield = seasonality_model.get_relative_strength(
         prices, prices.mean(axis=1), window=50
     )
-    rating = seasonality_model.get_relative_strength_rating(prices)
+    rating = seasonality_model.get_relative_strength_rating(
+        seasonality_model.get_relative_strength_score(prices)
+    )
 
     assert relative.iloc[0].to_numpy() == pytest.approx(np.ones(20))
     assert mansfield.iloc[:49].isna().all().all()
@@ -187,7 +189,9 @@ def test_relative_strength_rating_gives_tied_leaders_99():
         index=index,
     )
 
-    rating = seasonality_model.get_relative_strength_rating(prices).iloc[-1]
+    rating = seasonality_model.get_relative_strength_rating(
+        seasonality_model.get_relative_strength_score(prices)
+    ).iloc[-1]
 
     assert rating["Leader"] == rating["Twin"] == 99
     assert rating["Laggard"] == 1

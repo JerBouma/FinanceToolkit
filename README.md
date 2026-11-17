@@ -26,7 +26,7 @@ Complementing this is the [Finance Database 🌎](https://github.com/JerBouma/Fi
 ___
 **🔌 The Finance Toolkit is also available as an [MCP Server](https://www.jeroenbouma.com/projects/financetoolkit/mcp)**
 
-Query 500+ methods from Claude, Copilot, Cursor, Windsurf or any MCP-compatible client without writing code.
+Query 500+ methods from Claude, Copilot, Cursor, Devin Desktop (Windsurf) or any MCP-compatible client without writing code.
 
 - **Hosted:** connect to `https://financetoolkit.jeroenbouma.com/mcp` — OAuth handles the rest on first use.
 - **Local:** `uvx --from "financetoolkit[mcp]" financetoolkit-mcp-setup` — sets up your client config and API key automatically. See [MCP Server Documentation](https://www.jeroenbouma.com/projects/financetoolkit/mcp#local-clients) for manual setup.
@@ -549,7 +549,7 @@ Connect directly to the hosted server at `https://financetoolkit.jeroenbouma.com
 | **Claude Code** | `claude mcp add --transport http finance-toolkit https://financetoolkit.jeroenbouma.com/mcp` |
 | **VS Code** | Command Palette → MCP: Add Server → HTTP → paste the URL |
 | **Cursor** | Cursor Settings → Tools & MCP → New MCP Server → add `"finance-toolkit": { "url": "<URL>" }` |
-| **Windsurf** | Cascade panel → MCPs → Configure → add `"finance-toolkit": { "serverUrl": "<URL>" }` and refresh |
+| **Devin Desktop (Windsurf)** | Cascade panel → MCPs → Configure → add `"finance-toolkit": { "serverUrl": "<URL>" }` and refresh |
 
 ### Local installation
 
@@ -585,7 +585,7 @@ For any financial statement, I make sure to line it up with the corresponding *c
 
 > **Why do the numbers in the financial statements sometimes deviate from the data from FinancialModelingPrep?**
 
-When looking at a company such as Hyundai Motor Company (ticker: 005380.KS), you will notice that the financial statements are reported in KRW (South Korean won). As this specific ticker is listed on the Korean Exchange, the historical market data will also be reported in KRW. However, if you use the ticker HYMTF, which is listed on the American OTC market, the historical market data will be reported in USD. To deal with this discrepancy, the end of year or end of quarter exchange rate is retrieved which is used to convert the financial statements to USD. This is done to prevent ratio calculations such as the Free Cash Flow Yield (which is based on the market capitalization) or Price Earnings Ratio (which is based on the stock price) from being incorrect. This can be disabled by setting `convert_currency=False` in the Toolkit initialization. It is recommended to always use the ticker that is listed on the exchange where the company is based.
+When looking at a company such as Hyundai Motor Company (ticker: 005380.KS), you will notice that the financial statements are reported in KRW (South Korean won). As this specific ticker is listed on the Korean Exchange, the historical market data will also be reported in KRW. However, if you use the ticker HYMTF, which is listed on the American OTC market, the historical market data will be reported in USD. To deal with this discrepancy, the financial statements are converted to USD as accounting standards (IAS 21) prescribe: the balance sheet at the exchange rate of the fiscal period end, the income and cash flow statements at the average rate over the fiscal period, and the cash at the beginning of the period at the opening rate, with the difference shown as Forex Changes on Cash. When a company changes its reporting currency, each period is converted from the currency it was reported in. This is done to prevent ratio calculations such as the Free Cash Flow Yield (which is based on the market capitalization) or Price Earnings Ratio (which is based on the stock price) from being incorrect. This can be disabled by setting `convert_currency=False` in the Toolkit initialization. It is recommended to always use the ticker that is listed on the exchange where the company is based.
 
 > **How can I get TTM (Trailing Twelve Months) and Growth metrics?**
 

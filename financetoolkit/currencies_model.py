@@ -363,31 +363,96 @@ def determine_currencies(
     and the numbers as found in the financial statements. If there is a mismatch, then
     the currency conversion needs to be applied.
 
+    A company can change the currency it reports in (from GBP to USD, for example). Each
+    period is then translated from the currency it was reported in (IAS 21.39), so the
+    currency pair of every period is kept in the attrs of the returned Series under "pairs"
+    (see get_period_currencies), and the change is reported with a warning. A period without
+    a reported currency takes the currency of the next period, or the previous one for the
+    latest periods.
+
     Args:
-        statement_currencies (pd.DataFrame): A DataFrame containing the statement currencies.
-        historical_currencies (pd.DataFrame): A DataFrame containing the historical currencies.
+        statement_currencies (pd.DataFrame): The reported currency per ticker (index) and
+            period (columns).
+        historical_currencies (pd.Series): The currency of the historical data per ticker.
 
     Returns:
-        pd.Series, list: a Series containing the currency symbols per ticker
-        and a list containing the currencies.
+        pd.Series, list: a Series containing the currency pair of the latest period per
+        ticker, with the pair of every period in its attrs["pairs"] (tickers as index,
+        periods as columns), and a list containing the currency pairs of all periods.
     """
     currencies = []
+    reported = statement_currencies.copy()
+    pairs = statement_currencies.copy()
 
-    for period in statement_currencies.columns:
-        statement_currencies.loc[:, period] = (
-            statement_currencies[period] + historical_currencies + "=X"
-        )
+    for period in pairs.columns:
+        pairs.loc[:, period] = reported[period] + historical_currencies + "=X"
 
-        for currency in statement_currencies[period].unique():
+        for currency in pairs[period].unique():
             # Skip currencies already listed and NaN (the currency == currency check).
             if currency not in currencies and currency == currency:  # noqa
                 currencies.append(currency)
 
-    statement_currencies = statement_currencies.bfill(axis=1).ffill(axis=1)
+    pairs = pairs.bfill(axis=1).ffill(axis=1)
 
-    statement_currencies = statement_currencies[statement_currencies.columns[-1]]
+    changes = []
 
-    return statement_currencies, currencies
+    for ticker in reported.index:
+        known = reported.loc[ticker].dropna()
+        # The first period of each currency the ticker reported in.
+        starts = known[known != known.shift()]
+
+        if len(starts) > 1:
+            changes.append(
+                f"{ticker} ("
+                + ", ".join(
+                    f"{currency} from {period}" for period, currency in starts.items()
+                )
+                + ")"
+            )
+
+    if changes:
+        logger.warning(
+            "The reporting currency changes within the periods for %s: each period is "
+            "translated from the currency it was reported in.",
+            ", ".join(changes),
+        )
+
+    latest_pairs = pairs[pairs.columns[-1]].copy()
+    latest_pairs.attrs["pairs"] = pairs
+
+    return latest_pairs, currencies
+
+
+def get_period_currencies(
+    statement_currencies: pd.Series, ticker: str, periods: pd.Index
+) -> pd.Series:
+    """
+    Returns the currency pair of each period of a ticker, so that every period is
+    translated from the currency it was reported in.
+
+    The pairs per period are those in statement_currencies.attrs["pairs"], as set by
+    determine_currencies. A period that is not among them takes the pair of the next period,
+    or of the previous one for the latest periods, and a ticker without them the pair in
+    statement_currencies for every period.
+
+    Args:
+        statement_currencies (pd.Series): The currency pair per ticker (e.g. EURUSD=X), as
+            returned by determine_currencies.
+        ticker (str): The ticker to return the pairs for.
+        periods (pd.Index): The periods to return the pairs for.
+
+    Returns:
+        pd.Series: The currency pair per period, NaN when the ticker has none.
+    """
+    pairs = statement_currencies.attrs.get("pairs")
+    latest = statement_currencies.get(ticker, float("nan"))
+
+    if isinstance(pairs, pd.DataFrame) and ticker in pairs.index:
+        period_pairs = pairs.loc[ticker].reindex(periods).bfill().ffill()
+
+        return period_pairs.fillna(latest).astype(object)
+
+    return pd.Series(latest, index=periods, dtype=object)
 
 
 def get_statement_exchange_rates(
@@ -428,14 +493,17 @@ def get_statement_exchange_rates(
             a rate such as KRWUSD needs many decimals.
         period_end_dates (pd.DataFrame): The last day of the fiscal period behind each
             statement period, with the tickers as index and the periods as columns.
-        statement_currencies (pd.Series): The currency pair per ticker.
+        statement_currencies (pd.Series): The currency pair per ticker, with the pair of
+            every period in its attrs (see get_period_currencies), so a period takes the
+            rates of the currency it was reported in.
         quarter (bool): Whether the periods are quarters. Years when False.
         rate (str, optional): The rate to determine: "closing", "average" or "opening".
             Defaults to "closing".
 
     Returns:
-        pd.DataFrame: The exchange rate per period (index) and ticker (columns). Tickers
-        without a currency pair in the daily exchange rates are left out.
+        pd.DataFrame: The exchange rate per period (index) and ticker (columns), from the
+        currency pair of each period. Tickers without any of their currency pairs in the
+        daily exchange rates are left out.
     """
     if rate not in ["closing", "average", "opening"]:
         raise ValueError("Please choose closing, average or opening as rate.")
@@ -453,45 +521,55 @@ def get_statement_exchange_rates(
     rates = {}
 
     for ticker in period_end_dates.index:
-        currency = statement_currencies.get(ticker)
-
-        if currency != currency or currency not in daily.columns:  # noqa
-            continue
-
-        currency_rates = daily[currency].dropna()
         end_dates = pd.Series(
             pd.DatetimeIndex(period_end_dates.loc[ticker]),
             index=period_end_dates.columns,
         ).sort_values()
+        pairs = get_period_currencies(statement_currencies, ticker, end_dates.index)
+        available = [pair for pair in pairs.dropna().unique() if pair in daily.columns]
+
+        if not available:
+            continue
 
         # The previous period's end (or a full period earlier for the first one) is the day
         # the period starts from.
         start_dates = end_dates.shift(1)
         start_dates = start_dates.fillna(end_dates - period_length)
 
-        if rate == "average":
-            values = [
-                currency_rates.loc[
-                    (currency_rates.index > start) & (currency_rates.index <= end)
-                ].mean()
-                for start, end in zip(start_dates, end_dates, strict=True)
-            ]
-        else:
-            dates = end_dates if rate == "closing" else start_dates
-            # The last published rate on or before each date, unless that rate is more than
-            # a month old: a period ending after the rates do has no rate yet.
-            positions = currency_rates.index.searchsorted(dates, side="right") - 1
-            values = [
-                (
-                    currency_rates.iloc[position]
-                    if position >= 0
-                    and date - currency_rates.index[position] <= STALE_RATE_DAYS
-                    else float("nan")
-                )
-                for position, date in zip(positions, dates, strict=True)
-            ]
+        ticker_rates = pd.Series(float("nan"), index=end_dates.index, dtype="float64")
 
-        rates[ticker] = pd.Series(values, index=end_dates.index, dtype="float64")
+        # Each period takes the rates of the pair of the currency it was reported in.
+        for currency in available:
+            currency_rates = daily[currency].dropna()
+
+            if rate == "average":
+                values = [
+                    currency_rates.loc[
+                        (currency_rates.index > start) & (currency_rates.index <= end)
+                    ].mean()
+                    for start, end in zip(start_dates, end_dates, strict=True)
+                ]
+            else:
+                dates = end_dates if rate == "closing" else start_dates
+                # The last published rate on or before each date, unless that rate is more than
+                # a month old: a period ending after the rates do has no rate yet.
+                positions = currency_rates.index.searchsorted(dates, side="right") - 1
+                values = [
+                    (
+                        currency_rates.iloc[position]
+                        if position >= 0
+                        and date - currency_rates.index[position] <= STALE_RATE_DAYS
+                        else float("nan")
+                    )
+                    for position, date in zip(positions, dates, strict=True)
+                ]
+
+            ticker_rates = ticker_rates.where(
+                pairs != currency,
+                pd.Series(values, index=end_dates.index, dtype="float64"),
+            )
+
+        rates[ticker] = ticker_rates
 
     return pd.DataFrame(rates, index=period_end_dates.columns)
 
@@ -641,7 +719,9 @@ def convert_currencies(
 
     Args:
         financial_statement_data (pd.DataFrame): A DataFrame containing the financial statement data.
-        financial_statement_currencies (pd.Series): A Series containing the currency symbols per ticker.
+        financial_statement_currencies (pd.Series): A Series containing the currency symbols per ticker,
+            with the pair of every period in its attrs as determine_currencies sets them (see
+            get_period_currencies), so each period is converted from the currency it was reported in.
         exchange_rate_data (pd.DataFrame): The exchange rate per period (index), with as columns either
             the currency pairs (e.g. EURUSD=X) or the tickers, the latter for rates that depend on each
             ticker's fiscal periods (see get_statement_exchange_rates). A ticker column takes precedence
@@ -667,95 +747,118 @@ def convert_currencies(
 
     for ticker in tickers:
         try:
-            currency = financial_statement_currencies.loc[ticker]
+            # The pair of each period: a company that changed its reporting currency is
+            # translated from the currency of each period (IAS 21.39).
+            pairs = get_period_currencies(
+                financial_statement_currencies, ticker, periods
+            )
 
-            # Only proceed if the currency is not NaN
-            if currency == currency:  # noqa
-                base_currency, quote_currency = currency[:3], currency[3:6]
-
-                if not is_same_currency(base_currency, quote_currency):
-                    if currency not in currencies:
-                        currencies[currency] = []
-
-                    # The retrieved rate is between major units even when the price is quoted in a fractional one, so it is scaled onto that unit here.  # noqa: E501
-                    minor_unit_factor = get_minor_unit_factor(
-                        base_currency, quote_currency
-                    )
-
-                    # reindex (not .loc) since older periods can predate the FX pair's own history, e.g. a statement stretching back to 1999 when TWDUSD=X only starts in 2004 — those periods get NaN rather than raising and dropping the whole ticker from conversion.  # noqa: E501
-                    rates = exchange_rate_data[
-                        ticker if ticker in exchange_rate_data.columns else currency
-                    ].reindex(periods)
-
-                    if rates.isna().all():
-                        # Column exists (placeholder from a partly-failed batch fetch) but no provider published a rate.
-                        raise ValueError(
-                            f"No exchange rate data available for {currency}"
-                        )
-
-                    if items_not_to_adjust is not None:
-                        items_to_adjust = [
-                            item
-                            for item in financial_statement_data.index.get_level_values(
-                                level=1
-                            )
-                            if item not in items_not_to_adjust
-                        ]
-                    else:
-                        items_to_adjust = (
-                            financial_statement_data.index.get_level_values(level=1)
-                        )
-
-                    # Items with a rate of their own are converted separately below.
-                    item_rates = {
-                        item: rate_data[
-                            ticker if ticker in rate_data.columns else currency
-                        ].reindex(periods)
-                        for item, rate_data in (item_exchange_rate_data or {}).items()
-                        if item in items_to_adjust
-                        and (ticker, item) in financial_statement_data.index
-                        and (ticker in rate_data.columns or currency in rate_data)
-                    }
-                    items_to_adjust = [
-                        item for item in items_to_adjust if item not in item_rates
-                    ]
-
-                    # The cash flows without the exchange rate effect, determined before the
-                    # translation since the convention of the source shows in the local balances.
-                    local_cash_flows = (
-                        get_cash_flows_excluding_forex(financial_statement_data, ticker)
-                        if set(item_rates) >= CASH_BALANCE_ITEMS
-                        else None
-                    )
-
-                    financial_statement_data.loc[(ticker, items_to_adjust), :] = (
-                        financial_statement_data.loc[(ticker, items_to_adjust), :].mul(
-                            rates * minor_unit_factor,
-                            axis=1,
-                        )
-                    ).to_numpy()
-
-                    for item, item_rate in item_rates.items():
-                        financial_statement_data.loc[(ticker, item), :] = (
-                            financial_statement_data.loc[(ticker, item), :]
-                            * item_rate
-                            * minor_unit_factor
-                        ).to_numpy()
-
-                    if set(item_rates) >= CASH_BALANCE_ITEMS:
-                        financial_statement_data = reconcile_cash_translation(
-                            financial_statement_data,
-                            ticker,
-                            cash_flows=(
-                                local_cash_flows * rates * minor_unit_factor
-                                if local_cash_flows is not None
-                                else None
-                            ),
-                        )
-
-                    currencies[currency].append(ticker)
-            else:
+            if pairs.isna().all():
                 no_data.append(ticker)
+                continue
+
+            same_currency = pairs.map(
+                lambda pair: pd.isna(pair) or is_same_currency(pair[:3], pair[3:6])
+            ).astype(bool)
+
+            if same_currency.all():
+                continue
+
+            # The retrieved rate is between major units even when the price is quoted in a fractional one, so it is scaled onto that unit here.  # noqa: E501
+            minor_unit_factor = pairs.map(
+                lambda pair: (
+                    float("nan")
+                    if pd.isna(pair)
+                    else get_minor_unit_factor(pair[:3], pair[3:6])
+                )
+            ).astype("float64")
+
+            def period_rates(rate_data: pd.DataFrame) -> pd.Series:
+                """The rate of each period, from the ticker's column or else its pair's."""
+                if ticker in rate_data.columns:
+                    # reindex (not .loc) since older periods can predate the FX pair's own history, e.g. a statement stretching back to 1999 when TWDUSD=X only starts in 2004 — those periods get NaN rather than raising and dropping the whole ticker from conversion.  # noqa: E501
+                    rates = rate_data[ticker].reindex(periods)
+                else:
+                    rates = pd.Series(float("nan"), index=periods, dtype="float64")
+
+                    for pair in pairs.dropna().unique():
+                        if pair in rate_data.columns:
+                            rates = rates.where(
+                                pairs != pair, rate_data[pair].reindex(periods)
+                            )
+
+                # The periods reported in the currency of the prices need no conversion.
+                return rates.astype("float64").where(~same_currency, 1.0)
+
+            rates = period_rates(exchange_rate_data)
+
+            if rates[~same_currency].isna().all():
+                # Column exists (placeholder from a partly-failed batch fetch) but no provider published a rate.
+                raise ValueError(
+                    f"No exchange rate data available for {', '.join(pairs.dropna().unique())}"
+                )
+
+            if items_not_to_adjust is not None:
+                items_to_adjust = [
+                    item
+                    for item in financial_statement_data.index.get_level_values(level=1)
+                    if item not in items_not_to_adjust
+                ]
+            else:
+                items_to_adjust = financial_statement_data.index.get_level_values(
+                    level=1
+                )
+
+            # Items with a rate of their own are converted separately below.
+            item_rates = {
+                item: period_rates(rate_data)
+                for item, rate_data in (item_exchange_rate_data or {}).items()
+                if item in items_to_adjust
+                and (ticker, item) in financial_statement_data.index
+                and (
+                    ticker in rate_data.columns
+                    or any(pair in rate_data.columns for pair in pairs.dropna())
+                )
+            }
+            items_to_adjust = [
+                item for item in items_to_adjust if item not in item_rates
+            ]
+
+            # The cash flows without the exchange rate effect, determined before the
+            # translation since the convention of the source shows in the local balances.
+            local_cash_flows = (
+                get_cash_flows_excluding_forex(financial_statement_data, ticker)
+                if set(item_rates) >= CASH_BALANCE_ITEMS
+                else None
+            )
+
+            financial_statement_data.loc[(ticker, items_to_adjust), :] = (
+                financial_statement_data.loc[(ticker, items_to_adjust), :].mul(
+                    rates * minor_unit_factor,
+                    axis=1,
+                )
+            ).to_numpy()
+
+            for item, item_rate in item_rates.items():
+                financial_statement_data.loc[(ticker, item), :] = (
+                    financial_statement_data.loc[(ticker, item), :]
+                    * item_rate
+                    * minor_unit_factor
+                ).to_numpy()
+
+            if set(item_rates) >= CASH_BALANCE_ITEMS:
+                financial_statement_data = reconcile_cash_translation(
+                    financial_statement_data,
+                    ticker,
+                    cash_flows=(
+                        local_cash_flows * rates * minor_unit_factor
+                        if local_cash_flows is not None
+                        else None
+                    ),
+                )
+
+            for pair in pairs[~same_currency].unique():
+                currencies.setdefault(pair, []).append(ticker)
         except (KeyError, ValueError):
             no_data.append(ticker)
             continue

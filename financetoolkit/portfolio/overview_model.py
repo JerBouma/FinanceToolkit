@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+from financetoolkit.portfolio.helpers import divide_by_capital
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import drop_non_finite, to_period_index
 
@@ -13,29 +14,6 @@ logger = logger_model.get_logger()
 TRADING_DAYS_PER_YEAR = 252
 # Units left to sell below this are floating point residue of the volumes, not an oversold position.
 OVERSOLD_TOLERANCE = 1e-9
-
-
-def _safe_divide(
-    numerator: pd.Series | pd.DataFrame, denominator: pd.Series | pd.DataFrame
-) -> pd.Series | pd.DataFrame:
-    """
-    Divide two objects, returning NaN wherever the denominator is zero or negative.
-
-    A return is only defined against capital that was actually deployed. Dividing by a
-    zero or negative denominator produces an infinite or sign-flipped number that reads
-    as a real result, so those cases are reported as missing instead.
-
-    Args:
-        numerator (pd.Series | pd.DataFrame): The numerator of the division.
-        denominator (pd.Series | pd.DataFrame): The denominator of the division.
-
-    Returns:
-        pd.Series | pd.DataFrame: The element-wise division with non-positive
-            denominators replaced by NaN.
-    """
-    result = numerator / denominator.where(denominator > 0)
-
-    return drop_non_finite(result)
 
 
 def _per_transaction(values: pd.Series | None, length: int) -> np.ndarray:
@@ -266,6 +244,39 @@ def _calculate_portfolio_volatility(
     return float(sum(fallback_volatilities * weights))
 
 
+def is_open_position(volume: pd.Series, largest_volume: pd.Series) -> pd.Series:
+    """
+    Determine which positions are still open, long or short, from their net volume.
+
+    A position whose sales add up to its purchases is closed, but the sum of fractional volumes
+    rarely lands on exactly zero: 1.1 + 2.2 - 3.3 leaves 4.4e-16 units. Such a remainder is
+    floating point residue that grows with the volumes traded, so a position counts as open
+    only when its net volume exceeds `OVERSOLD_TOLERANCE` times the largest volume traded in
+    the asset (at least one unit), the scale the profit and loss overview uses for the same
+    residue. A negative net volume beyond that is a short position, which is open as well.
+
+    Args:
+        volume (pd.Series): The net volume of every position, indexed by identifier or by
+            period and identifier, with the identifier as the last index level.
+        largest_volume (pd.Series): The largest absolute volume of a single transaction in
+            every identifier, indexed by identifier.
+
+    Returns:
+        pd.Series: True for every open position, aligned with `volume`.
+    """
+    scale = np.maximum(
+        1.0,
+        largest_volume.reindex(volume.index.get_level_values(-1))
+        .fillna(0.0)
+        .to_numpy(dtype=float),
+    )
+
+    return pd.Series(
+        volume.abs().to_numpy(dtype=float) > OVERSOLD_TOLERANCE * scale,
+        index=volume.index,
+    )
+
+
 def create_portfolio_overview(
     portfolio_name: pd.Series,
     portfolio_volume: pd.Series,
@@ -448,7 +459,7 @@ def create_portfolio_overview(
         2,
         "Price",
         # The volume-weighted price actually paid for the units that were bought.
-        _safe_divide(
+        divide_by_capital(
             portfolio_overview_grouped["Buy Value"],
             portfolio_overview_grouped["Buy Volume"],
         ),
@@ -473,11 +484,11 @@ def create_portfolio_overview(
         + portfolio_overview_grouped["Dividends"]
         - portfolio_overview_grouped["Invested"]
     )
-    portfolio_overview_grouped["Return"] = _safe_divide(
+    portfolio_overview_grouped["Return"] = divide_by_capital(
         portfolio_overview_grouped["Return Value"],
         portfolio_overview_grouped["Invested"],
     )
-    portfolio_overview_grouped["Benchmark Return"] = _safe_divide(
+    portfolio_overview_grouped["Benchmark Return"] = divide_by_capital(
         benchmark_latest_value
         + portfolio_overview_grouped["Proceeds"]
         - portfolio_overview_grouped["Invested"],
@@ -516,8 +527,11 @@ def create_portfolio_overview(
             fallback_volatilities=portfolio_overview_grouped["Volatility"],
             asset_returns=asset_returns,
         )
-        # Only the positions still held count: a sold position has no beta over the window, but with a weight of zero it does not change the portfolio's beta either.  # noqa: E501
-        held = portfolio_overview_grouped["Weight"] != 0
+        # Only the open positions count, long or short: a sold position has no beta over the window and a weight of zero, also when float residue of its volumes leaves a sliver of a unit, whose missing beta would otherwise turn the portfolio's beta into NaN.  # noqa: E501
+        held = is_open_position(
+            portfolio_overview_grouped["Volume"],
+            portfolio_volume.abs().groupby(level="Identifier", observed=True).max(),
+        )
         portfolio_beta = (
             (
                 portfolio_overview_grouped.loc[held, "Beta"]
@@ -825,7 +839,7 @@ def create_transactions_performance(
     period_performance_grouped.insert(
         1,
         price_column,
-        _safe_divide(
+        divide_by_capital(
             period_performance_grouped["Buy Value"],
             period_performance_grouped["Buy Volume"],
         ),
@@ -839,14 +853,14 @@ def create_transactions_performance(
     # A period in which nothing was bought deployed no capital, so there is no return to report on it.
     bought_in_period = period_performance_grouped["Buy Value"] > 0
 
-    period_performance_grouped["Return"] = _safe_divide(
+    period_performance_grouped["Return"] = divide_by_capital(
         period_performance_grouped["Current Value"]
         + period_performance_grouped["Dividends"]
         - period_performance_grouped["Invested Amount"],
         period_performance_grouped["Invested Amount"],
     ).where(bought_in_period)
 
-    period_performance_grouped["Benchmark Return"] = _safe_divide(
+    period_performance_grouped["Benchmark Return"] = divide_by_capital(
         period_performance_grouped["Benchmark Value"]
         - period_performance_grouped["Invested Amount"],
         period_performance_grouped["Invested Amount"],
@@ -1007,7 +1021,7 @@ def create_positions_overview(
     positions["Current Value"] = (positions["Volume"] * closing_prices).where(
         positions["Volume"] != 0, 0.0
     )
-    positions["Cumulative Return"] = _safe_divide(
+    positions["Cumulative Return"] = divide_by_capital(
         positions["Current Value"]
         + positions["Realized Proceeds"]
         + positions["Dividends"]
@@ -1113,7 +1127,7 @@ def create_portfolio_performance(
         else 0.0
     )
 
-    positions_dataset_grouped["Return"] = _safe_divide(
+    positions_dataset_grouped["Return"] = divide_by_capital(
         positions_dataset_grouped["Current Value"]
         + positions_dataset_grouped["Realized Proceeds"]
         + dividends_received

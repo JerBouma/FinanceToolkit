@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit.fixedincome.bonds import bond_model
 from financetoolkit.fixedincome.curves import curve_model
 
 MATURITIES = np.array([0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30.0])
@@ -210,3 +211,59 @@ def test_bootstrap_keeps_the_bill_convention_on_the_coupon_dates():
 
     assert zero_rates[1] == pytest.approx(one_year)
     assert zero_rates[2] == pytest.approx(discount_2 ** (-1 / 2) - 1)
+
+
+def test_bootstrap_grid_matches_quantlib_and_reprices_par_bonds():
+    # The US convention: bills up to a year as bond-equivalent yields, then par bonds with
+    # semi-annual coupons at the par yields interpolated to every coupon date.
+    maturities = np.array([1 / 12, 0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30])
+    par_yields = np.array(
+        [0.042, 0.042, 0.041, 0.040, 0.038, 0.0375, 0.038, 0.039, 0.041, 0.046, 0.047]
+    )
+
+    years, zero_rates = curve_model.bootstrap_zero_rates(
+        maturities, par_yields, 2, "bond-equivalent", return_grid=True
+    )
+    grid = pd.Series(zero_rates, index=years)
+
+    # The bills keep their own maturities, then every half year up to 30 years.
+    assert years[:4].tolist() == pytest.approx([1 / 12, 0.25, 0.5, 1])
+    assert np.diff(years[3:]) == pytest.approx(np.full(58, 0.5))
+
+    # QuantLib's PiecewiseLogLinearDiscount on FixedRateBondHelpers at the same par yields
+    # (Thirty360 BondBasis, half years of exactly 0.5), annually compounded.
+    quantlib = {
+        1.5: 0.03935350840094021,
+        2.5: 0.03805765354021018,
+        7.5: 0.03987640134939041,
+        15: 0.0450030110761559,
+        19.5: 0.04824174978455509,
+        25: 0.04912878567860224,
+        30: 0.049852654920741424,
+    }
+    for maturity, zero_rate in quantlib.items():
+        assert grid[maturity] == pytest.approx(zero_rate, abs=1e-10)
+
+    # The quoted maturities alone interpolate the zero rates, which is 2.4 basis points
+    # off at 15 years.
+    quoted = curve_model.bootstrap_zero_rates(
+        maturities, par_yields, 2, "bond-equivalent"
+    )
+    assert np.interp(15, maturities, quoted) - quantlib[15] == pytest.approx(
+        0.000237, abs=1e-6
+    )
+
+    # Every par bond prices at par on the grid (99.947 and 99.920 for the 20 and 30-year
+    # bonds on the quoted maturities alone).
+    spot_rates = 2 * ((1 + grid) ** 0.5 - 1)
+    for maturity, par_yield in zip(maturities[4:], par_yields[4:], strict=True):
+        assert bond_model.get_bond_price_from_curve(
+            100, par_yield, maturity, spot_rates, 2
+        ) == pytest.approx(100, abs=1e-8)
+    quoted_spot_rates = pd.Series(2 * ((1 + quoted) ** 0.5 - 1), index=maturities)
+    assert bond_model.get_bond_price_from_curve(
+        100, 0.046, 20, quoted_spot_rates, 2
+    ) == pytest.approx(99.9466, abs=1e-4)
+
+    # Without return_grid the rates at the given maturities are the grid's.
+    assert quoted[4:] == pytest.approx(grid[maturities[4:]].to_numpy())

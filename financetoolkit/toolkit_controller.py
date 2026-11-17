@@ -297,8 +297,9 @@ class Toolkit:
             on the Toolkit as _fiscal_year_adjustments.
 
             The last day of each fiscal period is kept as well: daily ratios apply a period's figures
-            from that day on (not from the end of its calendar label), and currency translation uses
-            the closing rate on that day and the average rate over the fiscal period. The dates come
+            from that day on (not from the end of its calendar label), the price-based ratios of the
+            period take the close of that day, and currency translation uses the closing rate on that
+            day and the average rate over the fiscal period. The dates come
             from the Period End Date in the statistics statement; when a source does not report it,
             the latest day the period can end on given its label is used, so that figures are never
             applied before the period ended.
@@ -1414,6 +1415,12 @@ class Toolkit:
                 return pd.Series(dtype=object)
             return profile.loc["Sector"]
 
+        def holding_currencies(tickers: list[str]) -> pd.Series:
+            # The holdings' prices are converted into the fund's currency for their contributions.
+            return self._other_toolkit(
+                tickers, self._start_date, self._end_date
+            )._get_listing_currencies()
+
         return ETF(
             tickers=self._tickers,
             historical_function=historical,
@@ -1425,6 +1432,8 @@ class Toolkit:
             currency_function=self._get_listing_currencies,
             prices_function=prices,
             sector_function=sectors,
+            holding_currency_function=holding_currencies,
+            benchmark_ticker=self._benchmark_ticker,
         )
 
     @property
@@ -1719,6 +1728,10 @@ class Toolkit:
                 "EPS Diluted",
                 "Weighted Average Shares",
                 "Weighted Average Shares Diluted",
+                "Share Issued",
+                "Ordinary Shares Number",
+                "Treasury Shares Number",
+                "Tax Rate for Calcs",
             ],
         )
 
@@ -5952,6 +5965,12 @@ class Toolkit:
                         exchange_rate_data=self._get_statement_exchange_rates(
                             self._balance_sheet_statement, rate="closing"
                         ),
+                        # Yahoo Finance's share counts are numbers of shares, not amounts.
+                        items_not_to_adjust=[
+                            "Share Issued",
+                            "Ordinary Shares Number",
+                            "Treasury Shares Number",
+                        ],
                         financial_statement_name="balance sheet statement",
                     )
 
@@ -6859,8 +6878,9 @@ class Toolkit:
         Statement columns are calendar periods (see "Fiscal periods and calendar periods" on
         the Toolkit), while the fiscal period they hold ends on its own date, e.g. 30 June for
         Microsoft's yearly statements and the end of January for NVIDIA's. These dates are
-        what the daily ratios apply the figures from and what the closing and average exchange
-        rates of the statements are taken over. They come from the Period End Date statistic
+        what the daily ratios apply the figures from, the day whose close the price-based period
+        ratios take, and what the closing and average exchange rates of the statements are taken
+        over. They come from the Period End Date statistic
         (FinancialModelingPrep) and otherwise from the latest date the period can end on given
         its label and _fiscal_year_adjustments (see helpers.determine_period_end_dates).
 

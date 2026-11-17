@@ -5,6 +5,7 @@ __docformat__ = "google"
 import numpy as np
 from scipy.stats import norm
 
+from financetoolkit.options import helpers
 from financetoolkit.options.pricing import black_scholes_model
 
 
@@ -220,6 +221,37 @@ def get_theta(
             * norm.cdf(d1)
         )
 
+    # Without uncertainty left (at expiration or without volatility) the option is worth its
+    # discounted intrinsic value off the strike, so only the carry of the strike and of the
+    # stock remains: -r K e^(-r t) + q S e^(-q t) for a call in the money, mirrored for a put.  # noqa: E501
+    if put_option:
+        limit = risk_free_rate * strike_price * np.exp(
+            -risk_free_rate * time_to_expiration
+        ) * norm.cdf(-d2) - dividend_yield * stock_price * np.exp(
+            -dividend_yield * time_to_expiration
+        ) * norm.cdf(
+            -d1
+        )
+    else:
+        limit = -risk_free_rate * strike_price * np.exp(
+            -risk_free_rate * time_to_expiration
+        ) * norm.cdf(d2) + dividend_yield * stock_price * np.exp(
+            -dividend_yield * time_to_expiration
+        ) * norm.cdf(
+            d1
+        )
+
+    theta = helpers.apply_expiration_limit(
+        theta,
+        limit,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
+
     # Divide by 365 to get the theta value
     theta = theta / 365
 
@@ -431,7 +463,17 @@ def get_gamma(
         norm.pdf(d1) / (stock_price * volatility * np.sqrt(time_to_expiration))
     )
 
-    return gamma
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        gamma,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -475,7 +517,17 @@ def get_dual_gamma(
         norm.pdf(d2) / (strike_price * volatility * np.sqrt(time_to_expiration))
     )
 
-    return dual_gamma
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        dual_gamma,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -517,7 +569,17 @@ def get_vanna(
         -np.exp(-dividend_yield * time_to_expiration) * norm.pdf(d1) * (d2 / volatility)
     )
 
-    return vanna
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        vanna,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -587,7 +649,26 @@ def get_charm(
             2 * time_to_expiration * volatility * np.sqrt(time_to_expiration)
         )
 
-    return charm
+    # Without uncertainty left Delta is e^(-q t) in the money and 0 out of it, which only
+    # changes through the dividend yield.
+    limit = (
+        -dividend_yield * np.exp(-dividend_yield * time_to_expiration) * norm.cdf(-d1)
+        if put_option
+        else dividend_yield
+        * np.exp(-dividend_yield * time_to_expiration)
+        * norm.cdf(d1)
+    )
+
+    return helpers.apply_expiration_limit(
+        charm,
+        limit,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -634,7 +715,17 @@ def get_vomma(
         / volatility
     )
 
-    return vomma
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        vomma,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -677,10 +768,21 @@ def get_vera(
         * time_to_expiration
         * np.exp(-risk_free_rate * time_to_expiration)
         * norm.pdf(d2)
-        * (d1 / volatility)
+        # np.divide gives inf rather than raising for a volatility of 0.0.
+        * np.divide(d1, volatility)
     )
 
-    return vera
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        vera,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -750,7 +852,17 @@ def get_veta(
     # Expressed per 1% change in volatility per day, matching the documented convention.
     veta = veta / (100 * 365)
 
-    return veta
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        veta,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -778,12 +890,16 @@ def get_second_order_partial_derivative(
         float: The second order partial derivative of the Black-Scholes model with
         respect to the strike price.
     """
+    # The variance up to expiration as a NumPy value, so that a time to expiration or a
+    # volatility of 0.0 divides to inf (and the limit below) instead of raising.
+    variance = np.multiply(volatility**2, time_to_expiration)
+
     second_order_partial_derivative = (
         np.exp(-risk_free_rate * time_to_expiration)
         * (1 / strike_price)
-        * (1 / np.sqrt(2 * np.pi * volatility**2 * time_to_expiration))
+        * (1 / np.sqrt(2 * np.pi * variance))
         * np.exp(
-            -(1 / (2 * volatility**2 * time_to_expiration))
+            -(1 / (2 * variance))
             * (
                 np.log(strike_price / stock_price)
                 - ((risk_free_rate - dividend_yield) - (0.5 * volatility**2))
@@ -793,7 +909,17 @@ def get_second_order_partial_derivative(
         )
     )
 
-    return second_order_partial_derivative
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        second_order_partial_derivative,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -834,7 +960,17 @@ def get_speed(
         * ((d1 / (volatility * np.sqrt(time_to_expiration))) + 1)
     )
 
-    return speed
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        speed,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -877,7 +1013,17 @@ def get_zomma(
         / (stock_price * volatility**2 * np.sqrt(time_to_expiration))
     )
 
-    return zomma
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        zomma,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -955,7 +1101,17 @@ def get_color(
         )
     )
 
-    return color
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        color,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )
 
 
 @np.errstate(divide="ignore", invalid="ignore")
@@ -1010,4 +1166,14 @@ def get_ultima(
 
     ultima = (-vega / volatility**2) * (d1 * d2 * (1 - d1 * d2) + d1**2 + d2**2)
 
-    return ultima
+    # At expiration or without volatility the curvature is gone off the strike.
+    return helpers.apply_expiration_limit(
+        ultima,
+        0.0,
+        stock_price,
+        strike_price,
+        time_to_expiration,
+        risk_free_rate,
+        volatility,
+        dividend_yield,
+    )

@@ -1,5 +1,9 @@
 """Derivative Model Tests""" ""
 
+import math
+
+import pytest
+
 from financetoolkit.fixedincome.bonds import derivative_model
 
 
@@ -167,3 +171,27 @@ def test_swaptions_without_volatility_or_time_pay_their_intrinsic_value():
 
     assert black_payoff == 0
     assert abs(bachelier_payoff - 0.01) < 1e-12
+
+
+def test_get_annuity_factor_ends_with_a_short_period():
+    # A 1.25-year swap paying twice a year accrues 0.5, 0.5 and a last 0.25 year, paid at
+    # the end of the tenor: 2.5, 3.0 and 3.25 years from today.
+    annuity = derivative_model._get_annuity_factor(
+        risk_free_rate=0.03, years_to_maturity=2, tenor=1.25, payment_frequency=2
+    )
+    expected = (
+        0.5 * math.exp(-0.03 * 2.5)
+        + 0.5 * math.exp(-0.03 * 3.0)
+        + 0.25 * math.exp(-0.03 * 3.25)
+    )
+    assert annuity == pytest.approx(expected)
+
+    # A tenor shorter than one period is a single payment accruing the tenor.
+    assert derivative_model._get_annuity_factor(
+        risk_free_rate=0.03, years_to_maturity=1, tenor=0.3, payment_frequency=2
+    ) == pytest.approx(0.3 * math.exp(-0.03 * 1.3))
+
+    # A whole number of periods in floating point noise has no short period.
+    assert derivative_model._get_annuity_factor(
+        risk_free_rate=0.03, years_to_maturity=1, tenor=0.1 * 3, payment_frequency=10
+    ) == pytest.approx(0.1 * sum(math.exp(-0.03 * (1 + 0.1 * k)) for k in (1, 2, 3)))

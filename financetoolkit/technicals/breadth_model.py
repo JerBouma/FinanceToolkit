@@ -6,6 +6,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.technicals.helpers import apply_on_own_closes
 from financetoolkit.technicals.overlap_model import get_exponential_moving_average
 
 
@@ -257,13 +258,16 @@ def get_trin(prices_close: pd.DataFrame, volumes: pd.DataFrame) -> pd.Series:
     Analysis of Stock and Bond Markets." Business One Irwin, for the definitive treatment.
 
     Args:
-        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns.
+        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns,
+            NaN on the dates a ticker did not trade. A ticker's change runs from its own
+            previous close, and a ticker without a close on a date is not counted on it.
         volumes (pd.DataFrame): DataFrame of trading volumes with tickers as columns.
 
     Returns:
         pd.Series: TRIN values.
     """
-    price_change = prices_close.diff()
+    # Each ticker's change since its own previous close, so a ticker without a close on a date (it did not trade) is neither advancing nor declining.  # noqa: E501
+    price_change = apply_on_own_closes(prices_close, lambda close: close.diff())
 
     advancing = price_change > 0
     declining = price_change < 0
@@ -301,7 +305,8 @@ def get_new_highs_new_lows(prices_close: pd.DataFrame, window: int) -> pd.Series
     R.W. (2003). "The Encyclopedia of Technical Market Indicators." 2nd ed. McGraw-Hill.
 
     Args:
-        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns.
+        prices_close (pd.DataFrame): DataFrame of closing prices with tickers as columns,
+            NaN on the dates a ticker did not trade (its window counts its own closes).
         window (int): Number of periods to consider for the new high / new low lookback.
 
     Returns:
@@ -658,7 +663,9 @@ def get_market_breadth(
       of constituents); unchanged issues are left out. Each average starts from the simple
       average of its first 19 or 39 values, so the oscillator starts once the 39-period
       average exists (NaN before), and so does its running total, the McClellan Summation
-      Index.
+      Index. When a constituent has dates without a close inside its history, such as a
+      stock next to a cryptocurrency, the averages run over the dates on which such a
+      constituent traded and are NaN on the others (a cryptocurrency's weekend).
     - Percentage Above the Moving Averages: the share of constituents whose close is above its
       short and long moving average.
     - New Highs and New Lows: the constituents whose close is above the highest (below the
@@ -666,13 +673,18 @@ def get_market_breadth(
       of the last `high_low_window` periods. A close that only equals the previous high is no
       new high. NaN until at least one constituent has `high_low_window` closes.
 
+    Every change, moving average and high or low of a constituent runs over its own closes,
+    and a constituent is counted on the dates it has a close, so a stock is not counted as
+    unchanged on the weekends of a cryptocurrency in the same universe.
+
     For more information, see the following book:
 
     - McClellan, S. and McClellan, M. (1970). "Patterns for Profit: The McClellan Oscillator
       and Summation Index." Trade Levels Inc.
 
     Args:
-        prices_close (pd.DataFrame): The closes of the constituents, a column each.
+        prices_close (pd.DataFrame): The closes of the constituents, a column each, NaN on
+            the dates a constituent did not trade.
         short_window (int, optional): The short moving average window. Defaults to 50.
         long_window (int, optional): The long moving average window. Defaults to 200.
         high_low_window (int, optional): The number of periods, including the current one, of
@@ -681,7 +693,8 @@ def get_market_breadth(
     Returns:
         pd.DataFrame: The breadth measures per date.
     """
-    changes = prices_close.diff()
+    # Each constituent's change since its own previous close: a constituent without a close on a date (such as a stock on a weekend next to a cryptocurrency) is not counted on it, and its next change spans the days it did not trade.  # noqa: E501
+    changes = apply_on_own_closes(prices_close, lambda close: close.diff())
     observed = changes.notna()
     advancers = (changes > 0).sum(axis=1)
     decliners = (changes < 0).sum(axis=1)
@@ -694,20 +707,39 @@ def get_market_breadth(
         .fillna(0)
         .where(observed.any(axis=1))
     )
+    # A constituent with dates inside its history without a close, such as a stock next to a cryptocurrency, sets the dates of the averages: they run over the dates on which such a constituent traded, so the weekends of a cryptocurrency in the universe do not add periods that the 19 and 39 count, while a universe that trades every date (only cryptocurrencies, or stocks of one exchange) keeps all its dates.  # noqa: E501
+    inside_gaps = (
+        prices_close.isna()
+        & prices_close.ffill().notna()
+        & prices_close.bfill().notna()
+    )
+    with_gaps = inside_gaps.any()
+    if with_gaps.any():
+        ratio_adjusted = ratio_adjusted.where(
+            prices_close.loc[:, with_gaps].notna().any(axis=1)
+        )
     short_average = _get_seeded_exponential_moving_average(ratio_adjusted, 19)
     long_average = _get_seeded_exponential_moving_average(ratio_adjusted, 39)
     mcclellan = short_average - long_average
 
     def share_above(window: int) -> pd.Series:
-        average = prices_close.rolling(window).mean()
+        average = apply_on_own_closes(
+            prices_close, lambda close: close.rolling(window).mean()
+        )
         counted = average.notna() & prices_close.notna()
         above = (prices_close > average).astype(float).where(counted)
         return above.sum(axis=1) / counted.sum(axis=1).replace(0, np.nan)
 
     # Against the closes before today, so a close that merely equals the previous high (or low) is not counted as a new one day after day.  # noqa: E501
     if high_low_window > 1:
-        previous_closes = prices_close.shift(1).rolling(high_low_window - 1)
-        previous_high, previous_low = previous_closes.max(), previous_closes.min()
+        previous_high = apply_on_own_closes(
+            prices_close,
+            lambda close: close.shift(1).rolling(high_low_window - 1).max(),
+        )
+        previous_low = apply_on_own_closes(
+            prices_close,
+            lambda close: close.shift(1).rolling(high_low_window - 1).min(),
+        )
     else:
         # A window of a single period has no earlier close to set a high or a low.
         previous_high = previous_low = prices_close * np.nan

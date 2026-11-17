@@ -194,9 +194,14 @@ def convert_period_end_dates_to_calendar_periods(
           September and December) this is the quarter it already sat in, so only
           companies reporting on an off-calendar quarter cycle are relabelled.
 
-    Both rules are the same rule at two frequencies, which keeps the yearly and
-    quarterly outputs of the same company consistent with one another: NVIDIA's fiscal
-    2024 is labelled 2023 and its four quarters are labelled 2023Q1 through 2023Q4.
+    Both rules are the same rule at two frequencies: NVIDIA's fiscal 2024 is labelled 2023
+    and its four quarters are labelled 2023Q1 through 2023Q4. A year ending in November,
+    December or January keeps its four quarters within the label of its year. Any other
+    year end splits them over two calendar years: Oracle's fiscal 2024 (June 2023 - May
+    2024) is labelled 2023 with quarters 2023Q3 through 2024Q2, and Apple's fiscal 2024
+    (October 2023 - September 2024) is labelled 2024 with quarters 2023Q4 through 2024Q3.
+    A yearly figure is therefore not the sum of the four quarters with the same year label
+    for such a company.
 
     A period ending in the first five days of a month is treated as ending in the month
     before (see determine_period_end_months). Companies with a 52/53-week fiscal year end
@@ -1148,3 +1153,34 @@ def rank_across_tickers(data: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(
         rankings, names=[data.index.name or "Date", data.columns.name or "Ticker"]
     )
+
+
+def get_non_trading_days(historical_data: pd.DataFrame, column: str) -> pd.DataFrame:
+    """
+    The dates on which a ticker did not trade while another ticker or the Benchmark did.
+
+    A Toolkit with tickers on different calendars, such as a stock and a cryptocurrency or
+    stocks of two exchanges, holds the dates of all of them. On a date only another ticker
+    traded, a ticker's last price is carried forward as a flat bar (Open, High, Low and
+    Close at the last close, a Volume of 0) without a Return (see
+    `historical_model.fill_non_trading_days`). Those dates are recognised by the missing
+    Return after the ticker's first price, up to its last Return. A ticker's first price has
+    no Return by construction and is a trading day.
+
+    Args:
+        historical_data (pd.DataFrame): The historical data of one period with (column,
+            ticker) columns, including "Return" and `column`.
+        column (str): The price column whose tickers are checked, e.g. "Close".
+
+    Returns:
+        pd.DataFrame: True on the dates a ticker did not trade, a column per ticker.
+    """
+    prices = historical_data[column]
+    if "Return" not in historical_data.columns.get_level_values(0):
+        return pd.DataFrame(False, index=prices.index, columns=prices.columns)
+
+    has_return = historical_data["Return"].reindex(columns=prices.columns).notna()
+    after_first_price = prices.notna().cumsum() > 1
+    up_to_last_return = has_return[::-1].cummax()[::-1]
+
+    return ~has_return & after_first_price & up_to_last_return

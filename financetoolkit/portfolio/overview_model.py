@@ -244,6 +244,39 @@ def _calculate_portfolio_volatility(
     return float(sum(fallback_volatilities * weights))
 
 
+def is_open_position(volume: pd.Series, largest_volume: pd.Series) -> pd.Series:
+    """
+    Determine which positions are still open, long or short, from their net volume.
+
+    A position whose sales add up to its purchases is closed, but the sum of fractional volumes
+    rarely lands on exactly zero: 1.1 + 2.2 - 3.3 leaves 4.4e-16 units. Such a remainder is
+    floating point residue that grows with the volumes traded, so a position counts as open
+    only when its net volume exceeds `OVERSOLD_TOLERANCE` times the largest volume traded in
+    the asset (at least one unit), the scale the profit and loss overview uses for the same
+    residue. A negative net volume beyond that is a short position, which is open as well.
+
+    Args:
+        volume (pd.Series): The net volume of every position, indexed by identifier or by
+            period and identifier, with the identifier as the last index level.
+        largest_volume (pd.Series): The largest absolute volume of a single transaction in
+            every identifier, indexed by identifier.
+
+    Returns:
+        pd.Series: True for every open position, aligned with `volume`.
+    """
+    scale = np.maximum(
+        1.0,
+        largest_volume.reindex(volume.index.get_level_values(-1))
+        .fillna(0.0)
+        .to_numpy(dtype=float),
+    )
+
+    return pd.Series(
+        volume.abs().to_numpy(dtype=float) > OVERSOLD_TOLERANCE * scale,
+        index=volume.index,
+    )
+
+
 def create_portfolio_overview(
     portfolio_name: pd.Series,
     portfolio_volume: pd.Series,
@@ -494,8 +527,11 @@ def create_portfolio_overview(
             fallback_volatilities=portfolio_overview_grouped["Volatility"],
             asset_returns=asset_returns,
         )
-        # Only the positions still held count: a sold position has no beta over the window, but with a weight of zero it does not change the portfolio's beta either.  # noqa: E501
-        held = portfolio_overview_grouped["Weight"] != 0
+        # Only the open positions count, long or short: a sold position has no beta over the window and a weight of zero, also when float residue of its volumes leaves a sliver of a unit, whose missing beta would otherwise turn the portfolio's beta into NaN.  # noqa: E501
+        held = is_open_position(
+            portfolio_overview_grouped["Volume"],
+            portfolio_volume.abs().groupby(level="Identifier", observed=True).max(),
+        )
         portfolio_beta = (
             (
                 portfolio_overview_grouped.loc[held, "Beta"]

@@ -1345,7 +1345,7 @@ def get_excess_volatility(
 @by_own_trading_days
 def get_rolling_excess_volatility(
     returns: pd.Series | pd.DataFrame,
-    risk_free_rate: pd.Series,
+    risk_free_rate: pd.Series | pd.DataFrame,
     period: str,
     window_size: int,
 ) -> pd.Series | pd.DataFrame:
@@ -1355,7 +1355,9 @@ def get_rolling_excess_volatility(
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns for the given period.
-        risk_free_rate (pd.Series): A Series of the risk free rate for the given period.
+        risk_free_rate (pd.Series | pd.DataFrame): The risk free rate for the given period, a
+        Series subtracted from every column or a DataFrame with the rate per column (the rate
+        each ticker earns over its own dates in each period).
         period (str): The period the returns are given in and to scale the Excess Volatility for.
         Can be weekly, monthly, quarterly or yearly.
         window_size (int): The size of the rolling window, in number of periods.
@@ -1363,7 +1365,11 @@ def get_rolling_excess_volatility(
     Returns:
         pd.Series | pd.DataFrame: Rolling Excess Volatility values with time as index.
     """
-    excess_returns = returns.sub(risk_free_rate, axis=0)
+    excess_returns = (
+        returns - risk_free_rate
+        if isinstance(risk_free_rate, pd.DataFrame)
+        else returns.sub(risk_free_rate, axis=0)
+    )
 
     return get_rolling_volatility(excess_returns, period, window_size)
 

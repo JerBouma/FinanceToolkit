@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.performance import performance_model
-from financetoolkit.performance.helpers import (
+from financetoolkit.risk.helpers import (
     compound_risk_free_rate,
     get_observations_per_year,
 )
@@ -848,10 +848,17 @@ def test_rolling_omega_ratio_matches_every_window_and_is_infinite_without_losses
         losses = -window[window < 0].sum()
         return gains / losses
 
+    # A date without a return (a day only another ticker traded on) is left out of the
+    # windows of that column, which run over its own dates.
+    expected = pd.concat(
+        {
+            column: returns[column].dropna().rolling(20).apply(window_omega, raw=True)
+            for column in returns.columns
+        },
+        axis=1,
+    ).reindex(returns.index)
     pd.testing.assert_frame_equal(
-        performance_model.get_rolling_omega_ratio(returns, 20),
-        returns.rolling(20).apply(window_omega, raw=True),
-        rtol=1e-12,
+        performance_model.get_rolling_omega_ratio(returns, 20), expected, rtol=1e-12
     )
     assert (
         performance_model.get_rolling_omega_ratio(pd.Series([0.01, 0.02, 0.0, 0.0]), 2)
@@ -1709,3 +1716,43 @@ def test_the_period_risk_free_rate_does_not_depend_on_the_tickers():
     assert stock[weekday_turns].to_numpy() == pytest.approx(
         mixed[weekday_turns].to_numpy(), rel=1e-12
     )
+
+
+def test_the_rolling_standard_deviation_pairs_the_asset_with_the_benchmark_dates():
+    days = pd.period_range("2024-01-01", "2024-03-31", freq="D")
+    weekday = days.dayofweek < 5  # noqa: PLR2004
+    rng = np.random.default_rng(3)
+    returns = pd.DataFrame(
+        {
+            "Crypto": rng.normal(0, 0.03, len(days)),
+            "Stock": np.where(weekday, rng.normal(0, 0.01, len(days)), np.nan),
+        },
+        index=days,
+    )
+    benchmark = pd.Series(
+        np.where(weekday, rng.normal(0, 0.01, len(days)), np.nan), index=days
+    )
+
+    result = performance_model.get_rolling_standard_deviation(returns, 10, benchmark)
+    benchmark_deviation = performance_model.get_rolling_standard_deviation(
+        benchmark, 10
+    )
+    beta = performance_model.get_rolling_beta(returns, benchmark, 10)
+
+    # The stock's windows hold its own trading days, as without the cryptocurrency.
+    stock = returns["Stock"].dropna()
+    pd.testing.assert_series_equal(
+        result["Stock"].dropna(), stock.rolling(10).std().dropna(), check_names=False
+    )
+    # The cryptocurrency's weekend returns are compounded into Monday, the sample of its
+    # Beta, so its total risk ratio is at least its absolute Beta.
+    crypto = (1 + returns["Crypto"]).groupby(np.cumsum(weekday[::-1])[::-1]).transform(
+        "prod"
+    ) - 1
+    crypto = crypto[weekday]
+    expected = crypto.rolling(10).std().dropna()
+    pd.testing.assert_series_equal(
+        result["Crypto"].dropna(), expected, check_names=False
+    )
+    total_risk_ratio = result.div(benchmark_deviation, axis=0)
+    assert (total_risk_ratio + 1e-12 >= beta.abs())[beta.notna()].all().all()

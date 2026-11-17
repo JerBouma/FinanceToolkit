@@ -12,10 +12,8 @@ from financetoolkit.risk.dependence.dependence_controller import DependenceRisk
 from financetoolkit.risk.distribution.distribution_controller import DistributionRisk
 from financetoolkit.risk.drawdown.drawdown_controller import DrawdownRisk
 from financetoolkit.risk.helpers import (
-    compound_risk_free_rate,
     determine_within_historical_data,
-    get_risk_free_rate_per_date,
-    get_risk_free_rate_per_observation,
+    get_risk_free_rate_per_ticker,
     mask_non_trading_days,
 )
 from financetoolkit.risk.liquidity.liquidity_controller import LiquidityRisk
@@ -26,11 +24,7 @@ from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import (
-    PERIODS_PER_YEAR,
-    apply_rounding,
-    convert_annualized_rate_to_period,
-)
+from financetoolkit.utilities.statistics_model import apply_rounding
 
 logger = get_logger()
 
@@ -100,7 +94,7 @@ class RiskBase:
         self._annualized_risk_free_rate_data = (
             risk_free_rate_data if risk_free_rate_data is not None else {}
         )
-        # The risk free rate is quoted as an annualized yield, so it is converted to the rate earned per period of the returns it is subtracted from (see `_get_risk_free_rate`).  # noqa: E501
+        # The risk free rate is quoted as an annualized yield, so it is converted to the rate each ticker earns per period of its returns, on its own calendar (see `_get_risk_free_rate`).  # noqa: E501
         self._risk_free_rate_data = LazyDict(self._get_risk_free_rate)
         self._tickers_source = tickers
         self._quarterly = quarterly
@@ -130,70 +124,13 @@ class RiskBase:
             else self._tickers_source
         )
 
-    @cached_property
-    def _daily_returns(self) -> pd.DataFrame:
-        """The daily returns of every column, including the Benchmark."""
-        daily_historical_data = self._historical_data["daily"]
-
-        if daily_historical_data.empty or "Return" not in daily_historical_data:
-            return pd.DataFrame()
-
-        return daily_historical_data["Return"]
-
-    @cached_property
-    def _risk_free_rate_per_date(self) -> pd.Series:
+    def _get_risk_free_rate(self, period: str) -> pd.DataFrame:
         """
-        The risk free return earned on each date of the daily returns since the date before,
-        see `financetoolkit.risk.helpers.get_risk_free_rate_per_date`.
+        The risk free return per period of each ticker (and the Benchmark) on its own
+        calendar, see `financetoolkit.risk.helpers.get_risk_free_rate_per_ticker`.
         """
-        return get_risk_free_rate_per_date(
-            self._annualized_risk_free_rate_data["daily"], self._daily_returns
-        )
-
-    def _get_risk_free_rate(self, period: str) -> pd.Series:
-        """
-        The risk free return per period, the rate subtracted from the returns of that period.
-
-        For period="daily" this is the risk free return of each date since the date before.
-        The other periods compound the annualized rate over the calendar days between the
-        dates in each period that hold a return, as the return of a period compounds the daily
-        returns within it, so a full year earns the annualized rate whichever tickers the data
-        holds and a period the data covers in part (the current year, or a first period cut by
-        the start date) earns the risk free rate of the days it covers rather than of a full
-        period (see `compound_risk_free_rate`). Without daily returns the annualized rate of
-        the period is converted with the periods in a year instead.
-
-        Args:
-            period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
-
-        Returns:
-            pd.Series: The risk free return per period, as a decimal.
-
-        Raises:
-            KeyError: For any other period, as a dictionary of the periods would.
-        """
-        if period not in PERIODS_PER_YEAR:
-            raise KeyError(period)
-
-        if self._daily_returns.empty:
-            return convert_annualized_rate_to_period(
-                self._annualized_risk_free_rate_data[period], period
-            )
-
-        if period == "daily":
-            return self._risk_free_rate_per_date
-
-        return compound_risk_free_rate(
-            self._annualized_risk_free_rate_data["daily"], self._daily_returns, period
-        )
-
-    def _get_risk_free_rate_per_observation(self) -> pd.DataFrame:
-        """
-        The risk free return each ticker earns with each of its daily returns, see
-        `financetoolkit.risk.helpers.get_risk_free_rate_per_observation`.
-        """
-        return get_risk_free_rate_per_observation(
-            self._annualized_risk_free_rate_data["daily"], self._daily_returns
+        return get_risk_free_rate_per_ticker(
+            self._annualized_risk_free_rate_data, self._historical_data, period
         )
 
     @handle_portfolio

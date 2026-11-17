@@ -990,24 +990,109 @@ def test_marginal_value_at_risk_compounds_the_dates_one_ticker_missed(risk_modul
 
 def test_risk_free_rate_of_a_partial_period_covers_its_dates(risk_module):
     daily_returns = risk_module._historical_data["daily"]["Return"]
-    per_date = risk_module._get_risk_free_rate("daily")
+    per_observation = risk_module._get_risk_free_rate("daily")
     yearly = risk_module._get_risk_free_rate("yearly")
 
-    # Stock-only data earns a trading day of the annualized rate per date.
+    # Stock-only data earns a trading day of the annualized rate per return.
     annualized = align_annualized_rate(
         risk_module._annualized_risk_free_rate_data["daily"], daily_returns.index
     )
-    assert np.allclose(per_date, (1 + annualized) ** (1 / 252) - 1)
+    expected = ((1 + annualized) ** (1 / 252) - 1).to_numpy()[:, None]
+    observed = daily_returns.notna().to_numpy()
+    assert np.allclose(
+        per_observation.to_numpy()[observed],
+        np.broadcast_to(expected, observed.shape)[observed],
+    )
+    assert per_observation.isna().to_numpy()[~observed].all()
 
     # Each year compounds the annualized rate over the calendar days since the date before
-    # each date in it that holds a return, so a full year earns the annualized rate.
-    dates = daily_returns.dropna(how="all").index
-    first = daily_returns.index.get_loc(dates[0])
-    previous = daily_returns.index[first - 1].ordinal if first else dates[0].ordinal - 1
-    days = np.diff(np.append(previous, dates.asi8))
-    growth = pd.Series(
-        (1 + annualized.reindex(dates).to_numpy()) ** (days / 365), index=dates
+    # each date of the ticker in it that holds a return, so a full year earns the
+    # annualized rate.
+    for ticker in daily_returns.columns:
+        dates = daily_returns[ticker].dropna().index
+        first = daily_returns.index.get_loc(dates[0])
+        previous = (
+            daily_returns.index[first - 1].ordinal if first else dates[0].ordinal - 1
+        )
+        days = np.diff(np.append(previous, dates.asi8))
+        growth = pd.Series(
+            (1 + annualized.reindex(dates).to_numpy()) ** (days / 365), index=dates
+        )
+        for year in yearly.index:
+            in_year = dates.asfreq("Y") == year
+            assert yearly.loc[year, ticker] == pytest.approx(growth[in_year].prod() - 1)
+
+
+def _weekend_risk(rate=0.04, tickers=("BTC", "SPY")):
+    """A stock (trading days) and a cryptocurrency (every calendar day) at a flat rate."""
+    from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
+
+    rng = np.random.default_rng(2)
+    days = pd.period_range("2021-01-01", "2022-06-30", freq="D")
+    weekday = days.dayofweek < 5  # noqa: PLR2004
+    returns = pd.DataFrame(
+        {
+            "BTC": rng.normal(0.001, 0.03, len(days)),
+            "SPY": np.where(weekday, rng.normal(0.0005, 0.01, len(days)), np.nan),
+            "Benchmark": np.where(weekday, rng.normal(0.0005, 0.01, len(days)), np.nan),
+        },
+        index=days,
     )
-    for year in yearly.index:
-        in_year = dates.asfreq("Y") == year
-        assert yearly[year] == pytest.approx(growth[in_year].prod() - 1)
+    returns.iloc[0] = np.nan
+    # Without the cryptocurrency the data only holds the trading days.
+    returns = returns[[*tickers, "Benchmark"]]
+    returns = returns[returns.notna().any(axis=1) | (returns.index == days[0])]
+    prices = (1 + returns.fillna(0)).cumprod() * 100
+    daily = pd.concat({"Return": returns, "Adj Close": prices, "Close": prices}, axis=1)
+    historical_data = {"daily": daily, "intraday": pd.DataFrame()}
+    # The return of a period runs from the last price of the period before to its last price.
+    for period, frequency in (
+        ("weekly", "W"),
+        ("monthly", "M"),
+        ("quarterly", "Q"),
+        ("yearly", "Y"),
+    ):
+        period_prices = prices.groupby(returns.index.asfreq(frequency)).last()
+        historical_data[period] = pd.concat(
+            {
+                "Return": period_prices / period_prices.shift() - 1,
+                "Adj Close": period_prices,
+                "Close": period_prices,
+            },
+            axis=1,
+        )
+    return Risk(
+        tickers=list(tickers),
+        historical_data=historical_data,
+        risk_free_rate_data={"daily": pd.Series(rate, index=days)},
+        rounding=None,
+    )
+
+
+@pytest.mark.parametrize("period", ["weekly", "monthly", "quarterly", "yearly"])
+def test_the_excess_volatility_of_a_stock_ignores_a_cryptocurrency_next_to_it(period):
+    mixed = _weekend_risk()
+    alone = _weekend_risk(tickers=("SPY",))
+
+    # The weekends the cryptocurrency adds neither change the rate a stock earns per
+    # return nor move a weekend at the turn of a period out of the period of the stock's
+    # next trading day.
+    for column in ("SPY", "Benchmark"):
+        pd.testing.assert_series_equal(
+            mixed._risk_free_rate_data[period][column].dropna(),
+            alone._risk_free_rate_data[period][column].dropna(),
+        )
+    for rolling in (None, 4):
+        pd.testing.assert_series_equal(
+            mixed.get_excess_volatility(period=period, rolling=rolling)["SPY"].dropna(),
+            alone.get_excess_volatility(period=period, rolling=rolling)["SPY"].dropna(),
+            rtol=1e-12,
+        )
+
+    # July 2021 ends on a Saturday, so the stock's July runs from Wednesday 2021-06-30 to
+    # Friday 2021-07-30 and the weekend accrues in its August, up to Tuesday 2021-08-31.
+    monthly = mixed._risk_free_rate_data["monthly"]
+    assert monthly.loc["2021-07", "SPY"] == pytest.approx(1.04 ** (30 / 365) - 1)
+    assert monthly.loc["2021-08", "SPY"] == pytest.approx(1.04 ** (32 / 365) - 1)
+    assert monthly.loc["2021-07", "BTC"] == pytest.approx(1.04 ** (31 / 365) - 1)
+    assert monthly.loc["2021-08", "BTC"] == pytest.approx(1.04 ** (31 / 365) - 1)

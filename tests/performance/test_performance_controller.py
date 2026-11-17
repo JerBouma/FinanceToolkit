@@ -6,6 +6,7 @@ from functools import partial
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from financetoolkit.performance.performance_controller import Performance
 
@@ -583,7 +584,7 @@ def test_morningstar_measures_use_the_monthly_geometric_excess_returns(
         "monthly", "Return", within_period=False
     )
     excess_returns = (1 + monthly_returns).div(
-        1 + performance_module._risk_free_rate_data["monthly"], axis=0
+        1 + performance_module._risk_free_rate_data["monthly"][monthly_returns.columns]
     ) - 1
     ticker = excess_returns.columns[0]
 
@@ -836,7 +837,7 @@ def test_get_beta_implied_return_without_a_market_cap(performance_module):
     assert result["Residual"].notna().any().any()
 
 
-def _weekend_performance(rate=0.04):
+def _weekend_performance(rate=0.04, tickers=("BTC", "SPY")):
     """A stock (trading days) and a cryptocurrency (every calendar day) at a flat rate."""
     rng = np.random.default_rng(2)
     days = pd.period_range("2021-01-01", "2022-06-30", freq="D")
@@ -850,20 +851,31 @@ def _weekend_performance(rate=0.04):
         index=days,
     )
     returns.iloc[0] = np.nan
+    # Without the cryptocurrency the data only holds the trading days.
+    returns = returns[[*tickers, "Benchmark"]]
+    returns = returns[returns.notna().any(axis=1) | (returns.index == days[0])]
     prices = (1 + returns.fillna(0)).cumprod() * 100
     daily = pd.concat({"Return": returns, "Adj Close": prices, "Close": prices}, axis=1)
-    yearly_prices = prices.groupby(days.asfreq("Y")).last()
-    yearly = pd.concat(
-        {
-            "Return": yearly_prices / yearly_prices.shift() - 1,
-            "Adj Close": yearly_prices,
-            "Close": yearly_prices,
-        },
-        axis=1,
-    )
+    historical_data = {"daily": daily, "intraday": pd.DataFrame()}
+    # The return of a period runs from the last price of the period before to its last price.
+    for period, frequency in (
+        ("weekly", "W"),
+        ("monthly", "M"),
+        ("quarterly", "Q"),
+        ("yearly", "Y"),
+    ):
+        period_prices = prices.groupby(returns.index.asfreq(frequency)).last()
+        historical_data[period] = pd.concat(
+            {
+                "Return": period_prices / period_prices.shift() - 1,
+                "Adj Close": period_prices,
+                "Close": period_prices,
+            },
+            axis=1,
+        )
     return Performance(
-        tickers=["BTC", "SPY"],
-        historical_data={"daily": daily, "yearly": yearly, "intraday": pd.DataFrame()},
+        tickers=list(tickers),
+        historical_data=historical_data,
         risk_free_rate_data={"daily": pd.Series(rate, index=days)},
         rounding=None,
     )
@@ -875,29 +887,30 @@ def test_a_partial_period_earns_the_risk_free_rate_of_its_days(performance_modul
     yearly_rate = performance_module._risk_free_rate_data["yearly"]
 
     # Every year, including a partial one, compounds the annualized rate quoted on each
-    # date with a return over the calendar days since the date before, as the yearly
-    # return compounds the daily returns.
-    dates = returns.dropna(how="all").index
-    first = returns.index.get_loc(dates[0])
-    # The first date accrues from the date before it, or one day when the data start there.
-    previous = returns.index[first - 1].ordinal if first else dates[0].ordinal - 1
-    days = np.diff(np.append(previous, dates.asi8))
-    rate = annualized_rate.sort_index().reindex(dates, method="ffill").bfill()
-    growth = pd.Series((1 + rate.to_numpy()) ** (days / 365), index=dates)
-    for year in yearly_rate.index:
-        expected = growth[dates.asfreq("Y") == year].prod() - 1
-        assert yearly_rate[year] == pytest.approx(expected, rel=1e-12)
+    # date a ticker has a return over the calendar days since its date before, as the
+    # yearly return compounds the daily returns.
+    for ticker in returns.columns:
+        dates = returns[ticker].dropna().index
+        first = returns.index.get_loc(dates[0])
+        # The first return accrues from the date of the first price, here the first date.
+        previous = returns.index[first - 1].ordinal if first else dates[0].ordinal - 1
+        days = np.diff(np.append(previous, dates.asi8))
+        rate = annualized_rate.sort_index().reindex(dates, method="ffill").bfill()
+        growth = pd.Series((1 + rate.to_numpy()) ** (days / 365), index=dates)
+        for year in yearly_rate.index:
+            expected = growth[dates.asfreq("Y") == year].prod() - 1
+            assert yearly_rate.loc[year, ticker] == pytest.approx(expected, rel=1e-12)
 
     performance = _weekend_performance()
     # The 181 days of the first half of 2022 at a flat 4% earn about half of it, not the
-    # full year's rate.
-    rate_2022 = performance._risk_free_rate_data["yearly"]["2022"]
-    assert rate_2022 == pytest.approx(1.04 ** (181 / 365) - 1, rel=1e-9)
+    # full year's rate, for the stock and the cryptocurrency alike.
+    rate_2022 = performance._risk_free_rate_data["yearly"].loc["2022"]
+    assert rate_2022.to_numpy() == pytest.approx(1.04 ** (181 / 365) - 1, rel=1e-9)
 
     excess = performance.get_excess_return(period="yearly")
     returns_2022 = performance._historical_data["yearly"]["Return"].loc["2022"]
     assert excess.loc["2022", "SPY"] == pytest.approx(
-        returns_2022["SPY"] - rate_2022, rel=1e-9
+        returns_2022["SPY"] - rate_2022["SPY"], rel=1e-9
     )
 
 
@@ -954,7 +967,6 @@ def test_the_rolling_appraisal_ratio_only_uses_earlier_residuals(performance_mod
     }
     performance._data_cache = {}
     performance.__dict__.pop("_daily_returns", None)
-    performance.__dict__.pop("_risk_free_rate_per_date", None)
     performance._risk_free_rate_data = type(performance_module._risk_free_rate_data)(
         performance._get_risk_free_rate
     )
@@ -975,7 +987,7 @@ def test_the_rolling_fama_decomposition_keeps_total_risk_above_beta(
         period="monthly", rolling=12, rounding=10
     )
     returns = performance_module._historical_data["monthly"]["Return"]
-    risk_free = performance_module._risk_free_rate_data["monthly"]
+    risk_free = performance_module._risk_free_rate_data["monthly"]["Benchmark"]
     market_premium = (returns["Benchmark"] - risk_free).reindex(rolling.index)
 
     # Diversification = (Total Risk Beta - Beta) * (Benchmark Return - Risk Free Rate)
@@ -1031,6 +1043,150 @@ def test_the_deflated_sharpe_ratio_counts_the_returns_of_each_ticker():
         pd.testing.assert_series_equal(default[ticker], explicit[ticker])
 
 
+def test_the_deflated_sharpe_ratio_of_a_stock_ignores_a_cryptocurrency_next_to_it():
+    performance = _weekend_performance()
+    default = performance.get_sharpe_ratio(method="deflated", rounding=None)
+
+    # The weekends only the cryptocurrency trades on leave the stock without a return on
+    # those rows, which neither empties its trials nor changes its ratio.
+    alone = _weekend_performance(tickers=("SPY",)).get_sharpe_ratio(
+        method="deflated", rounding=None
+    )
+    assert default.notna().all().all()
+    pd.testing.assert_series_equal(default["SPY"], alone["SPY"])
+
+    # Bailey and Lopez de Prado (2014) on the own returns of each ticker: the trials are
+    # the Sharpe ratios of every window of the median number of returns in a year, and N
+    # the non-overlapping windows those returns hold.
+    excess = performance._get_column("yearly", "Excess Return", True)
+    euler_mascheroni = 0.5772156649015329
+    for ticker in ("BTC", "SPY"):
+        history = excess[ticker].droplevel(0).dropna().to_numpy()
+        window = int(excess[ticker].groupby(level=0).count().median())
+        trials = np.array(
+            [
+                history[end - window : end].mean()
+                / history[end - window : end].std(ddof=1)
+                for end in range(window, len(history) + 1)
+            ]
+        )
+        n_trials = len(history) // window
+        expected_maximum = np.sqrt(trials.var(ddof=1)) * (
+            (1 - euler_mascheroni) * stats.norm.ppf(1 - 1 / n_trials)
+            + euler_mascheroni * stats.norm.ppf(1 - 1 / (n_trials * np.e))
+        )
+        for year in default.index:
+            returns = excess.loc[year, ticker].dropna().to_numpy()
+            sharpe_ratio = returns.mean() / returns.std(ddof=1)
+            skewness = stats.skew(returns, bias=False)
+            kurtosis = stats.kurtosis(returns, fisher=False, bias=False)
+            expected = stats.norm.cdf(
+                (sharpe_ratio - expected_maximum)
+                * np.sqrt(len(returns) - 1)
+                / np.sqrt(
+                    1 - skewness * sharpe_ratio + (kurtosis - 1) / 4 * sharpe_ratio**2
+                )
+            )
+            assert default.loc[year, ticker] == pytest.approx(expected, abs=1e-10)
+
+
+def test_a_stock_earns_the_risk_free_rate_of_its_own_dates_next_to_a_cryptocurrency():
+    mixed = _weekend_performance()
+    alone = _weekend_performance(tickers=("SPY",))
+
+    # The dates the cryptocurrency adds (the weekends) change neither the rate a stock
+    # earns per return nor the period a weekend at the turn of a month accrues in.
+    for period in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+        for column in ("SPY", "Benchmark"):
+            pd.testing.assert_series_equal(
+                mixed._risk_free_rate_data[period][column].dropna(),
+                alone._risk_free_rate_data[period][column].dropna(),
+            )
+
+    # A month at a flat 4% earns its calendar days from the last trading day of the month
+    # before to its own last trading day: May runs from Friday 2021-04-30 to Monday 2021-05-31
+    # (31 days) and June from that Monday to Wednesday 2021-06-30 (30 days).
+    monthly = mixed._risk_free_rate_data["monthly"]
+    assert monthly.loc["2021-05", "SPY"] == pytest.approx(1.04 ** (31 / 365) - 1)
+    assert monthly.loc["2021-06", "SPY"] == pytest.approx(1.04 ** (30 / 365) - 1)
+    assert monthly.loc["2021-05", "BTC"] == pytest.approx(1.04 ** (31 / 365) - 1)
+    assert monthly.loc["2021-07", "SPY"] == pytest.approx(1.04 ** (30 / 365) - 1)
+    assert monthly.loc["2021-07", "BTC"] == pytest.approx(1.04 ** (31 / 365) - 1)
+
+
+@pytest.mark.parametrize(("period", "rolling"), [("monthly", 12), ("daily", 63)])
+def test_the_rolling_measures_of_a_stock_ignore_a_cryptocurrency_next_to_it(
+    period, rolling
+):
+    mixed = _weekend_performance()
+    alone = _weekend_performance(tickers=("SPY",))
+
+    def spy(result):
+        return result["SPY"].dropna()
+
+    for method in ("standard", "lo", "adjusted", "probabilistic", "deflated"):
+        pd.testing.assert_series_equal(
+            spy(mixed.get_sharpe_ratio(period=period, rolling=rolling, method=method)),
+            spy(alone.get_sharpe_ratio(period=period, rolling=rolling, method=method)),
+        )
+    for name in (
+        "get_sortino_ratio",
+        "get_treynor_ratio",
+        "get_jensens_alpha",
+        "get_capital_asset_pricing_model",
+        "get_m2_ratio",
+        "get_appraisal_ratio",
+        "get_minimum_track_record_length",
+    ):
+        pd.testing.assert_series_equal(
+            spy(getattr(mixed, name)(period=period, rolling=rolling)),
+            spy(getattr(alone, name)(period=period, rolling=rolling)),
+            rtol=1e-9,
+        )
+    pd.testing.assert_series_equal(
+        spy(mixed.get_omega_ratio(period=period, rolling=rolling)),
+        spy(alone.get_omega_ratio(period=period, rolling=rolling)),
+    )
+    fama_decomposition = mixed.get_fama_decomposition(period=period, rolling=rolling)
+    assert fama_decomposition["SPY"].notna().any().all()
+    pd.testing.assert_frame_equal(
+        fama_decomposition["SPY"].dropna(),
+        alone.get_fama_decomposition(period=period, rolling=rolling)["SPY"].dropna(),
+        rtol=1e-9,
+    )
+    pd.testing.assert_series_equal(
+        spy(
+            mixed.get_kelly_criterion(
+                period=period, rolling=rolling, method="continuous"
+            )
+        ),
+        spy(
+            alone.get_kelly_criterion(
+                period=period, rolling=rolling, method="continuous"
+            )
+        ),
+    )
+
+
+@pytest.mark.parametrize("period", ["weekly", "monthly", "quarterly", "yearly"])
+def test_the_excess_return_of_a_stock_ignores_a_cryptocurrency_next_to_it(period):
+    mixed = _weekend_performance()
+    alone = _weekend_performance(tickers=("SPY",))
+
+    for cumulative in (False, True):
+        expected = alone.get_excess_return(period=period, cumulative=cumulative)
+        result = mixed.get_excess_return(period=period, cumulative=cumulative)
+        pd.testing.assert_series_equal(
+            result["SPY"].dropna(), expected["SPY"].dropna(), rtol=1e-12
+        )
+    for name in ("get_sortino_ratio", "get_burke_ratio", "get_starr_ratio"):
+        pd.testing.assert_series_equal(
+            getattr(mixed, name)(period=period)["SPY"].dropna(),
+            getattr(alone, name)(period=period)["SPY"].dropna(),
+            rtol=1e-12,
+        )
+
+
 def test_the_rolling_appraisal_ratio_starts_after_one_window(performance_module):
     ratio = performance_module.get_appraisal_ratio(
         period="monthly", rolling=12, rounding=10
@@ -1045,8 +1201,8 @@ def test_the_rolling_appraisal_ratio_starts_after_one_window(performance_module)
 
     end = ratio.index[-1]
     window = returns.loc[end - 11 : end]
-    y = window["AAPL"] - risk_free.reindex(window.index)
-    x = window["Benchmark"] - risk_free.reindex(window.index)
+    y = window["AAPL"] - risk_free["AAPL"].reindex(window.index)
+    x = window["Benchmark"] - risk_free["Benchmark"].reindex(window.index)
     slope, intercept = np.polyfit(x, y, 1)
     residual_standard_deviation = np.sqrt(((y - slope * x - intercept) ** 2).sum() / 11)
     alpha = performance_module.get_jensens_alpha(

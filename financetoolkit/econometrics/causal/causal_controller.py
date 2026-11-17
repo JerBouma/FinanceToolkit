@@ -208,7 +208,9 @@ class CausalEconometrics:
         Args:
             treated_tickers (str | list[str]): The asset(s) subject to the event/treatment.
             treatment_date (str): The date the event/treatment occurs, in the same format
-            accepted by `pd.Timestamp`. Observations on or after this date are `Post = 1`.
+            accepted by `pd.Timestamp`. Observations on or after this date are `Post = 1`; with
+            periods longer than a day, a period counts from its last day, so the period that holds the
+            treatment date is the first treated one.
             control_tickers (str | list[str] | None, optional): The untreated comparison
             asset(s). Defaults to None, which uses every ticker NOT in `treated_tickers`,
             excluding "Benchmark" (pass `control_tickers="Benchmark"` to use the benchmark as
@@ -254,10 +256,10 @@ class CausalEconometrics:
 
         |                |   Coefficient |   Std. Error |   t-Statistic |   P-Value |
         |:---------------|--------------:|-------------:|--------------:|----------:|
-        | Intercept      |       -0.0126 |       0.0262 |       -0.4794 |    0.6325 |
-        | Treated        |        0.0669 |       0.0371 |        1.8061 |    0.0735 |
-        | Post           |        0.0291 |       0.0362 |        0.8044 |    0.4229 |
-        | Treated x Post |       -0.0246 |       0.0511 |       -0.4817 |    0.6309 |
+        | Intercept      |       -0.0126 |       0.0262 |       -0.4796 |    0.6324 |
+        | Treated        |        0.0669 |       0.0371 |        1.8059 |    0.0736 |
+        | Post           |        0.0291 |       0.0362 |        0.8043 |    0.4229 |
+        | Treated x Post |       -0.0246 |       0.0511 |       -0.4813 |    0.6312 |
         """
         period = period if period else "daily"
         returns = self._get_series_column(period, column)
@@ -278,8 +280,10 @@ class CausalEconometrics:
         panel_tickers = [*treated_tickers, *control_tickers]
 
         index = returns.index
+        # A period is placed by its last day, so the period that holds the treatment date is
+        # treated (a June 15 treatment makes June, reported at its end, the first treated month).
         timestamps = (
-            index.to_timestamp()
+            index.to_timestamp(how="end").normalize()
             if isinstance(index, pd.PeriodIndex)
             else pd.DatetimeIndex(index)
         )
@@ -774,7 +778,8 @@ class CausalEconometrics:
 
         Args:
             event_date (str): The date of the event (e.g. "2023-05-04"). Must fall
-                within the Toolkit instance's daily historical data.
+                within the Toolkit instance's daily historical data; a date without
+                trading (a weekend or holiday) moves to the next trading day.
             dependent_ticker (str | None, optional): The ticker being studied.
                 Defaults to the first ticker in the Toolkit instance.
             column (str, optional): The historical data column to use. Defaults to
@@ -825,11 +830,11 @@ class CausalEconometrics:
 
         |                                |    Value |
         |:-------------------------------|---------:|
-        | Cumulative Abnormal Return     |   0.2044 |
-        | CAR t-statistic                |   1.9468 |
+        | Cumulative Abnormal Return     |   0.2041 |
+        | CAR t-statistic                |   1.9464 |
         | CAR p-value                    |   0.0527 |
         | Alpha                          |   0.0018 |
-        | Beta                           |   2.0781 |
+        | Beta                           |   2.0762 |
         | Estimation Window Observations | 250      |
         """
         dependent_ticker = dependent_ticker or self._get_tickers()[0]

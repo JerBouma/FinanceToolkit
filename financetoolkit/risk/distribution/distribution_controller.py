@@ -912,13 +912,15 @@ class DistributionRisk:
         ("the biggest one-day fall since March 2020"). The VaR Multiple measures the move against
         the historic Value at Risk of the same earlier returns instead of their standard deviation,
         so it does not assume normal returns: a fall with a VaR Multiple below -1 is a VaR
-        exceedance, worse than the loss the trailing VaR expected on all but a share alpha of days.
+        exceedance, worse than the loss the trailing VaR expected on all but a share alpha of days. When the
+        trailing quantile is not a loss (every earlier return was a gain or nearly so), the VaR Multiple is NaN.
+        Ties count half, as in `get_level_significance`.
 
         The formula is as follows:
 
         - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1))
         - VaR Multiple(t) = Return(t) / |Quantile(Return(t - window), ..., Return(t - 1); alpha)|
-        - Percentile(t) = Count(|Return(s)| < |Return(t)|, s < t) / Count(s < t)
+        - Percentile(t) = (Count(|Return(s)| < |Return(t)|, s < t) + 0.5 · Count(|Return(s)| = |Return(t)|, s < t)) / Count(s < t)
         - Largest Since(t) = max(s < t : Return(s) <= Return(t)) if Return(t) < 0
         - Largest Since(t) = max(s < t : Return(s) >= Return(t)) if Return(t) > 0
 
@@ -986,9 +988,9 @@ class DistributionRisk:
 
         |           |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
         |:----------|---------:|----------------------:|---------------:|-------------:|:----------------|
-        | NVDA      |  -0.1696 |               -5.0657 |        -3.4612 |       0.9976 | 2020-03-16      |
-        | KO        |   0.0319 |                3.9007 |         2.343  |       0.9818 | 2022-11-10      |
-        | Benchmark |  -0.0141 |               -1.7546 |        -1.0217 |       0.8613 | 2025-01-10      |
+        | NVDA      |  -0.1697 |               -5.0682 |        -3.4613 |       0.9976 | 2020-03-16      |
+        | KO        |   0.0318 |                3.891  |         2.3363 |       0.9818 | 2022-11-10      |
+        | Benchmark |  -0.0141 |               -1.76   |        -1.026  |       0.8632 | 2025-01-10      |
         """
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
             raise ValueError(

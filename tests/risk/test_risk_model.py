@@ -810,6 +810,37 @@ def test_skewness_and_kurtosis_of_returns_without_variation_are_nan():
     assert rolling_kurtosis.iloc[10:].notna().all()
 
 
+def test_the_var_multiple_is_nan_when_the_trailing_quantile_is_no_loss():
+    dates = pd.period_range("2024-01-01", periods=7, freq="D")
+    returns = pd.Series([0.01, 0.02, 0.015, 0.03, 0.012, 0.025, -0.01], index=dates)
+
+    significance = risk_model.get_move_significance(returns, window=5)
+
+    # Every trailing 5% quantile is a gain: no loss to scale the move by, so no multiple
+    # (rather than a fall measured against a gain).
+    assert significance["VaR Multiple"].isna().all()
+    assert significance.loc["2024-01-07", "Volatility Multiple"] < 0
+
+
+def test_the_move_percentile_counts_equal_moves_as_half():
+    dates = pd.period_range("2024-01-01", periods=6, freq="D")
+    returns = pd.Series([0.0, 0.0, 0.0, 0.0, 0.01, 0.0], index=dates)
+
+    significance = risk_model.get_move_significance(returns, window=3)
+
+    # An unchanged day among three unchanged days sits in the middle of its ties.
+    assert significance.loc["2024-01-04", "Percentile"] == pytest.approx(0.5)
+    # The 1% move is larger than all four earlier ones.
+    assert significance.loc["2024-01-05", "Percentile"] == pytest.approx(1.0)
+    # An unchanged day: smaller than one earlier move, tied with four.
+    assert significance.loc["2024-01-06", "Percentile"] == pytest.approx(0.4)
+    # A flat day has no direction and the largest rise has no earlier date: both NaN,
+    # the same missing marker as the rows of a gap.
+    largest_since = significance["Largest Since"]
+    assert largest_since.isna().all()
+    assert all(value is not None for value in largest_since)
+
+
 def _late_listing_returns():
     rng = np.random.default_rng(3)
     index = pd.period_range("2020-01-01", periods=500, freq="D")

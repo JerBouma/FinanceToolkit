@@ -323,3 +323,49 @@ def test_get_volatility_forecast_dataframe_uses_each_columns_own_history():
         pd.testing.assert_series_equal(
             result["Young"].dropna(), young_alone.dropna(), check_names=False
         )
+
+
+def test_get_diebold_mariano_test_weighs_the_first_horizon_lags_equally():
+    rng = np.random.default_rng(5)
+    actual = pd.Series(rng.normal(size=80))
+    forecast_a = (
+        actual + pd.Series(rng.normal(0, 1, 80)).rolling(3, min_periods=1).mean()
+    )
+    forecast_b = actual + rng.normal(0, 1.1, 80)
+
+    for horizon in (1, 2, 4):
+        result = forecast_evaluation_model.get_diebold_mariano_test(
+            actual, forecast_a, forecast_b, horizon=horizon
+        )
+
+        # Diebold & Mariano (1995): gamma_0 + 2 * the sum of the first h - 1
+        # autocovariances, unweighted, with the Harvey, Leybourne & Newbold correction.
+        d = ((actual - forecast_a) ** 2 - (actual - forecast_b) ** 2).to_numpy()
+        demeaned, n = d - d.mean(), len(d)
+        gammas = [np.sum(demeaned[k:] * demeaned[: n - k]) / n for k in range(horizon)]
+        variance = gammas[0] + 2 * sum(gammas[1:])
+        correction = np.sqrt((n + 1 - 2 * horizon + horizon * (horizon - 1) / n) / n)
+        expected = d.mean() / np.sqrt(variance / n) * correction
+
+        assert np.isclose(result["Diebold-Mariano Statistic"], expected)
+
+
+def test_get_diebold_mariano_test_falls_back_to_bartlett_weights():
+    # Alternating loss differentials have a negative first autocovariance large enough
+    # to make the rectangular long-run variance negative at horizon 2.
+    actual = pd.Series(np.zeros(20))
+    forecast_a = pd.Series(np.tile([1.0, 0.0], 10) + np.linspace(0, 0.1, 20))
+    forecast_b = pd.Series(np.full(20, 0.5))
+
+    d = (forecast_a**2 - forecast_b**2).to_numpy()
+    demeaned, n = d - d.mean(), len(d)
+    rectangular = np.sum(demeaned**2) / n + 2 * np.sum(demeaned[1:] * demeaned[:-1]) / n
+    assert rectangular <= 0
+
+    result = forecast_evaluation_model.get_diebold_mariano_test(
+        actual, forecast_a, forecast_b, horizon=2, small_sample_correction=False
+    )
+    bartlett = np.sum(demeaned**2) / n + np.sum(demeaned[1:] * demeaned[:-1]) / n
+    assert np.isclose(
+        result["Diebold-Mariano Statistic"], d.mean() / np.sqrt(bartlett / n)
+    )

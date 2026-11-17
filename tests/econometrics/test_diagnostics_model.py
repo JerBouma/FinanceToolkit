@@ -478,3 +478,19 @@ def test_window_change_by_year_in_points():
     assert window.loc[2025, "Change"] == pytest.approx(
         rates[pd.Period("2025-10", "M")] - rates[pd.Period("2025-02", "M")]
     )
+
+
+def test_window_change_by_year_ranks_and_years_are_whole_numbers():
+    months = pd.period_range("2021-01", "2024-06", freq="M")
+    values = pd.Series(100.0, index=months)
+    values[pd.Period("2021-10", "M")] = 105
+    values[pd.Period("2023-10", "M")] = 104
+
+    window = diagnostics_model.get_window_change_by_year(values, 2, 10)
+
+    assert str(window["Rank"].dtype) == "Int64"
+    assert str(window["Largest Since"].dtype) == "Int64"
+    # 2024 has no change yet and 2021 no earlier year: missing, not a float year.
+    assert window.loc[2024, "Rank"] is pd.NA
+    assert window.loc[2021, "Largest Since"] is pd.NA
+    assert window.loc[2023, "Largest Since"] == 2021

@@ -616,6 +616,51 @@ class ToolkitProvider:
 
         return result
 
+    def get_value_currencies(self, **toolkit_arguments: Any) -> dict[str, str]:
+        """
+        Return the currency each ticker's values are in: the currency its shares are listed
+        in, which its prices are quoted in and its financial statements are converted to, or
+        the currency it reports in when the statements are kept as reported.
+
+        Used to say that a ranking of amounts (a market cap, earnings per share) compares
+        unlike units when the tickers are in different currencies.
+
+        Args:
+            **toolkit_arguments (Any): The arguments of get_toolkit_instance (tickers,
+                start_date, end_date, quarterly, benchmark_ticker, ...).
+
+        Returns:
+            dict[str, str]: The currency per ticker; empty when it cannot be told.
+        """
+        # The keys of the request, as for the call itself (see get_transformation_notes).
+        toolkit_arguments["api_key"] = (
+            resolve_api_key() or toolkit_arguments.get("api_key") or self._api_key
+        )
+        toolkit_arguments["fred_api_key"] = (
+            resolve_fred_api_key()
+            or toolkit_arguments.get("fred_api_key")
+            or self._fred_api_key
+        )
+        try:
+            toolkit = self.get_toolkit_instance(**toolkit_arguments)
+            with hold_lock(self.instance_lock(toolkit)):
+                currencies = toolkit._get_listing_currencies()
+                statement_currencies = getattr(
+                    toolkit, "_statement_currencies", pd.Series(dtype=object)
+                )
+                if not getattr(toolkit, "_convert_currency", False):
+                    # The statements are kept in the currency they are reported in.
+                    reported = statement_currencies.astype(str).str[:3]
+                    currencies = reported.combine_first(currencies)
+        except Exception:  # noqa: BLE001
+            return {}
+
+        return {
+            str(ticker): str(currency)
+            for ticker, currency in currencies.items()
+            if isinstance(currency, str) and currency
+        }
+
     def get_transformation_notes(
         self,
         tickers: list[str],

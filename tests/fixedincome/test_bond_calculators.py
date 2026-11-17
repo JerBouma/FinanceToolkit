@@ -166,6 +166,37 @@ def test_maturity_range_selects_every_fixed_coupon_treasury(fixedincome):
     )
 
 
+def test_bill_measures_follow_the_bond_equivalent_yield(fixedincome):
+    statistics = fixedincome.collect_bond_statistics(
+        maturity_start="2026-11-01", maturity_end="2027-02-01"
+    )
+    bill = statistics.loc["912797WN3"]
+    years = 61 / 365
+
+    # Up to half a year the bond-equivalent yield is simple interest, so the modified
+    # duration is t / (1 + y t), not the t / (1 + y / 2) of a semi-annual bond.
+    assert bill["Macaulay's Duration"] == pytest.approx(years)
+    assert bill["Modified Duration"] == pytest.approx(
+        years / (1 + bill["Yield to Maturity"] * years)
+    )
+    assert bill["Modified Duration"] == pytest.approx(
+        fixedincome.get_treasury_securities(bonds="912797WN3").loc[
+            "912797WN3", "Modified Duration"
+        ]
+    )
+    assert fixedincome.get_duration(bonds="912797WN3", duration_type="modified").loc[
+        "912797WN3", "Modified Duration"
+    ] == pytest.approx(bill["Modified Duration"])
+
+    # The Taylor price change uses the same duration and convexity.
+    price_change = fixedincome.get_taylor_price_change(
+        bonds="912797WN3", yield_change=0.01
+    ).loc["912797WN3", "Price Change"]
+    assert price_change == pytest.approx(
+        -bill["Modified Duration"] * 0.01 + 0.5 * bill["Convexity"] * 0.01**2
+    )
+
+
 def test_bonds_by_cusip_and_isin(fixedincome):
     result = fixedincome.collect_bond_statistics(
         bonds="US912810FT08, 91282CLY5, 91282CMH1"
@@ -285,9 +316,17 @@ def test_corporate_bonds_by_issuer(fixedincome, monkeypatch):
     assert requested["issuer"] == "Apple"
     assert result.index.tolist() == ["US037833ET32"]
     assert result.loc["US037833ET32", "Security Type"] == "Corporate"
-    years = bond_data_model.get_years_to_maturity(PRICE_DATE, date(2033, 5, 10))
+    # A corporate bond counts its days on the 30/360 Bond Basis.
+    years = bond_data_model.get_years_to_maturity(
+        PRICE_DATE, date(2033, 5, 10), day_count="30/360"
+    )
     assert result.loc["US037833ET32", "Z-Spread"] == pytest.approx(
         bond_model.get_z_spread(100, 0.04, years, 98.0, spot_curve(fixedincome), 2)
+    )
+    # The accrued interest is QuantLib's on Thirty360(BondBasis): 175 of 360 days of 4%.
+    statistics = fixedincome.collect_bond_statistics(issuer="Apple")
+    assert statistics.loc["US037833ET32", "Accrued Interest"] == pytest.approx(
+        1.9444444444, abs=1e-9
     )
 
     # Treasuries and corporate bonds together, by identifier.

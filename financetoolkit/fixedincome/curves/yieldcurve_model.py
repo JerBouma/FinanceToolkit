@@ -52,7 +52,8 @@ def get_forward_rate(
 
     Raises:
         TypeError: If any of the inputs is not a float, int or pandas Series.
-        ValueError: If the far maturity is not greater than the near maturity.
+        ValueError: If the far maturity is not greater than the near maturity, for any
+            element when they are Series.
     """
     for value in (near_rate, far_rate, near_maturity, far_maturity):
         if not isinstance(value, int | float | pd.Series):
@@ -61,11 +62,9 @@ def get_forward_rate(
                 f"a float, int or pandas Series, received {type(value)} instead."
             )
 
-    if (
-        isinstance(near_maturity, int | float)
-        and isinstance(far_maturity, int | float)
-        and far_maturity <= near_maturity
-    ):
+    # A pair of a Series checks every element, so no row turns into a forward rate over a
+    # negative or zero period.
+    if np.any(np.asarray(far_maturity <= near_maturity)):
         raise ValueError(
             "The far maturity must be greater than the near maturity to derive "
             "a forward rate."

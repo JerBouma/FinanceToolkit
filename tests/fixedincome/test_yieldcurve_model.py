@@ -141,3 +141,22 @@ def test_get_par_yield_prices_at_par_between_coupon_dates():
         assert bond_model.get_bond_price_from_curve(
             100, par_yield, maturity, spot_rates, frequency
         ) == pytest.approx(100)
+
+
+def test_get_forward_rate_invalid_maturity_order_with_series():
+    # One pair with the far maturity before the near one is rejected, not turned into a
+    # forward rate over a negative period.
+    with pytest.raises(ValueError, match="far maturity"):
+        yieldcurve_model.get_forward_rate(
+            near_rate=pd.Series([0.03, 0.03]),
+            far_rate=pd.Series([0.04, 0.04]),
+            near_maturity=pd.Series([1.0, 5.0]),
+            far_maturity=pd.Series([2.0, 2.0]),
+        )
+    with pytest.raises(ValueError, match="far maturity"):
+        yieldcurve_model.get_forward_rate(
+            near_rate=0.03,
+            far_rate=pd.Series([0.04]),
+            near_maturity=5.0,
+            far_maturity=pd.Series([5.0]),
+        )

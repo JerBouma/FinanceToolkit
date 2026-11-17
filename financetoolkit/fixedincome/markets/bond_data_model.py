@@ -15,6 +15,10 @@ from financetoolkit.fixedincome.curves import curve_model
 # US Treasuries and corporate bonds pay their coupon twice a year.
 FREQUENCY = 2
 
+# The day count conventions of get_years_to_maturity: actual/actual for US Treasuries and
+# 30/360 for US corporate bonds.
+DAY_COUNTS = ("act/act", "30/360")
+
 # A bond fund names a holding "ISSUER [144A] COUPON% MM/DD/YYYY", sometimes followed by a
 # reference in brackets ("(JPM)", "(BBG02444V9S2)"). The coupon is printed to two decimals,
 # so 2.125% reads 2.13%.
@@ -128,39 +132,99 @@ def exclusion_reason(name: str, maturity: date | None = None) -> str | None:
     return None
 
 
+def _days_30_360(start: date, end: date) -> int:
+    """
+    The days between two dates on the 30/360 Bond Basis (ISDA 2006, 4.16(f)): every month
+    counts 30 days, the 31st counts as the 30th, and an end date on the 31st counts as the
+    30th only when the start date is the 30th or 31st.
+
+    Args:
+        start (date): The first date.
+        end (date): The last date.
+
+    Returns:
+        int: The days between them.
+    """
+    start_day = min(start.day, 30)
+    end_day = 30 if end.day == 31 and start_day == 30 else end.day  # noqa: PLR2004
+
+    return (
+        360 * (end.year - start.year)
+        + 30 * (end.month - start.month)
+        + (end_day - start_day)
+    )
+
+
 def get_years_to_maturity(
-    settlement: date, maturity: date, frequency: int = FREQUENCY
+    settlement: date,
+    maturity: date,
+    frequency: int = FREQUENCY,
+    day_count: str = "act/act",
 ) -> float:
     """
     The time to maturity in coupon periods, counted on the bond's actual coupon dates.
 
-    The coupon dates run back from maturity in steps of 12 / frequency months (a coupon of
-    a bond maturing on 31 August falls on the last day of February). The whole periods
-    after the next coupon date count as whole periods, and the current period counts the
-    share of its actual days that is still to come (actual/actual, the Treasury
-    convention). Dividing by the frequency gives the years `bond_model` takes, so its
-    coupon schedule falls on the bond's real coupon dates and its accrued interest is the
-    elapsed share of the current period.
+    The coupon dates run back from maturity in steps of 12 / frequency months. A bond that
+    matures on the last day of a month pays every coupon on the last day of its month (the
+    end-of-month rule): a bond maturing on 30 April pays on 31 October, one maturing on 31
+    August on the last day of February. The whole periods after the next coupon date count
+    as whole periods, and the current period counts the share of its days that is still to
+    come. Dividing by the frequency gives the years `bond_model` takes, so its coupon
+    schedule falls on the bond's real coupon dates and its accrued interest is the elapsed
+    share of the current period.
+
+    The days are counted with the bond's day count convention:
+
+    - "act/act": the actual days, as a share of the actual days of the coupon period
+      (actual/actual ICMA), the convention of US Treasuries.
+    - "30/360": 30 days to every month (the 30/360 Bond Basis), the elapsed days as a
+      share of the 360 / frequency days of a coupon period, the convention of US corporate
+      bonds.
 
     Args:
         settlement (date): The date the price applies to.
         maturity (date): The maturity date.
         frequency (int): The number of coupons per year. Defaults to 2.
+        day_count (str): The day count convention, "act/act" or "30/360". Defaults to
+            "act/act".
 
     Returns:
         float: The years to maturity, or NaN when the bond has matured.
+
+    Raises:
+        ValueError: If the day count convention is not "act/act" or "30/360".
     """
+    if day_count not in DAY_COUNTS:
+        raise ValueError(
+            f"The day count convention must be one of {', '.join(DAY_COUNTS)}, got {day_count}."
+        )
     if maturity <= settlement:
         return np.nan
 
     months = 12 // frequency
+    end_of_month = maturity == maturity + relativedelta(day=31)
+
+    def coupon_date(periods: int) -> date:
+        # relativedelta keeps the day where the month has it (30 April less six months is
+        # 30 October); the end-of-month rule moves it to the month's last day (31 October).
+        coupon = maturity - relativedelta(months=months * periods)
+        return coupon + relativedelta(day=31) if end_of_month else coupon
+
     periods = 1
-    while maturity - relativedelta(months=months * periods) > settlement:
+    while coupon_date(periods) > settlement:
         periods += 1
 
-    previous_coupon = maturity - relativedelta(months=months * periods)
-    next_coupon = maturity - relativedelta(months=months * (periods - 1))
-    remaining = (next_coupon - settlement).days / (next_coupon - previous_coupon).days
+    previous_coupon = coupon_date(periods)
+    next_coupon = coupon_date(periods - 1)
+    if day_count == "30/360":
+        # Counted from the previous coupon date, so the accrued interest is the 30/360
+        # accrued interest also where a period does not count 180 days (31 August to 28
+        # February counts 178).
+        remaining = 1 - _days_30_360(previous_coupon, settlement) / (360 / frequency)
+    else:
+        remaining = (next_coupon - settlement).days / (
+            next_coupon - previous_coupon
+        ).days
 
     return (periods - 1 + remaining) / frequency
 
@@ -200,12 +264,101 @@ def get_bond_analytics(
     return yield_to_maturity, duration
 
 
+def get_bill_price(years_to_maturity: float, yield_to_maturity: float) -> float:
+    """
+    The price of a Treasury bill per 100 of face value at a bond-equivalent yield, the
+    pricing that `bond_model.get_bond_equivalent_yield` inverts (31 CFR 356, Appendix B).
+
+    The formula is as follows:
+
+    - Price = 100 / (1 + y * t), for half a year (182.5 days) or less
+    - Price = 100 / ((1 + y / 2) * (1 + y * (t - 0.5))), beyond half a year
+
+    where y is the bond-equivalent yield and t the days to maturity divided by 365. Up to
+    half a year the yield is simple interest; beyond it an equivalent note would have paid
+    a coupon after half a year, so the yield compounds once.
+
+    Args:
+        years_to_maturity (float): The days to maturity divided by 365.
+        yield_to_maturity (float): The bond-equivalent yield (decimal).
+
+    Returns:
+        float: The price per 100 of face value.
+    """
+    if years_to_maturity <= 0.5:  # noqa: PLR2004
+        return 100 / (1 + yield_to_maturity * years_to_maturity)
+
+    return 100 / (
+        (1 + yield_to_maturity / 2)
+        * (1 + yield_to_maturity * (years_to_maturity - 0.5))
+    )
+
+
+def get_bill_measures(years_to_maturity: float, yield_to_maturity: float) -> dict:
+    """
+    The duration and convexity measures of a Treasury bill at its bond-equivalent yield,
+    on the bill's own pricing (see get_bill_price) rather than that of a semi-annual bond.
+
+    A bill pays once, at maturity, so its Macaulay duration is its maturity. Up to half a
+    year the bond-equivalent yield is simple interest, so the modified duration is
+    t / (1 + y t) rather than the t / (1 + y / 2) of a semi-annual bond (0.2468 instead of
+    0.2444 for a 91-day bill at 4%).
+
+    The formula is as follows:
+
+    - Macaulay's Duration = t
+    - Modified Duration = -dP/dy / P = t / (1 + y t) up to half a year, and
+      0.5 / (1 + y / 2) + (t - 0.5) / (1 + y (t - 0.5)) beyond it
+    - Effective Duration = (P(y - 0.01) - P(y + 0.01)) / (2 * P * 0.01)
+    - Dollar Duration = Modified Duration * P / 100
+    - DV01 = (P(y - 0.0001) - P(y + 0.0001)) / 2
+    - Convexity = (P(y + 0.0001) + P(y - 0.0001) - 2 * P) / (P * 0.0001^2)
+
+    where P is get_bill_price, y the bond-equivalent yield and t the days to maturity
+    divided by 365.
+
+    Args:
+        years_to_maturity (float): The days to maturity divided by 365.
+        yield_to_maturity (float): The bond-equivalent yield (decimal).
+
+    Returns:
+        dict: The Macaulay's Duration, Modified Duration, Effective Duration, Dollar
+        Duration, DV01 and Convexity.
+    """
+    years, bey = years_to_maturity, yield_to_maturity
+    price = get_bill_price(years, bey)
+
+    if years <= 0.5:  # noqa: PLR2004
+        modified_duration = years / (1 + bey * years)
+    else:
+        modified_duration = 0.5 / (1 + bey / 2) + (years - 0.5) / (
+            1 + bey * (years - 0.5)
+        )
+
+    def shifted(change: float) -> tuple[float, float]:
+        return get_bill_price(years, bey - change), get_bill_price(years, bey + change)
+
+    effective_down, effective_up = shifted(0.01)
+    basis_point_down, basis_point_up = shifted(0.0001)
+
+    return {
+        "Macaulay's Duration": years,
+        "Modified Duration": modified_duration,
+        "Effective Duration": (effective_down - effective_up) / (2 * price * 0.01),
+        "Dollar Duration": modified_duration * price / 100,
+        "DV01": (basis_point_down - basis_point_up) / 2,
+        "Convexity": (basis_point_up + basis_point_down - 2 * price)
+        / (price * 0.0001**2),
+    }
+
+
 def get_bill_analytics(days_to_maturity: int, price: float) -> tuple[float, float]:
     """
     The bond-equivalent yield and modified duration of a Treasury bill from its price.
 
     The price gives the discount yield, (100 - Price) / 100 * 360 / days, which
     `bond_model.get_bond_equivalent_yield` restates as the Treasury's bond-equivalent yield.
+    The modified duration follows from the same pricing, see get_bill_measures.
 
     Args:
         days_to_maturity (int): The calendar days until the bill matures.
@@ -218,14 +371,13 @@ def get_bill_analytics(days_to_maturity: int, price: float) -> tuple[float, floa
         return np.nan, np.nan
 
     discount_yield = (100 - price) / 100 * 360 / days_to_maturity
-    yield_to_maturity = bond_model.get_bond_equivalent_yield(
-        discount_yield, days_to_maturity
+    yield_to_maturity = float(
+        bond_model.get_bond_equivalent_yield(discount_yield, days_to_maturity)
     )
-    years = days_to_maturity / 365
-    duration = bond_model.get_modified_duration(
-        100, 0.0, years, yield_to_maturity, FREQUENCY
-    )
-    return float(yield_to_maturity), duration
+    duration = get_bill_measures(days_to_maturity / 365, yield_to_maturity)[
+        "Modified Duration"
+    ]
+    return yield_to_maturity, duration
 
 
 def interpolate_curve(curve: pd.Series, years: pd.Series) -> pd.Series:

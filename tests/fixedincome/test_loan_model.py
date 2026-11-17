@@ -68,3 +68,14 @@ def test_get_amortization_schedule():
     flat = loan_model.get_amortization_schedule(1200, 0.0, 1)
     assert np.allclose(flat["Principal"], 100)
     assert flat["Balance"].iloc[0] == pytest.approx(1100)
+
+
+def test_get_amortization_schedule_needs_whole_payments():
+    # 1.04 years of monthly payments is 12.48 payments, which no schedule has.
+    with pytest.raises(ValueError, match="whole number of payments"):
+        loan_model.get_amortization_schedule(1000, 0.06, 1.04, 12)
+
+    # A term that is a whole number of payments in floating point noise is accepted.
+    assert (
+        len(loan_model.get_amortization_schedule(1000, 0.06, 0.1 * 3, 10)) == 3
+    )  # noqa: PLR2004

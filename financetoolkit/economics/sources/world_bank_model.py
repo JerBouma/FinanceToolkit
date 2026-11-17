@@ -25,6 +25,10 @@ SHEET_NAME = "Monthly Prices"
 NAME_ROW = 4
 FIRST_ROW = 6
 
+# The columns of the worksheet that are an index (2010 = 100) rather than a price in US
+# dollars (or US cents, for plywood), so they are not converted into another currency.
+INDEX_COMMODITIES = ["Natural gas index"]
+
 
 def clean_commodity_name(name: object) -> str:
     """

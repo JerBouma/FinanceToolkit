@@ -2091,13 +2091,14 @@ class Performance:
                     f"The style tickers {', '.join(missing)} are not part of the Toolkit; add "
                     "them to its tickers."
                 )
+            # Sorted, as the dates only the style tickers have would otherwise follow all the others (pandas keeps the order of a PeriodIndex union) and break the date range and the rolling windows.  # noqa: E501
             returns = pd.concat(
                 [
                     returns,
                     self._returns_function(missing, period).reindex(columns=missing),
                 ],
                 axis=1,
-            )
+            ).sort_index()
         funds = [
             ticker
             for ticker in self._tickers_without_portfolio

@@ -122,7 +122,7 @@ def test_wls_and_gls_estimate_their_weights_and_covariance(schemas, captured):
     assert captured[1]["omega"] == "ar1"
 
 
-@pytest.mark.parametrize("benchmark", ["None", "none", "null", ""])
+@pytest.mark.parametrize("benchmark", ["None", "none", "null"])
 def test_no_benchmark_written_as_text_means_no_benchmark(captured, benchmark):
     call(
         "breadth",
@@ -334,3 +334,41 @@ def test_lags_are_a_number_a_list_or_comma_separated_text(captured, lag, expecte
     )
 
     assert captured[-1]["lag"] == expected
+
+
+def test_an_empty_benchmark_is_the_default_benchmark(captured):
+    call(
+        "breadth",
+        {
+            "indicator": "get_negative_volume_index",
+            "tickers": "AAPL",
+            "benchmark_ticker": "",
+        },
+    )
+
+    assert captured[-1]["benchmark_ticker"] == "SPY"
+
+
+def test_strategy_legs_are_an_array_of_objects(schemas):
+    legs = schemas["options"]["legs"]
+
+    assert types_of(legs) == {"array"}
+    assert legs["anyOf"][0]["items"]["type"] == "object"
+
+
+@pytest.mark.parametrize(
+    "legs",
+    [
+        [{"strike_price": 150, "put_option": False, "premium": 5}],
+        '[{"strike_price": 150, "put_option": false, "premium": 5}]',
+    ],
+)
+def test_the_strategy_payoff_takes_legs_as_objects_or_json(captured, legs):
+    call(
+        "options",
+        {"indicator": "get_strategy_payoff", "tickers": "AAPL", "legs": legs},
+    )
+
+    assert captured[-1]["legs"] == [
+        {"strike_price": 150, "put_option": False, "premium": 5}
+    ]

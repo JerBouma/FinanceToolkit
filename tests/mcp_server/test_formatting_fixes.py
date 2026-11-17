@@ -144,3 +144,20 @@ def test_a_week_belongs_to_the_month_it_ends_in():
         pd.Period("2024-02", "M"),
     ]
     assert monthly["x"].tolist() == [2.0, 3.0]
+
+
+def test_a_week_to_sunday_belongs_to_the_month_of_its_last_weekday():
+    from financetoolkit.mcp_server.registry.formatting_model import convert_to_period
+
+    weeks = pd.Series(
+        [1.0, 2.0, 3.0, 4.0],
+        index=pd.period_range("2026-01-12", periods=4, freq="W-SUN"),
+    )
+
+    monthly = convert_to_period(weeks, "monthly")
+
+    # The week of 26 January to Sunday 1 February closes on Friday 30 January.
+    assert monthly.to_dict() == {
+        pd.Period("2026-01", "M"): 3.0,
+        pd.Period("2026-02", "M"): 4.0,
+    }

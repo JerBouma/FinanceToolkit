@@ -501,13 +501,16 @@ def convert_to_period(
     ):
         return None
 
-    # A period belongs to the period it ends in: a week to Friday 2 February is February's
-    # last week, though it starts in January.
-    index = (
-        data.index.to_timestamp(how="end")
-        if isinstance(data.index, pd.PeriodIndex)
-        else data.index
-    )
+    # A period belongs to the period its last weekday falls in: a week to Friday 2 February
+    # is February's first week, though it starts in January, and a week to Sunday 1 February
+    # (pandas' W-SUN weeks) closes on Friday 30 January, so it is January's last week.
+    index = data.index
+    if isinstance(index, pd.PeriodIndex):
+        index = index.to_timestamp(how="end").normalize()
+        if data.index.freqstr.startswith("W"):
+            index = index - pd.to_timedelta(
+                np.maximum(index.dayofweek - 4, 0), unit="D"
+            )
     converted = data.groupby(index.to_period(PERIOD_ORDER[period])).last()
     converted.index.name = data.index.name
 

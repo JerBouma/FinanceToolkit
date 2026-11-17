@@ -750,3 +750,160 @@ def test_a_monthly_answer_to_a_quarterly_question_says_so(monkeypatch):
     )
     # A period given explicitly is what was asked for.
     assert "Quarterly data is not available" not in answer(period="monthly")
+
+
+def test_a_parameter_of_another_tool_is_named_and_not_applied(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "macroeconomics",
+            {
+                "indicator": "get_economic_calendar",
+                "benchmark_ticker": "QQQ",
+                "basket": True,
+                "risk_free_rate": "3m",
+            },
+        )
+    )[0][0].text
+
+    for pname in ("benchmark_ticker", "basket", "risk_free_rate"):
+        assert (
+            f"`{pname}` is not a parameter of `macroeconomics` and was ignored." in text
+        )
+    assert "QQQ" not in str(captured[-1])
+    assert captured[-1].get("basket") in (None, False)
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("search_metrics", {"query": "volatility", "quer": "x"}),
+        ("search_by_category", {"category": "risk", "quer": "x"}),
+        ("search_metric_categories", {"quer": "x"}),
+    ],
+)
+def test_the_search_tools_name_an_unknown_parameter(tool, arguments):
+    text = asyncio.run(mcp_controller.mcp.call_tool(tool, arguments))[0][0].text
+
+    assert f"`quer` is not a parameter of `{tool}` and was ignored" in text
+
+
+def test_limit_does_not_cut_tickers_next_to_a_portfolio_row(monkeypatch):
+    def component(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"Component VaR": [-0.0168, -0.0157, -0.0325]},
+            index=pd.Index(["AAPL", "MSFT", "Portfolio"], name="ticker"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", component)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "risk",
+            {
+                "indicator": "get_component_value_at_risk",
+                "tickers": "AAPL,MSFT",
+                "limit": -1,
+            },
+        )
+    )[0][0].text
+
+    assert '"AAPL"' in text and '"MSFT"' in text and '"Portfolio"' in text
+    assert "was not applied" in text
+
+
+@pytest.mark.parametrize(
+    ("tool", "indicator", "tickers", "rows"),
+    [
+        ("fixed_income", "get_loan_payment", {}, 1),
+        ("fixed_income", "get_affordable_loan", {}, 1),
+        ("overlap", "get_support_resistance_levels", {"tickers": "AAPL"}, 20),
+        ("risk", "get_move_significance", {"tickers": "AAPL"}, 20),
+    ],
+)
+def test_a_default_limit_selects_the_last_rows(
+    monkeypatch, tool, indicator, tickers, rows
+):
+    import json
+
+    def series(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"Value": [float(number) for number in range(100)]},
+            index=pd.period_range("2026-01-01", periods=100, freq="D"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", series)
+
+    def answer(**arguments):
+        return asyncio.run(
+            mcp_controller.mcp.call_tool(
+                tool, {"indicator": indicator, **tickers, **arguments}
+            )
+        )[0][0].text
+
+    text = answer()
+    data = json.loads(text)["data"]
+    assert [row["Value"] for row in data] == [float(n) for n in range(100 - rows, 100)]
+    assert f"limit=-{rows} applies by default" in text
+
+    # An explicit limit, limit=0 and a range given with dates win.
+    assert len(json.loads(answer(limit=-3))) == 3  # noqa: PLR2004
+    for arguments in ({"limit": 0}, {"start_date": "2026-01-01"}):
+        text = answer(**arguments)
+        assert "applies by default" not in text
+        assert len(json.loads(text)) == 100  # noqa: PLR2004
+
+
+def test_a_cryptocurrency_in_a_statement_tool_has_no_statements(monkeypatch):
+    def ratio(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame({"2025": [30.0]}, index=pd.Index(["AAPL"], name="ticker"))
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", ratio)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "valuation",
+            {
+                "indicator": "get_price_to_earnings_ratio",
+                "tickers": "AAPL,BTC-USD,NOTATICKER",
+            },
+        )
+    )[0][0].text
+
+    assert (
+        "BTC-USD is left out: currencies and cryptocurrencies have no financial" in text
+    )
+    assert "No data is available for NOTATICKER" in text
+    assert "No data is available for BTC-USD" not in text
+
+
+@pytest.mark.parametrize(
+    ("indicator", "currencies", "noted"),
+    [
+        ("get_earnings_per_share", {"AAPL": "USD", "ASML.AS": "EUR"}, True),
+        ("get_earnings_per_share", {"AAPL": "USD", "ASML.AS": "USD"}, False),
+        ("get_price_to_earnings_ratio", {"AAPL": "USD", "ASML.AS": "EUR"}, False),
+    ],
+)
+def test_a_ranking_of_amounts_in_different_currencies_says_so(
+    monkeypatch, indicator, currencies, noted
+):
+    def values(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"AAPL": [7.5], "ASML.AS": [25.0]},
+            index=pd.period_range("2025", periods=1, freq="Y"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", values)
+    monkeypatch.setattr(
+        ToolkitProvider, "get_value_currencies", lambda self, **kwargs: currencies
+    )
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "valuation",
+            {"indicator": indicator, "tickers": "AAPL,ASML.AS", "rank": True},
+        )
+    )[0][0].text
+
+    assert '"Rank"' in text
+    assert ("in each ticker's own currency (AAPL: USD, ASML.AS: EUR)" in text) is noted

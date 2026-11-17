@@ -75,6 +75,9 @@ def get_wilder_moving_average(
     - First value = SMA(values, window) — a simple average seeds the recursion
     - Value(t) = Value(t-1) + (1 / window) * (Series(t) - Value(t-1)), for every period after
 
+    A period without a value has no average (NaN), and the next value continues from the
+    last average.
+
     Also known as: Wilder's Moving Average, Modified Moving Average, Running Moving Average,
     Smoothed Moving Average.
 
@@ -129,7 +132,12 @@ def get_wilder_moving_average(
             current_value - previous_average
         )
 
-    return pd.Series(averages, index=values.index, dtype="float64")
+    # A period without a value has no average, while the recursion carries on from the last
+    # one on the next value, so a series that ends early (a delisted ticker) stops instead
+    # of repeating its last average.
+    return pd.Series(averages, index=values.index, dtype="float64").where(
+        values.notna()
+    )
 
 
 def get_average_true_range(
@@ -214,6 +222,8 @@ def get_supertrend(
           a published financial paper.
         - The trend is initialized as an uptrend (Trend Direction = 1) on the first available
           period, since there is no prior period to determine the starting direction from.
+        - A period with a missing price has no Supertrend; the bands carry on from the last
+          period with prices.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -319,8 +329,15 @@ def get_supertrend(
             direction[i] = -1.0
             trend[i] = final_upper[i]
 
-    supertrend = pd.Series(trend, index=prices_close.index, dtype="float64")
-    trend_direction = pd.Series(direction, index=prices_close.index, dtype="float64")
+    # A period without bands (a missing price) has no Supertrend, while the recursion
+    # carries on from the last bands, so a series that ends early stops there.
+    has_bands = basic_upper_band.notna() & basic_lower_band.notna()
+    supertrend = pd.Series(trend, index=prices_close.index, dtype="float64").where(
+        has_bands
+    )
+    trend_direction = pd.Series(
+        direction, index=prices_close.index, dtype="float64"
+    ).where(has_bands)
 
     return pd.concat(
         [supertrend, trend_direction], keys=["Supertrend", "Trend Direction"], axis=1

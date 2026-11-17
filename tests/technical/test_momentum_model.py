@@ -371,3 +371,24 @@ def test_windows_of_one_period_are_refused():
         momentum_model.get_commodity_channel_index(
             close + 1, close - 1, close, window=1
         )
+
+
+def test_wilder_indicators_stop_where_the_prices_stop():
+    """The RSI, ADX and MACD are NaN after a series' last price rather than repeating the
+    last smoothed values."""
+    prices = sample_prices()
+    high, low, close = (
+        prices["High"].copy(),
+        prices["Low"].copy(),
+        prices["Close"].copy(),
+    )
+    for series in (high, low, close):
+        series.iloc[-5:] = np.nan
+
+    for result in (
+        momentum_model.get_relative_strength_index(close, 14),
+        momentum_model.get_average_directional_index(high, low, close, 7),
+        momentum_model.get_moving_average_convergence_divergence(close, 5, 10, 4),
+    ):
+        assert result.iloc[-5:].isna().all().all()
+        assert result.iloc[-6:-5].notna().all().all()

@@ -920,3 +920,50 @@ def test_finalize_dataset_selects_a_country_spelled_twice_once():
     )
 
     assert list(selected.columns) == ["United States", "Japan"]
+
+
+def test_a_change_without_its_base_period_is_named(caplog):
+    """A skipped month leaves the change a year later empty, and that month is named."""
+    from financetoolkit.utilities.statistics_model import finalize_dataset
+
+    months = pd.period_range("2024-09", "2025-11", freq="M")
+    index = pd.DataFrame(
+        {"United States": [100.0 + number for number in range(len(months))]},
+        index=months,
+    ).drop(pd.Period("2024-10", "M"))
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        result = finalize_dataset(
+            dataset=index,
+            start_date="2025-09",
+            end_date="2025-11",
+            default_rounding=4,
+            growth=True,
+            lag=12,
+            axis="rows",
+            row_slice=True,
+        )
+
+    assert pd.isna(result.loc[pd.Period("2025-10", "M"), "United States"])
+    assert result.loc[pd.Period("2025-11", "M"), "United States"] == pytest.approx(
+        114 / 102 - 1, abs=1e-4
+    )
+    assert (
+        "No change for United States in 2025-10: its base period 2024-10 has no value."
+        in caplog.text
+    )
+
+    # The start of a series and a base period before the window are not named.
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        finalize_dataset(
+            dataset=index,
+            start_date="2025-11",
+            end_date="2025-11",
+            default_rounding=4,
+            growth=True,
+            lag=12,
+            axis="rows",
+            row_slice=True,
+        )
+    assert "No change for" not in caplog.text

@@ -58,6 +58,7 @@ from financetoolkit.utilities.sources_model import (
     record_source,
     track_sources,
 )
+from financetoolkit.utilities.statistics_model import warn_about_missing_base_periods
 
 logger = get_logger()
 
@@ -464,8 +465,15 @@ class EconomicsBase:
 
         if measure == "inflation_rate":
             # A month the BLS did not publish (October 2025) leaves its rate and the one a
-            # year later empty rather than compare the wrong months.
-            return change_over_periods(index, 12)
+            # year later empty rather than compare the wrong months, and the latter is named.
+            inflation_rate = change_over_periods(index, 12)
+            warn_about_missing_base_periods(
+                index.reindex(inflation_rate.index),
+                12,
+                self._start_date,
+                self._end_date,
+            )
+            return inflation_rate
 
         return index
 

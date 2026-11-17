@@ -254,6 +254,73 @@ def convert_annualized_rate_to_period(
     return (1 + annualized_rate) ** (1 / PERIODS_PER_YEAR[period]) - 1
 
 
+# The periods a missing base period warning names per series before it counts the rest.
+SKIPPED_BASE_PERIODS_SHOWN = 3
+
+
+def warn_about_missing_base_periods(
+    levels: pd.Series | pd.DataFrame,
+    lag: int,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    columns: Iterable | None = None,
+) -> None:
+    """
+    Logs a warning naming the periods whose change over lag periods is empty because the
+    period it compares with (the base period) has no value, although the series has
+    values before it: a month a statistics office did not publish leaves the change of the
+    same month a year later empty, which would otherwise disappear without a reason.
+
+    Args:
+        levels (pd.Series | pd.DataFrame): The values the change is taken of, a column per
+            series, on consecutive periods (rows).
+        lag (int): The number of periods (rows) the change compares with.
+        start_date (str | None, optional): The first period to name. Defaults to None.
+        end_date (str | None, optional): The last period to name. Defaults to None.
+        columns (Iterable | None, optional): The series to name. Defaults to None, which
+            names every column.
+    """
+    frame = levels.to_frame() if isinstance(levels, pd.Series) else levels
+    if (
+        frame.empty
+        or isinstance(frame.columns, pd.MultiIndex)
+        or not frame.index.is_monotonic_increasing
+        or frame.index.has_duplicates
+    ):
+        return
+
+    has_value = frame.notna()
+    # The base period has no value but an earlier period has, so it is a gap in the series
+    # rather than the start of it.
+    base_is_gap = (~has_value & has_value.cummax()).shift(lag, fill_value=False)
+    missing = (has_value & base_is_gap).loc[start_date:end_date]
+    base_periods = pd.Series(frame.index, index=frame.index).shift(lag)
+
+    for column in frame.columns if columns is None else columns:
+        if column not in missing.columns or not missing[column].any():
+            continue
+        periods = missing.index[missing[column].to_numpy()]
+        shown = periods[:SKIPPED_BASE_PERIODS_SHOWN]
+        more = (
+            f" and {len(periods) - len(shown)} more"
+            if len(periods) > len(shown)
+            else ""
+        )
+        logger.warning(
+            "No change for %s in %s%s: %s no value.",
+            column,
+            ", ".join(map(str, shown)),
+            more,
+            (
+                f"its base period {base_periods[shown[0]]} has"
+                if len(periods) == 1
+                else "the base periods "
+                + ", ".join(str(base_periods[period]) for period in shown)
+                + " have"
+            ),
+        )
+
+
 def finalize_dataset(
     dataset: pd.Series | pd.DataFrame,
     start_date: str | None,
@@ -367,6 +434,8 @@ def finalize_dataset(
 
     if trailing:
         dataset = dataset.rolling(window=trailing).sum()
+
+    levels = dataset
 
     if growth:
         dataset = calculate_growth(
@@ -491,6 +560,31 @@ def finalize_dataset(
                 ),
                 euro_area_hint(available_countries, unsliced),
             )
+
+    # A change that is empty because its base period has no value (a month the source
+    # skipped, a year back) is named for the series and window shown. Monthly data dated
+    # on the first day of each month (the US Census Bureau's) counts as months too.
+    if (
+        growth
+        and axis == "rows"
+        and isinstance(lag, int)
+        and isinstance(dataset, pd.DataFrame)
+        and (
+            calendar_periods
+            or (
+                isinstance(levels.index, pd.PeriodIndex | pd.DatetimeIndex)
+                and len(levels.index)
+                and bool((levels.index.day == 1).all())
+            )
+        )
+    ):
+        warn_about_missing_base_periods(
+            levels,
+            lag,
+            start_date if apply_slice and row_slice else None,
+            end_date if apply_slice and row_slice else None,
+            columns=dataset.columns,
+        )
 
     # After the country selection, so a row that is empty for every selected country goes
     # too, such as a month only an unselected country has published yet. Months, quarters

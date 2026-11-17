@@ -229,6 +229,71 @@ def get_exchange_rates(
     )
 
 
+def get_residential_property_prices(
+    country_code: str, inflation_adjusted: bool, start_date: str, end_date: str
+) -> pd.Series:
+    """
+    Retrieves the quarterly residential property price index of one economy from the BIS
+    selected series, which the BIS takes from the national source (for China the National
+    Bureau of Statistics' prices of newly built homes in 70 cities), as an index with
+    2010 = 100.
+
+    Args:
+        country_code (str): The two-letter code of the economy, e.g. "CN".
+        inflation_adjusted (bool): Whether to return the real index (deflated by consumer
+            prices) instead of the nominal one.
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.Series: The price index, indexed by quarter and named after the country, or an
+        empty Series when the BIS has no data.
+    """
+    value = "R" if inflation_adjusted else "N"
+    country = COUNTRY_CODES[country_code]
+    description = (
+        f"{'real' if inflation_adjusted else 'nominal'} house prices of {country}"
+    )
+
+    def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
+        text = request_csv(
+            f"{BASE_URL}WS_SPP/~/Q.{country_code}.{value}.628?format=csv&detail=dataonly"
+            # Quarters are written as "2026-Q2".
+            f"&startPeriod={str(pd.Period(fetch_start, 'Q')).replace('Q', '-Q')}"
+            f"&endPeriod={str(pd.Period(fetch_end, 'Q')).replace('Q', '-Q')}",
+            timeout=120,
+        )
+
+        if not text.strip():
+            return pd.DataFrame()
+
+        data = pd.read_csv(io.StringIO(text))
+        require_columns(data, {"TIME_PERIOD", "OBS_VALUE"}, description)
+        prices = data.set_index("TIME_PERIOD")[["OBS_VALUE"]].rename(
+            columns={"OBS_VALUE": country}
+        )
+        prices.index = pd.PeriodIndex(prices.index.str.replace("-", ""), freq="Q")
+        prices.index.name = None
+
+        return prices.sort_index()
+
+    prices = collect_ranged_data(
+        source=policy_model.BANK_FOR_INTERNATIONAL_SETTLEMENTS,
+        dataset="residential_property",
+        entity=f"WS_SPP/{country_code}/{value}",
+        fetch=fetch,
+        start_date=start_date,
+        end_date=end_date,
+        description=description,
+    )
+
+    return (
+        prices[country]
+        if country in prices.columns
+        else pd.Series(name=country, dtype=float)
+    )
+
+
 # The commercial types of the BIS property price dataset (RE_TYPE), in the order one is
 # preferred over the next: all commercial property, offices, retail, office and retail,
 # and industrial property.

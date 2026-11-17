@@ -118,3 +118,21 @@ def test_get_ohlson_bankruptcy_probability(recorder):
             ohlson_o_score=pd.Series([-5.0, -2.0, 0.0, 2.0, 5.0]),
         )
     )
+
+
+def test_log_of_total_assets_is_deflated_by_the_price_level_index():
+    import numpy as np  # noqa: PLC0415
+
+    total_assets = pd.DataFrame(
+        [[1e9, 2e9]], index=["A"], columns=pd.PeriodIndex(["2020", "2021"], freq="Y")
+    )
+    index = pd.Series([600.0, 650.0], index=total_assets.columns)
+
+    size = ohlson_model.get_log_of_total_assets(total_assets, index)
+
+    # Ohlson (1980): SIZE = ln(Total Assets / GNP price-level index), 1968 = 100.
+    assert size.iloc[0, 0] == np.log(1e9 / 600)
+    assert size.iloc[0, 1] == np.log(2e9 / 650)
+    assert ohlson_model.get_log_of_total_assets(1e9, 600.0) == np.log(1e9 / 600)
+    # Without an index, the total assets are not deflated.
+    assert ohlson_model.get_log_of_total_assets(1e9) == np.log(1e9)

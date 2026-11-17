@@ -674,11 +674,11 @@ class QualityModels:
 
         |       |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:------|-------:|-------:|-------:|-------:|-------:|
-        | AAPL  |      2 |      1 |      1 |      2 |      2 |
+        | AAPL  |      1 |      1 |      1 |      1 |      1 |
         | GOOGL |      4 |      2 |      2 |      1 |      4 |
         | INTC  |      3 |      5 |      5 |      5 |      5 |
-        | META  |      1 |      2 |      2 |      4 |      2 |
-        | MSFT  |      5 |      4 |      4 |      2 |      1 |
+        | META  |      1 |      2 |      2 |      3 |      2 |
+        | MSFT  |      4 |      4 |      4 |      3 |      2 |
         """
         # The scores were estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
@@ -786,6 +786,9 @@ class QualityModels:
           peers scores 0 on G4 and G5. When the statements cover fewer periods than that,
           the result is empty and a warning names the number of periods needed; set an
           earlier `start_date` to obtain the score.
+        - The variances are of yearly values, as in the paper (Tables 2 to 4: the variance of
+          the return on assets and of the annual sales growth over the past three to five
+          years), also with quarterly data, where the values are trailing years a year apart.
         - Net Income stands in for the net income before extraordinary items of the paper, as
           the statements do not report extraordinary items separately.
 

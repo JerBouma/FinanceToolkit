@@ -1,5 +1,41 @@
 """Models Controller Tests""" ""
 import pandas as pd
+import pytest
+
+# The GNP implicit price deflator of the U.S. Bureau of Economic Analysis (NIPA table 1.7.9,
+# 2017 = 100) for the years the offline datasets cover, which the Ohlson O-Score deflates the
+# total assets with.
+GNP_DEFLATOR = pd.DataFrame(
+    {
+        "United States": [
+            18.246,
+            97.339,
+            98.262,
+            100.0,
+            102.225,
+            103.909,
+            105.306,
+            110.081,
+            117.942,
+            122.361,
+            125.496,
+            128.801,
+        ]
+    },
+    index=pd.PeriodIndex(
+        ["1968"] + [str(year) for year in range(2015, 2026)], freq="Y", name="Date"
+    ),
+)
+
+
+@pytest.fixture(autouse=True)
+def offline_gnp_deflator(monkeypatch):
+    """Serves the GNP deflator of the Ohlson O-Score without a download."""
+    from financetoolkit.economics.sources import bea_model  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        bea_model, "get_gross_national_product_deflator", lambda: GNP_DEFLATOR
+    )
 
 
 def test_get_dupont_analysis(recorder, models_module):
@@ -932,6 +968,7 @@ def synthetic_models(items, quarterly=True):
     models._rounding = 10
     models._start_date = None
     models._end_date = None
+    models._period_end_dates_source = None
     models._historical_data = {
         "daily": pd.DataFrame(
             {("Close", ticker): [100.0] for ticker in tickers},
@@ -1144,7 +1181,15 @@ def test_quarterly_valuations_use_a_year_of_cash_flow_and_revenue():
     )
     expected = float(
         intrinsic_model.get_intrinsic_value(
-            20 * last_year, 0.05, 0.02, 0.09, 80 * g[-1], 180 * g[-1], 10, 5
+            20 * last_year,
+            0.05,
+            0.02,
+            0.09,
+            80 * g[-1],
+            180 * g[-1],
+            10,
+            5,
+            short_term_investments=20 * g[-1],
         )
         .loc["Intrinsic Value"]
         .iloc[0]
@@ -1195,6 +1240,14 @@ def test_synthetic_credit_rating_without_interest_expense(models_module, monkeyp
     assert rating.loc[("AAPL", "Rating"), period] == "AAA"
     assert pd.isna(rating.loc[("MSFT", "Rating"), period])
 
+    # Without interest but with an operating loss there is nothing the coverage says about a
+    # rating: no rating rather than the best one.
+    income.loc[("AAPL", "Operating Income"), period] = -1e9
+    rating = models.get_synthetic_credit_rating(firm_type="large")
+    assert period not in rating.columns or pd.isna(
+        rating.loc[("AAPL", "Rating"), period]
+    )
+
 
 def test_valuations_default_to_the_free_cash_flow_to_firm():
     import numpy as np  # noqa: PLC0415
@@ -1228,7 +1281,15 @@ def test_valuations_default_to_the_free_cash_flow_to_firm():
     )
     expected = float(
         intrinsic_model.get_intrinsic_value(
-            fcff, 0.05, 0.02, 0.09, 80 * g[-1], 180 * g[-1], 10, 5
+            fcff,
+            0.05,
+            0.02,
+            0.09,
+            80 * g[-1],
+            180 * g[-1],
+            10,
+            5,
+            short_term_investments=20 * g[-1],
         )
         .loc["Intrinsic Value"]
         .iloc[0]
@@ -1685,4 +1746,381 @@ def test_basket_models_leave_the_tickers_as_they_are(
     assert "Total" not in intrinsic_valuation.index.get_level_values(0)
     pd.testing.assert_frame_equal(
         intrinsic_valuation, models_module.get_intrinsic_valuation()
+    )
+
+
+def _fiscal_year_ends(models_module):
+    """Apple's fiscal years end on 30 September and Microsoft's on 30 June."""
+    columns = models_module._balance_sheet_statement.columns
+    return pd.DataFrame(
+        {
+            period: [
+                pd.Timestamp(f"{period.year}-09-30"),
+                pd.Timestamp(f"{period.year}-06-30"),
+            ]
+            for period in columns
+        },
+        index=["AAPL", "MSFT"],
+    )
+
+
+def _daily(models_module, column, data=None):
+    """A daily column of the historical data with a DatetimeIndex."""
+    daily = (data or models_module._historical_data)["daily"][column].copy()
+    daily.index = daily.index.to_timestamp()
+    return daily
+
+
+def test_market_values_use_the_close_at_the_fiscal_period_end(
+    models_module, monkeypatch
+):
+    dates = _fiscal_year_ends(models_module)
+    monkeypatch.setattr(models_module, "_period_end_dates", dates)
+    close = _daily(models_module, "Close")
+    shares = models_module._income_statement.xs(
+        "Weighted Average Shares Diluted", level=1
+    )
+    periods = [pd.Period("2021", freq="Y"), pd.Period("2022", freq="Y")]
+
+    prices = models_module._period_prices()
+    for ticker in ["AAPL", "MSFT"]:
+        for period in periods:
+            expected = close[ticker].loc[: dates.loc[ticker, period]].dropna().iloc[-1]
+            assert prices.loc[ticker, period] == pytest.approx(expected)
+    # The close of the last trading day of Apple's fiscal year 2021, not of December 2021.
+    assert prices.loc["AAPL", periods[0]] == pytest.approx(141.5)
+    assert prices.loc["MSFT", periods[0]] == pytest.approx(270.9)
+
+    market_cap = prices * shares
+    altman = models_module.get_altman_z_score(rounding=10)
+    tobin = models_module.get_tobins_q_ratio(rounding=10)
+    breakdown = models_module.get_enterprise_value_breakdown(rounding=10)
+    wacc = models_module.get_weighted_average_cost_of_capital(rounding=10)
+    mva = models_module.get_market_value_added(rounding=10)
+    merton = models_module.get_merton_distance_to_default(rounding=10)
+    multiples = models_module.get_justified_multiples(
+        rate_of_return=0.1, growth_rate=0.02, rounding=10
+    )
+    total_liabilities = models_module._balance_sheet_statement.xs(
+        "Total Liabilities", level=1
+    )
+    equity = models_module._balance_sheet_statement.xs(
+        "Total Shareholder Equity", level=1
+    )
+    for ticker in ["AAPL", "MSFT"]:
+        for period in periods:
+            cap = market_cap.loc[ticker, period]
+            assert altman.loc[
+                (ticker, "Market Value to Total Liabilities"), period
+            ] == pytest.approx(cap / total_liabilities.loc[ticker, period])
+            assert tobin.loc[(ticker, "Market Value of Equity"), period] == (
+                pytest.approx(cap)
+            )
+            assert breakdown.loc[(ticker, "Market Capitalization"), period] == (
+                pytest.approx(cap)
+            )
+            assert wacc.loc[(ticker, "Market Value Equity"), period] == (
+                pytest.approx(cap)
+            )
+            assert mva.loc[(ticker, "Market Value of Equity"), period] == (
+                pytest.approx(cap)
+            )
+            assert merton.loc[(ticker, "Equity Value"), period] == pytest.approx(cap)
+            assert multiples.loc[
+                (ticker, "Price-to-Book Ratio"), period
+            ] == pytest.approx(
+                prices.loc[ticker, period]
+                / (equity.loc[ticker, period] / shares.loc[ticker, period])
+            )
+
+
+def test_merton_measures_volatility_and_rates_at_the_fiscal_period_end(
+    models_module, monkeypatch
+):
+    dates = _fiscal_year_ends(models_module)
+    monkeypatch.setattr(models_module, "_period_end_dates", dates)
+    returns = _daily(models_module, "Return")
+    volatility = returns.rolling(252, min_periods=60).std() * 252**0.5
+    risk_free = _daily(models_module, "Adj Close", models_module._risk_free_rate_data)
+
+    merton = models_module.get_merton_distance_to_default(rounding=10)
+    period = pd.Period("2021", freq="Y")
+    for ticker in ["AAPL", "MSFT"]:
+        date = dates.loc[ticker, period]
+        assert merton.loc[(ticker, "Equity Volatility"), period] == pytest.approx(
+            volatility[ticker].loc[:date].dropna().iloc[-1]
+        )
+    # The model is solved with the rate of the fiscal period end: the same inputs give the
+    # same distance to default.
+    from financetoolkit.models.distress import credit_model  # noqa: PLC0415
+
+    date = dates.loc["AAPL", period]
+    balance = models_module._balance_sheet_statement
+    expected = credit_model.get_merton_model(
+        equity_value=float(merton.loc[("AAPL", "Equity Value"), period]),
+        equity_volatility=float(merton.loc[("AAPL", "Equity Volatility"), period]),
+        default_point=float(
+            balance.loc[("AAPL", "Short Term Debt"), period]
+            + 0.5 * balance.loc[("AAPL", "Long Term Debt"), period]
+        ),
+        risk_free_rate=float(risk_free.loc[:date].dropna().iloc[-1]),
+    )
+    assert merton.loc[("AAPL", "Distance to Default"), period] == pytest.approx(
+        expected["Distance to Default"]
+    )
+
+
+def test_present_value_of_growth_opportunities_uses_the_fiscal_period_end(
+    models_module, monkeypatch
+):
+    period = pd.Period("2021", freq="Y")
+    label = models_module.get_present_value_of_growth_opportunities(rounding=10)
+    label_prices = models_module._period_prices()
+
+    dates = _fiscal_year_ends(models_module)
+    monkeypatch.setattr(models_module, "_period_end_dates", dates)
+    fiscal = models_module.get_present_value_of_growth_opportunities(rounding=10)
+    fiscal_prices = models_module._period_prices()
+
+    # The no-growth value is the same; only the price is taken on another day.
+    for ticker in ["AAPL", "MSFT"]:
+        assert fiscal.loc[period, ticker] - label.loc[period, ticker] == (
+            pytest.approx(
+                fiscal_prices.loc[ticker, period] - label_prices.loc[ticker, period]
+            )
+        )
+
+    # Daily, the fiscal year's earnings apply from the day after it ends, not from January.
+    no_growth = fiscal_prices.loc["AAPL", period] - fiscal.loc[period, "AAPL"]
+    daily = models_module.get_present_value_of_growth_opportunities(
+        calculate_daily=True, rounding=10
+    )
+    close = models_module._historical_data["daily"]["Close"]["AAPL"]
+    after = pd.Period("2021-10-01", freq="D")
+    before = pd.Period("2021-09-29", freq="D")
+    previous_no_growth = (
+        fiscal_prices.loc["AAPL", period - 1] - fiscal.loc[period - 1, "AAPL"]
+    )
+    assert daily.loc[after, "AAPL"] == pytest.approx(close.loc[after] - no_growth)
+    assert daily.loc[before, "AAPL"] == pytest.approx(
+        close.loc[before] - previous_no_growth
+    )
+
+
+def test_return_decomposition_takes_the_dividends_of_the_fiscal_period(
+    models_module, monkeypatch
+):
+    dates = _fiscal_year_ends(models_module)
+    monkeypatch.setattr(models_module, "_period_end_dates", dates)
+    dividends = _daily(models_module, "Dividends")
+    prices = models_module._period_prices()
+
+    decomposition = models_module.get_return_decomposition(rounding=10)
+    period = pd.Period("2022", freq="Y")
+    for ticker in ["AAPL", "MSFT"]:
+        begin, end = dates.loc[ticker, period - 1], dates.loc[ticker, period]
+        paid = dividends[ticker].loc[begin:end].drop(begin, errors="ignore").sum()
+        assert decomposition.loc[(ticker, "Dividend Return"), period] == (
+            pytest.approx(paid / prices.loc[ticker, period - 1])
+        )
+        assert decomposition.loc[(ticker, "Price Return"), period] == (
+            pytest.approx(
+                prices.loc[ticker, period] / prices.loc[ticker, period - 1] - 1
+            )
+        )
+
+
+def test_return_on_equity_excludes_minority_interests(models_module, monkeypatch):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(models_module)
+    balance = models_module._balance_sheet_statement.copy()
+    # A minority interest makes the Total Equity larger than the shareholders' equity.
+    for ticker in ["AAPL", "MSFT"]:
+        balance.loc[(ticker, "Total Equity")] = (
+            balance.loc[(ticker, "Total Shareholder Equity")] + 1e10
+        )
+    models._balance_sheet_statement = balance
+
+    equity = balance.xs("Total Shareholder Equity", level=1)
+    assets = balance.xs("Total Assets", level=1)
+    net_income = models_module._income_statement.xs("Net Income", level=1)
+    period = pd.Period("2022", freq="Y")
+    average_equity = (equity[period] + equity[period - 1]) / 2
+    average_assets = (assets[period] + assets[period - 1]) / 2
+
+    dupont = models.get_dupont_analysis(rounding=10)
+    extended = models.get_extended_dupont_analysis(rounding=10)
+    for ticker in ["AAPL", "MSFT"]:
+        for analysis in (dupont, extended):
+            assert analysis.loc[(ticker, "Equity Multiplier"), period] == (
+                pytest.approx(average_assets[ticker] / average_equity[ticker])
+            )
+            assert analysis.loc[(ticker, "Return on Equity"), period] == (
+                pytest.approx(net_income.loc[ticker, period] / average_equity[ticker])
+            )
+
+    return_on_equity, _ = models._return_on_equity_and_payout(None)
+    assert return_on_equity.loc["AAPL", period] == pytest.approx(
+        net_income.loc["AAPL", period] / equity.loc["AAPL", period - 1]
+    )
+
+
+def test_trailing_scores_use_the_balances_at_the_period_end(models_module):
+    balance = models_module._balance_sheet_statement
+    period = pd.Period("2022", freq="Y")
+
+    def closing(item):
+        return balance.loc[("AAPL", item), period]
+
+    # With trailing=2 the flows cover two years, while the balances, the shares and the
+    # market values stay those at the end of the period.
+    altman = models_module.get_altman_z_score(trailing=2, rounding=10)
+    assert altman.loc[("AAPL", "Working Capital to Total Assets"), period] == (
+        pytest.approx(
+            (closing("Total Current Assets") - closing("Total Current Liabilities"))
+            / closing("Total Assets")
+        )
+    )
+    market_cap = (
+        models_module._period_prices()
+        * models_module._income_statement.xs("Weighted Average Shares Diluted", level=1)
+    ).loc["AAPL", period]
+    assert altman.loc[("AAPL", "Market Value to Total Liabilities"), period] == (
+        pytest.approx(market_cap / closing("Total Liabilities"))
+    )
+
+    for method, item, row in [
+        (models_module.get_ohlson_o_score, "Total Liabilities to Total Assets", None),
+        (models_module.get_zmijewski_score, None, None),
+        (models_module.get_springate_score, None, None),
+        (models_module.get_grover_score, None, None),
+        (models_module.get_fulmer_h_score, None, None),
+        (models_module.get_taffler_z_score, None, None),
+    ]:
+        trailing = method(trailing=2, rounding=10)
+        single = method(rounding=10)
+        if item:
+            assert trailing.loc[("AAPL", item), period] == pytest.approx(
+                closing("Total Liabilities") / closing("Total Assets")
+            )
+        # Every component without a flow is the same as without trailing.
+        balance_only = [
+            component
+            for component in single.loc["AAPL"].index
+            if component
+            in (
+                "Total Liabilities to Total Assets",
+                "Working Capital to Total Assets",
+                "Current Liabilities to Current Assets",
+                "Current Assets to Total Liabilities",
+                "Current Liabilities to Total Assets",
+                "Current Ratio",
+                "Debt to Assets",
+            )
+        ]
+        for component in balance_only:
+            assert trailing.loc[("AAPL", component), period] == pytest.approx(
+                single.loc[("AAPL", component), period]
+            )
+
+    tobin = models_module.get_tobins_q_ratio(rounding=10)
+    assert tobin.loc[("AAPL", "Total Assets"), period] == closing("Total Assets")
+    assert tobin.loc[("AAPL", "Market Value of Equity"), period] == (
+        pytest.approx(market_cap)
+    )
+
+    wacc = models_module.get_weighted_average_cost_of_capital(
+        trailing=2, rounding=10, market_risk_premium=0.05
+    )
+    assert wacc.loc[("AAPL", "Market Value Debt"), period] == closing("Total Debt")
+    assert wacc.loc[("AAPL", "Market Value Equity"), period] == pytest.approx(
+        market_cap
+    )
+
+
+def test_free_cash_flow_to_firm_clips_the_tax_rate():
+    import numpy as np  # noqa: PLC0415
+
+    items = growing_company()
+    items["Change in Working Capital"] = {"A": growing(-5)}
+    # A tax benefit on a profit: the corporate tax rate is 0, not negative, so the NOPAT
+    # does not exceed the operating income.
+    items["Income Tax Expense"] = {"A": growing(-8)}
+    models = synthetic_models(items)
+    last_year = (GROWTH ** np.arange(QUARTERS))[-4:].sum()
+
+    reverse = models.get_reverse_discounted_cash_flow(
+        weighted_average_cost_of_capital=0.09
+    )
+    assert reverse.loc["A", "Cash Flow"] == pytest.approx(
+        (50 + 10 - 10 - 5) * last_year
+    )
+
+
+def test_ohlson_size_is_deflated_by_the_gnp_price_level(models_module, monkeypatch):
+    import numpy as np  # noqa: PLC0415
+
+    from financetoolkit.models.distress import distress_controller  # noqa: PLC0415
+
+    total_assets = models_module._balance_sheet_statement.xs("Total Assets", level=1)
+    ohlson = models_module.get_ohlson_o_score(rounding=10)
+    deflator = GNP_DEFLATOR["United States"]
+    for year in ["2021", "2022"]:
+        period = pd.Period(year, freq="Y")
+        index = deflator[period] / deflator[pd.Period("1968", freq="Y")] * 100
+        assert ohlson.loc[("AAPL", "Log of Total Assets"), period] == pytest.approx(
+            np.log(total_assets.loc["AAPL", period] / index)
+        )
+
+    # A year the deflator is not published for yet uses the latest published year.
+    columns = pd.PeriodIndex(["2025Q4", "2026Q1"], freq="Q")
+    latest = models_module._gross_national_product_price_level(columns)
+    assert latest.iloc[1] == latest.iloc[0]
+
+    # Without the deflator, the size and the score are NaN rather than on another scale.
+    warnings = []
+    monkeypatch.setattr(
+        distress_controller.bea_model,
+        "get_gross_national_product_deflator",
+        pd.DataFrame,
+    )
+    monkeypatch.setattr(
+        distress_controller.logger,
+        "warning",
+        lambda message, *args: warnings.append(message % args),
+    )
+    missing = models_module.get_ohlson_o_score()
+    assert missing.xs("Log of Total Assets", level=1).isna().all().all()
+    assert missing.xs("Ohlson O-Score", level=1).isna().all().all()
+    assert missing.xs("Total Liabilities to Total Assets", level=1).notna().any().any()
+    assert any("GNP price deflator" in warning for warning in warnings)
+
+
+def test_market_value_added_compares_values_at_the_same_date(models_module):
+    balance = models_module._balance_sheet_statement
+    mva = models_module.get_market_value_added(rounding=10)
+    period = pd.Period("2022", freq="Y")
+
+    for ticker in ["AAPL", "MSFT"]:
+        invested_capital = (
+            balance.loc[(ticker, "Total Equity"), period]
+            + balance.loc[(ticker, "Total Debt"), period]
+        )
+        assert mva.loc[(ticker, "Invested Capital"), period] == pytest.approx(
+            invested_capital
+        )
+        # The debt at its book value cancels out: market value of equity minus book equity.
+        assert mva.loc[(ticker, "Market Value Added"), period] == pytest.approx(
+            mva.loc[(ticker, "Market Value of Equity"), period]
+            - balance.loc[(ticker, "Total Equity"), period]
+        )
+
+    averaged = models_module.get_market_value_added(trailing=2, rounding=10)
+    assert averaged.loc[("AAPL", "Invested Capital"), period] == pytest.approx(
+        (
+            balance.loc[("AAPL", "Total Equity"), [period - 1, period]].sum()
+            + balance.loc[("AAPL", "Total Debt"), [period - 1, period]].sum()
+        )
+        / 2
     )

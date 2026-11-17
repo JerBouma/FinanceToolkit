@@ -82,9 +82,11 @@ class ModelsBase:
                 average return above the risk-free rate for every company.
             period_end_dates (pd.DataFrame | Callable[[], pd.DataFrame], optional): The last day
                 of the fiscal period behind each statement column, with the tickers as index and
-                the periods as columns (the filing days with point_in_time). get_factor_analysis
-                applies each period's model values from that day on. Defaults to None, which
-                applies them from the end of the calendar period the column is labelled with.
+                the periods as columns (the filing days with point_in_time). The market values
+                (share prices, equity volatility, risk free rate) of each period are taken on
+                that day and get_factor_analysis applies each period's model values from it on.
+                Defaults to None, which uses the end of the calendar period the column is
+                labelled with.
             sp500_function (Callable | None, optional): Retrieves the S&P 500 between two
                 dates for get_campbell_hilscher_szilagyi_score: its daily price and total
                 return index (the columns "Price Index" and "Total Return Index", with a
@@ -161,7 +163,7 @@ class ModelsBase:
 
     @cached_property
     def _period_end_dates(self) -> pd.DataFrame | None:
-        """The fiscal period end dates, retrieved when get_factor_analysis first needs them."""
+        """The fiscal period end dates, retrieved when a model first needs them."""
         source = self._period_end_dates_source
         return source() if callable(source) else source
 
@@ -230,8 +232,10 @@ class ModelsBase:
             self._income_statement.loc[:, "Net Income", :], trailing
         )
         # Higgins measures the Return on Equity on the equity at the beginning of the period.
+        # The shareholders' equity (without minority interests), as the Net Income is the income
+        # attributable to the shareholders.
         beginning_total_equity = self._balance_sheet_statement.loc[
-            :, "Total Equity", :
+            :, "Total Shareholder Equity", :
         ].shift(trailing or 1, axis=1)
         dividends = helpers.trailing_sum(
             self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
@@ -259,11 +263,61 @@ class ModelsBase:
             .apply(pd.to_numeric, errors="coerce")
         )
 
+    def _market_dates(self) -> pd.DataFrame:
+        """
+        The day the market data of every statement period is taken on, per ticker (rows) and
+        period (columns): the end of the fiscal period (the filing day with point_in_time),
+        and where that is not known the end of the calendar period the column is labelled
+        with. A fiscal year ending in January through May is labelled with the calendar year
+        before, so the label's end lies before the end of the fiscal year and a market value
+        taken there would mix the balance sheet with a price from before its date.
+        """
+        columns = self._balance_sheet_statement.columns
+        label_ends = pd.Series(
+            columns.to_timestamp(how="end").normalize(), index=columns
+        )
+        dates = self._period_end_dates
+        if dates is None or dates.empty:
+            dates = pd.DataFrame(index=self._tickers, columns=columns)
+
+        return (
+            dates.reindex(index=self._tickers, columns=columns)
+            .apply(pd.to_datetime)
+            .fillna(label_ends)
+        )
+
+    def _values_at_market_dates(self, daily: pd.DataFrame | pd.Series) -> pd.DataFrame:
+        """
+        Daily values on (or on the last day before) each ticker's market date of every
+        statement period (see _market_dates), per ticker (rows) and period (columns).
+
+        Args:
+            daily (pd.DataFrame | pd.Series): The daily values with a PeriodIndex or
+                DatetimeIndex, per ticker (columns), or one Series that holds for every
+                ticker (such as the risk free rate).
+
+        Returns:
+            pd.DataFrame: The values per ticker (rows) and period (columns), NaN where no
+            value lies within 10 days before the date.
+        """
+        if isinstance(daily, pd.Series):
+            daily = pd.DataFrame({ticker: daily for ticker in self._tickers})
+        daily = daily.reindex(columns=self._tickers)
+        if isinstance(daily.index, pd.PeriodIndex):
+            daily.index = daily.index.to_timestamp()
+
+        return helpers.values_on_or_before(daily, self._market_dates())
+
     def _period_prices(self) -> pd.DataFrame:
         """
         The share price at the end of every statement period, per ticker, as traded (adjusted
         for splits, not for dividends): a market value is the shares outstanding at the
         price paid then, which the dividend-adjusted price understates for past periods.
+
+        The price is the close on the last trading day up to the end of the fiscal period
+        (the filing day with point_in_time, see _market_dates), the date of the balance sheet
+        it is combined with. Where the daily prices do not reach that day, the close of the
+        calendar period the column is labelled with is used.
         """
         columns = self._balance_sheet_statement.columns
         prices = self._historical_data["quarterly" if self._quarterly else "yearly"][
@@ -271,7 +325,15 @@ class ModelsBase:
         ]
         prices = prices.reindex(columns=self._tickers)
         prices.index = prices.index.asfreq(columns.freq)
-        return prices.reindex(columns).T
+        label_prices = prices.reindex(columns).T
+
+        fiscal_prices = self._values_at_market_dates(
+            self._historical_data["daily"]["Close"]
+        )
+
+        return fiscal_prices.combine_first(label_prices).reindex(
+            index=self._tickers, columns=columns
+        )
 
     def _finalize_components(
         self,
@@ -518,8 +580,8 @@ class Models(
         Which returns:
         |                                      |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:-------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_piotroski_score', '12 Months') |   -0.1352 |                  0.3685 |                -0.3669 |       -3.6693 |    0.0004 |             0.31 |            100 |            -0.1482 |              0.0787 |                 0.93   |
-        | ('get_altman_z_score', '12 Months')  |    0.1209 |                  0.3923 |                 0.3082 |        3.0824 |    0.0027 |             0.7  |            100 |             0.1264 |              0.0285 |                 0.9941 |
+        | ('get_piotroski_score', '12 Months') |   -0.1352 |                  0.3684 |                -0.3669 |       -3.6691 |    0.0004 |             0.31 |            100 |            -0.1482 |              0.0787 |                 0.93   |
+        | ('get_altman_z_score', '12 Months')  |    0.118  |                  0.3915 |                 0.3015 |        3.0149 |    0.0033 |             0.66 |            100 |             0.1563 |              0.0258 |                 0.9939 |
         """
         factors = factor_model.get_daily_factors(
             self,

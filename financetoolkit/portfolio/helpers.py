@@ -2,9 +2,11 @@
 
 import re
 
+import numpy as np
 import pandas as pd
 import yaml
 
+from financetoolkit.helpers import get_non_trading_days
 from financetoolkit.utilities.excel_model import read_excel as read_workbook
 from financetoolkit.utilities.statistics_model import drop_non_finite
 
@@ -184,3 +186,57 @@ def divide_by_capital(
     result = numerator / denominator.where(denominator > 0)
 
     return drop_non_finite(result)
+
+
+def get_trading_day_locations(
+    historical_data: pd.DataFrame, dates: pd.Index, tickers: pd.Index
+) -> np.ndarray:
+    """
+    The position in the dates of the historical data of the first day on or after each date
+    that its ticker traded on, the day a transaction on that date is priced and booked on.
+
+    With tickers on different calendars, such as a stock next to a cryptocurrency, the
+    historical data holds the dates of all of them and carries a ticker's last close forward
+    over the dates only another ticker traded (see `get_non_trading_days`). Taking the first
+    date with a price would book a Saturday purchase of a stock at Friday's close, in the
+    week or month before its position can start; the stock's own next trading day, Monday,
+    is the day the order fills. A ticker without historical data, or a transaction before the
+    ticker's first price, takes the first date on or after the transaction, and a transaction
+    after the last trading day of its ticker takes the last date of the data, the latest close
+    it is priced at.
+
+    Args:
+        historical_data (pd.DataFrame): The daily historical data with (column, ticker)
+            columns, including "Close" and "Return", on sorted dates.
+        dates (pd.Index): The date of every transaction, of the same type as the dates of the
+            historical data.
+        tickers (pd.Index): The ticker of every transaction.
+
+    Returns:
+        np.ndarray: The position of the trading day of every transaction.
+    """
+    all_dates = historical_data.index
+    locations = all_dates.get_indexer(dates, method="backfill")
+
+    if (
+        isinstance(historical_data.columns, pd.MultiIndex)
+        and "Close" in historical_data
+    ):
+        # Only the carried-forward dates are skipped: a date before a ticker's first price
+        # keeps the transaction on it, as a position held without a price yet.
+        trading_days = ~get_non_trading_days(historical_data, "Close")
+        for ticker in pd.unique(np.asarray(tickers)):
+            if ticker not in trading_days.columns:
+                continue
+            selected = np.asarray(tickers == ticker)
+            own_positions = np.flatnonzero(trading_days[ticker].to_numpy())
+            own_locations = all_dates[own_positions].get_indexer(
+                dates[selected], method="backfill"
+            )
+            locations[selected] = np.where(
+                own_locations == -1, -1, own_positions[own_locations]
+            )
+
+    locations[locations == -1] = len(all_dates) - 1
+
+    return locations

@@ -3,7 +3,10 @@
 import numpy as np
 import pandas as pd
 
-from financetoolkit.portfolio.helpers import divide_by_capital
+from financetoolkit.portfolio.helpers import (
+    divide_by_capital,
+    get_trading_day_locations,
+)
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.statistics_model import drop_non_finite, to_period_index
 
@@ -935,8 +938,9 @@ def create_positions_overview(
               of the portfolio.
 
     Notes:
-        - Transactions dated on a day without a price, such as a weekend or an exchange holiday, are
-          carried forward to the first following date that does have a price. Aligning them on the
+        - Transactions dated on a day their asset did not trade, such as a weekend or an exchange
+          holiday, are carried forward to the first following date the asset traded on, also when
+          another asset (such as a cryptocurrency) has a price on that day. Aligning them on the
           date itself would drop the transaction from every position metric without any warning.
           A transaction after the last date with a price, such as one of today before today's close
           is available, is placed on that last date, the date of the closing price it is priced at.
@@ -965,11 +969,13 @@ def create_positions_overview(
         transaction_volume < 0, 0.0
     )
 
-    # A transaction booked on a day without a price, such as a weekend or an exchange holiday, has no row to land on, and aligning on the date alone silently drops it from every position metric, so it is carried forward to the next date that does exist. One after the last date lands on the last date, the close it is priced at.  # noqa: E501
+    # A transaction booked on a day without a price, such as a weekend or an exchange holiday, has no row to land on, and aligning on the date alone silently drops it from every position metric, so it is carried forward to the next date its ticker traded on: a date only another ticker traded (a Saturday next to a cryptocurrency) holds the ticker's carried-forward close, not the close it is priced at. One after the last date lands on the last date, the close it is priced at.  # noqa: E501
     price_dates = pd.Index(period_dates).unique().sort_values()
-    transaction_dates = transactions.index.get_level_values(0)
-    date_locations = price_dates.get_indexer(transaction_dates, method="bfill")
-    date_locations[date_locations == -1] = len(price_dates) - 1
+    date_locations = get_trading_day_locations(
+        historical_prices.reindex(price_dates),
+        transactions.index.get_level_values(0),
+        portfolio_dataset.index.get_level_values(1),
+    )
 
     transactions.index = pd.MultiIndex.from_arrays(
         [

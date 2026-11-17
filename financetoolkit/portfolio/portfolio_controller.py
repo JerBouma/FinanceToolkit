@@ -7,6 +7,7 @@ from importlib import resources
 import numpy as np
 import pandas as pd
 
+from financetoolkit.helpers import get_non_trading_days
 from financetoolkit.portfolio import (
     definition_model,
     helpers,
@@ -458,24 +459,23 @@ class Portfolio:
     def _transaction_locations(self) -> np.ndarray:
         """
         The position of every transaction's trading day in the dates of the historical data: the
-        transaction's date, or the first trading day after it when it has no price (such as a
-        weekend), or the last date for a transaction after it.
+        transaction's date, or the first day after it that its ticker traded on when it did not
+        trade that day (such as a weekend, also next to a cryptocurrency that did), or the last
+        date for a transaction after it (see `helpers.get_trading_day_locations`).
         """
-        dates = self._daily_historical_data.index
-        locations = dates.get_indexer(
-            self._portfolio_dataset.index.get_level_values(0), method="backfill"
+        return helpers.get_trading_day_locations(
+            self._daily_historical_data,
+            self._portfolio_dataset.index.get_level_values(0),
+            self._portfolio_dataset.index.get_level_values(1),
         )
-        locations[locations == -1] = len(dates) - 1
-
-        return locations
 
     def _values_at_transactions(self, daily_values: pd.DataFrame) -> pd.Series:
         """
         The value of every transaction's ticker on the transaction's date, from daily values with
-        one column per ticker on the dates of the historical data. A transaction on a date without
-        a price, such as a weekend, takes the first following trading day, the day its position
-        starts on, and a transaction after the last date takes the last date, the close it is
-        priced at.
+        one column per ticker on the dates of the historical data. A transaction on a date its
+        ticker did not trade on, such as a weekend, takes the ticker's first following trading day,
+        the day its position starts on, and a transaction after the last date takes the last date,
+        the close it is priced at.
         """
         locations = self._transaction_locations()
         tickers = self._portfolio_dataset.index.get_level_values(1)
@@ -687,9 +687,10 @@ class Portfolio:
     ) -> pd.DataFrame | str | list:
         """
         Fill in the price of transactions that leave it out: the closing price of the day,
-        in the currency the ticker trades in. A transaction on a day without a price, such as a
-        weekend or a holiday, takes the closing price of the first following trading day, the day
-        its position, benchmark and dividends start on. A transaction after the latest close, such
+        in the currency the ticker trades in. A transaction on a day its ticker did not trade, such
+        as a weekend or a holiday, takes the closing price of the ticker's first following trading
+        day, the day its position, benchmark and dividends start on, also when another ticker (such
+        as a cryptocurrency) traded that day. A transaction after the latest close, such
         as one of today before today's close is available, takes the latest close, with a warning.
         Files and folders that have a price column are passed on as they are.
         """
@@ -726,15 +727,19 @@ class Portfolio:
         toolkit = self._price_toolkit(
             tickers, (dates.min() - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
         )
-        closes = toolkit.get_historical_data(period="daily")["Close"]
+        historical_data = toolkit.get_historical_data(period="daily")
+        closes = historical_data["Close"]
         if isinstance(closes, pd.Series):
             closes = closes.to_frame(tickers[0])
+        else:
+            # The dates only another ticker traded on carry a ticker's last close forward, which would price a Saturday purchase of a stock next to a cryptocurrency at Friday's close; only the ticker's own trading days hold its price.  # noqa: E501
+            closes = closes.mask(get_non_trading_days(historical_data, "Close"))
         closes = closes.copy()
         closes.index = closes.index.to_timestamp()
         closes = closes.sort_index()
 
         def first_close(symbol: str, day: pd.Timestamp) -> float:
-            # The first close on or after the date, as the positions, the benchmark and the dividends use: the previous close would price a weekend purchase on Friday while its position starts on Monday.  # noqa: E501
+            # The first close of the ticker's own trading days on or after the date, as the positions, the benchmark and the dividends use: the previous close would price a weekend purchase on Friday while its position starts on Monday.  # noqa: E501
             if symbol not in closes.columns or pd.isna(day):
                 return float("nan")
             available = closes[symbol].dropna()
@@ -2667,8 +2672,10 @@ class Portfolio:
         )
         trading_days = pd.to_datetime(
             self._daily_historical_data.index.get_level_values(0).astype(str)
-        ).unique()
+        )
         last_date = trading_days.max()
+        # A transaction on a day its ticker did not trade (a weekend or holiday, also when a cryptocurrency next to it did) flows on the ticker's next trading day, the day its position starts, as in the transactions performance, and one after the last date on the last close it is priced at.  # noqa: E501
+        flow_dates = trading_days[self._transaction_locations()]
 
         # The dividends received per day follow from the cumulative dividends of the positions, dated on the ex-dividend date.  # noqa: E501
         positions_dividends = self.get_positions_overview()["Dividends"]
@@ -2689,12 +2696,14 @@ class Portfolio:
                 flows if identifier == "Portfolio" else flows[identifiers == identifier]
             )
             dates = pd.to_datetime(selected.index.get_level_values("Date").astype(str))
-            # A transaction on a day without a price (a weekend or holiday) flows on the trading
-            # day its position starts, as in the transactions performance, and one after the
-            # last date on the last close it is priced at.
-            locations = trading_days.get_indexer(dates, method="backfill")
-            locations[locations == -1] = len(trading_days) - 1
-            cash_flows = pd.Series(selected.to_numpy(), index=trading_days[locations])
+            cash_flows = pd.Series(
+                selected.to_numpy(),
+                index=(
+                    flow_dates
+                    if identifier == "Portfolio"
+                    else flow_dates[identifiers == identifier]
+                ),
+            )
             dividends = (
                 pd.concat(list(dividend_flows.values()))
                 if identifier == "Portfolio" and dividend_flows

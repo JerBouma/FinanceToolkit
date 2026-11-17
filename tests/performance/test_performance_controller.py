@@ -1211,3 +1211,57 @@ def test_the_rolling_appraisal_ratio_starts_after_one_window(performance_module)
     assert ratio.loc[end, "AAPL"] == pytest.approx(
         alpha.loc[end, "AAPL"] / residual_standard_deviation, abs=1e-8
     )
+
+
+def _later_listing_performance(tickers):
+    """Two stocks at a flat rate, "IPO" listed only from 2022 and "SPY" from 2021."""
+    rng = np.random.default_rng(3)
+    days = pd.period_range("2021-01-01", "2022-12-30", freq="B").asfreq("D")
+    returns = pd.DataFrame(
+        {
+            "IPO": np.where(
+                days >= pd.Period("2022-01-03", "D"),
+                rng.normal(0.0005, 0.02, len(days)),
+                np.nan,
+            ),
+            "SPY": rng.normal(0.0005, 0.01, len(days)),
+            "Benchmark": rng.normal(0.0005, 0.01, len(days)),
+        },
+        index=days,
+    )
+    returns.iloc[0] = np.nan
+    returns.loc[pd.Period("2022-01-03", "D"), "IPO"] = np.nan
+    returns = returns[[*tickers, "Benchmark"]]
+    prices = (1 + returns.fillna(0)).cumprod() * 100
+    prices["IPO"] = prices["IPO"].where(days >= pd.Period("2022-01-03", "D"))
+    daily = pd.concat({"Return": returns, "Adj Close": prices, "Close": prices}, axis=1)
+    historical_data = {"daily": daily, "intraday": pd.DataFrame()}
+    period_prices = prices.groupby(days.asfreq("M")).last()
+    historical_data["monthly"] = pd.concat(
+        {
+            "Return": period_prices / period_prices.shift() - 1,
+            "Adj Close": period_prices,
+            "Close": period_prices,
+        },
+        axis=1,
+    )
+    return Performance(
+        tickers=list(tickers),
+        historical_data=historical_data,
+        risk_free_rate_data={"daily": pd.Series(0.04, index=days)},
+        rounding=None,
+    )
+
+
+def test_the_rolling_measures_of_a_ticker_ignore_a_later_listing_before_it():
+    later_first = _later_listing_performance(("IPO", "SPY"))
+    earlier_first = _later_listing_performance(("SPY", "IPO"))
+
+    # The risk free rate of the months before the listing of the first ticker stays in date order, so a rolling window over twelve rows covers twelve consecutive months.  # noqa: E501
+    assert later_first._risk_free_rate_data["monthly"].index.is_monotonic_increasing
+    m2_ratio = later_first.get_m2_ratio(period="monthly", rolling=12)
+    assert m2_ratio.loc["2021-12":"2022-12", "SPY"].notna().all()
+    pd.testing.assert_frame_equal(
+        m2_ratio,
+        earlier_first.get_m2_ratio(period="monthly", rolling=12)[m2_ratio.columns],
+    )

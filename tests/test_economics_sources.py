@@ -2463,6 +2463,64 @@ def test_house_prices_of_china_come_from_the_bis(monkeypatch):
     assert "China" not in economics.get_house_prices(quarterly=True).columns
 
 
+@pytest.mark.parametrize("end_date", ["2014-12-31", "2015-06-30", "2016-12-31"])
+def test_house_prices_of_china_rebase_on_the_whole_base_year(monkeypatch, end_date):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import bis_model, oecd_model
+
+    quarters = pd.period_range("2014Q1", "2016Q4", freq="Q")
+    oecd = pd.DataFrame({"Germany": [100.0 + i for i in range(12)]}, index=quarters)
+    # The BIS index has 2010 = 100 and 2015 averages 125 (120 to 130), so 2014Q1 is 80.
+    bis = pd.Series(
+        [
+            100.0,
+            104.0,
+            108.0,
+            112.0,
+            120.0,
+            124.0,
+            126.0,
+            130.0,
+            128.0,
+            126.0,
+            124.0,
+            122.0,
+        ],
+        index=quarters,
+        name="China",
+    )
+
+    def fake_oecd(quarterly, start_date, end_date, **kwargs):  # noqa: ARG001
+        data = oecd.loc[: pd.Period(end_date, "Q")]
+        return data.copy() if quarterly else data.groupby(data.index.asfreq("Y")).mean()
+
+    def fake_bis(
+        country_code, inflation_adjusted, start_date, end_date
+    ):  # noqa: ARG001
+        # The BIS returns the quarters up to the end date it is asked for.
+        return bis.loc[pd.Period(start_date, "Q") : pd.Period(end_date, "Q")].copy()
+
+    monkeypatch.setattr(oecd_model, "get_house_prices", fake_oecd)
+    monkeypatch.setattr(bis_model, "get_residential_property_prices", fake_bis)
+    economics = Economics(
+        start_date="2014-01-01", end_date=end_date, rounding=None, use_cached_data=False
+    )
+
+    quarterly = economics.get_house_prices(quarterly=True)
+
+    # Whichever the end date, the index is rebased on the four quarters of 2015 and cut to the range.  # noqa: E501
+    assert quarterly["China"].iloc[0] == pytest.approx(80.0)
+    assert quarterly.index[-1] == pd.Period(end_date, "Q")
+    assert quarterly["China"].notna().all()
+
+    yearly = economics.get_house_prices(quarterly=False, gmdb_source=False)
+
+    # A year the range ends in part of stays out, as it does for the OECD indices.
+    last_year = "2016" if end_date == "2016-12-31" else "2014"
+    assert yearly["China"].dropna().index[-1] == pd.Period(last_year, "Y")
+    assert yearly.loc["2014", "China"] == pytest.approx(84.8)
+
+
 def test_requested_countries_skip_blanks_and_repeated_spellings():
     known = ["United States", "Germany"]
 

@@ -391,6 +391,7 @@ def get_stock_screener(
     limit: int = 1000,
     user_subscription: str = "Free",
     primary_only: bool = False,
+    truncation_advice: str = "Narrow the criteria or raise the limit to see the remainder.",
 ) -> pd.DataFrame:
     """
     Get a list of instruments based on the screening criteria provided. It defaults
@@ -432,6 +433,10 @@ def get_stock_screener(
             the company's country, the most traded one among several) of each
             company, rather than every listing (e.g. ING in Amsterdam, New York, Toronto and
             Frankfurt). Defaults to False.
+        truncation_advice (str, optional): What the warning logged when the screener returns
+            its maximum number of results advises, so that a function screening on behalf of
+            its caller can point to its own parameters instead of the limit. Defaults to
+            "Narrow the criteria or raise the limit to see the remainder."
 
     Returns:
         pd.DataFrame: DataFrame of instruments matching the query, with each listing's currency
@@ -598,9 +603,9 @@ def get_stock_screener(
 
     if truncated:
         logger.warning(
-            "The screener returned the maximum of %s results, so the list is truncated. "
-            "Narrow the criteria or raise the limit to see the remainder.",
+            "The screener returned the maximum of %s results, so the list is truncated. %s",
             requested_limit,
+            truncation_advice,
         )
         if market_cap_lower is not None and upper_bound is None:
             logger.warning(
@@ -2832,6 +2837,12 @@ def get_earnings_calendar(
             country=country,
             limit=MAXIMUM_SCREENER_LIMIT,
             user_subscription=user_subscription,
+            # The limit is already the screener's maximum, so the advice is about the
+            # calendar's own parameters.
+            truncation_advice=(
+                "The releases of the companies beyond them are left out of the earnings "
+                "calendar: set a (higher) min_market_cap to look up fewer companies."
+            ),
         )
         earnings_calendar = earnings_calendar[
             earnings_calendar.index.isin(companies.index)

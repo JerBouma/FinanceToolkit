@@ -577,3 +577,31 @@ def test_a_holding_listed_abroad_contributes_in_the_fund_currency():
     assert contribution.loc["Y", "Contribution"] == pytest.approx(0.04)
     assert contribution.loc["Remainder", "Contribution"] == pytest.approx(0)
     assert contribution.loc["Total", "Contribution"] == pytest.approx(0.09)
+
+
+def test_assets_without_a_nav_currency_are_in_the_listing_currency(etf):
+    historical = etf._historical()
+    traded = (historical["Close"]["AAA"] * historical["Volume"]["AAA"]).iloc[-252:]
+    # The close of AAA is in pence and no NAV currency is published, so its assets are
+    # taken in pounds, not in dollars.
+    days = pd.date_range("2024-12-01", "2027-01-31")
+    etf._currency_function = lambda: pd.Series({"AAA": "GBp", "BBB": "USD"})
+    etf._prices_function = lambda tickers, start, end: pd.DataFrame(
+        {"GBPUSD=X": 1.25}, index=days
+    ).loc[start:end, tickers]
+
+    liquidity = etf.get_liquidity(rounding=12)
+
+    assert liquidity.loc["Dollar Volume to Assets", "AAA"] == pytest.approx(
+        traded.mean() / 100 / 1e10
+    )
+
+
+@pytest.mark.parametrize("currency", ["GBX", "GBx", "gbp", "ZAC", "zac", "ILA"])
+def test_minor_units_are_recognized_in_any_casing_but_pounds(currency):
+    from financetoolkit.etf.etf_controller import _major_currency
+
+    major, factor = _major_currency(currency)
+
+    assert major == {"G": "GBP", "Z": "ZAR", "I": "ILS"}[currency[0].upper()]
+    assert factor == (1.0 if currency == "gbp" else 0.01)

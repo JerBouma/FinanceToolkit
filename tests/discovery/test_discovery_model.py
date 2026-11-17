@@ -1051,3 +1051,19 @@ def test_a_long_ipo_or_split_calendar_is_asked_for_in_parts(monkeypatch):
     ]
     assert list(calendar.index) == ["S2024-01-01", "S2024-03-31"]
     assert len(splits) == 1
+
+
+def test_a_truncated_country_screen_points_to_the_calendars_own_parameters(
+    monkeypatch, caplog
+):
+    _calendar_responses(monkeypatch)
+    # The screener returns its maximum of two listings for the country.
+    monkeypatch.setattr(discovery_model, "MAXIMUM_SCREENER_LIMIT", 2)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        discovery_model.get_earnings_calendar(
+            "KEY", "2026-11-09", "2026-11-13", country="Germany"
+        )
+
+    assert "set a (higher) min_market_cap" in caplog.text
+    assert "raise the limit" not in caplog.text

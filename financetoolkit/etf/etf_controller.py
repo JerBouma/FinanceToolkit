@@ -8,6 +8,7 @@ import pandas as pd
 
 from financetoolkit import currencies_model
 from financetoolkit.etf import etf_model
+from financetoolkit.portfolio import portfolio_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -33,24 +34,18 @@ NAV_CLOSE_HOURS = 16
 # A premium or discount beyond half the NAV is a data error (a NAV in another unit or
 # currency, a stale price), not a market price.
 MAXIMUM_PREMIUM = 0.5
-# Some exchanges quote in a minor unit: London in pence (GBp, also written GBX), Johannesburg
-# in cents (ZAc) and Tel Aviv in agorot (ILA). The NAV is in the major unit.
-MINOR_CURRENCIES = {
-    "GBp": ("GBP", 0.01),
-    "GBX": ("GBP", 0.01),
-    "ZAc": ("ZAR", 0.01),
-    "ILA": ("ILS", 0.01),
-}
 
 
 def _major_currency(currency: object) -> tuple[str | None, float]:
-    """The major currency of a currency code and the factor to it, e.g. GBp is GBP 0.01."""
+    """
+    The major currency of a currency code and the factor to it, e.g. GBp (pence, also
+    written GBX) is GBP 0.01, as are ZAc (ZAR) and ILA (ILS). The minor units are those of
+    the portfolio module, matched in any casing except GBP, which is pounds and not pence.
+    """
     if not isinstance(currency, str) or not currency.strip():
         return None, 1.0
-    currency = currency.strip()
-    if currency in MINOR_CURRENCIES:
-        return MINOR_CURRENCIES[currency]
-    return currency.upper(), 1.0
+    major, units = portfolio_model.get_price_unit(currency)
+    return major, 1 / units
 
 
 @filter_shown_columns
@@ -247,10 +242,19 @@ class ETF:
         factors.index = close.index
         return close * volume * factors
 
-    def _assets_in_dollars(self, assets: float, nav_currency: object) -> float:
-        """The assets under management, published in the NAV's currency, in US dollars."""
+    def _assets_in_dollars(
+        self, assets: float, nav_currency: object, listing_currency: object
+    ) -> float:
+        """
+        The assets under management, published in the NAV's currency, in US dollars. Without
+        a NAV currency the assets are taken to be in the major unit of the listing currency
+        (pounds for a fund quoted in pence), the currency a fund's NAV is nearly always
+        published in, rather than in US dollars.
+        """
         if pd.isna(assets):
             return float("nan")
+        if _major_currency(nav_currency)[0] is None:
+            nav_currency = _major_currency(listing_currency)[0]
         today = pd.DatetimeIndex([pd.Timestamp.today().normalize()])
         factor = self._conversion_factors(
             pd.Series({"Assets": nav_currency}), "USD", today
@@ -1215,7 +1219,8 @@ class ETF:
         2002, illiquidity: the average absolute daily return per dollar traded, scaled to 100
         million). The dollar volume of a fund listed in another currency is its traded value
         in the major unit (pounds for a close in pence) converted at the exchange rate of every
-        day, and its assets, published in the NAV's currency, at the latest rate; without an
+        day, and its assets, published in the NAV's currency (the major unit of the listing
+        currency when the NAV currency is not published), at the latest rate; without an
         exchange rate these measures are NaN, with a logged warning. An ETF can also be traded through its holdings, so a thinly traded fund of
         liquid holdings is easier to trade than its own volume suggests; a fund whose holdings
         are themselves illiquid (small companies, high yield bonds) is not.
@@ -1272,6 +1277,8 @@ class ETF:
             data["Close"][self._funds()], data["Volume"][self._funds()]
         )
 
+        listing_currencies = self._listing_currencies()
+
         liquidity = {}
         for fund in self._funds():
             volume, dollar_volume = data["Volume"][fund], dollar_volumes[fund]
@@ -1282,6 +1289,7 @@ class ETF:
                         errors="coerce",
                     ),
                     information[fund].get("NAV Currency"),
+                    listing_currencies.get(fund),
                 )
                 if information is not None and fund in information
                 else float("nan")

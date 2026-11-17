@@ -96,6 +96,9 @@ def get_event_study(
         else pd.DatetimeIndex(returns.index)
     )
     event = pd.Timestamp(event_date)
+    # A date without a time zone is read in the time zone of the returns.
+    if timestamps.tz is not None and event.tzinfo is None:
+        event = event.tz_localize(timestamps.tz)
     if returns.empty:
         raise ValueError("There are no returns to study the event with.")
     if not timestamps[0] <= event <= timestamps[-1]:
@@ -113,7 +116,7 @@ def get_event_study(
             "model's 'normal return' estimate with event-window observations."
         )
 
-    event_position = int(timestamps.searchsorted(event.to_datetime64(), side="left"))
+    event_position = int(timestamps.searchsorted(event, side="left"))
 
     estimation_end = event_position - gap_days
     estimation_start = estimation_end - estimation_window

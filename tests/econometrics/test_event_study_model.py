@@ -106,3 +106,20 @@ def test_get_event_study_event_date_after_the_returns():
         raise AssertionError("Expected a ValueError to be raised.")
     except ValueError as error:
         assert "outside the returns" in str(error)
+
+
+def test_get_event_study_reads_a_plain_date_in_the_time_zone_of_the_returns():
+    returns, market = _synthetic_returns()
+    keywords = {"estimation_window": 200, "gap_days": 20}
+    plain = event_study_model.get_event_study(
+        returns=returns, market_returns=market, event_date="2020-12-28", **keywords
+    )
+
+    aware = event_study_model.get_event_study(
+        returns=returns.tz_localize("America/New_York"),
+        market_returns=market.tz_localize("America/New_York"),
+        event_date="2020-12-28",
+        **keywords,
+    )
+
+    assert aware["cumulative_abnormal_return"] == plain["cumulative_abnormal_return"]

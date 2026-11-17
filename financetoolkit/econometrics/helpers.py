@@ -23,8 +23,9 @@ def get_observations_per_year(index: pd.Index) -> int:
         index (pd.Index): The dates of the observations, a DatetimeIndex or PeriodIndex.
 
     Returns:
-        int: 252, 52, 12, 4 or 1 for a daily, weekly, monthly, quarterly or yearly spacing;
-        252 when there are fewer than two dates.
+        int: 252, 52, 12, 4 or 1 for a daily, weekly, monthly, quarterly or yearly spacing
+        (365 for a daily series with regular Saturday and Sunday observations); 252 when
+        there are fewer than two dates.
     """
     dates = (
         index.to_timestamp()
@@ -39,6 +40,15 @@ def get_observations_per_year(index: pd.Index) -> int:
 
     for days, observations in SPACING_OBSERVATIONS_PER_YEAR:
         if spacing < days:
+            # A daily series that also trades on weekends, such as a cryptocurrency, has
+            # 365 observations a year; a stock with an odd weekend session keeps 252.
+            weekdays = dates.dayofweek
+            if (
+                observations == SPACING_OBSERVATIONS_PER_YEAR[0][1]
+                and (weekdays == 5).mean() > 0.1  # noqa: PLR2004
+                and (weekdays == 6).mean() > 0.1  # noqa: PLR2004
+            ):
+                return 365
             return observations
 
     return 1

@@ -299,3 +299,15 @@ def test_chow_test_puts_the_period_with_the_break_date_after_it():
     pooled, split = rss(slice(None)), rss(slice(None, 60)) + rss(slice(60, None))
     expected = ((pooled - split) / 2) / (split / (96 - 4))
     assert result["Chow F-Statistic"] == pytest.approx(expected)
+
+
+def test_a_daily_series_with_weekends_counts_a_calendar_year():
+    from financetoolkit.econometrics.helpers import get_observations_per_year
+
+    every_day = pd.date_range("2024-01-01", periods=400, freq="D")
+    weekdays = pd.bdate_range("2024-01-01", periods=400)
+    one_saturday = weekdays.append(pd.DatetimeIndex(["2025-02-01"])).sort_values()
+
+    assert get_observations_per_year(every_day) == 365
+    assert get_observations_per_year(weekdays) == 252
+    assert get_observations_per_year(one_saturday) == 252

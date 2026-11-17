@@ -7,9 +7,17 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
     WITHIN_PERIOD_TRANSLATION,
     to_datetime_index,
 )
+
+# The day of the week of a Saturday and a Sunday in pandas (Monday is 0).
+SATURDAY = 5
+SUNDAY = 6
+
+# The share of the dates that Saturdays and Sundays must each exceed for daily dates to be calendar days rather than trading days: one in seven (about 14%) for a cryptocurrency, none or a fraction of a percent for a stock exchange.  # noqa: E501
+WEEKEND_DAY_SHARE = 0.1
 
 
 def determine_within_dataset(
@@ -91,3 +99,227 @@ def get_newey_west_lags(n_observations: int) -> int:
         int: The number of lags.
     """
     return int(np.floor(4 * (n_observations / 100) ** (2 / 9)))
+
+
+def align_annualized_rate(
+    annualized_rate: pd.Series, dates: pd.PeriodIndex
+) -> pd.Series:
+    """
+    The annualized risk free rate on each of the dates: a date without a quote (a weekend or
+    a holiday of the Treasury market) takes the most recent earlier quote, and the dates
+    before the first quote take the first quote.
+
+    Args:
+        annualized_rate (pd.Series): The annualized risk free rate with a daily PeriodIndex.
+        dates (pd.PeriodIndex): The daily dates to align the rate to.
+
+    Returns:
+        pd.Series: The annualized risk free rate per date.
+    """
+    rate = annualized_rate.sort_index()
+    rate = rate[~rate.index.duplicated(keep="last")]
+
+    return rate.reindex(rate.index.union(dates)).ffill().bfill().reindex(dates)
+
+
+def trades_on_weekends(dates: pd.PeriodIndex) -> bool:
+    """
+    Whether the daily dates are calendar days rather than trading days, as those of a
+    cryptocurrency that trades on every day of the week: Saturdays and Sundays each make
+    up more than 10% of the dates (one in seven of the dates of a cryptocurrency). The
+    trading days of an exchange that opens from Sunday to Thursday, which has no Saturdays,
+    or of a stock with a one-off Saturday session stay trading days, about 252 a year.
+
+    Args:
+        dates (pd.PeriodIndex): The daily dates with an observation.
+
+    Returns:
+        bool: True when Saturdays and Sundays are each more than 10% of the dates.
+    """
+    if len(dates) == 0:
+        return False
+
+    day_of_week = np.asarray(dates.dayofweek)
+
+    return bool(
+        (day_of_week == SATURDAY).mean() > WEEKEND_DAY_SHARE
+        and (day_of_week == SUNDAY).mean() > WEEKEND_DAY_SHARE
+    )
+
+
+def get_calendar_days_between(dates: pd.PeriodIndex) -> np.ndarray:
+    """
+    The number of calendar days since the date before, 1 for the first date.
+
+    Args:
+        dates (pd.PeriodIndex): The daily dates, in order.
+
+    Returns:
+        np.ndarray: The calendar days since the date before, per date.
+    """
+    ordinals = dates.asfreq("D").asi8
+
+    return (
+        np.diff(ordinals, prepend=ordinals[0] - 1).astype(float)
+        if len(dates)
+        else np.array([])
+    )
+
+
+def get_risk_free_rate_per_date(
+    annualized_rate: pd.Series, returns: pd.DataFrame
+) -> pd.Series:
+    """
+    The risk free return earned on each date of the daily returns since the date before, from
+    the annualized risk free rate (such as a Treasury yield) quoted on that date, the rate
+    the daily returns are compared with. The longer periods compound the annualized rate
+    over the calendar days they span instead (see `compound_risk_free_rate`).
+
+    Dates that are trading days (no returns on a Saturday or Sunday) follow the trading day
+    convention of 252 days a year, so a year of trading days earns the annualized rate.
+    Once a ticker trades on weekends as well, such as a cryptocurrency, the dates are
+    calendar days and the rate accrues over the calendar days since the date before, on
+    365 days a year.
+
+    The formula is as follows:
+
+        - Trading Days: Risk Free Rate per Date = (1 + Annualized Rate)^(1 / 252) - 1
+        - Calendar Days: Risk Free Rate per Date = (1 + Annualized Rate)^(Days Since the Date Before / 365) - 1
+
+    Args:
+        annualized_rate (pd.Series): The annualized risk free rate with a daily PeriodIndex, see
+            `align_annualized_rate`.
+        returns (pd.DataFrame): The daily returns with a daily PeriodIndex, one column per ticker.
+
+    Returns:
+        pd.Series: The risk free return per date of the returns, as a decimal.
+    """
+    dates = returns.index
+    rate = align_annualized_rate(annualized_rate, dates)
+
+    if trades_on_weekends(dates[returns.notna().any(axis=1).to_numpy()]):
+        return (1 + rate) ** (get_calendar_days_between(dates) / 365) - 1
+
+    return (1 + rate) ** (1 / 252) - 1
+
+
+def get_risk_free_rate_per_observation(
+    annualized_rate: pd.Series, returns: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    The risk free return each ticker earns over the period of each of its returns, from the
+    annualized risk free rate quoted on the date of the return.
+
+    A ticker that trades on trading days earns a trading day of the rate with every return,
+    on 252 trading days a year, whichever other tickers the data holds: its measures use
+    its own trading days. A ticker that also trades on weekends, such as a cryptocurrency,
+    earns the rate over the calendar days since its previous return, on 365 days a year,
+    so it earns the annualized rate over a year rather than about 365 / 252 times it.
+
+    The formula is as follows:
+
+        - Trading Days: Risk Free Rate per Observation = (1 + Annualized Rate)^(1 / 252) - 1
+        - Weekends Included: Risk Free Rate per Observation = (1 + Annualized Rate)^(Days Since the Previous
+        Observation / 365) - 1
+
+    Args:
+        annualized_rate (pd.Series): The annualized risk free rate with a daily PeriodIndex, see
+            `align_annualized_rate`.
+        returns (pd.DataFrame): The daily returns with a daily PeriodIndex, one column per ticker,
+            NaN on the dates a ticker has no return.
+
+    Returns:
+        pd.DataFrame: The risk free return per observation, shaped as the returns and NaN where
+        the returns are NaN. The first observation of a ticker trading on weekends earns one
+        calendar day.
+    """
+    rate = align_annualized_rate(annualized_rate, returns.index)
+    risk_free_rate = pd.DataFrame(np.nan, index=returns.index, columns=returns.columns)
+
+    for position in range(returns.shape[1]):
+        observed = returns.iloc[:, position].notna().to_numpy()
+        dates = returns.index[observed]
+        exponent = (
+            get_calendar_days_between(dates) / 365
+            if trades_on_weekends(dates)
+            else 1 / 252
+        )
+        risk_free_rate.iloc[observed, position] = (
+            (1 + rate[observed]) ** exponent - 1
+        ).to_numpy()
+
+    return risk_free_rate
+
+
+def compound_risk_free_rate(
+    annualized_rate: pd.Series, returns: pd.DataFrame, period: str
+) -> pd.Series:
+    """
+    The risk free return of each period: the annualized risk free rate compounded over the
+    calendar days between the dates in the period that hold a return, each date earning the
+    rate quoted on it over the days since the date before on 365 days a year. The return of
+    a period runs from the last date of the period before to the last date of the period, so
+    a full year earns the annualized rate whether its dates are the trading days of a stock
+    or every calendar day of a cryptocurrency, and the rate of a period does not depend on
+    which tickers the data holds. A period the data covers in part, such as the current year,
+    earns the risk free rate of the days it covers rather than of a full period.
+
+    The formula is as follows:
+
+        - Period Risk Free Rate = PRODUCT((1 + Annualized Rate)^(Days Since the Date Before / 365)) - 1,
+          over the dates in the period
+
+    Args:
+        annualized_rate (pd.Series): The annualized risk free rate with a daily PeriodIndex, see
+            `align_annualized_rate`.
+        returns (pd.DataFrame): The daily returns with a daily PeriodIndex, one column per ticker.
+            The first date with a return accrues from the date before it (the date of the
+            first price), or over one day when it is the first date.
+        period (str): The period to compound to (weekly, monthly, quarterly or yearly).
+
+    Returns:
+        pd.Series: The risk free return per period, as a decimal.
+    """
+    observed = returns.notna().any(axis=1).to_numpy()
+    positions = np.flatnonzero(observed)
+
+    if not len(positions):
+        return pd.Series(dtype=float)
+
+    ordinals = returns.index.asfreq("D").asi8
+    first = positions[0]
+    days_since_date_before = np.diff(
+        ordinals[positions],
+        prepend=ordinals[first - 1] if first > 0 else ordinals[first] - 1,
+    ).astype(float)
+
+    dates = returns.index[positions]
+    rate = align_annualized_rate(annualized_rate, dates)
+    growth = (1 + rate) ** (days_since_date_before / 365)
+
+    return growth.groupby(dates.asfreq(PERIOD_TRANSLATION[period])).prod() - 1
+
+
+def get_observations_per_year(returns: pd.DataFrame) -> pd.Series:
+    """
+    The number of daily returns in a year per ticker, to annualize a ratio computed from
+    them: 252 for a ticker that trades on trading days only, and 365 for a ticker that also
+    trades on weekends, such as a cryptocurrency with a return on every calendar day.
+
+    Args:
+        returns (pd.DataFrame): The daily returns with a daily PeriodIndex, one column per ticker.
+
+    Returns:
+        pd.Series: The observations per year, indexed by ticker.
+    """
+    return pd.Series(
+        {
+            column: (
+                365.0
+                if trades_on_weekends(returns.index[returns[column].notna().to_numpy()])
+                else 252.0
+            )
+            for column in returns.columns
+        },
+        dtype=float,
+    )

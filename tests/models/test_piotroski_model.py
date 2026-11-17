@@ -319,3 +319,17 @@ def test_piotroski_change_criteria_take_a_lag():
     assert piotroski_model.get_change_in_return_on_asset_criteria(
         _row(10, 12, 11), _row(100, 100, 100), lag=2
     ).loc["A"].tolist() == [False, False, True]
+
+
+def test_accruals_criteria_with_statements_of_different_periods():
+    net_income = pd.DataFrame({"2023": [1.0], "2024": [2.0]}, index=["A"])
+    operating_cashflow = pd.DataFrame(
+        {"2023": [3.0], "2024": [1.0], "2025": [2.0]}, index=["A"]
+    )
+    beginning_total_assets = pd.DataFrame({"2023": [10.0], "2024": [10.0]}, index=["A"])
+
+    criteria = piotroski_model.get_accruals_criteria(
+        net_income, operating_cashflow, beginning_total_assets
+    )
+
+    assert criteria.loc["A"].tolist() == [True, False, False]

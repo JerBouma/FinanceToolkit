@@ -1277,6 +1277,34 @@ def test_bea_real_personal_income_is_in_billions_rounded_half_up(monkeypatch):
     ]
 
 
+def test_bea_gross_national_product_deflator_is_yearly(monkeypatch):
+    from financetoolkit.economics.sources import bea_model
+
+    text = (
+        "%SeriesCode,Period,Value\n"
+        'A001RD,1968,"18.246"\n'
+        'A001RD,2025,"128.801"\n'
+        'A191RD,2025,"128.893"\n'
+        'A001RC,2025,"30,000"\n'
+    )
+    requested = []
+    monkeypatch.setattr(
+        bea_model,
+        "get_request",
+        lambda url, **kwargs: requested.append(url) or FakeResponse(text=text),
+    )
+
+    deflator = bea_model.get_gross_national_product_deflator()
+
+    # Only the GNP deflator (A001RD), not the GDP deflator (A191RD) or GNP itself.
+    assert requested == [bea_model.ANNUAL_URL]
+    assert deflator["United States"].tolist() == [18.246, 128.801]
+    assert deflator.index.tolist() == [
+        pd.Period("1968", "Y"),
+        pd.Period("2025", "Y"),
+    ]
+
+
 def test_bls_nonfarm_payrolls_are_dated_on_the_first_of_the_month(monkeypatch):
     from financetoolkit.economics.sources import bls_model
 

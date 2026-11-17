@@ -26,7 +26,7 @@ Complementing this is the [Finance Database 🌎](https://github.com/JerBouma/Fi
 ___
 **🔌 The Finance Toolkit is also available as an [MCP Server](https://www.jeroenbouma.com/projects/financetoolkit/mcp)**
 
-Query 500+ methods from Claude, Copilot, Cursor, Windsurf or any MCP-compatible client without writing code.
+Query 500+ methods from Claude, Copilot, Cursor, Devin Desktop (Windsurf) or any MCP-compatible client without writing code.
 
 - **Hosted:** connect to `https://financetoolkit.jeroenbouma.com/mcp` — OAuth handles the rest on first use.
 - **Local:** `uvx --from "financetoolkit[mcp]" financetoolkit-mcp-setup` — sets up your client config and API key automatically. See [MCP Server Documentation](https://www.jeroenbouma.com/projects/financetoolkit/mcp#local-clients) for manual setup.
@@ -549,7 +549,7 @@ Connect directly to the hosted server at `https://financetoolkit.jeroenbouma.com
 | **Claude Code** | `claude mcp add --transport http finance-toolkit https://financetoolkit.jeroenbouma.com/mcp` |
 | **VS Code** | Command Palette → MCP: Add Server → HTTP → paste the URL |
 | **Cursor** | Cursor Settings → Tools & MCP → New MCP Server → add `"finance-toolkit": { "url": "<URL>" }` |
-| **Windsurf** | Cascade panel → MCPs → Configure → add `"finance-toolkit": { "serverUrl": "<URL>" }` and refresh |
+| **Devin Desktop (Windsurf)** | Cascade panel → MCPs → Configure → add `"finance-toolkit": { "serverUrl": "<URL>" }` and refresh |
 
 ### Local installation
 

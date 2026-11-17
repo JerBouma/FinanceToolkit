@@ -379,7 +379,8 @@ def get_share_turnover(
         period (str, optional): The period to sum the daily turnover over: weekly, monthly,
         quarterly or yearly. Defaults to "monthly".
         rolling (int | None, optional): The mean of the turnover of the last `rolling`
-        periods instead of the turnover per period. Defaults to None.
+        periods instead of the turnover per period. A window with a period without any
+        trading day is NaN. Defaults to None.
 
     Returns:
         pd.Series | pd.DataFrame: The turnover as a decimal (0.1 is 10% of the shares
@@ -404,7 +405,14 @@ def get_share_turnover(
     turnover = turnover.where(complete)
 
     if rolling:
-        turnover = turnover.rolling(rolling).mean()
+        # A period without any trading day in the data (a halt) is a row of its own, so a window always spans `rolling` periods and one that holds such a period is NaN.  # noqa: E501
+        full_range = pd.period_range(
+            turnover.index.min(),
+            turnover.index.max(),
+            freq=turnover.index.freq,
+            name=turnover.index.name,
+        )
+        turnover = turnover.reindex(full_range).rolling(rolling).mean()
 
     return turnover
 
@@ -437,7 +445,8 @@ def get_idiosyncratic_volatility(
 
     The regression runs on the days on which the asset and every factor have a return, and
     a period with fewer than `minimum_observations` of those days (or no more than the
-    number of coefficients) is NaN.
+    number of coefficients) is NaN. The periods run up to the last date of `excess_returns`, so a period
+    after the last factor return is NaN as well.
 
     For more information about the method, see the following paper:
 
@@ -494,6 +503,13 @@ def get_idiosyncratic_volatility(
         return pd.Series(dtype=float, name=excess_returns.name)
 
     periods = to_period_index(data.index).asfreq(PERIOD_TRANSLATION[period])
+    # The periods run up to the last date of the returns, so the periods after the last
+    # factor return (the Fama-French data lag a month or more, and so does their risk-free
+    # rate the excess returns are taken over) are NaN rows rather than missing, also with a
+    # rolling window that still holds earlier days.
+    last_period = (
+        to_period_index(excess_returns.index).asfreq(PERIOD_TRANSLATION[period]).max()
+    )
     window = rolling if rolling else 1
     scale = np.sqrt(VOLATILITY_WINDOW_TRANSLATION["yearly" if annualize else period])
     minimum = max(minimum_observations, factors.shape[1] + 2)
@@ -517,6 +533,11 @@ def get_idiosyncratic_volatility(
         residuals = target[rows] - design[rows] @ coefficients
         volatility[end] = residuals.std(ddof=1) * scale
 
-    return pd.Series(volatility, name=excess_returns.name, dtype=float).rename_axis(
-        excess_returns.index.name
-    )
+    volatility = pd.Series(volatility, name=excess_returns.name, dtype=float)
+
+    if last_period > periods.max():
+        volatility = volatility.reindex(
+            pd.period_range(periods.min() + window - 1, last_period, freq=periods.freq)
+        )
+
+    return volatility.rename_axis(excess_returns.index.name)

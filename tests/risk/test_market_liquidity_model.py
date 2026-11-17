@@ -369,3 +369,39 @@ def test_liquidity_measures_invalid_input():
         market_liquidity_model.get_idiosyncratic_volatility(
             pd.Series(dtype=float), pd.DataFrame(), "daily"
         )
+
+
+def test_get_share_turnover_rolling_spans_a_period_without_trading_days():
+    dates = pd.period_range("2024-01-01", "2024-04-30", freq="D")
+    volume = pd.Series(10.0, index=dates)
+    shares = pd.Series(100.0, index=dates)
+    # A halt: February has no trading day in the data at all.
+    traded = (dates < pd.Period("2024-02-01", "D")) | (
+        dates > pd.Period("2024-02-29", "D")
+    )
+
+    rolling = market_liquidity_model.get_share_turnover(
+        volume[traded], shares[traded], "monthly", rolling=2
+    )
+
+    # The windows that hold February are NaN, not the mean of January and March.
+    assert rolling.index.tolist() == list(
+        pd.period_range("2024-01", "2024-04", freq="M")
+    )
+    assert rolling.iloc[:3].isna().all()
+    assert np.isclose(rolling[pd.Period("2024-04", "M")], (31 + 30) * 0.1 / 2)
+
+
+def test_get_idiosyncratic_volatility_runs_up_to_the_last_return():
+    returns, factors = idiosyncratic_data()
+    # The factors are published up to February only.
+    published = factors[factors.index <= pd.Period("2024-02-29", "D")]
+
+    for rolling in (None, 2):
+        result = market_liquidity_model.get_idiosyncratic_volatility(
+            returns, published, "monthly", rolling=rolling
+        )
+
+        assert result.index[-1] == pd.Period("2024-04", "M")
+        assert result.loc[pd.Period("2024-03", "M") :].isna().all()
+        assert not np.isnan(result[pd.Period("2024-02", "M")])

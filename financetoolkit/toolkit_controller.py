@@ -1420,6 +1420,7 @@ class Toolkit:
             prices_function=prices,
             sector_function=sectors,
             holding_currency_function=holding_currencies,
+            benchmark_ticker=self._benchmark_ticker,
         )
 
     @property

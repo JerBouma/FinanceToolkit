@@ -70,6 +70,7 @@ class ETF:
         prices_function: Callable[[list[str], str, str], pd.DataFrame] | None = None,
         sector_function: Callable[[list[str]], pd.Series] | None = None,
         holding_currency_function: Callable[[list[str]], pd.Series] | None = None,
+        benchmark_ticker: str | None = None,
     ):
         """
         Initializes the ETF Controller Class, which the Toolkit creates as `toolkit.etf`.
@@ -103,6 +104,10 @@ class ETF:
                 Retrieves the currency other tickers (the holdings) are listed in, to convert
                 their prices into the fund's currency for the contribution of the holdings.
                 Defaults to None, which takes their prices as they are.
+            benchmark_ticker (str | None, optional): The ticker of the Benchmark, whose listing
+                currency (through holding_currency_function) tells whether its prices are
+                converted into a fund's currency to measure the tracking. Defaults to None,
+                which compares the prices as they are.
 
         As an example:
 
@@ -126,6 +131,7 @@ class ETF:
         self._prices_function = prices_function
         self._sector_function = sector_function
         self._holding_currency_function = holding_currency_function
+        self._benchmark_ticker = benchmark_ticker
 
     def _listing_currencies(self) -> pd.Series:
         """The currency every ticker is listed in, empty when it cannot be retrieved."""
@@ -224,6 +230,42 @@ class ETF:
                 ),
             )
         return factors
+
+    def _benchmark_in_currency(
+        self, benchmark: pd.Series, currency: object, benchmark_currency: object
+    ) -> pd.Series:
+        """
+        The prices of the Benchmark in a fund's listing currency, converted at the exchange
+        rate of each date, so that the tracking of a fund listed in another currency than its
+        index does not count the move of the exchange rate as tracking error. The prices are
+        kept as they are when either currency is unknown or they are the same, and, with a
+        logged warning, when there is no exchange rate.
+        """
+        major, _ = _major_currency(currency)
+        benchmark_major, _ = _major_currency(benchmark_currency)
+        if major is None or benchmark_major is None or major == benchmark_major:
+            return benchmark
+
+        dates = (
+            benchmark.index.to_timestamp()
+            if isinstance(benchmark.index, pd.PeriodIndex)
+            else pd.DatetimeIndex(benchmark.index)
+        )
+        factors = self._conversion_factors(
+            pd.Series({BENCHMARK_TICKER: benchmark_currency}), currency, dates
+        )[BENCHMARK_TICKER].to_numpy()
+        converted = benchmark * factors
+        if converted.notna().any():
+            return converted
+
+        logger.warning(
+            "Without a %s exchange rate the Benchmark is compared in %s, so the tracking "
+            "measures of the funds listed in %s include the move of the exchange rate.",
+            f"{benchmark_major}/{major}",
+            benchmark_major,
+            major,
+        )
+        return benchmark
 
     def _dollar_volume(self, close: pd.DataFrame, volume: pd.DataFrame) -> pd.DataFrame:
         """
@@ -845,6 +887,13 @@ class ETF:
         timing of their last trade, which adds noise to a daily tracking error; fund reports
         usually measure it from monthly returns.
 
+        A fund listed in another currency than the Benchmark (a London listing of an S&P 500 fund
+        in pounds against SPY in dollars) is compared with the Benchmark converted into the
+        fund's currency at the exchange rate of each date, as the fund's own returns include the
+        move of that currency. The fund and the Benchmark still close at different hours, which
+        adds noise to the daily measures; monthly returns are less affected. Without an exchange
+        rate the prices are compared as they are, with a logged warning.
+
         Also known as: tracking difference, tracking error, index tracking.
 
         Args:
@@ -900,12 +949,31 @@ class ETF:
             )
         frequency = "Y" if yearly else FREQUENCIES.get(period)
 
+        # A fund listed in another currency than the Benchmark is compared with the
+        # Benchmark converted into its currency, once per currency.
+        currencies = self._listing_currencies()
+        benchmark_currency = (
+            self._holding_currencies([self._benchmark_ticker]).get(
+                self._benchmark_ticker
+            )
+            if self._benchmark_ticker
+            else None
+        )
+        benchmarks: dict[object, pd.Series] = {}
+
         results = {}
         for fund in self._funds():
+            currency = currencies.get(fund)
+            if currency not in benchmarks:
+                benchmarks[currency] = self._benchmark_in_currency(
+                    full[BENCHMARK_TICKER], currency, benchmark_currency
+                )
             # Only the dates on which both have a close count, so a fund whose prices stop
             # (a ticker change, a delisting) or start later is compared with the Benchmark
             # over the same days, not with the Benchmark's later year-end close.
-            pair = full[[fund, BENCHMARK_TICKER]]
+            pair = pd.concat(
+                [full[fund], benchmarks[currency].rename(BENCHMARK_TICKER)], axis=1
+            )
             pair = pair[pair.notna().all(axis=1)]
             prices = pair.loc[self._start_date : self._end_date]
             if prices.empty:

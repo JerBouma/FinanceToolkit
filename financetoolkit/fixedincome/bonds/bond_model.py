@@ -883,7 +883,10 @@ def get_bond_equivalent_yield(discount_yield: float, days_to_maturity: float) ->
 
     where t = days_to_maturity and Price = 1 - Discount Yield * t / 360 is the purchase
     price per unit of face value. Applying the simple formula beyond 182 days ignores
-    that intermediate compounding and understates the yield.
+    that intermediate compounding and overstates the yield: the simple formula spreads
+    the whole return over the year without letting the first half-year's interest earn
+    interest, so it needs a higher rate (4.2265% instead of 4.1829% for a 364-day bill at
+    a 4% discount yield).
 
     A 365-day year is assumed throughout; the Treasury substitutes 366 when the holding
     period spans a 29 February, which shifts the result by well under a basis point.

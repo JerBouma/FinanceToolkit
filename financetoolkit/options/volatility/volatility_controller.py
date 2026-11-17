@@ -5,8 +5,12 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.options import helpers
-from financetoolkit.options.helpers import get_days_to_expiration
+from financetoolkit.options import helpers, options_model
+from financetoolkit.options.helpers import (
+    get_days_to_expiration,
+    get_time_to_expiration,
+)
+from financetoolkit.options.market import market_metrics_model
 from financetoolkit.options.pricing import black_scholes_model
 from financetoolkit.options.volatility import risk_neutral_density_model, svi_model
 from financetoolkit.utilities import logger_model
@@ -42,12 +46,13 @@ class VolatilityOptions:
         """
         Logs a warning when the last historical date lies more than MAXIMUM_SPOT_AGE_DAYS
         calendar days before today. The methods that work with the live option chains
-        (implied volatility, the volatility surface, the risk-neutral density and the option
-        chains filtered on strike) take the quotes and the days to expiration from today but
-        the spot price from the last historical date, so an end_date in the past or an
-        outdated price history pairs today's option prices with an old stock price. The
-        history of an instance does not change, so the warning is shown once per instance
-        rather than once for every expiration date a surface walks through.
+        (implied volatility, the volatility surface and the risk-neutral density) take the
+        quotes, the price of the underlying quoted with them and the time to expiration
+        from the current time, but the risk free rate, the dividend yield and, when a chain quotes no
+        price of the underlying, the stock price from the last historical date, so an
+        end_date in the past or an outdated price history pairs today's option prices with
+        old inputs. The history of an instance does not change, so the warning is shown once
+        per instance rather than once for every expiration date a surface walks through.
         """
         if getattr(self, "_stale_spot_warning_shown", False):
             return
@@ -63,10 +68,10 @@ class VolatilityOptions:
         if spot_age > MAXIMUM_SPOT_AGE_DAYS:
             self._stale_spot_warning_shown = True
             logger.warning(
-                "The stock price is the close of %s, %d days ago, while the option chains and "
-                "the days to expiration are live. Implied volatilities and densities from these "
-                "chains are therefore based on an outdated stock price; set end_date to today "
-                "or leave it empty for current results.",
+                "The historical data ends on %s, %d days ago, while the option chains and the "
+                "time to expiration are live: the risk free rate, the dividend yield and, when a "
+                "chain quotes no price of the underlying, the stock price come from that date. "
+                "Set end_date to today or leave it empty for current results.",
                 last_timestamp.date(),
                 spot_age,
             )
@@ -92,8 +97,11 @@ class VolatilityOptions:
         fluctuate in the future. It is a key component of options pricing and can also be used to calculate the
         theoretical value of an option.
 
-        The most recent stock price, risk free rate and dividend yield are used, and the implied volatility is the
-        volatility at which the Black Scholes price equals the option's last traded price.
+        The price of the underlying quoted with the option chain and the most recent risk free rate and dividend
+        yield are used, and the implied volatility is the volatility at which the Black Scholes price equals the
+        option's mid price, the middle of its bid and ask (the last traded price when the option has no two-sided
+        quote, for example outside market hours). A strike without a two-sided quote and without open interest or
+        volume has no implied volatility: its last trade can be weeks old, from when the underlying stood elsewhere.
 
         The formulas are as follows:
 
@@ -103,7 +111,8 @@ class VolatilityOptions:
         - Put Option Price = K * e^(—r * t) * N(—d2) — S * e^(—q * t) * N(—d1)
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
-        volatility, t is the time to expiration, N(d1) is the cumulative normal distribution of d1 and N(d2) is the
+        volatility, t is the time to expiration (the minutes up to 16:00 New York time on the expiration date over
+        the 525,600 minutes of a year, as the Cboe counts it), N(d1) is the cumulative normal distribution of d1 and N(d2) is the
         the cumulative normal distribution of d2.
 
         In which the Implied Volatility is then calculated as follows:
@@ -115,22 +124,24 @@ class VolatilityOptions:
         the root of the difference between the theoretical and actual option price, found with Brent's method on the
         interval [1e-6, 5]. Prices outside the no-arbitrage bounds have no root and return NaN.
 
-        The implied volatility is solved from each option's last traded price, which can be hours or days old for
-        illiquid strikes, while the stock price is the latest close. Deep in-the-money and far out-of-the-money
-        strikes therefore often show extreme values (above 100%) that say more about stale quotes than about the
-        market's view. Practitioners read the smile around the money, where trading is liquid, and use
+        Mid prices and the underlying price quoted with the chain describe the same moment, unlike last traded
+        prices, which can be hours or days old for illiquid strikes. Deep in-the-money and far out-of-the-money
+        strikes still have wide quotes and can show extreme values (above 100%) that say more about the spread than
+        about the market's view. Practitioners read the smile around the money, where trading is liquid, and use
         `get_volatility_surface`, which filters outliers and fits a smooth curve, when they need values across all
         strikes.
 
-        The quotes and the days to expiration are live, while the stock price is the close of the last historical
-        date. When that date lies more than five days before today (for example with an end_date in the past), a
-        warning is logged, since the implied volatilities then pair today's option prices with an old stock price.
+        The quotes, the underlying price quoted with them and the time to expiration are live, while the risk free
+        rate and the dividend yield come from the last historical date, as does the stock price when a chain quotes
+        no price of the underlying. When that date lies more than five days before today (for example with an
+        end_date in the past), a warning is logged.
 
         Also known as: IV, option-implied volatility.
 
         Args:
-            expiration_date (str | None, optional): The expiration date to use for the calculation. Defaults to None
-            which means it will use the most recent expiration date.
+            expiration_date (str | None, optional): The expiration date to use for the calculation. Defaults to None,
+            which uses the first expiration date at least one calendar day away (an expiry of today has hardly any
+            time left to price).
             put_option (bool, optional): Whether to calculate the put option price. Defaults to False which means
             it will calculate the call option price.
             risk_free_rate (float, optional): The risk free rate to use for the calculation. Defaults to None, which
@@ -169,57 +180,117 @@ class VolatilityOptions:
 
         Which returns:
 
-        |   Strike Price |   2026-10-26 |
+        |   Strike Price |   2026-11-18 |
         |---------------:|-------------:|
-        |          337.5 |       0.1868 |
-        |          340   |       0.1847 |
-        |          342.5 |       0.1965 |
-        |          345   |       0.1994 |
-        |          347.5 |       0.1877 |
-        |          350   |       0.1839 |
-        |          352.5 |       0.179  |
-        |          355   |       0.1778 |
-        |          357.5 |       0.1914 |
-        |          360   |       0.1865 |
-        |          362.5 |       0.2381 |
-        |          365   |       0.2723 |
-        |          367.5 |       0.2829 |
-        |          370   |       0.3138 |
-        |          372.5 |       0.3441 |
-        |          375   |       0.4376 |
-        |          377.5 |       0.4035 |
-        |          380   |       0.4326 |
-        |          385   |       0.4896 |
-        |          410   |       0.7561 |
+        |          347.5 |       0.3258 |
+        |          352.5 |       0.2814 |
+        |          357.5 |       0.2722 |
+        |          362.5 |       0.2576 |
+        |          367.5 |       0.2675 |
+        |          372.5 |       0.2898 |
+        |          377.5 |       0.3803 |
         """
-        if expiration_date is None and not show_expiration_dates:
-            # An expiry of today or tomorrow has no time left to price, so the first
-            # expiry at least a day away is used.
+        expiration_dates = self.get_option_chains(show_expiration_dates=True)
+
+        if show_expiration_dates:
+            return expiration_dates
+
+        if expiration_date is None:
+            # An expiry of today has hardly any time left to price, so the first expiry at
+            # least a calendar day away is used.
+            now = self._current_time()
             expiration_date = next(
                 (
                     date
-                    for date in self.get_option_chains(show_expiration_dates=True)
-                    if get_days_to_expiration(date) >= 1
+                    for date in expiration_dates
+                    if get_days_to_expiration(date, now) >= 1
                 ),
                 None,
             )
+            if expiration_date is None:
+                raise ValueError("No expiration date lies a day or more away.")
+        elif expiration_date not in expiration_dates:
+            raise ValueError(
+                f"The expiration date {expiration_date} is not a valid date. Choose from "
+                f"{', '.join(expiration_dates)}"
+            )
 
-        option_chains = self.get_option_chains(
-            expiration_date=expiration_date,
-            show_expiration_dates=show_expiration_dates,
-            put_option=put_option,
+        implied_volatility_df, stock_price, risk_free_rate, dividend_yield_value, _ = (
+            self._solve_implied_volatility(
+                expiration_date, put_option, risk_free_rate, dividend_yield
+            )
         )
 
-        if show_expiration_dates:
-            # While the name implies option chains, it actually returns the expiration dates
-            return option_chains
+        implied_volatility_df = apply_rounding(
+            implied_volatility_df, rounding if rounding is not None else self._rounding
+        )
+
+        if standardize:
+            implied_volatility_df = calculate_standardization(
+                dataset=implied_volatility_df,
+                rounding=rounding if rounding is not None else self._rounding,
+            )
+
+        # The Expiration date is used as the name of the DataFrame
+        implied_volatility_df.name = expiration_date
+
+        if show_input_info:
+            helpers.show_input_info(
+                start_date=self._daily_historical.index[0],
+                end_date=self._daily_historical.index[-1],
+                stock_prices=stock_price,
+                volatility=self._volatility.loc[self._daily_historical.index[-1]],
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield_value,
+            )
+
+        return implied_volatility_df
+
+    def _solve_implied_volatility(
+        self,
+        expiration_date: str,
+        put_option: bool,
+        risk_free_rate: float | None,
+        dividend_yield: float | None,
+    ) -> tuple[pd.Series, pd.Series, float, dict[str, float], float]:
+        """
+        The implied volatility of every strike of one expiry, unrounded, from the mid prices
+        and the price of the underlying quoted with the chain (see _spot_price), with the
+        inputs it used, so that the volatility surface and the risk-neutral density work
+        with the same stock price and time to expiration.
+
+        Args:
+            expiration_date (str): The expiration date.
+            put_option (bool): Whether to use the puts instead of the calls.
+            risk_free_rate (float | None): The continuously compounded risk free rate, None
+                for the rate on the last historical date.
+            dividend_yield (float | None): The continuous dividend yield, None for the
+                yield of each ticker on the last historical date.
+
+        Returns:
+            tuple: The implied volatility indexed by ticker and strike price, the stock price
+            per ticker, the risk free rate, the dividend yield per ticker and the time to
+            expiration in years.
+
+        Raises:
+            ValueError: If the options have expired.
+        """
+        time_to_expiration = get_time_to_expiration(
+            expiration_date, self._current_time()
+        )
+        if time_to_expiration <= 0:
+            raise ValueError(f"The options expiring on {expiration_date} have expired.")
+
+        # The chains straight from the source, which keep the price of the underlying.
+        option_chains = options_model.get_option_chains(
+            tickers=self._tickers,
+            expiration_date=expiration_date,
+            put_option=put_option,
+        )
 
         self._warn_if_spot_is_stale()
 
         current_period = self._daily_historical.index[-1]
-        stock_price = self._prices.loc[current_period]
-        volatility = self._volatility.loc[current_period]
-
         risk_free_rate = (
             risk_free_rate
             if risk_free_rate is not None
@@ -227,29 +298,33 @@ class VolatilityOptions:
         )
 
         tickers = option_chains.index.get_level_values(0).unique()
+        stock_price: dict[str, float] = {}
         dividend_yield_value: dict[str, float] = {}
         implied_volatility: dict[str, dict[float, float]] = {}
 
         for ticker in tickers:
             implied_volatility[ticker] = {}
             option_chain = option_chains.loc[ticker]
+            stock_price[ticker] = self._spot_price(ticker, option_chain)
             dividend_yield_value[ticker] = (
                 dividend_yield
                 if dividend_yield is not None
                 else self._dividend_yield_on(ticker, current_period)
             )
 
-            for strike_price, row in option_chain.iterrows():
-                # Days to expiration feed the time to expiration in the Black-Scholes model.
-                days_to_expiration = get_days_to_expiration(option_chains.name)
+            # The mid price and the quoted price of the underlying are of the same moment,
+            # while a last traded price can be hours or days older than either; it is only
+            # used for an option with open interest or volume (see get_mid_prices).
+            option_prices = market_metrics_model.get_mid_prices(option_chain)
 
+            for strike_price, option_price in option_prices.items():
                 # Numerically finds the volatility matching the market option price.
                 implied_volatility_value = black_scholes_model.get_implied_volatility(
-                    market_price=row["Last Price"],
-                    stock_price=stock_price.loc[ticker],
+                    market_price=option_price,
+                    stock_price=stock_price[ticker],
                     strike_price=strike_price,
                     risk_free_rate=risk_free_rate,
-                    time_to_expiration=days_to_expiration / 365,
+                    time_to_expiration=time_to_expiration,
                     dividend_yield=dividend_yield_value[ticker],
                     put_option=put_option,
                 )
@@ -264,31 +339,15 @@ class VolatilityOptions:
         )
         # Named like the option chains, so the strike price is not mistaken for a metric.
         implied_volatility_df.index.names = ["Ticker", "Strike Price"]
+        implied_volatility_df.name = expiration_date
 
-        implied_volatility_df = apply_rounding(
-            implied_volatility_df, rounding if rounding is not None else self._rounding
+        return (
+            implied_volatility_df,
+            pd.Series(stock_price),
+            risk_free_rate,
+            dividend_yield_value,
+            time_to_expiration,
         )
-
-        if standardize:
-            implied_volatility_df = calculate_standardization(
-                dataset=implied_volatility_df,
-                rounding=rounding if rounding is not None else self._rounding,
-            )
-
-        # The Expiration date is used as the name of the DataFrame
-        implied_volatility_df.name = option_chains.name
-
-        if show_input_info:
-            helpers.show_input_info(
-                start_date=self._daily_historical.index[0],
-                end_date=self._daily_historical.index[-1],
-                stock_prices=stock_price,
-                volatility=volatility,
-                risk_free_rate=risk_free_rate,
-                dividend_yield=dividend_yield_value,
-            )
-
-        return implied_volatility_df
 
     @handle_errors
     def get_volatility_surface(
@@ -321,9 +380,10 @@ class VolatilityOptions:
         SVI fit for that whole expiry. Each fit keeps the total variance non-negative
         through Gatheral's condition a + b * sigma * sqrt(1 - rho^2) >= 0.
 
-        The option chains and the days to expiration are live, while the stock price
-        is the close of the last historical date; a warning is logged when that date
-        lies more than five days before today.
+        The option chains, the price of the underlying quoted with them and the time to
+        expiration (to 16:00 New York time on the expiration date) are live, while the
+        risk free rate and the dividend yield come from the last historical date; a
+        warning is logged when that date lies more than five days before today.
 
         See: Gatheral, J. (2004), "A parsimonious arbitrage-free implied volatility
         parameterization with application to the valuation of volatility
@@ -387,78 +447,16 @@ class VolatilityOptions:
 
         Which returns:
 
-        |   Strike Price |   2026-10-30 |   2026-11-06 |   2026-11-13 |   2026-11-20 |
+        |   Strike Price |   2026-11-20 |   2026-11-27 |   2026-12-04 |   2026-12-11 |
         |---------------:|-------------:|-------------:|-------------:|-------------:|
-        |          155   |     nan      |     nan      |     nan      |       1.3993 |
-        |          160   |     nan      |     nan      |     nan      |       1.3572 |
-        |          165   |     nan      |     nan      |     nan      |       1.3159 |
-        |          170   |     nan      |     nan      |     nan      |       1.2756 |
-        |          180   |     nan      |     nan      |     nan      |       1.1971 |
-        |          185   |     nan      |     nan      |     nan      |       1.159  |
-        |          190   |     nan      |     nan      |     nan      |       1.1216 |
-        |          195   |     nan      |     nan      |     nan      |       1.0848 |
-        |          200   |     nan      |     nan      |     nan      |       1.0487 |
-        |          205   |     nan      |     nan      |     nan      |       1.0132 |
-        |          210   |     nan      |     nan      |     nan      |       0.9782 |
-        |          215   |     nan      |     nan      |     nan      |       0.9438 |
-        |          220   |     nan      |     nan      |     nan      |       0.91   |
-        |          230   |     nan      |     nan      |     nan      |       0.8439 |
-        |          235   |     nan      |     nan      |     nan      |       0.8117 |
-        |          240   |     nan      |     nan      |     nan      |       0.7799 |
-        |          245   |     nan      |     nan      |     nan      |       0.7487 |
-        |          250   |     nan      |     nan      |     nan      |       0.7179 |
-        |          255   |     nan      |     nan      |     nan      |       0.6876 |
-        |          260   |     nan      |     nan      |     nan      |       0.6578 |
-        |          265   |     nan      |     nan      |     nan      |       0.6286 |
-        |          270   |     nan      |     nan      |     nan      |       0.5998 |
-        |          280   |     nan      |       0.7398 |     nan      |       0.5438 |
-        |          285   |     nan      |     nan      |     nan      |       0.5166 |
-        |          290   |     nan      |     nan      |     nan      |       0.49   |
-        |          295   |     nan      |     nan      |     nan      |       0.464  |
-        |          300   |       0.4147 |     nan      |       0.33   |       0.4387 |
-        |          305   |       0.3937 |       0.5749 |     nan      |       0.4142 |
-        |          310   |       0.3722 |       0.5386 |     nan      |       0.3904 |
-        |          312.5 |       0.3613 |     nan      |     nan      |     nan      |
-        |          315   |       0.3502 |       0.5006 |     nan      |       0.3675 |
-        |          320   |       0.3276 |       0.4609 |       0.2749 |       0.3456 |
-        |          322.5 |       0.3161 |     nan      |     nan      |     nan      |
-        |          325   |       0.3045 |       0.4193 |       0.262  |       0.3249 |
-        |          327.5 |       0.2929 |     nan      |     nan      |     nan      |
-        |          330   |       0.2812 |       0.3755 |       0.25   |       0.3054 |
-        |          332.5 |       0.2698 |     nan      |     nan      |     nan      |
-        |          335   |       0.2586 |       0.3298 |       0.2392 |       0.2875 |
-        |          337.5 |       0.2479 |     nan      |     nan      |     nan      |
-        |          340   |       0.2382 |       0.2836 |       0.2303 |       0.2712 |
-        |          342.5 |       0.2299 |     nan      |     nan      |     nan      |
-        |          345   |       0.224  |       0.2408 |       0.2239 |       0.257  |
-        |          347.5 |       0.2215 |     nan      |     nan      |     nan      |
-        |          350   |       0.2238 |       0.2104 |       0.2211 |       0.245  |
-        |          352.5 |       0.2321 |     nan      |     nan      |     nan      |
-        |          355   |       0.2469 |       0.2032 |       0.2229 |       0.2355 |
-        |          357.5 |       0.2679 |     nan      |     nan      |     nan      |
-        |          360   |       0.2936 |       0.22   |       0.2303 |       0.2288 |
-        |          365   |       0.3515 |       0.2504 |       0.2439 |       0.2251 |
-        |          370   |       0.4099 |       0.2853 |       0.264  |       0.2244 |
-        |          375   |       0.4647 |       0.3202 |       0.2899 |       0.2267 |
-        |          380   |       0.5153 |       0.3537 |       0.3206 |       0.2318 |
-        |          385   |       0.5619 |       0.3852 |       0.3546 |       0.2396 |
-        |          390   |       0.6051 |       0.4149 |     nan      |       0.2497 |
-        |          395   |       0.6452 |     nan      |     nan      |       0.2618 |
-        |          400   |       0.6829 |     nan      |     nan      |       0.2756 |
-        |          405   |       0.7183 |     nan      |     nan      |       0.2908 |
-        |          410   |       0.7517 |       0.5176 |     nan      |       0.3072 |
-        |          415   |       0.7835 |     nan      |     nan      |       0.3246 |
-        |          420   |     nan      |     nan      |     nan      |       0.3428 |
-        |          425   |       0.8425 |     nan      |     nan      |       0.3616 |
-        |          430   |     nan      |     nan      |     nan      |       0.3809 |
-        |          435   |     nan      |     nan      |     nan      |       0.4007 |
-        |          440   |     nan      |     nan      |     nan      |       0.4208 |
-        |          445   |     nan      |     nan      |     nan      |       0.4412 |
-        |          450   |     nan      |     nan      |     nan      |       0.4618 |
-        |          455   |     nan      |     nan      |     nan      |       0.4826 |
-        |          460   |     nan      |     nan      |     nan      |       0.5035 |
-        |          465   |     nan      |     nan      |     nan      |       0.5246 |
-        |          470   |     nan      |     nan      |     nan      |       0.5457 |
+        |          322.5 |       0.377  |     nan      |          nan |          nan |
+        |          327.5 |       0.3611 |     nan      |          nan |          nan |
+        |          332.5 |       0.3459 |       0.2733 |          nan |          nan |
+        |          337.5 |       0.3317 |       0.263  |          nan |          nan |
+        |          342.5 |       0.3192 |       0.2532 |          nan |          nan |
+        |          347.5 |       0.3093 |       0.2444 |          nan |          nan |
+        |          352.5 |       0.3033 |       0.2374 |          nan |          nan |
+        |          357.5 |       0.303  |       0.2331 |          nan |          nan |
         """
         all_expiration_dates = self.get_option_chains(show_expiration_dates=True)
 
@@ -476,32 +474,29 @@ class VolatilityOptions:
                     f"Choose from {', '.join(all_expiration_dates)}"
                 )
 
-        self._warn_if_spot_is_stale()
-
-        current_period = self._daily_historical.index[-1]
-        stock_price = self._prices.loc[current_period]
-        risk_free_rate = (
-            risk_free_rate
-            if risk_free_rate is not None
-            else self._risk_free_rate.loc[current_period]
-        )
         surface: dict[str, dict[float, dict[str, float]]] = {}
         svi_parameters_per_ticker: dict[str, dict[float, dict[str, float]]] = {
             ticker: {} for ticker in self._tickers
         }
 
         for expiration_date in expiration_dates:
-            time_to_expiration = get_days_to_expiration(expiration_date) / 365
-
-            if time_to_expiration <= 0:
+            # The smile of every expiry is fitted with the stock price, rates and time to
+            # expiration its implied volatilities were solved with. An expiry that has
+            # expired or has no chain is left out.
+            try:
+                (
+                    implied_volatility,
+                    stock_price,
+                    risk_free_rate_value,
+                    dividend_yield_value_per_ticker,
+                    time_to_expiration,
+                ) = self._solve_implied_volatility(
+                    expiration_date, put_option, risk_free_rate, dividend_yield
+                )
+            except (KeyError, IndexError, ValueError) as error:
+                # An expiry without usable quotes is left out of the surface.
+                logger.debug("The %s expiry is left out: %s", expiration_date, error)
                 continue
-
-            implied_volatility = self.get_implied_volatility(
-                expiration_date=expiration_date,
-                put_option=put_option,
-                risk_free_rate=risk_free_rate,
-                dividend_yield=dividend_yield,
-            )
 
             if implied_volatility.empty:
                 continue
@@ -518,14 +513,9 @@ class VolatilityOptions:
                 if len(ticker_iv) < MINIMUM_OBSERVATIONS_FOR_SVI_FIT:
                     continue
 
-                dividend_yield_value = (
-                    dividend_yield
-                    if dividend_yield is not None
-                    else self._dividend_yield_on(ticker, current_period)
-                )
-
                 forward_price = stock_price.loc[ticker] * np.exp(
-                    (risk_free_rate - dividend_yield_value) * time_to_expiration
+                    (risk_free_rate_value - dividend_yield_value_per_ticker[ticker])
+                    * time_to_expiration
                 )
 
                 log_moneyness = np.log(
@@ -628,9 +618,10 @@ class VolatilityOptions:
         of traded strikes. The first and last grid points have no neighbor on one side
         and are left out.
 
-        The option chains and the days to expiration are live, while the stock price is
-        the close of the last historical date; a warning is logged when that date lies
-        more than five days before today.
+        The option chains, the price of the underlying quoted with them and the time to
+        expiration (to 16:00 New York time on the expiration date) are live, while the
+        risk free rate and the dividend yield come from the last historical date; a
+        warning is logged when that date lies more than five days before today.
 
         See the paper: Breeden, D.T., & Litzenberger, R.H. (1978), "Prices of
         State-Contingent Claims Implicit in Option Prices", Journal of Business,
@@ -699,85 +690,85 @@ class VolatilityOptions:
 
         |   Strike Price |    SPY |
         |---------------:|-------:|
-        |        686.021 | 0      |
-        |        687.921 | 0      |
-        |        689.821 | 0      |
-        |        691.722 | 0      |
-        |        693.622 | 0.0001 |
-        |        695.522 | 0.0001 |
-        |        697.423 | 0.0001 |
-        |        699.323 | 0.0001 |
-        |        701.223 | 0.0001 |
-        |        703.124 | 0.0001 |
-        |        705.024 | 0.0001 |
-        |        706.924 | 0.0001 |
-        |        708.825 | 0.0001 |
-        |        710.725 | 0.0001 |
-        |        712.625 | 0.0002 |
-        |        714.526 | 0.0002 |
-        |        716.426 | 0.0002 |
-        |        718.326 | 0.0002 |
-        |        720.227 | 0.0003 |
-        |        722.127 | 0.0003 |
-        |        724.028 | 0.0004 |
-        |        725.928 | 0.0005 |
-        |        727.828 | 0.0006 |
-        |        729.729 | 0.0007 |
-        |        731.629 | 0.0009 |
-        |        733.529 | 0.0011 |
-        |        735.43  | 0.0015 |
-        |        737.33  | 0.0019 |
-        |        739.23  | 0.0024 |
-        |        741.131 | 0.0032 |
-        |        743.031 | 0.0043 |
-        |        744.931 | 0.0058 |
-        |        746.832 | 0.008  |
-        |        748.732 | 0.011  |
-        |        750.632 | 0.0151 |
-        |        752.533 | 0.0209 |
-        |        754.433 | 0.0284 |
-        |        756.333 | 0.0377 |
-        |        758.234 | 0.048  |
-        |        760.134 | 0.0573 |
-        |        762.034 | 0.0626 |
-        |        763.935 | 0.0612 |
-        |        765.835 | 0.0525 |
-        |        767.735 | 0.0392 |
-        |        769.636 | 0.0256 |
-        |        771.536 | 0.015  |
-        |        773.436 | 0.0081 |
-        |        775.337 | 0.0042 |
-        |        777.237 | 0.0022 |
-        |        779.137 | 0.0011 |
-        |        781.038 | 0.0006 |
-        |        782.938 | 0.0003 |
-        |        784.838 | 0.0002 |
-        |        786.739 | 0.0001 |
-        |        788.639 | 0.0001 |
-        |        790.539 | 0.0001 |
-        |        792.44  | 0      |
-        |        794.34  | 0      |
-        |        796.24  | 0      |
-        |        798.141 | 0      |
-        |        800.041 | 0      |
-        |        801.941 | 0      |
-        |        803.842 | 0      |
-        |        805.742 | 0      |
-        |        807.642 | 0      |
-        |        809.543 | 0      |
-        |        811.443 | 0      |
-        |        813.343 | 0      |
-        |        815.244 | 0      |
-        |        817.144 | 0      |
-        |        819.044 | 0      |
-        |        820.945 | 0      |
-        |        822.845 | 0      |
-        |        824.745 | 0      |
-        |        826.646 | 0      |
-        |        828.546 | 0      |
-        |        830.446 | 0      |
-        |        832.347 | 0      |
-        |        834.247 | 0      |
+        |        667.867 | 0      |
+        |        669.717 | 0      |
+        |        671.567 | 0      |
+        |        673.417 | 0      |
+        |        675.267 | 0      |
+        |        677.117 | 0.0001 |
+        |        678.968 | 0.0001 |
+        |        680.818 | 0.0001 |
+        |        682.668 | 0.0001 |
+        |        684.518 | 0.0001 |
+        |        686.368 | 0.0001 |
+        |        688.218 | 0.0001 |
+        |        690.068 | 0.0001 |
+        |        691.918 | 0.0002 |
+        |        693.768 | 0.0002 |
+        |        695.618 | 0.0002 |
+        |        697.468 | 0.0003 |
+        |        699.318 | 0.0003 |
+        |        701.168 | 0.0004 |
+        |        703.018 | 0.0004 |
+        |        704.868 | 0.0005 |
+        |        706.718 | 0.0006 |
+        |        708.568 | 0.0008 |
+        |        710.418 | 0.001  |
+        |        712.268 | 0.0012 |
+        |        714.118 | 0.0015 |
+        |        715.968 | 0.002  |
+        |        717.819 | 0.0025 |
+        |        719.669 | 0.0033 |
+        |        721.519 | 0.0043 |
+        |        723.369 | 0.0056 |
+        |        725.219 | 0.0075 |
+        |        727.069 | 0.01   |
+        |        728.919 | 0.0133 |
+        |        730.769 | 0.0177 |
+        |        732.619 | 0.0233 |
+        |        734.469 | 0.0302 |
+        |        736.319 | 0.0378 |
+        |        738.169 | 0.0455 |
+        |        740.019 | 0.0518 |
+        |        741.869 | 0.0549 |
+        |        743.719 | 0.0537 |
+        |        745.569 | 0.0479 |
+        |        747.419 | 0.0389 |
+        |        749.269 | 0.0289 |
+        |        751.119 | 0.0198 |
+        |        752.969 | 0.0127 |
+        |        754.82  | 0.0078 |
+        |        756.67  | 0.0046 |
+        |        758.52  | 0.0028 |
+        |        760.37  | 0.0016 |
+        |        762.22  | 0.001  |
+        |        764.07  | 0.0006 |
+        |        765.92  | 0.0004 |
+        |        767.77  | 0.0003 |
+        |        769.62  | 0.0002 |
+        |        771.47  | 0.0001 |
+        |        773.32  | 0.0001 |
+        |        775.17  | 0.0001 |
+        |        777.02  | 0      |
+        |        778.87  | 0      |
+        |        780.72  | 0      |
+        |        782.57  | 0      |
+        |        784.42  | 0      |
+        |        786.27  | 0      |
+        |        788.12  | 0      |
+        |        789.97  | 0      |
+        |        791.82  | 0      |
+        |        793.671 | 0      |
+        |        795.521 | 0      |
+        |        797.371 | 0      |
+        |        799.221 | 0      |
+        |        801.071 | 0      |
+        |        802.921 | 0      |
+        |        804.771 | 0      |
+        |        806.621 | 0      |
+        |        808.471 | 0      |
+        |        810.321 | 0      |
+        |        812.171 | 0      |
         """
         if expiration_date is not None:
             candidate_dates = [expiration_date]
@@ -786,12 +777,20 @@ class VolatilityOptions:
             candidate_dates = self.get_option_chains(show_expiration_dates=True)
 
         for candidate_date in candidate_dates:
-            implied_volatility = self.get_implied_volatility(
-                expiration_date=candidate_date,
-                put_option=put_option,
-                risk_free_rate=risk_free_rate,
-                dividend_yield=dividend_yield,
-            )
+            try:
+                (
+                    implied_volatility,
+                    stock_price,
+                    risk_free_rate_value,
+                    dividend_yield_value_per_ticker,
+                    time_to_expiration,
+                ) = self._solve_implied_volatility(
+                    candidate_date, put_option, risk_free_rate, dividend_yield
+                )
+            except (KeyError, IndexError, ValueError):
+                if expiration_date is not None:
+                    raise
+                continue
 
             if not implied_volatility.empty:
                 expiration_date = candidate_date
@@ -801,17 +800,6 @@ class VolatilityOptions:
                 f"No implied volatility could be determined for expiration date(s) "
                 f"{', '.join(candidate_dates)}."
             )
-
-        self._warn_if_spot_is_stale()
-
-        current_period = self._daily_historical.index[-1]
-        stock_price = self._prices.loc[current_period]
-        risk_free_rate = (
-            risk_free_rate
-            if risk_free_rate is not None
-            else self._risk_free_rate.loc[current_period]
-        )
-        time_to_expiration = get_days_to_expiration(expiration_date) / 365
 
         density: dict[str, pd.Series] = {}
 
@@ -832,14 +820,10 @@ class VolatilityOptions:
                 )
                 continue
 
-            dividend_yield_value = (
-                dividend_yield
-                if dividend_yield is not None
-                else self._dividend_yield_on(ticker, current_period)
-            )
+            dividend_yield_value = dividend_yield_value_per_ticker[ticker]
 
             forward_price = stock_price.loc[ticker] * np.exp(
-                (risk_free_rate - dividend_yield_value) * time_to_expiration
+                (risk_free_rate_value - dividend_yield_value) * time_to_expiration
             )
 
             log_moneyness = np.log(
@@ -853,7 +837,7 @@ class VolatilityOptions:
                 stock_price=stock_price.loc[ticker],
                 forward_price=forward_price,
                 time_to_expiration=time_to_expiration,
-                risk_free_rate=risk_free_rate,
+                risk_free_rate=risk_free_rate_value,
                 dividend_yield=dividend_yield_value,
                 svi_parameters=svi_parameters,
                 strike_price_range=strike_price_range,

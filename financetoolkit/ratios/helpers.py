@@ -18,9 +18,10 @@ def map_period_data_to_daily_data(
     the period end, not from the (later) date they were filed, so a day shortly after a
     period end already uses figures the market only learns of weeks later; a Toolkit with
     point_in_time passes the filing days as period_end_dates, so each day only uses filed
-    figures. When a period ends on a trading day, the daily ratio on that day equals the
-    period ratio, which is based on the same period-end close. Days before the end of the
-    first period have no value (NaN): the figures are not filled backwards.
+    figures. The period ratios price each period at the close on the same date (or the last
+    trading day before it), so on a trading day that a period's figures start to apply, the
+    daily ratio equals the period ratio. Days before the end of the first period have no
+    value (NaN): the figures are not filled backwards.
 
     The statement columns are calendar periods, which for a fiscal year ending in January
     through May is the calendar year before the one it ends in (and for an off-cycle quarter

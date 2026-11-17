@@ -227,6 +227,11 @@ class ShortRatesFixedIncome(CurvesFixedIncome):
         with f the instantaneous forward rate. The paths are simulated with an Euler scheme
         starting at today's rate (CIR's are kept at or above zero).
 
+        The simulated short rates are continuously compounded, the rate these models describe:
+        the quoted yield of the short_rate maturity is converted from its quote convention
+        (for US bills the bond-equivalent yield) and the zero-coupon curve of the Hull-White
+        mean from annual compounding.
+
         For more information, see the following paper:
 
         - Hull, J. and White, A. (1990). "Pricing Interest-Rate-Derivative Securities." The

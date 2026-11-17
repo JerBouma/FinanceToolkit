@@ -84,7 +84,7 @@ AAPL,Degree of Total Leverage,,1.9518,0.6943,1.0047
 AAPL,Earnings per Share,3.2753,5.614,6.1132,6.1341
 AAPL,Revenue per Share,15.6613,21.691,24.1536,24.2393
 AAPL,Price-to-Earnings,40.5117,31.6297,21.254,
-AAPL,Price-to-Earnings-Growth,,0.443,2.3908,
+AAPL,Price-to-Earnings-Growth,,0.443,2.3903,
 AAPL,Book Value per Share,3.7276,3.7409,3.1038,3.9302
 AAPL,Price-to-Book,35.5962,47.4672,41.8617,
 AAPL,Interest Debt per Share,7.14,8.2519,8.2943,7.274
@@ -199,7 +199,7 @@ MSFT,Degree of Total Leverage,,2.1885,1.0423,-0.0753
 MSFT,Earnings per Share,5.7635,8.0535,9.6469,9.6843
 MSFT,Revenue per Share,18.6145,22.0936,26.2958,28.3612
 MSFT,Price-to-Earnings,38.5911,41.7607,24.8597,
-MSFT,Price-to-Earnings-Growth,,1.0511,1.2562,
+MSFT,Price-to-Earnings-Growth,,1.051,1.2564,
 MSFT,Book Value per Share,15.3982,18.663,22.0878,27.5994
 MSFT,Price-to-Book,14.4446,18.0207,10.8576,
 MSFT,Interest Debt per Share,9.5782,9.2167,8.3996,8.2887

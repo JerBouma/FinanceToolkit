@@ -133,3 +133,51 @@ def test_a_term_without_bids_has_no_variance():
     assert np.isnan(
         market_metrics_model.get_constant_maturity_volatility(-1e-5, 20, 0.04, 40, 30)
     )
+
+
+def test_the_time_to_expiration_runs_to_four_in_the_afternoon_in_new_york():
+    from financetoolkit.options import helpers
+
+    # 30 hours before the close of the next day.
+    now = pd.Timestamp("2026-11-17 10:00")
+    assert helpers.get_time_to_expiration("2026-11-18", now) == pytest.approx(
+        30 * 60 / 525_600
+    )
+    assert helpers.get_days_to_expiration("2026-11-18", now) == 1
+    # A time in another time zone is converted: 15:00 UTC is 10:00 in New York.
+    utc = pd.Timestamp("2026-11-17 15:00", tz="UTC")
+    assert helpers.get_time_to_expiration("2026-11-18", utc) == pytest.approx(
+        30 * 60 / 525_600
+    )
+    # After the close the option has expired.
+    assert helpers.get_time_to_expiration("2026-11-17", now + pd.Timedelta(hours=7)) < 0
+    assert helpers.get_days_to_expiration("2026-11-17", now) == 0
+
+
+def test_a_time_that_daylight_saving_skips_or_repeats_is_accepted():
+    from financetoolkit.options import helpers
+
+    skipped = pd.Timestamp("2026-03-08 02:30")
+    repeated = pd.Timestamp("2026-11-01 01:30")
+
+    assert helpers.get_time_to_expiration("2026-03-09", skipped) > 0
+    assert helpers.get_time_to_expiration("2026-11-02", repeated) > 0
+
+
+def test_a_strike_without_a_quote_or_activity_has_no_price():
+    # 160 still has open interest and 165 traded today; 170 has neither, so its last
+    # price is stale and is not used (an implied volatility of 150% from it).
+    quotes = pd.DataFrame(
+        {
+            "Bid": [2.4, 0.0, 0.0, 0.0],
+            "Ask": [2.6, 0.0, 0.0, 0.0],
+            "Last Price": [2.45, 3.1, 3.1, 3.1],
+            "Volume": [1500.0, 0.0, 4.0, 0.0],
+            "Open Interest": [8000.0, 12.0, 0.0, 0.0],
+        },
+        index=[100.0, 160.0, 165.0, 170.0],
+    )
+    prices = market_metrics_model.get_mid_prices(quotes)
+
+    assert prices.iloc[:3].tolist() == pytest.approx([2.5, 3.1, 3.1])
+    assert np.isnan(prices.iloc[3])

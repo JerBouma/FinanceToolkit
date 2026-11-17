@@ -62,14 +62,24 @@ def get_cost_of_debt(
 
         Cost of Debt (Rd) = Annual Interest Expense / Total Debt
 
+    An interest expense of 0 next to outstanding debt is not a cost of debt of 0%: the
+    financial statements of some companies, such as those with the interest included in
+    another line item, report no interest expense although the debt carries interest. The cost
+    of debt of such a period is unknown, so it is returned as NaN.
+
     Args:
         interest_expense (float or pd.Series): Interest expense of the company.
         total_debt (float or pd.Series): Total debt of the company.
 
     Returns:
-        pd.DataFrame: A DataFrame containing Cost of Debt
+        pd.DataFrame: A DataFrame containing Cost of Debt, NaN where there is debt but no
+            interest expense.
     """
-    return interest_expense / total_debt
+    # A reported interest expense of 0 against outstanding debt means the interest is not reported (or reported elsewhere), not that the debt is free. Without debt the ratio is 0 / 0 either way, which the WACC treats as debt-free.  # noqa: E501
+    if isinstance(interest_expense, pd.Series | pd.DataFrame):
+        return interest_expense.where(interest_expense != 0) / total_debt
+
+    return np.nan if interest_expense == 0 else interest_expense / total_debt
 
 
 def get_corporate_tax_rate(
@@ -172,6 +182,9 @@ def get_weighted_average_cost_of_capital(
     - The cost of debt is calculated as the interest expense divided by the total debt at the end of
     the period. Debt that is raised or repaid during the period makes this differ from the rate on the
     average debt outstanding.
+    - A period with debt but an interest expense of 0 has an unknown cost of debt (see
+    get_cost_of_debt), so its Cost of Debt and Weighted Average Cost of Capital are NaN rather
+    than a WACC that treats the debt as free. Without any debt the WACC is the cost of equity.
     - The corporate tax rate is calculated as the income tax expense divided by the income before taxes,
     kept within 0 and 1, and 0 when there is no pre-tax profit (no taxable income for the interest to
     shield).

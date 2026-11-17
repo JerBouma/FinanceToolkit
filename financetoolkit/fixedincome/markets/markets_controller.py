@@ -230,8 +230,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
         Coupons are semi-annual, the US convention for corporate bonds, and the yield is a
         nominal annual rate compounded twice a year (bond-equivalent), like the Treasury par
         yields it is compared with. The coupon periods fall on the bond's actual coupon dates,
-        counted back from maturity, and the time in the current period is counted in actual
-        days. The Treasury par yield at a maturity is interpolated linearly between the
+        counted back from maturity (on the last day of the month for a bond maturing on a
+        month's last day), and the time in the current period is counted on the 30/360 Bond
+        Basis, the day count of US corporate bonds: 30 days to a month and 180 days to a
+        coupon period. The Treasury par yield at a maturity is interpolated linearly between the
         maturities of the US Treasury par yield curve on the price date (held at the 1-month
         and 30-year yield beyond them).
 
@@ -272,6 +274,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
           holdings, so there is no history. For the Treasuries the funds hold, the yields are
           within about a basis point of the FedInvest prices of the same day (see
           `get_treasury_securities`).
+        - Each bond is valued as of its Price Date: the accrued interest and the years to
+          maturity count from that day, not from a later settlement date.
         - The yield is to maturity. A callable bond that trades above its call price
           yields less to its call date (the yield to worst), which is common among high
           yield bonds; call schedules are not in the holdings.
@@ -302,11 +306,11 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         | ISIN         |   Coupon | Maturity   |   Price |   Yield to Maturity |   Modified Duration |   G-Spread |
         |:-------------|---------:|:-----------|--------:|--------------------:|--------------------:|-----------:|
-        | US037833EC07 |   0.012  | 2028-02-08 |   95.96 |              0.0454 |              1.2213 |     0.0021 |
-        | US037833ET32 |   0.04   | 2028-05-10 |   99.12 |              0.0461 |              1.4224 |     0.0024 |
-        | US037833EY27 |   0.04   | 2028-05-12 |   99.09 |              0.0463 |              1.4275 |     0.0025 |
-        | US037833EH93 |   0.014  | 2028-08-05 |   94.67 |              0.046  |              1.6896 |     0.0019 |
-        | US037833FD70 |   0.0465 | 2028-11-09 |   99.95 |              0.0468 |              1.8564 |     0.0022 |
+        | US037833EC07 |   0.012  | 2028-02-08 |   95.54 |              0.0496 |              1.1972 |     0.0026 |
+        | US037833ET32 |   0.04   | 2028-05-10 |   98.61 |              0.0498 |              1.4267 |     0.0022 |
+        | US037833EY27 |   0.04   | 2028-05-12 |   98.65 |              0.0495 |              1.4324 |     0.0018 |
+        | US037833EH93 |   0.014  | 2028-08-05 |   94.13 |              0.0499 |              1.6647 |     0.0017 |
+        | US037833FD70 |   0.0465 | 2028-11-09 |   99.32 |              0.0501 |              1.8745 |     0.0014 |
         """
         helpers.require_api_key(self._api_key, "the bond universe")
 
@@ -425,8 +429,11 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 "No bond in the holdings matches the bonds, issuer and maturity given."
             )
 
+        # US corporate bonds count their days on the 30/360 Bond Basis.
         bonds["Years"] = [
-            bond_data_model.get_years_to_maturity(settlement, maturity)
+            bond_data_model.get_years_to_maturity(
+                settlement, maturity, day_count="30/360"
+            )
             for settlement, maturity in zip(
                 bonds["Price Date"], bonds["Maturity"], strict=True
             )
@@ -548,9 +555,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
 
         | Issuer            |     2Y |     5Y |    10Y |   Bonds |   Shortest |   Longest |
         |:------------------|-------:|-------:|-------:|--------:|-----------:|----------:|
-        | APPLE INC         | 0.0017 | 0.0029 | 0.0052 |      43 |     1.2473 |   35.7473 |
-        | BOEING CO         | 0.0062 | 0.0083 | 0.0093 |      20 |     1.2283 |   37.4779 |
-        | INTEL CORPORATION | 0.0081 | 0.0112 | 0.0149 |      35 |     1.2527 |   36.2527 |
+        | APPLE INC         | 0.0014 | 0.0026 | 0.0045 |      43 |     1.2361 |   35.7361 |
+        | BOEING CO         | 0.0064 | 0.0081 | 0.0094 |      20 |     1.2167 |   37.4667 |
+        | INTEL CORPORATION | 0.0078 | 0.0107 | 0.0146 |      35 |     1.2417 |   36.2417 |
         """
         maturities = [
             float(value) for value in helpers.split_values(maturity_years)
@@ -563,7 +570,9 @@ class MarketsFixedIncome(CurvesFixedIncome):
         bonds = bonds.assign(
             Years=[
                 bond_data_model.get_years_to_maturity(
-                    pd.Timestamp(settlement).date(), pd.Timestamp(maturity).date()
+                    pd.Timestamp(settlement).date(),
+                    pd.Timestamp(maturity).date(),
+                    day_count="30/360",
                 )
                 for settlement, maturity in zip(
                     bonds["Price Date"], bonds["Maturity"], strict=True
@@ -606,7 +615,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
         - Modified Duration = Macaulay Duration / (1 + y / 2) (see `get_duration`)
 
         Coupons are semi-annual and fall on the actual coupon dates, counted back from
-        maturity; the time in the current period is counted in actual days (actual/actual,
+        maturity (on the last day of the month for a note maturing on a month's last day,
+        such as 30 April); the time in the current period is counted in actual days (actual/actual,
         the Treasury convention). Yields are nominal annual rates compounded twice a year
         (bond-equivalent), as the Treasury quotes them. For TIPS the price is per 100 of
         inflation-adjusted principal, so the yield is the real yield. Floating rate notes

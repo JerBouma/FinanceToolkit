@@ -181,7 +181,7 @@ class SignificanceEconometrics:
         ```python
         from financetoolkit import Economics, Econometrics
 
-        economics = Economics(start_date='2000-01-01', end_date='2026-10-31')
+        economics = Economics(start_date='2000-01-01', end_date='2026-10-31', rounding=None)
 
         long_term_rates = economics.get_long_term_interest_rate(
             countries=['United States', 'Germany', 'Japan'], period='monthly'
@@ -201,20 +201,20 @@ class SignificanceEconometrics:
         | Observations         | 322             | 322        | 322        |
         | Latest Date          | 2026-10-31      | 2026-10-31 | 2026-10-31 |
         | Latest Value         | 0.0513          | 0.0342     | 0.0276     |
-        | Change Since Start   | -0.2297         | -0.3827    | 0.6331     |
-        | Multiple Since Start | 0.7703          | 0.6173     | 1.6331     |
-        | Annualised Change    | -0.0097         | -0.0179    | 0.0185     |
+        | Change Since Start   | -0.2297         | -0.3834    | 0.6292     |
+        | Multiple Since Start | 0.7703          | 0.6166     | 1.6292     |
+        | Annualised Change    | -0.0097         | -0.0179    | 0.0184     |
         | Percentile           | 0.9377          | 0.6854     | 0.9907     |
         | Rank                 | 21              | 102        | 4          |
         | Highest Since        | 2002-05-31      | 2026-09-30 | 2026-09-30 |
         | Lowest Since         | 2026-09-30      | 2026-08-31 | 2026-06-30 |
         | Highest              | 0.0666          | 0.0554     | 0.0305     |
         | Highest Date         | 2000-01-31      | 2000-01-31 | 2026-09-30 |
-        | Change From Highest  | -0.2297         | -0.3827    | -0.0951    |
+        | Change From Highest  | -0.2297         | -0.3834    | -0.0967    |
         | Lowest               | 0.0062          | -0.0065    | -0.0028    |
         | Lowest Date          | 2020-07-31      | 2019-08-31 | 2019-08-31 |
-        | Change From Lowest   | 7.2742          | 6.2615     | 10.8571    |
-        | Largest Drawdown     | -0.9069         | -1.1173    | -1.1429    |
+        | Change From Lowest   | 7.2742          | 6.2626     | 10.8393    |
+        | Largest Drawdown     | -0.9069         | -1.1172    | -1.1431    |
         | Drawdown Peak Date   | 2000-01-31      | 2000-01-31 | 2006-04-30 |
         | Drawdown Trough Date | 2020-07-31      | 2019-08-31 | 2019-08-31 |
         | Recovery Date        | nan             | nan        | 2025-12-31 |
@@ -326,7 +326,7 @@ class SignificanceEconometrics:
         ```python
         from financetoolkit import Econometrics, FixedIncome
 
-        fixedincome = FixedIncome(start_date='2025-01-01', end_date='2026-11-10')
+        fixedincome = FixedIncome(start_date='2025-01-01', end_date='2026-11-10', rounding=None)
 
         treasury_rates = fixedincome.get_treasury_rates(maturities=['2Y', '10Y'])
 
@@ -340,11 +340,7 @@ class SignificanceEconometrics:
         |         |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
         |:--------|---------:|----------------------:|---------------:|-------------:|:----------------|
         | 2 Year  |   0.0017 |                3.5345 |         2.4286 |       0.9935 | 2025-04-09      |
-        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9546 | 2026-09-23      |
-        |         |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
-        |:--------|---------:|----------------------:|---------------:|-------------:|:----------------|
-        | 2 Year  |   0.0017 |                3.5345 |         2.4286 |       0.9935 | 2025-04-09      |
-        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9546 | 2026-09-23      |
+        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9654 | 2026-09-23      |
         """
         period = period if period else "daily"
 

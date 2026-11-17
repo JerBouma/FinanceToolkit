@@ -6,7 +6,10 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.options import options_model
-from financetoolkit.options.helpers import get_days_to_expiration
+from financetoolkit.options.helpers import (
+    get_days_to_expiration,
+    get_time_to_expiration,
+)
 from financetoolkit.options.market import market_metrics_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -50,8 +53,20 @@ class MarketOptions:
                     f"The expiration date(s) {', '.join(invalid)} are not available for "
                     f"{ticker}. Choose from {', '.join(available)}"
                 )
-            return list(expiration_dates)
-        upcoming = [date for date in available if get_days_to_expiration(date) > 0]
+            # An expiry given for today has settled once the market closed.
+            open_dates = []
+            for date in expiration_dates:
+                if get_time_to_expiration(date, self._current_time()) <= 0:
+                    logger.warning(
+                        "The options of %s expiring on %s have expired and are left out.",
+                        ticker,
+                        date,
+                    )
+                else:
+                    open_dates.append(date)
+            return open_dates
+        now = self._current_time()
+        upcoming = [date for date in available if get_days_to_expiration(date, now) > 0]
         return upcoming[:number_of_expirations]
 
     def _warn_if_history_is_stale(self, purpose: str) -> None:
@@ -76,7 +91,10 @@ class MarketOptions:
     ) -> tuple[pd.DataFrame, pd.DataFrame, float, float, float, float]:
         """
         The calls, puts, stock price, time to expiration, risk free rate and dividend yield.
-        The stock price is the one quoted with the chain when available (see _spot_price).
+        The stock price is the one quoted with the chain when available (see _spot_price),
+        the time to expiration runs from _current_time to 16:00 New York time on the
+        expiration date, and the dividend yield is the continuously compounded trailing
+        yield on the last historical date (see _dividend_yield_on).
         """
         calls = options_model.get_option_chains([ticker], expiration_date, False)
         puts = options_model.get_option_chains([ticker], expiration_date, True)
@@ -98,10 +116,20 @@ class MarketOptions:
             if quoted(cboe_calls) + quoted(cboe_puts) > quoted(calls) + quoted(puts):
                 calls, puts = cboe_calls, cboe_puts
         stock_price = self._spot_price(ticker, calls, puts)
-        time_to_expiration = max(get_days_to_expiration(expiration_date), 0.5) / 365
+        # The time left up to the close on the expiration date, so that an expiry this
+        # afternoon is not priced as a whole day away.
+        time_to_expiration = get_time_to_expiration(
+            expiration_date, self._current_time()
+        )
+        if time_to_expiration <= 0:
+            raise ValueError(
+                f"The options of {ticker} expiring on {expiration_date} have expired."
+            )
         risk_free_rate = float(self._risk_free_rate.dropna().iloc[-1])
+        # The trailing dividend yield on the last historical date, continuously compounded
+        # as ln(1 + q) like the risk free rate, and 0 for a ticker without dividend data.
         dividend_yield = (
-            float(self._dividend_yield[ticker].iloc[-1])
+            self._dividend_yield_on(ticker, self._daily_historical.index[-1])
             if not self._dividend_yield[ticker].empty
             else 0.0
         )
@@ -148,7 +176,7 @@ class MarketOptions:
                         pd.Series(
                             {
                                 "Days to Expiration": get_days_to_expiration(
-                                    expiration_date
+                                    expiration_date, self._current_time()
                                 )
                             }
                         ),
@@ -211,16 +239,10 @@ class MarketOptions:
 
         Which returns:
 
-        |                        |   Days to Expiration |   Call Volume |   Put Volume |   Volume Put-Call Ratio |   Call Open Interest |   Put Open Interest |   Open Interest Put-Call Ratio |
-        |:-----------------------|---------------------:|--------------:|-------------:|------------------------:|---------------------:|--------------------:|-------------------------------:|
-        | ('AAPL', '2026-10-26') |                    2 |         90053 |        85187 |                  0.946  |                14688 |               22097 |                         1.5044 |
-        | ('AAPL', '2026-10-28') |                    4 |         27330 |        21152 |                  0.7739 |                17505 |               10137 |                         0.5791 |
-        | ('AAPL', '2026-10-30') |                    6 |         76540 |       134401 |                  1.756  |                81432 |               86739 |                         1.0652 |
-        | ('AAPL', 'All')        |                  nan |        193923 |       240740 |                  1.2414 |               113625 |              118973 |                         1.0471 |
-        | ('TSLA', '2026-10-26') |                    2 |        149535 |       129459 |                  0.8657 |                68890 |               34714 |                         0.5039 |
-        | ('TSLA', '2026-10-28') |                    4 |         32602 |        24491 |                  0.7512 |                14542 |               15028 |                         1.0334 |
-        | ('TSLA', '2026-10-30') |                    6 |        121542 |       101610 |                  0.836  |               104417 |               97818 |                         0.9368 |
-        | ('TSLA', 'All')        |                  nan |        303679 |       255560 |                  0.8415 |               187849 |              147560 |                         0.7855 |
+        |                 |   Days to Expiration |   Call Volume |   Put Volume |   Volume Put-Call Ratio |   Call Open Interest |   Put Open Interest |   Open Interest Put-Call Ratio |
+        |:----------------|---------------------:|--------------:|-------------:|------------------------:|---------------------:|--------------------:|-------------------------------:|
+        | ('AAPL', 'All') |                  nan |        117895 |       172939 |                  1.4669 |               467397 |              454917 |                         0.9733 |
+        | ('TSLA', 'All') |                  nan |        222838 |       192067 |                  0.8619 |               383562 |              508747 |                         1.3264 |
         """
         table = self._per_expiry(
             lambda calls, puts, *_: market_metrics_model.get_put_call_ratio(
@@ -303,10 +325,10 @@ class MarketOptions:
 
         |                        |   Days to Expiration |   Max Pain |   Stock Price |   Distance to Max Pain |
         |:-----------------------|---------------------:|-----------:|--------------:|-----------------------:|
-        | ('AAPL', '2026-10-26') |                    2 |      345   |        347.73 |                -0.0079 |
-        | ('AAPL', '2026-10-28') |                    4 |      345   |        347.73 |                -0.0079 |
-        | ('AAPL', '2026-10-30') |                    6 |      342.5 |        347.73 |                -0.015  |
-        | ('AAPL', '2026-11-06') |                   13 |      340   |        347.73 |                -0.0222 |
+        | ('AAPL', '2026-11-18') |                    2 |      355   |        352.78 |                 0.0063 |
+        | ('AAPL', '2026-11-20') |                    4 |      337.5 |        352.78 |                -0.0433 |
+        | ('AAPL', '2026-11-23') |                    7 |      355   |        352.78 |                 0.0063 |
+        | ('AAPL', '2026-11-25') |                    9 |      357.5 |        352.78 |                 0.0134 |
         """
 
         def calculate(calls, puts, stock_price, *_):
@@ -397,8 +419,8 @@ class MarketOptions:
 
         |      |   Stock Price |   Call Gamma Exposure |   Put Gamma Exposure |   Net Gamma Exposure |   Gamma Flip Point |
         |:-----|--------------:|----------------------:|---------------------:|---------------------:|-------------------:|
-        | QQQ  |        704.4  |           1.83881e+09 |         -6.41458e+09 |         -4.57577e+09 |            727.993 |
-        | AAPL |        347.73 |           7.48337e+08 |         -4.80606e+08 |          2.67731e+08 |            342.412 |
+        | QQQ  |        661.75 |           1.57107e+09 |         -4.27908e+09 |         -2.708e+09   |            689.003 |
+        | AAPL |        352.78 |           1.02921e+09 |         -6.02256e+08 |          4.26958e+08 |            346.506 |
         """
         self._warn_if_history_is_stale(_CHAIN_INPUTS_FROM_HISTORY)
         summary, strikes = {}, {}
@@ -511,16 +533,16 @@ class MarketOptions:
 
         |                        |   Days to Expiration |   At-the-Money Volatility |
         |:-----------------------|---------------------:|--------------------------:|
-        | ('AAPL', '2026-10-26') |                    2 |                    0.1637 |
-        | ('AAPL', '2026-10-28') |                    4 |                    0.2136 |
-        | ('AAPL', '2026-10-30') |                    6 |                    0.2273 |
-        | ('AAPL', '2026-11-06') |                   13 |                    0.319  |
-        | ('AAPL', '2026-11-13') |                   20 |                    0.2967 |
-        | ('TSLA', '2026-10-26') |                    2 |                    0.297  |
-        | ('TSLA', '2026-10-28') |                    4 |                    0.3781 |
-        | ('TSLA', '2026-10-30') |                    6 |                    0.4003 |
-        | ('TSLA', '2026-11-06') |                   13 |                    0.4124 |
-        | ('TSLA', '2026-11-13') |                   20 |                    0.4058 |
+        | ('AAPL', '2026-11-18') |                    2 |                    0.2889 |
+        | ('AAPL', '2026-11-20') |                    4 |                    0.2983 |
+        | ('AAPL', '2026-11-23') |                    7 |                    0.2516 |
+        | ('AAPL', '2026-11-25') |                    9 |                    0.2711 |
+        | ('AAPL', '2026-11-27') |                   11 |                    0.2508 |
+        | ('TSLA', '2026-11-18') |                    2 |                    0.6121 |
+        | ('TSLA', '2026-11-20') |                    4 |                    0.6225 |
+        | ('TSLA', '2026-11-23') |                    7 |                    0.526  |
+        | ('TSLA', '2026-11-25') |                    9 |                    0.5349 |
+        | ('TSLA', '2026-11-27') |                   11 |                    0.5078 |
         """
         return self._per_expiry(
             lambda calls, puts, stock_price, *_: pd.Series(
@@ -601,12 +623,12 @@ class MarketOptions:
 
         |                        |   Days to Expiration |   25-Delta Put Volatility |   At-the-Money Volatility |   25-Delta Call Volatility |   25-Delta Risk Reversal |   25-Delta Butterfly |
         |:-----------------------|---------------------:|--------------------------:|--------------------------:|---------------------------:|-------------------------:|---------------------:|
-        | ('QQQ', '2026-10-26')  |                    2 |                    0.1908 |                    0.1938 |                     0.1855 |                  -0.0052 |              -0.0056 |
-        | ('QQQ', '2026-10-27')  |                    3 |                    0.2287 |                    0.2253 |                     0.213  |                  -0.0157 |              -0.0044 |
-        | ('QQQ', '2026-10-28')  |                    4 |                    0.2629 |                    0.2545 |                     0.2396 |                  -0.0233 |              -0.0033 |
-        | ('AAPL', '2026-10-26') |                    2 |                    0.1716 |                    0.1637 |                     0.1555 |                  -0.0161 |              -0.0002 |
-        | ('AAPL', '2026-10-28') |                    4 |                    0.2238 |                    0.2136 |                     0.2031 |                  -0.0207 |              -0.0002 |
-        | ('AAPL', '2026-10-30') |                    6 |                    0.2349 |                    0.2273 |                     0.215  |                  -0.0199 |              -0.0023 |
+        | ('QQQ', '2026-11-17')  |                    1 |                    0.4167 |                    0.3999 |                     0.3738 |                  -0.0429 |              -0.0047 |
+        | ('QQQ', '2026-11-18')  |                    2 |                    0.4336 |                    0.4161 |                     0.3949 |                  -0.0387 |              -0.0019 |
+        | ('QQQ', '2026-11-19')  |                    3 |                    0.4302 |                    0.4128 |                     0.3904 |                  -0.0398 |              -0.0025 |
+        | ('AAPL', '2026-11-18') |                    2 |                    0.3172 |                    0.2889 |                     0.2724 |                  -0.0448 |               0.0059 |
+        | ('AAPL', '2026-11-20') |                    4 |                    0.3142 |                    0.2983 |                     0.2728 |                  -0.0414 |              -0.0048 |
+        | ('AAPL', '2026-11-23') |                    7 |                    0.27   |                    0.2516 |                     0.2324 |                  -0.0376 |              -0.0004 |
         """
         return self._per_expiry(
             market_metrics_model.get_volatility_skew,
@@ -683,8 +705,8 @@ class MarketOptions:
 
         |                        | Earnings Date   |   Days to Expiration |   Straddle Strike |   Straddle Price |   Implied Move |   Lower Price |   Upper Price |
         |:-----------------------|:----------------|---------------------:|------------------:|-----------------:|---------------:|--------------:|--------------:|
-        | ('AAPL', '2026-11-06') | 2026-11-02      |                   13 |               350 |            16.85 |         0.0485 |        330.88 |        364.58 |
-        | ('NVDA', '2026-11-20') | 2026-11-18      |                   27 |               210 |            20.5  |         0.0972 |        190.46 |        231.46 |
+        | ('AAPL', '2027-02-19') | 2027-02-04      |                   95 |               350 |            38.2  |         0.1083 |        314.58 |        390.98 |
+        | ('NVDA', '2026-11-18') | 2026-11-17      |                    2 |               155 |            13.05 |         0.0836 |        143.09 |        169.19 |
         """
         earnings_dates = None
         if around_earnings:
@@ -726,10 +748,11 @@ class MarketOptions:
 
     def _model_free_volatility(self, ticker: str, days: int) -> pd.Series:
         """The constant-maturity model-free implied volatility of one ticker."""
+        now = self._current_time()
         usable = [
             date
             for date in options_model.get_option_expiry_dates(ticker)
-            if get_days_to_expiration(date) >= market_metrics_model.MINIMUM_DAYS
+            if get_days_to_expiration(date, now) >= market_metrics_model.MINIMUM_DAYS
         ]
         if len(usable) < 2:  # noqa: PLR2004
             raise ValueError(
@@ -738,16 +761,16 @@ class MarketOptions:
 
         # Beyond the furthest expiry there is nothing to interpolate towards, and holding
         # the last expiry's variance would present it as the volatility of a longer span.
-        if days > get_days_to_expiration(usable[-1]):
+        if days > get_days_to_expiration(usable[-1], now):
             raise ValueError(
                 f"The longest usable expiry of {ticker} is {usable[-1]} "
-                f"({get_days_to_expiration(usable[-1])} days), shorter than days={days}."
+                f"({get_days_to_expiration(usable[-1], now)} days), shorter than days={days}."
             )
 
         # A target shorter than the nearest usable expiry is extrapolated from the two
         # nearest terms, as the Cboe does when no expiry lies before the 30 days.
         near_candidates = [
-            date for date in usable if get_days_to_expiration(date) <= days
+            date for date in usable if get_days_to_expiration(date, now) <= days
         ]
         near = near_candidates[-1] if near_candidates else usable[0]
         following = [date for date in usable if date > near]
@@ -762,7 +785,9 @@ class MarketOptions:
             variance, forward = market_metrics_model.get_model_free_variance(
                 calls, puts, time, rate
             )
-            terms[label] = (date, variance, forward, get_days_to_expiration(date))
+            # The interpolation weighs the terms by the same time to expiration as the
+            # variance, in days with the fraction of the day left (the Cboe counts minutes).
+            terms[label] = (date, variance, forward, time * 365)
 
         near_date, near_variance, forward, near_days = terms["Near-Term"]
         next_date, next_variance, _, next_days = terms["Next-Term"]
@@ -836,6 +861,9 @@ class MarketOptions:
           extrapolated from the two nearest terms, as in the Cboe method. A target beyond
           the longest usable expiry raises a ValueError naming the ticker and that expiry,
           since there is no later term to interpolate towards.
+        - The time to each expiry runs from the current time to 16:00 New York time on the
+          expiration date, in minutes over the 525,600 minutes of a year as in the Cboe method, and
+          the variance of a term and its weight in the interpolation use that same time.
         - The risk free rate comes from the historical data, so leave end_date at today: a
           warning is logged when the history ends more than 5 days before today.
 
@@ -853,8 +881,8 @@ class MarketOptions:
 
         |      | Near-Term Expiration   | Next-Term Expiration   |   Near-Term Volatility |   Next-Term Volatility |   Forward Price |   Model-Free Implied Volatility |
         |:-----|:-----------------------|:-----------------------|-----------------------:|-----------------------:|----------------:|--------------------------------:|
-        | ^SPX | 2026-11-23             | 2026-11-24             |                 0.1955 |                 0.1965 |        7649.3   |                          0.1955 |
-        | AAPL | 2026-11-20             | 2026-11-27             |                 0.297  |                 0.2817 |         348.495 |                          0.2897 |
+        | ^SPX | 2026-12-16             | 2026-12-17             |                 0.2274 |                 0.2284 |        7436.64  |                          0.2276 |
+        | AAPL | 2026-12-11             | 2026-12-18             |                 0.2655 |                 0.2724 |         353.871 |                          0.2709 |
         """
         self._warn_if_history_is_stale("the risk free rate comes from that date")
         rows, errors = {}, []
@@ -950,9 +978,9 @@ class MarketOptions:
 
         |      |   Implied Volatility |   Realized Volatility |   Volatility Risk Premium |   Variance Risk Premium |   Implied to Realized Ratio |
         |:-----|---------------------:|----------------------:|--------------------------:|------------------------:|----------------------------:|
-        | QQQ  |               0.2846 |                0.1769 |                    0.1077 |                  0.0497 |                      1.609  |
-        | AAPL |               0.2897 |                0.1641 |                    0.1256 |                  0.057  |                      1.7653 |
-        | TSLA |               0.4357 |                0.3516 |                    0.0841 |                  0.0662 |                      1.2392 |
+        | QQQ  |               0.3272 |                0.3555 |                   -0.0283 |                 -0.0193 |                      0.9203 |
+        | AAPL |               0.2709 |                0.2745 |                   -0.0036 |                 -0.002  |                      0.9867 |
+        | TSLA |               0.5498 |                0.5943 |                   -0.0445 |                 -0.0509 |                      0.9251 |
         """
         self._warn_if_history_is_stale(
             "the realized volatility covers the days up to that date instead of the days "

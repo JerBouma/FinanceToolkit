@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+from financetoolkit.risk.helpers import get_days_per_period, get_observed_span
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
-    VOLATILITY_WINDOW_TRANSLATION,
     by_own_trading_days,
     drop_non_finite,
     to_period_index,
@@ -23,12 +23,16 @@ DAYS_PER_YEAR = 365.25
 # Two levels when a 'within period' index nests days inside a period (2020Q1).
 MULTI_PERIOD_INDEX_LEVELS = 2
 
+# The returns a period needs for a quantile of their distribution.
+MINIMUM_QUANTILE_OBSERVATIONS = 2
+
 
 def get_quantile(
     returns: pd.Series | pd.DataFrame, quantile: float
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate a quantile of returns per column and, for a within period index, per period.
+    A period with fewer than two returns gives NaN rather than its single return.
 
     The quantile is interpolated linearly, as np.percentile does, but skips missing
     returns: a single missing return would otherwise make the quantile missing.
@@ -44,7 +48,11 @@ def get_quantile(
     """
     if isinstance(returns, pd.DataFrame):
         if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            result = returns.groupby(level=0, sort=False).quantile(quantile)
+            grouped = returns.groupby(level=0, sort=False)
+            # A period with a single return (a period cut by the start or end date) has no distribution to take a quantile of, as the parametric estimates are NaN for it.  # noqa: E501
+            result = grouped.quantile(quantile).where(
+                grouped.count() >= MINIMUM_QUANTILE_OBSERVATIONS
+            )
             result.index.name = None
 
             return result
@@ -245,9 +253,10 @@ def get_ui(
         dimensionless, cross-asset-comparable figure), or "level", computed on
         absolute drawdowns of the raw level series directly -- use this when
         `returns` is not a genuine percentage return (e.g. a series that can be zero
-        or negative). Note that in "level" mode the result is in squared input units,
-        not the dimensionless index the name implies, so it is not comparable across
-        assets/series with different scales. Defaults to "return".
+        or negative). Note that in "level" mode the result is in the units of the
+        input (the root mean squared drawdown of the levels), not the dimensionless
+        index the name implies, so it is not comparable across assets/series with
+        different scales. Defaults to "return".
 
     Returns:
         pd.Series | pd.DataFrame: UI values as a float if returns is a pd.Series, as
@@ -304,6 +313,8 @@ def get_ui(
 
             drawdowns = (cumulative_returns - reference_max) / reference_max
 
+        # The rows before a ticker's first and after its last return in a period are no observations of it.  # noqa: E501
+        drawdowns = drawdowns.where(get_observed_span(returns, by_period=True))
         ulcer_index = np.sqrt(per_period(drawdowns**2).mean())
         ulcer_index = ulcer_index.where(per_period(returns).count() > 0)
         ulcer_index.index.name = None
@@ -335,6 +346,9 @@ def get_ui(
                 ].clip(lower=1)
 
             drawdowns = (cumulative_returns - reference_max) / reference_max
+
+        # The rows before a ticker's first and after its last return (a later listing, a delisting) are no observations of it, see get_observed_span.  # noqa: E501
+        drawdowns = drawdowns.where(get_observed_span(returns))
 
         return mask_without_observations(np.sqrt((drawdowns**2).mean()), returns)
 
@@ -436,7 +450,10 @@ def get_variance(
     quarterly or yearly) based on daily historical returns.
 
     The daily Variance is scaled to the given period by multiplying it with the
-    number of trading days within that period (e.g. 252 / 52 for weekly).
+    number of daily returns within that period: 252 a year for a ticker that trades on
+    weekdays (e.g. 252 / 52 for weekly) and 365 a year for one that also trades on
+    weekends, such as a cryptocurrency (e.g. 365 / 52 for weekly), see
+    `helpers.get_days_per_period`.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
@@ -458,14 +475,14 @@ def get_variance(
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+    days_per_period = get_days_per_period(returns, period, groups)
     dates = (
         groups
         if groups is not None
         else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
-    return returns.groupby(dates).var() * volatility_window
+    return returns.groupby(dates).var() * days_per_period
 
 
 @by_own_trading_days
@@ -528,8 +545,10 @@ def get_volatility(
     quarterly or yearly) based on daily historical returns.
 
     The daily Volatility is scaled to the given period by multiplying it with the
-    square root of the number of trading days within that period
-    (e.g. SQRT(252 / 52) for weekly).
+    square root of the number of daily returns within that period: 252 a year for a
+    ticker that trades on weekdays (e.g. SQRT(252 / 52) for weekly) and 365 a year for
+    one that also trades on weekends, such as a cryptocurrency (e.g. SQRT(365 / 52) for
+    weekly), see `helpers.get_days_per_period`.
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
@@ -551,14 +570,14 @@ def get_volatility(
     if not isinstance(returns, pd.Series | pd.DataFrame):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+    days_per_period = get_days_per_period(returns, period, groups)
     dates = (
         groups
         if groups is not None
         else to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period])
     )
 
-    return returns.groupby(dates).std() * np.sqrt(volatility_window)
+    return returns.groupby(dates).std() * np.sqrt(days_per_period)
 
 
 @by_own_trading_days
@@ -619,6 +638,8 @@ def get_conditional_drawdown_at_risk(
         wealth, peak = get_wealth_and_peak(returns)
         drawdowns = wealth / peak - 1
 
+    # The rows before a ticker's first and after its last return (a later listing, a delisting) are no observations of it, see get_observed_span.  # noqa: E501
+    drawdowns = drawdowns.where(get_observed_span(returns))
     drawdown_at_risk = drawdowns.quantile(alpha)
 
     return mask_without_observations(
@@ -1289,7 +1310,7 @@ def get_rolling_downside_deviation(
 
 def get_excess_volatility(
     returns: pd.Series | pd.DataFrame,
-    risk_free_rate: pd.Series,
+    risk_free_rate: pd.Series | pd.DataFrame,
     period: str,
 ) -> pd.Series | pd.DataFrame:
     """
@@ -1302,7 +1323,9 @@ def get_excess_volatility(
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of daily returns.
-        risk_free_rate (pd.Series): A Series of the daily risk free rate.
+        risk_free_rate (pd.Series | pd.DataFrame): The daily risk free rate, a Series
+        subtracted from every column or a DataFrame with the rate per column (the rate
+        each ticker earns per return of its own calendar).
         period (str): The period to calculate the Excess Volatility for. Can be weekly,
         monthly, quarterly or yearly.
 
@@ -1310,7 +1333,11 @@ def get_excess_volatility(
         pd.Series | pd.DataFrame: Excess Volatility values with time as the index, resampled
         to the given period.
     """
-    excess_returns = returns.sub(risk_free_rate, axis=0)
+    excess_returns = (
+        returns - risk_free_rate
+        if isinstance(risk_free_rate, pd.DataFrame)
+        else returns.sub(risk_free_rate, axis=0)
+    )
 
     return get_volatility(excess_returns, period)
 

@@ -380,3 +380,20 @@ def test_get_market_cap_to_gdp_uses_the_year_before():
     assert valuation_model.get_market_cap_to_gdp(yearly, gross_domestic_product).iloc[
         0, 0
     ] == pytest.approx(3.0)
+
+
+def test_multiples_of_non_positive_denominators_are_nan():
+    ev_to_ebitda = valuation_model.get_ev_to_ebitda_ratio(
+        enterprise_value=pd.Series([1000.0, 1000.0, 1000.0]),
+        operating_income=pd.Series([100.0, -50.0, -20.0]),
+        depreciation_and_amortization=pd.Series([20.0, 30.0, 20.0]),
+    )
+    price_to_book = valuation_model.get_price_to_book_ratio(
+        price_per_share=pd.Series([50.0, 50.0, 50.0]),
+        book_value_per_share=pd.Series([10.0, -5.0, 0.0]),
+    )
+
+    assert ev_to_ebitda.iloc[0] == pytest.approx(1000 / 120)
+    assert ev_to_ebitda.iloc[1:].isna().all()
+    assert price_to_book.iloc[0] == pytest.approx(5.0)
+    assert price_to_book.iloc[1:].isna().all()

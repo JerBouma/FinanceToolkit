@@ -55,6 +55,16 @@ def determine_within_historical_data(
     return period_data
 
 
+def trailing_sum(frame: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
+    """A ticker (rows) by period (columns) flow summed over `trailing` periods, as is without."""
+    return frame.T.rolling(trailing).sum().T if trailing else frame
+
+
+def trailing_mean(frame: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
+    """A ticker (rows) by period (columns) balance averaged over `trailing` periods, as is without."""
+    return frame.T.rolling(trailing).mean().T if trailing else frame
+
+
 def rates_per_ticker(
     value: float | list | dict[str, float] | None,
     tickers: list[str],

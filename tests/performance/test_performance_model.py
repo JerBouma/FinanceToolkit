@@ -8,6 +8,10 @@ import pandas as pd
 import pytest
 
 from financetoolkit.performance import performance_model
+from financetoolkit.performance.helpers import (
+    compound_risk_free_rate,
+    get_observations_per_year,
+)
 from financetoolkit.risk.value_at_risk import cvar_model
 
 RESIDUAL_STD_TOLERANCE = 0.002
@@ -1589,3 +1593,119 @@ def test_residual_value_uses_the_market_cap_of_the_previous_close():
     # February is valued at the last close of January (31 January: 120).
     assert np.isnan(monthly.loc["2024-01", "A"])
     assert monthly.loc["2024-02", "A"] == pytest.approx(0.2 * 120.0)
+
+
+def test_get_rolling_appraisal_ratio_uses_the_regression_of_each_window():
+    index = pd.period_range("2020-01", periods=24, freq="M")
+    rng = np.random.default_rng(3)
+    benchmark = pd.Series(rng.normal(0.01, 0.04, 24), index=index)
+    excess = pd.DataFrame({"A": 0.8 * benchmark + rng.normal(0, 0.02, 24)}, index=index)
+    jensens_alpha = pd.DataFrame({"A": rng.normal(0.01, 0.01, 24)}, index=index)
+
+    ratio = performance_model.get_rolling_appraisal_ratio(
+        jensens_alpha, excess, benchmark, 12
+    )
+
+    # Each ratio divides by the residual standard deviation of the OLS regression over its
+    # own window of 12 returns, the first one at the 12th return.
+    expected = pd.Series(np.nan, index=index)
+    for end in range(11, 24):
+        y = excess["A"].iloc[end - 11 : end + 1].to_numpy()
+        x = benchmark.iloc[end - 11 : end + 1].to_numpy()
+        slope, intercept = np.polyfit(x, y, 1)
+        residuals = y - slope * x - intercept
+        expected.iloc[end] = jensens_alpha["A"].iloc[end] / np.sqrt(
+            (residuals**2).sum() / 11
+        )
+    pd.testing.assert_series_equal(ratio["A"], expected, check_names=False)
+    assert ratio["A"].iloc[:11].isna().all()
+    assert ratio["A"].iloc[11:].notna().all()
+
+
+def _crypto_and_stock_returns():
+    rng = np.random.default_rng(4)
+    index = pd.period_range("2022-01-01", "2022-12-31", freq="D")
+    weekday = index.dayofweek < 5  # noqa: PLR2004
+    return pd.DataFrame(
+        {
+            "Crypto": rng.normal(0.001, 0.03, len(index)),
+            "Stock": np.where(weekday, rng.normal(0.0005, 0.01, len(index)), np.nan),
+        },
+        index=index,
+    )
+
+
+def test_rolling_ratios_of_a_stock_next_to_a_cryptocurrency_use_its_own_returns():
+    returns = _crypto_and_stock_returns()
+    stock = returns["Stock"].dropna()
+
+    for function in (
+        performance_model.get_rolling_sharpe_ratio,
+        performance_model.get_rolling_sortino_ratio,
+        performance_model.get_rolling_kelly_criterion,
+    ):
+        mixed = function(returns, 20)
+        alone = function(stock.to_frame(), 20)
+
+        # The weekends the stock does not trade on do not break every window of it.
+        assert mixed["Stock"].notna().sum() == len(stock) - 19
+        pd.testing.assert_series_equal(mixed["Stock"].dropna(), alone["Stock"].dropna())
+        assert mixed["Crypto"].notna().sum() == len(returns) - 19
+
+
+def test_get_jensens_alpha_needs_matching_types():
+    returns = pd.DataFrame({"A": [0.01, 0.02]})
+
+    with pytest.raises(TypeError):
+        performance_model.get_jensens_alpha(
+            returns, 0.0, pd.Series([1.0, 1.0]), pd.Series([0.01, 0.01])
+        )
+
+
+def test_only_a_ticker_trading_on_every_weekend_counts_365_days_a_year():
+    returns = _crypto_and_stock_returns()
+    index = returns.index
+    # An exchange open from Sunday to Thursday and a stock with a one-off Saturday session.
+    returns["Sunday to Thursday"] = np.where(
+        (index.dayofweek < 4) | (index.dayofweek == 6), 0.001, np.nan  # noqa: PLR2004
+    )
+    returns["One Saturday"] = returns["Stock"]
+    returns.loc["2022-01-08", "One Saturday"] = 0.002
+
+    assert get_observations_per_year(returns).to_dict() == {
+        "Crypto": 365.0,
+        "Stock": 252.0,
+        "Sunday to Thursday": 252.0,
+        "One Saturday": 252.0,
+    }
+
+
+def test_the_period_risk_free_rate_does_not_depend_on_the_tickers():
+    returns = _crypto_and_stock_returns()
+    annualized_rate = pd.Series(0.04, index=returns.index)
+
+    mixed = compound_risk_free_rate(annualized_rate, returns, "monthly")
+    stock = compound_risk_free_rate(
+        annualized_rate, returns[["Stock"]].dropna(), "monthly"
+    )
+    days_in_month = returns.index.asfreq("M").value_counts().sort_index()
+
+    # Every calendar day earns 1 / 365 of the year: a full year earns the annualized rate
+    # and a month its days, whether the dates are the trading days of the stock or every
+    # calendar day of the cryptocurrency. Only a weekend at the turn of a month moves to
+    # the month of the next trading day.
+    yearly = compound_risk_free_rate(annualized_rate, returns, "yearly")
+    assert yearly.iloc[0] == pytest.approx(0.04, rel=1e-12)
+    assert mixed.to_numpy() == pytest.approx(
+        (1.04 ** (days_in_month / 365) - 1).to_numpy(), rel=1e-12
+    )
+    weekday_turns = [
+        month
+        for month in stock.index[1:]
+        if month.end_time.dayofweek < 5  # noqa: PLR2004
+        and (month - 1).end_time.dayofweek < 5  # noqa: PLR2004
+    ]
+    assert len(weekday_turns) > 3  # noqa: PLR2004
+    assert stock[weekday_turns].to_numpy() == pytest.approx(
+        mixed[weekday_turns].to_numpy(), rel=1e-12
+    )

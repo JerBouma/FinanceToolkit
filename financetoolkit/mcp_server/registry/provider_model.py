@@ -723,10 +723,22 @@ class ToolkitProvider:
         convert_currency: bool = bool(getattr(toolkit, "_convert_currency", False))
         if convert_currency and not stmt_currencies.empty:
             converted_currencies = []
+            # A company that changed its reporting currency is converted from each one.
+            period_pairs = stmt_currencies.attrs.get("pairs")
             for ticker, pair in stmt_currencies.items():
-                src, dst = str(pair)[:3], str(pair)[3:6]
-                if src != dst:
-                    converted_currencies.append(f"{ticker} ({src} to {dst})")
+                pairs = (
+                    list(dict.fromkeys(period_pairs.loc[ticker].dropna().astype(str)))
+                    if isinstance(period_pairs, pd.DataFrame)
+                    and ticker in period_pairs.index
+                    else [str(pair)]
+                )
+                conversions = [
+                    f"{pair_[:3]} to {pair_[3:6]}"
+                    for pair_ in pairs
+                    if pair_[:3] != pair_[3:6]
+                ]
+                if conversions:
+                    converted_currencies.append(f"{ticker} ({', '.join(conversions)})")
             if converted_currencies:
                 notes.append(
                     "Financial statements are converted to the currency of the share "

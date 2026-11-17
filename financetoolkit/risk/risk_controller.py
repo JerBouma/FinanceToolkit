@@ -155,11 +155,13 @@ class RiskBase:
         The risk free return per period, the rate subtracted from the returns of that period.
 
         For period="daily" this is the risk free return of each date since the date before.
-        The other periods compound it over the dates in each period that hold a return, as the
-        return of a period compounds the daily returns within it, so a period the data covers
-        in part (the current year, or a first period cut by the start date) earns the risk
-        free rate of the dates it covers rather than of a full period. Without daily returns
-        the annualized rate of the period is converted with the periods in a year instead.
+        The other periods compound the annualized rate over the calendar days between the
+        dates in each period that hold a return, as the return of a period compounds the daily
+        returns within it, so a full year earns the annualized rate whichever tickers the data
+        holds and a period the data covers in part (the current year, or a first period cut by
+        the start date) earns the risk free rate of the days it covers rather than of a full
+        period (see `compound_risk_free_rate`). Without daily returns the annualized rate of
+        the period is converted with the periods in a year instead.
 
         Args:
             period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
@@ -182,7 +184,7 @@ class RiskBase:
             return self._risk_free_rate_per_date
 
         return compound_risk_free_rate(
-            self._risk_free_rate_per_date, self._daily_returns, period
+            self._annualized_risk_free_rate_data["daily"], self._daily_returns, period
         )
 
     def _get_risk_free_rate_per_observation(self) -> pd.DataFrame:

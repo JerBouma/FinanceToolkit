@@ -901,21 +901,20 @@ def test_compound_into_shared_dates_compounds_the_weekend_into_monday():
     index = pd.period_range("2024-01-04", periods=8, freq="D")
     returns = pd.DataFrame(
         {
-            "Stock": [np.nan, 0.01, np.nan, np.nan, 0.02, 0.01, np.nan, np.nan],
-            "Crypto": [0.1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.5, np.nan],
+            "Stock": [np.nan, 0.01, np.nan, np.nan, 0.02, 0.03, np.nan, np.nan],
+            "Crypto": [0.1, 0.04, 0.01, 0.01, 0.01, 0.05, 0.5, np.nan],
         },
         index=index,
     )
 
     shared = compound_into_shared_dates(returns)
 
-    # The Thursday before the first shared date and the dates after the last are left out.
+    # The Thursday before the first shared date and the dates after the last are left out,
+    # and each shared date keeps its own returns, in the order of the dates.
     assert list(shared.index.astype(str)) == ["2024-01-05", "2024-01-08", "2024-01-09"]
+    assert shared["Stock"].to_numpy() == pytest.approx([0.01, 0.02, 0.03])
     # Monday 8 January holds the Crypto returns of Saturday, Sunday and Monday.
-    assert shared.loc[pd.Period("2024-01-08", "D"), "Crypto"] == pytest.approx(
-        1.01**3 - 1
-    )
-    assert shared.loc[pd.Period("2024-01-08", "D"), "Stock"] == pytest.approx(0.02)
+    assert shared["Crypto"].to_numpy() == pytest.approx([0.04, 1.01**3 - 1, 0.05])
 
 
 def test_observations_per_year_and_risk_free_rate_follow_each_calendar():
@@ -937,10 +936,59 @@ def test_observations_per_year_and_risk_free_rate_follow_each_calendar():
     in_2023 = returns.index.year == 2023  # noqa: PLR2004
     assert (1 + per_observation.loc[in_2023, "Crypto"]).prod() == pytest.approx(1.05)
 
-    # The rate of a period the data covers in part is that of the dates it covers.
+    # The rate of a period the data covers in part is that of the calendar days it covers,
+    # from the date before its first return (Sunday 2 January) to its last return.
     stock_only = returns[["Stock"]].loc[:"2022-03-31"]
+    yearly = compound_risk_free_rate(annualized_rate, stock_only, "yearly")
+    assert yearly.iloc[0] == pytest.approx(1.05 ** (88 / 365) - 1)
+
+    # A trading day of the rate per date of stock-only data, as for the daily returns.
     per_date = get_risk_free_rate_per_date(annualized_rate, stock_only)
-    yearly = compound_risk_free_rate(per_date, stock_only, "yearly")
-    assert yearly.iloc[0] == pytest.approx(
-        1.05 ** (stock_only["Stock"].count() / 252) - 1
+    assert np.allclose(per_date, 1.05 ** (1 / 252) - 1)
+
+
+def test_only_a_ticker_trading_on_every_weekend_counts_365_days_a_year():
+    returns = _stock_and_crypto_returns()
+    index = returns.index
+    # An exchange open from Sunday to Thursday and a stock with a one-off Saturday session.
+    returns["Sunday to Thursday"] = np.where(
+        (index.dayofweek < 4) | (index.dayofweek == 6), 0.001, np.nan  # noqa: PLR2004
+    )
+    returns["One Saturday"] = returns["Stock"]
+    returns.loc["2022-01-08", "One Saturday"] = 0.002
+
+    assert get_observations_per_year(returns).to_dict() == {
+        "Crypto": 365.0,
+        "Stock": 252.0,
+        "Sunday to Thursday": 252.0,
+        "One Saturday": 252.0,
+    }
+
+
+def test_the_period_risk_free_rate_does_not_depend_on_the_tickers():
+    returns = _stock_and_crypto_returns()
+    annualized_rate = pd.Series(0.05, index=returns.index)
+
+    mixed = compound_risk_free_rate(annualized_rate, returns, "monthly")
+    stock = compound_risk_free_rate(annualized_rate, returns[["Stock"]], "monthly")
+    days_in_month = returns.index.asfreq("M").value_counts().sort_index()
+
+    # Every calendar day earns 1 / 365 of the year: a full year earns the annualized rate
+    # and a month its days, whether the dates are the trading days of the stock or every
+    # calendar day of the cryptocurrency. Only a weekend at the turn of a month moves to
+    # the month of the next trading day.
+    yearly = compound_risk_free_rate(annualized_rate, returns, "yearly")
+    assert yearly[pd.Period("2023", "Y")] == pytest.approx(0.05, rel=1e-12)
+    assert mixed.to_numpy() == pytest.approx(
+        (1.05 ** (days_in_month / 365) - 1).to_numpy(), rel=1e-12
+    )
+    weekday_turns = [
+        month
+        for month in stock.index[1:]
+        if month.end_time.dayofweek < 5  # noqa: PLR2004
+        and (month - 1).end_time.dayofweek < 5  # noqa: PLR2004
+    ]
+    assert len(weekday_turns) > 3  # noqa: PLR2004
+    assert stock[weekday_turns].to_numpy() == pytest.approx(
+        mixed[weekday_turns].to_numpy(), rel=1e-12
     )

@@ -950,8 +950,15 @@ def test_risk_free_rate_of_a_partial_period_covers_its_dates(risk_module):
     )
     assert np.allclose(per_date, (1 + annualized) ** (1 / 252) - 1)
 
-    # Each year compounds the rate over the dates in it that hold a return.
-    with_return = daily_returns.notna().any(axis=1)
+    # Each year compounds the annualized rate over the calendar days since the date before
+    # each date in it that holds a return, so a full year earns the annualized rate.
+    dates = daily_returns.dropna(how="all").index
+    first = daily_returns.index.get_loc(dates[0])
+    previous = daily_returns.index[first - 1].ordinal if first else dates[0].ordinal - 1
+    days = np.diff(np.append(previous, dates.asi8))
+    growth = pd.Series(
+        (1 + annualized.reindex(dates).to_numpy()) ** (days / 365), index=dates
+    )
     for year in yearly.index:
-        in_year = (daily_returns.index.asfreq("Y") == year) & with_return
-        assert yearly[year] == pytest.approx((1 + per_date[in_year]).prod() - 1)
+        in_year = dates.asfreq("Y") == year
+        assert yearly[year] == pytest.approx(growth[in_year].prod() - 1)

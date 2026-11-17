@@ -98,8 +98,13 @@ def coerce_value(val: Any, annotation: Any) -> Any:
     )
 
     lists = [a for a in args if a is list or get_origin(a) is list]
-    item_type = get_args(lists[0])[0] if lists and get_args(lists[0]) else str
     scalars = [a for a in args if a in (bool, int, float, str)]
+    # A bare list next to a number and no text (a rate, or one per ticker) holds numbers.
+    item_type = (
+        get_args(lists[0])[0]
+        if lists and get_args(lists[0])
+        else next((a for a in scalars if a in (int, float) and str not in scalars), str)
+    )
 
     if lists and get_origin(item_type) is not dict:
         if isinstance(val, list):

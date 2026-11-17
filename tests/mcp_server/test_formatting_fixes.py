@@ -85,3 +85,62 @@ def test_days_a_ticker_did_not_trade_are_named():
     assert len(notes) == 1
     assert notes[0].startswith("^KS11 did not trade on 2026-10-03 (")
     assert filled_day_notes(prices["Close"]) == []
+
+
+def test_an_answer_without_data_keeps_its_notes_and_sources():
+    import json
+
+    from financetoolkit.mcp_server.registry.formatting_model import format_result
+
+    answer = json.loads(
+        format_result(
+            pd.DataFrame({"a": [None]}),
+            reason="no key",
+            notes=["`perid` is not a parameter"],
+            sources=["Eurostat"],
+        )
+    )
+
+    assert answer == {
+        "error": "No data available.",
+        "reason": "no key",
+        "_notes": ["`perid` is not a parameter"],
+        "_sources": ["Eurostat"],
+    }
+
+
+def test_rows_of_two_levels_with_columns_of_two_levels_become_records():
+    rows = pd.MultiIndex.from_product(
+        [pd.period_range("2022", periods=2, freq="Y"), ["Mean", "Std"]]
+    )
+    columns = pd.MultiIndex.from_tuples([("Close", "AAPL"), ("Close", "MSFT")])
+    table = pd.DataFrame(
+        [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0], [6.0, 7.0]], index=rows, columns=columns
+    )
+
+    records = _df_to_records(table)
+
+    assert records[:2] == [
+        {"date": "2022", "metric": "Mean", "ticker": "AAPL", "Close": 0.0},
+        {"date": "2022", "metric": "Mean", "ticker": "MSFT", "Close": 1.0},
+    ]
+    assert len(records) == 8  # noqa: PLR2004
+
+
+def test_a_week_belongs_to_the_month_it_ends_in():
+    from financetoolkit.mcp_server.registry.formatting_model import convert_to_period
+
+    weeks = pd.DataFrame(
+        {"x": [1.0, 2.0, 3.0]},
+        index=pd.PeriodIndex(["2024-01-05", "2024-01-12", "2024-02-02"], freq="W-FRI"),
+    )
+
+    monthly = convert_to_period(weeks, "monthly")
+
+    # The week of 27 January to 2 February is February's, the one ending 5 January
+    # January's.
+    assert monthly.index.tolist() == [
+        pd.Period("2024-01", "M"),
+        pd.Period("2024-02", "M"),
+    ]
+    assert monthly["x"].tolist() == [2.0, 3.0]

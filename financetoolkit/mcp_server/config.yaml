@@ -246,6 +246,12 @@ init_handled_params:
 # group instead (which mixes tickers and countries).
 # get_exchange_rates (Toolkit) is omitted here as it is mostly a helper functionality
 # economics.get_exchange_rates is exposed separately through the macroeconomics tool.
+# get_stock_news and get_press_releases (Toolkit) are text feeds rather than data to
+# calculate with; the discovery tool has the news and press releases of every ticker.
+# get_cache_contents (Toolkit) lists the files of the local cache, which says nothing
+# about the markets and nothing a hosted server's user could use.
+# economics.get_market_risk_premium is the same series as the Toolkit's
+# get_market_risk_premium listed below, so it is not part of a country tool as well.
 # ──────────────────────────────────────────────────────────────────────────────
 direct_methods:
   - "get_analyst_estimates"

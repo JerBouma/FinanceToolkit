@@ -28,6 +28,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import (
     BeforeValidator,
+    ConfigDict,
     Field as PydanticField,
 )
 
@@ -64,6 +65,7 @@ from financetoolkit.mcp_server.registry.formatting_model import (
     has_period_columns,
     is_time_index_of,
     is_yearly,
+    observed_period,
     select_rows,
     signal_rows,
     skipped_periods_note,
@@ -453,6 +455,13 @@ PERIODS = ("daily", "weekly", "monthly", "quarterly", "yearly", "annual")
 INTRADAY_PERIODS = ("1min", "5min", "15min", "30min", "1hour")
 
 
+def _normalise_period(period: Any) -> str:
+    """The period in lower case, with "annual" read as "yearly"."""
+    period = str(period).strip().lower()
+
+    return "yearly" if period == "annual" else period
+
+
 # The most distinct docstring descriptions of one parameter that are listed per indicator.
 MAXIMUM_DESCRIPTION_VERSIONS = 3
 
@@ -503,6 +512,39 @@ def _docstring_arguments(docstring: str) -> dict[str, str]:
             cleaned[argument] = text if text.endswith((".", "?", "...")) else f"{text}."
 
     return cleaned
+
+
+def _keep_unknown_arguments(mcp: Any, tool_name: str) -> None:
+    """Pass the arguments that are no parameter of a tool on to the tool.
+
+    The MCP SDK validates the arguments with a model of the tool's parameters that drops
+    any other argument, so a misspelt parameter (`perid`) would be ignored without a word
+    and the answer would read as one for the given value. Kept, the tool names them in
+    its notes. The input schema the clients read is built when the tool is added and
+    does not change.
+
+    Args:
+        mcp (Any): The FastMCP server.
+        tool_name (str): The tool whose argument model to extend.
+    """
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tool = tool_manager.get_tool(tool_name) if tool_manager is not None else None
+    metadata = getattr(tool, "fn_metadata", None)
+    if metadata is None:
+        return
+
+    arguments = metadata.arg_model
+
+    class ArgumentsWithUnknown(arguments):  # type: ignore[valid-type, misc]
+        # The title keeps the name a validation error starts with ("riskArguments").
+        model_config = ConfigDict(
+            **{**arguments.model_config, "extra": "allow", "title": arguments.__name__}
+        )
+
+        def model_dump_one_level(self) -> dict[str, Any]:
+            return {**super().model_dump_one_level(), **(self.model_extra or {})}
+
+    metadata.arg_model = ArgumentsWithUnknown
 
 
 def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
@@ -990,9 +1032,18 @@ def _simplify_annotation(ann: Any) -> Any:
 
     scalar = scalars[0]
 
-    # A number that may also be a list of numbers (coupon rates or maturities for a bond
-    # sensitivity table, lags for growth) accepts both, as the indicator does.
-    if scalar in (int, float) and any(
+    if scalar not in (int, float):
+        return scalar | None if has_none else scalar
+
+    # A number accepts every other form the indicator takes, so none of them is refused
+    # before the indicator sees it: a keyword or label (the Black-Litterman
+    # risk_aversion='market', a maturity of '10Y'), a list (coupon rates or maturities for
+    # a bond sensitivity table, lags for growth) and a value per ticker (the weight bounds of
+    # the portfolio optimizers, the discount rates {'AAPL': 0.08} of a valuation model).
+    # Built at runtime for the tool schema; ty cannot follow a type held in a variable.
+    combined = scalar
+    takes_text = str in scalars
+    if any(
         a is list
         or (
             typing.get_origin(a) is list
@@ -1000,27 +1051,21 @@ def _simplify_annotation(ann: Any) -> Any:
         )
         for a in args
     ):
-        # Built at runtime for the tool schema; ty cannot follow a type held in a variable.
-        combined = scalar | list[scalar]  # ty: ignore[invalid-type-form]
-        return combined | None if has_none else combined
-
-    # A number that may also be given per ticker (the weight bounds of the portfolio
-    # optimizers) accepts both, as the indicator does.
-    if scalar in (int, float) and any(
+        # A list of labels next to the numbers ('2Y,10Y') keeps them as text.
+        item = scalar | str if takes_text else scalar
+        combined = combined | list[item]  # ty: ignore[invalid-type-form]
+        # A list is also written as text ('1,2'), which coerce_value splits.
+        takes_text = True
+    if any(
         typing.get_origin(a) is dict
         and all(arg in (str, int, float) for arg in typing.get_args(a))
         for a in args
     ):
-        combined = scalar | dict[str, scalar]  # ty: ignore[invalid-type-form]
-        return combined | None if has_none else combined
+        combined = combined | dict[str, scalar]  # ty: ignore[invalid-type-form]
+    if takes_text:
+        combined = combined | str
 
-    # A number that may also be a keyword (the Black-Litterman risk_aversion='market')
-    # accepts both, so the keyword is not refused as an unparsable number.
-    if scalar in (int, float) and str in scalars:
-        combined = scalar | str
-        return combined | None if has_none else combined
-
-    return scalar | None if has_none else scalar
+    return combined | None if has_none else combined
 
 
 class RouterGroupSpec(NamedTuple):
@@ -1988,10 +2033,7 @@ class ToolRegistry:
             # the length of a list) receives it instead, when it supports the value.
             raw_limit = kwargs.pop("limit", None)
             try:
-                # 0 asks for no selection, the same as leaving limit out.
-                rows_limit = (
-                    int(raw_limit) or None if raw_limit not in (None, "") else None
-                )
+                rows_limit = int(raw_limit) if raw_limit not in (None, "") else None
             except (TypeError, ValueError):
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): limit must be a "
@@ -1999,6 +2041,11 @@ class ToolRegistry:
                     f"five, not {raw_limit!r}."
                 )
             row_selection = None
+            # 0 asks for every row: no selection, and no MCP default limit either (the 25
+            # largest holdings of an ETF), so the indicator's own default of all rows holds.
+            every_row = rows_limit == 0
+            if every_row:
+                rows_limit = None
 
             method_kwargs = {}
             if rows_limit is not None:
@@ -2074,6 +2121,7 @@ class ToolRegistry:
             for pname, value in method_defaults.items():
                 if (
                     pname not in ("lookback_days", "lookahead_days")
+                    and not (pname == "limit" and every_row)
                     and pname in accepted_params
                     and method_kwargs.get(pname) in (None, "")
                 ):
@@ -2141,12 +2189,16 @@ class ToolRegistry:
                             f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
                         )
 
-            if kwargs:
-                logger.warning(
-                    "Unknown parameter(s) passed to %s (%s) and ignored: %s",
-                    tool_name,
-                    method_name,
-                    ", ".join(kwargs.keys()),
+            # What is left is no parameter of the tool at all (a misspelt one, or one of
+            # another tool), which the answer names rather than drop it quietly.
+            unknown_notes = []
+            for pname in kwargs:
+                near = difflib.get_close_matches(
+                    pname, list(wrapper.__signature__.parameters), n=1, cutoff=0.8
+                )
+                unknown_notes.append(
+                    f"`{pname}` is not a parameter of `{tool_name}` and was ignored"
+                    + (f"; did you mean `{near[0]}`?" if near else ".")
                 )
 
             # A period the toolkit does not know would surface as a confusing missing-item
@@ -2161,6 +2213,10 @@ class ToolRegistry:
                         f"'{method_kwargs['period']}'. Please use one of: "
                         f"{', '.join(known_periods)}."
                     )
+                # The methods compare the period in lower case and know "yearly" rather than "annual", so the period they receive is the normalised one, not only the one checked.  # noqa: E501
+                method_kwargs["period"] = _normalise_period(method_kwargs["period"])
+            if requested_period is not None:
+                requested_period = _normalise_period(requested_period)
 
             # Validate that the requested period (if any) is not blocked for this tool
             # A rolling window reads the regular data of the period, which every period
@@ -2302,23 +2358,6 @@ class ToolRegistry:
                 unmatched_columns: list[str] = []
                 # Read before show_columns can leave out the Volume and Return they need.
                 filled_days = filled_day_notes(result)
-                if show_columns is not None:
-                    # Matched in any casing ("close" for Close), as the names are shown
-                    # in a response and typed back by hand.
-                    _, available_columns = _unmatched_columns(result, show_columns)
-                    by_lowercase = {name.lower(): name for name in available_columns}
-                    show_columns = [
-                        (
-                            name
-                            if name in available_columns
-                            else by_lowercase.get(name.lower(), name)
-                        )
-                        for name in show_columns
-                    ]
-                    unmatched_columns, available_columns = _unmatched_columns(
-                        result, show_columns
-                    )
-                    result = _filter_columns(result, show_columns)
                 notes: list[str] = []
                 if dispatch_category in ("ticker", "toolkit") and tickers:
                     notes = provider.get_transformation_notes(
@@ -2373,6 +2412,25 @@ class ToolRegistry:
                             f"{'it is' if len(absent) == 1 else 'they are'} left out. "
                             "Please check the symbol (e.g. ASML.AS for Amsterdam)."
                         )
+                # After the check for missing tickers, which would otherwise count a ticker
+                # that show_columns leaves out as one without data.
+                if show_columns is not None:
+                    # Matched in any casing ("close" for Close), as the names are shown
+                    # in a response and typed back by hand.
+                    _, available_columns = _unmatched_columns(result, show_columns)
+                    by_lowercase = {name.lower(): name for name in available_columns}
+                    show_columns = [
+                        (
+                            name
+                            if name in available_columns
+                            else by_lowercase.get(name.lower(), name)
+                        )
+                        for name in show_columns
+                    ]
+                    unmatched_columns, available_columns = _unmatched_columns(
+                        result, show_columns
+                    )
+                    result = _filter_columns(result, show_columns)
                 # A signal is rare, so with signals_only each ticker keeps only its own
                 # periods with a signal, and a limit gives every ticker its last ones.
                 if (
@@ -2473,6 +2531,47 @@ class ToolRegistry:
                                 f"{'is' if len(skipped) == 1 else 'are'} left out: most rows "
                                 "have no value for it yet. Use start_date/end_date to see it."
                             )
+                        # A column per country or ticker over dated rows: the last rows are those of the series published latest, so a series that lags behind (a month not published yet) is empty in them, while it has a value just before.  # noqa: E501
+                        if (
+                            row_selection < 0
+                            and isinstance(selected, pd.DataFrame)
+                            and len(selected.columns) > 1
+                            and is_time_index_of(selected)
+                            and not isinstance(selected.index, pd.MultiIndex)
+                        ):
+                            lagging = [
+                                (column, result[column].last_valid_index())
+                                for column in selected.columns
+                                if selected[column].isna().all()
+                                and result[column].notna().any()
+                            ]
+                            if lagging:
+                                names = [
+                                    (
+                                        " ".join(map(str, column))
+                                        if isinstance(column, tuple)
+                                        else str(column)
+                                    )
+                                    + " (latest "
+                                    + (
+                                        latest.strftime("%Y-%m-%d")
+                                        if isinstance(latest, pd.Timestamp)
+                                        else str(latest)
+                                    )
+                                    + ")"
+                                    for column, latest in lagging
+                                ]
+                                notes.append(
+                                    (
+                                        f"{', '.join(names)} "
+                                        f"{'has' if len(names) == 1 else 'have'} no "
+                                        if len(names) <= MAXIMUM_NAMED_ROWS
+                                        else f"{len(names):,} columns have no "
+                                    )
+                                    + "value for the selected periods (e.g. not published "
+                                    "yet); a larger limit or start_date/end_date shows the "
+                                    "latest value."
+                                )
                         result = selected
                         # The latest period may not be reported yet for every ticker; a row
                         # without any value at all is not worth a mention.
@@ -2516,16 +2615,25 @@ class ToolRegistry:
                         )
                     else:
                         result = ranking
-                # Most economic series are yearly only, whatever quarterly asks for.
-                if (
-                    quarterly
-                    and isinstance(result, pd.DataFrame | pd.Series)
-                    and is_yearly(result.index)
-                ):
-                    notes.append(
-                        f"Quarterly data is not available for `{method_name}`, so the yearly "
-                        "figures are shown."
+                # Most economic series are yearly only, whatever quarterly asks for, and a
+                # series published monthly (inflation) is not made quarterly either: without
+                # a period, quarterly=true gives quarterly figures only where they are published.  # noqa: E501
+                if quarterly and isinstance(result, pd.DataFrame | pd.Series):
+                    shown_period = (
+                        "yearly"
+                        if is_yearly(result.index)
+                        else (
+                            observed_period(result.index)
+                            if "countries" in accepted_params
+                            and "period" not in given_params
+                            else None
+                        )
                     )
+                    if shown_period in ("yearly", "monthly", "weekly", "daily"):
+                        notes.append(
+                            f"Quarterly data is not available for `{method_name}`, so the "
+                            f"{shown_period} figures are shown."
+                        )
                 if indicator_note:
                     notes.insert(0, indicator_note)
                 if period_note:
@@ -2544,6 +2652,7 @@ class ToolRegistry:
                         f"`{method_name}` and {'was' if len(ignored_params) == 1 else 'were'} "
                         "ignored."
                     )
+                notes.extend(unknown_notes)
                 if unmatched_columns:
                     notes.append(
                         "show_columns: "
@@ -2902,6 +3011,7 @@ class ToolRegistry:
                 {"tool": spec.tool_name, "description": index_description}
             )
             _strip_schema_titles(self._mcp, spec.tool_name)
+            _keep_unknown_arguments(self._mcp, spec.tool_name)
             if compact:
                 _strip_schema_descriptions(self._mcp, spec.tool_name)
             return True

@@ -201,8 +201,23 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
             dataframe.columns.unique(level=ticker_level)
         )
 
+        # Rows of two levels (a statistic per year) keep a key per level, and the stacked
+        # level comes last; a name taken twice gets its position, as a record has one key
+        # per name.
+        row_names = (
+            [
+                str(name) if name else _idx_key(dataframe.index.get_level_values(i))
+                for i, name in enumerate(dataframe.index.names)
+            ]
+            if isinstance(dataframe.index, pd.MultiIndex)
+            else [orig_name]
+        )
+        row_names = [
+            name if name not in row_names[:i] else f"{name}_{i}"
+            for i, name in enumerate([*row_names, str(ticker_name)])
+        ]
         stacked = dataframe.stack(level=ticker_level)
-        stacked.index.names = [orig_name, ticker_name]
+        stacked.index.names = row_names
         # When both levels hold the same names (an impulse response is shock by response,
         # both tickers), the keys say which level they are: "Shock MSFT".
         kept_name = dataframe.columns.names[-1 if ticker_level == 0 else 0]
@@ -267,20 +282,32 @@ def _df_to_records(dataframe: pd.DataFrame) -> list[dict]:
     ]
 
 
-def _no_data(reason: str | None) -> str:
+def _no_data(
+    reason: str | None,
+    notes: list[str] | None = None,
+    sources: list[str] | None = None,
+) -> str:
     """
-    Builds the response for a call without data, with the reason when one is known.
+    Builds the response for a call without data, with the reason when one is known. The
+    notes (an ignored parameter, a ticker left out) and the sources are kept, since they
+    can explain the empty answer as well.
 
     Args:
         reason (str | None): Why there is no data, e.g. a missing API key.
+        notes (list[str] | None): The notes of the answer, under "_notes".
+        sources (list[str] | None): The publishers asked for the data, under "_sources".
 
     Returns:
         str: The JSON response.
     """
-    payload = {"error": "No data available."}
+    payload: dict[str, Any] = {"error": "No data available."}
 
     if reason:
         payload["reason"] = reason
+    if notes:
+        payload["_notes"] = notes
+    if sources:
+        payload["_sources"] = sources
 
     return json.dumps(payload)
 
@@ -425,7 +452,7 @@ PERIOD_ORDER = {
 PERIOD_SPACING_DAYS = {"daily": 4, "weekly": 10, "monthly": 45, "quarterly": 135}
 
 
-def _observed_period(index: pd.Index) -> str | None:
+def observed_period(index: pd.Index) -> str | None:
     """The frequency of a date or period index, or None when it is neither."""
     if isinstance(index, pd.PeriodIndex):
         return next(
@@ -464,7 +491,7 @@ def convert_to_period(
         not a time series or is not finer than the period.
     """
     period = "yearly" if period.lower() == "annual" else period.lower()
-    observed = _observed_period(data.index)
+    observed = observed_period(data.index)
     order = list(PERIOD_ORDER)
 
     if (
@@ -474,8 +501,10 @@ def convert_to_period(
     ):
         return None
 
+    # A period belongs to the period it ends in: a week to Friday 2 February is February's
+    # last week, though it starts in January.
     index = (
-        data.index.to_timestamp()
+        data.index.to_timestamp(how="end")
         if isinstance(data.index, pd.PeriodIndex)
         else data.index
     )
@@ -748,14 +777,14 @@ def format_result(
         return payload
 
     if dataset is None:
-        return _no_data(reason)
+        return _no_data(reason, notes, sources)
 
     if isinstance(dataset, pd.Series):
         dataset = dataset.to_frame()
 
     if isinstance(dataset, pd.DataFrame):
         if dataset.empty or not int(dataset.notna().to_numpy().sum()):
-            return _no_data(reason)
+            return _no_data(reason, notes, sources)
         if max_characters:
             records, cut_note = _fit_to_size(dataset, max_characters)
             if cut_note:
@@ -792,7 +821,7 @@ def format_result(
     # A plain list of values, such as the expiration dates of an option chain.
     if isinstance(dataset, list | tuple):
         if not dataset:
-            return _no_data(reason)
+            return _no_data(reason, notes, sources)
         values = [_clean(value) for value in dataset]
         # A list has no rows to cut by date, so it keeps its first values that fit.
         if max_characters and len(json.dumps(values, default=str)) > max_characters:

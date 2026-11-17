@@ -606,3 +606,147 @@ def test_too_many_tickers_or_countries_are_refused(captured):
     )
     assert "received 51 tickers; at most 50" in answer
     assert not captured
+
+
+@pytest.mark.parametrize("period", ["Yearly", "annual", "YEARLY"])
+def test_the_period_reaches_the_indicator_normalised(captured, period):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "performance",
+            {"indicator": "get_sharpe_ratio", "tickers": "AAPL", "period": period},
+        )
+    )
+
+    assert captured[-1]["period"] == "yearly"
+
+
+def test_a_ticker_left_out_by_show_columns_is_not_missing(monkeypatch):
+    def var(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"AAPL": [-0.037], "MSFT": [-0.038], "Benchmark": [-0.026]},
+            index=pd.period_range("2022", periods=1, freq="Y"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", var)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "risk",
+            {
+                "indicator": "get_value_at_risk",
+                "tickers": "AAPL,MSFT",
+                "period": "yearly",
+                "within_period": True,
+                "show_columns": "AAPL",
+            },
+        )
+    )[0][0].text
+
+    assert '"MSFT"' not in text
+    assert "No data is available" not in text
+
+
+def test_limit_zero_lifts_the_mcp_default_limit(captured):
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "etf", {"indicator": "get_holdings", "tickers": "SPY", "limit": 0}
+        )
+    )
+    assert "limit" not in captured[-1]
+
+    asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "etf", {"indicator": "get_holdings", "tickers": "SPY"}
+        )
+    )
+    assert captured[-1]["limit"] == 25  # noqa: PLR2004
+
+
+def test_an_unknown_parameter_is_named_with_a_near_match(captured):
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "risk",
+            {
+                "indicator": "get_value_at_risk",
+                "tickers": "AAPL",
+                "alpa": 0.01,
+                "colour": "red",
+            },
+        )
+    )[0][0].text
+
+    assert (
+        "`alpa` is not a parameter of `risk` and was ignored; did you mean `alpha`?"
+        in text
+    )
+    assert "`colour` is not a parameter of `risk` and was ignored." in text
+    assert "alpa" not in captured[-1] and "colour" not in captured[-1]
+
+
+def test_the_tool_schema_does_not_take_unknown_parameters():
+    tools = asyncio.run(mcp_controller.mcp.list_tools())
+    schema = next(tool for tool in tools if tool.name == "risk").inputSchema
+
+    assert schema.get("additionalProperties") in (None, False)
+
+
+def test_a_series_that_lags_behind_the_last_rows_is_named(monkeypatch):
+    import json
+
+    def inflation(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"United States": [0.034, 0.037, None], "Germany": [0.029, 0.033, 0.028]},
+            index=pd.period_range("2026-08", periods=3, freq="M"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", inflation)
+
+    def notes(limit):
+        text = asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "macroeconomics",
+                {
+                    "indicator": "get_inflation_rate",
+                    "countries": "United States,Germany",
+                    "limit": limit,
+                },
+            )
+        )[0][0].text
+        return json.loads(text).get("_notes", []) if text.startswith("{") else []
+
+    assert any(
+        note.startswith("United States (latest 2026-09) has no value for the selected")
+        for note in notes(-1)
+    )
+    # With a value in the selected rows, there is nothing to say.
+    assert not any("latest 2026-09" in note for note in notes(-2))
+
+
+def test_a_monthly_answer_to_a_quarterly_question_says_so(monkeypatch):
+    def inflation(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame(
+            {"United States": [0.068, 0.070]},
+            index=pd.period_range("2021-11", periods=2, freq="M"),
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", inflation)
+
+    def answer(**arguments):
+        return asyncio.run(
+            mcp_controller.mcp.call_tool(
+                "macroeconomics",
+                {
+                    "indicator": "get_inflation_rate",
+                    "countries": "United States",
+                    "quarterly": True,
+                    **arguments,
+                },
+            )
+        )[0][0].text
+
+    assert (
+        "Quarterly data is not available for `get_inflation_rate`, so the monthly "
+        "figures are shown." in answer()
+    )
+    # A period given explicitly is what was asked for.
+    assert "Quarterly data is not available" not in answer(period="monthly")

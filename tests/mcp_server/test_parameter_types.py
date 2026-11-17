@@ -268,3 +268,69 @@ def test_the_basket_reaches_the_toolkit(captured, given, expected):
 def test_econometrics_passes_deflate_with_to_its_series(schemas):
     assert "deflate_with" in schemas["econometrics"]
     assert "deflate_with" not in schemas["performance"]
+
+
+def test_a_number_parameter_keeps_its_label_and_per_ticker_forms(schemas, captured):
+    # Maturities are numbers or labels such as '10Y'; rates are numbers, a list or one per
+    # ticker. Each form reaches the indicator.
+    assert types_of(schemas["fixed_income"]["long_maturity"]) == {
+        "number",
+        "array",
+        "string",
+    }
+    assert types_of(schemas["models"]["rate_of_return"]) == {
+        "number",
+        "array",
+        "object",
+        "string",
+    }
+
+    call(
+        "fixed_income",
+        {
+            "indicator": "get_yield_curve_spread",
+            "short_maturity": "3M",
+            "long_maturity": "10Y",
+        },
+    )
+    assert (captured[-1]["short_maturity"], captured[-1]["long_maturity"]) == (
+        "3M",
+        "10Y",
+    )
+
+    call(
+        "models",
+        {
+            "indicator": "get_gordon_growth_model",
+            "tickers": "AAPL,MSFT",
+            "rate_of_return": {"AAPL": 0.08, "MSFT": 0.09},
+        },
+    )
+    assert captured[-1]["rate_of_return"] == {"AAPL": 0.08, "MSFT": 0.09}
+
+    call(
+        "models",
+        {
+            "indicator": "get_gordon_growth_model",
+            "tickers": "AAPL,MSFT",
+            "rate_of_return": "0.08,0.09",
+        },
+    )
+    assert captured[-1]["rate_of_return"] == [0.08, 0.09]
+
+
+@pytest.mark.parametrize(
+    ("lag", "expected"), [("1,2", [1, 2]), ("[1, 2]", [1, 2]), ("2", 2), (2, 2)]
+)
+def test_lags_are_a_number_a_list_or_comma_separated_text(captured, lag, expected):
+    call(
+        "profitability",
+        {
+            "indicator": "get_gross_margin",
+            "tickers": "AAPL",
+            "growth": True,
+            "lag": lag,
+        },
+    )
+
+    assert captured[-1]["lag"] == expected

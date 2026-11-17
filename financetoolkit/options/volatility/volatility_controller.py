@@ -491,7 +491,9 @@ class VolatilityOptions:
                 ) = self._solve_implied_volatility(
                     expiration_date, put_option, risk_free_rate, dividend_yield
                 )
-            except (KeyError, IndexError, ValueError):
+            except (KeyError, IndexError, ValueError) as error:
+                # An expiry without usable quotes is left out of the surface.
+                logger.debug("The %s expiry is left out: %s", expiration_date, error)
                 continue
 
             if implied_volatility.empty:

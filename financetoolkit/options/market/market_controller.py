@@ -53,7 +53,18 @@ class MarketOptions:
                     f"The expiration date(s) {', '.join(invalid)} are not available for "
                     f"{ticker}. Choose from {', '.join(available)}"
                 )
-            return list(expiration_dates)
+            # An expiry given for today has settled once the market closed.
+            open_dates = []
+            for date in expiration_dates:
+                if get_time_to_expiration(date, self._current_time()) <= 0:
+                    logger.warning(
+                        "The options of %s expiring on %s have expired and are left out.",
+                        ticker,
+                        date,
+                    )
+                else:
+                    open_dates.append(date)
+            return open_dates
         now = self._current_time()
         upcoming = [date for date in available if get_days_to_expiration(date, now) > 0]
         return upcoming[:number_of_expirations]
@@ -156,14 +167,6 @@ class MarketOptions:
             for expiration_date in self._expiries(
                 ticker, ticker_expiration_dates, number_of_expirations
             ):
-                # An expiry given for today has settled once the market closed.
-                if get_time_to_expiration(expiration_date, self._current_time()) <= 0:
-                    logger.warning(
-                        "The options of %s expiring on %s have expired and are left out.",
-                        ticker,
-                        expiration_date,
-                    )
-                    continue
                 inputs = self._expiry_inputs(ticker, expiration_date)
                 if inputs[0].empty or inputs[1].empty:
                     continue

@@ -422,7 +422,10 @@ def _in_new_york(current_time: pd.Timestamp | None) -> pd.Timestamp:
         return get_current_time()
     current_time = pd.Timestamp(current_time)
     if current_time.tzinfo is None:
-        return current_time.tz_localize(EXPIRATION_TIMEZONE)
+        # A wall-clock time that a daylight saving change skips or repeats takes the later one.
+        return current_time.tz_localize(
+            EXPIRATION_TIMEZONE, ambiguous=False, nonexistent="shift_forward"
+        )
     return current_time.tz_convert(EXPIRATION_TIMEZONE)
 
 

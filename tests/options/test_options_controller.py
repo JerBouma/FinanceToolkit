@@ -1179,6 +1179,10 @@ def test_an_expiry_that_has_closed_is_left_out(option_market, monkeypatch):
     assert first not in ratio.index.get_level_values("Expiration")
     assert set(ratio.index.get_level_values("Expiration")) == {*list(labels)[1:], "All"}
 
+    # The gamma exposure leaves the closed expiry out too, instead of failing as a whole.
+    gamma_exposure = module.get_gamma_exposure(expiration_dates=list(labels))
+    assert not gamma_exposure.empty
+
 
 def test_the_market_metrics_use_the_trailing_continuous_dividend_yield(option_market):
     import numpy as np  # noqa: PLC0415

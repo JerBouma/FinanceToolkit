@@ -152,3 +152,13 @@ def test_the_time_to_expiration_runs_to_four_in_the_afternoon_in_new_york():
     # After the close the option has expired.
     assert helpers.get_time_to_expiration("2026-11-17", now + pd.Timedelta(hours=7)) < 0
     assert helpers.get_days_to_expiration("2026-11-17", now) == 0
+
+
+def test_a_time_that_daylight_saving_skips_or_repeats_is_accepted():
+    from financetoolkit.options import helpers
+
+    skipped = pd.Timestamp("2026-03-08 02:30")
+    repeated = pd.Timestamp("2026-11-01 01:30")
+
+    assert helpers.get_time_to_expiration("2026-03-09", skipped) > 0
+    assert helpers.get_time_to_expiration("2026-11-02", repeated) > 0

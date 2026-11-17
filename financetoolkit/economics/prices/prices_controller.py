@@ -702,7 +702,7 @@ class PricesEconomics:
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: PPI, wholesale prices, factory gate prices, upstream inflation.
 
@@ -827,7 +827,7 @@ class PricesEconomics:
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: export prices, XPI, trade prices.
 
@@ -950,7 +950,7 @@ class PricesEconomics:
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpi_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: import prices, MPI, trade prices.
 

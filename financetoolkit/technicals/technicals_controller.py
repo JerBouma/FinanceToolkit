@@ -8122,10 +8122,10 @@ class Technicals:
         Which returns:
         |                                     |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
-        | ('get_rate_of_change', '1 Month')   |    0.0475 |                  0.3466 |                 0.1369 |        1.4936 |    0.1379 |           0.5798 |            119 |             0.0093 |              0.2626 |                 0.8581 |
-        | ('get_rate_of_change', '12 Months') |    0.1187 |                  0.3985 |                 0.2979 |        3.0956 |    0.0025 |           0.6389 |            108 |             0.0799 |              0.2626 |                 0.8581 |
-        | ('get_moving_average', '1 Month')   |    0.0383 |                  0.3464 |                 0.1107 |        1.2073 |    0.2297 |           0.563  |            119 |             0.0125 |              0.3074 |                 0.8028 |
-        | ('get_moving_average', '12 Months') |    0.1019 |                  0.3843 |                 0.2652 |        2.7561 |    0.0069 |           0.5833 |            108 |             0.0843 |              0.3074 |                 0.8028 |
+        | ('get_rate_of_change', '1 Month')   |    0.0477 |                  0.3456 |                 0.1381 |        1.5063 |    0.1347 |           0.5798 |            119 |             0.0092 |              0.2626 |                 0.8582 |
+        | ('get_rate_of_change', '12 Months') |    0.1181 |                  0.3986 |                 0.2964 |        3.0802 |    0.0026 |           0.6389 |            108 |             0.08   |              0.2626 |                 0.8582 |
+        | ('get_moving_average', '1 Month')   |    0.0383 |                  0.3458 |                 0.1107 |        1.2071 |    0.2298 |           0.563  |            119 |             0.0125 |              0.3074 |                 0.8031 |
+        | ('get_moving_average', '12 Months') |    0.1018 |                  0.3848 |                 0.2646 |        2.7503 |    0.007  |           0.5833 |            108 |             0.0853 |              0.3074 |                 0.8031 |
         """
         tickers = self._tickers
         factors = factor_model.get_daily_factors(
@@ -8158,6 +8158,7 @@ class Technicals:
             detail,
             self._start_date,
             self._end_date,
+            returns=self._historical_data["daily"].get("Return"),
         )
 
         return apply_rounding(

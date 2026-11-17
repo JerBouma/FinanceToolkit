@@ -732,7 +732,8 @@ def round_half_up(value: float | str | Decimal, decimals: int) -> float:
     even and works on the binary float, so 0.125 and 2.675 would not round up.
 
     Args:
-        value (float | str | Decimal): The number, a missing value is returned as is.
+        value (float | str | Decimal): The number, a missing value is returned as is and
+            an infinity as a float.
         decimals (int): The number of decimals to round to.
 
     Returns:
@@ -743,6 +744,10 @@ def round_half_up(value: float | str | Decimal, decimals: int) -> float:
 
     # str gives the shortest decimal that is the float, so 2.675 rounds as 2.675.
     number = value if isinstance(value, Decimal) else Decimal(str(value))
+
+    # An infinity (or NaN given as text) has no decimals to round, and quantize raises on it.
+    if not number.is_finite():
+        return float(number)
 
     return float(number.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
 

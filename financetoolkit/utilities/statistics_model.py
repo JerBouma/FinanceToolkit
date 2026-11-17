@@ -819,17 +819,20 @@ def bounded_ffill(
     Returns:
         pd.Series | pd.DataFrame: The data with each bounded single-period gap filled.
     """
-    if isinstance(dataset, pd.DataFrame):
-        # pandas accepts the "rows"/"index"/"columns" aliases the callers use, but its
-        # stubs only spell out the numeric form.
-        axis_number = 0 if axis in ("rows", "index") else 1
-        filled = dataset.ffill(axis=axis_number, limit=1)
-        has_future_data = dataset.bfill(axis=axis_number).notna()
-    else:
-        filled = dataset.ffill(limit=1)
-        has_future_data = dataset.bfill().notna()
+    # pandas accepts the "rows"/"index"/"columns" aliases the callers use, but its stubs
+    # only spell out the numeric form. A Series has a single axis.
+    axis_number = (
+        0 if axis in ("rows", "index") or isinstance(dataset, pd.Series) else 1
+    )
+    previous = dataset.shift(1, axis=axis_number)
 
-    return filled.where(has_future_data, dataset)
+    # A gap of one observation has a value on both sides. The first observation of a longer
+    # run has a value before it but not after it, so it stays empty as the rest of the run.
+    single_gap = (
+        dataset.isna() & previous.notna() & dataset.shift(-1, axis=axis_number).notna()
+    )
+
+    return dataset.mask(single_gap, previous)
 
 
 def calculate_growth(
@@ -950,6 +953,49 @@ def calculate_growth(
     )
 
 
+def shift_periods(
+    dataset: pd.Series | pd.DataFrame, periods: int = 1, axis: str = "columns"
+) -> pd.Series | pd.DataFrame:
+    """
+    Shifts a dataset by a number of periods, so each value lines up with the value that
+    many periods earlier. On yearly, quarterly, monthly or weekly periods (a PeriodIndex)
+    the shift counts calendar periods: a period missing from the data (2018, 2019, 2021)
+    leaves the value after it without a previous value, rather than comparing 2021 with
+    2019 as if they were a year apart. Other axes, daily periods among them (markets
+    close on weekends and holidays), shift by position.
+
+    Args:
+        dataset (pd.Series | pd.DataFrame): the dataset to shift.
+        periods (int): the number of periods to shift by. Defaults to 1.
+        axis (str): the axis that holds the periods of a DataFrame ("columns" or "rows").
+            Defaults to "columns".
+
+    Returns:
+        pd.Series | pd.DataFrame: the dataset shifted, with the same labels.
+    """
+    axis_number = (
+        0 if isinstance(dataset, pd.Series) or axis in ("rows", "index") else 1
+    )
+    labels = dataset.axes[axis_number]
+
+    if (
+        isinstance(labels, pd.PeriodIndex)
+        and len(labels) > 0
+        and labels.is_unique
+        and not labels.hasnans
+        and labels.freqstr.upper().startswith(("Y", "A", "Q", "M", "W"))
+    ):
+        every_period = pd.period_range(labels.min(), labels.max(), freq=labels.freq)
+
+        return (
+            dataset.reindex(every_period, axis=axis_number)
+            .shift(periods, axis=axis_number)
+            .reindex(labels, axis=axis_number)
+        )
+
+    return dataset.shift(periods, axis=axis_number)
+
+
 def calculate_change_over_absolute_base(
     dataset: pd.Series | pd.DataFrame, periods: int = 1, axis: str = "columns"
 ) -> pd.Series | pd.DataFrame:
@@ -967,11 +1013,7 @@ def calculate_change_over_absolute_base(
     Returns:
         pd.Series | pd.DataFrame: the change relative to the absolute previous value.
     """
-    if isinstance(dataset, pd.DataFrame):
-        axis_number = 0 if axis in ("rows", "index") else 1
-        previous = dataset.shift(periods, axis=axis_number)
-    else:
-        previous = dataset.shift(periods)
+    previous = shift_periods(dataset, periods, axis)
 
     return (dataset - previous) / previous.abs()
 
@@ -1031,11 +1073,7 @@ def calculate_compound_growth(
         pd.Series | pd.DataFrame: the compound annual growth rate, missing where either value
             is zero or negative.
     """
-    if isinstance(dataset, pd.DataFrame):
-        axis_number = 0 if axis in ("rows", "index") else 1
-        previous = dataset.shift(periods, axis=axis_number)
-    else:
-        previous = dataset.shift(periods)
+    previous = shift_periods(dataset, periods, axis)
 
     # A compound rate between a loss and a profit (or from zero) does not exist.
     ratio = (dataset / previous).where((dataset > 0) & (previous > 0))
@@ -1091,6 +1129,10 @@ def calculate_standardization(
     Returns:
         pd.Series | pd.DataFrame: the standardized (Z-Score) dataset.
     """
+    # An infinity (a division by zero upstream) is undefined rather than a value, and left
+    # in it would make the mean and standard deviation of its whole series NaN.
+    dataset = drop_non_finite(dataset)
+
     if isinstance(dataset, pd.Series):
         return apply_rounding((dataset - dataset.mean()) / dataset.std(), rounding)
 

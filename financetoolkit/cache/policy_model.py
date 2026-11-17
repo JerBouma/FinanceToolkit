@@ -81,8 +81,8 @@ class CachePolicy:
     Attributes:
         ttl_seconds (int): How long a stored range is served without contacting the
             source at all.
-        revision_days (int): How many days back from the end of the request are
-            re-requested once the stored range has gone stale. Zero means the whole
+        revision_days (int): How many days back from today are re-requested once the
+            stored range has gone stale; a stored range that ends before them is not. Zero means the whole
             stale range is requested again, which is the right behaviour for sources
             that cannot be queried by date range anyway.
         settles_at_close (bool): Whether the data holds a bar per trading day. The bar
@@ -147,6 +147,8 @@ POLICIES: dict[str, CachePolicy] = {
     f"{YAHOO_FINANCE}.statements": CachePolicy(ttl_seconds=DAY),
     # Company descriptors barely move.
     f"{FINANCIAL_MODELING_PREP}.profile": CachePolicy(ttl_seconds=30 * DAY),
+    # The statement currency and fiscal year end, Yahoo Finance's part of the profile.
+    f"{YAHOO_FINANCE}.company_information": CachePolicy(ttl_seconds=30 * DAY),
     f"{FINANCIAL_MODELING_PREP}.rating": CachePolicy(ttl_seconds=DAY),
     f"{FINANCIAL_MODELING_PREP}.quote": CachePolicy(ttl_seconds=60),
     f"{FINANCIAL_MODELING_PREP}.analyst_estimates": CachePolicy(ttl_seconds=DAY),

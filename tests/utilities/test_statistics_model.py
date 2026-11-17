@@ -722,14 +722,15 @@ def test_calculate_compound_growth_annualises_and_skips_sign_changes():
 
 def test_bounded_ffill_fills_one_gap_only_inside_the_data():
     result = statistics_model.bounded_ffill(
-        pd.Series([1.0, np.nan, np.nan, 4.0, np.nan])
+        pd.Series([1.0, np.nan, 3.0, np.nan, np.nan, 6.0, np.nan])
     )
 
-    # One period is carried forward, and never past the last observation.
-    assert result.tolist()[:2] == [1.0, 1.0]
-    assert np.isnan(result.iloc[2])
-    assert result.iloc[3] == 4.0
-    assert np.isnan(result.iloc[4])
+    # A single gap is carried forward, a run of two is not touched at all (its first
+    # period would otherwise show a flat growth), and nothing past the last observation.
+    assert result.tolist()[:3] == [1.0, 1.0, 3.0]
+    assert result.iloc[3:5].isna().all()
+    assert result.iloc[5] == 6.0
+    assert np.isnan(result.iloc[6])
 
     frame = pd.DataFrame(
         {"2020": [1.0, 1.0], "2021": [np.nan, np.nan], "2022": [3.0, np.nan]}
@@ -835,6 +836,60 @@ def test_finalize_dataset_keeps_a_skipped_period_as_an_empty_row():
     assert np.isnan(levels.loc["2025-10", "United States"])
     assert np.isnan(growth.loc["2025-11", "United States"])
     assert growth.loc["2025-12", "United States"] == pytest.approx(0.0097, abs=1e-4)
+
+
+def test_bounded_ffill_leaves_a_longer_run_empty_along_either_axis():
+    frame = pd.DataFrame([[1.0, np.nan, np.nan, 4.0], [1.0, np.nan, 3.0, np.nan]])
+
+    filled = statistics_model.bounded_ffill(frame)
+    rows = statistics_model.bounded_ffill(frame.T, axis="rows").T
+
+    for result in (filled, rows):
+        assert result.loc[0, [1, 2]].isna().all()
+        assert result.loc[1].tolist()[:3] == [1.0, 1.0, 3.0]
+        assert np.isnan(result.loc[1, 3])
+
+
+def test_growth_counts_calendar_periods_when_a_period_is_missing():
+    years = pd.PeriodIndex(["2018", "2019", "2021", "2022"], freq="Y")
+    frame = pd.DataFrame([[100.0, 110.0, 150.0, 165.0]], columns=years)
+
+    growth = statistics_model.calculate_growth(frame, rounding=None)
+    compound = statistics_model.calculate_growth(
+        frame, lag=2, compound=True, rounding=None
+    )
+
+    # 2021 has no 2020 to compare with, rather than a "yearly" growth from 2019.
+    assert growth.iloc[0].tolist()[1] == pytest.approx(0.1)
+    assert np.isnan(growth.iloc[0, 2])
+    assert growth.iloc[0, 3] == pytest.approx(0.1)
+    # Two years from 2019 to 2021, and 2022 has no 2020.
+    assert compound.iloc[0, 2] == pytest.approx((150 / 110) ** 0.5 - 1)
+    assert np.isnan(compound.iloc[0, 3])
+
+    quarters = pd.Series(
+        [1.0, 2.0, 4.0], index=pd.PeriodIndex(["2020Q1", "2020Q2", "2020Q4"], freq="Q")
+    )
+    assert np.isnan(statistics_model.calculate_growth(quarters, axis="rows").iloc[2])
+
+
+def test_growth_on_daily_periods_compares_the_previous_trading_day():
+    days = pd.PeriodIndex(["2024-01-05", "2024-01-08"], freq="D")
+    frame = pd.DataFrame({"A": [1.0, 2.0]}, index=days)
+
+    # Friday to Monday: the weekend is not a missing period.
+    assert statistics_model.calculate_growth(frame, axis="rows").loc[
+        days[1], "A"
+    ] == pytest.approx(1.0)
+
+
+def test_standardization_leaves_out_an_infinity():
+    result = statistics_model.calculate_standardization(
+        pd.Series([1.0, 2.0, 3.0, np.inf]), rounding=None
+    )
+
+    assert result.iloc[:3].tolist() == pytest.approx([-1.0, 0.0, 1.0])
+    assert np.isnan(result.iloc[3])
 
 
 def test_finalize_dataset_selects_comma_separated_and_gmdb_spelled_countries():

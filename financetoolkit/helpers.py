@@ -195,12 +195,13 @@ def convert_period_end_dates_to_calendar_periods(
           companies reporting on an off-calendar quarter cycle are relabelled.
 
     Both rules are the same rule at two frequencies: NVIDIA's fiscal 2024 is labelled 2023
-    and its four quarters are labelled 2023Q1 through 2023Q4. Only a January year end keeps
-    all four quarters within the label of its year. A year ending in February through May
-    is labelled with the preceding calendar year while its last quarters fall in the
-    calendar year of its end: Oracle's fiscal 2024 (June 2023 - May 2024) is labelled 2023
-    and its quarters 2023Q3, 2023Q4, 2024Q1 and 2024Q2. A yearly figure is therefore not
-    the sum of the four quarters with the same year label for such a company.
+    and its four quarters are labelled 2023Q1 through 2023Q4. A year ending in November,
+    December or January keeps its four quarters within the label of its year. Any other
+    year end splits them over two calendar years: Oracle's fiscal 2024 (June 2023 - May
+    2024) is labelled 2023 with quarters 2023Q3 through 2024Q2, and Apple's fiscal 2024
+    (October 2023 - September 2024) is labelled 2024 with quarters 2023Q4 through 2024Q3.
+    A yearly figure is therefore not the sum of the four quarters with the same year label
+    for such a company.
 
     A period ending in the first five days of a month is treated as ending in the month
     before (see determine_period_end_months). Companies with a 52/53-week fiscal year end

@@ -16,6 +16,11 @@ from financetoolkit.technicals import (
     seasonality_model,
     volatility_model,
 )
+from financetoolkit.technicals.helpers import (
+    calculate_per_ticker,
+    get_non_trading_days,
+    get_observations_per_year,
+)
 from financetoolkit.utilities import factor_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -688,14 +693,13 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        mcclellan_oscillator = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            mcclellan_oscillator[ticker] = breadth_model.get_mcclellan_oscillator(
-                historical_data[close_column][ticker], short_ema_window, long_ema_window
-            ).loc[self._start_date : self._end_date]
-
+        mcclellan_oscillator = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            breadth_model.get_mcclellan_oscillator,
+            short_ema_window,
+            long_ema_window,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=mcclellan_oscillator,
             start_date=self._start_date,
@@ -809,8 +813,8 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        advancers_decliners = breadth_model.get_advancers_decliners(
-            historical_data[close_column],
+        advancers_decliners = calculate_per_ticker(
+            historical_data, [close_column], breadth_model.get_advancers_decliners
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -901,13 +905,13 @@ class Technicals:
 
         Which returns:
 
-        | Date       |       BTCUSD |   Benchmark |
-        |:-----------|-------------:|------------:|
-        | 2025-12-27 | -1.15162e+12 | 1.48569e+09 |
-        | 2025-12-28 | -1.13646e+12 | 1.48569e+09 |
-        | 2025-12-29 | -1.18487e+12 | 1.42314e+09 |
-        | 2025-12-30 | -1.14929e+12 | 1.37597e+09 |
-        | 2025-12-31 | -1.18312e+12 | 1.30183e+09 |
+        | Date       |       BTCUSD |     Benchmark |
+        |:-----------|-------------:|--------------:|
+        | 2025-12-27 | -1.15162e+12 | nan           |
+        | 2025-12-28 | -1.13646e+12 | nan           |
+        | 2025-12-29 | -1.18487e+12 |   1.32079e+09 |
+        | 2025-12-30 | -1.14929e+12 |   1.27363e+09 |
+        | 2025-12-31 | -1.18312e+12 |   1.19948e+09 |
         """
         if period not in [
             "intraday",
@@ -930,9 +934,10 @@ class Technicals:
         # A running total starts at the start date, not at the earlier prices.
         historical_data = self._historical_data[period].loc[self._start_date :]
 
-        on_balance_volume = breadth_model.get_on_balance_volume(
-            historical_data[close_column],
-            historical_data["Volume"],
+        on_balance_volume = calculate_per_ticker(
+            historical_data,
+            [close_column, "Volume"],
+            breadth_model.get_on_balance_volume,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -1052,19 +1057,11 @@ class Technicals:
             self._start_date :
         ]
 
-        accumulation_distribution_line = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            accumulation_distribution_line[ticker] = (
-                breadth_model.get_accumulation_distribution_line(
-                    historical_data["High"][ticker],
-                    historical_data["Low"][ticker],
-                    historical_data[close_column][ticker],
-                    historical_data["Volume"][ticker],
-                ).loc[self._start_date : self._end_date]
-            )
-
+        accumulation_distribution_line = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column, "Volume"],
+            breadth_model.get_accumulation_distribution_line,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=accumulation_distribution_line,
             start_date=self._start_date,
@@ -1183,11 +1180,10 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        chaikin_oscillator = breadth_model.get_chaikin_oscillator(
-            historical_data["High"],
-            historical_data["Low"],
-            historical_data[close_column],
-            historical_data["Volume"],
+        chaikin_oscillator = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column, "Volume"],
+            breadth_model.get_chaikin_oscillator,
             short_window,
             long_window,
         ).loc[self._start_date : self._end_date]
@@ -1289,11 +1285,11 @@ class Technicals:
 
         | Date       |   ETHUSD |   SOLUSD |   Benchmark |
         |:-----------|---------:|---------:|------------:|
-        | 2025-12-27 |  -0.0938 |  -0.143  |      0.0688 |
-        | 2025-12-28 |  -0.1006 |  -0.0945 |      0.0818 |
-        | 2025-12-29 |  -0.1815 |  -0.1419 |      0.1253 |
-        | 2025-12-30 |  -0.1279 |  -0.0749 |      0.0534 |
-        | 2025-12-31 |  -0.1646 |  -0.1521 |     -0.0918 |
+        | 2025-12-27 |  -0.0938 |  -0.143  |    nan      |
+        | 2025-12-28 |  -0.1006 |  -0.0945 |    nan      |
+        | 2025-12-29 |  -0.1815 |  -0.1419 |      0.0671 |
+        | 2025-12-30 |  -0.1279 |  -0.0749 |      0.0614 |
+        | 2025-12-31 |  -0.1646 |  -0.1521 |      0.017  |
         """
         if period not in [
             "intraday",
@@ -1315,18 +1311,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        chaikin_money_flow = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            chaikin_money_flow[ticker] = breadth_model.get_chaikin_money_flow(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                historical_data["Volume"][ticker],
-                window,
-            ).loc[self._start_date : self._end_date]
-
+        chaikin_money_flow = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column, "Volume"],
+            breadth_model.get_chaikin_money_flow,
+            window,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=chaikin_money_flow,
             start_date=self._start_date,
@@ -1454,18 +1444,13 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        ease_of_movement = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            ease_of_movement[ticker] = breadth_model.get_ease_of_movement(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data["Volume"][ticker],
-                window,
-                volume_divisor,
-            ).loc[self._start_date : self._end_date]
-
+        ease_of_movement = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", "Volume"],
+            breadth_model.get_ease_of_movement,
+            window,
+            volume_divisor,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=ease_of_movement,
             start_date=self._start_date,
@@ -1589,16 +1574,12 @@ class Technicals:
         # A running total starts at the start date, not at the earlier prices.
         historical_data = self._historical_data[period].loc[self._start_date :]
 
-        negative_volume_index = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            negative_volume_index[ticker] = breadth_model.get_negative_volume_index(
-                historical_data[close_column][ticker],
-                historical_data["Volume"][ticker],
-                start_value,
-            ).loc[self._start_date : self._end_date]
-
+        negative_volume_index = calculate_per_ticker(
+            historical_data,
+            [close_column, "Volume"],
+            breadth_model.get_negative_volume_index,
+            start_value,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=negative_volume_index,
             start_date=self._start_date,
@@ -1722,16 +1703,12 @@ class Technicals:
         # A running total starts at the start date, not at the earlier prices.
         historical_data = self._historical_data[period].loc[self._start_date :]
 
-        positive_volume_index = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            positive_volume_index[ticker] = breadth_model.get_positive_volume_index(
-                historical_data[close_column][ticker],
-                historical_data["Volume"][ticker],
-                start_value,
-            ).loc[self._start_date : self._end_date]
-
+        positive_volume_index = calculate_per_ticker(
+            historical_data,
+            [close_column, "Volume"],
+            breadth_model.get_positive_volume_index,
+            start_value,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=positive_volume_index,
             start_date=self._start_date,
@@ -2109,11 +2086,10 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        money_flow_index = momentum_model.get_money_flow_index(
-            historical_data["High"],
-            historical_data["Low"],
-            historical_data[close_column],
-            historical_data["Volume"],
+        money_flow_index = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column, "Volume"],
+            momentum_model.get_money_flow_index,
             window,
         ).loc[self._start_date : self._end_date]
 
@@ -2205,11 +2181,11 @@ class Technicals:
 
         | Date       |   EURUSD |   Benchmark |
         |:-----------|---------:|------------:|
-        | 2025-12-26 | -16.5329 |     -6.0156 |
-        | 2025-12-28 | -18.4956 |    -11.4945 |
-        | 2025-12-29 | -18.4956 |    -16.9733 |
-        | 2025-12-30 | -78.0427 |    -20.7008 |
-        | 2025-12-31 | -78.0427 |    -43.3797 |
+        | 2025-12-26 | -29.4352 |     -6.0166 |
+        | 2025-12-28 | -39.9621 |    nan      |
+        | 2025-12-29 | -33.5227 |    -16.9802 |
+        | 2025-12-30 | -56.8182 |    -20.7239 |
+        | 2025-12-31 | -58.8068 |    -43.4088 |
         """
         if period not in [
             "intraday",
@@ -2231,10 +2207,10 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        williams_percent_r = momentum_model.get_williams_percent_r(
-            historical_data["High"],
-            historical_data["Low"],
-            historical_data[close_column],
+        williams_percent_r = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_williams_percent_r,
             window,
         ).loc[self._start_date : self._end_date]
 
@@ -2352,17 +2328,8 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        aroon_indicator_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            aroon_indicator_dict[ticker] = momentum_model.get_aroon_indicator(
-                historical_data["High"][ticker], historical_data["Low"][ticker], window
-            )
-
-        aroon_indicator = (
-            pd.concat(aroon_indicator_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
+        aroon_indicator = calculate_per_ticker(
+            historical_data, ["High", "Low"], momentum_model.get_aroon_indicator, window
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -2456,11 +2423,11 @@ class Technicals:
 
         | Date       |   CLUSD |   Benchmark |
         |:-----------|--------:|------------:|
-        | 2025-12-26 | 15.2689 |    120.245  |
-        | 2025-12-28 | -1.512  |     88.9846 |
-        | 2025-12-29 | 51.2665 |     60.685  |
-        | 2025-12-30 | 69.184  |     49.5715 |
-        | 2025-12-31 | 38.1997 |     -1.7385 |
+        | 2025-12-26 | 15.2689 |    144.032  |
+        | 2025-12-28 | -1.512  |    nan      |
+        | 2025-12-29 | 51.2665 |     82.3342 |
+        | 2025-12-30 | 69.184  |     67.1731 |
+        | 2025-12-31 | 38.1997 |     13.3141 |
         """
         if period not in [
             "intraday",
@@ -2482,21 +2449,13 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        commodity_channel_index = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-
-        for ticker in historical_data[close_column].columns:
-            commodity_channel_index[ticker] = (
-                momentum_model.get_commodity_channel_index(
-                    historical_data["High"][ticker],
-                    historical_data["Low"][ticker],
-                    historical_data[close_column][ticker],
-                    window,
-                    constant,
-                ).loc[self._start_date : self._end_date]
-            )
-
+        commodity_channel_index = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_commodity_channel_index,
+            window,
+            constant,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=commodity_channel_index,
             start_date=self._start_date,
@@ -2596,10 +2555,10 @@ class Technicals:
         | Date       |   Relative Vigor Index |   Signal Line |
         |:-----------|-----------------------:|--------------:|
         | 2025-12-24 |                -0.0322 |       -0.0822 |
-        | 2025-12-26 |                 0.0098 |       -0.0505 |
-        | 2025-12-29 |                -0.0084 |       -0.0215 |
-        | 2025-12-30 |                -0.0505 |       -0.0133 |
-        | 2025-12-31 |                -0.0627 |       -0.0285 |
+        | 2025-12-26 |               nan      |      nan      |
+        | 2025-12-29 |                -0.0004 |       -0.0522 |
+        | 2025-12-30 |                -0.0074 |       -0.0247 |
+        | 2025-12-31 |                -0.03   |       -0.013  |
         """
         if period not in [
             "intraday",
@@ -2621,22 +2580,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        relative_vigor_index_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            relative_vigor_index_dict[ticker] = momentum_model.get_relative_vigor_index(
-                historical_data["Open"][ticker],
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-            ).loc[self._start_date : self._end_date]
-
-        relative_vigor_index = (
-            pd.concat(relative_vigor_index_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        relative_vigor_index = calculate_per_ticker(
+            historical_data,
+            ["Open", "High", "Low", close_column],
+            momentum_model.get_relative_vigor_index,
+            window,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=relative_vigor_index,
@@ -2752,9 +2701,10 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        force_index = momentum_model.get_force_index(
-            historical_data[close_column],
-            historical_data["Volume"],
+        force_index = calculate_per_ticker(
+            historical_data,
+            [close_column, "Volume"],
+            momentum_model.get_force_index,
             window,
         ).loc[self._start_date : self._end_date]
 
@@ -2855,11 +2805,11 @@ class Technicals:
 
         | Date       |   ^GDAXI |   Benchmark |
         |:-----------|---------:|------------:|
-        | 2025-12-24 |  56.3876 |     57.6018 |
-        | 2025-12-26 |  60.8708 |     57.097  |
-        | 2025-12-29 |  69.7344 |     64.6179 |
-        | 2025-12-30 |  67.8468 |     66.1075 |
-        | 2025-12-31 | nan      |     53.9197 |
+        | 2025-12-24 | nan      |     57.7084 |
+        | 2025-12-26 | nan      |     56.8787 |
+        | 2025-12-29 |  56.2772 |     64.508  |
+        | 2025-12-30 |  61.9948 |     66.0178 |
+        | 2025-12-31 | nan      |     52.8916 |
         """
         if period not in [
             "intraday",
@@ -2881,19 +2831,14 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        ultimate_oscillator = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            ultimate_oscillator[ticker] = momentum_model.get_ultimate_oscillator(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window_1,
-                window_2,
-                window_3,
-            ).loc[self._start_date : self._end_date]
-
+        ultimate_oscillator = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_ultimate_oscillator,
+            window_1,
+            window_2,
+            window_3,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=ultimate_oscillator,
             start_date=self._start_date,
@@ -2990,11 +2935,11 @@ class Technicals:
 
         | Date       |   ^STOXX50E |   ^GSPC |   Benchmark |
         |:-----------|------------:|--------:|------------:|
-        | 2025-12-24 |      0.0048 |  0.0043 |      0.0046 |
-        | 2025-12-26 |      0.0047 |  0.0049 |      0.0052 |
-        | 2025-12-29 |      0.0046 |  0.005  |      0.0054 |
-        | 2025-12-30 |      0.0051 |  0.005  |      0.0053 |
-        | 2025-12-31 |      0.0051 |  0.0043 |      0.0046 |
+        | 2025-12-24 |    nan      |  0.0045 |      0.0048 |
+        | 2025-12-26 |    nan      |  0.0051 |      0.0054 |
+        | 2025-12-29 |      0.0048 |  0.0052 |      0.0055 |
+        | 2025-12-30 |      0.0054 |  0.0051 |      0.0055 |
+        | 2025-12-31 |    nan      |  0.0044 |      0.0048 |
         """
         if period not in [
             "intraday",
@@ -3016,8 +2961,10 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        percentage_price_oscillator = momentum_model.get_percentage_price_oscillator(
-            historical_data[close_column],
+        percentage_price_oscillator = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_percentage_price_oscillator,
             short_window,
             long_window,
         ).loc[self._start_date : self._end_date]
@@ -3112,11 +3059,11 @@ class Technicals:
 
         | Date       |   NGUSD |   Benchmark |
         |:-----------|--------:|------------:|
-        | 2025-12-26 | -0.0693 |    -12.8207 |
-        | 2025-12-28 | -0.155  |     -7.9386 |
-        | 2025-12-29 | -0.0764 |     -2.4429 |
-        | 2025-12-30 | -0.0021 |     -0.8893 |
-        | 2025-12-31 | -0.0493 |      0.9886 |
+        | 2025-12-26 | -0.0656 |     -3.2958 |
+        | 2025-12-28 | -0.1575 |    nan      |
+        | 2025-12-29 | -0.0724 |     -5.5778 |
+        | 2025-12-30 | -0.001  |    -13.3921 |
+        | 2025-12-31 | -0.0537 |     -8.1194 |
         """
         if period not in [
             "intraday",
@@ -3138,8 +3085,11 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        detrended_price_oscillator = momentum_model.get_detrended_price_oscillator(
-            historical_data[close_column], window
+        detrended_price_oscillator = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_detrended_price_oscillator,
+            window,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -3237,11 +3187,11 @@ class Technicals:
 
         | Date       |   USDJPY |   Benchmark |
         |:-----------|---------:|------------:|
-        | 2025-12-26 |  12.9299 |     17.7945 |
-        | 2025-12-28 |  12.0721 |     18.0251 |
-        | 2025-12-29 |  11.4398 |     17.7259 |
-        | 2025-12-30 |  11.0738 |     17.448  |
-        | 2025-12-31 |  10.4431 |     16.6228 |
+        | 2025-12-26 |  12.9436 |     14.8316 |
+        | 2025-12-28 |  12.0867 |    nan      |
+        | 2025-12-29 |  11.4583 |     14.7623 |
+        | 2025-12-30 |  11.0975 |     14.698  |
+        | 2025-12-31 |  10.4608 |     13.7116 |
         """
         if period not in [
             "intraday",
@@ -3263,19 +3213,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        average_directional_index = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            average_directional_index[ticker] = (
-                momentum_model.get_average_directional_index(
-                    historical_data["High"][ticker],
-                    historical_data["Low"][ticker],
-                    historical_data[close_column][ticker],
-                    window,
-                ).loc[self._start_date : self._end_date]
-            )
-
+        average_directional_index = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_average_directional_index,
+            window,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=average_directional_index,
             start_date=self._start_date,
@@ -3364,11 +3307,11 @@ class Technicals:
 
         | Date       |   SIUSD |   Benchmark |
         |:-----------|--------:|------------:|
-        | 2025-12-26 | 59.7782 |     11.8161 |
-        | 2025-12-28 | 57.6324 |      4.8651 |
-        | 2025-12-29 | 26.3815 |     23.9571 |
-        | 2025-12-30 | 38.9752 |     22.7863 |
-        | 2025-12-31 | 15.4986 |      8.2769 |
+        | 2025-12-26 | 59.7384 |     13.98   |
+        | 2025-12-28 | 57.585  |    nan      |
+        | 2025-12-29 | 26.3917 |     13.0139 |
+        | 2025-12-30 | 38.9776 |     12.4231 |
+        | 2025-12-31 | 15.5101 |     -7.4365 |
         """
         if period not in [
             "intraday",
@@ -3390,8 +3333,11 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        chande_momentum_oscillator = momentum_model.get_chande_momentum_oscillator(
-            historical_data[close_column], window
+        chande_momentum_oscillator = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_chande_momentum_oscillator,
+            window,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -3506,11 +3452,11 @@ class Technicals:
 
         | Date       |   Base Line |   Conversion Line |   Leading Span A |   Leading Span B |
         |:-----------|------------:|------------------:|-----------------:|-----------------:|
-        | 2025-12-25 |     49808.9 |           49640.4 |          49824   |          48044.8 |
-        | 2025-12-26 |     49808.9 |           49792.8 |          49969.9 |          48072.9 |
-        | 2025-12-29 |     49814.3 |           49792.8 |          49969.9 |          48253.7 |
-        | 2025-12-30 |     49819.8 |           49792.8 |          50111.6 |          48497.3 |
-        | 2025-12-31 |       nan   |             nan   |          50111.6 |          48497.3 |
+        | 2025-12-25 |     49681.5 |           49640.4 |          49838.9 |          47250   |
+        | 2025-12-26 |     49808.9 |           49792.8 |          49732.3 |          47250   |
+        | 2025-12-29 |     49808.9 |           49792.8 |          49824   |          47351.7 |
+        | 2025-12-30 |     49819.8 |           49792.8 |          49969.9 |          47710.2 |
+        | 2025-12-31 |       nan   |             nan   |          49926.3 |          47990.2 |
         """
         if period not in [
             "intraday",
@@ -3532,22 +3478,14 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        ichimoku_cloud_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            ichimoku_cloud_dict[ticker] = momentum_model.get_ichimoku_cloud(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                conversion_window,
-                base_window,
-                lead_span_b_window,
-            ).loc[self._start_date : self._end_date]
-
-        ichimoku_cloud = (
-            pd.concat(ichimoku_cloud_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        ichimoku_cloud = calculate_per_ticker(
+            historical_data,
+            ["High", "Low"],
+            momentum_model.get_ichimoku_cloud,
+            conversion_window,
+            base_window,
+            lead_span_b_window,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=ichimoku_cloud,
@@ -3645,11 +3583,11 @@ class Technicals:
 
         | Date       |   Stochastic %D |   Stochastic %K |
         |:-----------|----------------:|----------------:|
-        | 2025-12-26 |         85.0072 |         83.2421 |
-        | 2025-12-28 |         83.9852 |         83.2421 |
-        | 2025-12-29 |         83.2421 |         83.2421 |
-        | 2025-12-30 |         79.3458 |         71.5532 |
-        | 2025-12-31 |         75.4495 |         71.5532 |
+        | 2025-12-26 |         86.4285 |         82.9586 |
+        | 2025-12-28 |         85.136  |         82.9137 |
+        | 2025-12-29 |         84.997  |         89.1187 |
+        | 2025-12-30 |         80.5606 |         69.6493 |
+        | 2025-12-31 |         74.4904 |         64.7032 |
         """
         if period not in [
             "intraday",
@@ -3671,24 +3609,13 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        stochastic_oscillator_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            stochastic_oscillator_dict[ticker] = (
-                momentum_model.get_stochastic_oscillator(
-                    historical_data["High"][ticker],
-                    historical_data["Low"][ticker],
-                    historical_data[close_column][ticker],
-                    window,
-                    smooth_window,
-                ).loc[self._start_date : self._end_date]
-            )
-
-        stochastic_oscillator = (
-            pd.concat(stochastic_oscillator_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        stochastic_oscillator = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_stochastic_oscillator,
+            window,
+            smooth_window,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=stochastic_oscillator,
@@ -3818,19 +3745,14 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        macd_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            macd_dict[ticker] = (
-                momentum_model.get_moving_average_convergence_divergence(
-                    historical_data[close_column][ticker],
-                    short_window,
-                    long_window,
-                    signal_window,
-                ).loc[self._start_date : self._end_date]
-            )
-
-        macd = pd.concat(macd_dict, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
+        macd = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_moving_average_convergence_divergence,
+            short_window,
+            long_window,
+            signal_window,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=macd,
@@ -3926,11 +3848,11 @@ class Technicals:
 
         | Date       |   BTCUSD |   ETHUSD |   Benchmark |
         |:-----------|---------:|---------:|------------:|
-        | 2025-12-27 |  44.6846 |  45.0659 |     62.972  |
-        | 2025-12-28 |  44.9649 |  45.241  |     61.2128 |
-        | 2025-12-29 |  42.4043 |  44.276  |     59.4252 |
-        | 2025-12-30 |  47.7803 |  47.2561 |     57.5773 |
-        | 2025-12-31 |  44.643  |  46.9887 |     47.8313 |
+        | 2025-12-27 |  44.6846 |  45.0659 |    nan      |
+        | 2025-12-28 |  44.9649 |  45.241  |    nan      |
+        | 2025-12-29 |  42.4043 |  44.276  |     58.6691 |
+        | 2025-12-30 |  47.7803 |  47.2561 |     57.6091 |
+        | 2025-12-31 |  44.643  |  46.9887 |     51.5337 |
         """
         if period not in [
             "intraday",
@@ -3952,8 +3874,11 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        relative_strength_index = momentum_model.get_relative_strength_index(
-            historical_data[close_column], window
+        relative_strength_index = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_relative_strength_index,
+            window,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -4040,13 +3965,13 @@ class Technicals:
 
         Which returns:
 
-        | Date       |   ^FTSE |   Benchmark |
-        |:-----------|--------:|------------:|
-        | 2025-12-24 | -0.5953 |      0.802  |
-        | 2025-12-26 | -0.3466 |     -0.1381 |
-        | 2025-12-29 | -0.1212 |      0.099  |
-        | 2025-12-30 |  0.7846 |     -0.2222 |
-        | 2025-12-31 | -0.279  |     -0.9239 |
+        | Date       |    ^FTSE |   Benchmark |
+        |:-----------|---------:|------------:|
+        | 2025-12-24 |  -0.5953 |      0.802  |
+        | 2025-12-26 | nan      |     -0.1381 |
+        | 2025-12-29 |  -0.1212 |      0.099  |
+        | 2025-12-30 |   0.7846 |     -0.2222 |
+        | 2025-12-31 |  -0.279  |     -0.9239 |
         """
         if period not in [
             "intraday",
@@ -4068,11 +3993,10 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        balance_of_power = momentum_model.get_balance_of_power(
-            historical_data["Open"],
-            historical_data["High"],
-            historical_data["Low"],
-            historical_data[close_column],
+        balance_of_power = calculate_per_ticker(
+            historical_data,
+            ["Open", "High", "Low", close_column],
+            momentum_model.get_balance_of_power,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -4174,11 +4098,11 @@ class Technicals:
 
         | Date       |   SOLUSD |   Benchmark |
         |:-----------|---------:|------------:|
-        | 2025-12-27 |  -8.9048 |      8.1464 |
-        | 2025-12-28 |  -8.6621 |      7.9295 |
-        | 2025-12-29 |  -7.5992 |      7.0338 |
-        | 2025-12-30 |  -6.6618 |      6.2715 |
-        | 2025-12-31 |  -5.546  |      4.9234 |
+        | 2025-12-27 |  -8.9048 |    nan      |
+        | 2025-12-28 |  -8.6621 |    nan      |
+        | 2025-12-29 |  -7.5992 |     10.4586 |
+        | 2025-12-30 |  -6.6618 |     11.0505 |
+        | 2025-12-31 |  -5.546  |     10.5955 |
         """
         if period not in [
             "intraday",
@@ -4200,17 +4124,13 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        awesome_oscillator = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            awesome_oscillator[ticker] = momentum_model.get_awesome_oscillator(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                short_window,
-                long_window,
-            ).loc[self._start_date : self._end_date]
-
+        awesome_oscillator = calculate_per_ticker(
+            historical_data,
+            ["High", "Low"],
+            momentum_model.get_awesome_oscillator,
+            short_window,
+            long_window,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=awesome_oscillator,
             start_date=self._start_date,
@@ -4308,11 +4228,11 @@ class Technicals:
 
         | Date       |    VI+ |    VI- |
         |:-----------|-------:|-------:|
-        | 2025-12-26 | 1.1414 | 0.9189 |
-        | 2025-12-28 | 1.1667 | 0.8882 |
-        | 2025-12-29 | 1.1118 | 0.8882 |
-        | 2025-12-30 | 1.1094 | 0.8691 |
-        | 2025-12-31 | 1.058  | 0.9068 |
+        | 2025-12-26 | 1.1422 | 0.9189 |
+        | 2025-12-28 | 1.1661 | 0.8887 |
+        | 2025-12-29 | 1.1108 | 0.8889 |
+        | 2025-12-30 | 1.1099 | 0.8697 |
+        | 2025-12-31 | 1.0576 | 0.9069 |
         """
         if period not in [
             "intraday",
@@ -4334,21 +4254,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        vortex_indicator_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            vortex_indicator_dict[ticker] = momentum_model.get_vortex_indicator(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-            ).loc[self._start_date : self._end_date]
-
-        vortex_indicator = (
-            pd.concat(vortex_indicator_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        vortex_indicator = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_vortex_indicator,
+            window,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=vortex_indicator,
@@ -4446,11 +4357,11 @@ class Technicals:
 
         | Date       |   Bear Power |   Bull Power |
         |:-----------|-------------:|-------------:|
-        | 2025-12-26 |       0.1172 |       0.3357 |
-        | 2025-12-28 |       0.1601 |       0.3185 |
-        | 2025-12-29 |      -0.0356 |       0.3307 |
-        | 2025-12-30 |      -0.0892 |       0.1712 |
-        | 2025-12-31 |       0.0046 |       0.1455 |
+        | 2025-12-26 |       0.1171 |       0.3356 |
+        | 2025-12-28 |       0.1638 |       0.3223 |
+        | 2025-12-29 |      -0.0388 |       0.3272 |
+        | 2025-12-30 |      -0.0877 |       0.1728 |
+        | 2025-12-31 |       0.0063 |       0.1473 |
         """
         if period not in [
             "intraday",
@@ -4472,21 +4383,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        elder_ray_index_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            elder_ray_index_dict[ticker] = momentum_model.get_elder_ray_index(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-            ).loc[self._start_date : self._end_date]
-
-        elder_ray_index = (
-            pd.concat(elder_ray_index_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        elder_ray_index = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_elder_ray_index,
+            window,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=elder_ray_index,
@@ -4580,11 +4482,11 @@ class Technicals:
 
         | Date       |   GCUSD |   SIUSD |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-26 |  0.0518 |  0.245  |      0.0155 |
-        | 2025-12-28 |  0.0411 |  0.263  |      0.0145 |
-        | 2025-12-29 |  0.0019 |  0.108  |      0.0134 |
-        | 2025-12-30 |  0.0125 |  0.2306 |      0.015  |
-        | 2025-12-31 | -0.0075 |  0.0553 |      0.0187 |
+        | 2025-12-26 |  0.0518 |  0.245  |      0.0136 |
+        | 2025-12-28 |  0.0411 |  0.2629 |    nan      |
+        | 2025-12-29 |  0.0019 |  0.1081 |      0.0034 |
+        | 2025-12-30 |  0.0125 |  0.2305 |     -0.0002 |
+        | 2025-12-31 | -0.0075 |  0.0553 |      0.0032 |
         """
         if period not in [
             "intraday",
@@ -4606,9 +4508,8 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        rate_of_change = momentum_model.get_rate_of_change(
-            historical_data[close_column],
-            window,
+        rate_of_change = calculate_per_ticker(
+            historical_data, [close_column], momentum_model.get_rate_of_change, window
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -4710,11 +4611,11 @@ class Technicals:
 
         | Date       |   EURUSD |   Benchmark |
         |:-----------|---------:|------------:|
-        | 2025-12-26 |  52.4784 |     50.3552 |
-        | 2025-12-28 |  53.5899 |     48.3828 |
-        | 2025-12-29 |  54.145  |     45.0165 |
-        | 2025-12-30 |  58.6754 |     41.7357 |
-        | 2025-12-31 |  54.8842 |     41.2609 |
+        | 2025-12-26 |  58.6157 |     50.3552 |
+        | 2025-12-28 |  61.2072 |    nan      |
+        | 2025-12-29 |  61.879  |     49.989  |
+        | 2025-12-30 |  63.269  |     49.6207 |
+        | 2025-12-31 |  63.0658 |     48.7037 |
         """
         if period not in [
             "intraday",
@@ -4736,17 +4637,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        choppiness_index = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            choppiness_index[ticker] = momentum_model.get_choppiness_index(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-            ).loc[self._start_date : self._end_date]
-
+        choppiness_index = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_choppiness_index,
+            window,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=choppiness_index,
             start_date=self._start_date,
@@ -4882,22 +4778,15 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        know_sure_thing_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            know_sure_thing_dict[ticker] = momentum_model.get_know_sure_thing(
-                historical_data[close_column][ticker],
-                roc_windows,
-                sma_windows,
-                weights,
-                signal_window,
-            ).loc[self._start_date : self._end_date]
-
-        know_sure_thing = (
-            pd.concat(know_sure_thing_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        know_sure_thing = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_know_sure_thing,
+            roc_windows,
+            sma_windows,
+            weights,
+            signal_window,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=know_sure_thing,
@@ -5263,8 +5152,8 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        moving_average = moving_averages[method](
-            historical_data[close_column], window
+        moving_average = calculate_per_ticker(
+            historical_data, [close_column], moving_averages[method], window
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -5390,9 +5279,9 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        trix = overlap_model.get_trix(historical_data[close_column], window).loc[
-            self._start_date : self._end_date
-        ]
+        trix = calculate_per_ticker(
+            historical_data, [close_column], overlap_model.get_trix, window
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=trix,
@@ -5413,7 +5302,7 @@ class Technicals:
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
-        window: int = 14,
+        window: int = 20,
         num_std_dev: float = 2,
         rounding: int | None = None,
         growth: bool = False,
@@ -5441,9 +5330,9 @@ class Technicals:
 
         The band width tracks volatility: bands that narrow sharply (a squeeze) often precede a
         larger move, without saying in which direction. A close at or beyond a band is not a sell
-        or buy signal by itself, since prices can walk along a band in a trend. Bollinger's own
-        setting is a 20-period average with 2 standard deviations; this method defaults to a
-        window of 14, so pass window=20 to match most charting platforms.
+        or buy signal by itself, since prices can walk along a band in a trend. The defaults are
+        Bollinger's own setting, a 20-period average with 2 standard deviations, as on most
+        charting platforms.
 
         Also known as: Bollinger Bands, BB, volatility bands, price channels.
 
@@ -5453,7 +5342,7 @@ class Technicals:
             close_column (str, optional): The column name for closing prices in the historical data.
                 Defaults to "Adj Close".
             window (int, optional): Number of periods for moving average calculation.
-                The number of periods (time intervals) over which to calculate the moving average. Defaults to 14.
+                The number of periods (time intervals) over which to calculate the moving average. Defaults to 20.
             num_std_dev (float, optional): Number of standard deviations for the bands.
                 Defaults to 2.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -5499,11 +5388,11 @@ class Technicals:
 
         | Date       |   Close |   Lower Band |   Middle Band |   Upper Band |
         |:-----------|--------:|-------------:|--------------:|-------------:|
-        | 2025-12-26 |  156.5  |      154.489 |       156.076 |      157.664 |
-        | 2025-12-28 |  156.32 |      154.562 |       156.129 |      157.697 |
-        | 2025-12-29 |  156.03 |      154.588 |       156.146 |      157.704 |
-        | 2025-12-30 |  156.33 |      154.627 |       156.179 |      157.732 |
-        | 2025-12-31 |  156.85 |      154.808 |       156.296 |      157.785 |
+        | 2025-12-26 | 156.5   |      154.463 |       155.975 |      157.486 |
+        | 2025-12-28 | 156.324 |      154.582 |       156.038 |      157.495 |
+        | 2025-12-29 | 156.031 |      154.652 |       156.073 |      157.494 |
+        | 2025-12-30 | 156.329 |      154.744 |       156.124 |      157.504 |
+        | 2025-12-31 | 156.852 |      154.759 |       156.171 |      157.582 |
         """
         if period not in [
             "intraday",
@@ -5525,18 +5414,13 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        bollinger_bands_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            bollinger_bands_dict[ticker] = volatility_model.get_bollinger_bands(
-                historical_data[close_column][ticker], window, num_std_dev
-            ).loc[self._start_date : self._end_date]
-
-        bollinger_bands = (
-            pd.concat(bollinger_bands_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        bollinger_bands = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            volatility_model.get_bollinger_bands,
+            window,
+            num_std_dev,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=bollinger_bands,
@@ -5645,11 +5529,11 @@ class Technicals:
 
         | Date       |   ^STOXX50E |   Benchmark |
         |:-----------|------------:|------------:|
-        | 2025-12-24 |     5725.01 |     674.232 |
-        | 2025-12-26 |     5725.15 |     674.371 |
-        | 2025-12-29 |     5725.79 |     674.726 |
-        | 2025-12-30 |     5728.19 |     675.041 |
-        | 2025-12-31 |     5728.19 |     675.076 |
+        | 2025-12-24 |      nan    |     674.145 |
+        | 2025-12-26 |      nan    |     674.285 |
+        | 2025-12-29 |     5725.07 |     674.644 |
+        | 2025-12-30 |     5726.77 |     674.963 |
+        | 2025-12-31 |      nan    |     674.999 |
         """
         if period not in [
             "intraday",
@@ -5671,19 +5555,14 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        kaufman_adaptive_moving_average = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            kaufman_adaptive_moving_average[ticker] = (
-                overlap_model.get_kaufman_adaptive_moving_average(
-                    historical_data[close_column][ticker],
-                    window,
-                    fast_window,
-                    slow_window,
-                ).loc[self._start_date : self._end_date]
-            )
-
+        kaufman_adaptive_moving_average = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            overlap_model.get_kaufman_adaptive_moving_average,
+            window,
+            fast_window,
+            slow_window,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=kaufman_adaptive_moving_average,
             start_date=self._start_date,
@@ -5808,20 +5687,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        volume_weighted_average_price = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            volume_weighted_average_price[ticker] = (
-                overlap_model.get_volume_weighted_average_price(
-                    historical_data["High"][ticker],
-                    historical_data["Low"][ticker],
-                    historical_data[close_column][ticker],
-                    historical_data["Volume"][ticker],
-                    window,
-                ).loc[self._start_date : self._end_date]
-            )
-
+        volume_weighted_average_price = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column, "Volume"],
+            overlap_model.get_volume_weighted_average_price,
+            window,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=volume_weighted_average_price,
             start_date=self._start_date,
@@ -5918,11 +5789,11 @@ class Technicals:
 
         | Date       |   CLUSD |   Benchmark |
         |:-----------|--------:|------------:|
-        | 2025-12-26 | 55.5988 |     667.885 |
-        | 2025-12-28 | 55.8613 |     669.726 |
-        | 2025-12-29 | 56.1028 |     671.384 |
-        | 2025-12-30 | 56.325  |     672.875 |
-        | 2025-12-31 | 56.5294 |     674.218 |
+        | 2025-12-26 | 55.5988 |     666.32  |
+        | 2025-12-28 | 55.8613 |     nan     |
+        | 2025-12-29 | 56.1028 |     667.918 |
+        | 2025-12-30 | 56.325  |     669.389 |
+        | 2025-12-31 | 56.5294 |     670.742 |
         """
         if period not in [
             "intraday",
@@ -5944,18 +5815,14 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        parabolic_sar = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            parabolic_sar[ticker] = overlap_model.get_parabolic_sar(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                af_start,
-                af_increment,
-                af_max,
-            ).loc[self._start_date : self._end_date]
-
+        parabolic_sar = calculate_per_ticker(
+            historical_data,
+            ["High", "Low"],
+            overlap_model.get_parabolic_sar,
+            af_start,
+            af_increment,
+            af_max,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=parabolic_sar,
             start_date=self._start_date,
@@ -6051,11 +5918,11 @@ class Technicals:
 
         | Date       |   Pivot Point |   Resistance 1 |   Resistance 2 |   Support 1 |   Support 2 |
         |:-----------|--------------:|---------------:|---------------:|------------:|------------:|
-        | 2025-12-26 |        1.18   |         1.1809 |         1.1817 |      1.1792 |      1.1783 |
-        | 2025-12-28 |        1.1806 |         1.182  |         1.1841 |      1.1785 |      1.1771 |
-        | 2025-12-29 |        1.1806 |         1.1814 |         1.1827 |      1.1793 |      1.1785 |
-        | 2025-12-30 |        1.1797 |         1.1819 |         1.1837 |      1.1779 |      1.1757 |
-        | 2025-12-31 |        1.1709 |         1.1723 |         1.1746 |      1.1686 |      1.1672 |
+        | 2025-12-26 |        1.1785 |         1.1793 |         1.1802 |      1.1777 |      1.1768 |
+        | 2025-12-28 |        1.1776 |         1.1791 |         1.1812 |      1.1756 |      1.1741 |
+        | 2025-12-29 |        1.1772 |         1.178  |         1.1794 |      1.1759 |      1.1751 |
+        | 2025-12-30 |        1.177  |         1.1791 |         1.181  |      1.1752 |      1.1731 |
+        | 2025-12-31 |        1.1757 |         1.1771 |         1.1793 |      1.1734 |      1.1721 |
         """
         if period not in [
             "intraday",
@@ -6077,20 +5944,11 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        pivot_points_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            pivot_points_dict[ticker] = overlap_model.get_pivot_points(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-            ).loc[self._start_date : self._end_date]
-
-        pivot_points = (
-            pd.concat(pivot_points_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        pivot_points = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            overlap_model.get_pivot_points,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=pivot_points,
@@ -6239,21 +6097,12 @@ class Technicals:
 
         historical_data = self._historical_data[period]
 
-        support_resistance_levels = {}
-
-        for ticker in historical_data[close_column].columns:
-            support_resistance_levels[ticker] = (
-                overlap_model.get_support_resistance_levels(
-                    prices=historical_data[close_column][ticker],
-                    window=window,
-                    sensitivity=sensitivity,
-                )
-            )
-
-        support_resistance_levels_df = (
-            pd.concat(support_resistance_levels, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
+        support_resistance_levels_df = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            overlap_model.get_support_resistance_levels,
+            window=window,
+            sensitivity=sensitivity,
         )
 
         return finalize_dataset(
@@ -6400,23 +6249,16 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        fibonacci_retracement_levels_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            rolling_high = historical_data["High"][ticker].rolling(window=window).max()
-            rolling_low = historical_data["Low"][ticker].rolling(window=window).min()
-
-            fibonacci_retracement_levels_dict[ticker] = (
-                overlap_model.get_fibonacci_retracement_levels(
-                    rolling_high, rolling_low, levels=levels, trend=trend
-                ).loc[self._start_date : self._end_date]
-            )
-
-        fibonacci_retracement_levels = (
-            pd.concat(fibonacci_retracement_levels_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        fibonacci_retracement_levels = calculate_per_ticker(
+            historical_data,
+            ["High", "Low"],
+            lambda high, low: overlap_model.get_fibonacci_retracement_levels(
+                high.rolling(window=window).max(),
+                low.rolling(window=window).min(),
+                levels=levels,
+                trend=trend,
+            ),
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=fibonacci_retracement_levels,
@@ -6689,11 +6531,11 @@ class Technicals:
 
         | Date       |   NGUSD |   Benchmark |
         |:-----------|--------:|------------:|
-        | 2025-12-26 |  0.5251 |      2.3714 |
-        | 2025-12-28 |  0.482  |      2.7386 |
-        | 2025-12-29 |  0.2422 |      3.1057 |
-        | 2025-12-30 |  0.2599 |      1.9646 |
-        | 2025-12-31 |  0.3043 |      5.6062 |
+        | 2025-12-26 |   0.52  |      2.3715 |
+        | 2025-12-28 |   0.475 |    nan      |
+        | 2025-12-29 |   0.242 |      4.2071 |
+        | 2025-12-30 |   0.26  |      1.9647 |
+        | 2025-12-31 |   0.304 |      5.6062 |
         """
         if period not in [
             "intraday",
@@ -6715,16 +6557,11 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        true_range = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            true_range[ticker] = volatility_model.get_true_range(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-            ).loc[self._start_date : self._end_date]
-
+        true_range = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            volatility_model.get_true_range,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=true_range,
             start_date=self._start_date,
@@ -6828,11 +6665,11 @@ class Technicals:
 
         | Date       |   CLUSD |   NGUSD |   Benchmark |
         |:-----------|--------:|--------:|------------:|
-        | 2025-12-26 |  1.2031 |  0.3041 |      5.8269 |
-        | 2025-12-28 |  1.1614 |  0.3168 |      5.6063 |
-        | 2025-12-29 |  1.1778 |  0.3115 |      5.4277 |
-        | 2025-12-30 |  1.1558 |  0.3078 |      5.1803 |
-        | 2025-12-31 |  1.1697 |  0.3076 |      5.2107 |
+        | 2025-12-26 |  1.2031 |  0.304  |      6.4283 |
+        | 2025-12-28 |  1.1614 |  0.3162 |    nan      |
+        | 2025-12-29 |  1.1778 |  0.3109 |      6.2696 |
+        | 2025-12-30 |  1.1558 |  0.3073 |      5.9621 |
+        | 2025-12-31 |  1.1697 |  0.3071 |      5.9367 |
         """
         if period not in [
             "intraday",
@@ -6854,17 +6691,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        average_true_range = pd.DataFrame(
-            index=historical_data.loc[self._start_date : self._end_date].index
-        )
-        for ticker in historical_data[close_column].columns:
-            average_true_range[ticker] = volatility_model.get_average_true_range(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-            ).loc[self._start_date : self._end_date]
-
+        average_true_range = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            volatility_model.get_average_true_range,
+            window,
+        ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=average_true_range,
             start_date=self._start_date,
@@ -7003,22 +6835,13 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        supertrend_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            supertrend_dict[ticker] = volatility_model.get_supertrend(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-                multiplier,
-            ).loc[self._start_date : self._end_date]
-
-        supertrend = (
-            pd.concat(supertrend_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        supertrend = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            volatility_model.get_supertrend,
+            window,
+            multiplier,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=supertrend,
@@ -7116,11 +6939,11 @@ class Technicals:
 
         | Date       |   Lower Line |   Middle Line |   Upper Line |
         |:-----------|-------------:|--------------:|-------------:|
-        | 2025-12-24 |      23674   |       24088.6 |      24503.2 |
-        | 2025-12-26 |      23715.1 |       24113.2 |      24511.4 |
-        | 2025-12-29 |      23750.5 |       24135.9 |      24521.3 |
-        | 2025-12-30 |      23782.9 |       24169.6 |      24556.4 |
-        | 2025-12-31 |      23782.9 |       24169.6 |      24556.4 |
+        | 2025-12-24 |        nan   |         nan   |        nan   |
+        | 2025-12-26 |        nan   |         nan   |        nan   |
+        | 2025-12-29 |      23670.6 |       24089.3 |      24508   |
+        | 2025-12-30 |      23710.7 |       24127.5 |      24544.2 |
+        | 2025-12-31 |        nan   |         nan   |        nan   |
         """
         if period not in [
             "intraday",
@@ -7142,23 +6965,14 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        keltner_channels_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            keltner_channels_dict[ticker] = volatility_model.get_keltner_channels(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                historical_data[close_column][ticker],
-                window,
-                atr_window,
-                atr_multiplier,
-            ).loc[self._start_date : self._end_date]
-
-        keltner_channels = (
-            pd.concat(keltner_channels_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        keltner_channels = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            volatility_model.get_keltner_channels,
+            window,
+            atr_window,
+            atr_multiplier,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=keltner_channels,
@@ -7253,11 +7067,11 @@ class Technicals:
 
         | Date       |   Lower Channel |   Middle Channel |   Upper Channel |
         |:-----------|----------------:|-----------------:|----------------:|
-        | 2025-12-26 |          5.2425 |           5.4982 |          5.754  |
-        | 2025-12-28 |          5.281  |           5.5847 |          5.8885 |
-        | 2025-12-29 |          5.281  |           5.6002 |          5.9195 |
-        | 2025-12-30 |          5.281  |           5.6041 |          5.9272 |
-        | 2025-12-31 |          5.281  |           5.6041 |          5.9272 |
+        | 2025-12-26 |          5.2415 |           5.499  |          5.7565 |
+        | 2025-12-28 |          5.28   |           5.584  |          5.888  |
+        | 2025-12-29 |          5.28   |           5.6018 |          5.9235 |
+        | 2025-12-30 |          5.28   |           5.6018 |          5.9235 |
+        | 2025-12-31 |          5.28   |           5.6018 |          5.9235 |
         """
         if period not in [
             "intraday",
@@ -7279,20 +7093,12 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        donchian_channels_dict = {}
-
-        for ticker in historical_data[close_column].columns:
-            donchian_channels_dict[ticker] = volatility_model.get_donchian_channels(
-                historical_data["High"][ticker],
-                historical_data["Low"][ticker],
-                window,
-            ).loc[self._start_date : self._end_date]
-
-        donchian_channels = (
-            pd.concat(donchian_channels_dict, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
-        )
+        donchian_channels = calculate_per_ticker(
+            historical_data,
+            ["High", "Low"],
+            volatility_model.get_donchian_channels,
+            window,
+        ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=donchian_channels,
@@ -7328,7 +7134,10 @@ class Technicals:
 
         Realized volatility is the standard deviation of the log returns over each rolling
         window, annualized with the square root of the observations per year of the period
-        (252 for daily, 52 for weekly and 12 for monthly data). For each
+        (252 for daily data, or 365 for a ticker that also trades on weekends such as a
+        cryptocurrency, 52 for weekly and 12 for monthly data). Each ticker is measured over
+        the days it traded, so a stock in a Toolkit with a cryptocurrency keeps its own
+        returns rather than flat weekend days. For each
         window, the cone reports the minimum, the 10th, 25th, 50th, 75th and 90th percentiles,
         the maximum and the most recent value of that realized volatility series.
 
@@ -7398,12 +7207,12 @@ class Technicals:
 
         |   Window |    Min |   10th Percentile |   Median |   90th Percentile |    Max |   Current |
         |---------:|-------:|------------------:|---------:|------------------:|-------:|----------:|
-        |       10 | 0.0727 |            0.2073 |   0.3975 |            0.7323 | 1.3284 |    0.1308 |
-        |       20 | 0.0952 |            0.2474 |   0.4151 |            0.713  | 1.0995 |    0.2209 |
-        |       30 | 0.1416 |            0.2634 |   0.4278 |            0.6834 | 1.0096 |    0.2865 |
-        |       60 | 0.2175 |            0.2859 |   0.4537 |            0.6445 | 0.903  |    0.3453 |
-        |       90 | 0.2306 |            0.2962 |   0.445  |            0.6358 | 0.8003 |    0.3433 |
-        |      120 | 0.2412 |            0.3038 |   0.4334 |            0.6228 | 0.7615 |    0.3208 |
+        |       10 | 0.0875 |            0.2495 |   0.4784 |            0.8814 | 1.5987 |    0.1574 |
+        |       20 | 0.1146 |            0.2978 |   0.4996 |            0.8581 | 1.3232 |    0.2658 |
+        |       30 | 0.1704 |            0.317  |   0.5149 |            0.8225 | 1.215  |    0.3448 |
+        |       60 | 0.2618 |            0.3441 |   0.5461 |            0.7757 | 1.0868 |    0.4155 |
+        |       90 | 0.2776 |            0.3564 |   0.5356 |            0.7652 | 0.9631 |    0.4132 |
+        |      120 | 0.2903 |            0.3656 |   0.5216 |            0.7495 | 0.9164 |    0.3861 |
         """
         if period not in [
             "intraday",
@@ -7428,34 +7237,30 @@ class Technicals:
             self._start_date : self._end_date
         ]
 
-        volatility_cone = {}
-
-        # The volatility is annualized with the observations per year of the period;
-        # intraday that is the trading days times the bars per day.
+        # The volatility is annualized with the observations per year of the period: per
+        # ticker 252 trading days, or 365 calendar days for a ticker that also trades on
+        # weekends (a cryptocurrency); intraday those days times the bars per day.
+        bars_per_day = 1.0
         if period == "intraday":
             index = historical_data.index
             days = (
                 index.to_timestamp() if isinstance(index, pd.PeriodIndex) else index
             ).normalize()
-            periods_per_year = (
-                volatility_model.TRADING_DAYS_PER_YEAR
-                * len(index)
-                / max(days.nunique(), 1)
-            )
-        else:
-            periods_per_year = PERIODS_PER_YEAR[period]
+            bars_per_day = len(index) / max(days.nunique(), 1)
 
-        for ticker in historical_data[close_column].columns:
-            volatility_cone[ticker] = volatility_model.get_volatility_cone(
-                historical_data[close_column][ticker],
+        def get_volatility_cone(prices: pd.Series) -> pd.DataFrame:
+            return volatility_model.get_volatility_cone(
+                prices,
                 windows=windows,
-                periods_per_year=periods_per_year,
+                periods_per_year=(
+                    get_observations_per_year(prices) * bars_per_day
+                    if period in ("daily", "intraday")
+                    else PERIODS_PER_YEAR[period]
+                ),
             )
 
-        volatility_cone_df = (
-            pd.concat(volatility_cone, axis=1)
-            .swaplevel(1, 0, axis=1)
-            .sort_index(axis=1)
+        volatility_cone_df = calculate_per_ticker(
+            historical_data, [close_column], get_volatility_cone
         )
 
         return apply_rounding(
@@ -7960,12 +7765,13 @@ class Technicals:
             raise ValueError(
                 f"The frequency must be 'month' or 'weekday', not {frequency!r}."
             )
-        prices = self._close_prices(
-            "monthly" if frequency == "month" else "daily", close_column
-        )
-        returns = prices.pct_change(fill_method=None).loc[
-            self._start_date : self._end_date
-        ]
+        # Per ticker over the days it traded, so a stock in a Toolkit with a cryptocurrency
+        # gets no weekend days without a move.
+        returns = calculate_per_ticker(
+            self._historical_data["monthly" if frequency == "month" else "daily"],
+            [close_column],
+            lambda prices: prices.pct_change(fill_method=None),
+        ).loc[self._start_date : self._end_date]
 
         seasonality = pd.concat(
             {
@@ -8029,8 +7835,8 @@ class Technicals:
             close_column (str, optional): The name of the column containing the close prices.
                 Defaults to "Adj Close".
             window (int | None, optional): The moving average window of the Mansfield relative
-                strength, in periods. Defaults to None, which uses a year of periods: 252 daily,
-                52 weekly, 12 monthly, 4 quarterly and 1 yearly (a single period, which makes the
+                strength, in periods. Defaults to None, which uses a year of periods: 252 daily
+                (365 for a ticker that also trades on weekends, such as a cryptocurrency), 52 weekly, 12 monthly, 4 quarterly and 1 yearly (a single period, which makes the
                 measure zero, so pass a longer window for yearly data).
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit.
@@ -8082,24 +7888,60 @@ class Technicals:
             for ticker in prices.columns
             if ticker not in ("Portfolio", "Benchmark")
         ]
-        # A year of periods whatever the period: 252 periods would be almost five years of weekly and 21 years of monthly prices, leaving most histories without a value.  # noqa: E501
-        relative, mansfield = seasonality_model.get_relative_strength(
-            prices[tickers],
-            prices["Benchmark"],
-            window if window is not None else PERIODS_PER_YEAR[period],
+        benchmark = prices["Benchmark"]
+
+        def get_relative_strength(ticker_prices: pd.Series) -> pd.DataFrame:
+            # A year of periods whatever the period: 252 periods would be almost five years of weekly and 21 years of monthly prices, leaving most histories without a value. A ticker that trades on weekends has 365 daily periods a year.  # noqa: E501
+            relative, mansfield = seasonality_model.get_relative_strength(
+                ticker_prices,
+                benchmark.reindex(ticker_prices.index),
+                (
+                    window
+                    if window is not None
+                    else (
+                        get_observations_per_year(ticker_prices)
+                        if period == "daily"
+                        else PERIODS_PER_YEAR[period]
+                    )
+                ),
+            )
+            return pd.concat(
+                {
+                    "Relative Strength": relative,
+                    "Mansfield Relative Strength": mansfield,
+                },
+                axis=1,
+            )
+
+        strength = calculate_per_ticker(
+            self._historical_data[period], [close_column], get_relative_strength
         )
 
+        # Each ticker's score over the days it traded, its quarters counted in its own days
+        # (63 trading days, or 91 calendar days for a ticker that trades on weekends). On a
+        # day a ticker did not trade its latest score still ranks the others, but it gets
+        # no rating itself.
+        daily_data = self._historical_data["daily"]
+        scores = calculate_per_ticker(
+            daily_data,
+            [close_column],
+            lambda ticker_prices: seasonality_model.get_relative_strength_score(
+                ticker_prices, get_observations_per_year(ticker_prices)
+            ),
+        )[tickers]
         rating = seasonality_model.get_relative_strength_rating(
-            self._historical_data["daily"][close_column][tickers]
-        )
+            scores.ffill(limit_area="inside")
+        ).where(~get_non_trading_days(daily_data, close_column)[tickers])
         if period != "daily":
             rating = rating.groupby(rating.index.asfreq(prices.index.freqstr)).last()
             rating = rating.reindex(prices.index)
 
         relative_strength = pd.concat(
             {
-                "Relative Strength": relative,
-                "Mansfield Relative Strength": mansfield,
+                "Relative Strength": strength["Relative Strength"][tickers],
+                "Mansfield Relative Strength": strength["Mansfield Relative Strength"][
+                    tickers
+                ],
                 "Relative Strength Rating": rating,
             },
             axis=1,
@@ -8405,29 +8247,34 @@ class Technicals:
 
         historical_data = self._get_historical_data(period, close_column)
 
-        pattern_dict = {}
-        for ticker in historical_data[close_column].columns:
-            candles = pd.concat(
-                [
-                    historical_data[column][ticker]
-                    for column in ("Open", "High", "Low", close_column)
-                ],
-                axis=1,
-                keys=["Open", "High", "Low", "Close"],
-            ).dropna()
+        def get_candlestick_patterns(
+            open_prices: pd.Series,
+            high_prices: pd.Series,
+            low_prices: pd.Series,
+            close_prices: pd.Series,
+        ) -> pd.DataFrame:
             # Each ticker is evaluated on its own candles, so a later listing or a missing
             # day doesn't shift the candles a pattern compares.
-            pattern_dict[ticker] = (
-                pattern_model.get_candlestick_patterns(
-                    candles["Open"], candles["High"], candles["Low"], candles["Close"]
-                )
-                .reindex(historical_data.index)
-                .loc[self._start_date : self._end_date]
-            )
+            candles = pd.concat(
+                [open_prices, high_prices, low_prices, close_prices], axis=1
+            ).dropna()
+            return pattern_model.get_candlestick_patterns(
+                candles.iloc[:, 0],
+                candles.iloc[:, 1],
+                candles.iloc[:, 2],
+                candles.iloc[:, 3],
+            ).reindex(close_prices.index)
 
-        candlestick_patterns = pd.concat(pattern_dict, axis=1).swaplevel(0, 1, axis=1)[
+        candlestick_patterns = calculate_per_ticker(
+            historical_data,
+            ["Open", "High", "Low", close_column],
+            get_candlestick_patterns,
+        ).loc[self._start_date : self._end_date][
             list(patterns or pattern_model.PATTERN_LOOKBACK)
         ]
+        candlestick_patterns = candlestick_patterns.reindex(
+            columns=historical_data[close_column].columns, level=1
+        )
 
         if signals_only:
             # A pattern is a rare event, so most periods are all zeros; the empty warm-up
@@ -8512,7 +8359,8 @@ class Technicals:
                 Bands. Defaults to 2.
             high_low_window (int | None, optional): The number of previous periods a new high or
                 low is measured against. Defaults to None, which uses a year of periods: 252 daily
-                (and intraday), 52 weekly, 12 monthly, 4 quarterly and 1 yearly.
+                (and intraday), or 365 for a ticker that also trades on weekends such as a
+                cryptocurrency, 52 weekly, 12 monthly, 4 quarterly and 1 yearly.
             signals_only (bool, optional): Whether to return only the periods in which at least one
                 signal occurs for at least one ticker. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -8571,13 +8419,19 @@ class Technicals:
                 )
             close_column = "Close"
 
-        prices = self._historical_data[period][close_column]
-        if high_low_window is None:
-            high_low_window = PERIODS_PER_YEAR.get(period, 252)
+        historical_data = self._historical_data[period]
 
-        signal_dict = {
-            ticker: pattern_model.get_signals(
-                prices[ticker].dropna(),
+        def get_signals(prices: pd.Series) -> pd.DataFrame:
+            # A year of periods, which is 365 days for a ticker that trades on weekends.
+            if high_low_window is not None:
+                window = high_low_window
+            elif period in ("daily", "intraday"):
+                window = get_observations_per_year(prices)
+            else:
+                window = PERIODS_PER_YEAR[period]
+
+            signals = pattern_model.get_signals(
+                prices.dropna(),
                 short_window=short_window,
                 long_window=long_window,
                 macd_short_window=macd_short_window,
@@ -8588,16 +8442,18 @@ class Technicals:
                 rsi_oversold=rsi_oversold,
                 bollinger_window=bollinger_window,
                 bollinger_std_dev=bollinger_std_dev,
-                high_low_window=high_low_window,
+                high_low_window=window,
             )
-            .reindex(prices.index)
-            .loc[self._start_date : self._end_date]
-            for ticker in prices.columns
-        }
+            signal_names[:] = signals.columns
+            return signals.reindex(prices.index)
 
-        signals = pd.concat(signal_dict, axis=1).swaplevel(0, 1, axis=1)[
-            list(signal_dict[prices.columns[0]].columns)
-        ]
+        # The signals in the order the model gives them and the tickers in their own order.
+        signal_names: list[str] = []
+        signals = (
+            calculate_per_ticker(historical_data, [close_column], get_signals)
+            .loc[self._start_date : self._end_date][signal_names]
+            .reindex(columns=historical_data[close_column].columns, level=1)
+        )
 
         if signals_only:
             # Most periods have no signal at all; the empty warm-up (NaN) doesn't count either.

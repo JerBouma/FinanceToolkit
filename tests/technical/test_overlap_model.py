@@ -240,7 +240,9 @@ def test_parabolic_sar_starts_at_each_ticker_first_bar():
     pd.testing.assert_series_equal(
         later.iloc[5:], overlap_model.get_parabolic_sar(high.iloc[5:], low.iloc[5:])
     )
-    assert full.notna().all()
+    # The first bar only sets the direction, so the SAR starts on the second bar.
+    assert pd.isna(full.iloc[0])
+    assert full.iloc[1:].notna().all()
 
     gap_high, gap_low = high.copy(), low.copy()
     gap_high.iloc[12] = float("nan")
@@ -266,3 +268,87 @@ def test_support_resistance_follow_each_ticker_own_data():
 
     assert levels.iloc[:15].isna().all().all()
     pd.testing.assert_frame_equal(levels.iloc[15:], truncated)
+
+
+def test_parabolic_sar_matches_ta_lib_from_a_short_start():
+    """TA-Lib's ta_SAR.c (SAR(0.02, 0.2)) on bars whose second low falls further than
+    the high rises, so the trade starts short at the first high and reverses to a long.
+    """
+    high = pd.Series(
+        [96.5944, 95.4067, 96.7179, 97.5011, 96.4311, 98.0733, 96.3935, 96.4349]
+        + [95.0034, 93.9741, 94.7635, 92.3434]
+    )
+    low = pd.Series(
+        [95.2593, 94.4887, 96.1772, 95.6457, 95.1031, 95.7938, 94.3958, 94.9741]
+        + [94.6838, 92.6554, 93.7713, 91.8332]
+    )
+    ta_lib = [
+        float("nan"),
+        96.5944,
+        94.4887,
+        94.4887,
+        94.6092,
+        94.7249,
+        98.0733,
+        98.0733,
+        97.9998,
+        97.9277,
+        97.7168,
+        97.5144,
+    ]
+
+    result = overlap_model.get_parabolic_sar(high, low)
+
+    # The prices are rounded to four decimals, which moves the last decimal at most.
+    assert result.tolist()[1:] == pytest.approx(ta_lib[1:], abs=2e-4)
+    assert pd.isna(result.iloc[0])
+
+
+def test_parabolic_sar_takes_separate_start_and_increment():
+    """TA-Lib's SAREXT with an initial factor of 0.01, steps of 0.03 and a maximum of 0.25
+    is the same recursion with a different start and increment of the factor."""
+    high = pd.Series([10.0, 10.5, 11.0, 11.6, 12.0, 11.8, 12.5])
+    low = pd.Series([9.5, 9.9, 10.4, 11.0, 11.3, 11.1, 11.9])
+
+    result = overlap_model.get_parabolic_sar(high, low, 0.01, 0.03, 0.25)
+
+    # Long from the start (the second low is higher): the SAR starts at the first low and
+    # the extreme point at the second high. Each bar shows the SAR set the bar before, then
+    # a new high raises the factor and the next SAR stays below this and the prior low.
+    sar, af, extreme_point = 9.5, 0.01, 10.5
+    expected = []
+    for i in range(1, len(high)):
+        expected.append(sar)
+        if high.iloc[i] > extreme_point:
+            extreme_point, af = high.iloc[i], min(af + 0.03, 0.25)
+        sar = min(
+            sar + af * (extreme_point - sar), low.iloc[max(i - 1, 1)], low.iloc[i]
+        )
+
+    assert result.iloc[1:].tolist() == pytest.approx(expected)
+
+
+def test_exponential_and_adaptive_averages_stop_where_the_prices_stop():
+    """The EMA (and with it the DEMA, TRIX and MACD built on it) and KAMA are NaN on the
+    dates without a price instead of repeating their last value, and the recursion
+    continues from the last average on the next price."""
+    import numpy as np  # noqa: PLC0415
+
+    close = sample_prices()["Close"].copy()
+    close.iloc[-5:] = np.nan
+    close.iloc[40] = np.nan
+
+    ema = overlap_model.get_exponential_moving_average(close, 10)
+    for result in (
+        ema,
+        overlap_model.get_double_exponential_moving_average(close, 5),
+        overlap_model.get_trix(close, 5),
+        overlap_model.get_kaufman_adaptive_moving_average(close, 5),
+    ):
+        assert result.iloc[-5:].isna().all()
+        assert pd.isna(result.iloc[40])
+
+    alpha = 2 / 11
+    assert ema.iloc[41] == pytest.approx(
+        alpha * close.iloc[41] + (1 - alpha) * ema.iloc[39]
+    )

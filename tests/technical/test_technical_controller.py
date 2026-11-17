@@ -499,6 +499,9 @@ def test_conventional_default_windows():
         10,
         2,
     )
+    # Bollinger's own setting: a 20-period average with bands at 2 standard deviations.
+    bollinger = defaults(Technicals.get_bollinger_bands)
+    assert (bollinger["window"], bollinger["num_std_dev"]) == (20, 2)
 
 
 def test_relative_vigor_index_returns_index_and_signal_line(technical_module):
@@ -673,3 +676,127 @@ def test_signals_only_keeps_the_periods_with_a_signal(technical_module):
 
 def test_get_moving_average_rejects_an_unknown_method(technical_module):
     assert technical_module.get_moving_average(method="cubic").empty
+
+
+def _stock_with_a_cryptocurrency():
+    """The test toolkit's AAPL and Benchmark next to a ticker with a price on every
+    calendar day, filled as the Toolkit fills the dates a ticker did not trade."""
+    import numpy as np  # noqa: PLC0415
+
+    from financetoolkit.historical_model import (  # noqa: PLC0415
+        fill_non_trading_days,
+    )
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    stock = historical.loc[
+        :, historical.columns.get_level_values(1).isin(["AAPL", "Benchmark"])
+    ]
+    days = pd.period_range(stock.index[0], stock.index[-1], freq="D")
+    close = pd.Series(
+        100 * np.exp(np.cumsum(np.random.default_rng(1).normal(0, 0.03, len(days)))),
+        index=days,
+    )
+    crypto = pd.DataFrame(
+        {
+            "Open": close * 0.99,
+            "High": close * 1.02,
+            "Low": close * 0.97,
+            "Close": close,
+            "Adj Close": close,
+            "Volume": 1e6,
+            "Dividends": 0.0,
+            "Return": close.pct_change(),
+            "Cumulative Return": close / close.iloc[0],
+        }
+    )
+    crypto.columns = pd.MultiIndex.from_product([crypto.columns, ["BTC"]])
+    columns = stock.columns.get_level_values(0).unique()
+    mixed = pd.concat([stock.reindex(days), crypto], axis=1).reindex(
+        columns=pd.MultiIndex.from_product([columns, ["AAPL", "BTC", "Benchmark"]])
+    )
+
+    return stock, close, fill_non_trading_days(mixed, "Adj Close")
+
+
+def test_a_stock_keeps_its_indicators_next_to_a_cryptocurrency():
+    """A stock in a Toolkit with a cryptocurrency gets flat weekend bars without a Return.
+    Its indicators are calculated over its own trading days, so they equal those of the
+    stock alone, and are NaN on the weekends it did not trade."""
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, _, mixed = _stock_with_a_cryptocurrency()
+    alone = Technicals(["AAPL"], {"daily": stock}, rounding=None)
+    together = Technicals(["AAPL", "BTC"], {"daily": mixed}, rounding=None)
+    saturday = pd.Period("2022-12-24", freq="D")
+
+    for method in (
+        "get_average_true_range",
+        "get_average_directional_index",
+        "get_bollinger_bands",
+        "get_money_flow_index",
+        "get_ease_of_movement",
+        "get_relative_strength_index",
+        "get_balance_of_power",
+        "get_parabolic_sar",
+        "get_supertrend",
+        "get_moving_average_convergence_divergence",
+        "get_on_balance_volume",
+        "get_candlestick_patterns",
+        "get_signals",
+    ):
+        expected = getattr(alone, method)()
+        result = getattr(together, method)()
+        if isinstance(expected.columns, pd.MultiIndex):
+            expected = expected.xs("AAPL", level=1, axis=1)
+            result = result.xs("AAPL", level=1, axis=1)
+        else:
+            expected, result = expected[["AAPL"]], result[["AAPL"]]
+
+        pd.testing.assert_frame_equal(
+            result.reindex(expected.index), expected, check_freq=False
+        )
+        assert result.loc[saturday].isna().all(), method
+
+    # The cryptocurrency trades every day, so it has values on the weekend.
+    assert together.get_average_true_range().loc[saturday, "BTC"] > 0
+
+    cone = together.get_volatility_cone()
+    pd.testing.assert_frame_equal(
+        cone.xs("AAPL", level=1, axis=1),
+        alone.get_volatility_cone().xs("AAPL", level=1, axis=1),
+    )
+
+
+def test_a_cryptocurrency_counts_a_year_in_calendar_days():
+    """A ticker with prices on weekends annualizes with 365 days and measures a quarter of
+    its relative strength score in 91 days; a stock keeps 252 and 63."""
+    import numpy as np  # noqa: PLC0415
+
+    from financetoolkit.technicals import (  # noqa: PLC0415
+        helpers,
+        seasonality_model,
+    )
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, close, mixed = _stock_with_a_cryptocurrency()
+    assert helpers.get_observations_per_year(close) == 365
+    assert helpers.get_observations_per_year(stock[("Close", "AAPL")]) == 252
+
+    together = Technicals(["AAPL", "BTC"], {"daily": mixed}, rounding=None)
+    log_returns = np.log(close / close.shift(1))
+    cone = together.get_volatility_cone().xs("BTC", level=1, axis=1)
+    assert cone.loc[20, "Current"] == pytest.approx(
+        log_returns.iloc[-20:].std() * np.sqrt(365)
+    )
+
+    score = seasonality_model.get_relative_strength_score(close, 365)
+    assert score.iloc[-1] == pytest.approx(
+        sum(
+            weight * (close.iloc[-1] / close.iloc[-1 - days] - 1)
+            for days, weight in zip((91, 182, 274, 365), (0.4, 0.2, 0.2, 0.2))
+        )
+    )

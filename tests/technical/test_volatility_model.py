@@ -85,3 +85,35 @@ def test_supertrend_direction_is_nan_until_the_bands_start():
     direction = supertrend["Trend Direction"]
     assert direction.iloc[:9].isna().all()
     assert direction.iloc[9:].notna().all()
+
+
+def test_recursive_averages_stop_where_the_prices_stop():
+    """A series that ends early (a delisted ticker) has no Wilder average, Average True
+    Range or Supertrend after its last price, while a single missing day in the middle is
+    NaN on that day and the recursion carries on from the last average after it."""
+    import numpy as np  # noqa: PLC0415
+
+    prices = sample_prices()
+    high, low, close = (
+        prices["High"].copy(),
+        prices["Low"].copy(),
+        prices["Close"].copy(),
+    )
+    for series in (high, low, close):
+        series.iloc[-5:] = np.nan
+        series.iloc[40] = np.nan
+
+    true_range = volatility_model.get_true_range(high, low, close)
+    wilder = volatility_model.get_wilder_moving_average(true_range, 14)
+    average_true_range = volatility_model.get_average_true_range(high, low, close, 14)
+    supertrend = volatility_model.get_supertrend(high, low, close)
+
+    for result in (wilder, average_true_range, supertrend["Supertrend"]):
+        assert result.iloc[-5:].isna().all()
+        assert pd.isna(result.iloc[40])
+    assert supertrend["Trend Direction"].iloc[-5:].isna().all()
+
+    # After the gap the recursion continues from the average of the day before it.
+    assert wilder.iloc[41] == pytest.approx(
+        wilder.iloc[39] + (true_range.iloc[41] - wilder.iloc[39]) / 14
+    )

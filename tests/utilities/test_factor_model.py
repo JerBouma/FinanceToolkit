@@ -21,7 +21,7 @@ def random_prices(periods=400, seed=0):
 
 def test_a_factor_equal_to_the_forward_return_has_an_ic_of_one():
     prices = factor_model.sample_by_period(random_prices(), "monthly")
-    forward_returns = factor_model.get_forward_returns(prices, 1)
+    forward_returns = factor_model.get_forward_returns(prices, 1, "monthly")
 
     perfect = factor_model.get_information_coefficient(forward_returns, forward_returns)
     reversed_ = factor_model.get_information_coefficient(
@@ -59,7 +59,7 @@ def test_forward_returns_skip_the_days_a_ticker_does_not_trade():
         index=pd.period_range("2024-01-02", periods=3, freq="D"),
     )
 
-    forward_returns = factor_model.get_forward_returns(prices, 1)
+    forward_returns = factor_model.get_forward_returns(prices, 1, "daily")
 
     assert forward_returns["A"].iloc[0] == pytest.approx(0.1)
     # B's next close after the first day is the third day's.
@@ -93,7 +93,7 @@ def test_quantiles_are_equally_sized_and_need_enough_tickers():
 
 def test_a_perfect_factor_orders_the_quantile_returns():
     prices = factor_model.sample_by_period(random_prices(), "monthly")
-    forward_returns = factor_model.get_forward_returns(prices, 1)
+    forward_returns = factor_model.get_forward_returns(prices, 1, "monthly")
     quantiles = factor_model.assign_quantiles(forward_returns, 5)
 
     returns = factor_model.get_quantile_returns(quantiles, forward_returns)
@@ -180,3 +180,46 @@ def test_only_metrics_too_few_tickers_have_give_an_error_naming_them():
 
     with pytest.raises(ValueError, match="get_thin_ratio has a value for fewer than 3"):
         factor_model.get_factor_analysis({"get_thin_ratio": thin}, prices)
+
+
+def test_daily_forward_returns_skip_the_days_filled_for_another_ticker():
+    from financetoolkit.historical_model import fill_non_trading_days
+
+    dates = pd.period_range("2024-12-20", periods=8, freq="D")
+    raw = pd.DataFrame(
+        {
+            "A": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0],
+            "B": [100.0, 102.0, np.nan, np.nan, 108.0, 110.0, 111.0, 112.0],
+        },
+        index=dates,
+    )
+    returns = raw.apply(lambda column: column.dropna().pct_change()).reindex(dates)
+    data = fill_non_trading_days(
+        pd.concat({"Adj Close": raw, "Return": returns}, axis=1)
+    )
+
+    prices = factor_model.mask_non_trading_days(data["Adj Close"], data["Return"])
+    forward_returns = factor_model.get_forward_returns(prices, 1, "daily")
+
+    # B did not trade on the two filled days, so the return from its second day runs to
+    # its next trading day (108 / 102 - 1) instead of a flat 0 over a filled day.
+    assert forward_returns["B"].iloc[1] == pytest.approx(108 / 102 - 1)
+    assert forward_returns["B"].iloc[2:4].isna().all()
+    # The first price has no return yet and is kept.
+    assert forward_returns["B"].iloc[0] == pytest.approx(0.02)
+    assert forward_returns["A"].iloc[1] == pytest.approx(102 / 101 - 1)
+
+
+def test_monthly_forward_returns_count_calendar_months():
+    prices = pd.DataFrame(
+        {"A": [100.0, 110.0, 121.0, 133.1], "B": [100.0, np.nan, 120.0, 132.0]},
+        index=pd.period_range("2024-01", periods=4, freq="M"),
+    )
+
+    forward_returns = factor_model.get_forward_returns(prices, 1, "monthly")
+
+    # B has no February price, so January has no one-month return rather than a
+    # two-month one.
+    assert np.isnan(forward_returns["B"].iloc[0])
+    assert forward_returns["B"].iloc[2] == pytest.approx(0.1)
+    assert forward_returns["A"].iloc[0] == pytest.approx(0.1)

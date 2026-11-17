@@ -449,7 +449,10 @@ class MarketsFixedIncome(CurvesFixedIncome):
                 "Yield to Maturity"
             ] - bond_data_model.interpolate_curve(curve, bonds["Years"])
         except (ValueError, requests.exceptions.RequestException) as error:
-            logger.warning("The G-Spread is left empty: no Treasury curve (%s).", error)
+            logger.warning(
+                "The G-Spread is left empty: no Treasury curve (%s).",
+                logger_model.redact(error),
+            )
             bonds["G-Spread"] = np.nan
 
         bonds = bonds.sort_values(["Issuer", "Maturity"], kind="stable")

@@ -6380,6 +6380,7 @@ class Performance:
             detail,
             self._start_date,
             self._end_date,
+            returns=self._historical_data["daily"].get("Return"),
         )
 
         return apply_rounding(

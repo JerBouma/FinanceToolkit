@@ -16855,6 +16855,7 @@ class Ratios:
             detail,
             self._start_date,
             self._end_date,
+            returns=self._daily_historical_data.get("Return"),
         )
 
         return apply_rounding(

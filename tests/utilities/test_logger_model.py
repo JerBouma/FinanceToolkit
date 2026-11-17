@@ -325,3 +325,37 @@ def test_redaction_keeps_the_arguments_formatters_read():
     assert redacting.filter(split)
     assert split.args is None
     assert split.getMessage() == "https://example.com/quote?apikey=***"
+
+
+def test_get_logger_sets_up_redaction_before_any_toolkit_import():
+    """
+    Test that the logger a module gets is redacting even when nothing has called
+    setup_logger yet, as when only Economics or Fixed Income is imported.
+    """
+    import io  # noqa: PLC0415
+
+    logger = logging.getLogger("financetoolkit")
+    handlers, level, propagate = logger.handlers[:], logger.level, logger.propagate
+    for handler in handlers:
+        logger.removeHandler(handler)
+
+    try:
+        stream = io.StringIO()
+        with patch.object(sys, "stderr", stream):
+            result = logger_model.get_logger()
+            result.warning("Failed: https://api.example/x?series=GDP&api_key=SECRET")
+
+        assert result is logger
+        assert len(logger.handlers) == 1
+        assert "SECRET" not in stream.getvalue()
+        assert "api_key=***" in stream.getvalue()
+        # Asking again adds nothing.
+        logger_model.get_logger()
+        assert len(logger.handlers) == 1
+    finally:
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+        for handler in handlers:
+            logger.addHandler(handler)
+        logger.setLevel(level)
+        logger.propagate = propagate

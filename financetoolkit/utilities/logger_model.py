@@ -137,9 +137,11 @@ def setup_logger(log_level=logging.INFO):
 
 def get_logger():
     """
-    Get the "financetoolkit" logger, which is created when it does not exist yet.
+    Get the "financetoolkit" logger, set up through setup_logger when it is first asked
+    for. Every module that logs gets it here, so its records are redacted whichever module
+    is imported first (Economics, Fixed Income or Econometrics on their own included).
 
     Returns:
         logging.Logger: Logger instance
     """
-    return logging.getLogger("financetoolkit")
+    return setup_logger()

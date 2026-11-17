@@ -783,3 +783,8 @@ def test_rank_across_tickers_compares_with_the_neighbour_toward_the_middle():
     november = ranking.loc["2026-11"]
     assert "^HSI" not in november.index
     assert november.loc[["^KS11", "GC=F"], "Rank"].tolist() == [3, 3]
+
+
+def test_round_half_up_returns_an_infinity_unchanged():
+    assert helpers.round_half_up(float("inf"), 2) == float("inf")
+    assert helpers.round_half_up("-inf", 2) == float("-inf")

@@ -44,6 +44,20 @@ def test_redact_credentials_handles_a_trailing_key():
     )
 
 
+def test_redact_credentials_removes_every_key_the_log_redacts():
+    """Test that a message never shows a key the log would hide, such as FRED's."""
+    assert (
+        request_model.redact_credentials(
+            "https://api.example/fred?series_id=GDP&fred_api_key=SECRET1&key=SECRET2"
+        )
+        == "https://api.example/fred?series_id=GDP"
+    )
+    assert (
+        request_model.redact_credentials("Rejected api_key=SECRET3 for GDP")
+        == "Rejected api_key=*** for GDP"
+    )
+
+
 def test_two_api_keys_share_one_discovery_entry(cache, monkeypatch):
     """Test that the credential is not part of what identifies a discovery response."""
     calls: list[str] = []

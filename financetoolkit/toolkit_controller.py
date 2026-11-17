@@ -1707,6 +1707,10 @@ class Toolkit:
                 "EPS Diluted",
                 "Weighted Average Shares",
                 "Weighted Average Shares Diluted",
+                "Share Issued",
+                "Ordinary Shares Number",
+                "Treasury Shares Number",
+                "Tax Rate for Calcs",
             ],
         )
 
@@ -5940,6 +5944,12 @@ class Toolkit:
                         exchange_rate_data=self._get_statement_exchange_rates(
                             self._balance_sheet_statement, rate="closing"
                         ),
+                        # Yahoo Finance's share counts are numbers of shares, not amounts.
+                        items_not_to_adjust=[
+                            "Share Issued",
+                            "Ordinary Shares Number",
+                            "Treasury Shares Number",
+                        ],
                         financial_statement_name="balance sheet statement",
                     )
 

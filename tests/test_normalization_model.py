@@ -133,6 +133,24 @@ def test_normalization_maps_the_period_end_date_and_yahoo_forex_changes():
     assert cash_yf.loc["EffectOfExchangeRateChanges"].iloc[0] == "Forex Changes on Cash"
 
 
+def test_yahoo_debt_and_stock_issuance_map_to_the_fmp_names():
+    from importlib.resources import files
+
+    cash_yf = pd.read_csv(
+        files("financetoolkit") / "normalization" / "cash_yf.csv", index_col=0
+    ).iloc[:, 0]
+    cash = pd.read_csv(
+        files("financetoolkit") / "normalization" / "cash.csv", index_col=0
+    ).iloc[:, 0]
+
+    # The net borrowing is what FCFE takes; Yahoo Finance's IssuanceOfDebt is the gross
+    # amount raised, before repayments, so it gets a name of its own.
+    assert cash_yf["NetIssuancePaymentsOfDebt"] == cash["netDebtIssuance"]
+    assert cash_yf["IssuanceOfDebt"] == "Gross Debt Issued"
+    assert cash_yf["NetCommonStockIssuance"] == cash["netCommonStockIssuance"]
+    assert not cash_yf.duplicated().any()
+
+
 def test_normalization_files_fall_back_per_statement(tmp_path):
     folder = tmp_path / "missing" / "folder"
     normalization_model.get_normalization_files(folder)

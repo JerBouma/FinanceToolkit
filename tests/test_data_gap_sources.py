@@ -787,3 +787,83 @@ def test_us_consumer_prices_add_the_bls_months_after_the_bis(monkeypatch):
 
     assert economics.get_inflation_rate(measure="core", period="yearly").empty
     assert economics.get_consumer_price_index(measure="rent").empty
+
+
+def test_inflation_adjusted_retail_sales_deflate_the_level_by_the_consumer_price_index(
+    monkeypatch,
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import census_model
+
+    days = pd.period_range("2025-09-01", "2026-10-01", freq="M").asfreq("D", "start")
+    days.name = "Date"
+    # Nominal sales up 6.569% and the price index up 4.635% over the year to September.
+    sales = pd.Series(100_000.0, index=days)
+    sales.iloc[-2] = 106_569.0
+    sales.iloc[-1] = 107_000.0
+    months = pd.period_range("2025-09", "2026-09", freq="M")
+    prices = pd.Series(150.0, index=months)
+    prices.iloc[-1] = 150.0 * 1.04635
+    # October 2025 was not published.
+    prices[pd.Period("2025-10", "M")] = float("nan")
+
+    monkeypatch.setattr(
+        census_model,
+        "get_retail_sales",
+        lambda: pd.DataFrame({"United States": sales}),
+    )
+    monkeypatch.setattr(
+        Economics,
+        "_get_consumer_price_index",
+        lambda self, countries, period, **kwargs: pd.DataFrame(
+            {"United States": prices}
+        ),
+    )
+
+    economics = Economics(start_date="2025-09-01", end_date="2026-10-31", rounding=None)
+    real = economics.get_retail_sales(inflation_adjusted=True)
+    growth = economics.get_retail_sales(inflation_adjusted=True, growth=True, lag=12)
+
+    # In the money of the latest month of the index; no real value without an index.
+    assert real.loc[pd.Period("2026-09-01", "D"), "United States"] == pytest.approx(
+        106_569.0
+    )
+    assert real.loc[pd.Period("2025-09-01", "D"), "United States"] == pytest.approx(
+        100_000.0 * 1.04635
+    )
+    assert pd.isna(real.loc[pd.Period("2025-10-01", "D"), "United States"])
+    assert pd.isna(real.loc[pd.Period("2026-10-01", "D"), "United States"])
+    # (1 + sales growth) / (1 + price growth) - 1, rather than the nominal 6.569%.
+    assert growth.loc[pd.Period("2026-09-01", "D"), "United States"] == pytest.approx(
+        1.06569 / 1.04635 - 1, abs=1e-4
+    )
+    assert economics.get_retail_sales(growth=True, lag=12).loc[
+        pd.Period("2026-09-01", "D"), "United States"
+    ] == pytest.approx(0.06569, abs=1e-4)
+
+
+def test_us_inflation_without_its_base_month_is_named(monkeypatch, caplog):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import bls_model
+    from financetoolkit.mcp_server.registry.diagnostics_model import missing_data_notes
+
+    # The BLS did not publish October 2025, so October 2026 has no annual rate.
+    bls_months = pd.period_range("2025-08", "2026-10", freq="M").delete(2)
+    bls_level = pd.Series(range(len(bls_months)), index=bls_months) + 320.0
+    monkeypatch.setattr(
+        bls_model,
+        "get_consumer_price_index",
+        lambda: pd.DataFrame({"all": bls_level, "goods": bls_level - 100}),
+    )
+
+    economics = Economics(start_date="2026-01-01", end_date="2026-10-31")
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        goods = economics._get_united_states_consumer_prices("inflation_rate", "goods")
+
+    assert pd.isna(goods.loc[pd.Period("2026-10", "M"), "United States"])
+    message = (
+        "No change for United States in 2026-10: its base period 2025-10 has no value."
+    )
+    assert message in caplog.text
+    # The MCP server passes it on as a note of the answer.
+    assert missing_data_notes([message]) == [message]

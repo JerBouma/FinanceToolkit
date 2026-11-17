@@ -421,6 +421,7 @@ class ActivityEconomics:
     @handle_errors
     def get_retail_sales(
         self,
+        inflation_adjusted: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -441,7 +442,18 @@ class ActivityEconomics:
 
         The series is monthly, in millions of US dollars, seasonally adjusted, and covers
         retail trade and food services. It is nominal, so growth=True mixes volume and price
-        changes together; compare against the Consumer Price Index to separate the two.
+        changes together. With inflation_adjusted=True the sales are deflated by the US
+        Consumer Price Index for All Urban Consumers, all items, of the same month (see
+        get_consumer_price_index), in the money of its latest month, so growth=True returns
+        the real change: the change in volume. The growth is taken of the deflated level,
+        so the real growth equals (1 + nominal growth) / (1 + CPI growth) - 1 over the same
+        months. The index is not seasonally adjusted, so the real change is best read over
+        12 months (lag=12), and a month without a published index, such as October 2025 or
+        a month whose index is not released yet, has no real value.
+
+        The formula is as follows:
+
+        - Real Retail Sales (t) = Retail Sales (t) * CPI (latest month) / CPI (t)
 
         Without a FRED API key the data comes from the Census Bureau directly, which gives
         the same figures. When a FRED API key is set (see the `fred_api_key` parameter of
@@ -452,6 +464,9 @@ class ActivityEconomics:
         Also known as: retail trade, consumer spending (proxy).
 
         Args:
+            inflation_adjusted (bool, optional): Whether to return the sales deflated by the US
+                consumer price index (real sales, in the money of the index's latest month)
+                instead of the nominal sales. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -470,7 +485,8 @@ class ActivityEconomics:
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of total retail
-            and food services sales, in millions of dollars.
+            and food services sales, in millions of dollars (of the latest month of the
+            consumer price index with inflation_adjusted=True).
 
         As an example:
 
@@ -504,6 +520,28 @@ class ActivityEconomics:
             if self._fred_api_key
             else census_model.get_retail_sales()
         )
+
+        if inflation_adjusted:
+            consumer_price_index = self._get_consumer_price_index(
+                countries=["United States"], period="monthly"
+            )
+            if "United States" not in consumer_price_index.columns:
+                raise ValueError(
+                    "There is no monthly US consumer price index to deflate the retail "
+                    "sales with."
+                )
+            price_index = consumer_price_index["United States"].dropna()
+            # The sales are dated on the first day of each month and deflated with the
+            # index of that month. A month without an index (skipped, or not released yet)
+            # has no real value rather than one deflated with the prices of another month.
+            months = (
+                retail_sales.index.asfreq("M")
+                if isinstance(retail_sales.index, pd.PeriodIndex)
+                else pd.DatetimeIndex(retail_sales.index).to_period("M")
+            )
+            retail_sales = retail_sales.mul(
+                price_index.iloc[-1] / price_index.reindex(months).to_numpy(), axis=0
+            )
 
         return finalize_dataset(
             dataset=retail_sales,

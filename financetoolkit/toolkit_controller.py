@@ -1246,6 +1246,18 @@ class Toolkit:
             end_date=self._end_date,
         )
 
+        # The Share Turnover divides the Volume by the share count of the statements, which
+        # are retrieved when it is first calculated, as are the days the counts apply from.
+        def shares_outstanding() -> tuple[pd.DataFrame, pd.DataFrame]:
+            income_statement = self._get_module_statement("income_statement", "Ratios")
+
+            return (
+                income_statement.loc[:, "Weighted Average Shares", :],
+                self._get_daily_start_dates(income_statement),
+            )
+
+        risk._shares_outstanding_function = shares_outstanding
+
         if self._portfolio_weights:
             risk._portfolio_weights = self._portfolio_weights
 

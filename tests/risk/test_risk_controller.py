@@ -883,6 +883,55 @@ def test_get_best_fitting_copula_ranks_the_families_by_aic(risk_module):
     assert result.loc["Gaussian", "AIC"] == pytest.approx(gaussian["AIC"])
 
 
+def test_get_corwin_schultz_spread(recorder, risk_module):
+    recorder.capture(risk_module.get_corwin_schultz_spread())
+    recorder.capture(risk_module.get_corwin_schultz_spread(period="quarterly"))
+    recorder.capture(
+        risk_module.get_corwin_schultz_spread(period="quarterly", rolling=2)
+    )
+
+
+def test_get_share_turnover(recorder, risk_module):
+    recorder.capture(risk_module.get_share_turnover())
+    recorder.capture(risk_module.get_share_turnover(period="quarterly", rolling=2))
+
+    # The turnover of a month is its Volume over the share count of the statements.
+    volume = risk_module._historical_data["daily"]["Volume"]["AAPL"]
+    january = (volume.index >= pd.Period("2021-01-01", "D")) & (
+        volume.index <= pd.Period("2021-01-31", "D")
+    )
+    shares = risk_module._shares_outstanding_function()[0].loc["AAPL", "2020"]
+    assert np.isclose(
+        risk_module.get_share_turnover(rounding=10).loc["2021-01", "AAPL"],
+        volume[january].sum() / shares,
+    )
+
+
+def test_get_idiosyncratic_volatility(recorder, risk_module, monkeypatch):
+    # Fixed factors in place of the Ken French download, on the dates of the fixture.
+    dates = risk_module._historical_data["daily"].index
+    rng = np.random.default_rng(11)
+    factors = pd.DataFrame(
+        rng.normal(0, 0.01, (len(dates), 4)),
+        index=dates,
+        columns=["Mkt-RF", "SMB", "HML", "RF"],
+    )
+    factors["RF"] = 0.0001
+    monkeypatch.setattr(
+        "financetoolkit.performance.performance_model."
+        "obtain_fama_and_french_three_factor_dataset",
+        lambda region="United States": factors,
+    )
+
+    recorder.capture(risk_module.get_idiosyncratic_volatility())
+    recorder.capture(risk_module.get_idiosyncratic_volatility(model="capm"))
+    recorder.capture(
+        risk_module.get_idiosyncratic_volatility(
+            period="quarterly", rolling=4, annualize=True
+        )
+    )
+
+
 def test_var_backtest_window_defaults_to_a_year_of_each_period(risk_module):
     # Daily keeps 252 returns, the other periods a year of them with a minimum of 20.
     pd.testing.assert_frame_equal(

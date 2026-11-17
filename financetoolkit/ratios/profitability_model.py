@@ -223,8 +223,9 @@ def get_return_on_equity(
 
     Args:
         net_income (float or pd.Series): Net income of the company.
-        average_total_equity (float or pd.Series): Average total equity of the company.
-            This is typically calculated as (beginning total equity + ending total equity) / 2.
+        average_total_equity (float or pd.Series): Average equity of the shareholders of the
+            parent (Total Shareholder Equity, without minority interest), typically
+            (beginning equity + ending equity) / 2.
 
     Returns:
         float | pd.Series: The ROE percentage value.

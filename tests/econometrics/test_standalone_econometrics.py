@@ -222,3 +222,80 @@ def test_spreads_and_streaks_on_any_data():
         .get_level_significance(spread_over="Inflation Rate YoY")
         .empty
     )
+
+
+def test_move_significance_counts_a_year_in_the_series_own_observations(monthly_rates):
+    econometrics = Econometrics(data=monthly_rates, changes="difference", rounding=None)
+
+    significance = econometrics.get_move_significance()
+
+    # A monthly series at its own dates: a year is 12 changes, so the window is the
+    # minimum of 20 changes (not 252 months), and the first measure follows 20 changes.
+    first = significance["Volatility Multiple"]["United States"].first_valid_index()
+    assert first == pd.Period("2001-10-31", "D")
+
+    changes = monthly_rates["United States"].diff().dropna()
+    expected = changes.iloc[20] / changes.iloc[:20].std(ddof=1)
+    assert significance["Volatility Multiple"]["United States"].loc[
+        first
+    ] == pytest.approx(expected)
+
+    # The same as asking for the monthly period, which counts a year in months already.
+    monthly = econometrics.get_move_significance(period="monthly")
+    assert monthly["Volatility Multiple"]["United States"].notna().sum() == (
+        significance["Volatility Multiple"]["United States"].notna().sum()
+    )
+
+
+def test_move_significance_of_a_quarterly_series_has_values():
+    rng = np.random.default_rng(2)
+    gdp = pd.Series(
+        100 * np.exp(np.cumsum(rng.normal(0.005, 0.02, 120))),
+        index=pd.period_range("1996Q1", periods=120, freq="Q"),
+        name="GDP",
+    )
+
+    significance = Econometrics(data=gdp).get_move_significance()
+
+    # 119 changes, the first 20 of which fill the window.
+    assert significance["Volatility Multiple"]["GDP"].notna().sum() == 99
+
+
+def test_changes_none_as_text_is_the_same_as_none(monthly_rates):
+    as_text = Econometrics(data=monthly_rates, changes="none")
+    as_none = Econometrics(data=monthly_rates, changes=None)
+
+    pd.testing.assert_frame_equal(
+        as_text._get_series_column("daily", "Return"),
+        as_none._get_series_column("daily", "Return"),
+    )
+    pd.testing.assert_frame_equal(
+        as_text._get_series_column("daily", "Return"),
+        as_text._get_series_column("daily", "Adj Close"),
+    )
+
+
+def test_chow_test_puts_the_period_with_the_break_date_after_it():
+    rng = np.random.default_rng(4)
+    index = pd.period_range("2015-01", periods=96, freq="M")
+    market = rng.normal(0, 0.04, 96)
+    beta = np.where(np.arange(96) < 60, 0.8, 1.6)
+    asset = beta * market + rng.normal(0, 0.01, 96)
+    econometrics = Econometrics(
+        data=pd.DataFrame({"Asset": asset, "Market": market}, index=index),
+        changes=None,
+        rounding=None,
+    )
+
+    # 2020-01-15 falls in January 2020 (position 60), which belongs to the "after" sample
+    # with monthly data, as the date itself would with daily data.
+    result = econometrics.get_chow_test(break_date="2020-01-15", period="monthly")
+
+    def rss(rows: slice) -> float:
+        x = np.column_stack([np.ones(len(market[rows])), market[rows]])
+        residuals = asset[rows] - x @ np.linalg.lstsq(x, asset[rows], rcond=None)[0]
+        return float(residuals @ residuals)
+
+    pooled, split = rss(slice(None)), rss(slice(None, 60)) + rss(slice(60, None))
+    expected = ((pooled - split) / 2) / (split / (96 - 4))
+    assert result["Chow F-Statistic"] == pytest.approx(expected)

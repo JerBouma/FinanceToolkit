@@ -99,8 +99,8 @@ class EconometricsBase:
                 of the Toolkit's prices, with a series per column. Defaults to None.
             changes (str | None, optional): How the changes ("Return") of the data are calculated:
                 "percentage" (relative changes, as returns), "log", "difference" (first
-                differences, for rates and ratios that can be zero or negative) or None
-                (the data are changes already). The percentage change divides by the
+                differences, for rates and ratios that can be zero or negative) or None or
+                "none" (the data are changes already). The percentage change divides by the
                 absolute previous value, so a negative series that rises has a positive
                 change. Defaults to "percentage".
 
@@ -133,6 +133,11 @@ class EconometricsBase:
         | Critical Value 10%    |      -2.57176   |  -2.57181  |
         | Reject Unit Root (5%) |       1         |   0        |
         """
+        # "none" as text (as an MCP client passes it) is the same as None: the data are changes.
+        changes = (
+            None if isinstance(changes, str) and changes.lower() == "none" else changes
+        )
+
         if data is not None:
             if historical_data is not None:
                 raise ValueError(

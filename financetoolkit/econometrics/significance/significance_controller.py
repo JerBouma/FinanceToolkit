@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.econometrics.diagnostics import diagnostics_model
+from financetoolkit.econometrics.helpers import get_observations_per_year
 from financetoolkit.risk import risk_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -269,7 +270,7 @@ class SignificanceEconometrics:
 
         - Volatility Multiple(t) = Change(t) / σ(Change(t - window), ..., Change(t - 1))
         - VaR Multiple(t) = Change(t) / |Quantile(Change(t - window), ..., Change(t - 1); alpha)|
-        - Percentile(t) = Count(|Change(s)| < |Change(t)|, s < t) / Count(s < t)
+        - Percentile(t) = (Count(|Change(s)| < |Change(t)|) + 0.5 * Count(|Change(s)| = |Change(t)|)) / Count(s), over s < t
         - Largest Since(t) = max(s < t : Change(s) <= Change(t)) if Change(t) < 0
         - Largest Since(t) = max(s < t : Change(s) >= Change(t)) if Change(t) > 0
 
@@ -278,6 +279,10 @@ class SignificanceEconometrics:
         The volatility σ uses ddof=1 and the quantile is the historic Value at Risk, interpolated
         linearly. Each measure only uses the changes before the period itself (no look-ahead),
         and Largest Since compares falls with falls and rises with rises, as a headline does.
+        An earlier change of the same size counts as half in the percentile (the mid-rank, as
+        in `get_level_significance`), so a rate that is unchanged on most days puts an
+        unchanged day in the middle of its ties. The VaR Multiple is NaN when the trailing
+        alpha quantile is zero or positive, as there is no loss to scale the change by.
 
         Also known as: sigma move, largest move since, biggest daily rise since, standardized
         change, yield move significance.
@@ -288,7 +293,10 @@ class SignificanceEconometrics:
             window (int | None, optional): The number of earlier changes the volatility is
                 measured over, which the percentile also needs at least. Defaults to None, which
                 uses a year of observations with a minimum of 20 (252 daily, 52 weekly and 20
-                monthly, quarterly or yearly changes).
+                monthly, quarterly or yearly changes). With `Econometrics(data=...)` and the
+                "daily" period, a year is counted in each series' own observations, from the
+                median spacing of its dates: 20 changes for a monthly or quarterly series and
+                52 for a weekly one.
             alpha (float, optional): The tail probability of the trailing historic Value at Risk
                 the VaR Multiple divides by (0.05 for the 95% VaR). Defaults to 0.05.
             include_benchmark (bool, optional): Whether to include the benchmark of a Toolkit.
@@ -302,8 +310,8 @@ class SignificanceEconometrics:
 
         Returns:
             pd.DataFrame: Return (the change), Volatility Multiple, VaR Multiple, Percentile and
-            Largest Since (the date as text) per series, with time as the index and the measures
-            and series as the column levels.
+            Largest Since (the date as text, NaN when there is none) per series, with time as the
+            index and the measures and series as the column levels.
 
         Notes:
         - The history a move is compared with starts at the start of the data: the volatility,
@@ -349,16 +357,29 @@ class SignificanceEconometrics:
                 "alpha must be between 0 and 1, e.g. 0.05 for the 95% VaR."
             )
 
-        window = window if window else max(PERIODS_PER_YEAR[period], 20)
         changes = self._filter_benchmark(
             self._get_series_column(period, "Return"),
             include_benchmark=include_benchmark,
         )
 
+        def default_window(series_changes: pd.Series) -> int:
+            # The "daily" period of data= holds every series at its own dates, so a monthly
+            # series would need 252 months (21 years) before its first measure: a year is
+            # counted in the series' own observations instead. The Toolkit's daily prices
+            # are trading days, which PERIODS_PER_YEAR already counts.
+            observations_per_year = (
+                get_observations_per_year(series_changes.index)
+                if period == "daily" and not self._fills_non_trading_days
+                else PERIODS_PER_YEAR[period]
+            )
+            return max(observations_per_year, 20)
+
         move_significance = pd.concat(
             {
                 series: risk_model.get_move_significance(
-                    changes[series].dropna(), window, alpha
+                    changes[series].dropna(),
+                    window if window else default_window(changes[series].dropna()),
+                    alpha,
                 )
                 for series in changes.columns
             },
@@ -421,7 +442,7 @@ class SignificanceEconometrics:
         February) runs into the next year and is labelled by the year it ends; the same
         month for both gives the change over twelve months. A year without the value of
         either month has no change, so the current year is empty until its last month is
-        published. Largest Since is NaN when no earlier year had a change as large. With
+        published. Largest Since is empty (<NA>) when no earlier year had a change as large. With
         `Econometrics(data=..., changes="difference")` the Change is x(to_month, y) -
         x(from_month, y), in percentage points for a rate.
 
@@ -452,7 +473,8 @@ class SignificanceEconometrics:
 
         Returns:
             pd.DataFrame: Per year (rows) and series the Start Value, End Value, Change
-            (decimal), Rank and Largest Since (columns, a level per series).
+            (decimal), Rank and Largest Since (columns, a level per series); the Rank and
+            Largest Since are whole numbers, <NA> when there is none.
 
         Notes:
         - The ranks and "largest since" depend on the history: start the data early enough,
@@ -478,16 +500,16 @@ class SignificanceEconometrics:
 
         Which returns:
 
-        |   Year |   Start Value |   End Value |   Change |   Rank |   Largest Since |
-        |-------:|--------------:|------------:|---------:|-------:|----------------:|
-        |   2019 |       115.923 |     118.019 |   0.0181 |      5 |             nan |
-        |   2020 |       118.629 |     119.414 |   0.0066 |      7 |            2019 |
-        |   2021 |       120.618 |     126.843 |   0.0516 |      1 |             nan |
-        |   2022 |       130.112 |     136.668 |   0.0504 |      2 |            2021 |
-        |   2023 |       137.965 |     141.098 |   0.0227 |      4 |            2022 |
-        |   2024 |       142.315 |     144.763 |   0.0172 |      6 |            2023 |
-        |   2025 |       146.331 |     nan     | nan      |    nan |             nan |
-        |   2026 |       149.863 |     154.782 |   0.0328 |      3 |            2022 |
+        |   Year |   Start Value |   End Value |   Change | Rank   | Largest Since   |
+        |-------:|--------------:|------------:|---------:|:-------|:----------------|
+        |   2019 |       115.923 |     118.019 |   0.0181 | 5      | <NA>            |
+        |   2020 |       118.629 |     119.414 |   0.0066 | 7      | 2019            |
+        |   2021 |       120.618 |     126.843 |   0.0516 | 1      | <NA>            |
+        |   2022 |       130.112 |     136.668 |   0.0504 | 2      | 2021            |
+        |   2023 |       137.965 |     141.098 |   0.0227 | 4      | 2022            |
+        |   2024 |       142.315 |     144.763 |   0.0172 | 6      | 2023            |
+        |   2025 |       146.331 |     nan     | nan      | <NA>   | <NA>            |
+        |   2026 |       149.863 |     154.782 |   0.0328 | 3      | 2022            |
         """
         levels = self._get_spreads(
             self._filter_benchmark(

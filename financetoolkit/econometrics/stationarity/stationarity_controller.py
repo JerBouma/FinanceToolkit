@@ -300,8 +300,9 @@ class StationarityEconometrics:
         - λ² = γ₀ + 2·Σ(j=1..l) (1 - j / (l + 1))·γⱼ, with γⱼ = (1 / n)·Σ(t=j+1..n) ûₜ·ûₜ₋ⱼ and l = `lags`,
           which defaults to int(12·(n / 100)^(1/4))
         - Z_t = √(γ₀ / λ²)·t_ρ - (λ² - γ₀) / (2·λ·s)·n·SE(ρ̂)
-        - The unit root is rejected at 5% when Z_t is below the MacKinnon (1996) asymptotic critical value
-          (-2.86 for "c", -3.41 for "ct"); no p-value is reported
+        - The p-value is the MacKinnon (1994) approximation of the Dickey-Fuller distribution and the unit
+          root is rejected at 5% when it is below 0.05, as in the ADF test; the critical values are the
+          finite-sample MacKinnon (2010) ones for the number of observations
 
         For more information about the method, see the following paper:
 
@@ -355,16 +356,16 @@ class StationarityEconometrics:
 
         Which returns:
 
-        |                           |      GCUSD |      SIUSD |
-        |:--------------------------|-----------:|-----------:|
-        | Phillips-Perron Statistic |    3.39009 |    4.5285  |
-        | P-Value                   |    1       |    1       |
-        | Lags Used                 |   23       |   23       |
-        | Observations              | 1300       | 1300       |
-        | Critical Value 1%         |   -3.43539 |   -3.43539 |
-        | Critical Value 5%         |   -2.86377 |   -2.86377 |
-        | Critical Value 10%        |   -2.56796 |   -2.56796 |
-        | Reject Unit Root (5%)     |    0       |    0       |
+        |                           |     GCUSD |     SIUSD |
+        |:--------------------------|----------:|----------:|
+        | Phillips-Perron Statistic |    3.3901 |    4.5297 |
+        | P-Value                   |    1      |    1      |
+        | Lags Used                 |   23      |   23      |
+        | Observations              | 1300      | 1300      |
+        | Critical Value 1%         |   -3.4354 |   -3.4354 |
+        | Critical Value 5%         |   -2.8638 |   -2.8638 |
+        | Critical Value 10%        |   -2.568  |   -2.568  |
+        | Reject Unit Root (5%)     |    0      |    0      |
         """
         period = period if period else "daily"
         prices = self._filter_benchmark(

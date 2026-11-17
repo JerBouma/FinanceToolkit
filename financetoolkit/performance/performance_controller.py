@@ -818,7 +818,8 @@ class Performance:
         returning it.
 
             - Residual Value = Residual × Market Cap at the previous close
-            - Residual Percentile(t) = Count(|Residual(s)| < |Residual(t)|, s < t) / Count(s < t)
+            - Residual Percentile(t) = (Count(|Residual(s)| < |Residual(t)|, s < t) + 0.5 · Count(|Residual(s)| =
+              |Residual(t)|, s < t)) / Count(s < t)
             - Residual Largest Since(t) = max(s < t : Residual(s) <= Residual(t)) if Residual(t) < 0,
               and max(s < t : Residual(s) >= Residual(t)) if Residual(t) > 0
 
@@ -881,16 +882,16 @@ class Performance:
 
         Which returns:
 
-        |                        | NVDA              | KO               | AMD               | TSLA              |
-        |:-----------------------|:------------------|:-----------------|:------------------|:------------------|
-        | Beta                   | 1.8763            | -0.2785          | 3.2862            | 2.1033            |
-        | Benchmark Return       | -0.0441           | -0.0441          | -0.0441           | -0.0441           |
-        | Implied Return         | -0.0827           | 0.0123           | -0.1449           | -0.0927           |
-        | Actual Return          | -0.0926           | -0.0007          | -0.1726           | -0.1077           |
-        | Residual               | -0.0099           | -0.013           | -0.0277           | -0.015            |
-        | Residual Value         | -48381834809.5885 | -5375271284.7669 | -22181273645.0303 | -20387379231.5616 |
-        | Residual Percentile    | 0.4241            | 0.8493           | 0.7588            | 0.4896            |
-        | Residual Largest Since | 2026-11-04        | 2026-10-27       | 2026-11-04        | 2026-11-04        |
+        |                        | NVDA              | KO              | AMD              | TSLA              |
+        |:-----------------------|:------------------|:----------------|:-----------------|:------------------|
+        | Beta                   | 1.8764            | -0.2779         | 3.2862           | 2.1033            |
+        | Benchmark Return       | -0.0441           | -0.0441         | -0.0441          | -0.0441           |
+        | Implied Return         | -0.0827           | 0.0123          | -0.1449          | -0.0927           |
+        | Actual Return          | -0.0926           | -0.0007         | -0.1726          | -0.1077           |
+        | Residual               | -0.0099           | -0.013          | -0.0277          | -0.015            |
+        | Residual Value         | -48347086729.0694 | -5363943888.836 | -22181169537.895 | -20387104458.3291 |
+        | Residual Percentile    | 0.4231            | 0.8482          | 0.7588           | 0.4896            |
+        | Residual Largest Since | 2026-11-04        | 2026-10-27      | 2026-11-04       | 2026-11-04        |
         """
         returns = self._get_column("daily", "Return", within_period=False)
 

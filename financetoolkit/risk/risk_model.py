@@ -1716,14 +1716,20 @@ def get_move_significance(
     - Volatility Multiple(t) = Return(t) / σ(Return(t - window), ..., Return(t - 1)), with ddof=1
     - VaR Multiple(t) = Return(t) / |VaR(t)|, with VaR(t) the historic VaR: the alpha quantile
       (linear interpolation) of Return(t - window), ..., Return(t - 1)
-    - Percentile(t) = share of the returns before t with |Return(s)| < |Return(t)|
+    - Percentile(t) = (Count(|Return(s)| < |Return(t)|) + 0.5 * Count(|Return(s)| = |Return(t)|))
+      / Count(s), over s < t
     - Largest Since(t) = the last date s < t with Return(s) <= Return(t) for a fall, or
       Return(s) >= Return(t) for a rise
 
     Every measure only uses the returns before the day itself, so a day is never compared
     with the move it is measuring. The volatility and the percentile need `window` earlier
-    returns and are NaN before that. Largest Since is NaN when no earlier return in the
-    series was as large, i.e. the move is the largest of the history available.
+    returns and are NaN before that. The VaR Multiple is NaN when the trailing alpha
+    quantile is not a loss (zero or positive), since a move cannot be scaled by a Value at
+    Risk that is no risk. An earlier move of the same size counts as half in the percentile
+    (the mid-rank), so a series of many equal moves, such as a rate that is unchanged most
+    days, puts an unchanged day in the middle of its ties rather than at zero. Largest Since
+    is NaN when no earlier return in the series was as large, i.e. the move is the largest
+    of the history available, and for a flat day (no direction).
 
     Args:
         returns (pd.Series): The returns of a single asset.
@@ -1755,14 +1761,19 @@ def get_move_significance(
     )
 
     percentile = np.full(count, np.nan)
-    largest_since = np.full(count, None, dtype=object)
+    # NaN (not None) as the missing marker, so it matches the NaN rows of the reindex below.
+    largest_since = np.full(count, np.nan, dtype=object)
     absolute = np.abs(values)
 
     for position in range(1, count):
         earlier = values[:position]
 
         if position >= window:
-            percentile[position] = np.mean(absolute[:position] < absolute[position])
+            # The mid-rank of the move among the earlier ones, as get_level_significance
+            # ranks a level: ties count as half, so a run of unchanged days is not at 0.
+            percentile[position] = np.mean(
+                absolute[:position] < absolute[position]
+            ) + 0.5 * np.mean(absolute[:position] == absolute[position])
 
         # The same direction, so a fall is compared with falls ("the largest drop since")
         # and a rise with rises; a flat day has no direction and gets no date.
@@ -1781,7 +1792,10 @@ def get_move_significance(
             {
                 "Return": values,
                 "Volatility Multiple": values / trailing_volatility.to_numpy(),
-                "VaR Multiple": values / np.abs(trailing_var.to_numpy()),
+                # A quantile of zero or above is no loss to scale the move by: NaN rather than
+                # an infinite or sign-flipped multiple.
+                "VaR Multiple": values
+                / np.abs(trailing_var.where(trailing_var < 0).to_numpy()),
                 "Percentile": percentile,
                 "Largest Since": largest_since,
             },

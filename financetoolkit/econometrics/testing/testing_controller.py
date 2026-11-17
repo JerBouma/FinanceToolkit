@@ -1272,8 +1272,9 @@ class TestingEconometrics:
         The formula is as follows:
 
         - F = ((RSS_pooled - (RSS_1 + RSS_2)) / k) / ((RSS_1 + RSS_2) / (n - 2k))
-        - The second sub-period starts at the first date on or after `break_date`, and `k` includes
-          the constant when add_constant=True
+        - The second sub-period starts at the first period that ends on or after `break_date` (the
+          date itself with daily data, the month that contains it with period="monthly"), and `k`
+          includes the constant when add_constant=True
 
         Where `RSS_pooled` is the residual sum of squares of the full-sample regression,
         `RSS_1` and `RSS_2` those of the two sub-periods, `k` the number of parameters and `n`
@@ -1294,8 +1295,8 @@ class TestingEconometrics:
 
         Args:
             break_date (str): The date (e.g. "2021-06-30") at which to split the sample -- all
-            periods starting on or after this date form the "after" sub-sample, everything
-            before it forms the "before" sub-sample.
+            periods ending on or after this date, the period that contains it included, form
+            the "after" sub-sample, everything before it forms the "before" sub-sample.
             dependent_ticker (str | None, optional): The dependent (predicted) asset.
             Defaults to None, meaning the Toolkit instance's first ticker.
             independent_tickers (str | list[str] | None, optional): The independent
@@ -1344,8 +1345,8 @@ class TestingEconometrics:
 
         |                                 |   Value |
         |:--------------------------------|--------:|
-        | Chow F-Statistic                |  0.811  |
-        | P-Value                         |  0.4447 |
+        | Chow F-Statistic                |  0.8161 |
+        | P-Value                         |  0.4424 |
         | Reject No Structural Break (5%) |  0      |
         """
         dependent_ticker, independent_tickers = self._resolve_dependent_independent(
@@ -1366,8 +1367,10 @@ class TestingEconometrics:
         )
 
         index = returns.index
+        # A period is placed by its last day, so the month (or quarter, year) that contains
+        # the break date belongs to the "after" sample, as the day itself does with daily data.
         timestamps = (
-            index.to_timestamp()
+            index.to_timestamp(how="end").normalize()
             if isinstance(index, pd.PeriodIndex)
             else pd.DatetimeIndex(index)
         )

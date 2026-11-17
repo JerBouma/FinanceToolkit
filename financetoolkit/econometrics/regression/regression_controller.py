@@ -54,7 +54,13 @@ class RegressionEconometrics:
         - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (cov_type="nonrobust"); "HC0" to "HC3",
           "cluster" and "HAC" (Newey-West with `maxlags`) use statsmodels' sandwich estimators
         - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
+          for cov_type="nonrobust" and from the standard normal distribution for the robust
+          estimators ("HC0" to "HC3", "cluster" and "HAC"), which are asymptotic results
         - R² = 1 - e'e / Σ(yₜ - mean(y))²
+
+        The "HAC" covariance is the Newey-West (Bartlett) estimator without a small-sample
+        degrees-of-freedom correction (statsmodels' default), so its standard errors are
+        slightly smaller than those of software that scales them by n / (n - k).
 
         Each coefficient is the expected change in `dependent_ticker` for a one-unit change in
         that independent ticker, holding the others fixed, and the intercept is what remains
@@ -201,6 +207,9 @@ class RegressionEconometrics:
 
         - β̂ = (X'WX)⁻¹X'Wy, with W = diag(weights), the same as OLS of √wₜ·yₜ on √wₜ·xₜ
         - Cov(β̂) = σ̂²·(X'WX)⁻¹, with σ̂² = Σwₜ·eₜ² / (n - k) (cov_type="nonrobust")
+        - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
+          for cov_type="nonrobust" and from the standard normal distribution for the robust
+          estimators; "HAC" is the Newey-West estimator without a small-sample correction
         - y is the dependent ticker's `column` (Return by default) and X the independent tickers'
           `column` plus a constant, on the dates where the returns and `weights` all have data
 

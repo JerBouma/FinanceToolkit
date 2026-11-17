@@ -323,7 +323,7 @@ def get_phillips_perron_test(
     Returns:
         pd.Series: The Phillips-Perron Z_t statistic, its MacKinnon p-value, the truncation lag
         used, the number of observations used, the finite-sample 1%/5%/10% critical values, and
-        whether the unit root is rejected at the 5% level.
+        whether the unit root is rejected at the 5% level (a p-value below 0.05).
 
     Raises:
         ValueError: If `regression` is not one of "c" or "ct".
@@ -397,7 +397,10 @@ def get_phillips_perron_test(
             "Critical Value 1%": critical_value_1,
             "Critical Value 5%": critical_value_5,
             "Critical Value 10%": critical_value_10,
-            "Reject Unit Root (5%)": bool(z_t_statistic < critical_value_5),
+            # From the p-value, as the ADF, KPSS and Zivot-Andrews tests decide: the
+            # asymptotic p-value and the finite-sample 5% critical value can disagree for a
+            # statistic right at the boundary, and the flag should match the reported p-value.
+            "Reject Unit Root (5%)": bool(p_value < SIGNIFICANCE_LEVEL),
         }
     )
 

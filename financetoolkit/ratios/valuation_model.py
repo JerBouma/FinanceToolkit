@@ -160,15 +160,15 @@ def get_price_to_book_ratio(
     Calculate the price to book ratio, a valuation ratio that compares a company's market
     price to its book value per share.
 
-    Args:
-        price_per_share (float or pd.Series): Price per share of the company.
-        book_value_per_share (float or pd.Series): Book value per share of the company.
-
     A multiple of a negative or zero book value does not measure value, so those periods
     are NaN.
 
+    Args:
+        price_per_share (pd.Series | pd.DataFrame): Price per share of the company.
+        book_value_per_share (pd.Series | pd.DataFrame): Book value per share of the company.
+
     Returns:
-        float | pd.Series: The price to book ratio value.
+        pd.Series | pd.DataFrame: The price to book ratio value.
     """
     return price_per_share / book_value_per_share.where(book_value_per_share > 0)
 
@@ -469,17 +469,18 @@ def get_ev_to_ebitda_ratio(
     that measures a company's total value (including debt and equity) relative to its
     EBITDA.
 
-    Args:
-        enterprise_value (float or pd.Series): The total value of a company (market capitalization
-            plus debt minus cash and cash equivalents).
-        operating_income (float or pd.Series): The operating income of the company.
-        depreciation_and_amortization (float or pd.Series): The depreciation and amortization of the company.
-
     A multiple of a negative or zero EBITDA does not measure value, so those periods are
     NaN.
 
+    Args:
+        enterprise_value (pd.Series | pd.DataFrame): The total value of a company (market
+            capitalization plus debt minus cash and cash equivalents).
+        operating_income (pd.Series | pd.DataFrame): The operating income of the company.
+        depreciation_and_amortization (pd.Series | pd.DataFrame): The depreciation and
+            amortization of the company.
+
     Returns:
-        float | pd.Series: The enterprise value over EBITDA ratio.
+        pd.Series | pd.DataFrame: The enterprise value over EBITDA ratio.
     """
     ebitda = operating_income + depreciation_and_amortization
 

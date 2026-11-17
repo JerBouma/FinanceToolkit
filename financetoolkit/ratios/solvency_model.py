@@ -185,12 +185,13 @@ def get_net_debt_to_ebitda_ratio(
     are NaN.
 
     Args:
-        operating_income (float or pd.Series): Operating income of the company.
-        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
-        net_debt (float or pd.Series): Net debt of the company.
+        operating_income (pd.Series | pd.DataFrame): Operating income of the company.
+        depreciation_and_amortization (pd.Series | pd.DataFrame): Depreciation and
+            amortization of the company.
+        net_debt (pd.Series | pd.DataFrame): Net debt of the company.
 
     Returns:
-        float | pd.Series: The net debt to EBITDA ratio.
+        pd.Series | pd.DataFrame: The net debt to EBITDA ratio.
     """
     ebitda = operating_income + depreciation_and_amortization
 
@@ -221,12 +222,13 @@ def get_gross_debt_to_ebitda_ratio(
     are NaN.
 
     Args:
-        total_debt (float or pd.Series): Total debt of the company.
-        operating_income (float or pd.Series): Operating income of the company.
-        depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
+        total_debt (pd.Series | pd.DataFrame): Total debt of the company.
+        operating_income (pd.Series | pd.DataFrame): Operating income of the company.
+        depreciation_and_amortization (pd.Series | pd.DataFrame): Depreciation and
+            amortization of the company.
 
     Returns:
-        float | pd.Series: The gross debt to EBITDA ratio.
+        pd.Series | pd.DataFrame: The gross debt to EBITDA ratio.
     """
     ebitda = operating_income + depreciation_and_amortization
 

@@ -1930,10 +1930,11 @@ class DistressModels:
             Spread, Risk Free Rate and Pre-tax Cost of Debt.
 
         Notes:
-        - A company that reports an interest expense of zero and a positive EBIT gets the
-          best rating; its coverage ratio, which is infinite, shows as NaN. A period without a
-          reported interest expense, or with an interest expense of zero and an operating loss,
-          gets no rating.
+        - A company without debt that reports an interest expense of zero and a positive EBIT
+          gets the best rating; its coverage ratio, which is infinite, shows as NaN. A period
+          without a reported interest expense, with an interest expense of zero next to debt
+          (interest the statements do not report) or with an interest expense of zero and an
+          operating loss gets no rating.
         - A coverage ratio below the lowest bound of the table gets the worst rating.
         - The market capitalization is compared with five billion in the reporting
           currency; for companies that do not report in US dollars, pass the firm type.
@@ -1987,13 +1988,16 @@ class DistressModels:
 
         ebit = self._rows(self._income_statement, "Operating Income")
         interest = self._rows(self._income_statement, "Interest Expense").abs()
-        # Only a reported interest expense of zero with a positive EBIT means there is nothing
-        # to cover (an infinite ratio, the best rating); a missing one leaves the ratio unknown,
-        # and so does an operating loss without interest, which says nothing about the rating
-        # the company would get if it borrowed.
+        debt = self._rows(self._balance_sheet_statement, "Total Debt")
+        # Only a reported interest expense of zero with a positive EBIT and no debt means there
+        # is nothing to cover (an infinite ratio, the best rating). An interest expense of zero
+        # next to debt is interest the statements do not report (or include in another line
+        # item), so the ratio is unknown, as it is for a missing interest expense and for an
+        # operating loss without interest, which says nothing about the rating the company
+        # would get if it borrowed.
         coverage = (
             (ebit / interest.where(interest > 0))
-            .mask((interest == 0) & (ebit > 0), float("inf"))
+            .mask((interest == 0) & (ebit > 0) & (debt == 0), float("inf"))
             .where(ebit.notna())
         )
 

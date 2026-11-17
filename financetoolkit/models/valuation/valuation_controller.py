@@ -566,7 +566,10 @@ class ValuationModels:
         average shares, and the debt is the Total Debt on the balance sheet of that day.
         - The Cost of Debt is the Interest Expense divided by the Total Debt at the end of the period,
         so debt raised or repaid during the period moves it away from the rate on the average debt
-        outstanding.
+        outstanding. A period with debt but an Interest Expense of 0 (financial statements that
+        include the interest in another line item or leave it out) has an unknown Cost of Debt, so
+        its Cost of Debt and Weighted Average Cost of Capital are NaN rather than a WACC that treats
+        the debt as free. Without any debt the WACC is the Cost of Equity.
         - The Corporate Tax Rate is the effective tax rate (Income Tax Expense / Income Before Tax),
         kept within 0 and 1 so that a tax benefit does not turn the tax shield negative, and 0 for a
         period without a pre-tax profit, which leaves no taxable income for the interest to shield.

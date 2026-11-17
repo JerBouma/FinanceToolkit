@@ -1230,15 +1230,26 @@ def test_synthetic_credit_rating_without_interest_expense(models_module, monkeyp
 
     models = copy.copy(models_module)
     income = models_module._income_statement.copy()
+    balance = models_module._balance_sheet_statement.copy()
     period = income.columns[-1]
-    # A reported zero means nothing to cover, a missing interest expense is unknown.
+    # A reported zero without debt means nothing to cover, a missing interest expense is unknown.
     income.loc[("AAPL", "Interest Expense"), period] = 0.0
+    balance.loc[("AAPL", "Total Debt"), period] = 0.0
     income.loc[("MSFT", "Interest Expense"), period] = np.nan
     models._income_statement = income
+    models._balance_sheet_statement = balance
 
     rating = models.get_synthetic_credit_rating(firm_type="large")
     assert rating.loc[("AAPL", "Rating"), period] == "AAA"
     assert pd.isna(rating.loc[("MSFT", "Rating"), period])
+
+    # A zero interest expense next to debt is unreported interest: no rating, not the best.
+    models._balance_sheet_statement = models_module._balance_sheet_statement
+    rating = models.get_synthetic_credit_rating(firm_type="large")
+    assert period not in rating.columns or pd.isna(
+        rating.loc[("AAPL", "Rating"), period]
+    )
+    models._balance_sheet_statement = balance
 
     # Without interest but with an operating loss there is nothing the coverage says about a
     # rating: no rating rather than the best one.
@@ -2124,3 +2135,20 @@ def test_market_value_added_compares_values_at_the_same_date(models_module):
         )
         / 2
     )
+
+
+def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(models_module)
+    income = models_module._income_statement.copy()
+    period = income.columns[-2]
+    # A zero interest expense next to debt is interest the statements do not report.
+    income.loc[("AAPL", "Interest Expense"), period] = 0.0
+    models._income_statement = income
+
+    wacc = models.get_weighted_average_cost_of_capital()
+
+    assert pd.isna(wacc.loc[("AAPL", "Cost of Debt"), period])
+    assert pd.isna(wacc.loc[("AAPL", "Weighted Average Cost of Capital"), period])
+    assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0

@@ -359,3 +359,42 @@ def test_get_logger_sets_up_redaction_before_any_toolkit_import():
             logger.addHandler(handler)
         logger.setLevel(level)
         logger.propagate = propagate
+
+
+def test_setup_logger_keeps_propagation_of_a_logger_with_handlers():
+    """Test that propagation is only switched off together with the handler it adds."""
+    logger = logging.getLogger("financetoolkit")
+    original_handlers, original_propagate = list(logger.handlers), logger.propagate
+
+    try:
+        logger.handlers = [logging.NullHandler()]
+        logger.propagate = True
+        logger_model.setup_logger()
+
+        assert logger.propagate is True
+        assert len(logger.handlers) == 1
+
+        logger.handlers = []
+        logger_model.setup_logger()
+
+        assert logger.propagate is False
+        assert len(logger.handlers) == 1
+    finally:
+        logger.handlers = original_handlers
+        logger.propagate = original_propagate
+
+
+def test_redact_only_hides_credential_names():
+    """Test that a parameter that merely ends in "key" keeps its value."""
+    assert (
+        logger_model.redact("keyword=apple&monkey=1&hotkey=2&tokens=3")
+        == "keyword=apple&monkey=1&hotkey=2&tokens=3"
+    )
+    assert (
+        logger_model.redact(
+            "key=A&apikey=B&API_KEY=C&fred_api_key=D&fred_key=E&access_token=F"
+            "&token=G&client_secret=H&password=I"
+        )
+        == "key=***&apikey=***&API_KEY=***&fred_api_key=***&fred_key=***"
+        "&access_token=***&token=***&client_secret=***&password=***"
+    )

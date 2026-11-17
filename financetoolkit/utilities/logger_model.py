@@ -6,11 +6,14 @@ import logging
 import re
 import sys
 
-# Credentials that can appear in a logged URL or message: the value after any parameter
-# whose name ends in "key" (apikey, api_key, fmp_api_key, fred_key, ...) or is "token".
+# Credentials that can appear in a logged URL or message: the value after a parameter named
+# key, apikey, api_key, token, secret or password, or one of those after a prefix and an
+# underscore (fmp_api_key, fred_key, access_token, client_secret, ...). The name has to start
+# the parameter, so a name that merely ends in "key" (monkey, hotkey) keeps its value.
 # A placeholder in angle brackets, as in the setup hints, is not a credential.
 CREDENTIAL_PATTERN = re.compile(
-    r"((?:api_?key|apikey|token|key)=)[^&\s'\"<>]+", re.IGNORECASE
+    r"((?<!\w)(?:\w*_)?(?:api_?key|key|token|secret|password)=)[^&\s'\"<>]+",
+    re.IGNORECASE,
 )
 
 # Renders the traceback of a record before it is redacted.
@@ -127,10 +130,13 @@ def setup_logger(log_level=logging.INFO):
 
         logger.addHandler(console_handler)
 
-    add_redaction(logger)
+        # The handler added here writes every record, so passing them on to the root
+        # logger as well would write them twice (or on stdout through a third-party root
+        # handler). A logger that already had handlers was set up by the application,
+        # whose choice to propagate is kept.
+        logger.propagate = False
 
-    # Prevents duplicate emission through third-party root handlers on stdout.
-    logger.propagate = False
+    add_redaction(logger)
 
     return logger
 

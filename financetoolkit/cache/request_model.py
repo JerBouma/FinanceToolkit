@@ -17,8 +17,9 @@ def redact_credentials(url: str) -> str:
     """
     Remove credential query parameters from a URL so it can identify a cache entry or
     be shown in a message. A credential is what logger_model.CREDENTIAL_PATTERN redacts
-    in the log: a parameter whose name ends in "key" (apikey, api_key, fred_api_key, ...)
-    or is "token", so a message never shows a key the log would hide.
+    in the log: a parameter named key, apikey, api_key, token, secret or password, also
+    after a prefix and an underscore (fred_api_key, access_token, ...), so a message never
+    shows a key the log would hide.
 
     Args:
         url (str): The request URL, possibly carrying an API key.

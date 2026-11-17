@@ -26,6 +26,7 @@ from financetoolkit.economics.helpers import (
     choose_sources,
     combine_sources,
     extend_with_recent,
+    normalize_requested_countries,
     resample_to_period,
 )
 from financetoolkit.economics.history.history_controller import HistoryEconomics
@@ -104,11 +105,11 @@ class EconomicsBase:
                 from 1939 instead of the last three years. Obtain a free key at https://fred.stlouisfed.org/docs/api/api_key.html. Can also be set
                 via the FRED_API_KEY environment variable. Defaults to the value of FRED_API_KEY if set,
                 otherwise an empty string.
-            allow_stale_oecd_cache (bool, optional): the OECD API enforces a hard rate limit (60
+            allow_stale_oecd_cache (bool, optional): The OECD API enforces a hard rate limit (60
                 downloads/hour). When True, a 429 response falls back to the most recently cached
-                successful response for that exact query instead of returning empty data -- opt-in,
-                since the served data may not be the most up-to-date. Every successful OECD response
-                is cached regardless of this setting. Defaults to True.
+                successful response for that exact query instead of returning empty data, which may
+                not be the most up-to-date data; set it to False to receive empty data instead. Every
+                successful OECD response is cached regardless of this setting. Defaults to True.
             cache (Cache | None, optional): A cache to use for the data this module retrieves, which takes
                 precedence over use_cached_data. Defaults to None.
             api_key (str, optional): A FinancialModelingPrep API key, needed for the economic
@@ -127,7 +128,7 @@ class EconomicsBase:
 
         economics = Economics(start_date="2010-01-01", end_date="2025-12-31")
 
-        cpi = economics.get_consumer_price_index()
+        cpi = economics.get_consumer_price_index(period="yearly")
 
         cpi.loc['2010':, ['United States', 'Netherlands', 'Japan']]
         ```
@@ -255,10 +256,10 @@ class EconomicsBase:
         Returns:
             pd.DataFrame: One column per country, from its most current source.
         """
-        requested = (
-            None
-            if countries is None
-            else {countries} if isinstance(countries, str) else set(countries)
+        # Short forms and other casings ("USA", "united kingdom") select the source of the
+        # country itself; finalize_dataset selects the columns the same way afterwards.
+        requested = normalize_requested_countries(
+            countries, {country for _, country in sources if country is not None}
         )
         needed = [
             fetch
@@ -280,9 +281,13 @@ class EconomicsBase:
         frames = [frame for frame, _ in retrieved]
         combined = combine_sources(frames)
 
-        # Only the sources a requested country is taken from are named with the answer.
+        # Only the sources a requested country is taken from are named with the answer,
+        # matched against every country retrieved: the countries of a source that
+        # publishes several are only known once it is retrieved.
+        selected = normalize_requested_countries(countries, combined.columns)
+
         for country, position in choose_sources(frames).items():
-            if requested is None or country in requested:
+            if selected is None or country in selected:
                 for source in retrieved[position][1]:
                     record_source(source)
 
@@ -566,11 +571,7 @@ class EconomicsBase:
                 f"'Germany' or ['Germany', 'United States'], not a {type(countries).__name__} ({countries!r})."
             )
 
-        requested = (
-            list(sources)
-            if countries is None
-            else [countries] if isinstance(countries, str) else list(countries)
-        )
+        requested = normalize_requested_countries(countries, sources) or list(sources)
 
         if unavailable := [country for country in requested if country not in sources]:
             logger.warning(

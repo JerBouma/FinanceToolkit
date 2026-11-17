@@ -34,6 +34,15 @@ GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/
 IDENTIFIERS = ["countryname", "ISO3", "id", "year", "income_group"]
 FORECAST_PREFIX = "forecast_"
 
+# The countries the Global Macro Database names differently from the OECD, the BIS and
+# the other sources, renamed so that a country has one name throughout the Finance Toolkit
+# and a GMDB series lines up with an OECD one column by column.
+COUNTRY_NAMES = {
+    "Russian Federation": "Russia",
+    "Eswatini": "Swaziland",
+    "Congo DR": "Democratic Republic of the Congo",
+}
+
 
 def get_latest_version() -> str:
     """
@@ -90,6 +99,7 @@ def _parse_dataset(content: bytes, include_forecasts: bool) -> pd.DataFrame:
         errors="ignore",
     )
     gmd_dataset["year"] = pd.PeriodIndex(gmd_dataset["year"].astype(int), freq="Y")
+    gmd_dataset["countryname"] = gmd_dataset["countryname"].replace(COUNTRY_NAMES)
     gmd_dataset = gmd_dataset.set_index(["year", "countryname"])
     gmd_dataset.index.names = [None] * gmd_dataset.index.nlevels
     gmd_dataset = to_dataframe(gmd_dataset.unstack(level=1))

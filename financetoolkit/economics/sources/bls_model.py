@@ -103,7 +103,8 @@ def collect_recent_bls_series(
         # A refused request, such as one over the daily limit, is answered with status 200.
         if response.get("status") != "REQUEST_SUCCEEDED":
             raise BLSRequestRefusedError(
-                f"The BLS did not process the request: {' '.join(response.get('message', []))}"
+                "The BLS refused the request, which the keyless API does after 25 requests a "
+                f"day per IP address: {' '.join(response.get('message', []))}"
             )
 
         series_values = {}
@@ -180,6 +181,12 @@ def get_nonfarm_payrolls() -> pd.DataFrame:
     payrolls = collect_recent_bls_series(
         SERIES["nonfarm_payrolls"], "nonfarm payrolls"
     ).copy()
+
+    # A refused request (e.g. over the daily limit of the keyless API) or an unreachable
+    # BLS has already been logged with the BLS message, and leaves an empty frame without
+    # a monthly index to redate.
+    if payrolls.empty:
+        return payrolls
 
     # Dated on the first day of each month, as FRED dates the series.
     payrolls.index = payrolls.index.asfreq("D", how="start")

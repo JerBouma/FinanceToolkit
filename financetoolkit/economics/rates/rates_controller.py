@@ -5,6 +5,7 @@ __docformat__ = "google"
 import itertools
 
 import pandas as pd
+import requests
 
 from financetoolkit import helpers
 from financetoolkit.economics.helpers import (
@@ -13,8 +14,8 @@ from financetoolkit.economics.helpers import (
     check_period_type,
     compound_overnight_rate,
     extend_with_recent,
+    normalize_requested_countries,
     resample_to_period,
-    to_gmdb_country_names,
     validate_period,
 )
 from financetoolkit.economics.sources import (
@@ -75,11 +76,14 @@ class RatesEconomics:
             pd.DataFrame: One column per country, indexed by day.
         """
         policy_rate = bis_model.get_central_bank_policy_rate(start_date, self._end_date)
+        # The BIS lists every calendar day for some central banks (the Federal Reserve
+        # and the ECB) and business days for others (the Bank of England and the Bank of
+        # Japan), so weekends are left out for all, as no rate is set on them.
+        policy_rate = policy_rate[~policy_rate.index.dayofweek.isin([5, 6])]
 
-        requested = (
-            {country.strip() for country in countries.split(",")}
-            if isinstance(countries, str)
-            else set(countries or policy_rate.columns)
+        requested = set(
+            normalize_requested_countries(countries, policy_rate.columns)
+            or policy_rate.columns
         )
         # Since 18 September 2024 the BIS reports the ECB's deposit facility rate for the
         # euro area (the main refinancing rate before), the rate the ECB steers with.
@@ -101,12 +105,34 @@ class RatesEconomics:
             if last_day is None:
                 continue
 
-            # A month of overlap, on which both publishers have to agree.
-            with collect_sources() as recent_sources:
-                recent = fetch((last_day - 31).strftime("%Y-%m-%d"))
+            # A month of overlap, on which both publishers have to agree. The ECB
+            # publishes the full history, which is cut to that month as well: before 18
+            # September 2024 the BIS reports another ECB rate (see above).
+            first_day = last_day - 31
+            # The extension only adds the last few days, so a publisher that cannot be
+            # reached (a gateway timeout, a connection error) or that answers in a format
+            # that cannot be read leaves the BIS series as it is instead of failing the
+            # policy rates of every country.
+            try:
+                with collect_sources() as recent_sources:
+                    recent = fetch(first_day.strftime("%Y-%m-%d"))
+            except (requests.exceptions.RequestException, ValueError) as error:
+                logger.info(
+                    "The recent %s policy rates could not be retrieved (%s), so they "
+                    "follow the BIS series, which ends on %s.",
+                    country,
+                    error,
+                    last_day,
+                )
+                continue
+
+            if recent.empty:
+                continue
+
             recent = recent[
-                (recent.index <= pd.Period(self._end_date, freq="D"))
-                # Business days, like the BIS series (the ECB lists every calendar day).
+                (recent.index >= first_day)
+                & (recent.index <= pd.Period(self._end_date, freq="D"))
+                # Business days, like the BIS series above (the ECB lists every calendar day).
                 & ~recent.index.dayofweek.isin([5, 6])
             ]
             policy_rate = extend_with_recent(
@@ -207,7 +233,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -348,7 +375,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -454,7 +482,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -594,35 +623,39 @@ class RatesEconomics:
         loans and advances to a commercial bank. This interest rate is used by the monetary
         authorities to control inflation and stabilize the country's currency.
 
-        Data comes from the Global Macro Database (GMDB), further information about the
-        variable can be found within https://www.globalmacrodata.com/documentation.html
-
-        The rate is annual and expressed as a decimal fraction per annum (0.0538 for 5.375%),
-        taken at the end of the year rather than averaged over it.
-
-        With period="daily", "weekly" or "monthly" the rates come from the Bank for
-        International Settlements (BIS) instead. It publishes the
-        policy rates of around fifty central banks daily, including the Federal Reserve,
-        the European Central Bank (as "Euro Area"), the Bank of England and the Bank of
-        Japan, some back to the 1940s. Weekly and monthly take the rate on the last day of
-        each period, so the current week or month shows the rate so far.
+        By default the rates are daily, from the Bank for International Settlements (BIS),
+        which publishes the policy rates of around fifty central banks, including the
+        Federal Reserve, the European Central Bank (as "Euro Area"), the Bank of England
+        and the Bank of Japan, some back to the 1940s. For the United States the BIS
+        reports the midpoint of the Federal Reserve's target range for the federal funds
+        rate (0.03875 for a range of 3.75% to 4.00%). Days are business days: the weekends
+        some central banks list in the BIS data are left out for all. Weekly, monthly and
+        quarterly data take the rate on the last business day of each period, so the
+        current week, month or quarter shows the rate so far.
 
         The BIS updates its series about once a week. The days since are added from the
         Bank of England (Bank Rate) and the European Central Bank, which publish their
-        rates the same day; other countries end at the latest BIS update. For the euro
-        area the BIS reports the main refinancing rate up to 17 September 2024 and the
-        deposit facility rate from 18 September 2024, when the ECB began steering money
-        markets with it; get_european_central_bank_rates has either rate throughout.
+        rates the same day, when both publishers agree on the month before; other
+        countries end at the latest BIS update. For the euro area the BIS reports the main
+        refinancing rate up to 17 September 2024 and the deposit facility rate from 18
+        September 2024, when the ECB began steering money markets with it;
+        get_european_central_bank_rates has either rate throughout.
 
-        The result is a decimal fraction (0.05375 for 5.375%), like every other rate in the
-        Finance Toolkit.
+        With period="yearly" the rates come from the Global Macro Database (GMDB) instead,
+        taken at the end of the year rather than averaged over it. Further information
+        about the variable can be found within
+        https://www.globalmacrodata.com/documentation.html
+
+        The result is a decimal fraction per annum (0.05375 for 5.375%), like every other
+        rate in the Finance Toolkit.
 
         Also known as: policy rate, benchmark rate, base rate.
 
         Args:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
-            period (str | None, optional): Whether to return the daily, weekly, monthly or the annual
-                data. Defaults to None, which is the daily data.
+            period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
+                or the yearly data. Defaults to None, which is quarterly when the Economics class
+                was initialized with quarterly=True and otherwise the highest frequency available: daily.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -630,7 +663,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -666,8 +700,8 @@ class RatesEconomics:
         check_period_type(period)
 
         period = validate_period(
-            self._default_period(period, "daily", quarterly_available=False),
-            ["daily", "weekly", "monthly", "yearly"],
+            self._default_period(period, "daily"),
+            ["daily", "weekly", "monthly", "quarterly", "yearly"],
             "central bank policy rate",
         )
 
@@ -677,8 +711,8 @@ class RatesEconomics:
                 gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
             )
         else:
-            # Weeks and months are taken from the daily rates, which the BIS updates
-            # sooner than its own end-of-month series.
+            # Weeks, months and quarters are taken from the daily rates, which the BIS
+            # updates sooner than its own end-of-month series.
             central_bank_policy_rate = resample_to_period(
                 self._get_daily_central_bank_policy_rate(
                     buffered_start_date(self._start_date, period), countries
@@ -755,7 +789,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -800,14 +835,17 @@ class RatesEconomics:
         """
         check_period_type(period)
 
-        period = self._default_period(period, "monthly")
+        # "annual" is accepted as well, the word the MCP server's parameter description uses.
+        period = (
+            self._default_period(period, "monthly").lower().replace("annual", "yearly")
+        )
 
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
         gmdb_source = (
             gmdb_source
             if gmdb_source is not None
-            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+            else self._gmdb_source and period not in ("monthly", "quarterly")
         )
 
         if gmdb_source:
@@ -883,7 +921,9 @@ class RatesEconomics:
         Japanese Ministry of Finance (JGBs, from 1974) and the European Central Bank (the
         euro area yield curve of all central government bonds, from 2004). The euro area
         rate is the 10-year zero-coupon rate of the ECB's Svensson curve, converted from
-        continuous to annual compounding, while the other three are par yields. Weekly takes
+        continuous to annual compounding, while the other three are par yields of bonds
+        paying coupons twice a year, quoted with semi-annual (bond-equivalent)
+        compounding. Weekly takes
         the yield on the last trading day of each week. Other countries have no daily source
         and are not included.
 
@@ -898,8 +938,8 @@ class RatesEconomics:
             period (str | None, optional): Whether to return the daily, weekly, monthly, quarterly
                 or the annual data. Defaults to None, which is quarterly when the Economics class
                 was initialized with quarterly=True and otherwise the highest frequency available: daily
-                for the United States, the United Kingdom, Japan and the Euro Area, monthly when
-                other countries are requested.
+                when only the United States, the United Kingdom, Japan and the Euro Area are requested,
+                and the monthly OECD data when other countries are requested or countries is None.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
                 Not used for daily and weekly data.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
@@ -909,7 +949,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -953,20 +994,20 @@ class RatesEconomics:
 
         # Daily 10-year yields exist for the United States, the United Kingdom, Japan and
         # the euro area; any other country is published monthly at most.
-        requested = (
-            [country.strip() for country in countries.split(",")]
-            if isinstance(countries, str)
-            else list(countries or [])
-        )
-        period = self._default_period(
-            period,
-            (
-                "daily"
-                if requested
-                and set(requested)
-                <= {"United States", "United Kingdom", "Japan", "Euro Area"}
-                else "monthly"
-            ),
+        daily_countries = {"United States", "United Kingdom", "Japan", "Euro Area"}
+        requested = normalize_requested_countries(countries, daily_countries)
+        # "annual" is accepted as well, the word the MCP server's parameter description uses.
+        period = (
+            self._default_period(
+                period,
+                (
+                    "daily"
+                    if requested and set(requested) <= daily_countries
+                    else "monthly"
+                ),
+            )
+            .lower()
+            .replace("annual", "yearly")
         )
 
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
@@ -974,12 +1015,12 @@ class RatesEconomics:
         gmdb_source = (
             gmdb_source
             if gmdb_source is not None
-            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+            else self._gmdb_source and period not in ("monthly", "quarterly")
         )
 
-        if period.lower() in ("daily", "weekly"):
+        if period in ("daily", "weekly"):
             long_term_interest_rate = resample_to_period(
-                self._get_daily_long_term_interest_rate(countries), period.lower()
+                self._get_daily_long_term_interest_rate(countries), period
             )
         elif gmdb_source:
 
@@ -1009,7 +1050,7 @@ class RatesEconomics:
             axis="rows",
             row_slice=True,
             # Rows empty for every selected country, e.g. a month only another source has.
-            dropna=period.lower() in ("daily", "weekly"),
+            dropna=period in ("daily", "weekly"),
         )
 
     @handle_errors
@@ -1077,7 +1118,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1176,9 +1218,10 @@ class RatesEconomics:
         get_inflation_rate (national statistical offices, Eurostat for the euro area and the
         BIS) from the OECD's monthly long or short-term rate, the monthly average of the daily
         rates, or from the policy rate at the end of the month (see
-        get_central_bank_policy_rate). The OECD has no euro area rates, so the euro area is
-        available with rate_type="policy": the ECB's deposit facility rate minus euro area
-        inflation. A month the inflation rate is not published yet is empty.
+        get_central_bank_policy_rate). For the euro area these are the OECD's euro area
+        10-year yield and 3-month EURIBOR, or the ECB's deposit facility rate, minus euro
+        area inflation (Eurostat's HICP). A month the inflation rate is not published yet
+        is empty.
 
         Yearly subtracts the annual inflation rate of the Global Macro Database (GMDB) from
         its annual long or short-term rate (or the OECD's with gmdb_source=False) or its
@@ -1210,9 +1253,7 @@ class RatesEconomics:
             gmdb_source (bool | None, optional): Whether to get the yearly long or short-term
                 rate from the Global Macro Database (GMDB) instead of the OECD. Defaults to
                 None, which falls back to the gmdb_source set on the Economics class (True by
-                default). Either way the yearly countries carry the GMDB names, such as
-                "Russian Federation", "Eswatini" and "Congo DR", as the yearly inflation
-                rate comes from the GMDB.
+                default).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -1220,7 +1261,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1331,10 +1373,6 @@ class RatesEconomics:
                     end_date=self._end_date,
                 )
 
-                # The inflation leg comes from the GMDB, which names a few countries
-                # differently.
-                nominal_interest_rate = to_gmdb_country_names(nominal_interest_rate)
-
             inflation_rate = gmdb_model.get_inflation_rate(gmd_dataset=gmdb_dataset)
 
         real_interest_rate = nominal_interest_rate - inflation_rate
@@ -1413,7 +1451,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1449,13 +1488,16 @@ class RatesEconomics:
         """
         check_period_type(period)
 
-        period = self._default_period(period, "monthly")
+        # "annual" is accepted as well, the word the MCP server's parameter description uses.
+        period = (
+            self._default_period(period, "monthly").lower().replace("annual", "yearly")
+        )
         # The GMDB is annual, so a monthly or quarterly request goes to the sources that
         # have that frequency unless the GMDB is asked for explicitly.
         gmdb_source = (
             gmdb_source
             if gmdb_source is not None
-            else self._gmdb_source and period.lower() not in ("monthly", "quarterly")
+            else self._gmdb_source and period not in ("monthly", "quarterly")
         )
 
         if gmdb_source:
@@ -1545,7 +1587,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1707,7 +1750,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1844,7 +1888,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2053,7 +2098,7 @@ class RatesEconomics:
     def get_inflation_expectations(
         self,
         countries: list[str] | str | None = None,
-        period: str = "monthly",
+        period: str | None = None,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -2090,8 +2135,10 @@ class RatesEconomics:
         Args:
             countries (list[str] | str | None, optional): The countries to retrieve, from
                 "Germany" and "Euro Area". Defaults to None, which retrieves every country.
-            period (str, optional): Whether to return the monthly or quarterly data. Quarterly
-                data takes the last month of each quarter. Defaults to "monthly".
+            period (str | None, optional): Whether to return the monthly or quarterly data.
+                Quarterly data takes the last month of each quarter. Defaults to None, which is
+                quarterly when the Economics class was initialized with quarterly=True and
+                otherwise the highest frequency available: monthly.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -2101,7 +2148,8 @@ class RatesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2132,8 +2180,12 @@ class RatesEconomics:
         | 2026-08 |    0.0219 |      0.0204 |
         | 2026-09 |    0.0223 |      0.0204 |
         """
+        check_period_type(period)
+
         period = validate_period(
-            period, ["monthly", "quarterly"], "inflation expectations"
+            self._default_period(period, "monthly"),
+            ["monthly", "quarterly"],
+            "inflation expectations",
         )
         start_date = buffered_start_date(self._start_date, "monthly")
 
@@ -2169,11 +2221,7 @@ class RatesEconomics:
                 f"'Germany' or ['Germany', 'Euro Area'], not a {type(countries).__name__} ({countries!r})."
             )
 
-        requested = (
-            list(sources)
-            if countries is None
-            else [countries] if isinstance(countries, str) else list(countries)
-        )
+        requested = normalize_requested_countries(countries, sources) or list(sources)
 
         if unavailable := [country for country in requested if country not in sources]:
             # Worded as missing data, so the MCP server reports it as a note.

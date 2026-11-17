@@ -177,6 +177,13 @@ def get_net_debt_to_ebitda_ratio(
     Calculates the net debt to EBITDA ratio, which measures the net debt of the company
     relative to its EBITDA.
 
+    The formula is as follows:
+
+        Net Debt to EBITDA Ratio = Net Debt / (Operating Income + Depreciation and Amortization)
+
+    A multiple of a negative or zero EBITDA does not measure leverage, so those periods
+    are NaN.
+
     Args:
         operating_income (float or pd.Series): Operating income of the company.
         depreciation_and_amortization (float or pd.Series): Depreciation and amortization of the company.
@@ -185,7 +192,9 @@ def get_net_debt_to_ebitda_ratio(
     Returns:
         float | pd.Series: The net debt to EBITDA ratio.
     """
-    return net_debt / (operating_income + depreciation_and_amortization)
+    ebitda = operating_income + depreciation_and_amortization
+
+    return net_debt / ebitda.where(ebitda > 0)
 
 
 def get_gross_debt_to_ebitda_ratio(
@@ -208,6 +217,9 @@ def get_gross_debt_to_ebitda_ratio(
 
         Gross Debt to EBITDA Ratio = Total Debt / (Operating Income + Depreciation and Amortization)
 
+    A multiple of a negative or zero EBITDA does not measure leverage, so those periods
+    are NaN.
+
     Args:
         total_debt (float or pd.Series): Total debt of the company.
         operating_income (float or pd.Series): Operating income of the company.
@@ -216,7 +228,9 @@ def get_gross_debt_to_ebitda_ratio(
     Returns:
         float | pd.Series: The gross debt to EBITDA ratio.
     """
-    return total_debt / (operating_income + depreciation_and_amortization)
+    ebitda = operating_income + depreciation_and_amortization
+
+    return total_debt / ebitda.where(ebitda > 0)
 
 
 def get_asset_coverage_ratio(

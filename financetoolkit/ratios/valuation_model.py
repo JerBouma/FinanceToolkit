@@ -164,10 +164,13 @@ def get_price_to_book_ratio(
         price_per_share (float or pd.Series): Price per share of the company.
         book_value_per_share (float or pd.Series): Book value per share of the company.
 
+    A multiple of a negative or zero book value does not measure value, so those periods
+    are NaN.
+
     Returns:
         float | pd.Series: The price to book ratio value.
     """
-    return price_per_share / book_value_per_share
+    return price_per_share / book_value_per_share.where(book_value_per_share > 0)
 
 
 def get_interest_debt_per_share(
@@ -207,11 +210,13 @@ def get_capex_per_share(
     capital expenditures made per outstanding share of a company's stock.
 
     Args:
-        capital_expenditures (float or pd.Series): Total capital expenditures made by the company.
+        capital_expenditures (float or pd.Series): Total capital expenditures made by the company,
+            as reported in the cash flow statement (a negative outflow).
         shares_outstanding (float or pd.Series): Total number of outstanding shares of the company.
 
     Returns:
-        float | pd.Series: The capex per share value.
+        float | pd.Series: The capex per share value, negative for capital expenditures
+        reported as an outflow.
     """
     return capital_expenditures / shares_outstanding
 
@@ -470,10 +475,15 @@ def get_ev_to_ebitda_ratio(
         operating_income (float or pd.Series): The operating income of the company.
         depreciation_and_amortization (float or pd.Series): The depreciation and amortization of the company.
 
+    A multiple of a negative or zero EBITDA does not measure value, so those periods are
+    NaN.
+
     Returns:
         float | pd.Series: The enterprise value over EBITDA ratio.
     """
-    return enterprise_value / (operating_income + depreciation_and_amortization)
+    ebitda = operating_income + depreciation_and_amortization
+
+    return enterprise_value / ebitda.where(ebitda > 0)
 
 
 def get_ev_to_operating_cashflow_ratio(
@@ -521,8 +531,13 @@ def get_dividend_payout_ratio(
     Calculates the dividend payout ratio, which measures the proportion of net income paid out as
     dividends to shareholders.
 
+    The formula is as follows:
+
+        Dividend Payout Ratio = |Dividends Paid| / Net Income
+
     Args:
-        dividends (float or pd.Series): Dividends paid by the company.
+        dividends (float or pd.Series): Dividends paid by the company, as reported in the
+            cash flow statement (a negative outflow), of which the magnitude is used.
         net_income (float or pd.Series): Net income of the company.
 
     Returns:

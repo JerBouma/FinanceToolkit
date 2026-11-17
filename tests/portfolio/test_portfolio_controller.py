@@ -846,3 +846,110 @@ def test_a_transaction_without_a_currency_keeps_its_price(monkeypatch, caplog):
     assert dataset.loc["NOVO", "Costs"] == pytest.approx(-1.0)
     assert dataset.loc["MSFT", "Price"] == pytest.approx(125.0)
     assert "NOVO" in caplog.text
+
+
+def test_a_weekend_transaction_belongs_to_the_period_of_its_trading_day(monkeypatch):
+    # Saturday 2021-07-31 is priced at the close of Monday 2021-08-02, so it is an August purchase, valued at the August close and receiving the AAPL dividend of 2021-08-06.  # noqa: E501
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-07-31", "2021-06-01"],
+            "Ticker": ["AAPL", "MSFT"],
+            "Volume": [10, 5],
+            "Costs": [0.0, 0.0],
+        }
+    )
+    weekend, prices = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    performance = weekend.get_transactions_performance(period="monthly", rounding=12)
+
+    close = prices[("Close", "AAPL")]
+    close.index = close.index.to_timestamp()
+    dividends = prices[("Dividends", "AAPL")]
+    dividends.index = dividends.index.to_timestamp()
+    aapl = performance.xs("AAPL", level=1)
+    assert aapl.index.tolist() == [pd.Period("2021-08", freq="M")]
+    august = aapl.iloc[0]
+    assert august["Price"] == pytest.approx(float(close.loc["2021-08-02"]))
+    assert august["Current Value"] == pytest.approx(10 * float(close.loc["2021-08-31"]))
+    assert august["Dividends"] == pytest.approx(
+        10 * float(dividends.loc["2021-08-03":"2021-08-31"].sum())
+    )
+    assert august["Dividends"] > 0
+
+
+def test_the_money_weighted_return_values_a_price_below_the_rounding(monkeypatch):
+    # A token priced at 0.00002 rounds to 0 at four decimals, which would value the position at nothing.  # noqa: E501
+    prices = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    holdings = prices.drop(columns="Benchmark", level=1).copy()
+    for column in ["Open", "High", "Low", "Close", "Adj Close", "Dividends"]:
+        if (column, "MSFT") in holdings.columns:
+            holdings[(column, "MSFT")] = holdings[(column, "MSFT")] / 1e7
+
+    def price_toolkit(self, tickers, start_date):  # noqa: ARG001
+        self._toolkit = Toolkit(
+            tickers=tickers,
+            historical=holdings,
+            benchmark_ticker=None,
+            start_date="2019-12-31",
+            sleep_timer=False,
+            rounding=None,
+        )
+        return self._toolkit
+
+    monkeypatch.setattr(Portfolio, "_price_toolkit", price_toolkit)
+    monkeypatch.setattr(Portfolio, "_ticker_currencies", lambda self, toolkit: {})
+    monkeypatch.setattr(
+        Toolkit,
+        "get_historical_statistics",
+        lambda self, *args, **kwargs: pd.DataFrame(),
+    )
+    tiny = Portfolio(
+        transactions=pd.DataFrame(
+            {
+                "Date": ["2021-01-11"],
+                "Ticker": ["MSFT"],
+                "Volume": [1e9],
+                "Costs": [0.0],
+            }
+        )
+    )
+    tiny._benchmark_tickers = dict.fromkeys(tiny._original_tickers, "AAPL")
+    tiny._benchmark_toolkit = Toolkit(
+        tickers=["AAPL"],
+        historical=prices.xs("AAPL", level=1, axis=1, drop_level=False),
+        benchmark_ticker=None,
+        start_date="2019-12-31",
+        sleep_timer=False,
+    )
+
+    result = tiny.get_money_weighted_return(rounding=12)
+
+    latest_close = float(holdings[("Close", "MSFT")].iloc[-1])
+    assert latest_close < 5e-5
+    assert result.loc["MSFT", "Latest Value"] == pytest.approx(1e9 * latest_close)
+    # Bought at 0.000021749 and worth 0.000023982 two years later, with dividends: a gain.
+    assert result.loc["MSFT", "Money-Weighted Return"] > 0.05
+
+
+def test_sold_positions_leave_the_overview_and_short_positions_stay(monkeypatch):
+    # 1.1 + 2.2 - 3.3 leaves 4.4e-16 AAPL units; MSFT is sold short.
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-11", "2021-02-01", "2021-03-01", "2021-01-11"],
+            "Ticker": ["AAPL", "AAPL", "AAPL", "MSFT"],
+            "Volume": [1.1, 2.2, -3.3, -5.0],
+            "Costs": [0.0, 0.0, 0.0, 0.0],
+        }
+    )
+    traded, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+
+    overview = traded.get_portfolio_overview(rounding=12)
+    performance = traded.get_portfolio_performance(period="yearly", rounding=12)
+
+    assert overview.index.tolist() == ["MSFT", "Portfolio"]
+    assert overview.loc["MSFT", "Volume"] == -5.0
+    assert performance.index.get_level_values(1).unique().tolist() == ["MSFT"]
+    every_position = traded.get_portfolio_overview(
+        rounding=12, exclude_sold_positions=False
+    )
+    assert every_position.index.tolist() == ["AAPL", "MSFT", "Portfolio"]

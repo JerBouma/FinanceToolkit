@@ -2537,3 +2537,31 @@ def test_repeated_quarters_cut_off_by_the_range_keep_their_last_month():
     # A single complete quarter cannot be told apart from a monthly series.
     short = data.loc["2026-02":"2026-06"]
     assert helpers.keep_quarter_end_of_repeated_quarters(short).equals(short)
+
+
+def test_a_refused_bls_request_leaves_nonfarm_payrolls_empty(monkeypatch, caplog):
+    import logging  # noqa: PLC0415
+
+    from financetoolkit import Economics  # noqa: PLC0415
+    from financetoolkit.economics.sources import bls_model  # noqa: PLC0415
+
+    payload = {
+        "status": "REQUEST_NOT_PROCESSED",
+        "message": ["Daily threshold reached."],
+    }
+    monkeypatch.setattr(
+        bls_model, "get_request", lambda url, **kwargs: FakeResponse(payload)
+    )
+
+    economics = Economics(
+        start_date="2024-01-01", end_date="2026-10-31", use_cached_data=False
+    )
+    clear_active_cache()
+
+    # The refusal is reported with the BLS message rather than crashing on the empty frame.
+    with caplog.at_level(logging.INFO, logger="financetoolkit"):
+        assert economics.get_nonfarm_payrolls().empty
+
+    assert any(
+        "Daily threshold reached." in record.getMessage() for record in caplog.records
+    )

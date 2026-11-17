@@ -1452,6 +1452,7 @@ class PricesEconomics:
     def get_commodity_prices(
         self,
         commodity: str | list[str] | None = None,
+        currency: str | None = None,
         deflate_with: str | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -1473,9 +1474,29 @@ class PricesEconomics:
         month of the consumer price index, which is published a few weeks late, keeps its
         nominal price, and a month the consumer price index skipped has no real price.
 
+        With currency, the prices are in another currency than the US dollar, such as the
+        euro, the pound sterling, the yen, the Swiss franc or the renminbi: each month's
+        average price is converted at the average exchange rate of the same month, from the
+        Bank for International Settlements (BIS), which publishes the monthly averages of
+        around 130 currencies against the US dollar from the central banks (the euro as the
+        euro area series, from June 1974). An average price is converted at an average rate
+        so that both cover the same days. A month without a rate, such as the latest month
+        before the BIS publishes its average a few days after the month ends, has no price in
+        the currency (NaN), and a warning names those months. The Natural gas index is an
+        index rather than a price in US dollars and is not converted.
+
+        With both, the prices are converted first and deflated after, so deflate_with is the
+        country whose money the currency is, e.g. currency="EUR" with deflate_with="Euro
+        Area" for prices in euros of the latest month of the euro area consumer price index.
+
         The formula is as follows:
 
+        - Price in Currency (t) = Price in US Dollars (t) * Exchange Rate (t)
         - Real Price (t) = Price (t) * CPI (latest month) / CPI (t)
+
+        Where the Exchange Rate (t) is the average of month t in units of the currency per US
+        dollar (e.g. 0.854 euro per US dollar, an EUR/USD rate of 1.171) and the Price (t) is
+        the price in US dollars, or in the currency when one is given.
 
         The units are those of the World Bank: US dollars per barrel ($/bbl) for crude oil,
         per million British thermal units ($/mmbtu) for natural gas, per troy ounce ($/troy oz)
@@ -1483,18 +1504,26 @@ class PricesEconomics:
         and fertilizers, per kilogram ($/kg) for cocoa, coffee, tea, sugar, meat, fruit, cotton
         and rubber, per dry metric ton unit ($/dmtu) for iron ore, per cubic meter for logs and
         sawnwood and cents per sheet for plywood. The Natural gas index is an index (2010=100).
+        With currency, the same units hold in that currency (euros per barrel, euro cents per
+        sheet of plywood), except for the Natural gas index.
 
         Also known as: Pink Sheet, commodity price history, long-run gold price, real gold
-        price, real oil price, inflation-adjusted commodity prices.
+        price, real oil price, inflation-adjusted commodity prices, oil price in euros, gold
+        price in local currency.
 
         Args:
             commodity (str | list[str] | None, optional): The commodities, e.g. "Gold" or
                 ["Gold", "Crude oil Brent"], as named by the World Bank without commas ("Crude
                 oil, Brent" is "Crude oil Brent"), in any casing. Defaults to None, which
                 returns all of them.
+            currency (str | None, optional): The ISO 4217 code of the currency to express
+                the prices in, e.g. "EUR", "GBP", "JPY", "CHF" or "CNY", converted at the BIS
+                average exchange rate of each month. Defaults to None, which keeps the US
+                dollar prices of the World Bank ("USD" does the same).
             deflate_with (str | None, optional): The country whose consumer price index the
-                prices are deflated with, e.g. "United States" for US dollar prices. Defaults
-                to None, which returns nominal prices.
+                prices are deflated with, after the conversion into currency, e.g. "United
+                States" for US dollar prices or "Euro Area" for euro prices. Defaults to None,
+                which returns nominal prices.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Economics class.
             growth (bool, optional): Whether to calculate the growth. Defaults to False.
@@ -1515,25 +1544,41 @@ class PricesEconomics:
         CC BY 4.0.
         - The prices are monthly averages: a peak within a month, such as gold's $850 London
         fix of 21 January 1980, is higher than the average of its month.
+        - BIS, "Bilateral exchange rates" (WS_XRU), the monthly averages (collection A) in
+        units of national currency per US dollar. A price converted at the rate of the end of
+        each month, or at the latest rate, differs from it by the move of the currency within
+        the month.
+        - A currency is converted for the months the BIS has a rate for: from June 1974 for
+        the euro (the BIS euro area series) and from the start of its BIS history for the
+        others; earlier months are NaN.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date="1979-01-01", end_date="2026-10-31")
+        economics = Economics(start_date="2025-10-01", end_date="2026-10-31")
 
-        prices = economics.get_commodity_prices(commodity="Gold", deflate_with="United States")
-        prices.loc[["1980-01", "2011-09", "2026-01"]]
+        economics.get_commodity_prices(commodity=["Crude oil Brent", "Gold"], currency="EUR")
         ```
 
         Which returns:
 
-        |         |    Gold |
-        |:--------|--------:|
-        | 1980-01 | 2923.32 |
-        | 2011-09 | 2631.5  |
-        | 2026-01 | 4923.8  |
+        |         |   Crude oil Brent |    Gold |
+        |:--------|------------------:|--------:|
+        | 2025-10 |           55.6312 | 3489.2  |
+        | 2025-11 |           55.017  | 3535.45 |
+        | 2025-12 |           53.551  | 3680.24 |
+        | 2026-01 |           56.9133 | 4049.53 |
+        | 2026-02 |           60.133  | 4245.68 |
+        | 2026-03 |           89.7212 | 4201.41 |
+        | 2026-04 |          102.854  | 4032.99 |
+        | 2026-05 |           92.0936 | 3929.61 |
+        | 2026-06 |           74.1506 | 3671.06 |
+        | 2026-07 |           73.0464 | 3567.36 |
+        | 2026-08 |           78.4106 | 3804.94 |
+        | 2026-09 |          101.456  | 3751.61 |
+        | 2026-10 |          111.593  | 3664.7  |
         """
         prices = world_bank_model.get_commodity_prices()
 
@@ -1554,6 +1599,52 @@ class PricesEconomics:
                     if name not in missing
                 ]
             ]
+
+        if currency is not None and currency.strip().upper() != "USD":
+            currency = currency.strip().upper()
+            # The rates reach back far enough for growth over lag months, so the first months
+            # of the range have a growth rate as they have in US dollars.
+            rate_start = min(
+                buffered_start_date(self._start_date, "monthly"),
+                pd.date_range(
+                    end=pd.Timestamp(self._start_date).replace(day=1),
+                    periods=lag + 2,
+                    freq="MS",
+                )[0].strftime("%Y-%m-%d"),
+            )
+            exchange_rate = bis_model.get_monthly_average_exchange_rate(
+                currency, rate_start, self._end_date
+            )
+            if exchange_rate.empty:
+                raise ValueError(
+                    f"The BIS publishes no monthly average exchange rate of {currency} against "
+                    "the US dollar to convert the prices with. Pass an ISO 4217 code such as "
+                    "'EUR', 'GBP' or 'JPY'."
+                )
+
+            # Each month's average price at the same month's average rate; a month without a
+            # rate has no price in the currency rather than one at another month's rate.
+            in_dollars = [
+                name
+                for name in prices.columns
+                if name not in world_bank_model.INDEX_COMMODITIES
+            ]
+            prices = prices.copy()
+            prices[in_dollars] = prices[in_dollars].mul(
+                exchange_rate.reindex(prices.index), axis=0
+            )
+
+            # The BIS publishes the average of a month a few days after it ends, so the
+            # latest Pink Sheet month can lack a rate for a while.
+            in_range = prices.loc[self._start_date[:7] : self._end_date[:7]]
+            without_rate = in_range.index[in_range.index > exchange_rate.index[-1]]
+            if len(without_rate) > 0:
+                logger.warning(
+                    "The BIS has no monthly average %s exchange rate for %s yet, so the "
+                    "prices of those months are NaN.",
+                    currency,
+                    ", ".join(str(month) for month in without_rate),
+                )
 
         if deflate_with is not None:
             consumer_price_index = self.get_consumer_price_index(

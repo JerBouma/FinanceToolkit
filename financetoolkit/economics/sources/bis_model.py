@@ -229,6 +229,78 @@ def get_exchange_rates(
     )
 
 
+# The euro is published for the euro area and for every member; the members' series run
+# back to before 1999 in their former currency converted at the irrevocable rate, which
+# is not the euro's history, so only the euro area series is taken.
+EURO_AREA_CODE = "XM"
+
+
+def get_monthly_average_exchange_rate(
+    currency: str, start_date: str, end_date: str
+) -> pd.Series:
+    """
+    Retrieves the average of each month of one currency against the US dollar, the BIS
+    exchange rate series of the currency's economy (WS_XRU, collection A). The euro is the
+    euro area's series, which starts in June 1974; a currency several
+    economies share, such as the CFA franc, has the same rate in each, so the series with
+    the longest history is taken and the others fill its gaps. Only the months that are not
+    cached yet are requested.
+
+    Args:
+        currency (str): The ISO 4217 code of the currency, e.g. "EUR" or "JPY".
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.Series: Units of the currency per US dollar, indexed by month and named after
+        the currency, or an empty Series when the BIS has no rate for it.
+    """
+    currency = currency.upper()
+    description = f"monthly average {currency} exchange rates"
+
+    def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
+        text = request_csv(
+            f"{BASE_URL}WS_XRU/~/M..{currency}.A?format=csv&detail=dataonly"
+            f"&startPeriod={fetch_start[:7]}&endPeriod={fetch_end[:7]}",
+            timeout=120,
+        )
+
+        if not text.strip():
+            return pd.DataFrame()
+
+        data = pd.read_csv(io.StringIO(text))
+        require_columns(data, {"REF_AREA", "TIME_PERIOD", "OBS_VALUE"}, description)
+
+        if currency == "EUR":
+            data = data[data["REF_AREA"] == EURO_AREA_CODE]
+
+        rates = data.pivot_table(
+            index="TIME_PERIOD", columns="REF_AREA", values="OBS_VALUE", aggfunc="last"
+        )
+        rates = rates[rates.count().sort_values(ascending=False).index]
+        rates = rates.bfill(axis=1).iloc[:, [0]].set_axis([currency], axis=1)
+        rates.index = pd.PeriodIndex(rates.index, freq="M")
+        rates.index.name = None
+
+        return rates.sort_index()
+
+    rates = collect_ranged_data(
+        source=policy_model.BANK_FOR_INTERNATIONAL_SETTLEMENTS,
+        dataset="exchange_rates",
+        entity=f"WS_XRU/M/A/{currency}",
+        fetch=fetch,
+        start_date=start_date,
+        end_date=end_date,
+        description=description,
+    )
+
+    return (
+        rates[currency].dropna()
+        if currency in rates.columns
+        else pd.Series(name=currency, dtype=float)
+    )
+
+
 def get_residential_property_prices(
     country_code: str, inflation_adjusted: bool, start_date: str, end_date: str
 ) -> pd.Series:

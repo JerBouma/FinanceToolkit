@@ -1764,6 +1764,161 @@ def test_commodity_prices_are_selected_and_deflated(monkeypatch):
     )
 
 
+def test_bis_monthly_average_rate_takes_the_euro_area_for_the_euro(monkeypatch):
+    requested = []
+    csv = {
+        "EUR": (
+            "FREQ,REF_AREA,CURRENCY,COLLECTION,TIME_PERIOD,OBS_VALUE\n"
+            "M,DE,EUR,A,1998-12,0.8538\n"
+            "M,XM,EUR,A,1998-12,0.8532\n"
+            "M,DE,EUR,A,1999-01,0.8616\n"
+            "M,XM,EUR,A,1999-01,0.8616\n"
+        ),
+        # A shared currency: the same rate in each economy, one of them a month short.
+        "XAF": (
+            "FREQ,REF_AREA,CURRENCY,COLLECTION,TIME_PERIOD,OBS_VALUE\n"
+            "M,CM,XAF,A,2026-01,558.8\n"
+            "M,CM,XAF,A,2026-02,554.8\n"
+            "M,GA,XAF,A,2026-02,554.8\n"
+            "M,GA,XAF,A,2026-03,567.5\n"
+        ),
+    }
+
+    def fake(url, timeout):
+        requested.append(url)
+        currency = url.split("/M..")[1][:3]
+        if currency not in csv:
+            response = requests.Response()
+            response.status_code = 404
+            raise requests.HTTPError(response=response)
+        return FakeResponse(text=csv[currency])
+
+    monkeypatch.setattr(bis_model, "get_request", fake)
+
+    euro = bis_model.get_monthly_average_exchange_rate(
+        "eur", "1998-12-01", "1999-01-31"
+    )
+    # The average (A) of each month, keyed by currency rather than by economy.
+    assert "WS_XRU/~/M..EUR.A?" in requested[0]
+    assert "startPeriod=1998-12&endPeriod=1999-01" in requested[0]
+    # The members' converted former currencies are not the euro's history.
+    assert euro.tolist() == pytest.approx([0.8532, 0.8616])
+    assert euro.name == "EUR"
+
+    franc = bis_model.get_monthly_average_exchange_rate(
+        "XAF", "2026-01-01", "2026-03-31"
+    )
+    assert franc.index.tolist() == list(pd.period_range("2026-01", "2026-03", freq="M"))
+    assert franc.tolist() == pytest.approx([558.8, 554.8, 567.5])
+
+    assert bis_model.get_monthly_average_exchange_rate(
+        "XYZ", "2026-01-01", "2026-03-31"
+    ).empty
+
+
+def _commodity_economics(monkeypatch, rates):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import world_bank_model
+
+    months = pd.period_range("2026-07", "2026-10", freq="M")
+    monkeypatch.setattr(
+        world_bank_model,
+        "get_commodity_prices",
+        lambda: pd.DataFrame(
+            {
+                "Crude oil Brent": [70.0, 80.0, 100.0, 125.0],
+                "Natural gas index": [100.0, 110.0, 150.0, 180.0],
+            },
+            index=months,
+        ),
+    )
+    requested = []
+
+    def fake_rate(currency, start_date, end_date):
+        requested.append((currency, start_date, end_date))
+        return pd.Series(rates, index=months[: len(rates)], name=currency)
+
+    monkeypatch.setattr(bis_model, "get_monthly_average_exchange_rate", fake_rate)
+    economics = Economics(start_date="2026-07-01", end_date="2026-10-31", rounding=None)
+
+    return economics, months, requested
+
+
+def test_commodity_prices_are_converted_at_the_monthly_average_rate(monkeypatch):
+    economics, _, requested = _commodity_economics(
+        monkeypatch, [0.876, 0.863, 0.869, 0.893]
+    )
+
+    euros = economics.get_commodity_prices(currency="eur")
+
+    assert requested[0][0] == "EUR"
+    # Each month's price at the same month's rate (euros per US dollar).
+    assert euros["Crude oil Brent"].tolist() == pytest.approx(
+        [70.0 * 0.876, 80.0 * 0.863, 100.0 * 0.869, 125.0 * 0.893]
+    )
+    # The index is not a dollar amount, so it is not converted.
+    assert euros["Natural gas index"].tolist() == [100.0, 110.0, 150.0, 180.0]
+    # US dollars are the prices themselves, without asking for a rate.
+    dollars = economics.get_commodity_prices(currency="USD")
+    assert dollars["Crude oil Brent"].tolist() == [70.0, 80.0, 100.0, 125.0]
+    assert len(requested) == 1
+
+
+def test_commodity_prices_without_a_rate_are_nan_with_a_warning(monkeypatch, caplog):
+    import logging
+
+    economics, _, _ = _commodity_economics(monkeypatch, [0.876, 0.863])
+
+    with caplog.at_level(logging.WARNING, logger="financetoolkit"):
+        euros = economics.get_commodity_prices(
+            commodity="Crude oil Brent", currency="EUR"
+        )
+
+    # No rate is carried forward into the months the BIS has not published.
+    assert euros["Crude oil Brent"].iloc[:2].tolist() == pytest.approx(
+        [70.0 * 0.876, 80.0 * 0.863]
+    )
+    assert euros["Crude oil Brent"].iloc[2:].isna().all()
+    warnings = [
+        r.getMessage() for r in caplog.records if "EUR exchange rate" in r.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert "2026-09, 2026-10" in warnings[0]
+
+
+def test_commodity_prices_are_converted_before_they_are_deflated(monkeypatch):
+    economics, months, _ = _commodity_economics(
+        monkeypatch, [0.876, 0.863, 0.869, 0.893]
+    )
+    monkeypatch.setattr(
+        economics,
+        "get_consumer_price_index",
+        lambda **_: pd.DataFrame(
+            {"Euro Area": [100.0, 101.0, 102.0, 104.0]}, index=months
+        ),
+    )
+
+    real = economics.get_commodity_prices(
+        commodity="Crude oil Brent", currency="EUR", deflate_with="Euro Area"
+    )
+
+    # In euros of October, the latest month of the euro area consumer price index.
+    assert real["Crude oil Brent"].tolist() == pytest.approx(
+        [
+            70.0 * 0.876 * 104 / 100,
+            80.0 * 0.863 * 104 / 101,
+            100.0 * 0.869 * 104 / 102,
+            125.0 * 0.893,
+        ]
+    )
+
+
+def test_commodity_prices_in_an_unknown_currency_are_an_error(monkeypatch):
+    economics, _, _ = _commodity_economics(monkeypatch, [])
+
+    assert economics.get_commodity_prices(currency="XYZ").empty
+
+
 def test_bls_consumer_prices_come_in_one_request(monkeypatch):
     from financetoolkit.economics.sources import bls_model
 

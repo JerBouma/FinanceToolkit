@@ -349,3 +349,62 @@ def test_a_ticker_without_data_adds_no_calendar_days(monkeypatch):
     assert no_data == ["NOTATICKER"]
     assert data.index.tolist() == trading_days.tolist()
     assert data["Close"]["NOTATICKER"].isna().all()
+
+
+def test_period_open_high_low_leave_out_the_dates_a_ticker_did_not_trade():
+    """A stock's week that starts on a holiday, filled with a flat bar at the previous close
+    because another ticker traded that day, opens on its first trading day, and its High and
+    Low come from its trading days."""
+    index = pd.period_range("2024-01-01", "2024-01-21", freq="D")
+    crypto_close = [float(10 + day) for day in range(len(index))]
+    # The stock trades on weekdays except Monday 8 January, and not at all in the third week.
+    stock_days = [
+        day for day in index if day.dayofweek < 5 and day.day != 8 and day.day < 15
+    ]
+    stock_close = [100.0 + 2 * position for position in range(len(stock_days))]
+    frames = {
+        "STOCK": pd.DataFrame(
+            {
+                "Open": [close - 1 for close in stock_close],
+                "High": [close + 3 for close in stock_close],
+                "Low": [close - 3 for close in stock_close],
+                "Close": stock_close,
+                "Adj Close": stock_close,
+                "Volume": 10.0,
+            },
+            index=pd.PeriodIndex(stock_days, freq="D"),
+        ),
+        "BTC": pd.DataFrame(
+            {
+                column: crypto_close
+                for column in ("Open", "High", "Low", "Close", "Adj Close")
+            }
+            | {"Volume": 5.0},
+            index=index,
+        ),
+    }
+    for frame in frames.values():
+        frame["Return"] = frame["Adj Close"].pct_change()
+
+    daily = historical_model.fill_non_trading_days(
+        pd.concat(frames).unstack(level=0).reindex(index)
+    )
+    weekly = historical_model.convert_daily_to_other_period("weekly", daily)
+
+    second_week = pd.Period("2024-01-08", freq="W")
+    traded = frames["STOCK"].loc["2024-01-09":"2024-01-12"]
+    assert weekly.loc[second_week, ("Open", "STOCK")] == traded["Open"].iloc[0]
+    assert weekly.loc[second_week, ("High", "STOCK")] == traded["High"].max()
+    assert weekly.loc[second_week, ("Low", "STOCK")] == traded["Low"].min()
+    assert weekly.loc[second_week, ("Close", "STOCK")] == traded["Close"].iloc[-1]
+
+    # Past the stock's last price nothing is filled, so the third week has no bar.
+    assert (
+        weekly.loc[pd.Period("2024-01-15", freq="W"), ["Open", "High", "Low"]]
+        .xs("STOCK", level=1)
+        .isna()
+        .all()
+    )
+    # The cryptocurrency traded every day and is aggregated as it is.
+    assert weekly.loc[second_week, ("Open", "BTC")] == crypto_close[7]
+    assert weekly.loc[second_week, ("Low", "BTC")] == crypto_close[7]

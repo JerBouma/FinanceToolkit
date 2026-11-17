@@ -6,41 +6,12 @@ from collections.abc import Callable
 
 import pandas as pd
 
+from financetoolkit.helpers import get_non_trading_days
+
 # The observations in a year of a ticker that trades on an exchange's trading days, and of
 # one that also trades on weekends, such as a cryptocurrency.
 TRADING_DAYS_PER_YEAR = 252
 CALENDAR_DAYS_PER_YEAR = 365
-
-
-def get_non_trading_days(historical_data: pd.DataFrame, column: str) -> pd.DataFrame:
-    """
-    The dates on which a ticker did not trade while another ticker or the Benchmark did.
-
-    A Toolkit with tickers on different calendars, such as a stock and a cryptocurrency or
-    stocks of two exchanges, holds the dates of all of them. On a date only another ticker
-    traded, a ticker's last price is carried forward as a flat bar (Open, High, Low and
-    Close at the last close, a Volume of 0) without a Return (see
-    `historical_model.fill_non_trading_days`). Those dates are recognised by the missing
-    Return after the ticker's first price, up to its last Return. A ticker's first price has
-    no Return by construction and is a trading day.
-
-    Args:
-        historical_data (pd.DataFrame): The historical data of one period with (column,
-            ticker) columns, including "Return" and `column`.
-        column (str): The price column whose tickers are checked, e.g. "Close".
-
-    Returns:
-        pd.DataFrame: True on the dates a ticker did not trade, a column per ticker.
-    """
-    prices = historical_data[column]
-    if "Return" not in historical_data.columns.get_level_values(0):
-        return pd.DataFrame(False, index=prices.index, columns=prices.columns)
-
-    has_return = historical_data["Return"].reindex(columns=prices.columns).notna()
-    after_first_price = prices.notna().cumsum() > 1
-    up_to_last_return = has_return[::-1].cummax()[::-1]
-
-    return ~has_return & after_first_price & up_to_last_return
 
 
 def calculate_per_ticker(
@@ -100,6 +71,34 @@ def calculate_per_ticker(
         return pd.DataFrame(results)
 
     return pd.concat(results, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
+
+
+def apply_on_own_closes(
+    prices_close: pd.DataFrame, function: Callable[[pd.Series], pd.Series]
+) -> pd.DataFrame:
+    """
+    Applies a function to each ticker's closes over the dates the ticker has a close, and
+    places the result back on every date, NaN on the dates without a close. A change, moving
+    average or rolling high of a ticker thereby spans its own trading days, not the dates
+    only another ticker traded, such as the weekends of a cryptocurrency next to a stock.
+
+    Args:
+        prices_close (pd.DataFrame): The closes, a column per ticker, NaN on the dates a
+            ticker did not trade.
+        function (Callable[[pd.Series], pd.Series]): The calculation over one ticker's
+            closes, e.g. `lambda close: close.diff()`.
+
+    Returns:
+        pd.DataFrame: The result per date and ticker.
+    """
+    return pd.DataFrame(
+        {
+            ticker: function(prices_close[ticker].dropna()).reindex(prices_close.index)
+            for ticker in prices_close.columns
+        },
+        index=prices_close.index,
+        columns=prices_close.columns,
+    )
 
 
 def get_observations_per_year(prices: pd.Series) -> int:

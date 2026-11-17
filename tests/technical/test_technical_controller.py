@@ -800,3 +800,138 @@ def test_a_cryptocurrency_counts_a_year_in_calendar_days():
             for days, weight in zip((91, 182, 274, 365), (0.4, 0.2, 0.2, 0.2))
         )
     )
+
+
+def test_a_stocks_weeks_leave_out_the_weekends_of_a_cryptocurrency():
+    """The weekly Open, High and Low of a stock next to a cryptocurrency come from its own
+    trading days, not from the flat bars of the dates only the cryptocurrency traded, so its
+    weekly bars and the indicators on them equal those of the stock alone. In the week of
+    20 June 2022 (Juneteenth on Monday) the week opens on Tuesday."""
+    from financetoolkit.historical_model import (  # noqa: PLC0415
+        convert_daily_to_other_period,
+    )
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, _, mixed = _stock_with_a_cryptocurrency()
+
+    def technicals(tickers, daily):
+        return Technicals(
+            tickers,
+            {
+                "daily": daily,
+                "weekly": convert_daily_to_other_period("weekly", daily),
+            },
+            rounding=None,
+        )
+
+    alone = technicals(["AAPL"], stock)
+    together = technicals(["AAPL", "BTC"], mixed)
+
+    week = pd.Period("2022-06-20", freq="W")
+    tuesday = pd.Period("2022-06-21", freq="D")
+    for close_column in ("Close", "Adj Close"):
+        weekly = together._get_historical_data("weekly", close_column)
+        daily = together._get_historical_data("daily", close_column)
+        assert weekly.loc[week, ("Open", "AAPL")] == pytest.approx(
+            daily.loc[tuesday, ("Open", "AAPL")]
+        )
+        expected = alone._get_historical_data("weekly", close_column)
+        for column in ("Open", "High", "Low", "Close"):
+            pd.testing.assert_series_equal(
+                weekly[(column, "AAPL")].reindex(expected.index),
+                expected[(column, "AAPL")],
+                check_freq=False,
+            )
+
+    for method in (
+        "get_stochastic_oscillator",
+        "get_average_directional_index",
+        "get_williams_percent_r",
+    ):
+        expected = getattr(alone, method)(period="weekly")
+        result = getattr(together, method)(period="weekly")
+        if isinstance(expected.columns, pd.MultiIndex):
+            expected = expected.xs("AAPL", level=1, axis=1)
+            result = result.xs("AAPL", level=1, axis=1)
+        else:
+            expected, result = expected[["AAPL"]], result[["AAPL"]]
+        pd.testing.assert_frame_equal(
+            result.reindex(expected.index), expected, check_freq=False
+        )
+
+
+def test_market_breadth_counts_a_stock_on_its_own_trading_days():
+    """In a Toolkit with a stock and a cryptocurrency, the stock is not counted as unchanged
+    on the weekends: only the cryptocurrency counts there, the McClellan averages skip those
+    dates, and on the stock's trading days both count."""
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, _, mixed = _stock_with_a_cryptocurrency()
+    together = Technicals(["AAPL", "BTC"], {"daily": mixed}, rounding=None)
+    saturday = pd.Period("2022-12-24", freq="D")
+    friday = pd.Period("2022-12-23", freq="D")
+
+    breadth = together.get_market_breadth()
+    counted = breadth[["Advancers", "Decliners", "Unchanged"]].sum(axis=1)
+    weekend = breadth.index.dayofweek >= 5
+    assert (counted[weekend] == 1).all()
+    assert (counted.loc[stock.index[1:]] == 2).all()
+    assert breadth["McClellan Oscillator"][weekend].isna().all()
+    assert pd.notna(breadth["McClellan Oscillator"].loc[friday])
+
+    # The TRIN and New Highs - New Lows count the stock on its trading days only as well.
+    trin = together.get_trin()
+    assert trin.loc[saturday].isna().all()
+    new_highs_new_lows = together.get_new_highs_new_lows(window=20)
+    assert new_highs_new_lows.loc[saturday, "AAPL"] in (-1, 0, 1)
+
+
+def test_market_breadth_of_stocks_ignores_filled_dates():
+    """Stocks whose data holds filled dates, as next to a cryptocurrency, have the same
+    breadth, TRIN and New Highs - New Lows as on their own calendar."""
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, _, mixed = _stock_with_a_cryptocurrency()
+    filled = mixed.loc[:, mixed.columns.get_level_values(1) != "BTC"]
+    alone = Technicals(["AAPL", "Benchmark"], {"daily": stock}, rounding=None)
+    with_filled_dates = Technicals(
+        ["AAPL", "Benchmark"], {"daily": filled}, rounding=None
+    )
+
+    for method, kwargs in (
+        ("get_market_breadth", {}),
+        ("get_trin", {}),
+        ("get_new_highs_new_lows", {"window": 20}),
+    ):
+        expected = getattr(alone, method)(**kwargs)
+        result = getattr(with_filled_dates, method)(**kwargs)
+        pd.testing.assert_frame_equal(
+            result.reindex(expected.index), expected, check_freq=False
+        )
+
+
+def test_collected_bollinger_bands_keep_their_own_window(technical_module):
+    """The collections pass their window of 14 to the indicators with a single window, but
+    the Bollinger Bands keep Bollinger's 20 periods."""
+    bands = technical_module.get_bollinger_bands()
+    volatility = technical_module.collect_volatility_indicators()
+
+    for line in ("Upper", "Middle", "Lower"):
+        pd.testing.assert_frame_equal(
+            volatility[f"Bollinger Band {line}"],
+            bands[f"{line} Band"],
+            check_names=False,
+        )
+
+    collected = technical_module.collect_all_indicators(rounding=4)
+    pd.testing.assert_frame_equal(
+        collected["Bollinger Band Upper"],
+        bands["Upper Band"].round(4).loc[collected.index],
+        check_names=False,
+    )

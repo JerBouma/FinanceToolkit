@@ -291,6 +291,8 @@ class Portfolio:
                 rebalancing=rebalancing,
             )
         elif portfolio_dataset is not None and not example:
+            if isinstance(portfolio_dataset, pd.DataFrame) and portfolio_dataset.empty:
+                raise ValueError("The portfolio has no transactions.")
             portfolio_dataset = self._complete_transactions(portfolio_dataset)
 
         # Portfolio Dataset
@@ -1193,6 +1195,8 @@ class Portfolio:
             by=self._date_column, ascending=True, kind="stable"
         )
         self._tickers = list(self._portfolio_dataset[self._ticker_column].unique())
+        if not self._tickers:
+            raise ValueError("The portfolio has no transactions.")
         self._start_date = (
             self._portfolio_dataset[self._date_column].min().strftime("%Y-%m-%d")
         )
@@ -1971,7 +1975,8 @@ class Portfolio:
         trading days, the window of the Volatility column. A beta >1 indicates that the asset is more
         volatile than the benchmark and a beta <1 indicates that the asset is less volatile than the benchmark.
         - Weight: The weight of the asset in the portfolio based on the latest market value and the total
-        market value of the portfolio.
+        market value of the portfolio. With short positions the total is the net value, so a weight can
+        be negative or above 1.
 
         Positions are valued at the traded closing price, the basis of the transaction prices, and dividends
         are added as cash, for the asset and the benchmark alike, so Return and Benchmark Return are total
@@ -2660,9 +2665,10 @@ class Portfolio:
             -transactions["Price"] * transactions["Volume"]
             - transactions["Costs"].abs()
         )
-        last_date = pd.Timestamp(
-            str(self._daily_historical_data.index.get_level_values(0).max())
-        )
+        trading_days = pd.to_datetime(
+            self._daily_historical_data.index.get_level_values(0).astype(str)
+        ).unique()
+        last_date = trading_days.max()
 
         # The dividends received per day follow from the cumulative dividends of the positions, dated on the ex-dividend date.  # noqa: E501
         positions_dividends = self.get_positions_overview()["Dividends"]
@@ -2683,10 +2689,12 @@ class Portfolio:
                 flows if identifier == "Portfolio" else flows[identifiers == identifier]
             )
             dates = pd.to_datetime(selected.index.get_level_values("Date").astype(str))
-            # A transaction after the last date is priced at, and its position starts on, the last close.  # noqa: E501
-            cash_flows = pd.Series(
-                selected.to_numpy(), index=dates.where(dates <= last_date, last_date)
-            )
+            # A transaction on a day without a price (a weekend or holiday) flows on the trading
+            # day its position starts, as in the transactions performance, and one after the
+            # last date on the last close it is priced at.
+            locations = trading_days.get_indexer(dates, method="backfill")
+            locations[locations == -1] = len(trading_days) - 1
+            cash_flows = pd.Series(selected.to_numpy(), index=trading_days[locations])
             dividends = (
                 pd.concat(list(dividend_flows.values()))
                 if identifier == "Portfolio" and dividend_flows

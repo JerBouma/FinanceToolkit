@@ -953,3 +953,33 @@ def test_sold_positions_leave_the_overview_and_short_positions_stay(monkeypatch)
         rounding=12, exclude_sold_positions=False
     )
     assert every_position.index.tolist() == ["AAPL", "MSFT", "Portfolio"]
+
+
+def test_a_weekend_cash_flow_is_dated_on_its_trading_day(monkeypatch):
+    # Saturday 2021-07-31 is bought at Monday 2021-08-02's close, so it flows on that Monday.
+    def money_weighted(date):
+        trades = pd.DataFrame(
+            {
+                "Date": [date, "2021-06-01"],
+                "Ticker": ["AAPL", "MSFT"],
+                "Volume": [10, 5],
+                "Costs": [0.0, 0.0],
+            }
+        )
+        portfolio, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+        return portfolio.get_money_weighted_return(rounding=12)
+
+    saturday = money_weighted("2021-07-31")
+    monday = money_weighted("2021-08-02")
+
+    assert saturday.loc["Portfolio"].tolist() == pytest.approx(
+        monday.loc["Portfolio"].tolist()
+    )
+
+
+def test_a_portfolio_without_transactions_says_so(monkeypatch):
+    with pytest.raises(ValueError, match="no transactions"):
+        _self_benchmarked_portfolio(
+            monkeypatch,
+            pd.DataFrame(columns=["Date", "Ticker", "Volume", "Costs"]),
+        )

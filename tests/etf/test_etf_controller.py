@@ -493,3 +493,87 @@ def test_return_excluding_defaults_to_the_largest_holding(index_fund):
     # X is the largest holding at the start (0.5 against Y's 0.4).
     pd.testing.assert_frame_equal(excluding, etf.get_return_excluding("X", rounding=8))
     assert excluding.loc["Excluded Weight", "FND"] == pytest.approx(0.5)
+
+
+def test_the_dollar_volume_of_a_fund_in_pence_is_in_dollars(etf):
+    historical = etf._historical()
+    traded = (historical["Close"]["AAA"] * historical["Volume"]["AAA"]).iloc[-252:]
+    # Every calendar day a pound is worth 1.25 dollars; the close of AAA is in pence and its
+    # assets, like its NAV, in pounds.
+    days = pd.date_range("2024-12-01", "2027-01-31")
+    etf._currency_function = lambda: pd.Series({"AAA": "GBp", "BBB": "USD"})
+    etf._prices_function = lambda tickers, start, end: pd.DataFrame(
+        {"GBPUSD=X": 1.25}, index=days
+    ).loc[start:end, tickers]
+    with_information(etf, NAV_Currency="GBP")
+
+    profile = etf.get_profile(rounding=12)
+    liquidity = etf.get_liquidity(rounding=12)
+
+    assert profile.loc["Average Dollar Volume", "AAA"] == pytest.approx(
+        traded.mean() / 100 * 1.25
+    )
+    assert liquidity.loc["Average Dollar Volume", "AAA"] == pytest.approx(
+        traded.mean() / 100 * 1.25
+    )
+    # The assets are converted too, so the ratio is that of pounds to pounds.
+    assert liquidity.loc["Dollar Volume to Assets", "AAA"] == pytest.approx(
+        traded.mean() / 100 / 1e10
+    )
+    assert liquidity.loc["Average Volume", "BBB"] == pytest.approx(1e6)
+
+
+def test_a_dollar_volume_without_an_exchange_rate_is_nan(etf, caplog):
+    etf._currency_function = lambda: pd.Series({"AAA": "EUR", "BBB": "USD"})
+    etf._prices_function = lambda tickers, start, end: pd.DataFrame(columns=tickers)
+
+    liquidity = etf.get_liquidity()
+
+    assert pd.isna(liquidity.loc["Average Dollar Volume", "AAA"])
+    assert pd.isna(liquidity.loc["Price Impact per $100 Million", "AAA"])
+    assert liquidity.loc["Average Dollar Volume", "BBB"] > 0
+    assert "No EURUSD=X exchange rate is available" in caplog.text
+
+
+def test_a_holding_listed_abroad_contributes_in_the_fund_currency():
+    dates = pd.bdate_range("2026-09-21", "2026-11-03")
+    after = dates > "2026-09-30"
+    # X gains 10% in dollars; Y is flat in euros while the euro gains 10% against the dollar,
+    # so the fund, which holds Y in dollars, gains 0.5 * 10% + 0.4 * 10% = 9%.
+    prices = pd.DataFrame(100.0, index=dates, columns=["FND", "X", "Y", "EURUSD=X"])
+    prices.loc[after, "X"] = 110.0
+    prices["EURUSD=X"] = 1.0
+    prices.loc[after, "EURUSD=X"] = 1.1
+    prices.loc[after, "FND"] = 109.0
+    holdings = pd.DataFrame(
+        {
+            "Weight": [0.5 * 1.1 / 1.09, 0.4 * 1.1 / 1.09],
+            "Updated At": ["2026-11-03"] * 2,
+        },
+        index=pd.MultiIndex.from_tuples(
+            [("FND", "X"), ("FND", "Y")], names=[None, "Asset"]
+        ),
+    )
+    etf = ETF(
+        tickers=["FND"],
+        historical_function=pd.DataFrame,
+        fund_data_function=lambda dataset, overwrite=False: {"holdings": holdings}.get(
+            dataset
+        ),
+        ratios_function=lambda tickers: pd.DataFrame(),
+        start_date="2026-10-01",
+        end_date="2026-10-30",
+        currency_function=lambda: pd.Series({"FND": "USD"}),
+        prices_function=lambda tickers, start, end: prices.loc[
+            start:end, [t for t in tickers if t in prices]
+        ],
+        holding_currency_function=lambda tickers: pd.Series({"X": "USD", "Y": "EUR"}),
+    )
+
+    contribution = etf.get_contribution(rounding=8)
+
+    assert contribution.loc["Y", "Start Weight"] == pytest.approx(0.4)
+    assert contribution.loc["Y", "Return"] == pytest.approx(0.1)
+    assert contribution.loc["Y", "Contribution"] == pytest.approx(0.04)
+    assert contribution.loc["Remainder", "Contribution"] == pytest.approx(0)
+    assert contribution.loc["Total", "Contribution"] == pytest.approx(0.09)

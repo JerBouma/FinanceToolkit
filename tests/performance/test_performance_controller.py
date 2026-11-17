@@ -870,15 +870,22 @@ def _weekend_performance(rate=0.04):
 
 
 def test_a_partial_period_earns_the_risk_free_rate_of_its_days(performance_module):
-    daily_rate = performance_module._risk_free_rate_data["daily"]
+    annualized_rate = performance_module._annualized_risk_free_rate_data["daily"]
     returns = performance_module._historical_data["daily"]["Return"]
     yearly_rate = performance_module._risk_free_rate_data["yearly"]
 
-    # Every year, including a partial one, compounds the daily rate over the days that
-    # hold a return, as the yearly return compounds the daily returns.
+    # Every year, including a partial one, compounds the annualized rate quoted on each
+    # date with a return over the calendar days since the date before, as the yearly
+    # return compounds the daily returns.
+    dates = returns.dropna(how="all").index
+    first = returns.index.get_loc(dates[0])
+    # The first date accrues from the date before it, or one day when the data start there.
+    previous = returns.index[first - 1].ordinal if first else dates[0].ordinal - 1
+    days = np.diff(np.append(previous, dates.asi8))
+    rate = annualized_rate.sort_index().reindex(dates, method="ffill").bfill()
+    growth = pd.Series((1 + rate.to_numpy()) ** (days / 365), index=dates)
     for year in yearly_rate.index:
-        dates = returns.loc[str(year)].dropna(how="all").index
-        expected = (1 + daily_rate.reindex(dates)).prod() - 1
+        expected = growth[dates.asfreq("Y") == year].prod() - 1
         assert yearly_rate[year] == pytest.approx(expected, rel=1e-12)
 
     performance = _weekend_performance()
@@ -1006,3 +1013,45 @@ def test_the_deflated_sharpe_ratio_counts_non_overlapping_trials(performance_mod
             method="deflated", n_trials=int(n_trials), rounding=10
         )
         pd.testing.assert_series_equal(default[ticker], explicit[ticker])
+
+
+def test_the_deflated_sharpe_ratio_counts_the_returns_of_each_ticker():
+    performance = _weekend_performance()
+    excess = performance._get_column("yearly", "Excess Return", True)
+    default = performance.get_sharpe_ratio(method="deflated", rounding=10)
+
+    # The window of each ticker is the median number of its own returns in a year, not of
+    # the rows, which also hold the weekends only the cryptocurrency trades on.
+    for ticker in ("BTC", "SPY"):
+        window = int(excess[ticker].groupby(level=0).count().median())
+        explicit = performance.get_sharpe_ratio(
+            method="deflated", trials_window=window, rounding=10
+        )
+        assert default[ticker].notna().all()
+        pd.testing.assert_series_equal(default[ticker], explicit[ticker])
+
+
+def test_the_rolling_appraisal_ratio_starts_after_one_window(performance_module):
+    ratio = performance_module.get_appraisal_ratio(
+        period="monthly", rolling=12, rounding=10
+    )
+    returns = performance_module._historical_data["monthly"]["Return"]
+    risk_free = performance_module._risk_free_rate_data["monthly"]
+    first_return = returns["AAPL"].first_valid_index()
+
+    # The residuals of each window come from the regression over that window, so the
+    # first ratio follows the first 12 returns rather than two windows of them.
+    assert ratio["AAPL"].first_valid_index() == first_return + 11
+
+    end = ratio.index[-1]
+    window = returns.loc[end - 11 : end]
+    y = window["AAPL"] - risk_free.reindex(window.index)
+    x = window["Benchmark"] - risk_free.reindex(window.index)
+    slope, intercept = np.polyfit(x, y, 1)
+    residual_standard_deviation = np.sqrt(((y - slope * x - intercept) ** 2).sum() / 11)
+    alpha = performance_module.get_jensens_alpha(
+        period="monthly", rolling=12, rounding=10
+    )
+    assert ratio.loc[end, "AAPL"] == pytest.approx(
+        alpha.loc[end, "AAPL"] / residual_standard_deviation, abs=1e-8
+    )

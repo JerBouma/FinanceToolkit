@@ -145,25 +145,25 @@ class Performance:
 
         | Date   |    AAPL |    TSLA |
         |:-------|--------:|--------:|
-        | 2021Q2 |  0.1157 |  0.1366 |
-        | 2021Q3 |  0.0064 |  0.0053 |
+        | 2021Q2 |  0.1155 |  0.1366 |
+        | 2021Q3 |  0.0067 |  0.0052 |
         | 2021Q4 |  0.1214 |  0.1869 |
-        | 2022Q1 | -0.0577 | -0.1017 |
-        | 2022Q2 | -0.2135 | -0.3321 |
-        | 2022Q3 | -0.0597 | -0.0828 |
-        | 2022Q4 |  0.1059 |  0.0998 |
-        | 2023Q1 |  0.0831 |  0.152  |
-        | 2023Q2 |  0.1032 |  0.1756 |
-        | 2023Q3 | -0.0416 | -0.1029 |
-        | 2023Q4 |  0.102  |  0.2474 |
-        | 2024Q1 |  0.1038 |  0.1406 |
-        | 2024Q2 |  0.0525 |  0.0589 |
-        | 2024Q3 |  0.0571 |  0.1525 |
-        | 2024Q4 |  0.0217 |  0.0516 |
-        | 2025Q1 | -0.0386 | -0.1499 |
-        | 2025Q2 |  0.1473 |  0.2038 |
-        | 2025Q3 |  0.1031 |  0.1768 |
-        | 2025Q4 |  0.0236 |  0.0495 |
+        | 2022Q1 | -0.0576 | -0.1007 |
+        | 2022Q2 | -0.2134 | -0.332  |
+        | 2022Q3 | -0.0594 | -0.0819 |
+        | 2022Q4 |  0.106  |  0.0999 |
+        | 2023Q1 |  0.0829 |  0.1514 |
+        | 2023Q2 |  0.1032 |  0.1765 |
+        | 2023Q3 | -0.0414 | -0.101  |
+        | 2023Q4 |  0.1021 |  0.2458 |
+        | 2024Q1 |  0.1037 |  0.1407 |
+        | 2024Q2 |  0.0524 |  0.0589 |
+        | 2024Q3 |  0.0571 |  0.1512 |
+        | 2024Q4 |  0.0216 |  0.0529 |
+        | 2025Q1 | -0.0387 | -0.1505 |
+        | 2025Q2 |  0.1472 |  0.2034 |
+        | 2025Q3 |  0.103  |  0.1764 |
+        | 2025Q4 |  0.0235 |  0.0496 |
         """
         self._tickers_source = tickers
         self._benchmark_name = "Benchmark"
@@ -248,10 +248,13 @@ class Performance:
         The risk free return per period, the rate subtracted from the returns of that period.
 
         For period="daily" this is the risk free return of each date since the date before.
-        The other periods compound it over the dates in each period that hold a return, as the
-        return of a period compounds the daily returns within it, so a period the data covers
-        in part earns the risk free rate of the dates it covers. Without daily returns the
-        annualized rate of the period is converted with the periods in a year instead.
+        The other periods compound the annualized rate over the calendar days between the
+        dates in each period that hold a return, as the return of a period compounds the daily
+        returns within it, so a full year earns the annualized rate whichever tickers the data
+        holds and a period the data covers in part (the current year, or a first period cut by
+        the start date) earns the risk free rate of the days it covers rather than of a full
+        period (see `compound_risk_free_rate`). Without daily returns the annualized rate of
+        the period is converted with the periods in a year instead.
 
         Args:
             period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
@@ -274,7 +277,7 @@ class Performance:
             return self._risk_free_rate_per_date
 
         return compound_risk_free_rate(
-            self._risk_free_rate_per_date, self._daily_returns, period
+            self._annualized_risk_free_rate_data["daily"], self._daily_returns, period
         )
 
     def _add_excess_return(self, period: str) -> pd.DataFrame:
@@ -487,11 +490,11 @@ class Performance:
 
         |      |    Alpha |   Beta |     CAPM |   Jensen's Alpha |   Treynor Ratio |   Sharpe Ratio |   Sortino Ratio |   Ulcer Performance Index |   Calmar Ratio |   Sterling Ratio |   Burke Ratio |   Omega Ratio |   Kappa Ratio |   Gain to Pain Ratio |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |   Information Ratio |   Appraisal Ratio |   STARR Ratio |   Rachev Ratio |   Returns |   Excess Return |
         |:-----|---------:|-------:|---------:|-----------------:|----------------:|---------------:|----------------:|--------------------------:|---------------:|-----------------:|--------------:|--------------:|--------------:|---------------------:|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|--------------------:|------------------:|--------------:|---------------:|----------:|----------------:|
-        | 2022 |  -0.0822 | 1.3025 |  -0.2458 |          -0.0182 |         -0.2254 |        -0.0482 |         -0.0675 |                   -4.4186 |        -0.8706 |          -1.0669 |       -0.1137 |        0.8943 |       -0.052  |              -0.1057 |     0.4781 |                 1.3036 |                   1.3242 |    -0.1698 |           0.0115 |             -0.025  |           -0.1098 |       -0.4128 |         1.0788 |   -0.2638 |         -0.2934 |
-        | 2023 |   0.2283 | 1.1148 |   0.2873 |           0.2028 |          0.4041 |         0.1189 |          0.1839 |                   13.8927 |         3.2719 |           3.3669 |        0.5152 |        1.4099 |        0.1284 |               0.4099 |     0.576  |                 1.1755 |                   0.9726 |     0.3296 |           0.009  |              0.0794 |            1.44   |        1.0736 |         1.0726 |    0.489  |          0.4494 |
-        | 2024 |   0.0583 | 0.9686 |   0.2423 |           0.0648 |          0.2736 |         0.07   |          0.1071 |                    7.7225 |         1.9958 |           1.9699 |        0.2621 |        1.2509 |        0.0767 |               0.2509 |     0.5    |                 1.1049 |                   1.0583 |     0.189  |           0.0121 |              0.0207 |            0.3386 |        0.5644 |         1.1443 |    0.3069 |          0.2648 |
-        | 2025 |  -0.0867 | 1.2551 |   0.2115 |          -0.121  |          0.0379 |         0.0188 |          0.0283 |                    0.9488 |         0.2913 |           0.445  |        0.0249 |        1.0903 |        0.0186 |               0.0903 |     0.472  |                 1.0147 |                   1.1139 |     0.0714 |           0.0139 |             -0.0127 |           -0.5668 |        0.0659 |         1.0729 |    0.0904 |          0.0475 |
-        | 2021 | nan      | 1.3196 | nan      |         nan      |        nan      |         0.0859 |          0.129  |                  nan      |       nan      |         nan      |      nan      |        1.2632 |        0.0943 |               0.2632 |     0.4921 |                 1.3706 |                   1.432  |   nan      |           0.0118 |              0.0266 |          nan      |      nan      |         0.9957 |    0.3811 |          0.3667 |
+        | 2022 |  -0.0823 | 1.3027 |  -0.2457 |          -0.0184 |         -0.2253 |        -0.0483 |         -0.0676 |                   -1.7999 |        -0.87   |          -1.067  |       -0.1136 |        0.8941 |       -0.0521 |              -0.1059 |     0.4781 |                 1.3037 |                   1.3243 |    -0.1699 |           0.0115 |             -0.025  |           -0.1106 |       -0.4074 |         1.0649 |   -0.264  |         -0.2935 |
+        | 2023 |   0.2283 | 1.1139 |   0.2871 |           0.203  |          0.4045 |         0.1191 |          0.1843 |                    8.175  |         3.282  |           3.3708 |        0.517  |        1.4108 |        0.1286 |               0.4108 |     0.588  |                 1.1755 |                   0.9847 |     0.3297 |           0.009  |              0.0797 |            1.4414 |        1.0738 |         1.0942 |    0.4901 |          0.4505 |
+        | 2024 |   0.0582 | 0.9687 |   0.2424 |           0.0647 |          0.2732 |         0.0701 |          0.1072 |                    4.1634 |         1.9997 |           1.971  |        0.2623 |        1.251  |        0.0767 |               0.251  |     0.504  |                 1.1048 |                   1.0687 |     0.1891 |           0.0121 |              0.0208 |            0.3379 |        0.5637 |         1.1444 |    0.3071 |          0.2646 |
+        | 2025 |  -0.0867 | 1.2551 |   0.2114 |          -0.1209 |          0.0379 |         0.0189 |          0.0283 |                    0.3943 |         0.2913 |           0.4451 |        0.0249 |        1.0903 |        0.0187 |               0.0903 |     0.472  |                 1.015  |                   1.1072 |     0.0715 |           0.0139 |             -0.0126 |           -0.5667 |        0.0659 |         1.0731 |    0.0905 |          0.0476 |
+        | 2021 | nan      | 1.3195 | nan      |         nan      |        nan      |         0.0858 |          0.1289 |                  nan      |       nan      |         nan      |      nan      |        1.2629 |        0.0942 |               0.2629 |     0.494  |                 1.3706 |                   1.4316 |   nan      |           0.0118 |              0.0267 |          nan      |      nan      |         0.9961 |    0.3806 |          0.3663 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         rounding = rounding if rounding is not None else self._rounding
@@ -1103,11 +1106,11 @@ class Performance:
 
         | Date   |     JPM |      GS |      MS |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.2426 |  0.2807 |  0.3175 |
+        | 2021   |  0.2425 |  0.2807 |  0.3175 |
         | 2022   | -0.1567 | -0.173  | -0.1912 |
-        | 2023   |  0.2332 |  0.2759 |  0.3057 |
-        | 2024   |  0.2076 |  0.2801 |  0.2632 |
-        | 2025   |  0.1702 |  0.2211 |  0.2174 |
+        | 2023   |  0.2333 |  0.2759 |  0.3056 |
+        | 2024   |  0.2077 |  0.28   |  0.2632 |
+        | 2025   |  0.1702 |  0.221  |  0.2173 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2371,11 +2374,11 @@ class Performance:
 
         | Date   |     UNH |     JNJ |     PFE |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.2601 | -0.0093 |  0.6494 |
-        | 2022   |  0.1609 |  0.0946 | -0.0262 |
-        | 2023   | -0.0949 | -0.2011 | -0.5534 |
-        | 2024   | -0.0911 | -0.0802 | -0.1162 |
-        | 2025   | -0.4152 |  0.4253 | -0.0973 |
+        | 2021   |  0.2601 | -0.0092 |  0.6494 |
+        | 2022   |  0.1608 |  0.0946 | -0.0263 |
+        | 2023   | -0.095  | -0.2012 | -0.5535 |
+        | 2024   | -0.0914 | -0.0806 | -0.1165 |
+        | 2025   | -0.4154 |  0.4249 | -0.0975 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2497,11 +2500,11 @@ class Performance:
 
         | Date   |     UNP |     UPS |     FDX |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.2342 |  0.3679 | -0.0077 |
+        | 2021   |  0.2343 |  0.3679 | -0.0076 |
         | 2022   | -0.2787 | -0.2133 | -0.3425 |
-        | 2023   |  0.2008 | -0.0896 |  0.4283 |
-        | 2024   | -0.1628 | -0.3384 |  0.1571 |
-        | 2025   | -0.0059 | -0.2644 |  0.0084 |
+        | 2023   |  0.2005 | -0.0898 |  0.4281 |
+        | 2024   | -0.1635 | -0.339  |  0.1565 |
+        | 2025   | -0.0065 | -0.265  |  0.008  |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -2689,10 +2692,10 @@ class Performance:
             series that approximates `Var[SR_trials]` and the default `n_trials`, see above. Only
             used when method="deflated". It counts observations of the returns the Sharpe ratio is
             computed from: daily (or intraday) observations for the Sharpe ratio per period, and
-            observations of `period` when `rolling` is set. Defaults to None, which uses the median
-            number of observations per period (so each trial spans about one period) for the Sharpe
-            ratio per period, and half of the available return history for a rolling Sharpe ratio
-            so that enough overlapping windows exist regardless of `period` or date range.
+            observations of `period` when `rolling` is set. Defaults to None, which uses, per ticker,
+            the median number of its observations in a period (so each trial spans about one period)
+            for the Sharpe ratio per period, and half of its return history for a rolling Sharpe
+            ratio so that enough overlapping windows exist regardless of `period` or date range.
             n_trials (int, optional): The number of independent (or effectively independent)
             strategy variations, parameter combinations, or lookback windows tried before
             arriving at the reported Sharpe ratio. Only used when method="deflated". Defaults to
@@ -2872,23 +2875,35 @@ class Performance:
                 # deflated: comparing a daily-scale Sharpe ratio with the dispersion of
                 # Sharpe ratios of period returns (a much larger scale) would push the
                 # expected maximum far above it and the deflated ratio to 0.
+                # The default window counts the returns of each ticker rather than the
+                # rows, which also hold the dates only other tickers traded on (the
+                # weekends of a cryptocurrency next to a stock): half of its returns for a
+                # rolling ratio, the median number of its returns in a period otherwise.
                 if rolling:
                     trials_returns = full_excess_return
-                    default_window = max(2, len(trials_returns) // 2)
+                    default_window = trials_returns.count() // 2
                 else:
                     trials_returns = excess_return.droplevel(0)
-                    default_window = max(
-                        2, int(excess_return.groupby(level=0).size().median())
-                    )
+                    period_counts = excess_return.groupby(level=0).count()
+                    default_window = period_counts.where(period_counts > 0).median()
 
-                trials_sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
-                    trials_returns,
-                    trials_window if trials_window is not None else default_window,
+                window = (
+                    pd.Series(trials_window, index=trials_returns.columns)
+                    if trials_window is not None
+                    else default_window.fillna(2).astype(int).clip(lower=2)
+                )
+                trials_sharpe_ratio_variance = pd.Series(
+                    {
+                        column: performance_model.get_rolling_sharpe_ratio(
+                            trials_returns[column], int(window[column])
+                        ).var()
+                        for column in trials_returns.columns
+                    },
+                    dtype=float,
                 )
                 # Overlapping windows share most of their returns, so they are not
                 # independent trials (Bailey and Lopez de Prado, 2014): the default counts
                 # the non-overlapping windows the returns hold.
-                window = trials_window if trials_window is not None else default_window
                 trials = (
                     n_trials
                     if n_trials is not None
@@ -2897,7 +2912,7 @@ class Performance:
 
                 result = performance_model.get_deflated_sharpe_ratio(
                     sharpe_ratio=sharpe_ratio,
-                    sharpe_ratio_variance=trials_sharpe_ratio.var(),
+                    sharpe_ratio_variance=trials_sharpe_ratio_variance,
                     n_trials=trials,
                     n_observations=n_observations,
                     skewness=skewness,
@@ -3139,11 +3154,11 @@ class Performance:
 
         | Date   |      VZ |       T |    TMUS |
         |:-------|--------:|--------:|--------:|
-        | 2021   | -1.3286 | -0.567  | -1.2683 |
-        | 2022   | -1.2498 |  0.2852 |  3.6941 |
-        | 2023   | -0.0979 | -0.3581 |  1.6599 |
-        | 2024   |  1.8772 | 11.6307 | 11.5463 |
-        | 2025   |  0.767  |  1.2916 | -0.7867 |
+        | 2021   | -1.3281 | -0.5668 | -1.2681 |
+        | 2022   | -1.25   |  0.2849 |  3.6935 |
+        | 2023   | -0.0995 | -0.3592 |  1.6567 |
+        | 2024   |  1.8693 | 11.6197 | 11.534  |
+        | 2025   |  0.7602 |  1.2863 | -0.7896 |
         """
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
@@ -3476,11 +3491,11 @@ class Performance:
 
         | Date   |      BA |     LMT |     RTX |
         |:-------|--------:|--------:|--------:|
-        | 2021   | -0.0305 |  0.014  |  0.3337 |
+        | 2021   | -0.0305 |  0.0141 |  0.3337 |
         | 2022   | -0.0181 |  0.3253 |  0.1089 |
-        | 2023   |  0.214  | -0.0586 | -0.0743 |
-        | 2024   | -0.0697 |  0.0509 |  0.6627 |
-        | 2025   |  0.1205 | -0.0131 |  1.0522 |
+        | 2023   |  0.2139 | -0.0588 | -0.0744 |
+        | 2024   | -0.0697 |  0.0506 |  0.662  |
+        | 2025   |  0.1202 | -0.0134 |  1.0514 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -3596,11 +3611,11 @@ class Performance:
 
         | Date   |      HD |     LOW |
         |:-------|--------:|--------:|
-        | 2021   |  0.3901 |  0.348  |
+        | 2021   |  0.39   |  0.348  |
         | 2022   | -0.1634 | -0.1482 |
-        | 2023   |  0.0931 |  0.0954 |
-        | 2024   |  0.1082 |  0.0921 |
-        | 2025   | -0.0718 |  0.0055 |
+        | 2023   |  0.0932 |  0.0955 |
+        | 2024   |  0.1084 |  0.0923 |
+        | 2025   | -0.0718 |  0.0056 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         period_returns = self._get_column(period, "Return", within_period=False)
@@ -4557,11 +4572,11 @@ class Performance:
 
         | Date   |     VOO |     QQQ |    SCHD |
         |:-------|--------:|--------:|--------:|
-        | 2021   |  0.3176 |  0.278  |  0.3208 |
-        | 2022   | -0.2351 | -0.3838 | -0.085  |
-        | 2023   |  0.18   |  0.4303 | -0.0226 |
-        | 2024   |  0.1793 |  0.1826 |  0.0483 |
-        | 2025   |  0.1202 |  0.1355 | -0.0095 |
+        | 2021   |  0.3176 |  0.278  |  0.3209 |
+        | 2022   | -0.235  | -0.3836 | -0.0848 |
+        | 2023   |  0.1799 |  0.4301 | -0.0227 |
+        | 2024   |  0.1789 |  0.1822 |  0.0479 |
+        | 2025   |  0.1198 |  0.1351 | -0.0098 |
         """
         mrar = self._get_morningstar_risk_adjusted_return(
             gamma, period, within_period, rolling
@@ -4671,7 +4686,7 @@ class Performance:
         | 2021   | 0.0148 | 0.0205 | 0.0215 |
         | 2022   | 0.0375 | 0.0449 | 0.0338 |
         | 2023   | 0.023  | 0.0444 | 0.0183 |
-        | 2024   | 0.0122 | 0.0147 | 0.0161 |
+        | 2024   | 0.0122 | 0.0147 | 0.0162 |
         | 2025   | 0.0125 | 0.0256 | 0.0126 |
         """
         morningstar_return = self._get_morningstar_risk_adjusted_return(
@@ -5373,11 +5388,11 @@ class Performance:
 
         | Date   |     MCD |    SBUX |     CMG |   Benchmark |
         |:-------|--------:|--------:|--------:|------------:|
-        | 2021   |  0.29   |  0.1389 |  0.3113 |      0.2907 |
+        | 2021   |  0.2901 |  0.139  |  0.3114 |      0.2908 |
         | 2022   | -0.0244 | -0.1612 | -0.2359 |     -0.2112 |
-        | 2023   |  0.1113 | -0.0512 |  0.609  |      0.2224 |
-        | 2024   | -0.0407 | -0.0669 |  0.2763 |      0.2068 |
-        | 2025   |  0.0364 | -0.0952 | -0.4289 |      0.1347 |
+        | 2023   |  0.1111 | -0.0514 |  0.6088 |      0.2222 |
+        | 2024   | -0.0411 | -0.0672 |  0.2759 |      0.2064 |
+        | 2025   |  0.036  | -0.0956 | -0.4293 |      0.1343 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5605,7 +5620,9 @@ class Performance:
                 initialised with quarterly=True, otherwise "yearly".
             rolling (int, optional): The rolling window size to use for the calculation. If set, Beta and
             the residual standard deviation are estimated over a rolling window of this many periods
-            across the full return history instead of per `period`. Defaults to None.
+            across the full return history instead of per `period`, the residuals of each window from
+            the regression over that window (see `performance_model.get_rolling_appraisal_ratio`).
+            Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
@@ -5648,11 +5665,11 @@ class Performance:
 
         | Date   |    ADBE |     CRM |    ORCL |
         |:-------|--------:|--------:|--------:|
-        | 2021   | -1.1713 | -0.8078 |  0.5274 |
-        | 2022   | -0.4646 | -0.6352 |  0.5196 |
-        | 2023   |  1.5754 |  2.7165 |  0.1372 |
-        | 2024   | -1.6891 | -0.1947 |  0.9941 |
-        | 2025   | -1.4147 | -1.4877 | -0.1035 |
+        | 2021   | -1.1713 | -0.8079 |  0.5274 |
+        | 2022   | -0.4645 | -0.6352 |  0.5195 |
+        | 2023   |  1.576  |  2.7166 |  0.1372 |
+        | 2024   | -1.6888 | -0.1942 |  0.9947 |
+        | 2025   | -1.415  | -1.4877 | -0.1032 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5667,15 +5684,9 @@ class Performance:
             )
 
             risk_free_rate = self._risk_free_rate_data[period]
-            within_excess_return = performance_model.get_excess_return(
-                returns, risk_free_rate
-            )
-            within_benchmark_excess_return = performance_model.get_excess_return(
+            excess_return = performance_model.get_excess_return(returns, risk_free_rate)
+            benchmark_excess_return = performance_model.get_excess_return(
                 benchmark_returns, risk_free_rate
-            )
-
-            capm_residuals = performance_model.get_jensens_alpha(
-                within_excess_return, 0.0, beta, within_benchmark_excess_return
             )
         else:
             returns = self._get_column(period, "Return", within_period=True)
@@ -5707,10 +5718,14 @@ class Performance:
             period_returns, risk_free_rate, beta, benchmark_period_returns
         )
 
-        # A rolling Alpha is divided by the residual standard deviation over the same
-        # rolling window, so each ratio only uses the returns up to its own date.
-        appraisal_ratio = performance_model.get_appraisal_ratio(
-            jensens_alpha, capm_residuals, rolling
+        # A rolling Alpha is divided by the residual standard deviation of the regression
+        # over the same window, so each ratio only uses the returns of its own window.
+        appraisal_ratio = (
+            performance_model.get_rolling_appraisal_ratio(
+                jensens_alpha, excess_return, benchmark_excess_return, rolling
+            )
+            if rolling
+            else performance_model.get_appraisal_ratio(jensens_alpha, capm_residuals)
         )
 
         return finalize_dataset(
@@ -5820,9 +5835,9 @@ class Performance:
         |:-------|--------:|--------:|--------:|
         | 2021   | -0.123  | -0.3306 | -0.1031 |
         | 2022   | -0.0751 |  0.0105 |  0.9386 |
-        | 2023   |  0.2053 | -0.2124 | -0.4354 |
-        | 2024   | -0.0826 | -0.2698 | -0.2804 |
-        | 2025   |  0.0021 | -0.0739 | -0.1336 |
+        | 2023   |  0.2054 | -0.2123 | -0.4352 |
+        | 2024   | -0.0824 | -0.2696 | -0.2803 |
+        | 2025   |  0.0022 | -0.0738 | -0.1335 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
@@ -5982,11 +5997,11 @@ class Performance:
 
         | Date   |    CAT |      DE |     HON |
         |:-------|-------:|--------:|--------:|
-        | 2021   | 0.287  |  0.4694 | -0.0376 |
-        | 2022   | 0.2128 |  0.2899 |  0.0391 |
-        | 2023   | 0.3706 | -0.1495 | -0.0624 |
-        | 2024   | 0.3596 |  0.063  |  0.1478 |
-        | 2025   | 0.8333 |  0.1251 | -0.1876 |
+        | 2021   | 0.287  |  0.4695 | -0.0375 |
+        | 2022   | 0.2127 |  0.2898 |  0.0391 |
+        | 2023   | 0.3702 | -0.1498 | -0.0629 |
+        | 2024   | 0.3589 |  0.0623 |  0.1468 |
+        | 2025   | 0.8327 |  0.1244 | -0.1883 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 

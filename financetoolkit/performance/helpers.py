@@ -12,6 +12,13 @@ from financetoolkit.utilities.statistics_model import (
     to_datetime_index,
 )
 
+# The day of the week of a Saturday and a Sunday in pandas (Monday is 0).
+SATURDAY = 5
+SUNDAY = 6
+
+# The share of the dates that Saturdays and Sundays must each exceed for daily dates to be calendar days rather than trading days: one in seven (about 14%) for a cryptocurrency, none or a fraction of a percent for a stock exchange.  # noqa: E501
+WEEKEND_DAY_SHARE = 0.1
+
 
 def determine_within_dataset(
     dataset: pd.DataFrame, period: str, correlation: bool = False
@@ -117,16 +124,27 @@ def align_annualized_rate(
 
 def trades_on_weekends(dates: pd.PeriodIndex) -> bool:
     """
-    Whether the daily dates include a Saturday or a Sunday, as those of a cryptocurrency
-    do, so the dates are calendar days rather than trading days.
+    Whether the daily dates are calendar days rather than trading days, as those of a
+    cryptocurrency that trades on every day of the week: Saturdays and Sundays each make
+    up more than 10% of the dates (one in seven of the dates of a cryptocurrency). The
+    trading days of an exchange that opens from Sunday to Thursday, which has no Saturdays,
+    or of a stock with a one-off Saturday session stay trading days, about 252 a year.
 
     Args:
         dates (pd.PeriodIndex): The daily dates with an observation.
 
     Returns:
-        bool: True when a date falls on a weekend.
+        bool: True when Saturdays and Sundays are each more than 10% of the dates.
     """
-    return bool((dates.dayofweek >= 5).any())  # noqa: PLR2004
+    if len(dates) == 0:
+        return False
+
+    day_of_week = np.asarray(dates.dayofweek)
+
+    return bool(
+        (day_of_week == SATURDAY).mean() > WEEKEND_DAY_SHARE
+        and (day_of_week == SUNDAY).mean() > WEEKEND_DAY_SHARE
+    )
 
 
 def get_calendar_days_between(dates: pd.PeriodIndex) -> np.ndarray:
@@ -153,9 +171,9 @@ def get_risk_free_rate_per_date(
 ) -> pd.Series:
     """
     The risk free return earned on each date of the daily returns since the date before, from
-    the annualized risk free rate (such as a Treasury yield) quoted on that date. It is the
-    rate the returns of a period are compared with once compounded over the period (see
-    `compound_risk_free_rate`).
+    the annualized risk free rate (such as a Treasury yield) quoted on that date, the rate
+    the daily returns are compared with. The longer periods compound the annualized rate
+    over the calendar days they span instead (see `compound_risk_free_rate`).
 
     Dates that are trading days (no returns on a Saturday or Sunday) follow the trading day
     convention of 252 days a year, so a year of trading days earns the annualized rate.
@@ -218,7 +236,7 @@ def get_risk_free_rate_per_observation(
     rate = align_annualized_rate(annualized_rate, returns.index)
     risk_free_rate = pd.DataFrame(np.nan, index=returns.index, columns=returns.columns)
 
-    for position, column in enumerate(returns.columns):
+    for position in range(returns.shape[1]):
         observed = returns.iloc[:, position].notna().to_numpy()
         dates = returns.index[observed]
         exponent = (
@@ -234,32 +252,52 @@ def get_risk_free_rate_per_observation(
 
 
 def compound_risk_free_rate(
-    risk_free_rate_per_date: pd.Series, returns: pd.DataFrame, period: str
+    annualized_rate: pd.Series, returns: pd.DataFrame, period: str
 ) -> pd.Series:
     """
-    The risk free return of each period: the risk free return per date compounded over the
-    dates in the period that hold a return, as the return of a period compounds the daily
-    returns within it. A period the data covers in part, such as the current year, earns the
-    risk free rate of the dates it covers rather than of a full period.
+    The risk free return of each period: the annualized risk free rate compounded over the
+    calendar days between the dates in the period that hold a return, each date earning the
+    rate quoted on it over the days since the date before on 365 days a year. The return of
+    a period runs from the last date of the period before to the last date of the period, so
+    a full year earns the annualized rate whether its dates are the trading days of a stock
+    or every calendar day of a cryptocurrency, and the rate of a period does not depend on
+    which tickers the data holds. A period the data covers in part, such as the current year,
+    earns the risk free rate of the days it covers rather than of a full period.
 
     The formula is as follows:
 
-        - Period Risk Free Rate = PRODUCT(1 + Risk Free Rate per Date) - 1, over the dates in the period
+        - Period Risk Free Rate = PRODUCT((1 + Annualized Rate)^(Days Since the Date Before / 365)) - 1,
+          over the dates in the period
 
     Args:
-        risk_free_rate_per_date (pd.Series): The risk free return per date, see
-            `get_risk_free_rate_per_date`.
-        returns (pd.DataFrame): The daily returns, one column per ticker.
+        annualized_rate (pd.Series): The annualized risk free rate with a daily PeriodIndex, see
+            `align_annualized_rate`.
+        returns (pd.DataFrame): The daily returns with a daily PeriodIndex, one column per ticker.
+            The first date with a return accrues from the date before it (the date of the
+            first price), or over one day when it is the first date.
         period (str): The period to compound to (weekly, monthly, quarterly or yearly).
 
     Returns:
         pd.Series: The risk free return per period, as a decimal.
     """
-    rate = risk_free_rate_per_date.reindex(returns.index)[
-        returns.notna().any(axis=1).to_numpy()
-    ]
+    observed = returns.notna().any(axis=1).to_numpy()
+    positions = np.flatnonzero(observed)
 
-    return (1 + rate).groupby(rate.index.asfreq(PERIOD_TRANSLATION[period])).prod() - 1
+    if not len(positions):
+        return pd.Series(dtype=float)
+
+    ordinals = returns.index.asfreq("D").asi8
+    first = positions[0]
+    days_since_date_before = np.diff(
+        ordinals[positions],
+        prepend=ordinals[first - 1] if first > 0 else ordinals[first] - 1,
+    ).astype(float)
+
+    dates = returns.index[positions]
+    rate = align_annualized_rate(annualized_rate, dates)
+    growth = (1 + rate) ** (days_since_date_before / 365)
+
+    return growth.groupby(dates.asfreq(PERIOD_TRANSLATION[period])).prod() - 1
 
 
 def get_observations_per_year(returns: pd.DataFrame) -> pd.Series:

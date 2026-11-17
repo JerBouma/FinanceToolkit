@@ -100,7 +100,8 @@ class VolatilityOptions:
         The price of the underlying quoted with the option chain and the most recent risk free rate and dividend
         yield are used, and the implied volatility is the volatility at which the Black Scholes price equals the
         option's mid price, the middle of its bid and ask (the last traded price when the option has no two-sided
-        quote, for example outside market hours).
+        quote, for example outside market hours). A strike without a two-sided quote and without open interest or
+        volume has no implied volatility: its last trade can be weeks old, from when the underlying stood elsewhere.
 
         The formulas are as follows:
 
@@ -312,7 +313,8 @@ class VolatilityOptions:
             )
 
             # The mid price and the quoted price of the underlying are of the same moment,
-            # while a last traded price can be hours or days older than either.
+            # while a last traded price can be hours or days older than either; it is only
+            # used for an option with open interest or volume (see get_mid_prices).
             option_prices = market_metrics_model.get_mid_prices(option_chain)
 
             for strike_price, option_price in option_prices.items():

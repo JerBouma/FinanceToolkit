@@ -162,3 +162,22 @@ def test_a_time_that_daylight_saving_skips_or_repeats_is_accepted():
 
     assert helpers.get_time_to_expiration("2026-03-09", skipped) > 0
     assert helpers.get_time_to_expiration("2026-11-02", repeated) > 0
+
+
+def test_a_strike_without_a_quote_or_activity_has_no_price():
+    # 160 still has open interest and 165 traded today; 170 has neither, so its last
+    # price is stale and is not used (an implied volatility of 150% from it).
+    quotes = pd.DataFrame(
+        {
+            "Bid": [2.4, 0.0, 0.0, 0.0],
+            "Ask": [2.6, 0.0, 0.0, 0.0],
+            "Last Price": [2.45, 3.1, 3.1, 3.1],
+            "Volume": [1500.0, 0.0, 4.0, 0.0],
+            "Open Interest": [8000.0, 12.0, 0.0, 0.0],
+        },
+        index=[100.0, 160.0, 165.0, 170.0],
+    )
+    prices = market_metrics_model.get_mid_prices(quotes)
+
+    assert prices.iloc[:3].tolist() == pytest.approx([2.5, 3.1, 3.1])
+    assert np.isnan(prices.iloc[3])

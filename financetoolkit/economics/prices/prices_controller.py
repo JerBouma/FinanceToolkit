@@ -1061,19 +1061,23 @@ class PricesEconomics:
             pd.DataFrame: The house price indices with China's from the BIS.
         """
         house_prices = house_prices.drop(columns="China", errors="ignore")
-        # Read from 2015, the base year, whatever the start date.
-        start_date = min(self._start_date or "2015-01-01", "2015-01-01")
+        end_date = self._end_date or pd.Timestamp.today().strftime("%Y-%m-%d")
+        # Read the whole of 2015, the base year, whatever the date range: a range ending
+        # before 2016 would otherwise rebase on part of the year, or on nothing at all.
         china = bis_model.get_residential_property_prices(
             "CN",
             inflation_adjusted=inflation_adjusted,
-            start_date=start_date,
-            end_date=self._end_date or pd.Timestamp.today().strftime("%Y-%m-%d"),
+            start_date=min(self._start_date or "2015-01-01", "2015-01-01"),
+            end_date=max(end_date, "2015-12-31"),
         )
 
         if china.empty:
             return house_prices
 
         china = china / china[china.index.year == 2015].mean() * 100  # noqa: PLR2004
+        # Cut to the end date before averaging the years, so a year the range ends in
+        # stays out as it does for the OECD indices.
+        china = china.loc[:end_date]
 
         if not quarterly:
             years = china.groupby(china.index.asfreq("Y"))

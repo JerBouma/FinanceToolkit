@@ -502,7 +502,10 @@ def get_risk_free_rate_per_ticker(
             annualized_rate, returns[own_dates].to_frame(), period
         )
 
-    return pd.concat(risk_free_rate, axis=1)
+    # The union of the tickers' periods keeps the order they are first met in (pandas only
+    # sorts a DatetimeIndex here, not a PeriodIndex), so a first ticker listed later would put
+    # the earlier periods of the others at the end and break every positional rolling window.  # noqa: E501
+    return pd.concat(risk_free_rate, axis=1).sort_index()
 
 
 def compound_into_shared_dates(returns: pd.DataFrame) -> pd.DataFrame:

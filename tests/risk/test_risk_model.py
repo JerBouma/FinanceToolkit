@@ -11,6 +11,7 @@ from financetoolkit.risk.helpers import (
     get_observations_per_year,
     get_risk_free_rate_per_date,
     get_risk_free_rate_per_observation,
+    get_risk_free_rate_per_ticker,
 )
 
 
@@ -1023,3 +1024,38 @@ def test_the_period_risk_free_rate_does_not_depend_on_the_tickers():
     assert stock[weekday_turns].to_numpy() == pytest.approx(
         mixed[weekday_turns].to_numpy(), rel=1e-12
     )
+
+
+def test_the_risk_free_rate_per_ticker_is_in_date_order_with_a_later_listing_first():
+    days = pd.period_range("2021-01-01", "2022-12-30", freq="B")
+    rng = np.random.default_rng(4)
+    returns = pd.DataFrame(
+        {
+            "Listed Later": np.where(
+                days >= pd.Period("2022-01-03", "B"),
+                rng.normal(0, 0.01, len(days)),
+                np.nan,
+            ),
+            "Listed Earlier": rng.normal(0, 0.01, len(days)),
+        },
+        index=days.asfreq("D"),
+    )
+    historical_data = {
+        "daily": pd.concat(
+            {"Return": returns, "Adj Close": (1 + returns).cumprod()}, axis=1
+        )
+    }
+    annualized_rate = {"daily": pd.Series(0.04, index=returns.index)}
+
+    monthly = get_risk_free_rate_per_ticker(annualized_rate, historical_data, "monthly")
+    swapped = get_risk_free_rate_per_ticker(
+        annualized_rate,
+        {"daily": historical_data["daily"].iloc[:, [1, 0, 3, 2]]},
+        "monthly",
+    )
+
+    # The periods of 2021 only the second ticker has come first, not after those of 2022,
+    # so rolling windows over the rows cover consecutive periods.
+    assert monthly.index.is_monotonic_increasing
+    assert len(monthly) == 24  # noqa: PLR2004
+    pd.testing.assert_frame_equal(monthly, swapped[monthly.columns])

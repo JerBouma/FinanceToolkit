@@ -565,7 +565,9 @@ def test_get_sectors_performance_returns_decimals_by_day(monkeypatch):
     assert len(requested) == len(discovery_model.FMP_SECTORS)
     assert all("&from=2024-01-01&to=2024-01-31" in url for url in requested)
     assert list(result.columns) == ["Energy", "Technology"]
-    assert [str(day) for day in result.index] == ["2024-01-02", "2024-01-03"]
+    # Dated like the history of one sector, so the two can be joined.
+    assert isinstance(result.index, pd.DatetimeIndex) and result.index.name == "Date"
+    assert list(result.index) == list(pd.to_datetime(["2024-01-02", "2024-01-03"]))
     assert result.loc["2024-01-02", "Technology"] == pytest.approx(0.02)
     assert result.loc["2024-01-03", "Technology"] == pytest.approx(-0.015)
     assert result.loc["2024-01-02", "Energy"] == pytest.approx(0.0025)
@@ -887,3 +889,181 @@ def test_the_international_order_book_trades_in_dollars(monkeypatch):
 
     assert listings["Currency"].tolist() == ["USD", "GBP"]
     assert listings["Market Cap (USD)"].tolist() == pytest.approx([300e9, 13e9])
+
+
+def test_the_earnings_calendar_ranks_a_listing_without_a_market_cap_by_its_rate(
+    monkeypatch,
+):
+    # The Sydney listing has no market cap of its own, but trades far more than London: its
+    # traded value takes the Australian dollar's rate, not a ratio of market caps.
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "/earnings-calendar" in url:
+            return pd.DataFrame(
+                {"symbol": ["BHP.L", "BHP.AX"], "date": ["2026-11-12", "2026-11-12"]}
+            )
+        if "/batch-quote" in url and "GBPUSD" in url:
+            return pd.DataFrame({"symbol": ["AUDUSD", "GBPUSD"], "price": [0.65, 1.3]})
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["BHP.L", "BHP.AX"],
+                    "name": ["BHP Group Limited", "BHP Group Limited"],
+                    "exchange": ["LSE", "ASX"],
+                    "marketCap": [152e9, float("nan")],
+                    "price": [2993.0, 57.62],
+                    "volume": [3.06e6, 10.57e6],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {"exchange": ["LSE", "ASX"], "countryCode": ["UK", "AU"]}
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    calendar = discovery_model.get_earnings_calendar(
+        "KEY", "2026-11-09", "2026-11-13", primary_only=True
+    )
+
+    # 57.62 * 10.57 million * 0.65 is about 396 million dollars against London's 119 million.
+    assert list(calendar.index) == ["BHP.AX"]
+
+
+def test_the_screener_warns_when_more_listings_match_than_the_limit(
+    monkeypatch, caplog
+):
+    rows = pd.DataFrame(
+        {
+            "symbol": [f"S{i}" for i in range(30)],
+            "companyName": [f"Company {i}" for i in range(30)],
+            "marketCap": [1e10 - i for i in range(30)],
+            "exchangeShortName": "NASDAQ",
+            "country": "US",
+            "volume": 1.0,
+            "avgVolume": 2.0,
+            "price": 1.0,
+        }
+    )
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "/company-screener" in url:
+            return rows.copy()
+        if "/available-exchanges" in url:
+            return pd.DataFrame({"exchange": ["NASDAQ"], "countryCode": ["US"]})
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    listings = discovery_model.get_stock_screener(
+        api_key="KEY", market_cap_higher=1e9, limit=10
+    )
+
+    assert len(listings) == 10  # noqa: PLR2004
+    assert "More than 10 listings match the criteria" in caplog.text
+    assert "Average Volume" in listings.columns and "avgVolume" not in listings.columns
+    assert "_dollar_rate" not in listings.columns
+
+
+def test_the_screener_keeps_listings_in_currencies_worth_more_than_two_dollars(
+    monkeypatch,
+):
+    urls = []
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        urls.append(url)
+        if "/company-screener" in url:
+            # 400 million Kuwaiti dinars is 1.3 billion dollars; 300 billion forint 0.84.
+            return pd.DataFrame(
+                {
+                    "symbol": ["NBK.KW", "OTP.BD"],
+                    "companyName": ["National Bank of Kuwait", "OTP Bank"],
+                    "marketCap": [400e6, 300e9],
+                    "exchangeShortName": ["KUW", "BUD"],
+                    "country": ["KW", "HU"],
+                }
+            )
+        if "/available-exchanges" in url:
+            return pd.DataFrame(
+                {"exchange": ["KUW", "BUD"], "countryCode": ["KW", "HU"]}
+            )
+        if "/batch-quote" in url:
+            return pd.DataFrame(
+                {"symbol": ["HUFUSD", "KWDUSD"], "price": [0.0028, 3.25]}
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    listings = discovery_model.get_stock_screener(api_key="KEY", market_cap_higher=1e9)
+
+    # The bound sent leaves room for a dinar worth 3.25 dollars (400 million is below 500).
+    assert "marketCapMoreThan=250000000" in next(
+        url for url in urls if "/company-screener" in url
+    )
+    assert list(listings.index) == ["NBK.KW"]
+    assert listings.loc["NBK.KW", "Market Cap (USD)"] == pytest.approx(1.3e9)
+    assert discovery_model.COUNTRY_CURRENCIES["HU"] == "HUF"
+
+
+def test_a_shares_float_of_zero_is_missing(monkeypatch):
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        if "page=0" in url:
+            return pd.DataFrame(
+                {
+                    "symbol": ["IMFP", "IMG"],
+                    "freeFloat": [0, 81.3132],
+                    "floatShares": [0, 7.30965e6],
+                    "outstandingShares": [2.11197e6, 8.9895e6],
+                }
+            )
+        return pd.DataFrame()
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    shares_float = discovery_model.get_stock_shares_float("KEY")
+
+    assert pd.isna(shares_float.loc["IMFP", "Free Float"])
+    assert pd.isna(shares_float.loc["IMFP", "Float Shares"])
+    assert shares_float.loc["IMFP", "Outstanding Shares"] == pytest.approx(2.11197e6)
+    assert shares_float.loc["IMG", "Free Float"] == pytest.approx(0.813132)
+
+
+def test_a_long_ipo_or_split_calendar_is_asked_for_in_parts(monkeypatch):
+    urls = []
+
+    def fake(url, user_subscription="Free", sleep_timer=True):  # noqa: ARG001
+        urls.append(url)
+        start = url.split("&from=")[1][:10]
+        return pd.DataFrame({"symbol": [f"S{start}"], "date": [start]})
+
+    monkeypatch.setattr(discovery_model, "get_cached_financial_data", fake)
+
+    calendar = discovery_model.get_ipo_calendar("KEY", "2024-01-01", "2024-06-01")
+    splits = discovery_model.get_stock_splits_calendar(
+        "KEY", "2024-01-01", "2024-03-30"
+    )
+
+    assert [url.split("&from=")[1] for url in urls] == [
+        "2024-01-01&to=2024-03-30",
+        "2024-03-31&to=2024-06-01",
+        "2024-01-01&to=2024-03-30",
+    ]
+    assert list(calendar.index) == ["S2024-01-01", "S2024-03-31"]
+    assert len(splits) == 1
+
+
+def test_a_truncated_country_screen_points_to_the_calendars_own_parameters(
+    monkeypatch, caplog
+):
+    _calendar_responses(monkeypatch)
+    # The screener returns its maximum of two listings for the country.
+    monkeypatch.setattr(discovery_model, "MAXIMUM_SCREENER_LIMIT", 2)
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        discovery_model.get_earnings_calendar(
+            "KEY", "2026-11-09", "2026-11-13", country="Germany"
+        )
+
+    assert "set a (higher) min_market_cap" in caplog.text
+    assert "raise the limit" not in caplog.text

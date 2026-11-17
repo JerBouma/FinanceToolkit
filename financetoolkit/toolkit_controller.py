@@ -1403,6 +1403,12 @@ class Toolkit:
                 return pd.Series(dtype=object)
             return profile.loc["Sector"]
 
+        def holding_currencies(tickers: list[str]) -> pd.Series:
+            # The holdings' prices are converted into the fund's currency for their contributions.
+            return self._other_toolkit(
+                tickers, self._start_date, self._end_date
+            )._get_listing_currencies()
+
         return ETF(
             tickers=self._tickers,
             historical_function=historical,
@@ -1414,6 +1420,8 @@ class Toolkit:
             currency_function=self._get_listing_currencies,
             prices_function=prices,
             sector_function=sectors,
+            holding_currency_function=holding_currencies,
+            benchmark_ticker=self._benchmark_ticker,
         )
 
     @property

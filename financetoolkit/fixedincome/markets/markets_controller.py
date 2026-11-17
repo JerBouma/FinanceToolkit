@@ -274,6 +274,8 @@ class MarketsFixedIncome(CurvesFixedIncome):
           holdings, so there is no history. For the Treasuries the funds hold, the yields are
           within about a basis point of the FedInvest prices of the same day (see
           `get_treasury_securities`).
+        - Each bond is valued as of its Price Date: the accrued interest and the years to
+          maturity count from that day, not from a later settlement date.
         - The yield is to maturity. A callable bond that trades above its call price
           yields less to its call date (the yield to worst), which is common among high
           yield bonds; call schedules are not in the holdings.

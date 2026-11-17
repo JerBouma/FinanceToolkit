@@ -178,8 +178,9 @@ def get_years_to_maturity(
     - "act/act": the actual days, as a share of the actual days of the coupon period
       (actual/actual ICMA), the convention of US Treasuries.
     - "30/360": 30 days to every month (the 30/360 Bond Basis), the elapsed days as a
-      share of the 360 / frequency days of a coupon period, the convention of US corporate
-      bonds.
+      share of the 360 / frequency days of a coupon period. US corporate bonds mostly use
+      30/360 US, which also counts the last day of February as the 30th; the two differ by
+      at most a few days of accrual around February.
 
     Args:
         settlement (date): The date the price applies to.

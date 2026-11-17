@@ -64,7 +64,12 @@ def get_forward_rate(
 
     # A pair of a Series checks every element, so no row turns into a forward rate over a
     # negative or zero period.
-    if np.any(np.asarray(far_maturity <= near_maturity)):
+    far, near = (
+        far_maturity.align(near_maturity)
+        if isinstance(far_maturity, pd.Series) and isinstance(near_maturity, pd.Series)
+        else (far_maturity, near_maturity)
+    )
+    if np.any(np.asarray(far <= near)):
         raise ValueError(
             "The far maturity must be greater than the near maturity to derive "
             "a forward rate."

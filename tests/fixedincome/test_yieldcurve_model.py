@@ -160,3 +160,17 @@ def test_get_forward_rate_invalid_maturity_order_with_series():
             near_maturity=5.0,
             far_maturity=pd.Series([5.0]),
         )
+
+
+def test_forward_rate_aligns_differently_indexed_maturities():
+    near = pd.Series([1.0, 2.0], index=[0, 1])
+    far = pd.Series([3.0, 4.0], index=[1, 2])
+    near_rate = pd.Series([0.03, 0.035], index=[0, 1])
+    far_rate = pd.Series([0.04, 0.045], index=[1, 2])
+
+    result = yieldcurve_model.get_forward_rate(near_rate, far_rate, near, far)
+    shared = yieldcurve_model.get_forward_rate(0.035, 0.04, 2.0, 3.0)
+
+    # Only the shared label holds both maturities; the others are NaN, not an error.
+    assert result.loc[1] == pytest.approx(shared)
+    assert result.drop(1).isna().all()

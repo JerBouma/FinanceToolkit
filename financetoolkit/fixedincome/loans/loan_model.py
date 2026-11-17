@@ -127,8 +127,18 @@ def get_amortization_schedule(
 
     Returns:
         pd.DataFrame: Per payment (1 to n) the Payment, Interest, Principal and Balance.
+
+    Raises:
+        ValueError: If the term is not a whole number of payments, as the schedule has a
+            row per payment.
     """
     number_of_payments = int(round(years * payments_per_year))
+    if not np.isclose(years * payments_per_year, number_of_payments):
+        raise ValueError(
+            f"The term of {years} years is {years * payments_per_year:g} payments at "
+            f"{payments_per_year} payments a year; an amortization schedule needs a whole "
+            "number of payments."
+        )
     periodic_rate = rate / payments_per_year
     payment = get_loan_payment(principal, rate, years, payments_per_year)
 

@@ -77,32 +77,58 @@ class CurvesFixedIncome:
     Yield curves: government bond yields and curves, Treasury rates, forward rates, par yields, spreads, breakeven inflation, zero-coupon curves, Nelson-Siegel-Svensson fits, principal components, the term premium, the Bank of England curves and the EIOPA risk-free rates.
     """
 
-    def _latest_zero_curve(self, country: str, date: str | None = None) -> pd.Series:
+    def _latest_zero_curve(
+        self, country: str, date: str | None = None, coupon_grid: bool = True
+    ) -> pd.Series:
         """
         The zero-coupon curve of a country on a day, bootstrapped from its par yield curve
-        as `get_zero_coupon_curve` does.
+        as `get_zero_coupon_curve` does, with the zero rate of every coupon date rather than
+        only those of the quoted maturities. Interpolating between the quoted maturities
+        alone would misprice par bonds at long maturities (a 20-year par bond at about
+        99.95), as the bootstrap interpolates the par yields, not the zero rates.
 
         Args:
             country (str): The country, see get_zero_coupon_curve.
             date (str | None): The day (YYYY-MM-DD), or the last day before it with a curve.
                 Defaults to None, the end date.
+            coupon_grid (bool): Whether to return the zero rate of every coupon date, or only
+                those of the quoted maturities (the points key rate durations shock).
+                Defaults to True.
 
         Returns:
             pd.Series: The annually compounded zero-coupon rates by maturity in years.
         """
-        par_curve = self._latest_yield_curve(country, date)
-        zero_curve = self._to_zero_coupon(par_curve.to_frame().T, country)
-        if zero_curve.empty:
+        par_curve = self._latest_yield_curve(country, date).dropna()
+
+        if country in ZERO_COUPON_CURVES:
+            zero_curve = self._to_zero_coupon(par_curve.to_frame().T, country).iloc[0]
+            return pd.Series(
+                zero_curve.to_numpy(dtype=float),
+                index=[maturity_key(label) for label in zero_curve.index],
+            )
+
+        maturities = np.array(
+            [curve_model.maturity_in_years(label) for label in par_curve.index]
+        )
+        if par_curve.empty or maturities.min() > 1:
             raise ValueError(
                 f"The {country} yield curve has no maturity of a year or less to bootstrap "
                 "zero-coupon rates from."
             )
-        zero_curve = zero_curve.iloc[0].dropna()
-
-        return pd.Series(
-            zero_curve.to_numpy(dtype=float),
-            index=[maturity_key(label) for label in zero_curve.index],
+        bootstrap = curve_model.bootstrap_zero_rates(
+            maturities,
+            par_curve.to_numpy(dtype=float),
+            COUPON_FREQUENCIES.get(country, 2),
+            BILL_CONVENTIONS.get(country),
+            return_grid=coupon_grid,
         )
+        if not coupon_grid:
+            return pd.Series(
+                bootstrap, index=[maturity_key(label) for label in par_curve.index]
+            )
+
+        years, zero_rates = bootstrap
+        return pd.Series(zero_rates, index=years)
 
     @handle_errors
     def get_forward_rate(
@@ -133,7 +159,8 @@ class CurvesFixedIncome:
 
         The curve is the zero-coupon curve of `get_zero_coupon_curve`, bootstrapped from the
         country's government bond par yields and annually compounded, so the forward rate is
-        annually compounded as well. For a curve of your own, use
+        annually compounded as well. It holds the zero rate of every coupon date the bootstrap
+        solves for, not only those of the quoted maturities. For a curve of your own, use
         `yieldcurve_model.get_forward_rate`.
 
         Also known as: implied forward rate, forward-forward rate.
@@ -226,8 +253,10 @@ class CurvesFixedIncome:
         that maturity needs so that, discounted with the spot curve, its price equals par.
 
         The government bond yield curve quotes par yields at its own maturities; this gives the
-        par yield of any maturity in between (such as 4 or 15 years) with the interpolation done
-        on the zero-coupon rates, where it belongs, rather than on the par yields.
+        par yield of any maturity in between (such as 4 or 15 years) from the zero-coupon rates
+        of every coupon date the bootstrap of `get_zero_coupon_curve` solves for, so a maturity
+        on a coupon date reprices the par yield the bootstrap assumed there and a maturity
+        between coupon dates is interpolated on the zero-coupon rates.
 
         The formula is as follows:
 
@@ -237,7 +266,7 @@ class CurvesFixedIncome:
 
         where Spot Rate(τ) is the zero-coupon rate of `get_zero_coupon_curve` at τ years, restated from annual
         compounding to the country's coupon frequency (twice a year, once for Sweden and Norway) and interpolated
-        linearly, a is the elapsed fraction of the current coupon period (0 on a coupon date) and t_i = i - a is
+        linearly between the bills and the coupon dates of the bootstrap, a is the elapsed fraction of the current coupon period (0 on a coupon date) and t_i = i - a is
         the time of the i-th coupon in periods. The par yield is a nominal annual coupon rate paid at the coupon
         frequency, like the government bond yield curve. For a curve of your own, use
         `yieldcurve_model.get_par_yield`.
@@ -278,8 +307,8 @@ class CurvesFixedIncome:
         |                   1 |      0.0428 |
         |                   4 |      0.0456 |
         |                   8 |      0.0475 |
-        |                  15 |      0.0507 |
-        |                  25 |      0.0527 |
+        |                  15 |      0.0505 |
+        |                  25 |      0.0526 |
         """
         frequency = COUPON_FREQUENCIES.get(country, 2)
         zero_curve = self._latest_zero_curve(country, date)
@@ -326,7 +355,10 @@ class CurvesFixedIncome:
 
         Where both yields are the par yields of `get_government_bond_yield_curve`, as the
         Treasury and FRED (T10Y2Y, T10Y3M) calculate the spreads, interpolated linearly for a
-        maturity the curve does not quote. For the history of these spreads, take the
+        maturity the curve does not quote. They keep the source's quote convention: for the
+        United States bond-equivalent yields, compounded twice a year beyond a year and simple
+        interest for the bill maturities up to half a year, so a spread against a bill yield
+        mixes the two conventions, as the published spreads do. For the history of these spreads, take the
         difference of two columns of `get_government_bond_yield_curve`; for yields of your own,
         use `yieldcurve_model.get_yield_curve_spread`.
 
@@ -421,8 +453,9 @@ class CurvesFixedIncome:
 
         - Breakeven Inflation Rate = Nominal Yield - Real Yield
 
-        Where both yields are the Treasury's par yield curve rates (nominal and real), the simple
-        difference FRED publishes as T5YIE and T10YIE, not (1 + Nominal) / (1 + Real) - 1.
+        Where both yields are the Treasury's par yield curve rates (nominal and real), quoted as
+        bond-equivalent yields compounded twice a year, and the breakeven rate is their simple
+        difference, as FRED publishes it as T5YIE and T10YIE, not (1 + Nominal) / (1 + Real) - 1.
 
         The breakeven rate is often read as the market's expected inflation, but it also
         contains an inflation risk premium, which raises it, and a liquidity premium on
@@ -1653,7 +1686,9 @@ class CurvesFixedIncome:
         values, so they are computed here with those formulas: upwards by the relative shock
         per maturity and at least one percentage point, downwards by the relative shock with
         negative rates left unchanged. Every value is a decimal fraction (0.0358 for 3.58%),
-        at the end of the month the release is for.
+        at the end of the month the release is for, and an annually compounded spot rate, as
+        Solvency II defines the term structure: a rate r discounts a payment in t years with
+        (1 + r)^(-t).
 
         EIOPA's page links the releases from January 2023; each is a
         separate file, so only the months between the start and end date are downloaded, and
@@ -1884,7 +1919,9 @@ class CurvesFixedIncome:
         UK government bonds (gilts) and the spot curve of overnight index swaps on SONIA (OIS,
         from 2009). Unlike the par yields of 5, 10 and 20 years in
         `get_government_bond_yield_curve`, these are zero-coupon spot rates over the full
-        range of maturities with history back to 1985.
+        range of maturities with history back to 1985. The Bank of England publishes them
+        continuously compounded, and they are returned that way: a spot rate r discounts a
+        payment in t years with exp(-r t).
 
         The Bank of England's real and implied inflation curves are part of
         `economics.get_real_yield_curve` and `economics.get_breakeven_inflation_expectations`

@@ -69,6 +69,51 @@ def _bond_terms(bond: pd.Series) -> dict:
     }
 
 
+def _yield_measures(bond: pd.Series, terms: dict, yield_to_maturity: float) -> dict:
+    """
+    The duration and convexity measures of a bond at a yield to maturity. A bill is priced
+    on its bond-equivalent yield, simple interest up to half a year, rather than as a
+    semi-annual bond (see bond_data_model.get_bill_measures).
+
+    Args:
+        bond (pd.Series): A bond, see FixedIncome._select_bonds.
+        terms (dict): The bond's terms, see _bond_terms.
+        yield_to_maturity (float): The yield to maturity (decimal).
+
+    Returns:
+        dict: The measures of YIELD_MEASURES, by name.
+    """
+    if bond["Security Type"] == "Bill":
+        return bond_data_model.get_bill_measures(
+            terms["years_to_maturity"], yield_to_maturity
+        )
+
+    return {
+        name: function(**terms, yield_to_maturity=yield_to_maturity)
+        for name, function in YIELD_MEASURES.items()
+    }
+
+
+def _taylor_price_change(bond: pd.Series, yield_change: float) -> float:
+    """
+    The percentage price change of a bond for a change in its yield to maturity, from its
+    modified duration and convexity (see bond_model.get_taylor_price_change).
+
+    Args:
+        bond (pd.Series): A bond, see FixedIncome._select_bonds.
+        yield_change (float): The change in the yield to maturity (decimal).
+
+    Returns:
+        float: The estimated percentage price change (decimal).
+    """
+    measures = _yield_measures(bond, _bond_terms(bond), bond["Yield to Maturity"])
+
+    return (
+        -measures["Modified Duration"] * yield_change
+        + 0.5 * measures["Convexity"] * yield_change**2
+    )
+
+
 def _curve_measures(bond: pd.Series, terms: dict, spot_rates: pd.Series) -> dict:
     """
     The present value of a bond on a spot curve and its Z-spread over it. TIPS are priced
@@ -240,7 +285,10 @@ class BondsFixedIncome(MarketsFixedIncome):
                 (pd.Timestamp(maturity) - pd.Timestamp(price_date)).days / 365
                 if security_type == "Bill"
                 else bond_data_model.get_years_to_maturity(
-                    pd.Timestamp(price_date).date(), pd.Timestamp(maturity).date()
+                    pd.Timestamp(price_date).date(),
+                    pd.Timestamp(maturity).date(),
+                    # Treasuries count actual days, US corporate bonds 30/360.
+                    day_count="30/360" if security_type == "Corporate" else "act/act",
                 )
             )
             for security_type, maturity, price_date in zip(
@@ -264,20 +312,28 @@ class BondsFixedIncome(MarketsFixedIncome):
             ]
         ]
 
-    def _bond_spot_curves(self, selection: pd.DataFrame) -> dict[str, pd.Series]:
+    def _bond_spot_curves(
+        self, selection: pd.DataFrame, coupon_grid: bool = True
+    ) -> dict[str, pd.Series]:
         """
         The Treasury zero-coupon curve of every price date of the bonds, compounded twice
-        a year like the coupons, so that `bond_model` discounts with it directly.
+        a year like the coupons, so that `bond_model` discounts with it directly. It holds
+        the zero rate of every coupon date, on which each par bond of the par yield curve
+        prices at par, see `_latest_zero_curve`.
 
         Args:
             selection (pd.DataFrame): The bonds, see _select_bonds.
+            coupon_grid (bool): Whether the curves hold every coupon date or only the
+                maturities the Treasury quotes, the key rates. Defaults to True.
 
         Returns:
             dict[str, pd.Series]: The spot rates by maturity in years, per price date.
         """
         curves = {}
         for price_date in selection["Price Date"].unique():
-            zero_curve = self._latest_zero_curve("United States", str(price_date))
+            zero_curve = self._latest_zero_curve(
+                "United States", str(price_date), coupon_grid
+            )
             curves[price_date] = FREQUENCY * ((1 + zero_curve) ** (1 / FREQUENCY) - 1)
 
         return curves
@@ -330,7 +386,9 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         The fields are:
 
-            - Years to Maturity: counted on the bond's actual coupon dates (actual/actual).
+            - Years to Maturity: counted on the bond's actual coupon dates, in actual days
+                for Treasuries (actual/actual) and on the 30/360 Bond Basis for corporate
+                bonds; a bill counts its days on a 365-day year.
             - Accrued Interest: the coupon earned since the previous coupon date.
             - Yield to Maturity: the rate that discounts the coupons and principal to the
                 price plus the accrued interest, compounded twice a year.
@@ -363,11 +421,14 @@ class BondsFixedIncome(MarketsFixedIncome):
         - Z-Spread solves Price = SUM(Cash Flow(t) / (1 + (Spot Rate(t) + Z-Spread) / 2)^(2t)) - Accrued Interest
 
         Where Spot Rate(t) is the Treasury zero-coupon rate of `get_zero_coupon_curve`,
-        restated from annual to semi-annual compounding, interpolated linearly between its
-        maturities. Bills pay no coupon and their yield is the bond-equivalent yield (see
-        `get_bond_equivalent_yield`). TIPS are priced on their inflation-adjusted principal,
-        so their yield is a real yield and they have no present value or Z-spread on the
-        nominal curve. Floating rate notes are left out.
+        restated from annual to semi-annual compounding, interpolated linearly between the
+        bills and the half-yearly coupon dates of the bootstrap, on which every par bond of
+        the par yield curve prices at par. Bills pay no coupon and their yield is the
+        bond-equivalent yield (see `get_bond_equivalent_yield`), simple interest up to half a
+        year, so their durations and convexity follow from that pricing: a modified duration
+        of t / (1 + YTM * t) up to half a year rather than t / (1 + YTM / 2). TIPS are priced
+        on their inflation-adjusted principal, so their yield is a real yield and they have
+        no present value or Z-spread on the nominal curve. Floating rate notes are left out.
 
         To calculate these statistics for terms of your own, use the functions of
         `financetoolkit.fixedincome.bonds.bond_model` (get_bond_price, get_yield_to_maturity,
@@ -432,8 +493,8 @@ class BondsFixedIncome(MarketsFixedIncome):
         | Dollar Duration     | 1.8847      | 4.4294      | 7.6505      | 14.7715     |
         | DV01                | 0.0188      | 0.0443      | 0.0765      | 0.1477      |
         | Convexity           | 4.5145      | 22.7527     | 71.6857     | 333.2043    |
-        | Present Value       | 100.3147    | 100.7082    | 98.4008     | 98.028      |
-        | Z-Spread            | 0.0         | 0.0         | 0.0         | -0.0001     |
+        | Present Value       | 100.3147    | 100.7083    | 98.4039     | 98.098      |
+        | Z-Spread            | 0.0         | 0.0         | 0.0         | 0.0         |
         """
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date
@@ -453,10 +514,7 @@ class BondsFixedIncome(MarketsFixedIncome):
                     coupon_rate=terms["coupon_rate"],
                     bond_price=row["Price"],
                 ),
-                **{
-                    name: function(**terms, yield_to_maturity=yield_to_maturity)
-                    for name, function in YIELD_MEASURES.items()
-                },
+                **_yield_measures(row, terms, yield_to_maturity),
                 **_curve_measures(row, terms, curves[row["Price Date"]]),
             }
 
@@ -497,7 +555,8 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         - C = Coupon payment per half year, 100 * Coupon / 2
         - s(t) = Treasury zero-coupon rate at t years (`get_zero_coupon_curve`), restated from
-          annual to semi-annual compounding and interpolated linearly between its maturities
+          annual to semi-annual compounding and interpolated linearly between the bills and the
+          half-yearly coupon dates of the bootstrap
         - a = Elapsed fraction of the current coupon period, 0 on a coupon date
         - t_i = Time of the i-th cash flow in years, on the bond's actual coupon dates
         - F = Face value of 100
@@ -551,12 +610,12 @@ class BondsFixedIncome(MarketsFixedIncome):
         |           |   Coupon | Maturity   |    Price |   Present Value |
         |:----------|---------:|:-----------|---------:|----------------:|
         | 91282CRU7 |   0.0462 | 2028-10-31 | 100.312  |        100.315  |
-        | 91282CLR0 |   0.0412 | 2029-10-31 |  98.875  |         98.8811 |
+        | 91282CLR0 |   0.0412 | 2029-10-31 |  98.875  |         98.8812 |
         | 91282CRT0 |   0.0475 | 2031-10-31 | 100.688  |        100.708  |
-        | 91282CRV5 |   0.0488 | 2033-10-31 | 101.062  |        101.039  |
-        | 91282CRF0 |   0.0462 | 2036-08-15 |  98.4375 |         98.4008 |
-        | 912810RU4 |   0.0288 | 2046-11-15 |  70.0312 |         69.9175 |
-        | 912810UW6 |   0.0512 | 2056-08-15 |  98.125  |         98.028  |
+        | 91282CRV5 |   0.0488 | 2033-10-31 | 101.062  |        101.04   |
+        | 91282CRF0 |   0.0462 | 2036-08-15 |  98.4375 |         98.4039 |
+        | 912810RU4 |   0.0288 | 2046-11-15 |  70.0312 |         69.9481 |
+        | 912810UW6 |   0.0512 | 2056-08-15 |  98.125  |         98.098  |
         """
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date
@@ -684,9 +743,7 @@ class BondsFixedIncome(MarketsFixedIncome):
             bonds, issuer, etfs, maturity_start, maturity_end, date
         )
         durations = {
-            bond: YIELD_MEASURES[name](
-                **_bond_terms(row), yield_to_maturity=row["Yield to Maturity"]
-            )
+            bond: _yield_measures(row, _bond_terms(row), row["Yield to Maturity"])[name]
             for bond, row in selection.iterrows()
         }
 
@@ -721,7 +778,8 @@ class BondsFixedIncome(MarketsFixedIncome):
         where:
 
         - C = Coupon payment per half year, 100 * Coupon / 2
-        - a = Elapsed fraction of the current coupon period, in actual days (actual/actual), 0 on a coupon date
+        - a = Elapsed fraction of the current coupon period, in actual days for Treasuries (actual/actual) and
+          on the 30/360 Bond Basis for corporate bonds, 0 on a coupon date
         - t_i = Time of the i-th cash flow in years, on the bond's actual coupon dates
         - F = Face value of 100
 
@@ -826,8 +884,8 @@ class BondsFixedIncome(MarketsFixedIncome):
         Where each coupon is 100 * Coupon / 2, the principal is repaid with the last coupon, t is
         each remaining payment time in years on the bond's actual coupon dates and Spot Rate(t) is
         the Treasury zero-coupon rate of the price date (`get_zero_coupon_curve`), restated from
-        annual to semi-annual compounding, interpolated linearly between its maturities and held
-        flat beyond its first and last maturity.
+        annual to semi-annual compounding, interpolated linearly between the bills and the
+        half-yearly coupon dates of the bootstrap and held flat beyond its first and last maturity.
 
         The bonds are selected as in `collect_bond_statistics`. TIPS have no Z-spread on the nominal
         curve. For a bond with an embedded option the Z-spread includes the option's value, which an
@@ -880,18 +938,18 @@ class BondsFixedIncome(MarketsFixedIncome):
 
         |              | Issuer    |   Coupon | Maturity   |   Price | Price Date   |   Z-Spread |
         |:-------------|:----------|---------:|:-----------|--------:|:-------------|-----------:|
-        | US037833EU05 | APPLE INC |   0.0415 | 2030-05-10 |   97.95 | 2026-11-05   |     0.0024 |
-        | US037833DU14 | APPLE INC |   0.0165 | 2030-05-11 |   89.69 | 2026-11-05   |     0.0033 |
-        | US037833EZ91 | APPLE INC |   0.042  | 2030-05-12 |   98.25 | 2026-11-05   |     0.002  |
-        | US037833DY36 | APPLE INC |   0.0125 | 2030-08-20 |   87.72 | 2026-11-05   |     0.0027 |
-        | US037833ED89 | APPLE INC |   0.0165 | 2031-02-08 |   87.78 | 2026-11-05   |     0.0029 |
-        | US037833EJ59 | APPLE INC |   0.017  | 2031-08-05 |   86.74 | 2026-11-05   |     0.0027 |
-        | US037833FG02 | APPLE INC |   0.049  | 2031-11-09 |   99.83 | 2026-11-05   |     0.0035 |
-        | US037833FA32 | APPLE INC |   0.045  | 2032-05-12 |   98.35 | 2026-11-05   |     0.0022 |
-        | US037833EP10 | APPLE INC |   0.0335 | 2032-08-08 |   92.53 | 2026-11-05   |     0.0022 |
-        | US037833EV87 | APPLE INC |   0.043  | 2033-05-10 |   95.84 | 2026-11-05   |     0.0038 |
-        | US037833FH84 | APPLE INC |   0.051  | 2033-11-09 |   99.77 | 2026-11-05   |     0.0044 |
-        | US037833FB15 | APPLE INC |   0.0475 | 2035-05-12 |   97.91 | 2026-11-05   |     0.0028 |
+        | US037833EU05 | APPLE INC |   0.0415 | 2030-05-10 |   96.93 | 2026-11-13   |     0.0019 |
+        | US037833DU14 | APPLE INC |   0.0165 | 2030-05-11 |   88.78 | 2026-11-13   |     0.0026 |
+        | US037833EZ91 | APPLE INC |   0.042  | 2030-05-12 |   97.22 | 2026-11-13   |     0.0014 |
+        | US037833DY36 | APPLE INC |   0.0125 | 2030-08-20 |   86.64 | 2026-11-13   |     0.0025 |
+        | US037833ED89 | APPLE INC |   0.0165 | 2031-02-08 |   86.66 | 2026-11-13   |     0.0024 |
+        | US037833EJ59 | APPLE INC |   0.017  | 2031-08-05 |   85.5  | 2026-11-13   |     0.0022 |
+        | US037833FG02 | APPLE INC |   0.049  | 2031-11-09 |   98.53 | 2026-11-13   |     0.0026 |
+        | US037833FA32 | APPLE INC |   0.045  | 2032-05-12 |   96.52 | 2026-11-13   |     0.0024 |
+        | US037833EP10 | APPLE INC |   0.0335 | 2032-08-08 |   90.86 | 2026-11-13   |     0.002  |
+        | US037833EV87 | APPLE INC |   0.043  | 2033-05-10 |   94.57 | 2026-11-13   |     0.0027 |
+        | US037833FH84 | APPLE INC |   0.051  | 2033-11-09 |   98.13 | 2026-11-13   |     0.0038 |
+        | US037833FB15 | APPLE INC |   0.0475 | 2035-05-12 |   95.86 | 2026-11-13   |     0.0026 |
         """
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date
@@ -950,8 +1008,8 @@ class BondsFixedIncome(MarketsFixedIncome):
         Where each coupon is 100 * Coupon / 2, the principal is repaid with the last coupon, t is each
         remaining payment time in years on the bond's actual coupon dates, Spot Rate(t) is the Treasury
         zero-coupon rate of the price date (`get_zero_coupon_curve`), restated from annual to
-        semi-annual compounding and interpolated linearly between its maturities, and Δy is the shock
-        applied to the key rate only (1 basis point by default).
+        semi-annual compounding and interpolated linearly between the maturities the Treasury quotes (the
+        key rates), and Δy is the shock applied to the key rate only (1 basis point by default).
 
         The bonds are selected as in `collect_bond_statistics`; TIPS have no key rate durations on the
         nominal curve. For terms or a curve of your own, use `bond_model.get_key_rate_duration`.
@@ -1016,7 +1074,9 @@ class BondsFixedIncome(MarketsFixedIncome):
         selection = self._select_bonds(
             bonds, issuer, etfs, maturity_start, maturity_end, date
         )
-        curves = self._bond_spot_curves(selection)
+        # The key rates are the maturities the Treasury quotes, so the curve holds only those
+        # and a shock tapers off to the neighbouring quoted maturities.
+        curves = self._bond_spot_curves(selection, coupon_grid=False)
 
         # The maturities of the curve to shock, all of them when none are given.
         key_rates = (
@@ -1197,10 +1257,8 @@ class BondsFixedIncome(MarketsFixedIncome):
                 bonds, issuer, etfs, maturity_start, maturity_end, date
             )
             price_changes = {
-                bond: bond_model.get_taylor_price_change(
-                    **_bond_terms(row),
-                    yield_to_maturity=row["Yield to Maturity"],
-                    yield_change=0.01 if yield_change is None else yield_change,
+                bond: _taylor_price_change(
+                    row, 0.01 if yield_change is None else yield_change
                 )
                 for bond, row in selection.iterrows()
             }
@@ -1238,11 +1296,7 @@ class BondsFixedIncome(MarketsFixedIncome):
         yield_changes = later["Yield to Maturity"] - earlier["Yield to Maturity"]
         price_changes = {
             bond: (
-                bond_model.get_taylor_price_change(
-                    **_bond_terms(row),
-                    yield_to_maturity=row["Yield to Maturity"],
-                    yield_change=yield_changes[bond],
-                )
+                _taylor_price_change(row, yield_changes[bond])
                 if np.isfinite(yield_changes[bond])
                 else np.nan
             )
@@ -1294,7 +1348,8 @@ class BondsFixedIncome(MarketsFixedIncome):
         A bill with half a year or less remaining takes the simple restatement onto the purchase price and a
         365-day year. Beyond that an equivalent coupon-bearing note would have paid a coupon at the six month
         point, so the U.S. Treasury's semi-annually compounded solution (31 CFR 356, Appendix B) is used instead.
-        Applying the simple formula to a 52-week bill instead overstates its yield by roughly seven basis points.
+        Applying the simple formula to a 52-week bill instead overstates its yield, by about 4 to 7 basis points at
+        discount yields of 4 to 5% (4.2265% instead of 4.1829% at a 4% discount yield).
 
         The prices are the Treasury's daily FedInvest prices, see `get_treasury_securities`. To convert a discount
         yield of your own, use `bond_model.get_bond_equivalent_yield`.

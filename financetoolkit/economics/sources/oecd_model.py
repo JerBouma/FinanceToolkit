@@ -843,6 +843,25 @@ def get_unemployment_rate(
     return unemployment_rate
 
 
+def name_euro_area(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Names the euro area column of the OECD financial market statistics "Euro Area", as
+    every other source does. These statistics publish the euro area in its current
+    composition under the code EA20, which CODE_TO_COUNTRY keeps apart from the fixed
+    compositions (EA17, EA19) of other datasets.
+
+    Args:
+        data (pd.DataFrame): The rates, a column per country.
+
+    Returns:
+        pd.DataFrame: The rates with the EA20 column named "Euro Area".
+    """
+    if "EA20" in data.columns and "Euro Area" not in data.columns:
+        return data.rename(columns={"EA20": "Euro Area"})
+
+    return data
+
+
 def get_long_term_interest_rate(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):
@@ -850,7 +869,8 @@ def get_long_term_interest_rate(
     Get the long term interest rate for a variety of countries over time from the OECD.
     The long term interest rate is defined as the yield on government bonds with a
     residual maturity of about 10 years, measured on the national definition, and
-    quoted as a percent per annum.
+    quoted as a percent per annum. The euro area, in its current composition, is
+    returned as "Euro Area".
 
     Args:
         period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
@@ -882,7 +902,7 @@ def get_long_term_interest_rate(
     # Divide by 100 to convert the percentage into a decimal
     long_term_interest_rate = long_term_interest_rate / 100
 
-    return long_term_interest_rate
+    return name_euro_area(long_term_interest_rate)
 
 
 def get_short_term_interest_rate(
@@ -894,7 +914,7 @@ def get_short_term_interest_rate(
     (the rate at which banks lend to one another for three months, e.g. EURIBOR for the
     euro area), on the national definition and quoted as a percent per annum. It is not
     a government bill yield, and for most countries it tracks the central bank's policy
-    rate closely.
+    rate closely. The euro area, in its current composition, is returned as "Euro Area".
 
     Args:
         period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
@@ -926,7 +946,7 @@ def get_short_term_interest_rate(
     # Divide by 100 to convert the percentage into a decimal
     short_term_interest_rate = short_term_interest_rate / 100
 
-    return short_term_interest_rate
+    return name_euro_area(short_term_interest_rate)
 
 
 def get_gross_domestic_product_growth(

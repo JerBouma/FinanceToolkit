@@ -3,7 +3,7 @@
 __docformat__ = "google"
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import pandas as pd
 import requests
@@ -26,6 +26,7 @@ from financetoolkit.cache.request_model import redact_credentials
 from financetoolkit.helpers import split_values
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import record_source
+from financetoolkit.utilities.statistics_model import normalize_country_name
 
 logger = get_logger()
 
@@ -72,31 +73,6 @@ COUNTRY_CODES: dict[str, str] = {
     "EU27_2020": "European Union",
 }  # fmt: skip
 
-# The countries the OECD names differently from the Global Macro Database. An OECD series
-# combined with a GMDB series (the real interest rate and the misery index, whose inflation
-# leg is always the GMDB's) is renamed to the GMDB names first, as columns that differ only
-# in name would otherwise not line up and give a column of NaN for each spelling.
-OECD_TO_GMDB_COUNTRY_NAMES: dict[str, str] = {
-    "Russia": "Russian Federation",
-    "Swaziland": "Eswatini",
-    "Democratic Republic of the Congo": "Congo DR",
-}
-
-
-def to_gmdb_country_names(data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Renames the country columns of an OECD series to the names the Global Macro Database
-    uses, so the two can be combined column by column.
-
-    Args:
-        data (pd.DataFrame): The OECD series with a column per country.
-
-    Returns:
-        pd.DataFrame: The same series with the GMDB country names.
-    """
-    return data.rename(columns=OECD_TO_GMDB_COUNTRY_NAMES)
-
-
 # The periods a high-frequency series can be returned in, with the PeriodIndex frequency
 # each one maps to. Weekly periods end on Friday, the last trading day of the week.
 PERIOD_FREQUENCIES = {
@@ -109,7 +85,7 @@ PERIOD_FREQUENCIES = {
 
 # History requested before the start date, so growth, lag and rolling windows can be
 # computed for the first periods shown (finalize_dataset slices the result afterwards).
-START_BUFFER_DAYS = {"daily": 400, "weekly": 400, "monthly": 731}
+START_BUFFER_DAYS = {"daily": 400, "weekly": 400, "monthly": 731, "quarterly": 1096}
 
 # Gateway errors, timeouts and dropped connections the public statistics services answer
 # with when briefly overloaded. The ECB Data Portal answers around a third of its requests with a 504 at
@@ -440,7 +416,7 @@ def buffered_start_date(start_date: str, period: str) -> str:
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
-        period (str): "daily", "weekly" or "monthly".
+        period (str): "daily", "weekly", "monthly" or "quarterly".
 
     Returns:
         str: The earlier start date (YYYY-MM-DD).
@@ -448,6 +424,33 @@ def buffered_start_date(start_date: str, period: str) -> str:
     return (
         pd.Timestamp(start_date) - pd.Timedelta(days=START_BUFFER_DAYS[period])
     ).strftime("%Y-%m-%d")
+
+
+def normalize_requested_countries(
+    countries: list[str] | str | None, known: Iterable[str]
+) -> list[str] | None:
+    """
+    The requested countries as a list of the names the sources use, so a short form or
+    another casing ("USA", "united kingdom", "uk") selects the same sources as the name
+    itself. A string may hold several countries separated by commas. A country that
+    matches nothing known is kept as given, so it is reported as unavailable later on.
+
+    Args:
+        countries (list[str] | str | None): The countries as passed to a method.
+        known (Iterable[str]): The country names the sources use.
+
+    Returns:
+        list[str] | None: The normalized countries, or None when every country is requested.
+    """
+    if countries is None:
+        return None
+
+    requested = countries.split(",") if isinstance(countries, str) else countries
+    known = list(known)
+
+    return [
+        normalize_country_name(str(country).strip(), known) for country in requested
+    ]
 
 
 def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> None:
@@ -745,6 +748,51 @@ def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     return grouped.mean().where(grouped.count() == (3 if period == "quarterly" else 12))
 
 
+# The complete quarters a monthly series has to repeat in every one of before it is taken
+# as a quarterly series spread over its months. A monthly series repeats one value over a
+# quarter now and then (about 2% of the quarters of the BIS consumer price indices), never
+# over several quarters in a row.
+MINIMUM_REPEATED_QUARTERS = 2
+
+
+def keep_quarter_end_of_repeated_quarters(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keeps only the last month of each quarter for the countries whose monthly series
+    repeats each quarter's value over its three months, such as the BIS consumer prices
+    of Australia and New Zealand, which publish their CPI quarterly. Repeated months
+    would otherwise show a monthly rate of change of 0 twice a quarter and count each
+    quarter three times in averages and rolling windows. A country qualifies when every
+    complete quarter of the series holds a single value, over at least
+    MINIMUM_REPEATED_QUARTERS quarters; the other months become NaN.
+
+    Args:
+        data (pd.DataFrame): The series, indexed by a monthly PeriodIndex with a column
+            per country.
+
+    Returns:
+        pd.DataFrame: The series with the first two months of each quarter empty for the
+        countries published quarterly.
+    """
+    if data.empty:
+        return data
+
+    quarters = data.groupby(data.index.asfreq("Q"))
+    complete = quarters.count() == 3  # noqa: PLR2004
+    repeated = (quarters.max() == quarters.min()) & complete
+    quarterly = data.columns[
+        (complete.sum() >= MINIMUM_REPEATED_QUARTERS)
+        & (repeated.sum() == complete.sum())
+    ]
+
+    if quarterly.empty:
+        return data
+
+    data = data.copy()
+    data.loc[data.index.month % 3 != 0, quarterly] = float("nan")
+
+    return data
+
+
 def choose_sources(sources: list[pd.DataFrame]) -> dict[str, int]:
     """
     Per country, the position of the source with the most recent observation and, when
@@ -859,9 +907,11 @@ def extend_with_recent(
         shared.empty
         or (existing[shared] - newer[shared]).abs().max() > EXTENSION_TOLERANCE
     ):
-        logger.debug(
-            "The recent %s figures do not match the history on the months both cover, so "
-            "the history is not extended.",
+        # Logged as information rather than a warning: the history is complete as it
+        # is, it only lacks the days or months the faster publisher has since.
+        logger.info(
+            "The recent %s figures do not match the history on the periods both cover, so "
+            "the history is not extended with them.",
             country,
         )
         return history

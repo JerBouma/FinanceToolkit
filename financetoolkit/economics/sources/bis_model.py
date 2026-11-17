@@ -11,6 +11,7 @@ from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import (
     COUNTRY_CODES,
     collect_ranged_data,
+    keep_quarter_end_of_repeated_quarters,
     require_columns,
 )
 from financetoolkit.utilities.requests_model import get_request
@@ -109,6 +110,11 @@ def get_consumer_prices(measure: str, start_date: str, end_date: str) -> pd.Data
     around sixty countries, including China, India, Brazil, the United States and the
     other G20 economies. Only the months that are not cached yet are requested.
 
+    Countries that publish their consumer prices quarterly, such as Australia and New
+    Zealand, are spread over the three months of each quarter in the BIS data. Their
+    value is kept in the last month of each quarter only (the other months are NaN), so a
+    quarter is not counted three times and the change on the month before is not 0.
+
     Args:
         measure (str): "inflation_rate" for the change on a year earlier or
             "consumer_price_index" for the index (2010 = 100).
@@ -145,14 +151,16 @@ def get_consumer_prices(measure: str, start_date: str, end_date: str) -> pd.Data
         # The rate of change is published in percent; the index is a level.
         return data.sort_index() / (100 if measure == "inflation_rate" else 1)
 
-    return collect_ranged_data(
-        source=policy_model.BANK_FOR_INTERNATIONAL_SETTLEMENTS,
-        dataset="consumer_prices",
-        entity=f"WS_LONG_CPI/{unit}",
-        fetch=fetch,
-        start_date=start_date,
-        end_date=end_date,
-        description=description,
+    return keep_quarter_end_of_repeated_quarters(
+        collect_ranged_data(
+            source=policy_model.BANK_FOR_INTERNATIONAL_SETTLEMENTS,
+            dataset="consumer_prices",
+            entity=f"WS_LONG_CPI/{unit}",
+            fetch=fetch,
+            start_date=start_date,
+            end_date=end_date,
+            description=description,
+        )
     )
 
 
@@ -221,9 +229,10 @@ def get_exchange_rates(
     )
 
 
-# The commercial types of the BIS property price dataset (RE_TYPE): all commercial
-# property, offices, retail, office and retail, and industrial property.
-COMMERCIAL_PROPERTY_TYPES = {"A", "B", "C", "D", "G"}
+# The commercial types of the BIS property price dataset (RE_TYPE), in the order one is
+# preferred over the next: all commercial property, offices, retail, office and retail,
+# and industrial property.
+COMMERCIAL_PROPERTY_TYPES = ["A", "B", "C", "D", "G"]
 
 # The PRICED_UNIT of an index in real terms, "real price per square meter".
 REAL_PRICE_UNIT = "8"
@@ -235,12 +244,13 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
     national sources, for around twenty economies including the euro area, from 1945 for
     the United States and from the 1990s and 2000s for most others.
 
-    Per country one nominal index of commercial property is taken: the one for all
-    commercial property in the whole country where there is one, otherwise the longest
-    index of a commercial type (offices, retail, office and retail, or industrial
-    property), preferring the whole country. Indices of dwellings, land, agricultural
-    property and real prices are left out, so a country without a nominal commercial
-    property index has no column.
+    Per country one nominal index of commercial property is taken, chosen from every
+    series the BIS publishes rather than from those with observations in the date range,
+    so the same series is returned whatever the range: the whole country before a region
+    or city, and all commercial property (A) before offices (B), retail (C), office and
+    retail (D) and industrial property (G), in that order. Among regions the lowest BIS
+    area code is taken. Indices of dwellings, land, agricultural property and real prices
+    are left out, so a country without a nominal commercial property index has no column.
 
     Args:
         start_date (str): The start date (YYYY-MM-DD).
@@ -250,6 +260,34 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
         pd.DataFrame: The price index, indexed by quarter with a column per country.
     """
     description = "commercial property prices"
+
+    def commercial_series(data: pd.DataFrame) -> pd.DataFrame:
+        # The dataset also holds dwellings (rented ones for Switzerland), land and real
+        # prices (PRICED_UNIT 8, Iceland), which are not commercial property prices.
+        data = data[data["RE_TYPE"].astype(str).isin(COMMERCIAL_PROPERTY_TYPES)]
+
+        if "PRICED_UNIT" in data.columns:
+            data = data[data["PRICED_UNIT"].astype(str) != REAL_PRICE_UNIT]
+
+        return data
+
+    def choose_series(series_keys: pd.DataFrame) -> pd.DataFrame:
+        # One series per country from the keys of every published series, so the choice
+        # does not depend on which series have observations in the range fetched: the
+        # cache joins ranges, which would otherwise join different series (such as a
+        # region of Saudi Arabia before 2021 and the whole country after).
+        keys = commercial_series(series_keys).copy()
+        keys["area"] = pd.to_numeric(keys["COVERED_AREA"], errors="coerce")
+        keys["type"] = keys["RE_TYPE"].astype(str).map(COMMERCIAL_PROPERTY_TYPES.index)
+        keys["whole_country"] = keys["area"] == 0
+        keys["preferred"] = keys["whole_country"] & (keys["type"] == 0)
+        chosen = keys.sort_values(
+            ["preferred", "whole_country", "type", "area"],
+            ascending=[False, False, True, True],
+            kind="stable",
+        ).drop_duplicates(subset="REF_AREA")
+
+        return chosen.drop(columns=["area", "type", "whole_country", "preferred"])
 
     def fetch(fetch_start: str, fetch_end: str) -> pd.DataFrame:
         text = request_csv(
@@ -270,37 +308,37 @@ def get_commercial_property_prices(start_date: str, end_date: str) -> pd.DataFra
             description,
         )
 
-        # The dataset also holds dwellings (rented ones for Switzerland), land and real
-        # prices (PRICED_UNIT 8, Iceland), which are not commercial property prices and
-        # would otherwise be picked for a country where they are the longest series.
-        data = data[data["RE_TYPE"].astype(str).isin(COMMERCIAL_PROPERTY_TYPES)]
-
-        if "PRICED_UNIT" in data.columns:
-            data = data[data["PRICED_UNIT"].astype(str) != REAL_PRICE_UNIT]
+        data = commercial_series(data)
 
         if data.empty:
             return pd.DataFrame()
 
+        series_keys = pd.read_csv(
+            io.StringIO(
+                request_csv(
+                    f"{BASE_URL}WS_CPP/~/Q.......?format=csv&detail=serieskeysonly",
+                    timeout=120,
+                )
+            )
+        )
         series_columns = [
             column
             for column in data.columns
             if column not in ("FREQ", "TIME_PERIOD", "OBS_VALUE")
         ]
-        lengths = data.groupby(series_columns, as_index=False).size()
-        lengths["whole_country"] = lengths["COVERED_AREA"].astype(str) == "0"
-        lengths["preferred"] = lengths["whole_country"] & (
-            lengths["RE_TYPE"].astype(str) == "A"
-        )
-        chosen = (
-            lengths.sort_values(
-                ["preferred", "whole_country", "size"], ascending=False, kind="stable"
-            )
-            .drop_duplicates(subset="REF_AREA")
-            .drop(columns=["preferred", "whole_country", "size"])
+        require_columns(series_keys, set(series_columns), description)
+        chosen = choose_series(
+            series_keys[series_columns].drop_duplicates().astype(str)
         )
 
-        data = data.merge(chosen, on=series_columns)
+        data = data.astype({column: str for column in series_columns}).merge(
+            chosen, on=series_columns
+        )
         data = data[data["REF_AREA"].isin(COUNTRY_CODES.keys())]
+
+        if data.empty:
+            return pd.DataFrame()
+
         prices = data.pivot(index="TIME_PERIOD", columns="REF_AREA", values="OBS_VALUE")
         prices = prices.rename(columns=COUNTRY_CODES)
         prices.index = pd.PeriodIndex(prices.index.str.replace("-", ""), freq="Q")

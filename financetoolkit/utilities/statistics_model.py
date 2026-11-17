@@ -62,6 +62,9 @@ COUNTRY_ALIASES = {
     "us": "United States",
     "u.s.": "United States",
     "usa": "United States",
+    "russian federation": "Russia",
+    "eswatini": "Swaziland",
+    "congo dr": "Democratic Republic of the Congo",
     "u.s.a.": "United States",
     "america": "United States",
     "united states of america": "United States",
@@ -415,7 +418,10 @@ def finalize_dataset(
     if countries:
         # Economic indicators are indexed by date with countries as columns.
         if isinstance(countries, str):
-            countries = [countries]
+            # "United States,Japan" selects both, as the sources accept it.
+            countries = [
+                country.strip() for country in countries.split(",") if country.strip()
+            ]
         # Common short forms and any casing resolve to the names the sources use, e.g.
         # "USA" or "united states" to "United States".
         # A column per country and item (e.g. a maturity) is selected by its country.

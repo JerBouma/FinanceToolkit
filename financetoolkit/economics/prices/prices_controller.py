@@ -193,6 +193,8 @@ class PricesEconomics:
         from 2015, on its latest base) and the Bank for International Settlements for
         every other country (2010 = 100). The base year differs between countries, so
         compare the changes rather than the levels.
+        Countries that publish their consumer prices quarterly, such as Australia and New
+        Zealand, have a value in the last month of each quarter only.
 
         The measure parameter selects the core index (all items less energy and food;
         Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
@@ -239,7 +241,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -388,7 +391,12 @@ class PricesEconomics:
         Finance Toolkit.
 
         The rates are the sources' own figures (published in percent and divided by 100 here),
-        except for Japan, which is calculated from the Statistics Bureau of Japan's CPI.
+        except for Japan, which is calculated from the Statistics Bureau of Japan's CPI, and
+        the US months the BLS has published after the BIS, which are calculated from the
+        BLS's CPI-U.
+
+        Countries that publish their consumer prices quarterly, such as Australia and New
+        Zealand, have a value in the last month of each quarter only.
 
         The formula is as follows:
 
@@ -419,7 +427,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -550,7 +559,8 @@ class PricesEconomics:
                 currency instead of being held as banknotes. Defaults to False.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -708,7 +718,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -832,7 +843,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -954,7 +966,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1047,10 +1060,11 @@ class PricesEconomics:
         and existing dwellings, following the recommendations from the RPPI (Residential
         Property Prices Indices) manual.
 
-        By default the data comes from the Global Macro Database (GMDB), annual with
-        2015 = 100. Set gmdb_source=False to retrieve it from the OECD instead, which is
-        the only source with quarterly data: asking for quarterly data takes it from the
-        OECD unless gmdb_source=True is given.
+        By default the data is quarterly, from the OECD, the only source with quarterly
+        data. With quarterly=False the data is annual and comes from the Global Macro
+        Database (GMDB), with 2015 = 100, unless gmdb_source=False is given (or the
+        Economics class was initialized with gmdb_source=False), which takes the annual
+        data from the OECD.
 
         In the OECD data, the real house price index is given by the ratio of the nominal
         house price index to the consumers' expenditure deflator in each country from the
@@ -1079,7 +1093,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1207,7 +1222,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1316,7 +1332,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

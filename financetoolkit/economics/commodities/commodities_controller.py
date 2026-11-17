@@ -181,7 +181,8 @@ class CommoditiesEconomics:
             generic (bool, optional): Whether the columns are the positions on
                 each day's curve (Front, +1, +2, ...) instead of the contracts listed
                 today. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             growth (bool, optional): Whether to return the change of each column instead
                 of the price. Defaults to False.
             lag (int | list[int], optional): The number of trading days to calculate the
@@ -308,7 +309,8 @@ class CommoditiesEconomics:
                 "Wheat" or "Soybeans". Defaults to None, which retrieves every one of them.
             generic (bool, optional): Whether the front and far contract are
                 those of each day's curve, instead of today's. Defaults to True.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

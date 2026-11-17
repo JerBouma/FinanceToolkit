@@ -8,7 +8,7 @@ from financetoolkit.economics.helpers import (
     buffered_start_date,
     check_period_type,
     extend_with_recent,
-    to_gmdb_country_names,
+    normalize_requested_countries,
 )
 from financetoolkit.economics.sources import (
     bls_model,
@@ -105,7 +105,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -208,7 +209,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -333,7 +335,9 @@ class JobsEconomics:
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
                 Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise.
+                quarterly=True and monthly otherwise. Countries the OECD publishes quarterly only,
+                such as New Zealand and Switzerland, are not in the monthly data; a warning names
+                them when they are requested.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -342,7 +346,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -416,6 +421,7 @@ class JobsEconomics:
                 ],
                 countries,
             )
+            self._log_quarterly_unemployment_rates(unemployment_rate, countries)
         elif gmdb_source:
 
             unemployment_rate = gmdb_model.get_unemployment_rate(
@@ -444,6 +450,52 @@ class JobsEconomics:
             # Rows empty for every selected country, e.g. a month only another source has.
             dropna=monthly,
         )
+
+    def _log_quarterly_unemployment_rates(
+        self, monthly_rate: pd.DataFrame, countries: list[str] | str | None
+    ) -> None:
+        """
+        Names the requested countries the monthly sources lack that the OECD publishes
+        quarterly, such as New Zealand and Switzerland, so their absence from the monthly
+        data points to period="quarterly" rather than reading as no data at all. Only
+        checked when countries are requested, as the full table has no such gap to explain.
+
+        Args:
+            monthly_rate (pd.DataFrame): The monthly unemployment rate, a column per country.
+            countries (list[str] | str | None): The requested countries.
+        """
+        requested = normalize_requested_countries(countries, monthly_rate.columns)
+        missing = [
+            country
+            for country in requested or []
+            if country not in monthly_rate.columns or monthly_rate[country].isna().all()
+        ]
+
+        if not missing:
+            return
+
+        # Held back: the quarterly data only explains the gap, it is not in the answer.
+        with collect_sources():
+            quarterly_rate = oecd_model.get_unemployment_rate(
+                period="quarterly", start_date=self._start_date, end_date=self._end_date
+            )
+
+        quarterly_only = [
+            country
+            for country in normalize_requested_countries(
+                missing, quarterly_rate.columns
+            )
+            or []
+            if country in quarterly_rate.columns
+            and quarterly_rate[country].notna().any()
+        ]
+
+        if quarterly_only:
+            logger.warning(
+                "The unemployment rate of %s is published quarterly, not monthly: use "
+                "period='quarterly' for it.",
+                ", ".join(quarterly_only),
+            )
 
     @handle_errors
     def get_misery_index(
@@ -486,8 +538,6 @@ class JobsEconomics:
             gmdb_source (bool | None, optional): Whether to get the unemployment rate from the
                 Global Macro Database (GMDB) instead of the OECD. Defaults to None, which falls
                 back to the gmdb_source set on the Economics class (True by default).
-                Either way the countries carry the GMDB names, such as "Russian Federation",
-                "Eswatini" and "Congo DR", as the inflation rate comes from the GMDB.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -495,7 +545,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -539,9 +590,6 @@ class JobsEconomics:
             unemployment_rate = oecd_model.get_unemployment_rate(
                 period="yearly", start_date=self._start_date, end_date=self._end_date
             )
-
-            # The inflation leg comes from the GMDB, which names a few countries differently.
-            unemployment_rate = to_gmdb_country_names(unemployment_rate)
 
         inflation_rate = gmdb_model.get_inflation_rate(
             gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
@@ -616,7 +664,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -712,7 +761,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -824,7 +874,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -934,7 +985,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1035,7 +1087,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1148,7 +1201,8 @@ class JobsEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1245,7 +1299,8 @@ class JobsEconomics:
             measure (str, optional): The life table measure, see above. Defaults to
                 "death_probability".
             sex (str, optional): "total", "male" or "female". Defaults to "total".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When

@@ -975,32 +975,14 @@ def test_bis_commercial_property_leaves_out_dwellings_land_and_real_prices(monke
     assert prices.loc[pd.Period("2026Q1", "Q"), "Turkey"] == 200  # noqa: PLR2004
 
 
-def test_oecd_countries_are_renamed_to_their_gmdb_names():
-    oecd = pd.DataFrame(
-        {"Russia": [0.08], "Swaziland": [0.07], "Germany": [0.02]},
-        index=pd.PeriodIndex(["2023"], freq="Y"),
-    )
-    gmdb = pd.DataFrame(
-        {"Russian Federation": [0.06], "Eswatini": [0.05], "Germany": [0.06]},
-        index=pd.PeriodIndex(["2023"], freq="Y"),
-    )
-
-    # Without the renaming each spelling would be its own column of NaN.
-    combined = helpers.to_gmdb_country_names(oecd) - gmdb
-
-    assert combined.notna().all().all()
-    assert combined.loc[pd.Period("2023", "Y"), "Russian Federation"] == pytest.approx(
-        0.02
-    )
-
-
 def test_real_interest_rate_and_misery_index_line_up_oecd_and_gmdb_names(monkeypatch):
     from financetoolkit.economics import economics_controller
 
     years = pd.PeriodIndex(["2022", "2023"], freq="Y")
     oecd = pd.DataFrame({"Russia": [0.09, 0.11], "Germany": [0.02, 0.025]}, index=years)
+    # The GMDB's own "Russian Federation", renamed when the dataset is read.
     inflation = pd.DataFrame(
-        {"Russian Federation": [0.14, 0.06], "Germany": [0.07, 0.06]}, index=years
+        {"Russia": [0.14, 0.06], "Germany": [0.07, 0.06]}, index=years
     )
 
     monkeypatch.setattr(
@@ -1021,9 +1003,9 @@ def test_real_interest_rate_and_misery_index_line_up_oecd_and_gmdb_names(monkeyp
     real_rate = economics.get_real_interest_rate(gmdb_source=False, period="yearly")
     misery = economics.get_misery_index(gmdb_source=False)
 
-    assert sorted(real_rate.columns) == ["Germany", "Russian Federation"]
-    assert real_rate.loc["2023", "Russian Federation"] == pytest.approx(0.05)
-    assert misery.loc["2022", "Russian Federation"] == pytest.approx(0.23)
+    assert sorted(real_rate.columns) == ["Germany", "Russia"]
+    assert real_rate.loc["2023", "Russia"] == pytest.approx(0.05)
+    assert misery.loc["2022", "Russia"] == pytest.approx(0.23)
 
 
 def test_an_unpublished_bis_period_is_no_data(monkeypatch):
@@ -2077,3 +2059,313 @@ def test_chokepoint_transits_select_measure_and_complete_periods(monkeypatch):
 
     # An unknown measure is reported and gives an empty result.
     assert economics.get_chokepoint_transits(measure="volume").empty
+
+
+def _bis_policy_rates(monkeypatch, frame):
+    monkeypatch.setattr(
+        bis_model, "get_central_bank_policy_rate", lambda start, end: frame
+    )
+
+
+def test_the_euro_area_policy_rate_is_extended_on_the_recent_month_only(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.fixedincome.sources import ecb_model as ecb_rates_model
+
+    days = pd.PeriodIndex(pd.bdate_range("2026-10-01", "2026-11-10"), freq="D")
+    _bis_policy_rates(monkeypatch, pd.DataFrame({"Euro Area": 0.02}, index=days))
+    # The ECB publishes the deposit facility rate since 1999, which differs from the
+    # main refinancing rate the BIS reports before 18 September 2024.
+    history = pd.Series(
+        0.04, index=pd.period_range("2023-09-20", "2026-11-17", freq="D")
+    )
+    history[pd.Period("2025-06-11", "D") :] = 0.02
+    monkeypatch.setattr(ecb_rates_model, "get_deposit_facility", lambda: history)
+
+    economics = Economics(start_date="2026-10-01", end_date="2026-11-17")
+    rate = economics.get_central_bank_policy_rate(countries="Euro Area")
+
+    assert rate["Euro Area"].last_valid_index() == pd.Period("2026-11-17", "D")
+
+
+def test_a_refused_policy_rate_extension_is_logged(monkeypatch, caplog):
+    days = pd.PeriodIndex(pd.bdate_range("2026-10-01", "2026-11-03"), freq="D")
+    history = pd.DataFrame({"Euro Area": 0.02}, index=days)
+    recent = pd.DataFrame(
+        {"Euro Area": 0.03},
+        index=pd.PeriodIndex(pd.bdate_range("2026-10-01", "2026-11-10"), freq="D"),
+    )
+
+    with caplog.at_level("INFO", logger="financetoolkit"):
+        extended = helpers.extend_with_recent(history, recent, "Euro Area")
+
+    assert extended.equals(history)
+    assert "do not match the history" in caplog.text
+
+
+def test_daily_policy_rates_leave_out_weekends_for_every_central_bank(monkeypatch):
+    from financetoolkit import Economics
+
+    # The BIS lists every calendar day for the Federal Reserve and the ECB.
+    days = pd.period_range("2026-11-02", "2026-11-10", freq="D")
+    _bis_policy_rates(
+        monkeypatch,
+        pd.DataFrame({"United States": 0.03875, "Japan": 0.0125}, index=days),
+    )
+
+    economics = Economics(start_date="2026-11-02", end_date="2026-11-10")
+    rate = economics.get_central_bank_policy_rate()
+
+    assert pd.Period("2026-11-07", "D") not in rate.index
+    assert pd.Period("2026-11-08", "D") not in rate.index
+    assert len(rate) == 7  # noqa: PLR2004
+
+
+def test_policy_rates_of_a_short_form_country_are_extended(monkeypatch):
+    from financetoolkit import Economics
+
+    days = pd.PeriodIndex(pd.bdate_range("2026-10-26", "2026-11-03"), freq="D")
+    _bis_policy_rates(monkeypatch, pd.DataFrame({"United Kingdom": 0.0375}, index=days))
+    bank_rate_days = pd.PeriodIndex(
+        pd.bdate_range("2026-10-26", "2026-11-09"), freq="D"
+    )
+    monkeypatch.setattr(
+        boe_model,
+        "get_bank_rate",
+        lambda start, end: pd.DataFrame(
+            {"United Kingdom": [0.0375] * 8 + [0.04] * 3}, index=bank_rate_days
+        ),
+    )
+
+    economics = Economics(start_date="2026-10-26", end_date="2026-11-09")
+    rate = economics.get_central_bank_policy_rate(countries="uk")
+
+    assert (
+        rate.loc[pd.Period("2026-11-09", "D"), "United Kingdom"] == 0.04
+    )  # noqa: PLR2004
+
+
+def test_policy_rates_can_be_quarterly(monkeypatch):
+    from financetoolkit import Economics
+
+    days = pd.PeriodIndex(pd.bdate_range("2026-01-01", "2026-09-30"), freq="D")
+    rates = pd.Series(0.0425, index=days)
+    rates[pd.Period("2026-06-18", "D") :] = 0.04
+    _bis_policy_rates(monkeypatch, rates.to_frame("United States"))
+
+    economics = Economics(
+        start_date="2026-01-01", end_date="2026-09-30", quarterly=True
+    )
+    rate = economics.get_central_bank_policy_rate()
+
+    # The rate on the last business day of each quarter.
+    assert rate["United States"].to_dict() == {
+        pd.Period("2026Q1", "Q"): 0.0425,
+        pd.Period("2026Q2", "Q"): 0.04,
+        pd.Period("2026Q3", "Q"): 0.04,
+    }
+
+
+def test_oecd_euro_area_rates_are_named_euro_area(monkeypatch):
+    months = pd.period_range("2026-08", "2026-09", freq="M")
+    monkeypatch.setattr(
+        oecd_model,
+        "collect_oecd_data",
+        lambda *args: pd.DataFrame(
+            {"EA20": [2.5, 2.6], "Germany": [2.5, 2.6]}, index=months
+        ),
+    )
+
+    for rate in (
+        oecd_model.get_short_term_interest_rate("monthly"),
+        oecd_model.get_long_term_interest_rate("monthly"),
+    ):
+        assert list(rate.columns) == ["Euro Area", "Germany"]
+        assert rate.loc[pd.Period("2026-09", "M"), "Euro Area"] == pytest.approx(0.026)
+
+
+def test_single_country_sources_are_chosen_for_short_forms_and_any_casing(monkeypatch):
+    from financetoolkit import Economics
+
+    fetched = []
+
+    def source(country):
+        def fetch():
+            fetched.append(country)
+            return pd.DataFrame(
+                {country: [0.04]}, index=pd.PeriodIndex(["2026-11-02"], freq="D")
+            )
+
+        return fetch
+
+    sources = [
+        (source("United States"), "United States"),
+        (source("United Kingdom"), "United Kingdom"),
+        (source("Japan"), "Japan"),
+    ]
+
+    combined = Economics._combine_sources_for(sources, "usa, united kingdom")
+
+    assert sorted(fetched) == ["United Kingdom", "United States"]
+    assert sorted(combined.columns) == ["United Kingdom", "United States"]
+
+
+def test_long_term_rates_of_a_short_form_country_default_to_daily(monkeypatch):
+    from financetoolkit import Economics
+
+    requested = []
+    monkeypatch.setattr(
+        Economics,
+        "_get_daily_long_term_interest_rate",
+        lambda self, countries: requested.append(countries)
+        or pd.DataFrame(
+            {"United States": [0.041]}, index=pd.PeriodIndex(["2026-11-02"], freq="D")
+        ),
+    )
+
+    economics = Economics(start_date="2026-11-02", end_date="2026-11-02")
+    rate = economics.get_long_term_interest_rate(countries=["usa"])
+
+    assert requested == [["usa"]]
+    assert (
+        rate.loc[pd.Period("2026-11-02", "D"), "United States"] == 0.041
+    )  # noqa: PLR2004
+
+
+def test_annual_short_and_long_term_rates_come_from_the_oecd_yearly(monkeypatch):
+    from financetoolkit import Economics
+
+    periods = []
+
+    def fetch(period, start_date=None, end_date=None):
+        periods.append(period)
+        return pd.DataFrame(
+            {"United States": [0.05]}, index=pd.PeriodIndex(["2025"], freq="Y")
+        )
+
+    monkeypatch.setattr(oecd_model, "get_short_term_interest_rate", fetch)
+    monkeypatch.setattr(oecd_model, "get_long_term_interest_rate", fetch)
+
+    economics = Economics(start_date="2025-01-01", end_date="2025-12-31")
+
+    for method in (
+        economics.get_short_term_interest_rate,
+        economics.get_long_term_interest_rate,
+        economics.get_yield_curve_slope,
+    ):
+        assert not method(
+            countries=["United States"], period="annual", gmdb_source=False
+        ).empty
+
+    assert periods == ["yearly"] * 4
+
+
+def test_inflation_expectations_follow_the_quarterly_setting(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.fixedincome.sources import bundesbank_model
+
+    months = pd.period_range("2026-01", "2026-06", freq="M")
+    monkeypatch.setattr(
+        bundesbank_model,
+        "get_survey_inflation_expectations",
+        lambda start, end: pd.DataFrame(
+            {"5Y": [0.021, 0.022, 0.023, 0.024, 0.025, 0.026]}, index=months
+        ),
+    )
+
+    economics = Economics(
+        start_date="2026-01-01", end_date="2026-06-30", quarterly=True
+    )
+    expectations = economics.get_inflation_expectations(countries="germany")
+
+    assert list(expectations.index) == [
+        pd.Period("2026Q1", "Q"),
+        pd.Period("2026Q2", "Q"),
+    ]
+    assert (
+        expectations.loc[pd.Period("2026Q2", "Q"), ("Germany", "5Y")] == 0.026
+    )  # noqa: PLR2004
+
+
+def test_commercial_property_series_do_not_depend_on_the_date_range(monkeypatch):
+    header = "FREQ,REF_AREA,COVERED_AREA,RE_TYPE,RE_VINTAGE,COMPILING_ORG,PRICED_UNIT,ADJUST_CODED"
+    # Saudi Arabia: a region from 2015 and the whole country from 2021; Slovenia's
+    # offices, retail and office and retail indices are equally long.
+    keys = (
+        f"{header}\nQ,SA,2,C,0,1,6,0\nQ,SA,0,C,0,1,6,0\n"
+        "Q,SI,0,D,0,1,6,0\nQ,SI,0,C,0,1,6,0\nQ,SI,0,B,0,1,6,0\n"
+    )
+    observations = (
+        f"{header},TIME_PERIOD,OBS_VALUE\n"
+        "Q,SA,2,C,0,1,6,0,2019-Q4,90\nQ,SA,2,C,0,1,6,0,2020-Q1,91\n"
+        "Q,SI,0,D,0,1,6,0,2020-Q1,103\nQ,SI,0,C,0,1,6,0,2020-Q1,102\n"
+        "Q,SI,0,B,0,1,6,0,2020-Q1,101\n"
+    )
+    monkeypatch.setattr(
+        bis_model,
+        "get_request",
+        lambda url, timeout: FakeResponse(
+            text=keys if "serieskeysonly" in url else observations
+        ),
+    )
+
+    prices = bis_model.get_commercial_property_prices("2019-10-01", "2020-03-31")
+
+    # The whole country is chosen even before its index starts, so a range that only
+    # has the region does not return the region; offices come before retail.
+    assert list(prices.columns) == ["Slovenia"]
+    assert prices.loc[pd.Period("2020Q1", "Q"), "Slovenia"] == 101  # noqa: PLR2004
+
+
+def test_quarterly_consumer_prices_keep_the_last_month_of_each_quarter(monkeypatch):
+    months = pd.period_range("2025-01", "2025-12", freq="M")
+    rows = [
+        f"M,NZ,771,{month},{2.0 + (month.quarter - 1) * 0.5}\n"
+        f"M,PL,771,{month},{4.0 if month.month < 4 else 3.0 + month.month / 10}\n"
+        for month in months
+    ]
+    text = "FREQ,REF_AREA,UNIT_MEASURE,TIME_PERIOD,OBS_VALUE\n" + "".join(rows)
+    monkeypatch.setattr(
+        bis_model, "get_request", lambda url, timeout: FakeResponse(text=text)
+    )
+
+    rates = bis_model.get_consumer_prices("inflation_rate", "2025-01-01", "2025-12-31")
+
+    # New Zealand repeats each quarter over its months; Poland repeats only its first
+    # quarter, as a monthly series can, and keeps every month.
+    assert rates["New Zealand"].dropna().to_dict() == {
+        pd.Period("2025-03", "M"): pytest.approx(0.02),
+        pd.Period("2025-06", "M"): pytest.approx(0.025),
+        pd.Period("2025-09", "M"): pytest.approx(0.03),
+        pd.Period("2025-12", "M"): pytest.approx(0.035),
+    }
+    assert rates["Poland"].notna().all()
+
+
+def test_quarterly_only_unemployment_rates_are_named(monkeypatch, caplog):
+    from financetoolkit import Economics
+
+    months = pd.period_range("2026-01", "2026-06", freq="M")
+    monkeypatch.setattr(
+        Economics,
+        "_combine_sources_for",
+        lambda self, sources, countries: pd.DataFrame({"Germany": 0.063}, index=months),
+    )
+    monkeypatch.setattr(
+        oecd_model,
+        "get_unemployment_rate",
+        lambda period, start_date, end_date: pd.DataFrame(
+            {"New Zealand": [0.052, 0.054], "Germany": [0.063, 0.063]},
+            index=pd.period_range("2026Q1", "2026Q2", freq="Q"),
+        ),
+    )
+
+    economics = Economics(start_date="2026-01-01", end_date="2026-06-30")
+
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        rate = economics.get_unemployment_rate(countries=["Germany", "new zealand"])
+
+    assert list(rate.columns) == ["Germany"]
+    assert (
+        "The unemployment rate of New Zealand is published quarterly, not monthly"
+        in caplog.text
+    )

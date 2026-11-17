@@ -55,3 +55,27 @@ def test_a_strike_grid_too_large_for_memory_is_refused():
     assert len(helpers.define_strike_prices(["AAPL"], prices, 5, 0.25)["AAPL"]) > 0
     with pytest.raises(ValueError, match="larger strike_step_size"):
         helpers.define_strike_prices(["BRK-A"], prices, 1, 0.25)
+
+
+def test_the_strike_grid_covers_the_whole_range_in_positive_steps():
+    import pandas as pd
+
+    from financetoolkit.options import helpers
+
+    def strikes(price, step, strike_price_range):
+        return helpers.define_strike_prices(
+            ["A"], pd.Series({"A": price}, name="date"), step, strike_price_range
+        )["A"]
+
+    # Both ends of the range are included, rounded outwards to the step.
+    assert strikes(100.0, 5, 0.25) == list(range(75, 130, 5))
+    assert strikes(129.93, 5, 0.25)[0] == 95
+    assert strikes(129.93, 5, 0.25)[-1] == 165
+    # A price below the step still gets a positive strike, never 0.
+    assert strikes(3.0, 5, 0.25) == [5]
+    assert strikes(0.8, 1, 0.25) == [1]
+    # Fractional steps.
+    assert strikes(100.0, 2.5, 0.1) == [90.0 + 2.5 * step for step in range(9)]
+    assert strikes(100.0, 0.1, 0.001) == [99.9, 100.0, 100.1]
+    # Without a range the nearest strike.
+    assert strikes(101.0, 5, 0) == [100]

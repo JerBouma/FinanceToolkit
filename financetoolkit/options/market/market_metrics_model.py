@@ -21,18 +21,33 @@ MINIMUM_DAYS = 7
 def get_mid_prices(chain: pd.DataFrame) -> pd.Series:
     """
     The price of every option: the middle of the bid and ask when both are quoted, the
-    last traded price otherwise (e.g. outside market hours, when quotes are zero).
+    last traded price otherwise (e.g. outside market hours, when quotes are zero) for an
+    option that is still held or traded, which has an open interest or a volume above zero.
+
+    An option without a two-sided quote, open interest or volume has no price: its last
+    trade can be weeks old, from when the underlying stood elsewhere, and solving an implied
+    volatility from it gives values such as 276% that the market does not quote.
 
     Args:
         chain (pd.DataFrame): The options of one expiry, indexed by strike, with Bid, Ask and
-            Last Price columns.
+            Last Price columns, and the Volume and Open Interest columns of the chain. A chain
+            without both of these keeps the last traded price wherever there is no quote.
 
     Returns:
-        pd.Series: The price per strike.
+        pd.Series: The price per strike, NaN for an option without a quote or activity.
     """
     bid = pd.to_numeric(chain.get("Bid"), errors="coerce")
     ask = pd.to_numeric(chain.get("Ask"), errors="coerce")
     last = pd.to_numeric(chain.get("Last Price"), errors="coerce")
+
+    activity = [
+        pd.to_numeric(chain[column], errors="coerce") > 0
+        for column in ("Volume", "Open Interest")
+        if column in chain.columns
+    ]
+    if activity:
+        last = last.where(np.logical_or.reduce(activity))
+
     quoted = (bid > 0) & (ask > 0) & (ask >= bid)
     return ((bid + ask) / 2).where(quoted, last)
 

@@ -38,7 +38,7 @@ class PricingOptions:
         start_date: str | None = None,
         put_option: bool = False,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
@@ -102,8 +102,8 @@ class PricingOptions:
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -151,17 +151,17 @@ class PricingOptions:
 
         |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
         |---------------:|-------------:|-------------:|-------------:|
-        |            160 |      28.7159 |      31.761  |      34.5215 |
-        |            165 |      24.6249 |      28.1288 |      31.1403 |
-        |            170 |      20.8373 |      24.7538 |      27.9815 |
-        |            175 |      17.3911 |      21.6463 |      25.0482 |
-        |            180 |      14.3123 |      18.8111 |      22.34   |
-        |            185 |      11.6125 |      16.2474 |      19.8537 |
-        |            190 |       9.2892 |      13.9492 |      17.5835 |
-        |            195 |       7.3269 |      11.9066 |      15.5214 |
-        |            200 |       5.6997 |      10.106  |      13.6576 |
-        |            205 |       4.3742 |       8.5311 |      11.9811 |
-        |            210 |       3.313  |       7.1639 |      10.4798 |
+        |            160 |      28.7163 |      31.7618 |      34.5225 |
+        |            165 |      24.6254 |      28.1297 |      31.1413 |
+        |            170 |      20.8379 |      24.7547 |      27.9827 |
+        |            175 |      17.3918 |      21.6473 |      25.0494 |
+        |            180 |      14.313  |      18.8122 |      22.3412 |
+        |            185 |      11.6133 |      16.2484 |      19.855  |
+        |            190 |       9.29   |      13.9503 |      17.5848 |
+        |            195 |       7.3277 |      11.9077 |      15.5227 |
+        |            200 |       5.7004 |      10.1071 |      13.6589 |
+        |            205 |       4.3748 |       8.5321 |      11.9824 |
+        |            210 |       3.3136 |       7.1649 |      10.4811 |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -246,7 +246,7 @@ class PricingOptions:
         put_option: bool = False,
         american_option: bool = False,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         time_to_expiration: float = 1,
         timesteps: int = 10,
         risk_free_rate: float | None = None,
@@ -313,8 +313,8 @@ class PricingOptions:
                 node, instead of a European option. Defaults to False.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             time_to_expiration (float): The number of years to use for the time to expiration. Defaults to 1 which equals
             one year.
             timesteps (int): The number of time steps to use for the binomial tree. Defaults to 10 which equals 10
@@ -363,12 +363,12 @@ class PricingOptions:
 
         |               |   2025-12-31 |   2026-03-14 |   2026-05-26 |   2026-08-07 |   2026-10-19 |   2026-12-31 |
         |:--------------|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | (69, 'UUUUU') |        5.821 |       9.067  |      13.6268 |      19.594  |      26.7232 |      34.524  |
-        | (69, 'DUUUU') |      nan     |       2.7196 |       4.7251 |       7.9735 |      12.8942 |      19.479  |
-        | (69, 'DDUUU') |      nan     |     nan      |       0.7891 |       1.6034 |       3.2581 |       6.6205 |
-        | (69, 'DDDUU') |      nan     |     nan      |     nan      |       0      |       0      |       0      |
-        | (69, 'DDDDU') |      nan     |     nan      |     nan      |     nan      |       0      |       0      |
-        | (69, 'DDDDD') |      nan     |     nan      |     nan      |     nan      |     nan      |       0      |
+        | (70, 'UUUUU') |       5.3445 |       8.4014 |      12.7664 |      18.5956 |      25.7101 |      33.495  |
+        | (70, 'DUUUU') |     nan      |       2.4212 |       4.24   |       7.2343 |      11.8932 |      18.4642 |
+        | (70, 'DDUUU') |     nan      |     nan      |       0.6695 |       1.3603 |       2.764  |       5.6163 |
+        | (70, 'DDDUU') |     nan      |     nan      |     nan      |       0      |       0      |       0      |
+        | (70, 'DDDDU') |     nan      |     nan      |     nan      |     nan      |       0      |       0      |
+        | (70, 'DDDDD') |     nan      |     nan      |     nan      |     nan      |     nan      |       0      |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -571,12 +571,12 @@ class PricingOptions:
 
         | Movement   |   2025-12-31 |   2026-03-14 |   2026-05-26 |   2026-08-07 |   2026-10-19 |   2026-12-31 |
         |:-----------|-------------:|-------------:|-------------:|-------------:|-------------:|-------------:|
-        | UUUUU      |       214.16 |      280.988 |      368.67  |     483.712  |      634.654 |     832.696  |
-        | DUUUU      |       214.16 |      163.226 |      214.16  |     280.988  |      368.67  |     483.712  |
-        | DDUUU      |       214.16 |      163.226 |      124.405 |     163.226  |      214.16  |     280.988  |
-        | DDDUU      |       214.16 |      163.226 |      124.405 |      94.8177 |      124.405 |     163.226  |
-        | DDDDU      |       214.16 |      163.226 |      124.405 |      94.8177 |       72.267 |      94.8177 |
-        | DDDDD      |       214.16 |      163.226 |      124.405 |      94.8177 |       72.267 |      55.0796 |
+        | UUUUU      |       214.16 |      280.99  |      368.676 |     483.724  |     634.674  |     832.73   |
+        | DUUUU      |       214.16 |      163.225 |      214.16  |     280.99   |     368.676  |     483.724  |
+        | DDUUU      |       214.16 |      163.225 |      124.403 |     163.225  |     214.16   |     280.99   |
+        | DDDUU      |       214.16 |      163.225 |      124.403 |      94.8154 |     124.403  |     163.225  |
+        | DDDDU      |       214.16 |      163.225 |      124.403 |      94.8154 |      72.2646 |      94.8154 |
+        | DDDDD      |       214.16 |      163.225 |      124.403 |      94.8154 |      72.2646 |      55.0773 |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -654,7 +654,7 @@ class PricingOptions:
         self,
         start_date: str | None = None,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
@@ -698,8 +698,8 @@ class PricingOptions:
             last date of the historical data.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -857,7 +857,7 @@ class PricingOptions:
         start_date: str | None = None,
         put_option: bool = False,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         foreign_risk_free_rate: float = 0.0,
@@ -899,8 +899,8 @@ class PricingOptions:
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -952,14 +952,14 @@ class PricingOptions:
 
         |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
         |---------------:|-------------:|-------------:|-------------:|
-        |            148 |       8.4856 |       8.266  |       8.1462 |
-        |            150 |       6.5551 |       6.4903 |       6.498  |
-        |            152 |       4.7422 |       4.8793 |       5.0189 |
-        |            154 |       3.1505 |       3.4884 |       3.741  |
-        |            156 |       1.8845 |       2.3571 |       2.683  |
-        |            158 |       0.9971 |       1.4973 |       1.8467 |
-        |            160 |       0.4601 |       0.8903 |       1.2176 |
-        |            162 |       0.1832 |       0.494  |       0.7678 |
+        |            148 |       8.4856 |       8.2657 |       8.1457 |
+        |            150 |       6.555  |       6.4899 |       6.4972 |
+        |            152 |       4.7419 |       4.8787 |       5.018  |
+        |            154 |       3.15   |       3.4876 |       3.7399 |
+        |            156 |       1.8838 |       2.3562 |       2.6819 |
+        |            158 |       0.9965 |       1.4964 |       1.8457 |
+        |            160 |       0.4596 |       0.8896 |       1.2167 |
+        |            162 |       0.183  |       0.4935 |       0.767  |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -1038,7 +1038,7 @@ class PricingOptions:
         option_type: str = "cash-or-nothing",
         cash_payout: float = 1.0,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
@@ -1088,8 +1088,8 @@ class PricingOptions:
             expires in-the-money. Ignored for asset-or-nothing options. Defaults to 1.0.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -1235,7 +1235,7 @@ class PricingOptions:
         start_date: str | None = None,
         put_option: bool = False,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
@@ -1296,8 +1296,8 @@ class PricingOptions:
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -1346,17 +1346,17 @@ class PricingOptions:
         |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
         |---------------:|-------------:|-------------:|-------------:|
         |             34 |       6.73   |       6.73   |       6.73   |
-        |             35 |       5.73   |       5.73   |       5.7417 |
-        |             36 |       4.73   |       4.753  |       4.8234 |
-        |             37 |       3.7409 |       3.8477 |       3.9719 |
-        |             38 |       2.8269 |       3.0217 |       3.202  |
-        |             39 |       2.0118 |       2.2958 |       2.5242 |
-        |             40 |       1.3361 |       1.6834 |       1.9439 |
-        |             41 |       0.8214 |       1.189  |       1.4615 |
-        |             42 |       0.4646 |       0.8079 |       1.0723 |
-        |             43 |       0.241  |       0.5278 |       0.7678 |
-        |             44 |       0.1144 |       0.3314 |       0.5365 |
-        |             45 |       0.0497 |       0.2001 |       0.366  |
+        |             35 |       5.73   |       5.73   |       5.7418 |
+        |             36 |       4.73   |       4.7531 |       4.8237 |
+        |             37 |       3.741  |       3.8479 |       3.9723 |
+        |             38 |       2.8271 |       3.0221 |       3.2026 |
+        |             39 |       2.0122 |       2.2963 |       2.5249 |
+        |             40 |       1.3365 |       1.684  |       1.9446 |
+        |             41 |       0.8218 |       1.1896 |       1.4622 |
+        |             42 |       0.465  |       0.8084 |       1.073  |
+        |             43 |       0.2413 |       0.5282 |       0.7684 |
+        |             44 |       0.1146 |       0.3318 |       0.537  |
+        |             45 |       0.0498 |       0.2004 |       0.3664 |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -1440,7 +1440,7 @@ class PricingOptions:
         start_date: str | None = None,
         put_option: bool = False,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
@@ -1498,8 +1498,8 @@ class PricingOptions:
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -1554,23 +1554,23 @@ class PricingOptions:
 
         |   Strike Price |   2026-01-07 |   2026-01-14 |   2026-01-30 |
         |---------------:|-------------:|-------------:|-------------:|
-        |            780 |      82.8804 |      83.4929 |      85.5951 |
-        |            790 |      72.8944 |      73.6474 |      76.2377 |
-        |            800 |      62.9375 |      63.9365 |      67.1784 |
-        |            810 |      53.0608 |      54.449  |      58.4909 |
-        |            820 |      43.3668 |      45.3486 |      50.2675 |
-        |            830 |      34.0544 |      36.7989 |      42.5958 |
-        |            840 |      25.4476 |      28.9941 |      35.5519 |
-        |            850 |      17.9002 |      22.0923 |      29.1778 |
-        |            860 |      11.7131 |      16.2131 |      23.5449 |
-        |            870 |       7.0931 |      11.4623 |      18.6844 |
-        |            880 |       3.9774 |       7.8047 |      14.5854 |
-        |            890 |       2.0399 |       5.1208 |      11.2062 |
-        |            900 |       0.9613 |       3.2137 |       8.477  |
-        |            910 |       0.4226 |       1.935  |       6.285  |
-        |            920 |       0.1699 |       1.1307 |       4.5788 |
-        |            930 |       0.0583 |       0.6377 |       3.2783 |
-        |            940 |       0.018  |       0.3433 |       2.3104 |
+        |            780 |      82.8804 |      83.4928 |      85.5947 |
+        |            790 |      72.8944 |      73.6473 |      76.2372 |
+        |            800 |      62.9375 |      63.9363 |      67.1776 |
+        |            810 |      53.0607 |      54.4486 |      58.49   |
+        |            820 |      43.3666 |      45.3481 |      50.2664 |
+        |            830 |      34.0541 |      36.7981 |      42.5944 |
+        |            840 |      25.4471 |      28.9931 |      35.5504 |
+        |            850 |      17.8995 |      22.0913 |      29.1762 |
+        |            860 |      11.7123 |      16.2119 |      23.5432 |
+        |            870 |       7.0923 |      11.4611 |      18.6827 |
+        |            880 |       3.9767 |       7.8036 |      14.5838 |
+        |            890 |       2.0394 |       5.1199 |      11.2047 |
+        |            900 |       0.961  |       3.213  |       8.4756 |
+        |            910 |       0.4225 |       1.9345 |       6.2838 |
+        |            920 |       0.1698 |       1.1303 |       4.5777 |
+        |            930 |       0.0582 |       0.6374 |       3.2774 |
+        |            940 |       0.018  |       0.3432 |       2.3097 |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -1684,7 +1684,7 @@ class PricingOptions:
         knock_type: str = "out",
         rebate: float = 0.0,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
@@ -1765,8 +1765,8 @@ class PricingOptions:
             in). Defaults to 0.0.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -1820,20 +1820,20 @@ class PricingOptions:
 
         |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
         |---------------:|-------------:|-------------:|-------------:|
-        |            590 |      70.211  |      70.5594 |      71.0161 |
-        |            600 |      63.6599 |      65.6623 |      66.9713 |
-        |            610 |      57.1775 |      60.7959 |      62.9446 |
-        |            620 |      50.8693 |      56.0077 |      58.9639 |
-        |            630 |      44.8284 |      51.341  |      55.0551 |
-        |            640 |      39.1312 |      46.8335 |      51.2414 |
-        |            650 |      33.8365 |      42.5169 |      47.543  |
-        |            660 |      28.9845 |      38.4166 |      43.9768 |
-        |            670 |      24.5979 |      34.5518 |      40.557  |
-        |            680 |      20.6836 |      30.9358 |      37.2945 |
-        |            690 |      17.2345 |      27.5763 |      34.1974 |
-        |            700 |      14.2322 |      24.4761 |      31.2713 |
-        |            710 |      11.6493 |      21.6334 |      28.519  |
-        |            720 |       9.4527 |      19.043  |      25.9413 |
+        |            590 |      70.2113 |      70.5597 |      71.0164 |
+        |            600 |      63.6597 |      65.6622 |      66.9713 |
+        |            610 |      57.1768 |      60.7954 |      62.9442 |
+        |            620 |      50.8683 |      56.0068 |      58.9631 |
+        |            630 |      44.827  |      51.3397 |      55.0541 |
+        |            640 |      39.1295 |      46.8319 |      51.2401 |
+        |            650 |      33.8345 |      42.5151 |      47.5413 |
+        |            660 |      28.9823 |      38.4145 |      43.9749 |
+        |            670 |      24.5957 |      34.5495 |      40.5549 |
+        |            680 |      20.6814 |      30.9334 |      37.2922 |
+        |            690 |      17.2323 |      27.5738 |      34.1949 |
+        |            700 |      14.23   |      24.4735 |      31.2686 |
+        |            710 |      11.6473 |      21.6308 |      28.5162 |
+        |            720 |       9.4508 |      19.0403 |      25.9385 |
         """
         # The barrier is set relative to the spot, so a barrier on the wrong side of it is breached
         # before the option starts. The prices would then be a flat rebate or the vanilla price,
@@ -1936,7 +1936,7 @@ class PricingOptions:
         start_date: str | None = None,
         put_option: bool = False,
         strike_price_range: float = 0.25,
-        strike_step_size: int = 5,
+        strike_step_size: float = 5,
         expiration_time_range: int = 30,
         risk_free_rate: float | None = None,
         dividend_yield: float | None = None,
@@ -1984,8 +1984,8 @@ class PricingOptions:
             it will calculate the call option price.
             strike_price_range (float): The percentage range to use for the strike prices. Defaults to 0.25 which equals
             25% and thus results in strike prices from 75 to 125 if the current stock price is 100.
-            strike_step_size (int): The step size to use for the strike prices. Defaults to 5 which means that the
-            strike prices will be 75, 80, 85, 90, 95, 100, 105, 110, 115 and 120 if the current stock price is 100.
+            strike_step_size (float): The step size to use for the strike prices. Defaults to 5 which means that the
+            strike prices will be 75, 80, 85, ..., 120 and 125 if the current stock price is 100.
             expiration_time_range (int): The number of days to use for the time to expiration: the columns are the
             expirations 1 up to expiration_time_range - 1 days after the start date. Defaults to 30, which gives
             expirations of 1 to 29 days.
@@ -2034,17 +2034,17 @@ class PricingOptions:
         |   Strike Price |   2026-01-30 |   2026-03-01 |   2026-03-31 |
         |---------------:|-------------:|-------------:|-------------:|
         |            108 |      12.2984 |      12.3072 |      12.3784 |
-        |            110 |      10.3173 |      10.3976 |      10.5491 |
-        |            112 |       8.365  |       8.5609 |       8.8116 |
-        |            114 |       6.4839 |       6.8383 |       7.197  |
-        |            116 |       4.7442 |       5.2756 |       5.7352 |
-        |            118 |       3.2336 |       3.9144 |       4.4502 |
-        |            120 |       2.0276 |       2.7832 |       3.3568 |
-        |            122 |       1.1573 |       1.8907 |       2.4581 |
-        |            124 |       0.5964 |       1.2243 |       1.7458 |
-        |            126 |       0.276  |       0.7545 |       1.2016 |
-        |            128 |       0.1143 |       0.4421 |       0.8013 |
-        |            130 |       0.0423 |       0.2462 |       0.5176 |
+        |            110 |      10.3173 |      10.3976 |      10.549  |
+        |            112 |       8.365  |       8.5609 |       8.8115 |
+        |            114 |       6.4838 |       6.8383 |       7.197  |
+        |            116 |       4.7442 |       5.2755 |       5.7351 |
+        |            118 |       3.2336 |       3.9143 |       4.4501 |
+        |            120 |       2.0276 |       2.7831 |       3.3567 |
+        |            122 |       1.1573 |       1.8906 |       2.458  |
+        |            124 |       0.5964 |       1.2242 |       1.7457 |
+        |            126 |       0.2759 |       0.7544 |       1.2015 |
+        |            128 |       0.1143 |       0.442  |       0.8012 |
+        |            130 |       0.0423 |       0.2461 |       0.5176 |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]
@@ -2216,51 +2216,51 @@ class PricingOptions:
 
         |   Stock Price |     TSLA |
         |--------------:|---------:|
-        |           335 |  49.7821 |
-        |           340 |  44.7821 |
-        |           345 |  39.7821 |
-        |           350 |  34.7821 |
-        |           355 |  29.7821 |
-        |           360 |  24.7821 |
-        |           365 |  19.7821 |
-        |           370 |  14.7821 |
-        |           375 |   9.7821 |
-        |           380 |   4.7821 |
-        |           385 |  -0.2179 |
-        |           390 |  -5.2179 |
-        |           395 | -10.2179 |
-        |           400 | -15.2179 |
-        |           405 | -20.2179 |
-        |           410 | -25.2179 |
-        |           415 | -30.2179 |
-        |           420 | -35.2179 |
-        |           425 | -40.2179 |
-        |           430 | -45.2179 |
-        |           435 | -50.2179 |
-        |           440 | -55.2179 |
-        |           445 | -60.2179 |
-        |           450 | -64.6579 |
-        |           455 | -59.6579 |
-        |           460 | -54.6579 |
-        |           465 | -49.6579 |
-        |           470 | -44.6579 |
-        |           475 | -39.6579 |
-        |           480 | -34.6579 |
-        |           485 | -29.6579 |
-        |           490 | -24.6579 |
-        |           495 | -19.6579 |
-        |           500 | -14.6579 |
-        |           505 |  -9.6579 |
-        |           510 |  -4.6579 |
-        |           515 |   0.3421 |
-        |           520 |   5.3421 |
-        |           525 |  10.3421 |
-        |           530 |  15.3421 |
-        |           535 |  20.3421 |
-        |           540 |  25.3421 |
-        |           545 |  30.3421 |
-        |           550 |  35.3421 |
-        |           555 |  40.3421 |
+        |           335 |  49.7822 |
+        |           340 |  44.7822 |
+        |           345 |  39.7822 |
+        |           350 |  34.7822 |
+        |           355 |  29.7822 |
+        |           360 |  24.7822 |
+        |           365 |  19.7822 |
+        |           370 |  14.7822 |
+        |           375 |   9.7822 |
+        |           380 |   4.7822 |
+        |           385 |  -0.2178 |
+        |           390 |  -5.2178 |
+        |           395 | -10.2178 |
+        |           400 | -15.2178 |
+        |           405 | -20.2178 |
+        |           410 | -25.2178 |
+        |           415 | -30.2178 |
+        |           420 | -35.2178 |
+        |           425 | -40.2178 |
+        |           430 | -45.2178 |
+        |           435 | -50.2178 |
+        |           440 | -55.2178 |
+        |           445 | -60.2178 |
+        |           450 | -64.6578 |
+        |           455 | -59.6578 |
+        |           460 | -54.6578 |
+        |           465 | -49.6578 |
+        |           470 | -44.6578 |
+        |           475 | -39.6578 |
+        |           480 | -34.6578 |
+        |           485 | -29.6578 |
+        |           490 | -24.6578 |
+        |           495 | -19.6578 |
+        |           500 | -14.6578 |
+        |           505 |  -9.6578 |
+        |           510 |  -4.6578 |
+        |           515 |   0.3422 |
+        |           520 |   5.3422 |
+        |           525 |  10.3422 |
+        |           530 |  15.3422 |
+        |           535 |  20.3422 |
+        |           540 |  25.3422 |
+        |           545 |  30.3422 |
+        |           550 |  35.3422 |
+        |           555 |  40.3422 |
         """
         start_date = self._pricing_date(start_date)
         stock_price = self._prices.loc[start_date]

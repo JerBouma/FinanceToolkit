@@ -122,7 +122,7 @@ def test_wls_and_gls_estimate_their_weights_and_covariance(schemas, captured):
     assert captured[1]["omega"] == "ar1"
 
 
-@pytest.mark.parametrize("benchmark", ["None", "none", "null", ""])
+@pytest.mark.parametrize("benchmark", ["None", "none", "null"])
 def test_no_benchmark_written_as_text_means_no_benchmark(captured, benchmark):
     call(
         "breadth",
@@ -268,3 +268,107 @@ def test_the_basket_reaches_the_toolkit(captured, given, expected):
 def test_econometrics_passes_deflate_with_to_its_series(schemas):
     assert "deflate_with" in schemas["econometrics"]
     assert "deflate_with" not in schemas["performance"]
+
+
+def test_a_number_parameter_keeps_its_label_and_per_ticker_forms(schemas, captured):
+    # Maturities are numbers or labels such as '10Y'; rates are numbers, a list or one per
+    # ticker. Each form reaches the indicator.
+    assert types_of(schemas["fixed_income"]["long_maturity"]) == {
+        "number",
+        "array",
+        "string",
+    }
+    assert types_of(schemas["models"]["rate_of_return"]) == {
+        "number",
+        "array",
+        "object",
+        "string",
+    }
+
+    call(
+        "fixed_income",
+        {
+            "indicator": "get_yield_curve_spread",
+            "short_maturity": "3M",
+            "long_maturity": "10Y",
+        },
+    )
+    assert (captured[-1]["short_maturity"], captured[-1]["long_maturity"]) == (
+        "3M",
+        "10Y",
+    )
+
+    call(
+        "models",
+        {
+            "indicator": "get_gordon_growth_model",
+            "tickers": "AAPL,MSFT",
+            "rate_of_return": {"AAPL": 0.08, "MSFT": 0.09},
+        },
+    )
+    assert captured[-1]["rate_of_return"] == {"AAPL": 0.08, "MSFT": 0.09}
+
+    call(
+        "models",
+        {
+            "indicator": "get_gordon_growth_model",
+            "tickers": "AAPL,MSFT",
+            "rate_of_return": "0.08,0.09",
+        },
+    )
+    assert captured[-1]["rate_of_return"] == [0.08, 0.09]
+
+
+@pytest.mark.parametrize(
+    ("lag", "expected"), [("1,2", [1, 2]), ("[1, 2]", [1, 2]), ("2", 2), (2, 2)]
+)
+def test_lags_are_a_number_a_list_or_comma_separated_text(captured, lag, expected):
+    call(
+        "profitability",
+        {
+            "indicator": "get_gross_margin",
+            "tickers": "AAPL",
+            "growth": True,
+            "lag": lag,
+        },
+    )
+
+    assert captured[-1]["lag"] == expected
+
+
+def test_an_empty_benchmark_is_the_default_benchmark(captured):
+    call(
+        "breadth",
+        {
+            "indicator": "get_negative_volume_index",
+            "tickers": "AAPL",
+            "benchmark_ticker": "",
+        },
+    )
+
+    assert captured[-1]["benchmark_ticker"] == "SPY"
+
+
+def test_strategy_legs_are_an_array_of_objects(schemas):
+    legs = schemas["options"]["legs"]
+
+    assert types_of(legs) == {"array"}
+    assert legs["anyOf"][0]["items"]["type"] == "object"
+
+
+@pytest.mark.parametrize(
+    "legs",
+    [
+        [{"strike_price": 150, "put_option": False, "premium": 5}],
+        '[{"strike_price": 150, "put_option": false, "premium": 5}]',
+    ],
+)
+def test_the_strategy_payoff_takes_legs_as_objects_or_json(captured, legs):
+    call(
+        "options",
+        {"indicator": "get_strategy_payoff", "tickers": "AAPL", "legs": legs},
+    )
+
+    assert captured[-1]["legs"] == [
+        {"strike_price": 150, "put_option": False, "premium": 5}
+    ]

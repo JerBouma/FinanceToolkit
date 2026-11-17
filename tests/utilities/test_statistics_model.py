@@ -890,3 +890,33 @@ def test_standardization_leaves_out_an_infinity():
 
     assert result.iloc[:3].tolist() == pytest.approx([-1.0, 0.0, 1.0])
     assert np.isnan(result.iloc[3])
+
+
+def test_finalize_dataset_selects_comma_separated_and_gmdb_spelled_countries():
+    dataset = pd.DataFrame(
+        {"United States": [0.01], "Japan": [0.02], "Russia": [0.03]},
+        index=pd.PeriodIndex(["2024"], freq="Y"),
+    )
+
+    both = statistics_model.finalize_dataset(
+        dataset, None, None, 4, countries="United States, Japan"
+    )
+    russia = statistics_model.finalize_dataset(
+        dataset, None, None, 4, countries="Russian Federation"
+    )
+
+    assert list(both.columns) == ["United States", "Japan"]
+    assert list(russia.columns) == ["Russia"]
+
+
+def test_finalize_dataset_selects_a_country_spelled_twice_once():
+    dataset = pd.DataFrame(
+        {"United States": [0.01], "Japan": [0.02]},
+        index=pd.PeriodIndex(["2024"], freq="Y"),
+    )
+
+    selected = statistics_model.finalize_dataset(
+        dataset, None, None, 4, countries=["USA", "United States", "japan"]
+    )
+
+    assert list(selected.columns) == ["United States", "Japan"]

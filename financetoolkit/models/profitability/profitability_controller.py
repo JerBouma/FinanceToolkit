@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.models import helpers
 from financetoolkit.models.profitability import dupont_model, growth_model
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -47,7 +48,7 @@ class ProfitabilityModels:
 
             - Net Profit Margin = Net Income / Revenue
             - Asset Turnover = Revenue / Average Total Assets
-            - Equity Multiplier = Average Total Assets / Average Total Equity
+            - Equity Multiplier = Average Total Assets / Average Total Shareholder Equity
             - ROE = Net Profit Margin * Asset Turnover * Equity Multiplier
 
         The value of the decomposition is in comparing the three factors with peers and over time: a
@@ -83,6 +84,9 @@ class ProfitabilityModels:
             revenue.
             - The Equity Multiplier measures financial leverage, the use of debt to finance a company's
             operations, which can amplify returns as well as risks.
+            - The equity is the Total Shareholder Equity, which excludes minority interests, as the
+            Net Income is the income attributable to the shareholders; this is the Return on Equity
+            of the Ratios module.
 
         As an example:
 
@@ -108,35 +112,20 @@ class ProfitabilityModels:
         | Equity Multiplier | 1.4317 | 1.4269 | 1.4228 | 1.4013 | 1.4122 |
         | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
-        if trailing:
-            dupont_analysis = dupont_model.get_dupont_analysis(
-                self._income_statement.loc[:, "Net Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T,
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-            )
-        else:
-            dupont_analysis = dupont_model.get_dupont_analysis(
-                self._income_statement.loc[:, "Net Income", :],
-                self._income_statement.loc[:, "Revenue", :],
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(2)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .T.rolling(2)
-                .mean()
-                .T,
-            )
+        # Without trailing, the balances are averaged over the period's opening and closing balance.
+        dupont_analysis = dupont_model.get_dupont_analysis(
+            helpers.trailing_sum(
+                self._income_statement.loc[:, "Net Income", :], trailing
+            ),
+            helpers.trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+            helpers.trailing_mean(
+                self._balance_sheet_statement.loc[:, "Total Assets", :], trailing or 2
+            ),
+            helpers.trailing_mean(
+                self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
+                trailing or 2,
+            ),
+        )
 
         if growth:
             dupont_analysis = calculate_growth(
@@ -187,7 +176,7 @@ class ProfitabilityModels:
             - Tax Burden Ratio = Net Income / Income Before Tax
             - Operating Profit Margin = Operating Income / Revenue
             - Asset Turnover = Revenue / Average Total Assets
-            - Equity Multiplier = Average Total Assets / Average Total Equity
+            - Equity Multiplier = Average Total Assets / Average Total Shareholder Equity
             - ROE = Interest Burden Ratio * Tax Burden Ratio * Operating Profit Margin *
             Asset Turnover * Equity Multiplier
 
@@ -224,6 +213,9 @@ class ProfitabilityModels:
             sales revenue.
             - The Equity Multiplier represents the use of debt to finance a company's operations,
             which can amplify returns as well as risks.
+            - The equity is the Total Shareholder Equity, which excludes minority interests, as the
+            Net Income is the income attributable to the shareholders; this is the Return on Equity
+            of the Ratios module.
             - Multiplying the first three components back together reproduces the Net Profit Margin
             of the three-factor `get_dupont_analysis`, so both decompositions resolve to the same ROE.
 
@@ -253,56 +245,25 @@ class ProfitabilityModels:
         | Equity Multiplier       | 2.4399 | 2.2643 | 2.0839 | 1.9468 | 1.8484 |
         | Return on Equity        | 0.4708 | 0.4715 | 0.3882 | 0.3713 | 0.3328 |
         """
-        if trailing:
-            extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-                operating_income=self._income_statement.loc[:, "Operating Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                net_income=self._income_statement.loc[:, "Net Income", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                total_revenue=self._income_statement.loc[:, "Revenue", :]
-                .T.rolling(trailing)
-                .sum()
-                .T,
-                average_total_assets=self._balance_sheet_statement.loc[
-                    :, "Total Assets", :
-                ]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-                average_total_equity=self._balance_sheet_statement.loc[
-                    :, "Total Equity", :
-                ]
-                .T.rolling(trailing)
-                .mean()
-                .T,
-            )
-        else:
-            extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-                operating_income=self._income_statement.loc[:, "Operating Income", :],
-                income_before_tax=self._income_statement.loc[:, "Income Before Tax", :],
-                net_income=self._income_statement.loc[:, "Net Income", :],
-                total_revenue=self._income_statement.loc[:, "Revenue", :],
-                average_total_assets=self._balance_sheet_statement.loc[
-                    :, "Total Assets", :
-                ]
-                .T.rolling(2)
-                .mean()
-                .T,
-                average_total_equity=self._balance_sheet_statement.loc[
-                    :, "Total Equity", :
-                ]
-                .T.rolling(2)
-                .mean()
-                .T,
-            )
+        # Without trailing, the balances are averaged over the period's opening and closing balance.
+        income = self._income_statement
+        balance = self._balance_sheet_statement
+        extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
+            operating_income=helpers.trailing_sum(
+                income.loc[:, "Operating Income", :], trailing
+            ),
+            income_before_tax=helpers.trailing_sum(
+                income.loc[:, "Income Before Tax", :], trailing
+            ),
+            net_income=helpers.trailing_sum(income.loc[:, "Net Income", :], trailing),
+            total_revenue=helpers.trailing_sum(income.loc[:, "Revenue", :], trailing),
+            average_total_assets=helpers.trailing_mean(
+                balance.loc[:, "Total Assets", :], trailing or 2
+            ),
+            average_total_equity=helpers.trailing_mean(
+                balance.loc[:, "Total Shareholder Equity", :], trailing or 2
+            ),
+        )
 
         if growth:
             extended_dupont_analysis = calculate_growth(
@@ -394,17 +355,18 @@ class ProfitabilityModels:
 
         Notes:
         - The share price is the traded Close (adjusted for splits, not for dividends) at the end
-        of each period, the same price the P/E ratio uses, and the Earnings per Share is the Net
-        Income over the weighted average (diluted) shares, as in `ratios.get_earnings_per_share`.
+        of each fiscal period, and the Earnings per Share is the Net Income over the weighted
+        average (diluted) shares, as in `ratios.get_earnings_per_share`.
         - The P/E ratio has no meaning when the earnings are zero or negative, so the EPS Growth
         and P/E Change are NaN when the Earnings per Share at either end of the window is not
         positive. The Price Return, Dividend Return and Total Return remain; the growth of the
         earnings themselves is `ratios.get_earnings_per_share(growth=True)`.
         - Dividends are added as paid, without reinvestment, so the Total Return differs slightly
         from a return on the dividend-adjusted price.
-        - Each period is a calendar period that holds the fiscal period reported in it (see the
-        Toolkit), so the price at the end of the calendar period is compared with the earnings
-        reported for it, as in the P/E ratio.
+        - The price is the close on the last trading day of each fiscal period (the filing day
+        with point_in_time), the date the earnings reported for it run up to, and the dividends
+        are those paid between two such days. The calendar period's close and dividends are
+        used where the daily prices do not reach those days.
 
         As an example:
 
@@ -425,20 +387,19 @@ class ProfitabilityModels:
 
         |                             |    2022 |    2023 |    2024 |    2025 |
         |:----------------------------|--------:|--------:|--------:|--------:|
-        | ('AMD', 'Price Return')     | -0.5499 |  1.2759 | -0.1806 |  0.773  |
+        | ('AMD', 'Price Return')     | -0.5568 |  1.2759 | -0.1507 |  0.7173 |
         | ('AMD', 'EPS Growth')       | -0.6734 | -0.3745 |  0.9075 |  1.6433 |
-        | ('AMD', 'P/E Change')       |  0.3782 |  2.6387 | -0.5704 | -0.3292 |
+        | ('AMD', 'P/E Change')       |  0.3571 |  2.6387 | -0.5548 | -0.3503 |
         | ('AMD', 'Dividend Return')  |  0      |  0      |  0      |  0      |
-        | ('AMD', 'Total Return')     | -0.5499 |  1.2759 | -0.1806 |  0.773  |
-        | ('MSFT', 'Price Return')    | -0.2869 |  0.568  |  0.1209 |  0.1474 |
+        | ('AMD', 'Total Return')     | -0.5568 |  1.2759 | -0.1507 |  0.7173 |
+        | ('MSFT', 'Price Return')    | -0.0519 |  0.3259 |  0.3125 |  0.1129 |
         | ('MSFT', 'EPS Growth')      |  0.1979 |  0.0039 |  0.2185 |  0.156  |
-        | ('MSFT', 'P/E Change')      | -0.4047 |  0.562  | -0.0801 | -0.0075 |
-        | ('MSFT', 'Dividend Return') |  0.0076 |  0.0116 |  0.0082 |  0.0081 |
-        | ('MSFT', 'Total Return')    | -0.2794 |  0.5796 |  0.1291 |  0.1554 |
+        | ('MSFT', 'P/E Change')      | -0.2085 |  0.3208 |  0.0771 | -0.0373 |
+        | ('MSFT', 'Dividend Return') |  0.0089 |  0.0104 |  0.0086 |  0.0072 |
+        | ('MSFT', 'Total Return')    | -0.043  |  0.3363 |  0.3211 |  0.1201 |
         """
-        trailing = (
-            trailing if trailing is not None else (4 if self._quarterly else None)
-        )
+        if trailing is None and self._quarterly:
+            trailing = 4
         lag = lag if lag is not None else (4 if self._quarterly else 1)
 
         if not isinstance(lag, int) or lag < 1:
@@ -446,15 +407,20 @@ class ProfitabilityModels:
                 "The lag is the number of periods of the window: 1 or more."
             )
 
-        shares = self._rows(
-            self._income_statement,
-            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+        shares = helpers.trailing_mean(
+            self._rows(
+                self._income_statement,
+                (
+                    "Weighted Average Shares Diluted"
+                    if diluted
+                    else "Weighted Average Shares"
+                ),
+            ),
+            trailing,
         )
-        net_income = self._rows(self._income_statement, "Net Income")
-
-        if trailing:
-            net_income = net_income.T.rolling(trailing).sum().T
-            shares = shares.T.rolling(trailing).mean().T
+        net_income = helpers.trailing_sum(
+            self._rows(self._income_statement, "Net Income"), trailing
+        )
 
         earnings_per_share = valuation_model.get_earnings_per_share(
             net_income=net_income,
@@ -468,6 +434,18 @@ class ProfitabilityModels:
         ].reindex(columns=self._tickers)
         dividends.index = dividends.index.asfreq(columns.freq)
         dividends = dividends.reindex(columns).T
+        # The dividends paid within each fiscal period, after the previous period's price
+        # date up to and including its own, so the window between the prices holds exactly
+        # the dividends paid in it; the calendar period's dividends where the daily data do
+        # not cover both dates.
+        paid_to_date = self._values_at_market_dates(
+            self._historical_data["daily"]["Dividends"].fillna(0).cumsum()
+        )
+        dividends = (
+            paid_to_date.diff(axis=1)
+            .reindex(index=self._tickers, columns=columns)
+            .combine_first(dividends)
+        )
 
         decomposition = growth_model.get_return_decomposition(
             close_prices=self._period_prices(),
@@ -504,7 +482,7 @@ class ProfitabilityModels:
 
         The formula is as follows:
 
-            - Return on Equity = Net Income / Total Equity at the beginning of the period
+            - Return on Equity = Net Income / Total Shareholder Equity at the beginning of the period
             - Retention Ratio = 1 - Dividend Payout Ratio
             - SGR = Return on Equity * Retention Ratio
 
@@ -661,20 +639,13 @@ class ProfitabilityModels:
         | ADSK | 0.0613 | 0.0955 | 0.1006 | 0.1144 | nan      |
         | INTU | 0.1004 | 0.0489 | 0.0569 | 0.0639 |   0.0782 |
         """
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
         # The ROA * b / (1 - ROA * b) form of the Internal Growth Rate measures ROA on the ending assets.
         ending_total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
-        dividends = (
-            self._cash_flow_statement.loc[:, "Dividends Paid", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Dividends Paid", :]
+        dividends = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
         )
 
         return_on_assets = profitability_model.get_return_on_assets(

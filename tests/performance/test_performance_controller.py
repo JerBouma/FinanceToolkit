@@ -408,7 +408,8 @@ def test_get_sharpe_ratio_deflated_uses_daily_trials(performance_module):
 
 def _intraday_performance():
     rng = np.random.default_rng(1)
-    days = pd.period_range("2024-01-01", periods=10, freq="D")
+    # Ten trading days, without the weekends a ticker trading on trading days does not have.
+    days = pd.bdate_range("2024-01-01", periods=10).to_period("D")
     columns = pd.MultiIndex.from_product([["Return"], ["A", "Benchmark"]])
     daily = pd.DataFrame(
         rng.normal(0, 0.01, (len(days), 2)), index=days, columns=columns
@@ -833,3 +834,224 @@ def test_get_beta_implied_return_without_a_market_cap(performance_module):
     # Without shares (an ETF, an index) the value is empty, never 0.
     assert result["Residual Value"].isna().all().all()
     assert result["Residual"].notna().any().any()
+
+
+def _weekend_performance(rate=0.04):
+    """A stock (trading days) and a cryptocurrency (every calendar day) at a flat rate."""
+    rng = np.random.default_rng(2)
+    days = pd.period_range("2021-01-01", "2022-06-30", freq="D")
+    weekday = days.dayofweek < 5  # noqa: PLR2004
+    returns = pd.DataFrame(
+        {
+            "BTC": rng.normal(0.001, 0.03, len(days)),
+            "SPY": np.where(weekday, rng.normal(0.0005, 0.01, len(days)), np.nan),
+            "Benchmark": np.where(weekday, rng.normal(0.0005, 0.01, len(days)), np.nan),
+        },
+        index=days,
+    )
+    returns.iloc[0] = np.nan
+    prices = (1 + returns.fillna(0)).cumprod() * 100
+    daily = pd.concat({"Return": returns, "Adj Close": prices, "Close": prices}, axis=1)
+    yearly_prices = prices.groupby(days.asfreq("Y")).last()
+    yearly = pd.concat(
+        {
+            "Return": yearly_prices / yearly_prices.shift() - 1,
+            "Adj Close": yearly_prices,
+            "Close": yearly_prices,
+        },
+        axis=1,
+    )
+    return Performance(
+        tickers=["BTC", "SPY"],
+        historical_data={"daily": daily, "yearly": yearly, "intraday": pd.DataFrame()},
+        risk_free_rate_data={"daily": pd.Series(rate, index=days)},
+        rounding=None,
+    )
+
+
+def test_a_partial_period_earns_the_risk_free_rate_of_its_days(performance_module):
+    annualized_rate = performance_module._annualized_risk_free_rate_data["daily"]
+    returns = performance_module._historical_data["daily"]["Return"]
+    yearly_rate = performance_module._risk_free_rate_data["yearly"]
+
+    # Every year, including a partial one, compounds the annualized rate quoted on each
+    # date with a return over the calendar days since the date before, as the yearly
+    # return compounds the daily returns.
+    dates = returns.dropna(how="all").index
+    first = returns.index.get_loc(dates[0])
+    # The first date accrues from the date before it, or one day when the data start there.
+    previous = returns.index[first - 1].ordinal if first else dates[0].ordinal - 1
+    days = np.diff(np.append(previous, dates.asi8))
+    rate = annualized_rate.sort_index().reindex(dates, method="ffill").bfill()
+    growth = pd.Series((1 + rate.to_numpy()) ** (days / 365), index=dates)
+    for year in yearly_rate.index:
+        expected = growth[dates.asfreq("Y") == year].prod() - 1
+        assert yearly_rate[year] == pytest.approx(expected, rel=1e-12)
+
+    performance = _weekend_performance()
+    # The 181 days of the first half of 2022 at a flat 4% earn about half of it, not the
+    # full year's rate.
+    rate_2022 = performance._risk_free_rate_data["yearly"]["2022"]
+    assert rate_2022 == pytest.approx(1.04 ** (181 / 365) - 1, rel=1e-9)
+
+    excess = performance.get_excess_return(period="yearly")
+    returns_2022 = performance._historical_data["yearly"]["Return"].loc["2022"]
+    assert excess.loc["2022", "SPY"] == pytest.approx(
+        returns_2022["SPY"] - rate_2022, rel=1e-9
+    )
+
+
+def test_a_ticker_trading_on_weekends_accrues_the_rate_per_calendar_day():
+    performance = _weekend_performance()
+    daily = performance._get_within_historical_data("yearly")
+    risk_free = (daily["Return"] - daily["Excess Return"]).droplevel(0)
+
+    # The cryptocurrency earns the calendar days since its previous return, a year of
+    # them the annual rate; the stock a trading day with every return, whichever other
+    # tickers trade on weekends.
+    btc = risk_free["BTC"].dropna()
+    assert btc.to_numpy() == pytest.approx(1.04 ** (1 / 365) - 1, rel=1e-9)
+    assert (1 + btc.loc["2021-01-02":"2022-01-01"]).prod() == pytest.approx(
+        1.04, rel=1e-12
+    )
+    spy = risk_free["SPY"].dropna()
+    assert spy.to_numpy() == pytest.approx(1.04 ** (1 / 252) - 1, rel=1e-9)
+
+    # Each ticker is annualized with its own observations in a year.
+    ratio = performance.get_sharpe_ratio()
+    annualized = performance.get_sharpe_ratio(annualize=True)
+    assert (annualized["BTC"] / ratio["BTC"]).to_numpy() == pytest.approx(
+        np.sqrt(365), rel=1e-9
+    )
+    assert (annualized["SPY"] / ratio["SPY"]).to_numpy() == pytest.approx(
+        np.sqrt(252), rel=1e-9
+    )
+
+
+def test_stock_returns_earn_the_trading_day_rate(performance_module):
+    daily = performance_module._get_within_historical_data("yearly")
+    risk_free = (daily["Return"] - daily["Excess Return"]).droplevel(0)
+    annual_rate = performance_module._annualized_risk_free_rate_data["daily"]
+    expected = (1 + annual_rate.reindex(risk_free.index).ffill()) ** (1 / 252) - 1
+
+    for ticker in risk_free.columns:
+        observed = risk_free[ticker].notna()
+        assert risk_free.loc[observed, ticker].to_numpy() == pytest.approx(
+            expected[observed].to_numpy(), rel=1e-9
+        )
+
+
+def test_the_rolling_appraisal_ratio_only_uses_earlier_residuals(performance_module):
+    full = performance_module.get_appraisal_ratio(
+        period="monthly", rolling=12, rounding=10
+    )
+
+    # The same calculation on the data up to 2021 gives the same 2021 ratios.
+    performance = copy.copy(performance_module)
+    performance._historical_data = {
+        period: data.loc[:"2021-12-31"] if period in ("daily", "monthly") else data
+        for period, data in performance_module._historical_data.items()
+    }
+    performance._data_cache = {}
+    performance.__dict__.pop("_daily_returns", None)
+    performance.__dict__.pop("_risk_free_rate_per_date", None)
+    performance._risk_free_rate_data = type(performance_module._risk_free_rate_data)(
+        performance._get_risk_free_rate
+    )
+    performance._end_date = "2021-12-31"
+    truncated = performance.get_appraisal_ratio(
+        period="monthly", rolling=12, rounding=10
+    )
+
+    pd.testing.assert_frame_equal(
+        full.loc["2021-01":"2021-12"], truncated.loc["2021-01":"2021-12"]
+    )
+
+
+def test_the_rolling_fama_decomposition_keeps_total_risk_above_beta(
+    performance_module,
+):
+    rolling = performance_module.get_fama_decomposition(
+        period="monthly", rolling=12, rounding=10
+    )
+    returns = performance_module._historical_data["monthly"]["Return"]
+    risk_free = performance_module._risk_free_rate_data["monthly"]
+    market_premium = (returns["Benchmark"] - risk_free).reindex(rolling.index)
+
+    # Diversification = (Total Risk Beta - Beta) * (Benchmark Return - Risk Free Rate)
+    # with a Total Risk Beta of at least |Beta|, so it has the sign of the market premium
+    # whenever Beta is positive.
+    for ticker in ("AAPL", "MSFT"):
+        diversification = rolling[(ticker, "Diversification")]
+        valid = diversification.notna() & (market_premium.abs() > 0)
+        assert (
+            np.sign(diversification[valid]) * np.sign(market_premium[valid]) >= 0
+        ).all()
+
+
+def test_the_ulcer_performance_index_measures_drawdowns_from_the_running_peak(
+    performance_module,
+):
+    default = performance_module.get_ulcer_performance_index(rounding=10)
+    running_peak = performance_module.get_ulcer_performance_index(
+        rolling=None, rounding=10
+    )
+    trailing = performance_module.get_ulcer_performance_index(rolling=14, rounding=10)
+
+    pd.testing.assert_frame_equal(default, running_peak)
+    assert not np.allclose(default.to_numpy(), trailing.to_numpy())
+
+
+def test_the_deflated_sharpe_ratio_counts_non_overlapping_trials(performance_module):
+    excess = performance_module._get_column("yearly", "Excess Return", True)
+    window = int(excess.groupby(level=0).size().median())
+    trials = excess.droplevel(0).count() // window
+
+    default = performance_module.get_sharpe_ratio(method="deflated", rounding=10)
+    for ticker, n_trials in trials.items():
+        explicit = performance_module.get_sharpe_ratio(
+            method="deflated", n_trials=int(n_trials), rounding=10
+        )
+        pd.testing.assert_series_equal(default[ticker], explicit[ticker])
+
+
+def test_the_deflated_sharpe_ratio_counts_the_returns_of_each_ticker():
+    performance = _weekend_performance()
+    excess = performance._get_column("yearly", "Excess Return", True)
+    default = performance.get_sharpe_ratio(method="deflated", rounding=10)
+
+    # The window of each ticker is the median number of its own returns in a year, not of
+    # the rows, which also hold the weekends only the cryptocurrency trades on.
+    for ticker in ("BTC", "SPY"):
+        window = int(excess[ticker].groupby(level=0).count().median())
+        explicit = performance.get_sharpe_ratio(
+            method="deflated", trials_window=window, rounding=10
+        )
+        assert default[ticker].notna().all()
+        pd.testing.assert_series_equal(default[ticker], explicit[ticker])
+
+
+def test_the_rolling_appraisal_ratio_starts_after_one_window(performance_module):
+    ratio = performance_module.get_appraisal_ratio(
+        period="monthly", rolling=12, rounding=10
+    )
+    returns = performance_module._historical_data["monthly"]["Return"]
+    risk_free = performance_module._risk_free_rate_data["monthly"]
+    first_return = returns["AAPL"].first_valid_index()
+
+    # The residuals of each window come from the regression over that window, so the
+    # first ratio follows the first 12 returns rather than two windows of them.
+    assert ratio["AAPL"].first_valid_index() == first_return + 11
+
+    end = ratio.index[-1]
+    window = returns.loc[end - 11 : end]
+    y = window["AAPL"] - risk_free.reindex(window.index)
+    x = window["Benchmark"] - risk_free.reindex(window.index)
+    slope, intercept = np.polyfit(x, y, 1)
+    residual_standard_deviation = np.sqrt(((y - slope * x - intercept) ** 2).sum() / 11)
+    alpha = performance_module.get_jensens_alpha(
+        period="monthly", rolling=12, rounding=10
+    )
+    assert ratio.loc[end, "AAPL"] == pytest.approx(
+        alpha.loc[end, "AAPL"] / residual_standard_deviation, abs=1e-8
+    )

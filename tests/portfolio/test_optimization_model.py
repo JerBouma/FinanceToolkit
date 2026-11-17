@@ -455,6 +455,17 @@ def test_semicovariance_and_exponential_covariance_match_pyportfolioopt():
     assert exponential.loc["C", "C"] == pytest.approx(4.810124354274288e-05, rel=1e-12)
 
 
+def test_the_exponential_covariance_weights_deviations_from_the_sample_mean():
+    deviations = SHRINKAGE_RETURNS - SHRINKAGE_RETURNS.mean()
+    exponential = optimization_model.get_exponential_covariance(SHRINKAGE_RETURNS)
+
+    # Normalized weights (1 - 2 / (span + 1)) ** age on the deviations from the sample mean.
+    expected = (
+        (deviations["A"] * deviations["B"]).ewm(span=180, adjust=True).mean().iloc[-1]
+    )
+    assert exponential.loc["A", "B"] == pytest.approx(expected, rel=1e-12)
+
+
 def test_shrinkage_keeps_the_average_variance_and_pulls_correlations_in():
     sample = SHRINKAGE_RETURNS.cov(ddof=0)
     covariance, _ = optimization_model.get_ledoit_wolf_covariance(SHRINKAGE_RETURNS)

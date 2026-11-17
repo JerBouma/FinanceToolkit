@@ -138,6 +138,70 @@ def test_get_years_to_maturity_counts_actual_coupon_periods():
     )
 
 
+@pytest.mark.parametrize(
+    ("maturity", "coupon", "price", "accrued", "yield_to_maturity", "duration"),
+    [
+        # Notes maturing on a month's last day pay on the last day of every coupon month
+        # (30 April and 31 October); QuantLib's FixedRateBond on ActualActual(ISMA) with an
+        # end-of-month schedule, settled on 5 November 2026.
+        (date(2028, 4, 30), 0.0375, 99.5, 0.05180, 0.0409986, 1.42937),
+        (date(2028, 2, 29), 0.04, 100.1, 0.72928, 0.0391786, 1.26372),
+        (date(2028, 6, 30), 0.04, 100.1, 1.39130, 0.0393429, 1.56340),
+        (date(2031, 10, 31), 0.04125, 100.6875, 0.05698, 0.0397154, 4.46823),
+        (date(2036, 8, 15), 0.04625, 98.4375, 1.03057, 0.0482648, 7.69144),
+    ],
+)
+def test_get_years_to_maturity_end_of_month_against_quantlib(
+    maturity, coupon, price, accrued, yield_to_maturity, duration
+):
+    years = bond_data_model.get_years_to_maturity(date(2026, 11, 5), maturity)
+
+    assert bond_model.get_accrued_interest(100, coupon, years, 2) == pytest.approx(
+        accrued, abs=1e-5
+    )
+    assert bond_data_model.get_bond_analytics(coupon, years, price) == pytest.approx(
+        (yield_to_maturity, duration), abs=1e-5
+    )
+
+
+@pytest.mark.parametrize(
+    ("settlement", "maturity", "coupon", "price", "accrued", "yield_to_maturity"),
+    [
+        # QuantLib's FixedRateBond on Thirty360(BondBasis), end-of-month where the maturity
+        # is a month's last day.
+        (date(2026, 11, 5), date(2033, 5, 10), 0.04, 98.0, 1.944444, 0.04355857),
+        (date(2026, 11, 5), date(2028, 4, 30), 0.0375, 99.5, 0.052083, 0.04099879),
+        (date(2026, 11, 5), date(2046, 2, 1), 0.049, 92.5, 1.279444, 0.05537891),
+        (date(2026, 11, 5), date(2036, 8, 15), 0.04625, 98.4375, 1.027778, 0.04826467),
+        (date(2026, 11, 30), date(2030, 5, 31), 0.045, 100.4, 0.0, 0.04375497),
+        # 31 August to 28 February counts 178 days on 30/360, so QuantLib pays a coupon of
+        # 178/360 of the rate; the accrued interest is the same, 65 days.
+        (date(2026, 11, 5), date(2031, 2, 28), 0.05, 101.2, 0.902778, None),
+    ],
+)
+def test_get_years_to_maturity_30_360_against_quantlib(
+    settlement, maturity, coupon, price, accrued, yield_to_maturity
+):
+    years = bond_data_model.get_years_to_maturity(
+        settlement, maturity, day_count="30/360"
+    )
+
+    assert bond_model.get_accrued_interest(100, coupon, years, 2) == pytest.approx(
+        accrued, abs=1e-6
+    )
+    if yield_to_maturity is not None:
+        assert bond_model.get_yield_to_maturity(
+            100, coupon, years, price, 2, guess=0.04, tolerance=1e-12
+        ) == pytest.approx(yield_to_maturity, abs=1e-8)
+
+
+def test_get_years_to_maturity_rejects_unknown_day_count():
+    with pytest.raises(ValueError, match="day count"):
+        bond_data_model.get_years_to_maturity(
+            date(2026, 11, 5), date(2030, 5, 31), day_count="act/360"
+        )
+
+
 def test_get_bond_analytics():
     # A bond priced at par on a coupon date yields its coupon.
     yield_to_maturity, duration = bond_data_model.get_bond_analytics(0.05, 10, 100)
@@ -168,6 +232,55 @@ def test_get_bill_analytics():
     assert 0 < duration < 182 / 365
 
     assert all(np.isnan(value) for value in bond_data_model.get_bill_analytics(0, 99))
+
+
+@pytest.mark.parametrize(
+    ("days", "bond_equivalent_yield", "price", "duration", "dv01", "convexity"),
+    [
+        # QuantLib's ZeroCouponBond at a simple Actual365Fixed rate: the price and the
+        # modified duration, DV01 and convexity from its prices around the yield.
+        (28, 0.039, 99.7017143232, 0.0764835068, 0.0007625537, 0.011699),
+        (91, 0.04, 99.0125868056, 0.2468532985, 0.0024441584, 0.121873),
+        (182, 0.0405, 98.0205225434, 0.4887598658, 0.0047908498, 0.477772),
+    ],
+)
+def test_get_bill_measures_against_quantlib(
+    days, bond_equivalent_yield, price, duration, dv01, convexity
+):
+    years = days / 365
+    measures = bond_data_model.get_bill_measures(years, bond_equivalent_yield)
+
+    assert bond_data_model.get_bill_price(
+        years, bond_equivalent_yield
+    ) == pytest.approx(price, abs=1e-9)
+    assert measures["Macaulay's Duration"] == pytest.approx(years)
+    assert measures["Modified Duration"] == pytest.approx(duration, abs=1e-9)
+    assert measures["DV01"] == pytest.approx(dv01, abs=1e-9)
+    assert measures["Convexity"] == pytest.approx(convexity, abs=1e-5)
+
+
+def test_get_bill_measures_beyond_half_a_year():
+    # Beyond half a year the price compounds once, (1 + y / 2) * (1 + y (t - 0.5)), the
+    # pricing get_bond_equivalent_yield inverts, and the duration is its log derivative.
+    years, bond_equivalent_yield = 300 / 365, 0.042
+    discount_yield = 0.04
+    price = 100 * (1 - discount_yield * 300 / 360)
+    assert bond_data_model.get_bill_price(
+        years, bond_model.get_bond_equivalent_yield(discount_yield, 300)
+    ) == pytest.approx(price)
+
+    measures = bond_data_model.get_bill_measures(years, bond_equivalent_yield)
+    step = 1e-7
+    numerical = (
+        bond_data_model.get_bill_price(years, bond_equivalent_yield - step)
+        - bond_data_model.get_bill_price(years, bond_equivalent_yield + step)
+    ) / (2 * step * bond_data_model.get_bill_price(years, bond_equivalent_yield))
+    assert measures["Modified Duration"] == pytest.approx(numerical, abs=1e-8)
+    assert measures["Modified Duration"] == pytest.approx(0.807339331, abs=1e-9)
+
+    # get_bill_analytics takes its duration from the same pricing.
+    yield_to_maturity, duration = bond_data_model.get_bill_analytics(91, 98.99)
+    assert duration == pytest.approx((91 / 365) / (1 + yield_to_maturity * 91 / 365))
 
 
 def test_interpolate_curve():
@@ -403,8 +516,15 @@ def test_get_bond_universe(bond_universe):
     # The holdings of 6 November are valued at the close of 5 November.
     assert set(bonds["Price Date"]) == {"2026-11-05"}
 
-    years = bond_data_model.get_years_to_maturity(date(2026, 11, 5), date(2033, 5, 10))
+    # Corporate bonds count their days on the 30/360 Bond Basis; QuantLib's FixedRateBond on
+    # Thirty360(BondBasis) gives a yield of 4.355857% and a modified duration of 5.556143.
+    years = bond_data_model.get_years_to_maturity(
+        date(2026, 11, 5), date(2033, 5, 10), day_count="30/360"
+    )
     yield_to_maturity, duration = bond_data_model.get_bond_analytics(0.04, years, 98)
+    assert [yield_to_maturity, duration] == pytest.approx(
+        [0.04355857, 5.556143], abs=1e-6
+    )
     curve = pd.Series({"1Y": 0.04, "10Y": 0.045, "30Y": 0.05})
     treasury = bond_data_model.interpolate_curve(curve, pd.Series([years])).iloc[0]
     assert bonds.loc[

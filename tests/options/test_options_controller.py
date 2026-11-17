@@ -773,6 +773,11 @@ def option_market(monkeypatch, options_module):
         options_model, "get_option_expiry_dates", lambda ticker: expiries
     )
     monkeypatch.setattr(options_model, "get_option_chains", chains)
+    # Valued at today's close in New York, so the time to expiration is the whole days the
+    # chains are priced with and the results do not depend on the time the tests run.
+    monkeypatch.setattr(
+        options_module, "_valuation_time", today + pd.Timedelta(hours=16)
+    )
     labels = {date: f"Expiry {number}" for number, date in enumerate(expiries, 1)}
     return options_module, labels
 
@@ -1116,3 +1121,131 @@ def test_a_start_date_before_the_data_or_not_a_date_is_refused(options_module, c
     caplog.clear()
     assert options_module.get_delta(start_date="not a date").empty
     assert "is not a valid date" in caplog.text
+
+
+def test_the_time_to_expiration_runs_to_the_close_on_the_expiration_date(
+    option_market, monkeypatch
+):
+    from financetoolkit.options.market import market_metrics_model  # noqa: PLC0415
+
+    module, labels = option_market
+    ticker = module._tickers[0]
+    today = pd.Timestamp.today().normalize()
+    # Six hours before today's close in New York, 10 days before the first expiry.
+    monkeypatch.setattr(module, "_valuation_time", today + pd.Timedelta(hours=10))
+    near, following = list(labels)[:2]
+
+    time_to_expiration = module._expiry_inputs(ticker, near)[3]
+
+    assert time_to_expiration == pytest.approx((10 * 24 + 6) / (365 * 24))
+
+    # The model-free variance and its interpolation weights use that same time.
+    variances, weights = [], []
+    variance = market_metrics_model.get_model_free_variance
+    interpolate = market_metrics_model.get_constant_maturity_volatility
+
+    def recorded_variance(calls, puts, time, rate):
+        variances.append(time)
+        return variance(calls, puts, time, rate)
+
+    def recorded_weights(near_variance, near_days, next_variance, next_days, days):
+        weights.extend([near_days, next_days])
+        return interpolate(near_variance, near_days, next_variance, next_days, days)
+
+    monkeypatch.setattr(
+        market_metrics_model, "get_model_free_variance", recorded_variance
+    )
+    monkeypatch.setattr(
+        market_metrics_model, "get_constant_maturity_volatility", recorded_weights
+    )
+    result = module._model_free_volatility(ticker, days=20)
+
+    assert result["Near-Term Expiration"] == near
+    assert result["Next-Term Expiration"] == following
+    assert variances[0] == pytest.approx(time_to_expiration)
+    assert weights == pytest.approx([time * 365 for time in variances])
+
+
+def test_an_expiry_that_has_closed_is_left_out(option_market, monkeypatch):
+    module, labels = option_market
+    first = list(labels)[0]
+    # After the close on the first expiration date.
+    monkeypatch.setattr(
+        module, "_valuation_time", pd.Timestamp(first) + pd.Timedelta(hours=17)
+    )
+
+    ratio = module.get_put_call_ratio(expiration_dates=list(labels))
+
+    assert first not in ratio.index.get_level_values("Expiration")
+    assert set(ratio.index.get_level_values("Expiration")) == {*list(labels)[1:], "All"}
+
+    # The gamma exposure leaves the closed expiry out too, instead of failing as a whole.
+    gamma_exposure = module.get_gamma_exposure(expiration_dates=list(labels))
+    assert not gamma_exposure.empty
+
+
+def test_the_market_metrics_use_the_trailing_continuous_dividend_yield(option_market):
+    import numpy as np  # noqa: PLC0415
+
+    module, labels = option_market
+    ticker = module._tickers[0]
+    last_date = module._daily_historical.index[-1]
+
+    dividend_yield = module._expiry_inputs(ticker, list(labels)[0])[5]
+
+    assert dividend_yield == pytest.approx(module._dividend_yield_on(ticker, last_date))
+    assert dividend_yield == pytest.approx(
+        np.log1p(module._daily_dividend_yield.loc[last_date, ticker])
+    )
+
+
+def test_the_implied_volatility_is_solved_from_mid_prices_and_the_quoted_price(
+    option_market, monkeypatch
+):
+    import numpy as np  # noqa: PLC0415
+
+    from financetoolkit.options import options_model  # noqa: PLC0415
+
+    module, labels = option_market
+    ticker = module._tickers[0]
+    expiry = list(labels)[1]
+    original = options_model.get_option_chains
+
+    def misleading(tickers, expiration_date, put_option=False):
+        # A stale last price and a history that ends at another price than the quote.
+        return original(tickers, expiration_date, put_option).assign(
+            **{"Last Price": lambda chain: chain["Last Price"] * 1.5}
+        )
+
+    monkeypatch.setattr(options_model, "get_option_chains", misleading)
+    monkeypatch.setitem(module.__dict__, "_prices", module._prices * 1.1)
+
+    # The chains are priced with a rate of 3% and no dividends.
+    implied_volatility = module.get_implied_volatility(
+        expiration_date=expiry, risk_free_rate=0.03, dividend_yield=0.0, rounding=8
+    ).loc[ticker]
+
+    price = float(original([ticker], expiry).loc[ticker, "Underlying Price"].iloc[0])
+    near_the_money = implied_volatility[
+        (implied_volatility.index > 0.9 * price)
+        & (implied_volatility.index < 1.1 * price)
+    ]
+    expected = 0.25 + 0.15 * (price - near_the_money.index.to_numpy()) / price
+    assert len(near_the_money) > 5
+    np.testing.assert_allclose(near_the_money.to_numpy(), expected, atol=2e-3)
+
+
+def test_the_default_implied_volatility_expiry_is_a_day_or_more_away(
+    option_market, monkeypatch
+):
+    from financetoolkit.options import options_model  # noqa: PLC0415
+
+    module, labels = option_market
+    today = pd.Timestamp.today().normalize()
+    expiries = [today.strftime("%Y-%m-%d"), *labels]
+    monkeypatch.setattr(
+        options_model, "get_option_expiry_dates", lambda ticker: expiries
+    )
+    monkeypatch.setattr(module, "_valuation_time", today + pd.Timedelta(hours=10))
+
+    assert module.get_implied_volatility().name == expiries[1]

@@ -788,3 +788,18 @@ def test_rank_across_tickers_compares_with_the_neighbour_toward_the_middle():
 def test_round_half_up_returns_an_infinity_unchanged():
     assert helpers.round_half_up(float("inf"), 2) == float("inf")
     assert helpers.round_half_up("-inf", 2) == float("-inf")
+
+
+def test_a_may_year_end_spreads_its_quarters_over_two_year_labels():
+    from financetoolkit import helpers
+
+    # Oracle's fiscal 2024 runs from June 2023 to May 2024.
+    quarters = helpers.convert_period_end_dates_to_calendar_periods(
+        pd.to_datetime(["2023-08-31", "2023-11-30", "2024-02-29", "2024-05-31"]), True
+    )
+    year = helpers.convert_period_end_dates_to_calendar_periods(
+        pd.to_datetime(["2024-05-31"]), False
+    )
+
+    assert year.astype(str).tolist() == ["2023"]
+    assert quarters.astype(str).tolist() == ["2023Q3", "2023Q4", "2024Q1", "2024Q2"]

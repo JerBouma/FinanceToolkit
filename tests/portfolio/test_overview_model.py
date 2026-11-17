@@ -12,6 +12,7 @@ from financetoolkit.portfolio.overview_model import (
     create_portfolio_overview,
     create_positions_overview,
     create_profit_and_loss_overview,
+    is_open_position,
 )
 
 
@@ -633,3 +634,49 @@ def test_selling_everything_held_in_fractions_does_not_warn(caplog, volumes, met
         )
 
     assert "More units are sold than held" not in caplog.text
+
+
+def test_a_position_sold_in_fractions_is_closed_and_a_short_one_open():
+    volume = pd.Series(
+        {"SOLD": (1.1 + 2.2) - 3.3, "LARGE": 1e8 + 0.1 - 1e8 - 0.1, "SHORT": -5.0}
+    )
+    largest_volume = pd.Series({"SOLD": 3.3, "LARGE": 1e8, "SHORT": 5.0})
+
+    assert volume["SOLD"] > 0
+    assert is_open_position(volume, largest_volume).to_dict() == {
+        "SOLD": False,
+        "LARGE": False,
+        "SHORT": True,
+    }
+
+    # The identifier is the last level of a performance index.
+    by_period = pd.Series(
+        [volume["SOLD"], -5.0],
+        index=pd.MultiIndex.from_tuples([("2024", "SOLD"), ("2024", "SHORT")]),
+    )
+    assert is_open_position(by_period, largest_volume).tolist() == [False, True]
+
+
+def test_the_portfolio_beta_ignores_a_position_sold_in_fractions():
+    # 1.1 + 2.2 - 3.3 leaves 4.4e-16 units, a sliver with a weight but without a beta.
+    dates = pd.period_range("2023-01-02", periods=4, freq="D")
+    index = pd.MultiIndex.from_tuples(
+        [(dates[0], "A"), (dates[0], "OLD"), (dates[1], "OLD"), (dates[2], "OLD")],
+        names=["Date", "Identifier"],
+    )
+
+    overview = create_portfolio_overview(
+        portfolio_name=pd.Series(["A", "OLD", "OLD", "OLD"], index=index),
+        portfolio_volume=pd.Series([10.0, 1.1, 2.2, -3.3], index=index),
+        portfolio_price=pd.Series([100.0, 50.0, 50.0, 50.0], index=index),
+        portfolio_costs=pd.Series([0.0, 0.0, 0.0, 0.0], index=index),
+        latest_returns=pd.Series({"A": 100.0, "OLD": 50.0}),
+        benchmark_prices=pd.Series([100.0] * 4, index=index),
+        benchmark_latest_prices=pd.Series({"A": 100.0, "OLD": 100.0}),
+        volatilities=pd.Series({"A": 0.2, "OLD": np.nan, "Benchmark": 0.1}),
+        betas=pd.Series({"A": 1.2, "OLD": np.nan}),
+        include_portfolio=True,
+    )
+
+    assert overview.loc["OLD", "Weight"] != 0
+    assert overview.loc["Portfolio", "Beta"] == pytest.approx(1.2)

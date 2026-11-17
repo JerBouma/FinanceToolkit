@@ -616,3 +616,86 @@ def test_get_fx_ticker_uses_the_native_symbol_where_one_exists():
     assert currencies_model.get_fx_ticker("EUR", "USD") == "EURUSD=X"
     assert currencies_model.get_fx_ticker("USD", "GBp") == "USDGBp=X"
     assert currencies_model.get_fx_ticker("USD", "ZAc") == "USDZAC"
+
+
+def _change_of_reporting_currency():
+    """A company reporting in GBP until 2021 and in USD from 2022, with USD prices."""
+    periods = pd.PeriodIndex(["2020", "2021", "2022"], freq="Y")
+    reported = pd.DataFrame([["GBP", "GBP", "USD"]], index=["SHEL"], columns=periods)
+    days = pd.period_range("2019-01-01", "2022-12-31", freq="D")
+    daily = pd.DataFrame(
+        {"GBPUSD=X": np.linspace(1.2, 1.4, len(days)), "USDUSD=X": 1.0}, index=days
+    )
+    period_ends = pd.DataFrame(
+        [[pd.Timestamp(f"{year}-12-31") for year in (2020, 2021, 2022)]],
+        index=["SHEL"],
+        columns=periods,
+    )
+    return periods, reported, daily, period_ends
+
+
+def test_determine_currencies_keeps_the_pair_of_every_period(caplog):
+    periods, reported, _, _ = _change_of_reporting_currency()
+
+    pairs, currencies = currencies_model.determine_currencies(
+        reported, pd.Series({"SHEL": "USD"})
+    )
+
+    assert pairs["SHEL"] == "USDUSD=X"
+    assert pairs.attrs["pairs"].loc["SHEL"].tolist() == [
+        "GBPUSD=X",
+        "GBPUSD=X",
+        "USDUSD=X",
+    ]
+    assert currencies == ["GBPUSD=X", "USDUSD=X"]
+    # The input is left as it is.
+    assert reported.loc["SHEL"].tolist() == ["GBP", "GBP", "USD"]
+    assert "SHEL (GBP from 2020, USD from 2022)" in caplog.text
+    assert currencies_model.get_period_currencies(pairs, "SHEL", periods).tolist() == [
+        "GBPUSD=X",
+        "GBPUSD=X",
+        "USDUSD=X",
+    ]
+
+
+def test_statements_are_translated_from_the_currency_of_each_period():
+    periods, reported, daily, period_ends = _change_of_reporting_currency()
+    pairs, _ = currencies_model.determine_currencies(
+        reported, pd.Series({"SHEL": "USD"})
+    )
+
+    closing = currencies_model.get_statement_exchange_rates(
+        daily, period_ends, pairs, quarter=False, rate="closing"
+    )
+
+    # The GBP years take GBPUSD at their year end, the USD year a rate of one.
+    assert closing["SHEL"].tolist() == pytest.approx(
+        [
+            daily.loc["2020-12-31", "GBPUSD=X"],
+            daily.loc["2021-12-31", "GBPUSD=X"],
+            1.0,
+        ]
+    )
+
+    statement = pd.DataFrame(
+        [[100.0, 120.0, 150.0]],
+        index=pd.MultiIndex.from_tuples([("SHEL", "Total Assets")]),
+        columns=periods,
+    )
+    translated = currencies_model.convert_currencies(statement, pairs, closing)
+
+    assert translated.loc[("SHEL", "Total Assets")].tolist() == pytest.approx(
+        [
+            100.0 * daily.loc["2020-12-31", "GBPUSD=X"],
+            120.0 * daily.loc["2021-12-31", "GBPUSD=X"],
+            150.0,
+        ]
+    )
+
+    # Rates per currency pair rather than per ticker work the same way.
+    by_pair = pd.DataFrame(
+        {"GBPUSD=X": closing["SHEL"], "USDUSD=X": 1.0}, index=periods
+    )
+    pd.testing.assert_frame_equal(
+        currencies_model.convert_currencies(statement, pairs, by_pair), translated
+    )

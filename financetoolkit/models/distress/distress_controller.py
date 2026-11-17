@@ -4,6 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
+from financetoolkit.economics.sources import bea_model
 from financetoolkit.helpers import (
     add_score_zone,
     get_goodwill_and_intangible_assets,
@@ -22,13 +23,12 @@ from financetoolkit.models.distress import (
 )
 from financetoolkit.models.valuation import damodaran_model
 from financetoolkit.ratios import liquidity_model, valuation_model
-from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
+from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     apply_rounding,
-    finalize_dataset,
 )
 
 # ruff: noqa: E501
@@ -108,9 +108,10 @@ class DistressModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
-                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
-                yearly statements.
+            trailing (int | None, optional): The number of periods the flows are summed over; the balances
+                are those at the end of the period, the statement-date figures the score was
+                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
+                the score was estimated on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below the lower cut-off of
                 the chosen model, "Grey" up to the upper one and "Safe" from it (see above). Not with growth or
                 standardize. Defaults to False.
@@ -129,6 +130,9 @@ class DistressModels:
             price, and the Z''-Score and Z''-EM score leave out sales to total assets.
             - The book value of equity is the Total Shareholder Equity, which excludes minority interests.
             - EBIT is the reported Operating Income, as in the EBIT based ratios of the Ratios module.
+            - The market value of equity is the closing share price at the end of the fiscal period (the
+            filing day with point_in_time) times the period's weighted average shares, taken at the date
+            of the balance sheet it is compared with.
 
         References:
             - Altman, E. I. (1968). Financial Ratios, Discriminant Analysis and the Prediction of Corporate
@@ -178,9 +182,8 @@ class DistressModels:
         altman_z_score = {}
 
         def balance_item(item: str) -> pd.DataFrame:
-            """A balance sheet item, averaged over the trailing periods when given."""
-            values = self._balance_sheet_statement.loc[:, item, :]
-            return values.T.rolling(trailing).mean().T if trailing else values
+            """A balance sheet item at the end of the period."""
+            return self._balance_sheet_statement.loc[:, item, :]
 
         total_assets = balance_item("Total Assets")
         total_liabilities = balance_item("Total Liabilities")
@@ -212,28 +215,21 @@ class DistressModels:
         )
 
         if model == "original":
-            years = self._balance_sheet_statement.columns
-            begin, end = str(years[0]), str(years[-1])
+            share_prices = self._period_prices()
 
-            share_prices = (
-                self._historical_data["quarterly" if self._quarterly else "yearly"]
-                .loc[begin:end, "Close"][self._tickers]
-                .T
-            )
-
-            average_shares = (
-                self._income_statement.loc[:, "Weighted Average Shares Diluted", :]
-                if diluted
-                else self._income_statement.loc[:, "Weighted Average Shares", :]
-            )
+            average_shares = self._income_statement.loc[
+                :,
+                (
+                    "Weighted Average Shares Diluted"
+                    if diluted
+                    else "Weighted Average Shares"
+                ),
+                :,
+            ]
 
             market_cap = valuation_model.get_market_cap(
                 share_price=share_prices,
-                total_shares_outstanding=(
-                    average_shares.T.rolling(trailing).mean().T
-                    if trailing
-                    else average_shares
-                ),
+                total_shares_outstanding=average_shares,
             )
 
             equity_ratio_name = "Market Value to Total Liabilities"
@@ -257,7 +253,7 @@ class DistressModels:
             revenue = self._income_statement.loc[:, "Revenue", :]
             altman_z_score["Sales to Total Assets"] = (
                 altman_model.get_sales_to_total_assets_ratio(
-                    sales=revenue.T.rolling(trailing).sum().T if trailing else revenue,
+                    sales=helpers.trailing_sum(revenue, trailing),
                     total_assets=total_assets,
                 )
             )
@@ -275,13 +271,6 @@ class DistressModels:
             equity_to_total_liabilities_ratio=altman_z_score[equity_ratio_name],
             sales_to_total_assets_ratio=altman_z_score.get("Sales to Total Assets"),
             model=model,
-        )
-
-        altman_results = (
-            concat_frames(altman_z_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
         )
 
         # The models were estimated on non-financial companies. A company without any cost
@@ -303,16 +292,8 @@ class DistressModels:
                 ", ".join(not_applicable),
             )
 
-        altman_results = finalize_dataset(
-            dataset=altman_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
+        altman_results = self._finalize_components(
+            altman_z_score, rounding, growth, lag, standardize
         )
 
         if zone and not growth and not standardize:
@@ -324,6 +305,32 @@ class DistressModels:
             )
 
         return altman_results
+
+    def _gross_national_product_price_level(self, columns: pd.PeriodIndex) -> pd.Series:
+        """
+        The US GNP implicit price deflator rebased to 1968 = 100, the price-level index of
+        Ohlson's SIZE term, per statement period: the deflator of the year the period falls
+        in, and for a year the U.S. Bureau of Economic Analysis has not published yet, the
+        latest published year. NaN, with a warning, when the deflator cannot be retrieved.
+        """
+        deflator = bea_model.get_gross_national_product_deflator()
+        if deflator.empty:
+            logger.warning(
+                "The GNP price deflator of the U.S. Bureau of Economic Analysis could not be "
+                "retrieved, so the Ohlson O-Score's Log of Total Assets and the score are NaN."
+            )
+            return pd.Series(float("nan"), index=columns)
+
+        yearly = deflator["United States"].dropna()
+        yearly = yearly / yearly[pd.Period("1968", freq="Y")] * 100
+        years = columns.asfreq("Y")
+        yearly = yearly.reindex(
+            pd.period_range(
+                yearly.index.min(), max(yearly.index.max(), years.max()), freq="Y"
+            )
+        ).ffill()
+
+        return pd.Series(yearly.reindex(years).to_numpy(), index=columns)
 
     @handle_errors
     def get_ohlson_o_score(
@@ -346,7 +353,7 @@ class DistressModels:
 
         The formula is as follows:
 
-            - SIZE = ln(Total Assets)
+            - SIZE = ln(Total Assets / GNP Price-Level Index)
             - TLTA = Total Liabilities / Total Assets
             - WCTA = Working Capital / Total Assets
             - CLCA = Current Liabilities / Current Assets
@@ -365,9 +372,7 @@ class DistressModels:
             threshold that minimized the sum of Type I and Type II misclassification errors on his
             sample. It is deliberately far below the naive 0.50 midpoint because bankruptcy is a
             rare event. Equivalently, in raw O-Score terms the cutoff sits at ln(0.038 / 0.962),
-            i.e. approximately -3.23. Since this implementation omits Ohlson's price-level
-            deflator, its scores sit about 2.6 below Ohlson's scale and this cutoff flags far too few
-            companies (see the Notes).
+            i.e. approximately -3.23.
             - A higher probability indicates a higher likelihood of bankruptcy.
 
         Also known as: Ohlson O-Score, bankruptcy prediction, financial distress score.
@@ -379,9 +384,10 @@ class DistressModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
-                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
-                yearly statements.
+            trailing (int | None, optional): The number of periods the flows are summed over; the balances
+                are those at the end of the period, the statement-date figures the score was
+                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
+                the score was estimated on yearly statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -392,15 +398,12 @@ class DistressModels:
             components.
 
         Notes:
-            - Ohlson's (1980) original SIZE term deflates Total Assets by the US GNP price-level index
-            (rebased to 1968), a US-specific 1970s macro series that isn't available in this toolkit and
-            isn't meaningful outside the original US sample. This implementation omits that deflator and
-            uses ln(Total Assets) in nominal terms instead. This lowers every O-Score by roughly 0.407 *
-            ln(price index); with the US price level of the 2020s at roughly six times its 1968 level (an
-            index of about 600 to 650), that is about 2.6. The resulting probabilities are therefore much
-            lower than in Ohlson's study and the 0.038 cutoff (-3.23) flags far too few companies; it
-            corresponds to roughly -5.8 on this scale. The *ranking* of companies relative to one another
-            within a given currency and period is unaffected.
+            - The GNP Price-Level Index is the US implicit price deflator of the gross national
+            product (U.S. Bureau of Economic Analysis, NIPA table 1.7.9) rebased to 1968 = 100, as in
+            Ohlson (1980), of the year each period falls in; a year not published yet uses the latest
+            published one. It is the US price level for every company, as in Ohlson's US sample, and the
+            total assets are in the units of the statements, so for companies reporting in another
+            currency the SIZE term (and the 0.038 cutoff) is only indicative.
             - Ohlson's original FUTL term uses "Funds from Operations", an accounting-flow concept that
             predates standardized cash flow statements. This implementation approximates Funds from
             Operations with Operating Cash Flow, the standard simplification used in modern
@@ -437,9 +440,9 @@ class DistressModels:
 
         |      |    2021 |    2022 |    2023 |    2024 |    2025 |
         |:-----|--------:|--------:|--------:|--------:|--------:|
-        | CCL  | -5.7604 | -5.4419 | -6.2136 | -6.8358 | -6.78   |
-        | NCLH | -4.4192 | -4.1038 | -5.0639 | -5.269  | -4.9984 |
-        | RCL  | -4.9997 | -5.0496 | -6.2194 | -6.3642 | -6.6839 |
+        | CCL  | -3.1546 | -2.808  | -3.5648 | -4.1767 | -4.1103 |
+        | NCLH | -1.8134 | -1.4699 | -2.4151 | -2.6099 | -2.3287 |
+        | RCL  | -2.3939 | -2.4157 | -3.5705 | -3.7051 | -4.0142 |
         """
         # The score was estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
@@ -447,50 +450,17 @@ class DistressModels:
             trailing = 4
         ohlson_o_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_assets = self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_liabilities = self._balance_sheet_statement.loc[
+            :, "Total Current Liabilities", :
+        ]
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_liabilities = self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-        )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
-        )
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-        )
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
-        )
-        operating_cash_flow = (
-            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        operating_cash_flow = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
 
         working_capital = liquidity_model.get_working_capital(
@@ -500,6 +470,9 @@ class DistressModels:
 
         ohlson_o_score["Log of Total Assets"] = ohlson_model.get_log_of_total_assets(
             total_assets=total_assets,
+            price_level_index=self._gross_national_product_price_level(
+                total_assets.columns
+            ),
         )
 
         ohlson_o_score["Total Liabilities to Total Assets"] = (
@@ -590,26 +563,9 @@ class DistressModels:
             )
         )
 
-        ohlson_results = (
-            concat_frames(ohlson_o_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            ohlson_o_score, rounding, growth, lag, standardize
         )
-
-        ohlson_results = finalize_dataset(
-            dataset=ohlson_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return ohlson_results
 
     @handle_errors
     def get_zmijewski_score(
@@ -652,9 +608,10 @@ class DistressModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
-                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
-                yearly statements.
+            trailing (int | None, optional): The number of periods the flows are summed over; the balances
+                are those at the end of the period, the statement-date figures the score was
+                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
+                the score was estimated on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" from a score of 0, a
                 bankruptcy probability of 0.5 and up (Zmijewski's classification), "Safe" below it. Not with
                 growth or standardize. Defaults to False.
@@ -708,42 +665,14 @@ class DistressModels:
             trailing = 4
         zmijewski_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-        )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-        )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
-        )
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-        )
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        current_assets = self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_liabilities = self._balance_sheet_statement.loc[
+            :, "Total Current Liabilities", :
+        ]
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_liabilities = self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
 
         zmijewski_score["Net Income to Total Assets"] = (
@@ -785,23 +714,8 @@ class DistressModels:
             )
         )
 
-        zmijewski_results = (
-            concat_frames(zmijewski_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        zmijewski_results = finalize_dataset(
-            dataset=zmijewski_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
+        zmijewski_results = self._finalize_components(
+            zmijewski_score, rounding, growth, lag, standardize
         )
 
         if zone and not growth and not standardize:
@@ -852,9 +766,10 @@ class DistressModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
-                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
-                yearly statements.
+            trailing (int | None, optional): The number of periods the flows are summed over; the balances
+                are those at the end of the period, the statement-date figures the score was
+                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
+                the score was estimated on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below Springate's cut-off
                 of 0.862, "Safe" from it. Not with growth or standardize. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -905,42 +820,16 @@ class DistressModels:
             trailing = 4
         springate_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_assets = self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_liabilities = self._balance_sheet_statement.loc[
+            :, "Total Current Liabilities", :
+        ]
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
+        income_before_tax = helpers.trailing_sum(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-        )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
-        )
-        income_before_tax = (
-            self._income_statement.loc[:, "Income Before Tax", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Before Tax", :]
-        )
-        revenue = (
-            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Revenue", :]
+        revenue = helpers.trailing_sum(
+            self._income_statement.loc[:, "Revenue", :], trailing
         )
 
         working_capital = liquidity_model.get_working_capital(
@@ -987,23 +876,8 @@ class DistressModels:
             sales_to_total_assets_ratio=springate_score["Sales to Total Assets"],
         )
 
-        springate_results = (
-            concat_frames(springate_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        springate_results = finalize_dataset(
-            dataset=springate_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
+        springate_results = self._finalize_components(
+            springate_score, rounding, growth, lag, standardize
         )
 
         if zone and not growth and not standardize:
@@ -1053,9 +927,10 @@ class DistressModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
-                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
-                yearly statements.
+            trailing (int | None, optional): The number of periods the flows are summed over; the balances
+                are those at the end of the period, the statement-date figures the score was
+                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
+                the score was estimated on yearly statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1106,34 +981,13 @@ class DistressModels:
             trailing = 4
         grover_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-        )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-        )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
-        )
-        net_income = (
-            self._income_statement.loc[:, "Net Income", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Net Income", :]
+        current_assets = self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_liabilities = self._balance_sheet_statement.loc[
+            :, "Total Current Liabilities", :
+        ]
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
+        net_income = helpers.trailing_sum(
+            self._income_statement.loc[:, "Net Income", :], trailing
         )
 
         working_capital = liquidity_model.get_working_capital(
@@ -1168,26 +1022,9 @@ class DistressModels:
             return_on_assets_ratio=grover_score["Return on Assets"],
         )
 
-        grover_results = (
-            concat_frames(grover_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            grover_score, rounding, growth, lag, standardize
         )
-
-        grover_results = finalize_dataset(
-            dataset=grover_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return grover_results
 
     @handle_errors
     def get_fulmer_h_score(
@@ -1220,7 +1057,8 @@ class DistressModels:
         - H-Score = 5.528 * V1 + 0.212 * V2 + 0.073 * V3 + 1.270 * V4 - 0.120 * V5 + 2.335 * V6 + 0.575 * V7 +
           1.083 * V8 + 0.894 * V9 - 6.075
 
-        With `trailing`, the flows are summed and the balance sheet items averaged over the trailing periods.
+        With `trailing`, the flows are summed over the trailing periods and the balance sheet items are those at
+        the end of the period, the statement-date balances the score was estimated on.
 
         The Fulmer H-Score can be interpreted as follows:
 
@@ -1236,9 +1074,10 @@ class DistressModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
-                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
-                yearly statements.
+            trailing (int | None, optional): The number of periods the flows are summed over; the balances
+                are those at the end of the period, the statement-date figures the score was
+                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
+                the score was estimated on yearly statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1298,98 +1137,29 @@ class DistressModels:
             trailing = 4
         fulmer_h_score = {}
 
-        current_assets = (
-            self._balance_sheet_statement.loc[:, "Total Current Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_assets = self._balance_sheet_statement.loc[:, "Total Current Assets", :]
+        current_liabilities = self._balance_sheet_statement.loc[
+            :, "Total Current Liabilities", :
+        ]
+        total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
+        total_liabilities = self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        total_debt = self._balance_sheet_statement.loc[:, "Total Debt", :]
+        total_equity = self._balance_sheet_statement.loc[:, "Total Equity", :]
+        retained_earnings = self._balance_sheet_statement.loc[:, "Retained Earnings", :]
+        goodwill_and_intangible_assets = get_goodwill_and_intangible_assets(
+            self._balance_sheet_statement
         )
-        current_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Current Liabilities", :]
+        revenue = helpers.trailing_sum(
+            self._income_statement.loc[:, "Revenue", :], trailing
         )
-        total_assets = (
-            self._balance_sheet_statement.loc[:, "Total Assets", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Assets", :]
+        income_before_tax = helpers.trailing_sum(
+            self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        total_liabilities = (
-            self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Liabilities", :]
+        interest_expense = helpers.trailing_sum(
+            self._income_statement.loc[:, "Interest Expense", :], trailing
         )
-        total_debt = (
-            self._balance_sheet_statement.loc[:, "Total Debt", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Debt", :]
-        )
-        total_equity = (
-            self._balance_sheet_statement.loc[:, "Total Equity", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Total Equity", :]
-        )
-        retained_earnings = (
-            self._balance_sheet_statement.loc[:, "Retained Earnings", :]
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else self._balance_sheet_statement.loc[:, "Retained Earnings", :]
-        )
-        goodwill_and_intangible_assets = (
-            get_goodwill_and_intangible_assets(self._balance_sheet_statement)
-            .T.rolling(trailing)
-            .mean()
-            .T
-            if trailing
-            else get_goodwill_and_intangible_assets(self._balance_sheet_statement)
-        )
-        revenue = (
-            self._income_statement.loc[:, "Revenue", :].T.rolling(trailing).sum().T
-            if trailing
-            else self._income_statement.loc[:, "Revenue", :]
-        )
-        income_before_tax = (
-            self._income_statement.loc[:, "Income Before Tax", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Income Before Tax", :]
-        )
-        interest_expense = (
-            self._income_statement.loc[:, "Interest Expense", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._income_statement.loc[:, "Interest Expense", :]
-        )
-        operating_cash_flow = (
-            self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
-            .T.rolling(trailing)
-            .sum()
-            .T
-            if trailing
-            else self._cash_flow_statement.loc[:, "Operating Cash Flow", :]
+        operating_cash_flow = helpers.trailing_sum(
+            self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
 
         working_capital = liquidity_model.get_working_capital(
@@ -1484,26 +1254,9 @@ class DistressModels:
             ],
         )
 
-        fulmer_results = (
-            concat_frames(fulmer_h_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
+        return self._finalize_components(
+            fulmer_h_score, rounding, growth, lag, standardize
         )
-
-        fulmer_results = finalize_dataset(
-            dataset=fulmer_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
-        )
-
-        return fulmer_results
 
     @handle_errors
     def get_taffler_z_score(
@@ -1547,7 +1300,8 @@ class DistressModels:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation: flows are
-                summed and balances averaged over it. Defaults to None, which is 4 on quarterly data (a
+                summed over it and balances are those at the end of the period, the statement-date
+                balances of the paper. Defaults to None, which is 4 on quarterly data (a
                 trailing twelve months), as the score was estimated on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below zero (Taffler's at
                 risk profile), "Safe" from it. Not with growth or standardize. Defaults to False.
@@ -1606,14 +1360,14 @@ class DistressModels:
         taffler_score = {}
 
         def balance_item(item: str) -> pd.DataFrame:
-            """A balance sheet item, averaged over the trailing periods when given."""
-            values = self._balance_sheet_statement.loc[:, item, :]
-            return values.T.rolling(trailing).mean().T if trailing else values
+            """A balance sheet item at the end of the period."""
+            return self._balance_sheet_statement.loc[:, item, :]
 
         def income_item(item: str) -> pd.DataFrame:
             """An income statement item, summed over the trailing periods when given."""
-            values = self._income_statement.loc[:, item, :]
-            return values.T.rolling(trailing).sum().T if trailing else values
+            return helpers.trailing_sum(
+                self._income_statement.loc[:, item, :], trailing
+            )
 
         current_assets = balance_item("Total Current Assets")
         current_liabilities = balance_item("Total Current Liabilities")
@@ -1664,23 +1418,8 @@ class DistressModels:
             no_credit_interval=taffler_score["No-Credit Interval"],
         )
 
-        taffler_results = (
-            concat_frames(taffler_score)
-            .dropna(axis=1, how="all")
-            .swaplevel(0, 1)
-            .reindex(self._tickers, level=0)
-        )
-
-        taffler_results = finalize_dataset(
-            dataset=taffler_results,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
-            growth=growth,
-            lag=lag,
-            rounding=rounding,
-            standardize=standardize,
-            axis="columns",
+        taffler_results = self._finalize_components(
+            taffler_score, rounding, growth, lag, standardize
         )
 
         if zone and not growth and not standardize:
@@ -1725,8 +1464,12 @@ class DistressModels:
         default is the number of standard deviations the asset value is above the default
         point; it reacts to the share price immediately, long before a rating changes.
 
+        The market capitalization, the equity volatility and the risk free rate are measured
+        on the last trading day of each fiscal period (the filing day with point_in_time), the
+        date of the balance sheet the default point comes from.
+
         The risk free rate is the Toolkit's (the 10-year Treasury yield unless set otherwise
-        with `risk_free_rate`) at every period end, where Vassalou and Xing (2004) and
+        with `risk_free_rate`) on that day, where Vassalou and Xing (2004) and
         Bharath and Shumway (2008) use the one-year rate for a one-year horizon; the
         difference moves the distance to default only slightly.
 
@@ -1783,11 +1526,11 @@ class DistressModels:
         |                        |        2021 |        2022 |        2023 |        2024 |        2025 |
         |:-----------------------|------------:|------------:|------------:|------------:|------------:|
         | Equity Value           | 8.37862e+10 | 4.66828e+10 | 4.92598e+10 | 3.98079e+10 | 5.22045e+10 |
-        | Equity Volatility      | 0.4163      | 0.491       | 0.3549      | 0.36        | 0.3319      |
+        | Equity Volatility      | 0.4163      | 0.4912      | 0.3552      | 0.3595      | 0.3312      |
         | Default Point          | 9.3892e+10  | 9.45665e+10 | 9.945e+10   | 1.07294e+11 | 1.1133e+11  |
-        | Asset Value            | 1.76332e+11 | 1.38452e+11 | 1.44842e+11 | 1.42679e+11 | 1.58862e+11 |
-        | Asset Volatility       | 0.1979      | 0.1665      | 0.1207      | 0.1005      | 0.1091      |
-        | Distance to Default    | 3.1586      | 2.3846      | 3.3822      | 3.2046      | 3.598       |
+        | Asset Value            | 1.76267e+11 | 1.37609e+11 | 1.44937e+11 | 1.42304e+11 | 1.58997e+11 |
+        | Asset Volatility       | 0.1979      | 0.1675      | 0.1208      | 0.1006      | 0.1088      |
+        | Distance to Default    | 3.1593      | 2.3871      | 3.379       | 3.2114      | 3.6053      |
         | Probability of Default | 0.0008      | 0.0085      | 0.0004      | 0.0007      | 0.0002      |
         """
         balance = self._balance_sheet_statement
@@ -1800,22 +1543,20 @@ class DistressModels:
         ) + 0.5 * self._rows(balance, "Long Term Debt").fillna(0)
 
         # The volatility of the daily returns over the 252 trading days (at least 60) up to
-        # every period end, annualized, whether the statements are yearly or quarterly.
+        # the day the period's market value is taken on (the fiscal period end, or the filing
+        # day with point_in_time), annualized, whether the statements are yearly or quarterly.
         daily_returns = self._historical_data["daily"]["Return"].reindex(
             columns=self._tickers
         )
-        daily_returns.index = daily_returns.index.to_timestamp()
         volatility = daily_returns.rolling(252, min_periods=60).std() * (252**0.5)
-        period_end = balance.columns.to_timestamp(how="end")
-        equity_volatility = (
-            volatility.reindex(volatility.index.union(period_end))
-            .ffill()
-            .reindex(period_end)
-        )
-        equity_volatility.index = balance.columns
-        equity_volatility = equity_volatility.T
+        equity_volatility = self._values_at_market_dates(volatility)
 
-        risk_free = self._period_risk_free_rate(balance.columns)
+        # The risk free rate on that same day, and the period's rate where the daily rates do
+        # not reach it.
+        period_risk_free = self._period_risk_free_rate(balance.columns)
+        risk_free = self._values_at_market_dates(
+            self._risk_free_rate_data["daily"]["Adj Close"]
+        ).fillna(period_risk_free)
 
         model_metrics = [
             "Default Point",
@@ -1841,18 +1582,13 @@ class DistressModels:
                     equity_value=float(equity_value.loc[ticker, period]),
                     equity_volatility=float(equity_volatility.loc[ticker, period]),
                     default_point=float(default_point.loc[ticker, period]),
-                    risk_free_rate=float(risk_free.get(period, float("nan"))),
+                    risk_free_rate=float(risk_free.loc[ticker, period]),
                     time_horizon=time_horizon,
                 )
                 for metric in model_metrics:
                     results[metric].loc[ticker, period] = model[metric]
 
-        merton = self._combine(results).dropna(axis=1, how="all")
-        merton = apply_rounding(
-            merton, rounding if rounding is not None else self._rounding
-        )
-
-        return merton.loc[:, self._start_date : self._end_date]
+        return self._finish_score(results, rounding, first_columns=0)
 
     @handle_errors
     def get_campbell_hilscher_szilagyi_score(
@@ -2002,16 +1738,7 @@ class DistressModels:
         periods = balance.columns
         tickers = self._tickers
 
-        dates = self._period_end_dates
-        if dates is None or dates.empty:
-            dates = pd.DataFrame(
-                {
-                    period: period.to_timestamp(how="end").normalize()
-                    for period in periods
-                },
-                index=tickers,
-            )
-        dates = dates.reindex(index=tickers, columns=periods).apply(pd.to_datetime)
+        dates = self._market_dates()
 
         # The daily data from a year before the start date, so that the excess returns of
         # the first periods have their twelve months.
@@ -2149,12 +1876,11 @@ class DistressModels:
             "Failure Probability": chs_model.get_chs_failure_probability(chs_score),
         }
 
-        chs = self._combine(
-            {name: frame.astype(float) for name, frame in results.items()}
-        ).dropna(axis=1, how="all")
-        chs = apply_rounding(chs, rounding if rounding is not None else self._rounding)
-
-        return chs.loc[:, self._start_date : self._end_date]
+        return self._finish_score(
+            {name: frame.astype(float) for name, frame in results.items()},
+            rounding,
+            first_columns=0,
+        )
 
     @handle_errors
     def get_synthetic_credit_rating(
@@ -2204,9 +1930,11 @@ class DistressModels:
             Spread, Risk Free Rate and Pre-tax Cost of Debt.
 
         Notes:
-        - A company that reports an interest expense of zero gets the best rating; its
-          coverage ratio, which is infinite, shows as NaN. A period without a reported
-          interest expense gets no rating.
+        - A company without debt that reports an interest expense of zero and a positive EBIT
+          gets the best rating; its coverage ratio, which is infinite, shows as NaN. A period
+          without a reported interest expense, with an interest expense of zero next to debt
+          (interest the statements do not report) or with an interest expense of zero and an
+          operating loss gets no rating.
         - A coverage ratio below the lowest bound of the table gets the worst rating.
         - The market capitalization is compared with five billion in the reporting
           currency; for companies that do not report in US dollars, pass the firm type.
@@ -2228,23 +1956,23 @@ class DistressModels:
 
         Which returns:
 
-        |                                     | 2021     | 2022    | 2023    | 2024    | 2025    |
-        |:------------------------------------|:---------|:--------|:--------|:--------|:--------|
-        | ('AAPL', 'Interest Coverage Ratio') | 41.1905  | 40.7496 | 29.062  | nan     | nan     |
-        | ('AAPL', 'Rating')                  | Aaa/AAA  | Aaa/AAA | Aaa/AAA | Aaa/AAA | Aaa/AAA |
-        | ('AAPL', 'Default Spread')          | 0.004    | 0.004   | 0.004   | 0.004   | 0.004   |
-        | ('AAPL', 'Risk Free Rate')          | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
-        | ('AAPL', 'Pre-tax Cost of Debt')    | 0.0184   | 0.0336  | 0.0437  | 0.0461  | 0.0469  |
-        | ('F', 'Interest Coverage Ratio')    | 2.7915   | 5.0905  | 4.1306  | 4.5695  | 2.0191  |
-        | ('F', 'Rating')                     | Baa2/BBB | A2/A    | A3/A-   | A2/A    | Ba2/BB  |
-        | ('F', 'Default Spread')             | 0.0111   | 0.0078  | 0.0089  | 0.0078  | 0.0184  |
-        | ('F', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
-        | ('F', 'Pre-tax Cost of Debt')       | 0.0255   | 0.0374  | 0.0486  | 0.0499  | 0.0613  |
-        | ('T', 'Interest Coverage Ratio')    | 3.8675   | -0.7472 | 3.7011  | 3.5969  | 3.6743  |
-        | ('T', 'Rating')                     | A3/A-    | D2/D    | A3/A-   | A3/A-   | A3/A-   |
-        | ('T', 'Default Spread')             | 0.0089   | 0.19    | 0.0089  | 0.0089  | 0.0089  |
-        | ('T', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421  | 0.0429  |
-        | ('T', 'Pre-tax Cost of Debt')       | 0.0233   | 0.2196  | 0.0486  | 0.051   | 0.0518  |
+        |                                     | 2021     | 2022    | 2023    | 2024     | 2025    |
+        |:------------------------------------|:---------|:--------|:--------|:---------|:--------|
+        | ('AAPL', 'Interest Coverage Ratio') | 41.1905  | 40.7496 | 29.062  | nan      | nan     |
+        | ('AAPL', 'Rating')                  | Aaa/AAA  | Aaa/AAA | Aaa/AAA | Aaa/AAA  | Aaa/AAA |
+        | ('AAPL', 'Default Spread')          | 0.004    | 0.004   | 0.004   | 0.004    | 0.004   |
+        | ('AAPL', 'Risk Free Rate')          | 0.0144   | 0.0296  | 0.0397  | 0.0421   | 0.0429  |
+        | ('AAPL', 'Pre-tax Cost of Debt')    | 0.0184   | 0.0336  | 0.0437  | 0.0461   | 0.0469  |
+        | ('F', 'Interest Coverage Ratio')    | 2.7915   | 5.0905  | 4.1306  | 4.5695   | 2.0191  |
+        | ('F', 'Rating')                     | Baa2/BBB | A2/A    | A3/A-   | A2/A     | Ba2/BB  |
+        | ('F', 'Default Spread')             | 0.0111   | 0.0078  | 0.0089  | 0.0078   | 0.0184  |
+        | ('F', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421   | 0.0429  |
+        | ('F', 'Pre-tax Cost of Debt')       | 0.0255   | 0.0374  | 0.0486  | 0.0499   | 0.0613  |
+        | ('T', 'Interest Coverage Ratio')    | 3.856    | -0.7472 | 3.7011  | 2.8183   | 3.5511  |
+        | ('T', 'Rating')                     | A3/A-    | D2/D    | A3/A-   | Baa2/BBB | A3/A-   |
+        | ('T', 'Default Spread')             | 0.0089   | 0.19    | 0.0089  | 0.0111   | 0.0089  |
+        | ('T', 'Risk Free Rate')             | 0.0144   | 0.0296  | 0.0397  | 0.0421   | 0.0429  |
+        | ('T', 'Pre-tax Cost of Debt')       | 0.0233   | 0.2196  | 0.0486  | 0.0532   | 0.0518  |
         """
         firm_type = firm_type.lower()
         if firm_type not in ("auto", "large", "small", "financial"):
@@ -2260,11 +1988,16 @@ class DistressModels:
 
         ebit = self._rows(self._income_statement, "Operating Income")
         interest = self._rows(self._income_statement, "Interest Expense").abs()
-        # Only a reported interest expense of zero means there is nothing to cover (an
-        # infinite ratio, the best rating); a missing one leaves the ratio unknown.
+        debt = self._rows(self._balance_sheet_statement, "Total Debt")
+        # Only a reported interest expense of zero with a positive EBIT and no debt means there
+        # is nothing to cover (an infinite ratio, the best rating). An interest expense of zero
+        # next to debt is interest the statements do not report (or include in another line
+        # item), so the ratio is unknown, as it is for a missing interest expense and for an
+        # operating loss without interest, which says nothing about the rating the company
+        # would get if it borrowed.
         coverage = (
             (ebit / interest.where(interest > 0))
-            .mask(interest == 0, float("inf"))
+            .mask((interest == 0) & (ebit > 0) & (debt == 0), float("inf"))
             .where(ebit.notna())
         )
 

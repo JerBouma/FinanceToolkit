@@ -30,11 +30,11 @@ SaleOfInvestment,Sales of Investments
 NetOtherInvestingChanges,Other Investing Activities
 FinancingCashFlow,Cash Flow from Financing
 CashFlowFromContinuingFinancingActivities,Cash Flow from Continuing Financing Activities
-NetIssuancePaymentsOfDebt,Net Issuance Payments of Debt
+NetIssuancePaymentsOfDebt,Net Debt Issued
 NetLongTermDebtIssuance,Long Term Debt Issued
 LongTermDebtIssuance,Gross Long Term Debt Issued
 NetShortTermDebtIssuance,Short Term Debt Issued
-NetCommonStockIssuance,Net Common Stock Issuance
+NetCommonStockIssuance,Net Common Stock Issued
 CommonStockIssuance,Common Stock Issued
 CommonStockPayments,Common Stock Purchased
 CashDividendsPaid,Dividends Paid
@@ -48,7 +48,7 @@ IncomeTaxPaidSupplementalData,Income Taxes Paid
 InterestPaidSupplementalData,Interest Paid
 CapitalExpenditure,Capital Expenditure
 IssuanceOfCapitalStock,Issuance of Capital Stock
-IssuanceOfDebt,Net Debt Issued
+IssuanceOfDebt,Gross Debt Issued
 RepaymentOfDebt,Debt Repayment
 RepurchaseOfCapitalStock,Repurchase of Capital Stock
 FreeCashFlow,Free Cash Flow

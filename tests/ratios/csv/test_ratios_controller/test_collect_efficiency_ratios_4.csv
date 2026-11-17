@@ -1,49 +1,49 @@
 ,,2021,2022,2023
-AAPL,Days of Inventory Outstanding,,-0.0508,-0.0242
-AAPL,Days of Sales Outstanding,,0.0821,0.0355
-AAPL,Operating Cycle,,0.0428,0.0194
-AAPL,Days of Accounts Payable Outstanding,,0.0733,0.0632
-AAPL,Cash Conversion Cycle,,-0.0913,-0.0878
-AAPL,Cash Conversion Efficiency,,0.0315,0.0054
-AAPL,Receivables Turnover,,-0.0758,-0.0343
-AAPL,Inventory Turnover Ratio,,0.0535,0.0248
-AAPL,Accounts Payable Turnover Ratio,,-0.0683,-0.0594
-AAPL,SGA-to-Revenue Ratio,,-0.0535,0.0388
-AAPL,Fixed Asset Turnover,,0.1034,-0.0234
-AAPL,Asset Turnover Ratio,,0.1384,0.0207
+AAPL,Days of Inventory Outstanding,,,0.1426
+AAPL,Days of Sales Outstanding,,,0.163
+AAPL,Operating Cycle,,,0.1573
+AAPL,Days of Accounts Payable Outstanding,,,0.1231
+AAPL,Cash Conversion Cycle,,,-0.1048
+AAPL,Cash Conversion Efficiency,,0.0315,0.0056
+AAPL,Receivables Turnover,,,-0.1401
+AAPL,Inventory Turnover Ratio,,,-0.1248
+AAPL,Accounts Payable Turnover Ratio,,,-0.1096
+AAPL,SGA-to-Revenue Ratio,,-0.0535,0.039
+AAPL,Fixed Asset Turnover,,,-0.0361
+AAPL,Asset Turnover Ratio,,,-0.0048
 AAPL,Operating Ratio,,-0.0366,-0.0001
-AAPL,R&D Intensity Ratio,,-0.0016,0.1388
+AAPL,R&D Intensity Ratio,,-0.0023,0.1399
 AAPL,S&M to Revenue Ratio,,,
 AAPL,G&A to Revenue Ratio,,,
-AAPL,SBC to Revenue Ratio,,-0.0304,0.148
-AAPL,Deferred Revenue Ratio,,-0.0811,0.0098
-AAPL,Working Capital Turnover Ratio,,-7.1371,0.5357
-AAPL,Capex Intensity,,0.0,-0.0279
+AAPL,SBC to Revenue Ratio,,-0.0313,0.1464
+AAPL,Deferred Revenue Ratio,,-0.0826,0.0058
+AAPL,Working Capital Turnover Ratio,,,-3.715
+AAPL,Capex Intensity,,-0.002,-0.0281
 AAPL,Net Capital Expenditure,,0.8492,-0.6067
 AAPL,Capex to Depreciation,,0.1822,-0.0161
 AAPL,Asset Growth,,,-0.9495
-AAPL,Net Operating Assets,,-0.0975,-0.0923
-MSFT,Days of Inventory Outstanding,,0.2046,-0.1251
-MSFT,Days of Sales Outstanding,,-0.0023,0.0087
-MSFT,Operating Cycle,,0.0328,-0.0178
-MSFT,Days of Accounts Payable Outstanding,,0.0557,-0.0293
-MSFT,Cash Conversion Cycle,,-0.6505,0.2167
-MSFT,Cash Conversion Efficiency,,0.0245,-0.0484
-MSFT,Receivables Turnover,,0.0023,-0.0086
-MSFT,Inventory Turnover Ratio,,-0.1698,0.143
-MSFT,Accounts Payable Turnover Ratio,,-0.0527,0.0302
-MSFT,SGA-to-Revenue Ratio,,-0.0997,-0.0208
-MSFT,Fixed Asset Turnover,,-0.08,-0.1025
-MSFT,Asset Turnover Ratio,,0.0705,0.007
-MSFT,Operating Ratio,,-0.0387,-0.0012
-MSFT,R&D Intensity Ratio,,-0.0389,0.0211
-MSFT,S&M to Revenue Ratio,,-0.1034,-0.0507
-MSFT,G&A to Revenue Ratio,,-0.0854,0.0967
-MSFT,SBC to Revenue Ratio,,0.0136,0.121
-MSFT,Deferred Revenue Ratio,,-0.0465,-0.0101
-MSFT,Working Capital Turnover Ratio,,0.4196,0.2328
-MSFT,Capex Intensity,,0.0483,0.0436
+AAPL,Net Operating Assets,,-0.0974,-0.0924
+MSFT,Days of Inventory Outstanding,,,-0.0407
+MSFT,Days of Sales Outstanding,,,0.0235
+MSFT,Operating Cycle,,,0.0114
+MSFT,Days of Accounts Payable Outstanding,,,0.0005
+MSFT,Cash Conversion Cycle,,,0.1873
+MSFT,Cash Conversion Efficiency,,0.0244,-0.0484
+MSFT,Receivables Turnover,,,-0.0229
+MSFT,Inventory Turnover Ratio,,,0.0424
+MSFT,Accounts Payable Turnover Ratio,,,-0.0005
+MSFT,SGA-to-Revenue Ratio,,-0.0995,-0.0207
+MSFT,Fixed Asset Turnover,,,-0.1185
+MSFT,Asset Turnover Ratio,,,0.0081
+MSFT,Operating Ratio,,-0.0388,-0.0011
+MSFT,R&D Intensity Ratio,,-0.0395,0.0211
+MSFT,S&M to Revenue Ratio,,-0.1032,-0.0506
+MSFT,G&A to Revenue Ratio,,-0.0853,0.0934
+MSFT,SBC to Revenue Ratio,,0.0139,0.1222
+MSFT,Deferred Revenue Ratio,,-0.0463,-0.0107
+MSFT,Working Capital Turnover Ratio,,,0.2515
+MSFT,Capex Intensity,,0.048,0.0434
 MSFT,Net Capital Expenditure,,0.5855,0.2892
-MSFT,Capex to Depreciation,,0.1557,0.0784
-MSFT,Asset Growth,,,0.1115
-MSFT,Net Operating Assets,,0.4416,0.166
+MSFT,Capex to Depreciation,,0.1556,0.0785
+MSFT,Asset Growth,,,0.1112
+MSFT,Net Operating Assets,,0.4414,0.166

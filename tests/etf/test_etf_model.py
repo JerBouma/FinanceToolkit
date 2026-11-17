@@ -117,3 +117,43 @@ def test_contribution_rolls_the_weights_back_to_the_start():
     assert contribution.loc["Y", "Start Weight"] == pytest.approx(0.3)
     assert contribution.loc["Y", "Return"] == pytest.approx(-0.05)
     assert contribution["Contribution"].sum() == pytest.approx(0.3 * 0.1 + 0.3 * -0.05)
+
+
+def test_a_fund_whose_holdings_earnings_cancel_out_has_no_multiple(caplog):
+    weights = pd.Series({"X": 0.5, "Y": 0.3, "Z": 0.2})
+    ratios = pd.DataFrame(
+        {
+            "Price-to-Earnings": {"X": 20.0, "Y": -10.0, "Z": 40.0},
+            "Price-to-Book": {"X": 2.0, "Y": 1.0, "Z": 4.0},
+        }
+    )
+
+    valuation = etf_model.get_look_through_valuation(weights, ratios)
+    # The losses of Y (0.3 / -10) cancel the earnings of X and Z (0.5 / 20 + 0.2 / 40), so
+    # 1 / Σ w / PE is a rounding error (about 4e17) rather than a P/E.
+    assert pd.isna(valuation["Price-to-Earnings"])
+    assert (
+        "The earnings of the holdings add up to a loss or to about zero" in caplog.text
+    )
+    assert valuation["Price-to-Book"] == pytest.approx(
+        1 / (0.5 / 2 + 0.3 / 1 + 0.2 / 4)
+    )
+    assert valuation["Coverage"] == pytest.approx(1)
+
+    losses = etf_model.get_look_through_valuation(
+        weights, ratios.assign(**{"Price-to-Earnings": [20.0, -5.0, 40.0]})
+    )
+    assert pd.isna(losses["Price-to-Earnings"])
+
+
+def test_the_overlap_takes_the_weights_as_listed():
+    incomplete = pd.Series({"X": 0.3, "Y": 0.3})
+    complete = pd.Series({"X": 0.5, "Y": 0.5})
+
+    overlap = etf_model.get_overlap({"a": incomplete, "c": complete})
+    active_share = etf_model.get_active_share({"a": incomplete, "c": complete})
+
+    # The overlap is of the listed 60%, the active share of the scaled proportions.
+    assert overlap.loc["a", "a"] == pytest.approx(0.6)
+    assert overlap.loc["a", "c"] == pytest.approx(0.6)
+    assert active_share.loc["a", "c"] == pytest.approx(0)

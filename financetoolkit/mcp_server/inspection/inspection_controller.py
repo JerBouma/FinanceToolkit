@@ -61,8 +61,8 @@ class ControllerInspector:
                 before today.
             end_date (str | None): Default end date string (YYYY-MM-DD) used for
                 tool signature defaults. When None, defaults to today.
-            benchmark_ticker (str): Default benchmark ticker symbol used for tool
-                signature defaults. Defaults to "SPY".
+            benchmark_ticker (str): Default benchmark ticker symbol, applied when a call
+                leaves benchmark_ticker empty. Defaults to "SPY".
         """
         self._categories: dict[str, str] = categories
         self._skip_params: frozenset[str] = frozenset(skip_params or [])
@@ -468,7 +468,7 @@ class ControllerInspector:
                 P(
                     "benchmark_ticker",
                     POS,
-                    default=self._benchmark_ticker,
+                    default="",
                     annotation=str,
                 ),
             ]
@@ -505,7 +505,7 @@ class ControllerInspector:
                 P(
                     "benchmark_ticker",
                     POS,
-                    default=self._benchmark_ticker,
+                    default="",
                     annotation=str,
                 )
             )
@@ -530,7 +530,7 @@ class ControllerInspector:
 
     @property
     def benchmark_ticker(self) -> str:
-        """Default benchmark ticker symbol used for tool signature defaults."""
+        """Default benchmark ticker symbol, applied when a call leaves benchmark_ticker empty."""
         return self._benchmark_ticker
 
     @property

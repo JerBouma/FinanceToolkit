@@ -451,7 +451,8 @@ def _row(statement, item, ticker="AAPL"):
 
 
 def test_days_ratios_cover_the_whole_trailing_window(ratios_module):
-    # With trailing=2 on annual data, COGS covers two years, so the window is 730 days.
+    # With trailing=2 on annual data, COGS covers two years, so the window is 730 days, and
+    # the inventory is averaged over the three year ends that open and close those years.
     balance = ratios_module._balance_sheet_statement
     income = ratios_module._income_statement
     inventory = _row(balance, "Inventory")
@@ -459,7 +460,7 @@ def test_days_ratios_cover_the_whole_trailing_window(ratios_module):
     year = inventory.index.get_loc(next(p for p in inventory.index if str(p) == YEAR))
 
     expected = (
-        inventory.iloc[year - 1 : year + 1].mean()
+        inventory.iloc[year - 2 : year + 1].mean()
         / cogs.iloc[year - 1 : year + 1].sum()
         * 730
     )
@@ -1755,3 +1756,209 @@ def test_get_net_capital_expenditure(recorder, ratios_module):
 
     recorder.capture(net_capital_expenditure)
     recorder.capture(ratios_module.get_net_capital_expenditure(trailing=2))
+
+
+def _ratios_with(ratios_module, balance=None, period_end_dates=None):
+    from financetoolkit.ratios.ratios_controller import Ratios
+
+    return Ratios(
+        ratios_module._tickers,
+        {
+            "period": ratios_module._historical_data,
+            "daily": ratios_module._daily_historical_data,
+        },
+        ratios_module._balance_sheet_statement if balance is None else balance,
+        ratios_module._income_statement,
+        ratios_module._cash_flow_statement,
+        rounding=None,
+        period_end_dates=period_end_dates,
+    )
+
+
+def test_period_prices_are_taken_at_the_fiscal_period_end(ratios_module):
+    periods = ratios_module._balance_sheet_statement.columns
+    # A fiscal year ending in January is labelled with the calendar year before it.
+    fiscal_ends = pd.DataFrame(
+        {
+            period: [
+                pd.Timestamp(f"{period.year + 1}-01-31"),
+                pd.Timestamp(f"{period.year}-06-30"),
+            ]
+            for period in periods
+        },
+        index=["AAPL", "MSFT"],
+    )
+    ratios = _ratios_with(ratios_module, period_end_dates=fiscal_ends)
+
+    for method in ["get_price_to_earnings_ratio", "get_price_to_book_ratio"]:
+        period = getattr(ratios, method)()
+        daily = getattr(ratios, method)(show_daily=True)
+
+        # The period ratio equals the daily ratio on the day the period ends.
+        assert period.loc["MSFT"].loc["2021"] == pytest.approx(
+            daily.loc["2021-06-30", "MSFT"]
+        )
+        assert period.loc["AAPL"].loc["2021"] == pytest.approx(
+            daily.loc["2022-01-31", "AAPL"]
+        )
+
+    # Fiscal years ending on 31 December are priced as without end dates.
+    december_ends = pd.DataFrame(
+        {period: [period.end_time.normalize()] * 2 for period in periods},
+        index=["AAPL", "MSFT"],
+    )
+    pd.testing.assert_frame_equal(
+        _ratios_with(ratios_module, period_end_dates=december_ends).get_market_cap(),
+        _ratios_with(ratios_module).get_market_cap(),
+    )
+
+
+def test_collected_growth_is_calculated_before_rounding(ratios_module):
+    collected = ratios_module.collect_valuation_ratios(growth=True)
+
+    for item, method in [
+        ("Dividend Yield", "get_dividend_yield"),
+        ("Earnings Yield", "get_earnings_yield"),
+    ]:
+        single = getattr(ratios_module, method)(growth=True)
+
+        for ticker in ["AAPL", "MSFT"]:
+            columns = collected.columns.intersection(single.columns)
+            pd.testing.assert_series_equal(
+                collected.loc[(ticker, item), columns],
+                single.loc[ticker, columns],
+                check_names=False,
+            )
+
+
+def _add_row(statement, item, values):
+    return pd.concat(
+        [
+            statement,
+            pd.DataFrame(
+                [values],
+                index=pd.MultiIndex.from_tuples([("XYZ", item)]),
+                columns=statement.columns,
+            ),
+        ]
+    )
+
+
+def test_quarterly_debt_ratios_default_to_the_trailing_twelve_months():
+    ratios, income = _quarterly_ratios()
+    balance = ratios._balance_sheet_statement
+    cash = ratios._cash_flow_statement
+    total_debt = balance.loc["XYZ"].loc["Total Debt"]
+    net_debt = total_debt - balance.loc["XYZ"].loc["Cash and Cash Equivalents"]
+    operating_cash_flow = 1.5 * cash.loc["XYZ"].loc["Free Cash Flow"]
+
+    ratios._balance_sheet_statement = _add_row(balance, "Net Debt", net_debt.to_numpy())
+    ratios._cash_flow_statement = _add_row(
+        cash, "Cash Flow from Operations", operating_cash_flow.to_numpy()
+    )
+
+    ebitda = (
+        income.loc["XYZ"].loc["Operating Income"].iloc[-4:].sum()
+        + cash.loc["XYZ"].loc["Depreciation and Amortization"].iloc[-4:].sum()
+    )
+
+    # A year of flows against the balance at the end of the last quarter.
+    assert ratios.get_net_debt_to_ebitda_ratio().iloc[0, -1] == pytest.approx(
+        net_debt.iloc[-1] / ebitda
+    )
+    assert ratios.get_gross_debt_to_ebitda_ratio().iloc[0, -1] == pytest.approx(
+        total_debt.iloc[-1] / ebitda
+    )
+    assert ratios.get_cash_flow_coverage_ratio().iloc[0, -1] == pytest.approx(
+        operating_cash_flow.iloc[-4:].sum() / total_debt.iloc[-1]
+    )
+    # trailing=1 gives single quarters.
+    assert ratios.get_cash_flow_coverage_ratio(trailing=1).iloc[0, -1] == pytest.approx(
+        operating_cash_flow.iloc[-1] / total_debt.iloc[-1]
+    )
+
+
+def test_market_value_ratios_use_the_balance_sheet_at_the_period_end(ratios_module):
+    import inspect
+
+    items = ["Price-to-Book", "Price-to-Tangible-Book", "EV-to-Invested-Capital"]
+    trailing = ratios_module.collect_valuation_ratios(trailing=2)
+    default = ratios_module.collect_valuation_ratios()
+
+    # A market value is compared with the balance sheet on the same date, so these
+    # ratios take no trailing window and the collection gives them unchanged.
+    pd.testing.assert_frame_equal(
+        trailing.loc[(slice(None), items), :],
+        default.loc[(slice(None), items), :],
+    )
+
+    for method in [
+        "get_price_to_book_ratio",
+        "get_price_to_tangible_book_ratio",
+        "get_ev_to_invested_capital_ratio",
+    ]:
+        assert (
+            "trailing"
+            not in inspect.signature(getattr(ratios_module, method)).parameters
+        )
+
+
+def test_trailing_one_averages_the_opening_and_closing_balance(ratios_module):
+    for method in [
+        "get_days_of_sales_outstanding",
+        "get_asset_turnover_ratio",
+        "get_return_on_equity",
+        "get_cash_conversion_cycle",
+    ]:
+        pd.testing.assert_frame_equal(
+            getattr(ratios_module, method)(trailing=1),
+            getattr(ratios_module, method)(),
+        )
+
+
+def test_dividend_yield_is_nan_for_a_period_before_the_first_price(ratios_module):
+    dividend_yield = ratios_module.get_dividend_yield(rounding=10)
+    daily = ratios_module._daily_historical_data
+    first_price = daily.index[0]
+
+    # The first period starts before the first price, so its dividends are incomplete.
+    first_period = dividend_yield.columns[0]
+    assert first_period.start_time < first_price.start_time
+    assert dividend_yield[first_period].isna().all()
+
+    dividends = daily["Dividends"].loc["2021"].sum()
+    close = daily["Close"].loc["2021"].iloc[-1]
+    pd.testing.assert_series_equal(
+        dividend_yield["2021"].astype(float),
+        (dividends / close).reindex(dividend_yield.index),
+        check_names=False,
+        rtol=1e-3,
+    )
+
+
+def test_price_to_earnings_growth_divides_unrounded_figures(ratios_module):
+    income = ratios_module._income_statement
+    peg = ratios_module.get_price_to_earnings_growth_ratio(rounding=10)
+    price_to_earnings = ratios_module.get_price_to_earnings_ratio(rounding=15)
+
+    for ticker in ["AAPL", "MSFT"]:
+        eps = (
+            income.loc[(ticker, "Net Income")]
+            / income.loc[(ticker, "Weighted Average Shares Diluted")]
+        )
+        growth = eps.loc[YEAR] / eps.shift(1).loc[YEAR] - 1
+
+        assert peg.loc[ticker].loc[YEAR] == pytest.approx(
+            price_to_earnings.loc[ticker].loc[YEAR] / (growth * 100), rel=1e-8
+        )
+
+
+def test_return_on_equity_excludes_minority_interest(ratios_module):
+    balance = ratios_module._balance_sheet_statement.copy()
+    # A minority interest raises the total equity but not that of the shareholders.
+    balance.loc[("AAPL", "Total Equity")] += 1e10
+
+    pd.testing.assert_frame_equal(
+        _ratios_with(ratios_module, balance=balance).get_return_on_equity(),
+        _ratios_with(ratios_module).get_return_on_equity(),
+    )

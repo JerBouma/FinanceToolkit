@@ -105,7 +105,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -239,7 +240,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -359,7 +361,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -379,24 +382,24 @@ class OutputEconomics:
 
         economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
 
-        economics.get_gross_domestic_product_deflator(countries=['United States', 'Canada', 'Russian Federation'])
+        economics.get_gross_domestic_product_deflator(countries=['United States', 'Canada', 'Russia'])
         ```
 
         Which returns:
 
-        |      |   United States |   Canada |   Russian Federation |
-        |:-----|----------------:|---------:|---------------------:|
-        | 2015 |         100     |  100     |              100     |
-        | 2016 |         100.95  |  100.717 |              102.844 |
-        | 2017 |         102.758 |  103.306 |              108.345 |
-        | 2018 |         105.112 |  105.012 |              119.179 |
-        | 2019 |         106.847 |  106.636 |              123.068 |
-        | 2020 |         108.284 |  107.778 |              124.173 |
-        | 2021 |         113.225 |  116.168 |              146.784 |
-        | 2022 |         121.278 |  125.325 |              173.542 |
-        | 2023 |         125.766 |  127.261 |              185.098 |
-        | 2024 |         128.887 |  130.738 |              204.816 |
-        | 2025 |         132.537 |  134.076 |              214.754 |
+        |      |   United States |   Canada |   Russia |
+        |:-----|----------------:|---------:|---------:|
+        | 2015 |         100     |  100     |  100     |
+        | 2016 |         100.95  |  100.717 |  102.844 |
+        | 2017 |         102.758 |  103.306 |  108.345 |
+        | 2018 |         105.112 |  105.012 |  119.179 |
+        | 2019 |         106.847 |  106.636 |  123.068 |
+        | 2020 |         108.284 |  107.778 |  124.173 |
+        | 2021 |         113.225 |  116.168 |  146.784 |
+        | 2022 |         121.278 |  125.325 |  173.542 |
+        | 2023 |         125.766 |  127.261 |  185.098 |
+        | 2024 |         128.887 |  130.738 |  204.816 |
+        | 2025 |         132.537 |  134.076 |  214.754 |
 
         """
 
@@ -467,7 +470,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -588,7 +592,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -685,7 +690,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -811,7 +817,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -910,7 +917,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1016,7 +1024,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1113,7 +1122,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1212,7 +1222,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1311,7 +1322,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1412,7 +1424,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1432,24 +1445,24 @@ class OutputEconomics:
 
         economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
 
-        economics.get_exports_to_gdp_ratio(countries=['United States', 'Canada', 'Russian Federation'])
+        economics.get_exports_to_gdp_ratio(countries=['United States', 'Canada', 'Russia'])
         ```
 
         Which returns:
 
-        |      |   United States |   Canada |   Russian Federation |
-        |:-----|----------------:|---------:|---------------------:|
-        | 2015 |          0.1241 |   0.3185 |               0.287  |
-        | 2016 |          0.1189 |   0.315  |               0.2585 |
-        | 2017 |          0.1218 |   0.3145 |               0.2609 |
-        | 2018 |          0.1229 |   0.3233 |               0.3079 |
-        | 2019 |          0.1179 |   0.3235 |               0.2843 |
-        | 2020 |          0.1012 |   0.2947 |               0.2552 |
-        | 2021 |          0.1083 |   0.3118 |               0.3    |
-        | 2022 |          0.1165 |   0.3372 |               0.2771 |
-        | 2023 |          0.1105 |   0.3334 |               0.2277 |
-        | 2024 |          0.1097 |   0.3247 |               0.2179 |
-        | 2025 |          0.1079 |   0.3133 |               0.1815 |
+        |      |   United States |   Canada |   Russia |
+        |:-----|----------------:|---------:|---------:|
+        | 2015 |          0.1241 |   0.3185 |   0.287  |
+        | 2016 |          0.1189 |   0.315  |   0.2585 |
+        | 2017 |          0.1218 |   0.3145 |   0.2609 |
+        | 2018 |          0.1229 |   0.3233 |   0.3079 |
+        | 2019 |          0.1179 |   0.3235 |   0.2843 |
+        | 2020 |          0.1012 |   0.2947 |   0.2552 |
+        | 2021 |          0.1083 |   0.3118 |   0.3    |
+        | 2022 |          0.1165 |   0.3372 |   0.2771 |
+        | 2023 |          0.1105 |   0.3334 |   0.2277 |
+        | 2024 |          0.1097 |   0.3247 |   0.2179 |
+        | 2025 |          0.1079 |   0.3133 |   0.1815 |
         """
 
         exports_to_gdp_ratio = gmdb_model.get_exports_to_gdp_ratio(
@@ -1510,7 +1523,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1617,7 +1631,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1728,7 +1743,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1824,7 +1840,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1933,7 +1950,8 @@ class OutputEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to

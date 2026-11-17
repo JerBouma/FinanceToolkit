@@ -193,6 +193,8 @@ class PricesEconomics:
         from 2015, on its latest base) and the Bank for International Settlements for
         every other country (2010 = 100). The base year differs between countries, so
         compare the changes rather than the levels.
+        Countries that publish their consumer prices quarterly, such as Australia and New
+        Zealand, have a value in the last month of each quarter only.
 
         The measure parameter selects the core index (all items less energy and food;
         Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
@@ -239,7 +241,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -388,7 +391,12 @@ class PricesEconomics:
         Finance Toolkit.
 
         The rates are the sources' own figures (published in percent and divided by 100 here),
-        except for Japan, which is calculated from the Statistics Bureau of Japan's CPI.
+        except for Japan, which is calculated from the Statistics Bureau of Japan's CPI, and
+        the US months the BLS has published after the BIS, which are calculated from the
+        BLS's CPI-U.
+
+        Countries that publish their consumer prices quarterly, such as Australia and New
+        Zealand, have a value in the last month of each quarter only.
 
         The formula is as follows:
 
@@ -419,7 +427,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -550,7 +559,8 @@ class PricesEconomics:
                 currency instead of being held as banknotes. Defaults to False.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -692,7 +702,7 @@ class PricesEconomics:
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: PPI, wholesale prices, factory gate prices, upstream inflation.
 
@@ -708,7 +718,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -816,7 +827,7 @@ class PricesEconomics:
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: export prices, XPI, trade prices.
 
@@ -832,7 +843,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -869,9 +881,9 @@ class PricesEconomics:
         | 2026-04 |          0.0931 |      0.0323 |  0.1809 |
         | 2026-05 |          0.1135 |      0.042  |  0.2057 |
         | 2026-06 |          0.0998 |      0.042  |  0.2126 |
-        | 2026-07 |          0.0812 |      0.0525 |  0.1936 |
-        | 2026-08 |          0.0928 |      0.0623 |  0.1796 |
-        | 2026-09 |          0.1163 |      0.0747 |  0.1786 |
+        | 2026-07 |          0.0812 |      0.0525 |  0.195  |
+        | 2026-08 |          0.0928 |      0.0623 |  0.1811 |
+        | 2026-09 |          0.1163 |      0.0747 |  0.1822 |
         """
         check_period_type(period)
 
@@ -938,7 +950,7 @@ class PricesEconomics:
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpi_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: import prices, MPI, trade prices.
 
@@ -954,7 +966,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -993,7 +1006,7 @@ class PricesEconomics:
         | 2026-06 |          0.0675 |      0.0604 |  0.3042 |
         | 2026-07 |          0.0602 |      0.064  |  0.2939 |
         | 2026-08 |          0.0674 |      0.0835 |  0.2506 |
-        | 2026-09 |          0.081  |      0.1072 |  0.2447 |
+        | 2026-09 |          0.081  |      0.1072 |  0.2376 |
         """
         check_period_type(period)
 
@@ -1026,6 +1039,48 @@ class PricesEconomics:
             dropna=True,
         )
 
+    def _with_bis_house_prices_of_china(
+        self, house_prices: pd.DataFrame, quarterly: bool, inflation_adjusted: bool
+    ) -> pd.DataFrame:
+        """
+        Replaces China's OECD house price index with the BIS one.
+
+        The OECD's index for China kept rising after 2021, while the National Bureau of
+        Statistics' prices of newly built homes in 70 cities, which the BIS publishes and
+        the Global Macro Database follows, fell from 2022 and were below a year earlier in
+        almost every month since. China's index therefore comes from the BIS, rebased to
+        2015 = 100 like the OECD indices; a year is the average of its four quarters. When
+        the BIS can't be reached, China is left out rather than shown with the OECD index.
+
+        Args:
+            house_prices (pd.DataFrame): The OECD house price indices, a column per country.
+            quarterly (bool): Whether the indices are quarterly (else yearly).
+            inflation_adjusted (bool): Whether the indices are real (else nominal).
+
+        Returns:
+            pd.DataFrame: The house price indices with China's from the BIS.
+        """
+        house_prices = house_prices.drop(columns="China", errors="ignore")
+        # Read from 2015, the base year, whatever the start date.
+        start_date = min(self._start_date or "2015-01-01", "2015-01-01")
+        china = bis_model.get_residential_property_prices(
+            "CN",
+            inflation_adjusted=inflation_adjusted,
+            start_date=start_date,
+            end_date=self._end_date or pd.Timestamp.today().strftime("%Y-%m-%d"),
+        )
+
+        if china.empty:
+            return house_prices
+
+        china = china / china[china.index.year == 2015].mean() * 100  # noqa: PLR2004
+
+        if not quarterly:
+            years = china.groupby(china.index.asfreq("Y"))
+            china = years.mean()[years.count() == 4]  # noqa: PLR2004
+
+        return house_prices.join(china.rename("China"), how="outer")
+
     @handle_errors
     def get_house_prices(
         self,
@@ -1047,14 +1102,18 @@ class PricesEconomics:
         and existing dwellings, following the recommendations from the RPPI (Residential
         Property Prices Indices) manual.
 
-        By default the data comes from the Global Macro Database (GMDB), annual with
-        2015 = 100. Set gmdb_source=False to retrieve it from the OECD instead, which is
-        the only source with quarterly data: asking for quarterly data takes it from the
-        OECD unless gmdb_source=True is given.
+        By default the data is quarterly, from the OECD, the only source with quarterly
+        data. With quarterly=False the data is annual and comes from the Global Macro
+        Database (GMDB), with 2015 = 100, unless gmdb_source=False is given (or the
+        Economics class was initialized with gmdb_source=False), which takes the annual
+        data from the OECD.
 
         In the OECD data, the real house price index is given by the ratio of the nominal
         house price index to the consumers' expenditure deflator in each country from the
-        OECD national accounts database. Both indices are seasonally adjusted.
+        OECD national accounts database. Both indices are seasonally adjusted. China's
+        index comes from the BIS instead: the National Bureau of Statistics' prices of newly
+        built homes in 70 cities (nominal, or deflated by consumer prices), rebased to
+        2015 = 100. The OECD's own index for China kept rising while these prices fell.
 
         Both are an index based on 2015 = 100.
 
@@ -1079,7 +1138,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1152,6 +1212,9 @@ class PricesEconomics:
                 start_date=self._start_date,
                 end_date=self._end_date,
             )
+            house_prices = self._with_bis_house_prices_of_china(
+                house_prices, quarterly=quarterly, inflation_adjusted=inflation_adjusted
+            )
 
         return finalize_dataset(
             dataset=house_prices,
@@ -1207,7 +1270,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1316,7 +1380,8 @@ class PricesEconomics:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

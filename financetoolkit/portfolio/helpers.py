@@ -6,6 +6,7 @@ import pandas as pd
 import yaml
 
 from financetoolkit.utilities.excel_model import read_excel as read_workbook
+from financetoolkit.utilities.statistics_model import drop_non_finite
 
 
 def read_excel(location: str):
@@ -160,3 +161,26 @@ BENCHMARK_TICKER = "Benchmark"
 
 
 PORTFOLIO_TICKER = "Portfolio"
+
+
+def divide_by_capital(
+    numerator: pd.Series | pd.DataFrame, denominator: pd.Series | pd.DataFrame
+) -> pd.Series | pd.DataFrame:
+    """
+    Divide two objects, returning NaN wherever the denominator is zero or negative.
+
+    A return is only defined against capital that was actually deployed. Dividing by a
+    zero or negative denominator produces an infinite or sign-flipped number that reads
+    as a real result, so those cases are reported as missing instead.
+
+    Args:
+        numerator (pd.Series | pd.DataFrame): The numerator of the division.
+        denominator (pd.Series | pd.DataFrame): The denominator of the division.
+
+    Returns:
+        pd.Series | pd.DataFrame: The element-wise division with non-positive
+            denominators replaced by NaN.
+    """
+    result = numerator / denominator.where(denominator > 0)
+
+    return drop_non_finite(result)

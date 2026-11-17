@@ -1270,7 +1270,9 @@ class VolatilityRisk:
         - Volatility = Std(Daily Returns within the period) * √(Trading Days per Period)
 
         Where Std is the sample standard deviation (ddof=1) and the trading days per period are 252 / 52
-        (weekly), 252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly). The range-based estimators
+        (weekly), 252 / 12 (monthly), 252 / 4 (quarterly) or 252 (yearly). A ticker with returns on weekends,
+        such as a cryptocurrency, has a return on every calendar day and uses 365 days a year instead
+        (365 / 52 weekly), so its Volatility is not understated against the stocks. The range-based estimators
         take the square root of a daily variance and scale it the same way, with H, L, O and C the daily
         High, Low, Open and Close, C_(-1) the previous Close, Mean the average and Var the sample variance
         (ddof=1) over the days in the period:
@@ -1358,11 +1360,11 @@ class VolatilityRisk:
 
         | Date   |   EURUSD |   BTCUSD |   ^GSPC |   GCUSD |   Benchmark |
         |:-------|---------:|---------:|--------:|--------:|------------:|
-        | 2021   |   0.0574 |   0.6758 |  0.1    |  0.1156 |      0.0993 |
-        | 2022   |   0.091  |   0.531  |  0.189  |  0.1216 |      0.1897 |
-        | 2023   |   0.0764 |   0.3662 |  0.1042 |  0.1088 |      0.104  |
-        | 2024   |   0.0665 |   0.4441 |  0.098  |  0.1201 |      0.0975 |
-        | 2025   |   0.0831 |   0.3485 |  0.1457 |  0.1554 |      0.152  |
+        | 2021   |   0.0679 |   0.8133 |  0.1303 |  0.1752 |      0.1293 |
+        | 2022   |   0.1199 |   0.639  |  0.2417 |  0.1881 |      0.2424 |
+        | 2023   |   0.0895 |   0.4408 |  0.1309 |  0.1652 |      0.1308 |
+        | 2024   |   0.0708 |   0.5345 |  0.1265 |  0.185  |      0.1257 |
+        | 2025   |   0.089  |   0.4194 |  0.1875 |  0.2421 |      0.1949 |
         """
         if method not in (
             "close_to_close",
@@ -1623,9 +1625,12 @@ class VolatilityRisk:
         - Excess Volatility = Std(Daily Return - Daily Risk Free Rate) * √(Trading Days per Period)
 
         Where Std is the sample standard deviation (ddof=1) over the days within the period, the annualized risk
-        free rate is converted to a daily rate, and the trading days per period are 252 / 52 (weekly), 252 / 12
-        (monthly), 252 / 4 (quarterly) or 252 (yearly). With `rolling`, the result is the sample standard
-        deviation of the last `rolling` excess returns of the chosen period itself, without scaling.
+        free rate is converted to the rate earned with each return (a trading day of it, 1 / 252 of a year, or
+        for a ticker that trades on weekends the calendar days since its previous return, on 365 days a year),
+        and the trading days per period are 252 / 52 (weekly), 252 / 12 (monthly), 252 / 4 (quarterly) or 252
+        (yearly), or 365 days a year for a ticker with returns on weekends. With `rolling`, the result is the
+        sample standard deviation of the last `rolling` excess returns of the chosen period itself, without
+        scaling, with the risk free rate compounded over the dates in each period that hold a return.
 
         Also known as: standard deviation of excess returns.
 
@@ -1697,7 +1702,8 @@ class VolatilityRisk:
             )
         else:
             returns = self._historical_data["daily"]["Return"]
-            risk_free_rate = self._risk_free_rate_data["daily"]
+            # Each ticker earns the risk free rate per observation of its own calendar: a trading day of it per return, or the calendar days since its previous return for a ticker that trades on weekends.  # noqa: E501
+            risk_free_rate = self._get_risk_free_rate_per_observation()
 
             excess_volatility = risk_model.get_excess_volatility(
                 returns, risk_free_rate, period
@@ -1891,8 +1897,8 @@ class VolatilityRisk:
 
         With the RiskMetrics decay factor of 0.94, about 70% of the weight sits on the last 20 trading
         days, so EWMA Volatility reacts within days to a market shock and falls back almost as quickly.
-        The values are daily; multiply them by the square root of 252 for an annualized figure comparable
-        with `get_volatility(period="yearly")`.
+        The values are daily; multiply them by the square root of 252 (365 for a ticker that trades on
+        weekends) for an annualized figure comparable with `get_volatility(period="yearly")`.
 
         Also known as: RiskMetrics volatility, exponentially weighted volatility.
 

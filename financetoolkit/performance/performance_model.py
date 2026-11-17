@@ -756,8 +756,8 @@ def obtain_fama_and_french_dataset(
     It is also possible to read other datasets from Fama and French with this functionality.
 
     Args:
-        fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is provided, the
-        5 factor file of the region is used.
+        fama_and_french_url (str | None, optional): the URL of the ZIP file that contains the dataset.
+        Defaults to None, which uses the 5 factor file of the region.
         region (str, optional): The region whose factors to use, one of FACTOR_REGIONS: "United States",
         "Developed", "Developed ex US", "Europe", "Japan", "Asia Pacific ex Japan" or "North America".
         Every region's factors are U.S. dollar returns with the U.S. one-month Treasury bill as the
@@ -817,8 +817,8 @@ def obtain_fama_and_french_three_factor_dataset(
     Model extends the *three* factor model, so it must be estimated against this file.
 
     Args:
-        fama_and_french_url (str): the URL of the ZIP file that contains the dataset. If no URL is
-        provided, the 3 factor file of the region is used.
+        fama_and_french_url (str | None, optional): the URL of the ZIP file that contains the dataset.
+        Defaults to None, which uses the 3 factor file of the region.
         region (str, optional): The region whose factors to use, see
         `obtain_fama_and_french_dataset`. Defaults to "United States".
 
@@ -844,8 +844,8 @@ def obtain_carhart_momentum_dataset(
     basis. The dataset is packaged in a ZIP file, so it needs to be extracted first.
 
     Args:
-        momentum_url (str): the URL of the ZIP file that contains the dataset. If no URL is
-        provided, the momentum file of the region is used.
+        momentum_url (str | None, optional): the URL of the ZIP file that contains the dataset.
+        Defaults to None, which uses the momentum file of the region.
         region (str, optional): The region whose factor to use, see
         `obtain_fama_and_french_dataset`. Defaults to "United States".
 
@@ -1245,7 +1245,7 @@ def get_jensens_alpha(
                 risk_free_rate + beta[column] * (benchmark_returns - risk_free_rate)
             )
     elif isinstance(beta, (pd.Series | float)) and isinstance(
-        beta, (pd.Series | float)
+        asset_returns, (pd.Series | float)
     ):
         jensens_alpha = asset_returns - (
             risk_free_rate + beta * (benchmark_returns - risk_free_rate)
@@ -1361,6 +1361,7 @@ def get_sharpe_ratio(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
 def get_rolling_sharpe_ratio(
     excess_returns: pd.Series | pd.DataFrame,
     window_size: int,
@@ -1626,6 +1627,7 @@ def get_sortino_ratio(
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
 
+@by_own_trading_days
 def get_rolling_sortino_ratio(
     excess_returns: pd.Series | pd.DataFrame, window_size: int
 ) -> pd.Series | pd.DataFrame:
@@ -2681,6 +2683,7 @@ def get_kelly_criterion(
     return float(kelly[0]) * fraction
 
 
+@by_own_trading_days
 def get_rolling_kelly_criterion(
     returns: pd.Series | pd.DataFrame,
     window_size: int,
@@ -3092,7 +3095,8 @@ def get_appraisal_ratio(
         (residual) standard deviation is derived. When this has a "within period" Multi
         Index (period, date), the standard deviation is computed separately within each
         period and rescaled to the period frequency (see Notes below); otherwise it is
-        computed over the entire series at once.
+        computed over the entire series at once. See `get_rolling_appraisal_ratio` for a
+        rolling window.
 
     Returns:
         pd.Series | pd.DataFrame: Appraisal Ratio values.
@@ -3124,6 +3128,96 @@ def get_appraisal_ratio(
         residual_standard_deviation = capm_residuals.std()
 
     return jensens_alpha / residual_standard_deviation
+
+
+@by_own_trading_days(compound=True)
+def get_rolling_residual_standard_deviation(
+    excess_returns: pd.Series | pd.DataFrame,
+    benchmark_excess_returns: pd.Series,
+    window_size: int,
+) -> pd.DataFrame:
+    """
+    Calculate the standard deviation of the CAPM regression residuals over a rolling
+    window, each window with the Beta of its own regression. The residuals of a window are
+    those of the regression of the asset's excess returns on the benchmark's over that
+    window, so they follow from the window's variances and covariance without computing
+    them one by one:
+
+        - Beta = Cov(Asset Excess Return, Benchmark Excess Return) / Var(Benchmark Excess Return)
+        - Residual Variance = Var(Asset Excess Return) - Beta^2 * Var(Benchmark Excess Return)
+
+    All three moments are sample moments (ddof=1), so the residual variance is the sum of
+    the squared residuals divided by the window size minus 1, the sample variance of the
+    residuals. Taking the standard deviation of residuals that each come from the Beta of
+    a different window instead would mix regressions and need two windows of returns
+    before its first value.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The excess returns of the assets.
+        benchmark_excess_returns (pd.Series): The excess returns of the benchmark, on the
+            same dates.
+        window_size (int): The number of returns in each window.
+
+    Returns:
+        pd.DataFrame: The residual standard deviation at the end of every full window, one
+        column per asset.
+    """
+    excess_returns = (
+        excess_returns.to_frame()
+        if isinstance(excess_returns, pd.Series)
+        else excess_returns
+    )
+    residual_standard_deviation = pd.DataFrame(
+        index=excess_returns.index, columns=excess_returns.columns, dtype=np.float64
+    )
+
+    for column in excess_returns.columns:
+        # Both moments run over the dates on which the asset and the benchmark have a
+        # return, as in `get_rolling_beta`.
+        benchmark = benchmark_excess_returns.where(excess_returns[column].notna())
+        asset = excess_returns[column].where(benchmark.notna())
+
+        covariance = asset.rolling(window_size).cov(benchmark)
+        benchmark_variance = benchmark.rolling(window_size).var()
+        residual_variance = (
+            asset.rolling(window_size).var() - covariance**2 / benchmark_variance
+        )
+
+        # A perfect fit can leave a residual variance a rounding error below 0.
+        residual_standard_deviation[column] = np.sqrt(residual_variance.clip(lower=0))
+
+    return residual_standard_deviation
+
+
+def get_rolling_appraisal_ratio(
+    jensens_alpha: pd.DataFrame,
+    excess_returns: pd.DataFrame,
+    benchmark_excess_returns: pd.Series,
+    window_size: int,
+) -> pd.DataFrame:
+    """
+    Calculate the Appraisal Ratio over a rolling window: the rolling Jensen's Alpha divided
+    by the standard deviation of the CAPM regression residuals of the same window (see
+    `get_rolling_residual_standard_deviation`), so each ratio only uses the returns of its
+    own window and the first one follows the first full window.
+
+    The formula is as follows:
+
+        - Appraisal Ratio = Jensen's Alpha / Residual Standard Deviation
+
+    Args:
+        jensens_alpha (pd.DataFrame): The rolling Jensen's Alpha, see `get_jensens_alpha`.
+        excess_returns (pd.DataFrame): The excess returns of the assets.
+        benchmark_excess_returns (pd.Series): The excess returns of the benchmark.
+        window_size (int): The number of returns in each window, the window of
+            `jensens_alpha`.
+
+    Returns:
+        pd.DataFrame: Appraisal Ratio values.
+    """
+    return jensens_alpha / get_rolling_residual_standard_deviation(
+        excess_returns, benchmark_excess_returns, window_size
+    )
 
 
 def get_fama_decomposition(
@@ -4091,6 +4185,7 @@ def get_lo_sharpe_ratio(
     return (values.mean() / values.std(ddof=1)) * get_lo_annualization_factor(rho, q)
 
 
+@by_own_trading_days
 def get_rolling_lo_sharpe_ratio(
     excess_returns: pd.Series | pd.DataFrame,
     window_size: int,

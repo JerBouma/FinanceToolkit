@@ -6,7 +6,9 @@ from collections.abc import Callable
 
 import pandas as pd
 
+from financetoolkit import currencies_model
 from financetoolkit.etf import etf_model
+from financetoolkit.portfolio import portfolio_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -32,24 +34,18 @@ NAV_CLOSE_HOURS = 16
 # A premium or discount beyond half the NAV is a data error (a NAV in another unit or
 # currency, a stale price), not a market price.
 MAXIMUM_PREMIUM = 0.5
-# Some exchanges quote in a minor unit: London in pence (GBp, also written GBX), Johannesburg
-# in cents (ZAc) and Tel Aviv in agorot (ILA). The NAV is in the major unit.
-MINOR_CURRENCIES = {
-    "GBp": ("GBP", 0.01),
-    "GBX": ("GBP", 0.01),
-    "ZAc": ("ZAR", 0.01),
-    "ILA": ("ILS", 0.01),
-}
 
 
 def _major_currency(currency: object) -> tuple[str | None, float]:
-    """The major currency of a currency code and the factor to it, e.g. GBp is GBP 0.01."""
+    """
+    The major currency of a currency code and the factor to it, e.g. GBp (pence, also
+    written GBX) is GBP 0.01, as are ZAc (ZAR) and ILA (ILS). The minor units are those of
+    the portfolio module, matched in any casing except GBP, which is pounds and not pence.
+    """
     if not isinstance(currency, str) or not currency.strip():
         return None, 1.0
-    currency = currency.strip()
-    if currency in MINOR_CURRENCIES:
-        return MINOR_CURRENCIES[currency]
-    return currency.upper(), 1.0
+    major, units = portfolio_model.get_price_unit(currency)
+    return major, 1 / units
 
 
 @filter_shown_columns
@@ -73,6 +69,8 @@ class ETF:
         currency_function: Callable[[], pd.Series] | None = None,
         prices_function: Callable[[list[str], str, str], pd.DataFrame] | None = None,
         sector_function: Callable[[list[str]], pd.Series] | None = None,
+        holding_currency_function: Callable[[list[str]], pd.Series] | None = None,
+        benchmark_ticker: str | None = None,
     ):
         """
         Initializes the ETF Controller Class, which the Toolkit creates as `toolkit.etf`.
@@ -95,11 +93,21 @@ class ETF:
                 close with a NAV of the same currency. Defaults to None, which leaves the
                 listing currency unknown.
             prices_function (Callable[[list[str], str, str], pd.DataFrame] | None, optional):
-                Retrieves the daily closing prices of other tickers (the holdings) between two
-                dates, for the contribution of the holdings. Defaults to None.
+                Retrieves the daily closing prices of other tickers (the holdings, and currency
+                pairs such as GBPUSD=X for the exchange rates) between two dates, for the
+                contribution of the holdings and the dollar volume of funds listed in another
+                currency. Defaults to None.
             sector_function (Callable[[list[str]], pd.Series] | None, optional): Retrieves
                 the sector of other tickers (the holdings), for the contribution per sector.
                 Defaults to None.
+            holding_currency_function (Callable[[list[str]], pd.Series] | None, optional):
+                Retrieves the currency other tickers (the holdings) are listed in, to convert
+                their prices into the fund's currency for the contribution of the holdings.
+                Defaults to None, which takes their prices as they are.
+            benchmark_ticker (str | None, optional): The ticker of the Benchmark, whose listing
+                currency (through holding_currency_function) tells whether its prices are
+                converted into a fund's currency to measure the tracking. Defaults to None,
+                which compares the prices as they are.
 
         As an example:
 
@@ -122,6 +130,8 @@ class ETF:
         self._currency_function = currency_function
         self._prices_function = prices_function
         self._sector_function = sector_function
+        self._holding_currency_function = holding_currency_function
+        self._benchmark_ticker = benchmark_ticker
 
     def _listing_currencies(self) -> pd.Series:
         """The currency every ticker is listed in, empty when it cannot be retrieved."""
@@ -137,6 +147,161 @@ class ETF:
         return (
             currencies if isinstance(currencies, pd.Series) else pd.Series(dtype=object)
         )
+
+    def _holding_currencies(self, symbols: list[str]) -> pd.Series:
+        """The currency every holding is listed in, empty when it cannot be retrieved."""
+        if self._holding_currency_function is None or not symbols:
+            return pd.Series(dtype=object)
+        try:
+            currencies = self._holding_currency_function(symbols)
+        # Without the currencies the prices are taken as they are, as for an unknown one.
+        except Exception as error:  # noqa: BLE001
+            logger.warning(
+                "The currencies of the holdings could not be retrieved: %s", error
+            )
+            return pd.Series(dtype=object)
+        return (
+            currencies if isinstance(currencies, pd.Series) else pd.Series(dtype=object)
+        )
+
+    def _conversion_factors(
+        self, currencies: pd.Series, target: object, dates: pd.DatetimeIndex
+    ) -> pd.DataFrame:
+        """
+        The factor that converts the prices of every ticker (the index of currencies) into
+        the target currency on each date: the minor unit's factor (a price in pence is a
+        hundredth of a pound) times the exchange rate of that date, or the last one before it
+        on a day without a rate. It is 1 for a ticker whose currency (or a target) is unknown,
+        and NaN, with a logged warning, without an exchange rate.
+        """
+        factors = pd.DataFrame(1.0, index=dates, columns=currencies.index)
+        target_major, target_factor = _major_currency(target)
+        if target_major is None:
+            return factors
+
+        pairs = {}
+        for ticker, currency in currencies.items():
+            major, factor = _major_currency(currency)
+            if major is None:
+                continue
+            factors[ticker] = factor / target_factor
+            if major != target_major:
+                pairs[ticker] = currencies_model.get_fx_ticker(major, target_major)
+        if not pairs:
+            return factors
+
+        tickers = sorted(set(pairs.values()))
+        rates = pd.DataFrame(float("nan"), index=dates, columns=tickers)
+        if self._prices_function is not None and len(dates):
+            try:
+                # A week before the first date covers a weekend or holiday without a rate.
+                fetched = self._prices_function(
+                    tickers,
+                    (dates.min() - pd.Timedelta(days=10)).strftime("%Y-%m-%d"),
+                    dates.max().strftime("%Y-%m-%d"),
+                )
+            except Exception as error:  # noqa: BLE001
+                logger.warning("The exchange rates could not be retrieved: %s", error)
+                fetched = pd.DataFrame()
+            if isinstance(fetched, pd.DataFrame) and not fetched.empty:
+                if isinstance(fetched.index, pd.PeriodIndex):
+                    fetched.index = fetched.index.to_timestamp()
+                fetched = fetched.reindex(columns=tickers).apply(
+                    pd.to_numeric, errors="coerce"
+                )
+                fetched = fetched.where(fetched > 0)
+                rates = (
+                    fetched.reindex(fetched.index.union(dates))
+                    .sort_index()
+                    .ffill()
+                    .reindex(dates)
+                )
+        for ticker, pair in pairs.items():
+            factors[ticker] = factors[ticker] * rates[pair]
+
+        if missing := sorted(pair for pair in tickers if rates[pair].isna().all()):
+            logger.warning(
+                "No %s exchange rate is available to convert into %s, so the values of %s "
+                "that need it are not given.",
+                ", ".join(missing),
+                target_major,
+                ", ".join(
+                    str(ticker) for ticker, pair in pairs.items() if pair in missing
+                ),
+            )
+        return factors
+
+    def _benchmark_in_currency(
+        self, benchmark: pd.Series, currency: object, benchmark_currency: object
+    ) -> pd.Series:
+        """
+        The prices of the Benchmark in a fund's listing currency, converted at the exchange
+        rate of each date, so that the tracking of a fund listed in another currency than its
+        index does not count the move of the exchange rate as tracking error. The prices are
+        kept as they are when either currency is unknown or they are the same, and, with a
+        logged warning, when there is no exchange rate.
+        """
+        major, _ = _major_currency(currency)
+        benchmark_major, _ = _major_currency(benchmark_currency)
+        if major is None or benchmark_major is None or major == benchmark_major:
+            return benchmark
+
+        dates = (
+            benchmark.index.to_timestamp()
+            if isinstance(benchmark.index, pd.PeriodIndex)
+            else pd.DatetimeIndex(benchmark.index)
+        )
+        factors = self._conversion_factors(
+            pd.Series({BENCHMARK_TICKER: benchmark_currency}), currency, dates
+        )[BENCHMARK_TICKER].to_numpy()
+        converted = benchmark * factors
+        if converted.notna().any():
+            return converted
+
+        logger.warning(
+            "Without a %s exchange rate the Benchmark is compared in %s, so the tracking "
+            "measures of the funds listed in %s include the move of the exchange rate.",
+            f"{benchmark_major}/{major}",
+            benchmark_major,
+            major,
+        )
+        return benchmark
+
+    def _dollar_volume(self, close: pd.DataFrame, volume: pd.DataFrame) -> pd.DataFrame:
+        """
+        The daily traded value of every fund in US dollars: the close times the volume, in
+        the major unit of the listing currency (pounds, not pence) and converted at the
+        exchange rate of the same date. A fund whose listing currency is unknown keeps its
+        close as it is.
+        """
+        currencies = self._listing_currencies().reindex(close.columns)
+        dates = (
+            close.index.to_timestamp()
+            if isinstance(close.index, pd.PeriodIndex)
+            else pd.DatetimeIndex(close.index)
+        )
+        factors = self._conversion_factors(currencies, "USD", dates)
+        factors.index = close.index
+        return close * volume * factors
+
+    def _assets_in_dollars(
+        self, assets: float, nav_currency: object, listing_currency: object
+    ) -> float:
+        """
+        The assets under management, published in the NAV's currency, in US dollars. Without
+        a NAV currency the assets are taken to be in the major unit of the listing currency
+        (pounds for a fund quoted in pence), the currency a fund's NAV is nearly always
+        published in, rather than in US dollars.
+        """
+        if pd.isna(assets):
+            return float("nan")
+        if _major_currency(nav_currency)[0] is None:
+            nav_currency = _major_currency(listing_currency)[0]
+        today = pd.DatetimeIndex([pd.Timestamp.today().normalize()])
+        factor = self._conversion_factors(
+            pd.Series({"Assets": nav_currency}), "USD", today
+        ).iloc[-1, 0]
+        return float(assets * factor)
 
     def _funds(self) -> list[str]:
         """The tickers other than the Benchmark and a Portfolio."""
@@ -477,7 +642,8 @@ class ETF:
         Get the profile of every fund: its name, issuer, asset class, domicile, inception date,
         expense ratio, assets under management, net asset value (NAV), latest price and the
         premium or discount of that price to the NAV, the number of holdings and the average
-        daily volume and dollar volume. The expense ratio is what holding the fund costs every
+        daily volume and dollar volume (in US dollars, at the exchange rate of every day for a
+        fund listed in another currency). The expense ratio is what holding the fund costs every
         year; a premium means buying it costs more than the holdings are worth, which happens in
         stress for funds of less liquid assets such as bonds. The NAV is the latest Financial
         Modeling Prep publishes and the NAV Date the New York close it was struck at (the last
@@ -551,6 +717,10 @@ class ETF:
         last_year = close.index[-min(len(close), TRADING_DAYS) :]
 
         currencies = self._listing_currencies()
+
+        dollar_volume = self._dollar_volume(
+            close.loc[last_year, funds], volume.loc[last_year, funds]
+        )
 
         rows = {}
         for fund in funds:
@@ -639,9 +809,7 @@ class ETF:
                     info.get("Holdings Count"), errors="coerce"
                 ),
                 "Average Volume": float(volume.loc[last_year, fund].mean()),
-                "Average Dollar Volume": float(
-                    (close.loc[last_year, fund] * volume.loc[last_year, fund]).mean()
-                ),
+                "Average Dollar Volume": float(dollar_volume[fund].mean()),
             }
 
         rounding = rounding if rounding is not None else self._rounding
@@ -719,6 +887,13 @@ class ETF:
         timing of their last trade, which adds noise to a daily tracking error; fund reports
         usually measure it from monthly returns.
 
+        A fund listed in another currency than the Benchmark (a London listing of an S&P 500 fund
+        in pounds against SPY in dollars) is compared with the Benchmark converted into the
+        fund's currency at the exchange rate of each date, as the fund's own returns include the
+        move of that currency. The fund and the Benchmark still close at different hours, which
+        adds noise to the daily measures; monthly returns are less affected. Without an exchange
+        rate the prices are compared as they are, with a logged warning.
+
         Also known as: tracking difference, tracking error, index tracking.
 
         Args:
@@ -774,12 +949,31 @@ class ETF:
             )
         frequency = "Y" if yearly else FREQUENCIES.get(period)
 
+        # A fund listed in another currency than the Benchmark is compared with the
+        # Benchmark converted into its currency, once per currency.
+        currencies = self._listing_currencies()
+        benchmark_currency = (
+            self._holding_currencies([self._benchmark_ticker]).get(
+                self._benchmark_ticker
+            )
+            if self._benchmark_ticker
+            else None
+        )
+        benchmarks: dict[object, pd.Series] = {}
+
         results = {}
         for fund in self._funds():
+            currency = currencies.get(fund)
+            if currency not in benchmarks:
+                benchmarks[currency] = self._benchmark_in_currency(
+                    full[BENCHMARK_TICKER], currency, benchmark_currency
+                )
             # Only the dates on which both have a close count, so a fund whose prices stop
             # (a ticker change, a delisting) or start later is compared with the Benchmark
             # over the same days, not with the Benchmark's later year-end close.
-            pair = full[[fund, BENCHMARK_TICKER]]
+            pair = pd.concat(
+                [full[fund], benchmarks[currency].rename(BENCHMARK_TICKER)], axis=1
+            )
             pair = pair[pair.notna().all(axis=1)]
             prices = pair.loc[self._start_date : self._end_date]
             if prices.empty:
@@ -881,6 +1075,12 @@ class ETF:
         holdings they share, of the smaller of the two weights. An overlap of 0.8 means 80% of
         the two portfolios is the same, so holding both adds little diversification.
 
+        The weights are taken as listed, not scaled to add up to one, so the overlap of a fund
+        whose list of holdings is incomplete is at most the weight that list covers, also with
+        itself on the diagonal (1 for a complete list).
+        One minus the overlap equals the active share (see get_active_share, which scales the
+        weights) only for funds whose listed weights each add up to one.
+
         Also known as: ETF overlap, portfolio overlap, holdings overlap.
 
         Args:
@@ -908,10 +1108,10 @@ class ETF:
 
         |      |    VOO |    QQQ |    VTI |   SCHD |
         |:-----|-------:|-------:|-------:|-------:|
-        | VOO  | 1.0017 | 0.556  | 0.8911 | 0.0764 |
-        | QQQ  | 0.556  | 1.0014 | 0.4994 | 0.0516 |
-        | VTI  | 0.8911 | 0.4994 | 1.0005 | 0.071  |
-        | SCHD | 0.0764 | 0.0516 | 0.071  | 1      |
+        | VOO  | 1      | 0.5186 | 0.8894 | 0.0845 |
+        | QQQ  | 0.5186 | 1      | 0.4717 | 0.0557 |
+        | VTI  | 0.8894 | 0.4717 | 1      | 0.0784 |
+        | SCHD | 0.0845 | 0.0557 | 0.0784 | 1      |
         """
         return apply_rounding(
             etf_model.get_overlap(self._weights()),
@@ -998,9 +1198,12 @@ class ETF:
         price-to-sales and price-to-free-cash-flow ratio, the dividend yield and the net profit
         margin of its largest holdings, weighted by their weight in the fund. The multiples are
         weighted harmonic means, the multiple of the fund as a whole, so one holding with a very
-        high multiple does not dominate. The coverage is the share of the fund's weight held in
-        holdings with a usable, non-zero price-to-earnings ratio; more holdings raise it at the
-        cost of more requests.
+        high multiple does not dominate. When the holdings' earnings (or book value, sales or
+        free cash flow) add up to a loss or to about zero, the fund has no meaningful multiple,
+        so it is NaN with a logged warning. The coverage is the share of the fund's weight held
+        in holdings with a usable, non-zero price-to-earnings ratio (or, without
+        price-to-earnings ratios, the first other multiple there is); more holdings raise it at
+        the cost of more requests.
 
         The ratios are the trailing twelve month ratios Financial Modeling Prep calculates for
         every holding.
@@ -1082,7 +1285,11 @@ class ETF:
         daily volume and dollar volume, that dollar volume relative to the fund's assets under
         management, and the price impact of trading 100 million dollars in a day (the Amihud,
         2002, illiquidity: the average absolute daily return per dollar traded, scaled to 100
-        million). An ETF can also be traded through its holdings, so a thinly traded fund of
+        million). The dollar volume of a fund listed in another currency is its traded value
+        in the major unit (pounds for a close in pence) converted at the exchange rate of every
+        day, and its assets, published in the NAV's currency (the major unit of the listing
+        currency when the NAV currency is not published), at the latest rate; without an
+        exchange rate these measures are NaN, with a logged warning. An ETF can also be traded through its holdings, so a thinly traded fund of
         liquid holdings is easier to trade than its own volume suggests; a fund whose holdings
         are themselves illiquid (small companies, high yield bonds) is not.
 
@@ -1127,20 +1334,30 @@ class ETF:
         |:------------------------------|------------------:|-------------------:|-----------------:|
         | Average Volume                |    7734399.056000 |    48666218.588000 |  10799597.760000 |
         | Average Dollar Volume         | 4400329488.944520 | 26740006060.354679 | 719035298.234000 |
-        | Dollar Volume to Assets       |          0.002588 |           0.057650 |         0.090822 |
+        | Dollar Volume to Assets       |          0.004400 |           0.056257 |         0.117432 |
         | Price Impact per $100 Million |          0.000179 |           0.000036 |         0.002990 |
         """
         data = self._historical().loc[self._start_date : self._end_date]
         data = data.iloc[-min(len(data), TRADING_DAYS) :]
         information = self._fund_data_function("information")
 
+        dollar_volumes = self._dollar_volume(
+            data["Close"][self._funds()], data["Volume"][self._funds()]
+        )
+
+        listing_currencies = self._listing_currencies()
+
         liquidity = {}
         for fund in self._funds():
-            close, volume = data["Close"][fund], data["Volume"][fund]
-            dollar_volume = close * volume
+            volume, dollar_volume = data["Volume"][fund], dollar_volumes[fund]
             assets = (
-                pd.to_numeric(
-                    information[fund].get("Assets Under Management"), errors="coerce"
+                self._assets_in_dollars(
+                    pd.to_numeric(
+                        information[fund].get("Assets Under Management"),
+                        errors="coerce",
+                    ),
+                    information[fund].get("NAV Currency"),
+                    listing_currencies.get(fund),
                 )
                 if information is not None and fund in information
                 else float("nan")
@@ -1246,25 +1463,48 @@ class ETF:
             prices.index = prices.index.to_timestamp()
         prices = prices.reindex(columns=tickers)
 
-        def close(before: pd.Timestamp, inclusive: bool = True) -> pd.Series:
+        def close(
+            frame: pd.DataFrame, before: pd.Timestamp, inclusive: bool = True
+        ) -> pd.Series:
             # The last close up to a date, per ticker: a holding that did not trade on the
             # date (a holiday on its exchange) keeps its last close.
-            rows = prices.loc[
-                prices.index <= before if inclusive else prices.index < before
+            rows = frame.loc[
+                frame.index <= before if inclusive else frame.index < before
             ]
             if rows.empty:
-                return pd.Series(float("nan"), index=prices.columns)
+                return pd.Series(float("nan"), index=frame.columns)
             return rows.ffill().iloc[-1]
 
-        start_prices, end_prices = close(start, inclusive=False), close(end)
-        if start_prices.isna().all():
+        if close(prices, start, inclusive=False).isna().all():
             raise ValueError(
                 "There are no prices before the start date to measure the period from."
             )
 
+        holding_currencies = self._holding_currencies(
+            sorted(
+                {symbol for fund_symbols in symbols.values() for symbol in fund_symbols}
+            )
+        )
+        fund_currencies = self._listing_currencies()
+
         contributions = {}
         for fund, fund_weights in weights.items():
-            weight_date_prices = close(weight_dates[fund])
+            # The holdings' prices in the fund's currency, so a holding listed abroad
+            # contributes its return to the fund including the exchange rate's move, as the
+            # fund holds it; the fund's own price (and the index) stays as it is.
+            fund_prices = prices.copy()
+            if not holding_currencies.empty:
+                listed = [
+                    symbol for symbol in symbols[fund] if symbol in holding_currencies
+                ]
+                fund_prices[listed] = prices[listed] * self._conversion_factors(
+                    holding_currencies[listed],
+                    fund_currencies.get(fund),
+                    pd.DatetimeIndex(prices.index),
+                )
+            start_prices = close(fund_prices, start, inclusive=False)
+            end_prices = close(fund_prices, end)
+            weight_date_prices = close(fund_prices, weight_dates[fund])
             table = etf_model.get_contribution(
                 fund_weights[symbols[fund]],
                 start_prices,
@@ -1331,6 +1571,9 @@ class ETF:
         back) the period, the less precise the split. The Remainder row holds what the priced
         holdings do not explain: cash, holdings without a symbol or price (bonds, futures) and
         that drift. The Total row is the fund's own price return, so the rows add up to it.
+        The prices of holdings listed in another currency than the fund are converted into
+        the fund's currency at the exchange rate of every date, so their returns include the
+        currency's move, as the fund earns them.
 
         Also known as: contribution to return, index contribution, attribution of an index
         move, points contribution, sector contribution.
@@ -1382,18 +1625,18 @@ class ETF:
 
         |                        |   Start Weight |   Return |   Contribution |    Points |
         |:-----------------------|---------------:|---------:|---------------:|----------:|
-        | Healthcare             |         0.0918 |   0.0974 |         0.0089 |   68.4349 |
-        | Financial Services     |         0.1122 |   0.0574 |         0.0064 |   49.3077 |
-        | Consumer Defensive     |         0.0432 |   0.1157 |         0.005  |   38.2649 |
-        | Energy                 |         0.0342 |   0.1384 |         0.0047 |   36.2639 |
-        | Consumer Cyclical      |         0.0859 |   0.0418 |         0.0036 |   27.4788 |
-        | Utilities              |         0.0188 |   0.1011 |         0.0019 |   14.5331 |
-        | Basic Materials        |         0.0167 |   0.0555 |         0.0009 |    7.0788 |
-        | Real Estate            |         0.017  |   0.0498 |         0.0008 |    6.4553 |
-        | Industrials            |         0.0738 |  -0.0021 |        -0.0002 |   -1.1988 |
-        | Communication Services |         0.0975 |  -0.1502 |        -0.0147 | -112.129  |
-        | Technology             |         0.4082 |  -0.0662 |        -0.027  | -206.655  |
-        | Remainder              |         0.0006 | nan      |         0.0004 |    2.8372 |
+        | Healthcare             |         0.0918 |   0.0974 |         0.0089 |   68.4283 |
+        | Financial Services     |         0.1122 |   0.0574 |         0.0064 |   49.2989 |
+        | Consumer Defensive     |         0.0432 |   0.1157 |         0.005  |   38.2537 |
+        | Energy                 |         0.0342 |   0.1383 |         0.0047 |   36.154  |
+        | Consumer Cyclical      |         0.0859 |   0.0418 |         0.0036 |   27.4715 |
+        | Utilities              |         0.0188 |   0.1011 |         0.0019 |   14.5172 |
+        | Basic Materials        |         0.0167 |   0.0555 |         0.0009 |    7.0752 |
+        | Real Estate            |         0.017  |   0.0498 |         0.0008 |    6.4549 |
+        | Industrials            |         0.0738 |  -0.0022 |        -0.0002 |   -1.2299 |
+        | Communication Services |         0.0977 |  -0.15   |        -0.0147 | -112.117  |
+        | Technology             |         0.4081 |  -0.0662 |        -0.027  | -206.628  |
+        | Remainder              |         0.0008 | nan      |         0.0004 |    2.9928 |
         | Total                  |         1      |  -0.0091 |        -0.0091 |  -69.3287 |
         """
         if group_by not in ("holding", "sector"):
@@ -1499,9 +1742,9 @@ class ETF:
         |                        |     SPY |     QQQ |
         |:-----------------------|--------:|--------:|
         | Return                 | -0.0091 | -0.0666 |
-        | Priced Holdings Return | -0.0094 | -0.0665 |
+        | Priced Holdings Return | -0.0095 | -0.0665 |
         | Excluded Weight        |  0.1415 |  0.141  |
-        | Excluded Contribution  | -0.0077 | -0.0077 |
+        | Excluded Contribution  | -0.0077 | -0.0076 |
         | Return Excluding       | -0.002  | -0.0685 |
         """
         wanted: set[str] | None = None

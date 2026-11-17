@@ -55,7 +55,8 @@ def get_present_value_of_growth_opportunities(
 
     if calculate_daily and period_end_dates is not None:
         # A period's earnings are only known after its fiscal period ends, so each no-growth
-        # value applies from that day on and never to the days of the period itself.
+        # value applies from the period's last day on (the next trading day when it falls on a
+        # weekend), as the daily ratios do.
         no_growth_value = map_period_data_to_daily_data(
             period_data=no_growth_value,
             daily_dates=close_prices.index,

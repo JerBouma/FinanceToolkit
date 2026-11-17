@@ -2175,14 +2175,14 @@ def test_policy_rates_can_be_quarterly(monkeypatch):
 
 
 def test_oecd_euro_area_rates_are_named_euro_area(monkeypatch):
-    months = pd.period_range("2026-08", "2026-09", freq="M")
-    monkeypatch.setattr(
-        oecd_model,
-        "collect_oecd_data",
-        lambda *args: pd.DataFrame(
-            {"EA20": [2.5, 2.6], "Germany": [2.5, 2.6]}, index=months
-        ),
-    )
+    class Response:
+        text = (
+            "REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+            "EA20,2026-08,2.5\nEA20,2026-09,2.6\n"
+            "DEU,2026-08,2.5\nDEU,2026-09,2.6\n"
+        )
+
+    monkeypatch.setattr(oecd_model, "get_request", lambda *args, **kwargs: Response())
 
     for rate in (
         oecd_model.get_short_term_interest_rate("monthly"),
@@ -2433,3 +2433,107 @@ def test_house_prices_of_china_come_from_the_bis(monkeypatch):
     )
 
     assert "China" not in economics.get_house_prices(quarterly=True).columns
+
+
+def test_requested_countries_skip_blanks_and_repeated_spellings():
+    known = ["United States", "Germany"]
+
+    assert helpers.normalize_requested_countries("Germany,", known) == ["Germany"]
+    assert helpers.normalize_requested_countries(
+        ["USA", "United States", " "], known
+    ) == ["United States"]
+
+
+def test_oecd_datasets_name_the_current_euro_area_euro_area(monkeypatch):
+    csv = (
+        "REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+        "EA20,2026-08,101.0\nEA20,2026-09,102.0\n"
+        "EA19,2026-08,99.0\nEA19,2026-09,98.0\n"
+        "DEU,2026-08,100.0\nDEU,2026-09,100.5\n"
+    )
+
+    class Response:
+        text = csv
+
+    monkeypatch.setattr(oecd_model, "get_request", lambda *args, **kwargs: Response())
+
+    # Share prices, consumer confidence and exchange rates go through the same parsing
+    # as the interest rates.
+    data = oecd_model.collect_oecd_data("OECD.SDD.STES,DSD_STES@DF_FINMARK,4.0/", "M")
+
+    assert sorted(data.columns) == ["Euro Area", "Euro Area 19", "Germany"]
+    assert data.loc[pd.Period("2026-09", "M"), "Euro Area"] == 102.0  # noqa: PLR2004
+    assert data.loc[pd.Period("2026-09", "M"), "Euro Area 19"] == 98.0  # noqa: PLR2004
+
+
+def test_an_unreachable_policy_rate_extension_keeps_the_bis_series(monkeypatch, caplog):
+    from financetoolkit import Economics
+    from financetoolkit.fixedincome.sources import ecb_model as ecb_rates_model
+
+    days = pd.PeriodIndex(pd.bdate_range("2026-10-01", "2026-11-10"), freq="D")
+    _bis_policy_rates(
+        monkeypatch,
+        pd.DataFrame({"Euro Area": 0.02, "United Kingdom": 0.04}, index=days),
+    )
+
+    def unreachable(*args, **kwargs):
+        raise requests.exceptions.ConnectionError("down")
+
+    monkeypatch.setattr(ecb_rates_model, "get_deposit_facility", unreachable)
+    monkeypatch.setattr(boe_model, "get_bank_rate", lambda start, end: pd.DataFrame())
+
+    economics = Economics(start_date="2026-10-01", end_date="2026-11-17")
+
+    with caplog.at_level("INFO", logger="financetoolkit"):
+        rate = economics.get_central_bank_policy_rate()
+
+    assert rate["Euro Area"].last_valid_index() == pd.Period("2026-11-10", "D")
+    assert rate["United Kingdom"].last_valid_index() == pd.Period("2026-11-10", "D")
+    assert "recent Euro Area policy rates could not be retrieved" in caplog.text
+
+
+def test_repeated_quarters_are_thinned_per_quarter():
+    months = pd.period_range("2025-01", "2026-09", freq="M")
+    # Quarterly until 2025Q4, monthly from 2026; the monthly series repeats one value
+    # over a single quarter (2025Q3) only.
+    quarterly_then_monthly = [1.0] * 3 + [2.0] * 3 + [3.0] * 3 + [4.0] * 3
+    quarterly_then_monthly += [5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8]
+    monthly = [float(month) for month in range(6)] + [6.0] * 3
+    monthly += [float(month) for month in range(9, 21)]
+    data = pd.DataFrame(
+        {"Australia": quarterly_then_monthly, "Hong Kong": monthly}, index=months
+    )
+
+    thinned = helpers.keep_quarter_end_of_repeated_quarters(data)
+
+    assert thinned["Australia"].loc[:"2025-12"].dropna().index.month.tolist() == [
+        3,
+        6,
+        9,
+        12,
+    ]
+    assert (
+        thinned["Australia"].loc["2026-01":].equals(data["Australia"].loc["2026-01":])
+    )
+    assert thinned["Hong Kong"].equals(data["Hong Kong"])
+
+
+def test_repeated_quarters_cut_off_by_the_range_keep_their_last_month():
+    quarters = [1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0]
+    data = pd.DataFrame(
+        {"New Zealand": quarters},
+        index=pd.period_range("2025-11", "2026-08", freq="M"),
+    )
+
+    thinned = helpers.keep_quarter_end_of_repeated_quarters(data)
+
+    assert thinned["New Zealand"].dropna().to_dict() == {
+        pd.Period("2025-12", "M"): 1.0,
+        pd.Period("2026-03", "M"): 2.0,
+        pd.Period("2026-06", "M"): 3.0,
+        pd.Period("2026-08", "M"): 4.0,
+    }
+
+    # A single complete quarter cannot be told apart from a monthly series.
+    short = data.loc["2026-02":"2026-06"]
+    assert helpers.keep_quarter_end_of_repeated_quarters(short).equals(short)

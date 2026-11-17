@@ -432,8 +432,10 @@ def normalize_requested_countries(
     """
     The requested countries as a list of the names the sources use, so a short form or
     another casing ("USA", "united kingdom", "uk") selects the same sources as the name
-    itself. A string may hold several countries separated by commas. A country that
-    matches nothing known is kept as given, so it is reported as unavailable later on.
+    itself. A string may hold several countries separated by commas; blank entries (a
+    trailing comma in "Germany,") are skipped and a country spelled twice is listed once.
+    A country that matches nothing known is kept as given, so it is reported as
+    unavailable later on.
 
     Args:
         countries (list[str] | str | None): The countries as passed to a method.
@@ -448,9 +450,13 @@ def normalize_requested_countries(
     requested = countries.split(",") if isinstance(countries, str) else countries
     known = list(known)
 
-    return [
-        normalize_country_name(str(country).strip(), known) for country in requested
-    ]
+    return list(
+        dict.fromkeys(
+            normalize_country_name(str(country).strip(), known)
+            for country in requested
+            if str(country).strip()
+        )
+    )
 
 
 def require_columns(data: pd.DataFrame, columns: set[str], description: str) -> None:
@@ -748,49 +754,81 @@ def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     return grouped.mean().where(grouped.count() == (3 if period == "quarterly" else 12))
 
 
-# The complete quarters a monthly series has to repeat in every one of before it is taken
-# as a quarterly series spread over its months. A monthly series repeats one value over a
-# quarter now and then (about 2% of the quarters of the BIS consumer price indices), never
-# over several quarters in a row.
+# The consecutive quarters a monthly series has to repeat its value in before those quarters
+# are taken as a quarterly series spread over its months. A monthly series repeats one value
+# over a quarter now and then (about 2% of the quarters of the BIS consumer price indices),
+# never over several quarters in a row.
 MINIMUM_REPEATED_QUARTERS = 2
 
 
 def keep_quarter_end_of_repeated_quarters(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Keeps only the last month of each quarter for the countries whose monthly series
-    repeats each quarter's value over its three months, such as the BIS consumer prices
-    of Australia and New Zealand, which publish their CPI quarterly. Repeated months
-    would otherwise show a monthly rate of change of 0 twice a quarter and count each
-    quarter three times in averages and rolling windows. A country qualifies when every
-    complete quarter of the series holds a single value, over at least
-    MINIMUM_REPEATED_QUARTERS quarters; the other months become NaN.
+    Keeps only the last month of each quarter in which a monthly series repeats the
+    quarter's value over its months, such as the BIS consumer prices of Australia and New
+    Zealand, which publish their CPI quarterly. Repeated months would otherwise show a
+    monthly rate of change of 0 twice a quarter and count each quarter three times in
+    averages and rolling windows.
+
+    The decision is made per country and per quarter, so a country that moves from
+    quarterly to monthly publication keeps its monthly months while its earlier quarters
+    are thinned out. A complete quarter counts as repeated when its three months hold a
+    single value, and repeated quarters are thinned out only in runs of at least
+    MINIMUM_REPEATED_QUARTERS consecutive quarters, since a monthly series repeats a
+    value over a single quarter now and then. A quarter cut off by the start or end of
+    the range (two months with a single value) is thinned out as well when it adjoins
+    such a run, keeping its last month in the range. A range that holds fewer complete
+    repeated quarters in a row than MINIMUM_REPEATED_QUARTERS, such as a range of a few
+    months, cannot be told apart from a monthly series and is returned unchanged.
 
     Args:
         data (pd.DataFrame): The series, indexed by a monthly PeriodIndex with a column
             per country.
 
     Returns:
-        pd.DataFrame: The series with the first two months of each quarter empty for the
-        countries published quarterly.
+        pd.DataFrame: The series with every month but the last of each repeated quarter
+        empty.
     """
     if data.empty:
         return data
 
-    quarters = data.groupby(data.index.asfreq("Q"))
-    complete = quarters.count() == 3  # noqa: PLR2004
-    repeated = (quarters.max() == quarters.min()) & complete
-    quarterly = data.columns[
-        (complete.sum() >= MINIMUM_REPEATED_QUARTERS)
-        & (repeated.sum() == complete.sum())
-    ]
+    quarter_of_month = data.index.asfreq("Q")
+    quarters = data.groupby(quarter_of_month)
+    # Every quarter of the range, so that a quarter without any month in the index
+    # interrupts a run instead of joining the quarters around it.
+    all_quarters = pd.period_range(
+        quarter_of_month.min(), quarter_of_month.max(), freq="Q"
+    )
+    count = quarters.count().reindex(all_quarters, fill_value=0)
+    single_value = (quarters.max() == quarters.min()).reindex(
+        all_quarters, fill_value=False
+    )
+    repeated = single_value & (count == 3)  # noqa: PLR2004
+    cut_off = single_value & (count == 2)  # noqa: PLR2004
 
-    if quarterly.empty:
+    # The length of the run of consecutive repeated quarters each quarter belongs to.
+    run_id = (~repeated).cumsum()
+    run_length = repeated.apply(
+        lambda column: column.groupby(run_id[column.name]).transform("sum")
+    )
+    thinned_quarters = repeated & (run_length >= MINIMUM_REPEATED_QUARTERS)
+    thinned_quarters |= cut_off & (
+        thinned_quarters.shift(1, fill_value=False)
+        | thinned_quarters.shift(-1, fill_value=False)
+    )
+
+    if not thinned_quarters.to_numpy().any():
         return data
 
-    data = data.copy()
-    data.loc[data.index.month % 3 != 0, quarterly] = float("nan")
+    thinned_months = thinned_quarters.reindex(quarter_of_month).set_axis(data.index)
 
-    return data
+    # The last observed month of each quarter, which is the third month of a complete one.
+    observed = data.notna()
+    observed_from_here = (
+        observed.iloc[::-1].groupby(quarter_of_month[::-1]).cumsum().iloc[::-1]
+    )
+    last_observed = observed & (observed_from_here == 1)
+
+    return data.mask(thinned_months & ~last_observed)
 
 
 def choose_sources(sources: list[pd.DataFrame]) -> dict[str, int]:

@@ -401,6 +401,29 @@ def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) ->
     return f"{period.year}-{period.month:02d}"
 
 
+def name_euro_area(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Names the euro area column of an OECD dataset "Euro Area", as every other source
+    does. Most OECD datasets (financial market statistics, consumer prices, share
+    prices, exchange rates, confidence indicators) publish the euro area in its current
+    composition under the code EA20, which CODE_TO_COUNTRY keeps apart from the fixed
+    compositions of other datasets. Those fixed compositions keep their own names
+    ("Euro Area 17", "Euro Area 19"), so a dataset that publishes EA19 next to EA20
+    returns both, with the current composition as "Euro Area". A dataset that already
+    publishes a column named "Euro Area" (the code EA) keeps it and leaves EA20 as is.
+
+    Args:
+        data (pd.DataFrame): The data, a column per country.
+
+    Returns:
+        pd.DataFrame: The data with the EA20 column named "Euro Area".
+    """
+    if "EA20" in data.columns and "Euro Area" not in data.columns:
+        return data.rename(columns={"EA20": "Euro Area"})
+
+    return data
+
+
 def collect_oecd_data(
     oecd_data_string: str,
     period_code: str,
@@ -474,6 +497,10 @@ def collect_oecd_data(
             parameters=cache_parameters,
         )
         cached_data = plan.cached_frame(cache_entity)
+
+        # Cached frames are named like fresh responses, whichever form they were stored in.
+        if cached_data is not None:
+            cached_data = name_euro_area(cached_data)
 
         if plan.fully_cached and cached_data is not None and not cached_data.empty:
             return cached_data
@@ -574,6 +601,8 @@ def collect_oecd_data(
     oecd_data.columns.name = None
 
     oecd_data.index = pd.PeriodIndex(oecd_data.index, freq=period_code)
+
+    oecd_data = name_euro_area(oecd_data)
 
     # Only remove data if all of it is NaN or it is NaT
     oecd_data = oecd_data.dropna(axis=1, how="all")
@@ -843,25 +872,6 @@ def get_unemployment_rate(
     return unemployment_rate
 
 
-def name_euro_area(data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Names the euro area column of the OECD financial market statistics "Euro Area", as
-    every other source does. These statistics publish the euro area in its current
-    composition under the code EA20, which CODE_TO_COUNTRY keeps apart from the fixed
-    compositions (EA17, EA19) of other datasets.
-
-    Args:
-        data (pd.DataFrame): The rates, a column per country.
-
-    Returns:
-        pd.DataFrame: The rates with the EA20 column named "Euro Area".
-    """
-    if "EA20" in data.columns and "Euro Area" not in data.columns:
-        return data.rename(columns={"EA20": "Euro Area"})
-
-    return data
-
-
 def get_long_term_interest_rate(
     period: str, start_date: str | None = None, end_date: str | None = None
 ):
@@ -902,7 +912,7 @@ def get_long_term_interest_rate(
     # Divide by 100 to convert the percentage into a decimal
     long_term_interest_rate = long_term_interest_rate / 100
 
-    return name_euro_area(long_term_interest_rate)
+    return long_term_interest_rate
 
 
 def get_short_term_interest_rate(
@@ -946,7 +956,7 @@ def get_short_term_interest_rate(
     # Divide by 100 to convert the percentage into a decimal
     short_term_interest_rate = short_term_interest_rate / 100
 
-    return name_euro_area(short_term_interest_rate)
+    return short_term_interest_rate
 
 
 def get_gross_domestic_product_growth(

@@ -336,8 +336,8 @@ class JobsEconomics:
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
                 Defaults to None, which is quarterly when the Economics class was initialized with
                 quarterly=True and monthly otherwise. Countries the OECD publishes quarterly only,
-                such as New Zealand and Switzerland, are not in the monthly data; a warning names
-                them when they are requested.
+                such as New Zealand, are not in the monthly data; a warning names them when they
+                are requested.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -456,7 +456,7 @@ class JobsEconomics:
     ) -> None:
         """
         Names the requested countries the monthly sources lack that the OECD publishes
-        quarterly, such as New Zealand and Switzerland, so their absence from the monthly
+        quarterly, such as New Zealand, so their absence from the monthly
         data points to period="quarterly" rather than reading as no data at all. Only
         checked when countries are requested, as the full table has no such gap to explain.
 

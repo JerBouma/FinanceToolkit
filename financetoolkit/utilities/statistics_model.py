@@ -430,9 +430,14 @@ def finalize_dataset(
             if isinstance(dataset.columns, pd.MultiIndex)
             else dataset.columns
         )
-        selected_countries: list[object] = [
-            normalize_country_name(country, known_countries) for country in countries
-        ]
+        # Two spellings of one country ("USA" and "United States") select it once, as a
+        # repeated column would be counted twice by anything that aggregates the result.
+        selected_countries: list[object] = list(
+            dict.fromkeys(
+                normalize_country_name(country, known_countries)
+                for country in countries
+            )
+        )
         missing_countries = [
             country for country in selected_countries if country not in dataset.columns
         ]

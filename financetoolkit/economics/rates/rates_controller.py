@@ -5,6 +5,7 @@ __docformat__ = "google"
 import itertools
 
 import pandas as pd
+import requests
 
 from financetoolkit import helpers
 from financetoolkit.economics.helpers import (
@@ -108,8 +109,26 @@ class RatesEconomics:
             # publishes the full history, which is cut to that month as well: before 18
             # September 2024 the BIS reports another ECB rate (see above).
             first_day = last_day - 31
-            with collect_sources() as recent_sources:
-                recent = fetch(first_day.strftime("%Y-%m-%d"))
+            # The extension only adds the last few days, so a publisher that cannot be
+            # reached (a gateway timeout, a connection error) or that answers in a format
+            # that cannot be read leaves the BIS series as it is instead of failing the
+            # policy rates of every country.
+            try:
+                with collect_sources() as recent_sources:
+                    recent = fetch(first_day.strftime("%Y-%m-%d"))
+            except (requests.exceptions.RequestException, ValueError) as error:
+                logger.info(
+                    "The recent %s policy rates could not be retrieved (%s), so they "
+                    "follow the BIS series, which ends on %s.",
+                    country,
+                    error,
+                    last_day,
+                )
+                continue
+
+            if recent.empty:
+                continue
+
             recent = recent[
                 (recent.index >= first_day)
                 & (recent.index <= pd.Period(self._end_date, freq="D"))

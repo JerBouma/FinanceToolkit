@@ -7,6 +7,11 @@ import pandas as pd
 import pytest
 
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.helpers import (
+    align_annualized_rate,
+    compound_into_shared_dates,
+)
+from financetoolkit.risk.value_at_risk import var_model
 
 # AAPL's EGARCH fit sits on a near-flat ridge a different libm/BLAS can tip either way; see garch_model.py.
 EGARCH_PLATFORM_DRIFT = pytest.mark.xfail(
@@ -876,3 +881,84 @@ def test_get_best_fitting_copula_ranks_the_families_by_aic(risk_module):
         ticker_a="AAPL", ticker_b="MSFT", rounding=None
     )
     assert result.loc["Gaussian", "AIC"] == pytest.approx(gaussian["AIC"])
+
+
+def test_var_backtest_window_defaults_to_a_year_of_each_period(risk_module):
+    # Daily keeps 252 returns, the other periods a year of them with a minimum of 20.
+    pd.testing.assert_frame_equal(
+        risk_module.get_var_backtest(rounding=10),
+        risk_module.get_var_backtest(window_size=252, rounding=10),
+    )
+    pd.testing.assert_frame_equal(
+        risk_module.get_var_backtest(period="weekly", rounding=10),
+        risk_module.get_var_backtest(period="weekly", window_size=52, rounding=10),
+    )
+    assert risk_module.get_var_backtest(period="weekly").notna().all().all()
+    assert (
+        risk_module.get_acerbi_szekely_test(period="weekly", n_bootstrap=50)
+        .notna()
+        .all()
+        .all()
+    )
+
+
+def test_var_backtest_with_evt_and_a_short_window_is_nan(risk_module, caplog):
+    with caplog.at_level("WARNING"):
+        result = risk_module.get_var_backtest(
+            period="weekly", distribution="evt", test="kupiec"
+        )
+
+    # 52 weekly returns hold 3 losses above the 95th percentile, too few to fit.
+    assert result.isna().all().all()
+    assert sum("Extreme Value Theory" in m for m in caplog.messages) == 1
+
+
+def test_marginal_value_at_risk_compounds_the_dates_one_ticker_missed(risk_module):
+    risk = copy.copy(risk_module)
+    risk._historical_data = dict(risk_module._historical_data)
+    daily = risk_module._historical_data["daily"].copy()
+    tickers = list(daily["Return"].columns[:2])
+    # The first ticker misses every fifth date, as on its own exchange's holidays.
+    missed = daily.index[1::5]
+    daily.loc[missed, ("Return", tickers[0])] = np.nan
+    risk._historical_data["daily"] = daily
+
+    returns = daily["Return"][tickers].dropna(how="all")
+    shared = compound_into_shared_dates(returns)
+    weights = pd.Series(0.5, index=tickers)
+
+    assert len(shared) == returns.notna().all(axis=1).sum()
+    pd.testing.assert_series_equal(
+        risk.get_marginal_value_at_risk(
+            weights=dict.fromkeys(tickers, 0.5), rounding=10
+        ),
+        var_model.get_marginal_var(shared, weights, 0.05)
+        .round(10)
+        .rename("Marginal VaR"),
+        check_names=False,
+    )
+
+
+def test_risk_free_rate_of_a_partial_period_covers_its_dates(risk_module):
+    daily_returns = risk_module._historical_data["daily"]["Return"]
+    per_date = risk_module._get_risk_free_rate("daily")
+    yearly = risk_module._get_risk_free_rate("yearly")
+
+    # Stock-only data earns a trading day of the annualized rate per date.
+    annualized = align_annualized_rate(
+        risk_module._annualized_risk_free_rate_data["daily"], daily_returns.index
+    )
+    assert np.allclose(per_date, (1 + annualized) ** (1 / 252) - 1)
+
+    # Each year compounds the annualized rate over the calendar days since the date before
+    # each date in it that holds a return, so a full year earns the annualized rate.
+    dates = daily_returns.dropna(how="all").index
+    first = daily_returns.index.get_loc(dates[0])
+    previous = daily_returns.index[first - 1].ordinal if first else dates[0].ordinal - 1
+    days = np.diff(np.append(previous, dates.asi8))
+    growth = pd.Series(
+        (1 + annualized.reindex(dates).to_numpy()) ** (days / 365), index=dates
+    )
+    for year in yearly.index:
+        in_year = dates.asfreq("Y") == year
+        assert yearly[year] == pytest.approx(growth[in_year].prod() - 1)

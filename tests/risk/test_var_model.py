@@ -454,3 +454,38 @@ def test_get_marginal_var_drops_dates_with_a_missing_return():
     )
 
     pd.testing.assert_series_equal(with_gap, without_row)
+
+
+def test_get_var_evt_needs_ten_exceedances(caplog):
+    rng = np.random.default_rng(11)
+    returns = pd.Series(stats.t.rvs(4, size=400, random_state=rng) * 0.01)
+
+    # 400 returns hold 20 losses above the 95th percentile: the fit matches scipy's.
+    losses = -returns.to_numpy()
+    threshold = np.percentile(losses, 95)
+    exceedances = losses[losses > threshold] - threshold
+    shape, _, scale = stats.genpareto.fit(exceedances, floc=0)
+    probability = len(exceedances) / len(losses)
+    expected = -(threshold + scale / shape * ((0.05 / probability) ** (-shape) - 1))
+    assert var_model.get_var_evt(returns, 0.05).iloc[0] == pytest.approx(expected)
+
+    # 60 returns hold 3, too few for a stable fit: NaN, with one logged warning.
+    with caplog.at_level("WARNING"):
+        assert np.isnan(var_model.get_var_evt(returns.iloc[:60], 0.05).iloc[0])
+    assert sum("Extreme Value Theory" in m for m in caplog.messages) == 1
+
+
+def test_get_var_evt_within_period_warns_once(caplog):
+    rng = np.random.default_rng(12)
+    index = pd.period_range("2020-01-01", periods=730, freq="D")
+    returns = pd.DataFrame(
+        {"A": stats.t.rvs(4, size=730, random_state=rng) * 0.01}, index=index
+    )
+    within = returns.set_axis(pd.MultiIndex.from_arrays([index.asfreq("Q"), index]))
+
+    with caplog.at_level("WARNING"):
+        result = var_model.get_var_evt(within, 0.05)
+
+    # A quarter of daily returns has about 4 losses above the 95th percentile.
+    assert result["A"].isna().all()
+    assert sum("Extreme Value Theory" in m for m in caplog.messages) == 1

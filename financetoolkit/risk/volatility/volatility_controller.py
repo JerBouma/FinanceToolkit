@@ -1630,7 +1630,7 @@ class VolatilityRisk:
         and the trading days per period are 252 / 52 (weekly), 252 / 12 (monthly), 252 / 4 (quarterly) or 252
         (yearly), or 365 days a year for a ticker with returns on weekends. With `rolling`, the result is the
         sample standard deviation of the last `rolling` excess returns of the chosen period itself, without
-        scaling, with the risk free rate compounded over the dates in each period that hold a return.
+        scaling, with the risk free rate compounded over the dates in each period on which the ticker has a return.
 
         Also known as: standard deviation of excess returns.
 
@@ -1696,14 +1696,17 @@ class VolatilityRisk:
 
         if rolling:
             period_returns = self._historical_data[period]["Return"]
-            risk_free_rate = self._risk_free_rate_data[period]
+            # Each ticker earns the risk free rate compounded over its own dates in each period, so a weekend at the turn of a month that only a cryptocurrency trades on stays in the month of a stock's next trading day.  # noqa: E501
+            risk_free_rate = self._risk_free_rate_data[period].reindex(
+                index=period_returns.index, columns=period_returns.columns
+            )
             excess_volatility = risk_model.get_rolling_excess_volatility(
                 period_returns, risk_free_rate, period, rolling
             )
         else:
             returns = self._historical_data["daily"]["Return"]
             # Each ticker earns the risk free rate per observation of its own calendar: a trading day of it per return, or the calendar days since its previous return for a ticker that trades on weekends.  # noqa: E501
-            risk_free_rate = self._get_risk_free_rate_per_observation()
+            risk_free_rate = self._risk_free_rate_data["daily"][returns.columns]
 
             excess_volatility = risk_model.get_excess_volatility(
                 returns, risk_free_rate, period

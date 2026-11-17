@@ -196,6 +196,38 @@ def get_rolling_beta(
 
 
 @by_own_trading_days(compound=True)
+def get_rolling_standard_deviation(
+    returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    benchmark_returns: pd.Series | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling sample standard deviation (ddof=1) of returns over the last
+    `window_size` returns of each column's own dates, so the dates only another ticker
+    has a return on (the weekends of a cryptocurrency next to a stock) do not leave every
+    window of a column incomplete.
+
+    With `benchmark_returns`, the windows hold the dates both the column and the benchmark
+    have a return on, with the returns of the dates in between compounded into the next
+    such date: the same sample as `get_rolling_beta`, so a total risk ratio (the standard
+    deviation of the asset over that of the benchmark) is at least the absolute Beta.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): Asset returns.
+        window_size (int): Rolling window size.
+        benchmark_returns (pd.Series | None, optional): Benchmark returns whose dates the
+            windows hold. Defaults to None, which uses every date of the column.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling standard deviation values with time as index.
+    """
+    if benchmark_returns is not None:
+        returns = returns.where(benchmark_returns.notna(), axis=0)
+
+    return returns.rolling(window=window_size).std()
+
+
+@by_own_trading_days(compound=True)
 def get_beta_implied_return(
     returns: pd.DataFrame,
     benchmark_returns: pd.Series,
@@ -533,7 +565,7 @@ def get_beta_estimate(
 
 
 def get_capital_asset_pricing_model(
-    risk_free_rate: pd.Series | float,
+    risk_free_rate: pd.Series | pd.DataFrame | float,
     beta: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
@@ -565,7 +597,8 @@ def get_capital_asset_pricing_model(
     Statistics, 47(1), 13-37.
 
     Args:
-        risk_free_rate (pd.Series | float): the risk free rate.
+        risk_free_rate (pd.Series | pd.DataFrame | float): the risk free rate, or a DataFrame with
+            the rate of each column of beta over the periods of its own calendar.
         beta (pd.Series | pd.DataFrame | float): the beta.
         benchmark_returns (pd.Series | pd.DataFrame | float): the benchmark returns, or with a
             DataFrame beta, a column of market returns per column of beta.
@@ -584,9 +617,15 @@ def get_capital_asset_pricing_model(
                 if isinstance(benchmark_returns, pd.DataFrame)
                 else benchmark_returns
             )
-            capital_asset_pricing_model.loc[:, column] = risk_free_rate + beta[
+            # A risk free rate per column, over the periods of each ticker's own calendar.
+            column_risk_free_rate = (
+                risk_free_rate[column]
+                if isinstance(risk_free_rate, pd.DataFrame)
+                else risk_free_rate
+            )
+            capital_asset_pricing_model.loc[:, column] = column_risk_free_rate + beta[
                 column
-            ] * (market_returns - risk_free_rate)
+            ] * (market_returns - column_risk_free_rate)
     elif isinstance(beta, (pd.Series | float)):
         capital_asset_pricing_model = risk_free_rate + beta * (
             benchmark_returns - risk_free_rate
@@ -1202,7 +1241,7 @@ def get_rolling_alpha(
 
 def get_jensens_alpha(
     asset_returns: pd.Series | pd.DataFrame | float,
-    risk_free_rate: pd.Series | float,
+    risk_free_rate: pd.Series | pd.DataFrame | float,
     beta: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
 ) -> pd.Series | pd.DataFrame | float:
@@ -1227,7 +1266,8 @@ def get_jensens_alpha(
 
     Args:
         asset_returns (pd.Series | float): The asset's or portfolio's return.
-        risk_free_rate (pd.Series | float): The risk-free rate over the same period.
+        risk_free_rate (pd.Series | pd.DataFrame | float): The risk-free rate over the same period,
+        or a DataFrame with the rate of each asset over the periods of its own calendar.
         beta (pd.Series | pd.DataFrame | float): The asset's or portfolio's Beta, see
         `get_beta`.
         benchmark_returns (pd.Series | float): The benchmark's return over the same period.
@@ -1241,8 +1281,14 @@ def get_jensens_alpha(
             index=beta.index, columns=beta.columns, dtype=np.float64
         )
         for column in jensens_alpha.columns:
+            column_risk_free_rate = (
+                risk_free_rate[column]
+                if isinstance(risk_free_rate, pd.DataFrame)
+                else risk_free_rate
+            )
             jensens_alpha.loc[:, column] = asset_returns[column] - (
-                risk_free_rate + beta[column] * (benchmark_returns - risk_free_rate)
+                column_risk_free_rate
+                + beta[column] * (benchmark_returns - column_risk_free_rate)
             )
     elif isinstance(beta, (pd.Series | float)) and isinstance(
         asset_returns, (pd.Series | float)
@@ -1261,7 +1307,7 @@ def get_jensens_alpha(
 
 def get_treynor_ratio(
     asset_returns: pd.Series | pd.DataFrame | float,
-    risk_free_rate: pd.Series | float,
+    risk_free_rate: pd.Series | pd.DataFrame | float,
     beta: pd.Series | pd.DataFrame | float,
 ) -> pd.Series | pd.DataFrame | float:
     """
@@ -1284,7 +1330,8 @@ def get_treynor_ratio(
 
     Args:
         asset_returns (pd.Series | float): The asset's or portfolio's return.
-        risk_free_rate (pd.Series | float): The risk-free rate over the same period.
+        risk_free_rate (pd.Series | pd.DataFrame | float): The risk-free rate over the same period,
+        or a DataFrame with the rate of each asset over the periods of its own calendar.
         beta (pd.Series | pd.DataFrame | float): The asset's or portfolio's Beta
         (systematic risk), see `get_beta`.
 
@@ -1296,8 +1343,13 @@ def get_treynor_ratio(
             index=beta.index, columns=beta.columns, dtype=np.float64
         )
         for column in treynor_ratio.columns:
+            column_risk_free_rate = (
+                risk_free_rate[column]
+                if isinstance(risk_free_rate, pd.DataFrame)
+                else risk_free_rate
+            )
             treynor_ratio.loc[:, column] = (
-                asset_returns[column] - risk_free_rate
+                asset_returns[column] - column_risk_free_rate
             ) / beta[column]
     elif isinstance(beta, (pd.Series | float)) and isinstance(
         asset_returns, (pd.Series | float)
@@ -1689,7 +1741,7 @@ def get_ulcer_performance_index(
 
 def get_m2_ratio(
     asset_returns: pd.Series | pd.DataFrame,
-    risk_free_rate: pd.Series,
+    risk_free_rate: pd.Series | pd.DataFrame,
     asset_standard_deviation: pd.Series | pd.DataFrame,
     benchmark_standard_deviation: pd.Series | float,
 ) -> pd.Series | pd.DataFrame:
@@ -1720,7 +1772,8 @@ def get_m2_ratio(
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
-        risk_free_rate (pd.Series): The risk-free rate, aligned to the same period as the returns.
+        risk_free_rate (pd.Series | pd.DataFrame): The risk-free rate, aligned to the same period as
+        the returns, or a DataFrame with the rate of each asset over the periods of its own calendar.
         asset_standard_deviation (pd.Series | pd.DataFrame): The asset's (or portfolio's)
         standard deviation, over the same window as `asset_returns`.
         benchmark_standard_deviation (pd.Series | float): The benchmark's standard
@@ -1736,11 +1789,16 @@ def get_m2_ratio(
             index=asset_returns.index, columns=asset_returns.columns, dtype=np.float64
         )
         for column in m2_ratio.columns:
+            column_risk_free_rate = (
+                risk_free_rate[column]
+                if isinstance(risk_free_rate, pd.DataFrame)
+                else risk_free_rate
+            )
             sharpe_ratio = (
-                asset_returns[column] - risk_free_rate
+                asset_returns[column] - column_risk_free_rate
             ) / asset_standard_deviation[column]
             m2_ratio.loc[:, column] = (
-                risk_free_rate + sharpe_ratio * benchmark_standard_deviation
+                column_risk_free_rate + sharpe_ratio * benchmark_standard_deviation
             )
     elif isinstance(asset_returns, (pd.Series | float)) and isinstance(
         asset_standard_deviation, (pd.Series | float)
@@ -1759,7 +1817,7 @@ def get_m2_ratio(
 @by_own_trading_days(compound=True)
 def get_rolling_m2_ratio(
     asset_returns: pd.Series | pd.DataFrame,
-    risk_free_rate: pd.Series,
+    risk_free_rate: pd.Series | pd.DataFrame,
     benchmark_returns: pd.Series,
     window_size: int,
 ) -> pd.Series | pd.DataFrame:
@@ -1769,7 +1827,8 @@ def get_rolling_m2_ratio(
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
-        risk_free_rate (pd.Series): The risk free rate, aligned to the same period as the returns.
+        risk_free_rate (pd.Series | pd.DataFrame): The risk free rate, aligned to the same period as
+        the returns, or a DataFrame with the rate of each asset over the periods of its own calendar.
         benchmark_returns (pd.Series): Benchmark returns, aligned to the same period as
         the returns, from which the rolling benchmark standard deviation is derived.
         window_size (int): The size of the rolling window.
@@ -2412,6 +2471,7 @@ def _divide_gains_by_losses(gains: float, losses: float) -> float:
     return gains / losses if losses > 0 else np.nan
 
 
+@by_own_trading_days
 def get_rolling_omega_ratio(
     returns: pd.Series | pd.DataFrame,
     window_size: int,
@@ -2903,7 +2963,7 @@ def get_returns(
 
 def get_excess_return(
     returns: pd.Series | pd.DataFrame,
-    risk_free_rate: pd.Series,
+    risk_free_rate: pd.Series | pd.DataFrame,
     cumulative: bool = False,
 ) -> pd.Series | pd.DataFrame:
     """
@@ -2916,8 +2976,8 @@ def get_excess_return(
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        risk_free_rate (pd.Series): A Series of the risk free rate, aligned to the
-        same period as the returns.
+        risk_free_rate (pd.Series | pd.DataFrame): A Series of the risk free rate, aligned to the
+        same period as the returns, or a DataFrame with the rate of each column of the returns.
         cumulative (bool, optional): Whether to return the cumulative excess return
         over time instead of the discrete excess return per period. Defaults to False.
 
@@ -3222,7 +3282,7 @@ def get_rolling_appraisal_ratio(
 
 def get_fama_decomposition(
     asset_returns: pd.Series | pd.DataFrame,
-    risk_free_rate: pd.Series | float,
+    risk_free_rate: pd.Series | pd.DataFrame | float,
     beta: pd.Series | pd.DataFrame | float,
     benchmark_returns: pd.Series | float,
     asset_standard_deviation: pd.Series | pd.DataFrame,
@@ -3288,7 +3348,8 @@ def get_fama_decomposition(
     Args:
         asset_returns (pd.Series | pd.DataFrame | float): The asset's or portfolio's
         return over the period.
-        risk_free_rate (pd.Series | float): The risk-free rate over the same period.
+        risk_free_rate (pd.Series | pd.DataFrame | float): The risk-free rate over the same period,
+        or a DataFrame with the rate of each asset over the periods of its own calendar.
         beta (pd.Series | pd.DataFrame | float): The asset's or portfolio's Beta, see
         `get_beta`.
         benchmark_returns (pd.Series | float): The benchmark's return over the same
@@ -3316,11 +3377,16 @@ def get_fama_decomposition(
         )
 
         for column in beta.columns:
-            capm_actual_beta = risk_free_rate + beta[column] * (
-                benchmark_returns - risk_free_rate
+            column_risk_free_rate = (
+                risk_free_rate[column]
+                if isinstance(risk_free_rate, pd.DataFrame)
+                else risk_free_rate
             )
-            capm_total_risk = risk_free_rate + total_risk_ratio[column] * (
-                benchmark_returns - risk_free_rate
+            capm_actual_beta = column_risk_free_rate + beta[column] * (
+                benchmark_returns - column_risk_free_rate
+            )
+            capm_total_risk = column_risk_free_rate + total_risk_ratio[column] * (
+                benchmark_returns - column_risk_free_rate
             )
 
             selectivity.loc[:, column] = asset_returns[column] - capm_total_risk

@@ -11,14 +11,13 @@ import pandas as pd
 
 from financetoolkit.helpers import LazyDict, handle_portfolio
 from financetoolkit.performance import performance_model
-from financetoolkit.performance.helpers import (
-    compound_risk_free_rate,
-    determine_within_dataset,
+from financetoolkit.performance.helpers import determine_within_dataset
+from financetoolkit.risk.helpers import (
+    determine_within_historical_data,
     get_observations_per_year,
     get_risk_free_rate_per_date,
-    get_risk_free_rate_per_observation,
+    get_risk_free_rate_per_ticker,
 )
-from financetoolkit.risk.helpers import determine_within_historical_data
 from financetoolkit.risk.risk_model import (
     get_kurtosis,
     get_max_drawdown,
@@ -179,7 +178,7 @@ class Performance:
 
         # Historical Data
         self._historical_data = historical_data
-        # The risk free rate is quoted as an annualized yield, so it is converted to the risk free return of each period: compounded over the dates in each period that hold a return, as the period's return compounds them, so a partial period (such as the current year) earns the rate of the dates it covers. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
+        # The risk free rate is quoted as an annualized yield, so it is converted to the risk free return of each ticker per period: compounded over the ticker's own dates in each period that hold a return, as the period's return compounds them, so a partial period (such as the current year) earns the rate of the dates it covers and a stock next to a cryptocurrency earns the same rate as on its own. Without this, a daily return would have a full year of risk free rate subtracted from it.  # noqa: E501
         self._annualized_risk_free_rate_data = risk_free_rate_data
         self._risk_free_rate_data = LazyDict(self._get_risk_free_rate)
 
@@ -233,51 +232,13 @@ class Performance:
 
         return daily_historical_data["Return"]
 
-    @cached_property
-    def _risk_free_rate_per_date(self) -> pd.Series:
+    def _get_risk_free_rate(self, period: str) -> pd.DataFrame:
         """
-        The risk free return earned on each date of the daily returns since the date before,
-        see `financetoolkit.performance.helpers.get_risk_free_rate_per_date`.
+        The risk free return per period of each ticker (and the Benchmark) on its own
+        calendar, see `financetoolkit.risk.helpers.get_risk_free_rate_per_ticker`.
         """
-        return get_risk_free_rate_per_date(
-            self._annualized_risk_free_rate_data["daily"], self._daily_returns
-        )
-
-    def _get_risk_free_rate(self, period: str) -> pd.Series:
-        """
-        The risk free return per period, the rate subtracted from the returns of that period.
-
-        For period="daily" this is the risk free return of each date since the date before.
-        The other periods compound the annualized rate over the calendar days between the
-        dates in each period that hold a return, as the return of a period compounds the daily
-        returns within it, so a full year earns the annualized rate whichever tickers the data
-        holds and a period the data covers in part (the current year, or a first period cut by
-        the start date) earns the risk free rate of the days it covers rather than of a full
-        period (see `compound_risk_free_rate`). Without daily returns the annualized rate of
-        the period is converted with the periods in a year instead.
-
-        Args:
-            period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
-
-        Returns:
-            pd.Series: The risk free return per period, as a decimal.
-
-        Raises:
-            KeyError: For any other period, as a dictionary of the periods would.
-        """
-        if period not in PERIODS_PER_YEAR:
-            raise KeyError(period)
-
-        if self._daily_returns.empty:
-            return convert_annualized_rate_to_period(
-                self._annualized_risk_free_rate_data[period], period
-            )
-
-        if period == "daily":
-            return self._risk_free_rate_per_date
-
-        return compound_risk_free_rate(
-            self._annualized_risk_free_rate_data["daily"], self._daily_returns, period
+        return get_risk_free_rate_per_ticker(
+            self._annualized_risk_free_rate_data, self._historical_data, period
         )
 
     def _add_excess_return(self, period: str) -> pd.DataFrame:
@@ -302,11 +263,8 @@ class Performance:
         # Each ticker earns the risk free rate per observation of its own calendar: a
         # trading day of it per return, or the calendar days since its previous return
         # for a ticker that trades on weekends.
-        excess_return = daily_historical_data["Return"] - (
-            get_risk_free_rate_per_observation(
-                self._annualized_risk_free_rate_data["daily"],
-                daily_historical_data["Return"],
-            )
+        excess_return = (
+            daily_historical_data["Return"] - self._risk_free_rate_data["daily"]
         )
         excess_return.columns = pd.MultiIndex.from_product(
             [["Excess Return"], excess_return.columns]
@@ -341,7 +299,16 @@ class Performance:
         bar_days = bars.asfreq("D")
         bars_per_day = float(pd.Series(1, index=bars).groupby(bar_days).size().median())
 
-        daily_rate = self._risk_free_rate_data["daily"].sort_index()
+        # The bars of a day share the risk free rate of the dates of the daily returns.
+        daily_rate = (
+            get_risk_free_rate_per_date(
+                self._annualized_risk_free_rate_data["daily"], self._daily_returns
+            )
+            if not self._daily_returns.empty
+            else convert_annualized_rate_to_period(
+                self._annualized_risk_free_rate_data["daily"], "daily"
+            )
+        ).sort_index()
         daily_rate = daily_rate[~daily_rate.index.duplicated(keep="last")]
         bar_rate = (1 + daily_rate.reindex(bar_days, method="ffill")) ** (
             1 / bars_per_day
@@ -360,7 +327,7 @@ class Performance:
         ticker, used to annualize a ratio computed from them. Those are daily returns: 252 a
         year for a ticker that trades on trading days, and the observations per year of its
         365 for a ticker that also trades on weekends, such as a cryptocurrency
-        (see `financetoolkit.performance.helpers.get_observations_per_year`). For
+        (see `financetoolkit.risk.helpers.get_observations_per_year`). For
         period="daily" and "intraday", which nest the intraday bars, a year holds those days
         times the median number of bars per day.
 
@@ -2789,7 +2756,8 @@ class Performance:
         if rolling:
             period_returns = self._get_column(period, "Return", within_period=False)
             full_excess_return = performance_model.get_excess_return(
-                period_returns, self._risk_free_rate_data[period]
+                period_returns,
+                self._risk_free_rate_data[period][period_returns.columns],
             )
 
         if rolling:
@@ -3053,7 +3021,8 @@ class Performance:
         if rolling:
             period_returns = self._get_column(period, "Return", within_period=False)
             excess_return = performance_model.get_excess_return(
-                period_returns, self._risk_free_rate_data[period]
+                period_returns,
+                self._risk_free_rate_data[period][period_returns.columns],
             )
             sortino_ratio = performance_model.get_rolling_sortino_ratio(
                 excess_return, rolling
@@ -3169,7 +3138,8 @@ class Performance:
             period_returns
             if period == "intraday"
             else performance_model.get_excess_return(
-                period_returns, self._risk_free_rate_data[period]
+                period_returns,
+                self._risk_free_rate_data[period][period_returns.columns],
             )
         )
 
@@ -3505,7 +3475,7 @@ class Performance:
 
         period_returns = self._get_column(period, "Return", within_period=False)
         excess_return = performance_model.get_excess_return(
-            period_returns, self._risk_free_rate_data[period]
+            period_returns, self._risk_free_rate_data[period][period_returns.columns]
         )
 
         burke_ratio = performance_model.get_burke_ratio(
@@ -3622,7 +3592,7 @@ class Performance:
         benchmark_period_returns = self._get_column(
             period, "Return", within_period=False, benchmark=True
         )
-        risk_free_rate = self._risk_free_rate_data[period]
+        risk_free_rate = self._risk_free_rate_data[period][period_returns.columns]
 
         if rolling:
             m2_ratio = performance_model.get_rolling_m2_ratio(
@@ -4449,7 +4419,7 @@ class Performance:
 
         excess_returns = performance_model.get_geometric_excess_return(
             self._get_column("monthly", "Return", within_period=False),
-            self._risk_free_rate_data["monthly"],
+            self._risk_free_rate_data["monthly"][self._tickers_without_portfolio],
         )
 
         if rolling:
@@ -4923,7 +4893,7 @@ class Performance:
 
             if method == "continuous":
                 returns = performance_model.get_excess_return(
-                    returns, self._risk_free_rate_data[period]
+                    returns, self._risk_free_rate_data[period][returns.columns]
                 )
 
             kelly_criterion = performance_model.get_rolling_kelly_criterion(
@@ -4935,7 +4905,7 @@ class Performance:
             if method == "continuous" and not within_period:
                 returns = performance_model.get_excess_return(
                     self._get_column(period, "Return", within_period=False),
-                    self._risk_free_rate_data[period],
+                    self._risk_free_rate_data[period][self._tickers_without_portfolio],
                 )
             else:
                 returns = self._get_column(period, column, within_period=within_period)
@@ -5401,7 +5371,7 @@ class Performance:
 
         returns = self._historical_data["daily"]["Return"]
         period_returns = performance_model.get_returns(returns, period)
-        risk_free_rate = self._risk_free_rate_data[period]
+        risk_free_rate = self._risk_free_rate_data[period][period_returns.columns]
 
         # Compounded only after slicing to the date range, see get_returns.
         excess_return = performance_model.get_excess_return(
@@ -5684,9 +5654,11 @@ class Performance:
             )
 
             risk_free_rate = self._risk_free_rate_data[period]
-            excess_return = performance_model.get_excess_return(returns, risk_free_rate)
+            excess_return = performance_model.get_excess_return(
+                returns, risk_free_rate[returns.columns]
+            )
             benchmark_excess_return = performance_model.get_excess_return(
-                benchmark_returns, risk_free_rate
+                benchmark_returns, risk_free_rate[self._benchmark_name]
             )
         else:
             returns = self._get_column(period, "Return", within_period=True)
@@ -5868,8 +5840,15 @@ class Performance:
             # The standard deviations of the same period returns and rolling window as the
             # rolling Beta, so that Total Risk Beta = Asset Standard Deviation / Benchmark
             # Standard Deviation is at least |Beta| (the correlation is at most 1).
-            asset_standard_deviation = returns.rolling(rolling).std()
-            benchmark_standard_deviation = benchmark_returns.rolling(rolling).std()
+            # Each on its own dates, and the asset on the dates it shares with the benchmark (as Beta), so a stock next to a cryptocurrency keeps full windows on daily data.  # noqa: E501
+            asset_standard_deviation = performance_model.get_rolling_standard_deviation(
+                returns, rolling, benchmark_returns
+            )
+            benchmark_standard_deviation = (
+                performance_model.get_rolling_standard_deviation(
+                    benchmark_returns, rolling
+                )
+            )
         else:
             daily_returns = self._get_column("daily", "Return", within_period=False)
             daily_benchmark_returns = self._get_column(
@@ -6007,7 +5986,7 @@ class Performance:
 
         returns = self._get_column(period, "Return", within_period=within_period)
         period_returns = self._get_column(period, "Return", within_period=False)
-        risk_free_rate = self._risk_free_rate_data[period]
+        risk_free_rate = self._risk_free_rate_data[period][period_returns.columns]
 
         excess_return = performance_model.get_excess_return(
             period_returns, risk_free_rate
@@ -6773,7 +6752,7 @@ class Performance:
         if rolling:
             excess_return = performance_model.get_excess_return(
                 self._get_column(period, "Return", within_period=False),
-                self._risk_free_rate_data[period],
+                self._risk_free_rate_data[period][self._tickers_without_portfolio],
             )
             sharpe_ratio = performance_model.get_rolling_sharpe_ratio(
                 excess_return, rolling

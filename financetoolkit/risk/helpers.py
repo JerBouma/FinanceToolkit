@@ -12,6 +12,7 @@ from financetoolkit.utilities.statistics_model import (
     PERIODS_PER_YEAR,
     VOLATILITY_WINDOW_TRANSLATION,
     WITHIN_PERIOD_TRANSLATION,
+    convert_annualized_rate_to_period,
     to_period_index,
 )
 
@@ -425,6 +426,83 @@ def compound_risk_free_rate(
     growth = (1 + rate) ** (days_since_date_before / 365)
 
     return growth.groupby(dates.asfreq(PERIOD_TRANSLATION[period])).prod() - 1
+
+
+def get_risk_free_rate_per_ticker(
+    annualized_rate_data: Mapping[str, pd.Series],
+    historical_data: Mapping[str, pd.DataFrame],
+    period: str,
+) -> pd.DataFrame:
+    """
+    The risk free return per period of each ticker (and the Benchmark), the rate subtracted
+    from its returns of that period, on the ticker's own calendar.
+
+    For period="daily" this is the risk free return over each of a ticker's returns: a
+    trading day of the rate for a ticker that trades on trading days, and the calendar days
+    since its previous return for a ticker that also trades on weekends (see
+    `get_risk_free_rate_per_observation`). The other periods compound the annualized rate
+    over the calendar days between the ticker's own dates with a return in each period,
+    starting from the date of its first price, as the return of a period compounds its
+    daily returns (see `compound_risk_free_rate`). A full year therefore earns the
+    annualized rate, and a period the ticker covers in part (the current year, or its first
+    period) earns the rate of the days it covers. The rate of a ticker does not depend on
+    the other tickers: the weekends a cryptocurrency adds to the dates neither split a
+    stock's Monday return from the Friday before nor move a weekend at the turn of a month
+    out of the month of the stock's next trading day. Without daily returns the annualized
+    rate of the period is converted with the periods in a year instead, the same for every
+    ticker.
+
+    Args:
+        annualized_rate_data (Mapping[str, pd.Series]): The annualized risk free rate per
+            period, with a PeriodIndex.
+        historical_data (Mapping[str, pd.DataFrame]): The historical data per period, with
+            a "Return" column per ticker (and an "Adj Close" column for the daily period).
+        period (str): "daily", "weekly", "monthly", "quarterly" or "yearly".
+
+    Returns:
+        pd.DataFrame: The risk free return per period and ticker, as a decimal.
+
+    Raises:
+        KeyError: For any other period, as a dictionary of the periods would.
+    """
+    if period not in PERIODS_PER_YEAR:
+        raise KeyError(period)
+
+    daily_historical_data = historical_data["daily"]
+
+    if daily_historical_data.empty or "Return" not in daily_historical_data:
+        risk_free_rate = convert_annualized_rate_to_period(
+            annualized_rate_data[period], period
+        )
+        return pd.DataFrame(
+            {
+                column: risk_free_rate
+                for column in historical_data[period]["Return"].columns
+            }
+        )
+
+    daily_returns = daily_historical_data["Return"]
+    annualized_rate = annualized_rate_data["daily"]
+
+    if period == "daily":
+        return get_risk_free_rate_per_observation(annualized_rate, daily_returns)
+
+    risk_free_rate = {}
+    for column, returns in daily_returns.items():
+        observed = returns.notna()
+        # The first return of a ticker accrues from the date of its first price, or
+        # without prices from the date before it.
+        first_price_date = (
+            daily_historical_data["Adj Close"][column].first_valid_index()
+            if "Adj Close" in daily_historical_data
+            else observed.shift(-1, fill_value=False).idxmax()
+        )
+        own_dates = observed | (returns.index == first_price_date)
+        risk_free_rate[column] = compound_risk_free_rate(
+            annualized_rate, returns[own_dates].to_frame(), period
+        )
+
+    return pd.concat(risk_free_rate, axis=1)
 
 
 def compound_into_shared_dates(returns: pd.DataFrame) -> pd.DataFrame:

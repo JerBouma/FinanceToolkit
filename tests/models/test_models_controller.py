@@ -2152,3 +2152,69 @@ def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
     assert pd.isna(wacc.loc[("AAPL", "Cost of Debt"), period])
     assert pd.isna(wacc.loc[("AAPL", "Weighted Average Cost of Capital"), period])
     assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0
+
+
+# The US CPI-U of the BIS (2010 = 100) that the size-age index deflates the total assets with,
+# rising 0.25% a month from its 2004 level.
+CONSUMER_PRICES = pd.DataFrame(
+    {"United States": [85.0 * 1.0025**month for month in range(240)]},
+    index=pd.period_range("2004-01", periods=240, freq="M"),
+)
+
+PROFILE = pd.DataFrame(
+    {
+        "AAPL": {"IPO Date": "1980-12-12", "Industry": "Consumer Electronics"},
+        "MSFT": {"IPO Date": "1986-03-13", "Industry": "Software - Infrastructure"},
+    }
+)
+
+
+@pytest.fixture
+def constraints_module(test_toolkit, monkeypatch):
+    """A Models instance with company profiles and the CPI, without a download."""
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        bis_model, "get_consumer_prices", lambda *args, **kwargs: CONSUMER_PRICES
+    )
+    module = test_toolkit.models
+    module._profile_source = PROFILE
+    return module
+
+
+def test_get_kaplan_zingales_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_kaplan_zingales_index())
+    recorder.capture(constraints_module.get_kaplan_zingales_index(growth=True))
+    recorder.capture(constraints_module.get_kaplan_zingales_index(standardize=True))
+
+
+def test_get_whited_wu_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_whited_wu_index())
+    recorder.capture(constraints_module.get_whited_wu_index(growth=True))
+
+
+def test_get_whited_wu_index_averages_the_industry(constraints_module):
+    constraints_module._profile_source = PROFILE.replace(
+        "Software - Infrastructure", "Consumer Electronics"
+    )
+    result = constraints_module.get_whited_wu_index()
+    sales_growth = result.xs("Sales Growth", level=1)
+    industry = result.xs("Industry Sales Growth", level=1)
+
+    # Rounded to the Toolkit's 4 decimals after averaging.
+    for ticker in ["AAPL", "MSFT"]:
+        pd.testing.assert_series_equal(
+            industry.loc[ticker], sales_growth.mean(), check_names=False, atol=1e-4
+        )
+
+
+def test_get_size_age_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_size_age_index())
+    recorder.capture(constraints_module.get_size_age_index(growth=True))
+
+
+def test_get_size_age_index_without_a_profile_is_nan(constraints_module):
+    constraints_module._profile_source = None
+    result = constraints_module.get_size_age_index()
+
+    assert result.empty or result.xs("Size-Age Index", level=1).isna().all().all()

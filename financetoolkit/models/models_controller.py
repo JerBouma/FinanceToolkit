@@ -9,6 +9,7 @@ import pandas as pd
 
 from financetoolkit.helpers import LazyDict
 from financetoolkit.models import helpers
+from financetoolkit.models.constraints.constraints_controller import ConstraintsModels
 from financetoolkit.models.distress.distress_controller import DistressModels
 from financetoolkit.models.profitability.profitability_controller import (
     ProfitabilityModels,
@@ -53,6 +54,7 @@ class ModelsBase:
         sp500_function: (
             Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
         ) = None,
+        profile: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -132,6 +134,7 @@ class ModelsBase:
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
         self._sp500_function = sp500_function
+        self._profile_source = profile
 
         # Historical Data
         self._historical_data = historical_data
@@ -165,6 +168,12 @@ class ModelsBase:
     def _period_end_dates(self) -> pd.DataFrame | None:
         """The fiscal period end dates, retrieved when a model first needs them."""
         source = self._period_end_dates_source
+        return source() if callable(source) else source
+
+    @cached_property
+    def _profile(self) -> pd.DataFrame | None:
+        """The company profiles, retrieved when a model first needs them."""
+        source = self._profile_source
         return source() if callable(source) else source
 
     @cached_property
@@ -454,7 +463,12 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["scores"] + [
 @filter_shown_columns
 @track_sources
 class Models(
-    ValuationModels, QualityModels, DistressModels, ProfitabilityModels, ModelsBase
+    ValuationModels,
+    QualityModels,
+    DistressModels,
+    ProfitabilityModels,
+    ConstraintsModels,
+    ModelsBase,
 ):
     """
     The Models module is meant to execute well-known models such

@@ -2806,3 +2806,145 @@ def test_a_refused_bls_request_leaves_nonfarm_payrolls_empty(monkeypatch, caplog
     assert any(
         "Daily threshold reached." in record.getMessage() for record in caplog.records
     )
+
+
+def nmdb_archive(rows):
+    """Zips an NMDB outstanding mortgage statistics CSV of (geography, market, period,
+    series, VALUE1, VALUE2, suppressed) rows, as the FHFA publishes it."""
+    import io
+    import zipfile
+
+    header = (
+        "SOURCE,FREQUENCY,GEOLEVEL,GEOID,GEONAME,MARKET,PERIOD,YEAR,QUARTER,MONTH,"
+        "SUPPRESSED,SERIESID,VALUE1,VALUE2\n"
+    )
+    lines = [
+        f"NMDB,Quarterly,National,USA,{geography},{market},{period},{period[:4]},"
+        f"{period[-1]},{int(period[-1]) * 3},{suppressed},{series},{value1},{value2}\n"
+        for geography, market, period, series, value1, value2, suppressed in rows
+    ]
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("outstanding.csv", header + "".join(lines))
+    return buffer.getvalue()
+
+
+def fhfa_lock_in_rows(geography="United States", market="All Mortgages"):
+    """The interest rate rows of the 2026 Q1 and Q2 NMDB release, plus a series the
+    model leaves out."""
+    published = {
+        "2026Q1": [4.4, 19.3, 30.1, 16.6, 11.8, 22.2],
+        "2026Q2": [4.4, 19.2, 29.9, 16.5, 12.0, 22.5],
+    }
+    series = [
+        "AVE_INTRATE",
+        "PCT_INTRATE_LT_3",
+        "PCT_INTRATE_3_4",
+        "PCT_INTRATE_4_5",
+        "PCT_INTRATE_5_6",
+        "PCT_INTRATE_GE_6",
+    ]
+    rows = [
+        (geography, market, period, name, value, value + 1, 0)
+        for period, values in published.items()
+        for name, value in zip(series, values, strict=True)
+    ]
+    rows.append((geography, market, "2026Q2", "TOT_LOANS", 54000, "", 0))
+    return rows
+
+
+def test_fhfa_outstanding_mortgage_rates_are_decimals_per_weighting(monkeypatch):
+    from financetoolkit.economics.sources import fhfa_model
+
+    content = nmdb_archive(
+        fhfa_lock_in_rows()
+        + [("Pacific", "All Mortgages", "2026Q2", "PCT_INTRATE_LT_3", 25.0, 26.0, 1)]
+    )
+    monkeypatch.setattr(
+        fhfa_model,
+        "get_request",
+        lambda url, timeout: type("Response", (), {"content": content})(),
+    )
+
+    rates = fhfa_model.get_outstanding_mortgage_interest_rates()
+    latest = rates.loc[pd.Period("2026Q2", "Q")]
+
+    # VALUE1 is weighted by the number of mortgages, VALUE2 by their unpaid balance.
+    assert latest[
+        ("United States", "All Mortgages", "Loans", "Below 3%")
+    ] == pytest.approx(0.192)
+    assert latest[
+        ("United States", "All Mortgages", "Balance", "Below 3%")
+    ] == pytest.approx(0.202)
+    assert latest[
+        ("United States", "All Mortgages", "Loans", "Average Rate")
+    ] == pytest.approx(0.044)
+    # A suppressed statistic has no value, and other series are left out.
+    assert pd.isna(latest[("Pacific", "All Mortgages", "Loans", "Below 3%")])
+    assert "TOT_LOANS" not in rates.columns.get_level_values("Series")
+
+
+def test_fhfa_archive_without_the_rate_series_is_a_changed_format(monkeypatch):
+    from financetoolkit.economics.sources import fhfa_model
+
+    content = nmdb_archive(
+        [("United States", "All Mortgages", "2026Q2", "TOT_LOANS", 1, "", 0)]
+    )
+    monkeypatch.setattr(
+        fhfa_model,
+        "get_request",
+        lambda url, timeout: type("Response", (), {"content": content})(),
+    )
+
+    with pytest.raises(ValueError, match="layout changed"):
+        fhfa_model.get_outstanding_mortgage_interest_rates()
+
+
+def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import fhfa_model
+
+    content = nmdb_archive(
+        fhfa_lock_in_rows() + fhfa_lock_in_rows(market="Enterprise Acquisitions")
+    )
+    monkeypatch.setattr(
+        fhfa_model,
+        "get_request",
+        lambda url, timeout: type("Response", (), {"content": content})(),
+    )
+    economics = Economics(
+        start_date="2026-04-01",
+        end_date="2026-06-30",
+        gmdb_source=False,
+        rounding=4,
+        use_cached_data=False,
+    )
+
+    buckets = economics.get_outstanding_mortgage_rates()
+    lock_in = economics.get_outstanding_mortgage_rates(cumulative=True)
+    by_balance = economics.get_outstanding_mortgage_rates(
+        market="Enterprise", weighting="balance"
+    )
+    unknown = economics.get_outstanding_mortgage_rates(region="Atlantis")
+
+    # The start date leaves out 2026 Q1.
+    assert buckets.index.tolist() == [pd.Period("2026Q2", "Q")]
+    assert buckets.columns.tolist() == [
+        "Below 3%",
+        "3% to 4%",
+        "4% to 5%",
+        "5% to 6%",
+        "6% and Above",
+        "Average Rate",
+    ]
+    assert buckets.iloc[0].tolist() == [0.192, 0.299, 0.165, 0.12, 0.225, 0.044]
+    # The shares below 4% and 6% the lock-in is reported with: 49.1% and 77.6%.
+    assert lock_in.iloc[0].to_dict() == {
+        "Below 3%": 0.192,
+        "Below 4%": 0.491,
+        "Below 5%": 0.656,
+        "Below 6%": 0.776,
+        "Average Rate": 0.044,
+    }
+    assert by_balance.iloc[0]["Below 3%"] == pytest.approx(0.202)
+    assert unknown.empty

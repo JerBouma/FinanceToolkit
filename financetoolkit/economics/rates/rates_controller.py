@@ -22,6 +22,7 @@ from financetoolkit.economics.sources import (
     bis_model,
     boe_model,
     ecb_model,
+    fhfa_model,
     fred_model,
     freddie_mac_model,
     gmdb_model,
@@ -55,7 +56,7 @@ logger = get_logger()
 @track_sources
 class RatesEconomics:
     """
-    Interest rates and money: policy, overnight, short and long-term and real interest rates, the yield curve slope, the 30-year mortgage rate, real yields, breakeven and expected inflation, the yield decomposition, the money supply and exchange rates.
+    Interest rates and money: policy, overnight, short and long-term and real interest rates, the yield curve slope, the 30-year mortgage rate, the rates of outstanding US mortgages, real yields, breakeven and expected inflation, the yield decomposition, the money supply and exchange rates.
     """
 
     def _get_daily_central_bank_policy_rate(
@@ -1635,6 +1636,194 @@ class RatesEconomics:
             default_rounding=self._rounding,
             rolling=rolling,
             trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
+    def get_outstanding_mortgage_rates(
+        self,
+        market: str = "all",
+        region: str = "United States",
+        weighting: str = "loans",
+        cumulative: bool = False,
+        rolling: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the distribution of the interest rates US homeowners pay on the mortgages they
+        already have, from the National Mortgage Database (NMDB) of the Federal Housing
+        Finance Agency (FHFA): the share of the mortgages outstanding at the end of each
+        quarter with a contract interest rate below 3%, between 3% and 4%, 4% and 5%, 5% and
+        6%, and at or above 6%, next to their average rate.
+
+        This is the measure of the mortgage rate "lock-in": a homeowner with a rate well
+        below the rate on a new mortgage (see `get_mortgage_rate_30_year`) gives that rate
+        up when moving, so the further the outstanding rates lie below the market rate, the
+        fewer existing homes come up for sale. The share of mortgages below 3%, 4%, 5% and
+        6% (cumulative=True) is how the lock-in is usually reported, to be compared with the
+        rate on a new mortgage.
+
+        The NMDB is a 1-in-20 sample of the closed-end first-lien residential mortgages
+        reported to one of the three national credit bureaus, quarterly from 2013 Q1 and
+        published about three months after the quarter ends. The rate is the contract
+        interest rate at origination, a nominal annual rate (compounded monthly for the
+        usual monthly payments), so an adjustable rate mortgage counts at its initial rate.
+        Each market is a subset of all mortgages, as the FHFA defines them:
+        - All Mortgages: every closed-end first-lien single-family mortgage in the NMDB.
+        - Enterprise: the mortgages acquired by Fannie Mae and Freddie Mac (that are not
+          guaranteed by a government agency).
+        - Government: the government insured, guaranteed or direct mortgages (FHA, VA,
+          USDA).
+        - Other Conventional: the remaining conventional mortgages (jumbo mortgages, bank
+          portfolios, private label pools, credit unions and the Federal Home Loan Bank
+          programs).
+
+        The shares come in two weightings, as the FHFA publishes them: by the number of
+        mortgages ("loans", VALUE1 in the NMDB files, "weighted by the number of mortgages
+        at the end of the quarter") and by the unpaid principal balance ("balance", VALUE2,
+        "weighted by the value of the unpaid principal balance (UPB) of the mortgage as of
+        the end of the quarter"), see the NMDB Aggregate Statistics Data Dictionary.
+
+        See the data: https://www.fhfa.gov/data/national-mortgage-database-aggregate-statistics
+
+        Also known as: mortgage rate lock-in, outstanding mortgage rate distribution, share
+        of mortgages below 3%, 4%, 5% or 6%, NMDB outstanding residential mortgage
+        statistics.
+
+        The formula is as follows:
+
+        - Share Below X% = Share Below 3% + ... + Share (X - 1)% to X%, the sum of the
+          published buckets below X% (cumulative=True)
+
+        Args:
+            market (str, optional): The market of the mortgages: "all", "enterprise"
+                (Fannie Mae and Freddie Mac), "government" or "other conventional".
+                Defaults to "all".
+            region (str, optional): The area: "United States", a census region ("Northeast",
+                "Midwest", "South", "West"), a census division ("New England", "Middle
+                Atlantic", "East North Central", "West North Central", "South Atlantic",
+                "East South Central", "West South Central", "Mountain", "Pacific"), or
+                "United States Rural" and "United States Non-Rural". Defaults to "United
+                States".
+            weighting (str, optional): Whether the shares and the average rate are weighted
+                by the number of mortgages ("loans") or by their unpaid principal balance
+                ("balance"). Defaults to "loans".
+            cumulative (bool, optional): Whether to return the share of mortgages below 3%,
+                4%, 5% and 6% instead of the share per bucket. Defaults to False.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+                moving average). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The quarterly shares of the outstanding mortgages per rate bucket
+            ("Below 3%", "3% to 4%", "4% to 5%", "5% to 6%" and "6% and Above", or "Below 3%"
+            to "Below 6%" with cumulative=True) and their "Average Rate", all as decimals
+            (0.192 for 19.2%).
+
+        Notes:
+            The FHFA publishes the shares in percent with one decimal and the average rate
+            with one decimal (4.4%), so the buckets add up to 100% within rounding (100.1%
+            for example) and a cumulative share is the sum of the rounded buckets below it.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2025-01-01', end_date="2026-06-30")
+
+        economics.get_outstanding_mortgage_rates(cumulative=True)
+        ```
+
+        Which returns:
+
+        | Date   |   Below 3% |   Below 4% |   Below 5% |   Below 6% |   Average Rate |
+        |:-------|-----------:|-----------:|-----------:|-----------:|---------------:|
+        | 2025Q1 |      0.205 |      0.531 |      0.707 |      0.81  |          0.043 |
+        | 2025Q2 |      0.202 |      0.521 |      0.695 |      0.799 |          0.043 |
+        | 2025Q3 |      0.198 |      0.51  |      0.681 |      0.786 |          0.044 |
+        | 2025Q4 |      0.195 |      0.501 |      0.67  |      0.781 |          0.044 |
+        | 2026Q1 |      0.193 |      0.494 |      0.66  |      0.778 |          0.044 |
+        | 2026Q2 |      0.192 |      0.491 |      0.656 |      0.776 |          0.044 |
+        """
+        markets = {
+            "all": "All Mortgages",
+            "enterprise": "Enterprise Acquisitions",
+            "government": "Government / Non-Conventional",
+            "other conventional": "Other Conventional Market",
+        }
+        # The FHFA's own names of the markets are accepted as well.
+        markets.update({name.lower(): name for name in markets.values()})
+        weightings = {"loans": "Loans", "balance": "Balance"}
+
+        if market.lower().strip() not in markets:
+            raise ValueError(
+                f"Please choose 'all', 'enterprise', 'government' or 'other conventional' "
+                f"for the market parameter, not '{market}'."
+            )
+        if weighting.lower().strip() not in weightings:
+            raise ValueError(
+                f"Please choose 'loans' or 'balance' for the weighting parameter, not "
+                f"'{weighting}'."
+            )
+
+        interest_rates = fhfa_model.get_outstanding_mortgage_interest_rates()
+
+        regions = {
+            name.lower(): name for name in interest_rates.columns.unique(level="Region")
+        }
+        if region.lower().strip() not in regions:
+            raise ValueError(
+                f"The FHFA has no outstanding mortgage statistics for '{region}'. Please "
+                f"choose one of {', '.join(sorted(regions.values()))}."
+            )
+
+        buckets = list(fhfa_model.INTEREST_RATE_SERIES.values())[1:]
+        selection = interest_rates[
+            (
+                regions[region.lower().strip()],
+                markets[market.lower().strip()],
+                weightings[weighting.lower().strip()],
+            )
+        ]
+        shares = selection[buckets]
+
+        if cumulative:
+            # The share below each threshold, the buckets below it added up; the share
+            # at or above 6% is what remains, so it has no cumulative column.
+            shares = shares.iloc[:, :-1].cumsum(axis=1, skipna=False)
+            shares.columns = ["Below 3%", "Below 4%", "Below 5%", "Below 6%"]
+
+        outstanding_mortgage_rates = pd.concat(
+            [shares, selection[["Average Rate"]]], axis=1
+        )
+        outstanding_mortgage_rates.columns.name = None
+
+        return finalize_dataset(
+            dataset=outstanding_mortgage_rates,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
             growth=growth,
             lag=lag,
             rounding=rounding,

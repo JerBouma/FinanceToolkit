@@ -51,6 +51,7 @@ from financetoolkit.economics.sources import (
     eex_model,
     esrb_model,
     eurostat_model,
+    fhfa_model,
     frb_model,
     freddie_mac_model,
     gmdb_model,
@@ -412,6 +413,12 @@ SOURCES = {
         freddie_mac_model.get_mortgage_rate_30_year,
         "United States",
         "daily",
+    ),
+    "FHFA outstanding mortgage rates": (
+        fhfa_model.get_outstanding_mortgage_interest_rates,
+        ("United States", "All Mortgages", "Loans", "Below 3%"),
+        "quarterly",
+        (0, 1),
     ),
     "Federal Reserve industrial production index": (
         frb_model.get_industrial_production_index,

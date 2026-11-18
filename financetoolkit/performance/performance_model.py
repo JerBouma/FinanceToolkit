@@ -1709,6 +1709,157 @@ def get_rolling_sortino_ratio(
     return rolling_mean / rolling_downside_deviation
 
 
+def get_safety_first_ratio(
+    returns: pd.Series | pd.DataFrame,
+    threshold: float | pd.Series = 0.0,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate Roy's Safety-First Ratio of returns, i.e. the mean return in excess of a
+    threshold (shortfall) return per unit of total volatility.
+
+    The formula is as follows:
+
+        - Safety-First Ratio = (Mean(Return) - Threshold) / Standard Deviation(Return)
+
+    Roy (1952) chooses the portfolio that minimizes the probability of a return below the
+    threshold (the "disaster level"); for normally distributed returns that is the
+    portfolio with the highest Safety-First Ratio, as the probability is N(-Ratio). With
+    the risk-free rate as the threshold the ratio is the Sharpe Ratio (see
+    `get_sharpe_ratio`). The standard deviation is the sample one (ddof=1), and the
+    threshold is in the units of the returns: per observation, so a daily threshold for
+    daily returns. A "within period" (period, date) Multi Index gives one ratio per period.
+
+    For more information about the method, see the following paper:
+
+    - Roy, A.D. (1952). "Safety First and the Holding of Assets." Econometrica, 20(3),
+    431-449.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
+        threshold (float | pd.Series, optional): The threshold return per observation, a
+        number or one per column. Defaults to 0.0.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: Safety-First Ratio values, one per period with a
+        "within period" Multi Index and otherwise one per column (or one for a Series).
+    """
+    # Subtracting a constant leaves the standard deviation as it is, so this is the
+    # Sharpe ratio of the returns in excess of the threshold.
+    return get_sharpe_ratio(returns - threshold)
+
+
+def get_rolling_safety_first_ratio(
+    returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    threshold: float | pd.Series = 0.0,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Safety-First Ratio of returns, see `get_safety_first_ratio`,
+    each column over its own trading days (see `get_rolling_sharpe_ratio`).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
+        window_size (int): The size of the rolling window.
+        threshold (float | pd.Series, optional): The threshold return per observation, a
+        number or one per column. Defaults to 0.0.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Safety-First Ratio values with time as index.
+    """
+    return get_rolling_sharpe_ratio(returns - threshold, window_size)
+
+
+def get_upside_potential_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Upside Potential Ratio of returns, i.e. the first order upper partial
+    moment (the expected return above the minimum acceptable return) per unit of the
+    downside deviation (the square root of the second order lower partial moment).
+
+    The formula is as follows:
+
+        - Upside Potential Ratio = UPM_1 / SQRT(LPM_2)
+        - UPM_1 = (1/N) * sum( max(Excess Return, 0) )
+        - LPM_2 = (1/N) * sum( min(Excess Return, 0)^2 )
+
+    Where the minimum acceptable return is already subtracted from `excess_returns` (the
+    risk-free rate, as in `get_sortino_ratio`) and N is the *total* number of observations
+    in both moments, as Sortino, van der Meer & Plantinga (1999) weigh each outcome by its
+    probability: observations on the other side of the minimum acceptable return add 0 but
+    still count. The denominator is the downside deviation of `get_sortino_ratio`, so the
+    two ratios differ only in their numerator: the Sortino Ratio rewards the mean excess
+    return, which losses lower, and the Upside Potential Ratio only the gains.
+
+    For more information about the method, see the following paper:
+
+    - Sortino, F.A., van der Meer, R., & Plantinga, A. (1999). "The Dutch Triangle."
+    Journal of Portfolio Management, 26(1), 50-57.
+
+    A ratio needs at least two observations (with a single one either moment is 0), and
+    without a return below the minimum acceptable return there is no downside to divide by:
+    both are returned as NaN.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
+        minimum acceptable return (the risk-free rate) subtracted.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: Upside Potential Ratio values, one per period with a
+        "within period" (period, date) Multi Index and otherwise one per column (or one for a
+        Series).
+    """
+
+    def _upside_potential(returns: pd.DataFrame) -> pd.Series:
+        upside_potential = returns.clip(lower=0).mean()
+        downside_deviation = np.sqrt((returns.clip(upper=0) ** 2).mean())
+
+        return (
+            upside_potential / downside_deviation.where(downside_deviation > 0)
+        ).where(returns.count() >= MIN_SORTINO_OBSERVATIONS)
+
+    if isinstance(excess_returns, pd.Series):
+        return _upside_potential(excess_returns.to_frame()).iloc[0]
+
+    if isinstance(excess_returns, pd.DataFrame):
+        if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            return excess_returns.groupby(level=0).apply(_upside_potential)
+
+        return _upside_potential(excess_returns)
+
+    raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
+
+
+@by_own_trading_days
+def get_rolling_upside_potential_ratio(
+    excess_returns: pd.Series | pd.DataFrame, window_size: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Upside Potential Ratio of returns, see
+    `get_upside_potential_ratio`, with both partial moments averaged over every
+    observation in the window.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
+        minimum acceptable return (the risk-free rate) subtracted.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Upside Potential Ratio values with time as index,
+        NaN for a window without a return below the minimum acceptable return.
+    """
+    # A window of a single observation has one of the two moments at 0.
+    if window_size < MIN_SORTINO_OBSERVATIONS:
+        return excess_returns * np.nan
+
+    upside_potential = excess_returns.clip(lower=0).rolling(window=window_size).mean()
+    downside_deviation = np.sqrt(
+        (excess_returns.clip(upper=0) ** 2).rolling(window=window_size).mean()
+    )
+
+    return upside_potential / downside_deviation.where(downside_deviation > 0)
+
+
 def get_ulcer_performance_index(
     excess_returns: pd.Series | pd.DataFrame, ulcer_index: pd.Series | pd.DataFrame
 ) -> pd.Series:
@@ -1731,7 +1882,7 @@ def get_ulcer_performance_index(
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series of returns with risk-free rate subtracted.
         ulcer_index (pd.Series | pd.DataFrame): The corresponding Ulcer Index values (see
-        `financetoolkit.risk.risk_model.get_ulcer_index`).
+        `financetoolkit.risk.risk_model.get_ui`).
 
     Returns:
         pd.Series: A Series of Ulcer Performance Index values with time as index and assets as columns.
@@ -2175,6 +2326,37 @@ def get_burke_ratio(
         and assets as columns.
     """
     return (excess_returns / burke_drawdown_measure).dropna(how="all")
+
+
+def get_pain_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+    pain_index: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Pain Ratio of returns, i.e. the excess return per unit of Pain Index.
+
+    The formula is as follows:
+
+        - Pain Ratio = (Return - Risk-Free Rate) / Pain Index
+
+    Without a drawdown the Pain Index is 0 and the ratio is undefined (NaN).
+
+    For more information about the method, see the following source:
+
+    - Bacon, C.R. (2013). "Practical Risk-Adjusted Performance Measurement." John Wiley &
+    Sons, chapter 5.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
+        risk-free rate subtracted.
+        pain_index (pd.Series | pd.DataFrame): The corresponding Pain Index values (see
+        `financetoolkit.risk.risk_model.get_pain_index`).
+
+    Returns:
+        pd.Series | pd.DataFrame: A Series or DataFrame of Pain Ratios with time as index
+        and assets as columns.
+    """
+    return (excess_returns / pain_index.where(pain_index > 0)).dropna(how="all")
 
 
 def _geometric_mean_return(returns: pd.Series | pd.DataFrame) -> pd.Series | float:

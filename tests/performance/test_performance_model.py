@@ -1756,3 +1756,46 @@ def test_the_rolling_standard_deviation_pairs_the_asset_with_the_benchmark_dates
     )
     total_risk_ratio = result.div(benchmark_deviation, axis=0)
     assert (total_risk_ratio + 1e-12 >= beta.abs())[beta.notna()].all().all()
+
+
+def test_the_safety_first_ratio_is_the_sharpe_ratio_above_the_threshold():
+    returns = pd.Series([0.02, -0.01, 0.03, -0.02, 0.01])
+
+    result = performance_model.get_safety_first_ratio(returns, threshold=0.005)
+
+    assert result == pytest.approx((returns.mean() - 0.005) / returns.std(ddof=1))
+    assert performance_model.get_safety_first_ratio(returns) == pytest.approx(
+        performance_model.get_sharpe_ratio(returns)
+    )
+
+
+def test_the_upside_potential_ratio_averages_both_moments_over_every_return():
+    returns = pd.Series([0.02, -0.01, 0.03, -0.02, 0.0])
+
+    # Sortino, van der Meer & Plantinga (1999): (0.05 / 5) / sqrt(0.0005 / 5).
+    result = performance_model.get_upside_potential_ratio(returns)
+    assert result == pytest.approx(0.01 / np.sqrt(0.0001))
+
+    rolling = performance_model.get_rolling_upside_potential_ratio(returns, 5)
+    assert rolling.iloc[-1] == pytest.approx(result)
+
+
+def test_the_upside_potential_ratio_without_a_loss_or_with_one_return_is_nan():
+    assert np.isnan(
+        performance_model.get_upside_potential_ratio(pd.Series([0.01, 0.02, 0.0]))
+    )
+    assert np.isnan(performance_model.get_upside_potential_ratio(pd.Series([-0.01])))
+    assert (
+        performance_model.get_rolling_upside_potential_ratio(
+            pd.Series([0.01, 0.02, 0.03]), 2
+        )
+        .isna()
+        .all()
+    )
+
+
+def test_the_pain_ratio_without_a_drawdown_is_nan():
+    # Without a drawdown there is no pain to divide by.
+    assert performance_model.get_pain_ratio(
+        pd.Series([0.05, 0.02]), pd.Series([0.0, 0.01])
+    ).to_list() == [pytest.approx(2.0)]

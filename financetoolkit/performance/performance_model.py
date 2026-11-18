@@ -3306,10 +3306,10 @@ def get_fama_decomposition(
 
     The formulas are as follows:
 
-        - Selectivity = (Asset Return − Risk-Free Rate) − (Sigma_Portfolio / Sigma_Market)
-            * (Benchmark Return − Risk-Free Rate)
-        - Diversification = [Risk-Free Rate + (Sigma_Portfolio / Sigma_Market)
-            * (Benchmark Return − Risk-Free Rate)] − [Risk-Free Rate + Beta * (Benchmark Return − Risk-Free Rate)]
+        - Selectivity = (Asset Return − Risk-Free Rate) − (Sigma_Portfolio / Sigma_Market) *
+          (Benchmark Return − Risk-Free Rate)
+        - Diversification = [Risk-Free Rate + (Sigma_Portfolio / Sigma_Market) * (Benchmark Return − Risk-Free Rate)] −
+          [Risk-Free Rate + Beta * (Benchmark Return − Risk-Free Rate)]
 
     Selectivity is the return earned above what would be required for a *fully
     diversified* portfolio carrying the same total risk, i.e. genuine security selection

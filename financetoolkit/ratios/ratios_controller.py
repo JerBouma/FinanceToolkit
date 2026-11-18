@@ -8358,8 +8358,8 @@ class Ratios:
         The formula is as follows:
 
         - Cash-Based Operating Profitability = (Revenue - Cost of Goods Sold - Selling,
-          General and Administrative Expenses - Δ Receivables - Δ Inventory - Δ Prepaids
-          + Δ Deferred Revenue + Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total
+          General and Administrative Expenses - Δ Receivables - Δ Inventory - Δ Prepaids +
+          Δ Deferred Revenue + Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total
           Assets
 
         The selling, general and administrative expenses are without research and
@@ -14559,8 +14559,8 @@ class Ratios:
 
         The formula is as follows:
 
-        - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
-            — (Cash and Cash Equivalents + Short Term Investments)
+        - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity —
+          (Cash and Cash Equivalents + Short Term Investments)
 
         Enterprise value is the price of the whole business, equity and debt together,
         which makes it the right numerator for multiples of operating results such as EV
@@ -15488,9 +15488,9 @@ class Ratios:
         - Net Current Asset Value = Total Current Assets — Total Liabilities
 
         Also known as: NCAV. Note that NCAV is related to, but distinct from, the Graham Number
-        (`sqrt(22.5 * Earnings per Share * Book Value per Share)`, see `Toolkit.models.get_graham_number`)
-        — both are Benjamin Graham value-investing metrics, but NCAV is a liquidation-value estimate
-        while the Graham Number is a fair-value price estimate based on earnings and book value.
+        (`sqrt(22.5 * Earnings per Share * Book Value per Share)`, see `Toolkit.models.get_graham_number`) —
+        both are Benjamin Graham value-investing metrics, but NCAV is a liquidation-value estimate while
+        the Graham Number is a fair-value price estimate based on earnings and book value.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -16660,8 +16660,8 @@ class Ratios:
 
         The formula is as follows:
 
-        - Composite Equity Issuance = ln(Market Cap / Market Cap Five Years Earlier)
-          - ln(Total Return over the Five Years)
+        - Composite Equity Issuance = ln(Market Cap / Market Cap Five Years Earlier) -
+          ln(Total Return over the Five Years)
 
         The total return is the log change in the price adjusted for dividends and splits,
         so a company that pays dividends without issuing shares has a negative value. The

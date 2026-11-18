@@ -734,8 +734,8 @@ def get_composite_equity_issuance(
 
     The formula is as follows:
 
-        Composite Equity Issuance = ln(Market Cap / Beginning Market Cap)
-            - ln(Total Return Price / Beginning Total Return Price)
+        Composite Equity Issuance = ln(Market Cap / Beginning Market Cap) -
+            ln(Total Return Price / Beginning Total Return Price)
 
     The second term is the log total return over the window (dividends reinvested), so
     a company that pays dividends without issuing shares has a negative value. A value

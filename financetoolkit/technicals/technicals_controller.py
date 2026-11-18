@@ -3263,8 +3263,8 @@ class Technicals:
 
         The formula is as follows:
 
-        - CMO = 100 * ((Sum of Upward Change) — (Sum of Downward Change)) / ((Sum of Upward Change)
-            + (Sum of Downward Change)), bounded between -100 and 100.
+        - CMO = 100 * ((Sum of Upward Change) — (Sum of Downward Change)) / ((Sum of Upward Change) +
+          (Sum of Downward Change)), bounded between -100 and 100.
 
         Also known as: CMO, Chande momentum.
 

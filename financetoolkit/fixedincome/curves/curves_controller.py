@@ -1831,9 +1831,9 @@ class CurvesFixedIncome:
 
         - Type 1 Equity Charge = 0.39 + Symmetric Adjustment, for equities listed in the EEA or OECD
         - Type 2 Equity Charge = 0.49 + Symmetric Adjustment, for other equities
-        Every value is a decimal fraction (0.0771 for 7.71%). Weekly
-        and monthly periods take the value on the last day of each period, which is the
-        value insurers apply at that reporting date.
+
+        Every value is a decimal fraction (0.0771 for 7.71%). Weekly and monthly periods take the value on
+        the last day of each period, which is the value insurers apply at that reporting date.
 
         See definition: https://www.eiopa.europa.eu/tools-and-data/symmetric-adjustment-equity-capital-charge_en
 

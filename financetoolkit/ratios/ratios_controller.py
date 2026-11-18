@@ -78,6 +78,9 @@ FACTOR_COLLECTIONS = {
         "get_cash_return_on_assets",
         "get_return_on_equity",
         "get_return_on_invested_capital",
+        "get_return_on_net_operating_assets",
+        "get_net_borrowing_cost",
+        "get_financial_leverage",
         "get_return_on_capital_employed",
         "get_return_on_tangible_assets",
         "get_income_quality_ratio",
@@ -630,6 +633,79 @@ class Ratios:
             pd.DataFrame: The trailing averages, or the data itself without trailing.
         """
         return data.T.rolling(trailing).mean().T if trailing else data
+
+    def _get_nissim_penman_inputs(
+        self, trailing: int | None
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        Returns the inputs of the Nissim and Penman (2001) ratios: the net income and the net
+        financial expense summed over the trailing periods, and the net financial obligations
+        and the common equity averaged over the period ends that open and close them (the
+        opening and closing balance without trailing).
+
+        The short and long term investments, the preferred stock and the interest income count
+        as zero where a company does not report them (they are absent); the other items give
+        NaN. A period with neither an interest expense nor an interest income (both missing or
+        zero) has an unknown net financial expense, so it is NaN, also in every trailing sum
+        that holds it.
+
+        Args:
+            trailing (int | None): The number of periods to sum the flows over, or None for
+                single-period flows.
+
+        Returns:
+            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]: The net income, the
+            net financial expense, the average net financial obligations and the average
+            common equity, with the tickers as index and the periods as columns.
+        """
+
+        def row(statement: pd.DataFrame, name: str) -> pd.DataFrame:
+            return statement.loc[:, name, :]
+
+        def optional(
+            statement: pd.DataFrame, name: str, like: pd.DataFrame
+        ) -> pd.DataFrame:
+            # A row that is not reported is zero; a period without any data stays NaN through
+            # the rows it is combined with (Total Debt, the equity and the interest expense).
+            if name not in statement.index.get_level_values(1):
+                return like * 0
+            return row(statement, name).fillna(0)
+
+        balance, income = self._balance_sheet_statement, self._income_statement
+        total_debt = row(balance, "Total Debt")
+        interest_expense = row(income, "Interest Expense")
+        preferred_stock = optional(balance, "Preferred Stock", total_debt)
+
+        net_financial_obligations = profitability_model.get_net_financial_obligations(
+            total_debt,
+            preferred_stock,
+            self._get_cash_and_short_term_investments(),
+            optional(balance, "Long Term Investments", total_debt),
+        )
+        common_equity = row(balance, "Total Shareholder Equity") - preferred_stock
+
+        interest_income = optional(income, "Interest Income", interest_expense)
+        # Interest income alone may be absent, but without either interest row the net financial
+        # expense is unknown, not zero: those periods are NaN before the trailing sums.
+        interest_expense = interest_expense.where(
+            (interest_expense.fillna(0) != 0) | (interest_income != 0)
+        )
+
+        net_financial_expense = profitability_model.get_net_financial_expense(
+            self._sum_trailing(interest_expense, trailing),
+            self._sum_trailing(interest_income, trailing),
+            self._sum_trailing(row(income, "Income Tax Expense"), trailing),
+            self._sum_trailing(row(income, "Income Before Tax"), trailing),
+        )
+
+        balance_periods = trailing + 1 if trailing else 2
+
+        return (
+            self._sum_trailing(row(income, "Net Income"), trailing),
+            net_financial_expense,
+            self._mean_trailing(net_financial_obligations, balance_periods),
+            self._mean_trailing(common_equity, balance_periods),
+        )
 
     @handle_errors
     def collect_all_ratios(
@@ -5373,6 +5449,9 @@ class Ratios:
         | Cash Return on Assets                       |  0.3083 |  0.3471 |  0.3134 |   0.3296 |   0.3079 |
         | Return on Equity                            |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
         | Return on Invested Capital                  |  0.4879 |  0.5229 |  0.528  |   0.5166 |   0.6201 |
+        | Return on Net Operating Assets              | 38.7091 |  8.6341 |  5.1105 | nan      | nan      |
+        | Net Borrowing Cost                          |  0.0028 | -0.002  | -0.0042 | nan      | nan      |
+        | Financial Leverage                          | -0.962  | -0.7966 | -0.663  |  -0.6361 |  -0.441  |
         | Return on Capital Employed                  |  0.4831 |  0.6009 |  0.5514 |   0.6534 |   0.6872 |
         | Return on Tangible Assets                   |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
@@ -5388,6 +5467,7 @@ class Ratios:
         | Cash Return on Invested Capital             |  0.4801 |  0.5823 |  0.5394 |   0.601  |   0.5455 |
         | Free Cash Flow Conversion                   |  0.9818 |  1.1166 |  1.0267 |   1.1608 |   0.8818 |
         | Free Cash Flow to EBITDA                    |  0.7731 |  0.8537 |  0.7915 |   0.808  |   0.6823 |
+        | Percent Accruals                            | -0.0988 | -0.2239 | -0.1397 |  -0.2616 |   0.0047 |
         """
         self._load_statements()
         # The ratios are collected unrounded and rounded only when returned, so that their
@@ -5431,6 +5511,15 @@ class Ratios:
             )
             profitability_ratios_dict["Return on Invested Capital"] = (
                 self.get_return_on_invested_capital(trailing=trailing)
+            )
+            profitability_ratios_dict["Return on Net Operating Assets"] = (
+                self.get_return_on_net_operating_assets(trailing=trailing)
+            )
+            profitability_ratios_dict["Net Borrowing Cost"] = (
+                self.get_net_borrowing_cost(trailing=trailing)
+            )
+            profitability_ratios_dict["Financial Leverage"] = (
+                self.get_financial_leverage(trailing=trailing)
             )
             profitability_ratios_dict["Return on Capital Employed"] = (
                 self.get_return_on_capital_employed(trailing=trailing)
@@ -6834,6 +6923,413 @@ class Ratios:
 
         return finalize_dataset(
             dataset=return_on_invested_capital,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_return_on_net_operating_assets(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the return on net operating assets (RNOA) of Nissim and Penman (2001), the
+        after-tax return a company earns on its operations, separated from how they are financed.
+
+        The return on net operating assets divides the operating income after tax by the
+        average net operating assets. Nissim and Penman define the operating income as the
+        net income plus the net financial expense (the after-tax net interest expense), so
+        every item that is not financing counts as operating. Unlike the return on invested
+        capital, the financial assets are deducted from the capital, so a company that holds
+        much cash is not penalised for it and its interest income is not counted as an
+        operating return.
+
+        RNOA is the operating part of the return on common equity in the Nissim-Penman
+        decomposition, ROCE = RNOA + FLEV x (RNOA - NBC)
+        (`Toolkit.models.get_nissim_penman_decomposition`). Nissim and Penman find RNOA to be
+        the main driver of the future return on equity, and that it reverts to the mean
+        more slowly than the leverage effect.
+
+        The formula is as follows:
+
+        - Net Financial Expense = (Interest Expense - Interest Income) x (1 - Effective Tax Rate)
+        - Operating Income = Net Income + Net Financial Expense
+        - Net Financial Obligations = Total Debt + Preferred Stock - Cash and Short Term Investments -
+          Long Term Investments
+        - Common Equity = Total Shareholder Equity - Preferred Stock
+        - Net Operating Assets = Net Financial Obligations + Common Equity
+        - Return on Net Operating Assets = Operating Income / Average Net Operating Assets
+        The balance sheet is split into operating and financial items as follows:
+
+        - Financial assets: the cash and cash equivalents, the short term investments and the
+        long term investments. Nissim and Penman treat the marketable securities as financial;
+        the long term investments of the statements are mostly those securities (Apple's long
+        term marketable securities), but also hold equity method stakes (Coca-Cola's bottlers),
+        which Nissim and Penman count as operating and which are financial here.
+        - Financial obligations: the Total Debt, which holds the short and long term debt and
+        the lease obligations (capital leases are debt in Nissim and Penman), and the preferred
+        stock, which Nissim and Penman treat as a financial claim.
+        - Common equity: the Total Shareholder Equity minus the preferred stock.
+        - Operating: everything else, so the net operating assets are the net financial
+        obligations plus the common equity (the operating assets minus the operating
+        liabilities and the minority interest).
+
+        Also known as: RNOA, return on operating assets.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default
+                average of the opening and closing balance. E.g. 4 with quarterly data gives the
+                trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                Defaults to None, which uses single-period flows (per quarter and not annualized
+                with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Return on net operating assets (RNOA) values.
+
+        Notes:
+        - Nissim, D. and S. H. Penman, "Ratio Analysis and Equity Valuation: From Research to
+        Practice," Review of Accounting Studies 6, 2001, pp. 109-154.
+        - The net financial expense is taxed at the effective tax rate (bounded to [0, 1], 0 for
+        a pre-tax loss) instead of the marginal statutory rate of Nissim and Penman, and holds
+        no preferred dividends, which the statements do not report.
+        - Missing data is treated in two ways. A short or long term investment, preferred
+        stock or interest income that is not reported is absent and counts as zero (a company
+        with debt but no interest income is normal). A period with neither an interest
+        expense nor an interest income (both missing or zero, as in Apple's statements from
+        fiscal 2024) has an unknown net financial expense rather than a zero one, so the
+        ratio is NaN for that period and for every trailing window that holds it.
+        - A company whose operating liabilities (payables, deferred revenue, accruals) nearly
+        cover its operating assets has small net operating assets and an RNOA well above 1
+        (Apple); net operating assets of zero or below make the ratio meaningless (it flips
+        sign). Such periods are returned as calculated.
+        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "KO", "DUK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_return_on_net_operating_assets()
+        ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |   2023 |     2024 |     2025 |
+        |:-----|--------:|-------:|-------:|---------:|---------:|
+        | AAPL | 38.7091 | 8.6341 | 5.1105 | nan      | nan      |
+        | DUK  |  0.0562 | 0.0423 | 0.0467 |   0.0607 |   0.0613 |
+        | KO   |  0.311  | 0.2795 | 0.3197 |   0.3076 |   0.337  |
+        """
+        net_income, net_financial_expense, average_nfo, average_cse = (
+            self._get_nissim_penman_inputs(trailing)
+        )
+        dataset = profitability_model.get_return_on_net_operating_assets(
+            net_income, net_financial_expense, average_nfo, average_cse
+        )
+
+        return finalize_dataset(
+            dataset=dataset,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_borrowing_cost(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the net borrowing cost (NBC) of Nissim and Penman (2001), the after-tax
+        interest rate a company pays on its net financial obligations.
+
+        The net borrowing cost divides the net financial expense (the interest expense minus
+        the interest income, after tax) by the average net financial obligations (the debt
+        and preferred stock minus the cash and investments). A company with net financial
+        assets and net interest income has a negative expense over negative obligations, so
+        the ratio is then the after-tax return it earns on its net financial assets.
+
+        In the Nissim-Penman decomposition, ROCE = RNOA + FLEV x (RNOA - NBC)
+        (`Toolkit.models.get_nissim_penman_decomposition`), borrowing raises the return on
+        equity only as long as the return on net operating assets exceeds the net borrowing
+        cost. When the net financial obligations are close to zero the ratio is volatile and
+        says little.
+
+        The formula is as follows:
+
+        - Net Financial Expense = (Interest Expense - Interest Income) x (1 - Effective Tax Rate)
+        - Net Financial Obligations = Total Debt + Preferred Stock - Cash and Short Term Investments -
+          Long Term Investments
+        - Net Borrowing Cost = Net Financial Expense / Average Net Financial Obligations
+        The balance sheet is split into operating and financial items as follows:
+
+        - Financial assets: the cash and cash equivalents, the short term investments and the
+        long term investments. Nissim and Penman treat the marketable securities as financial;
+        the long term investments of the statements are mostly those securities (Apple's long
+        term marketable securities), but also hold equity method stakes (Coca-Cola's bottlers),
+        which Nissim and Penman count as operating and which are financial here.
+        - Financial obligations: the Total Debt, which holds the short and long term debt and
+        the lease obligations (capital leases are debt in Nissim and Penman), and the preferred
+        stock, which Nissim and Penman treat as a financial claim.
+        - Common equity: the Total Shareholder Equity minus the preferred stock.
+        - Operating: everything else, so the net operating assets are the net financial
+        obligations plus the common equity (the operating assets minus the operating
+        liabilities and the minority interest).
+
+        Also known as: NBC, after-tax cost of net debt.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default
+                average of the opening and closing balance. E.g. 4 with quarterly data gives the
+                trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                Defaults to None, which uses single-period flows (per quarter and not annualized
+                with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Net borrowing cost (NBC) values.
+
+        Notes:
+        - Nissim, D. and S. H. Penman, "Ratio Analysis and Equity Valuation: From Research to
+        Practice," Review of Accounting Studies 6, 2001, pp. 109-154.
+        - The net financial expense is taxed at the effective tax rate (bounded to [0, 1], 0 for
+        a pre-tax loss) instead of the marginal statutory rate of Nissim and Penman, and holds
+        no preferred dividends, which the statements do not report.
+        - Missing data is treated in two ways. A short or long term investment, preferred
+        stock or interest income that is not reported is absent and counts as zero (a company
+        with debt but no interest income is normal). A period with neither an interest
+        expense nor an interest income (both missing or zero, as in Apple's statements from
+        fiscal 2024) has an unknown net financial expense rather than a zero one, so the
+        ratio is NaN for that period and for every trailing window that holds it.
+        - The interest on the lease obligations is part of the operating expenses for
+        operating leases, so the cost of the leases in the Total Debt is understated.
+        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "KO", "DUK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_net_borrowing_cost()
+        ```
+
+        Which returns:
+
+        |      |   2021 |    2022 |    2023 |     2024 |    2025 |
+        |:-----|-------:|--------:|--------:|---------:|--------:|
+        | AAPL | 0.0028 | -0.002  | -0.0042 | nan      | nan     |
+        | DUK  | 0.0357 |  0.0354 |  0.039  |   0.0404 |   0.039 |
+        | KO   | 0.0765 |  0.0299 |  0.0508 |   0.0497 |   0.057 |
+        """
+        _, net_financial_expense, average_nfo, _ = self._get_nissim_penman_inputs(
+            trailing
+        )
+        dataset = profitability_model.get_net_borrowing_cost(
+            net_financial_expense, average_nfo
+        )
+
+        return finalize_dataset(
+            dataset=dataset,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_financial_leverage(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the financial leverage (FLEV) of Nissim and Penman (2001), the net financial
+        obligations per unit of common equity.
+
+        The financial leverage divides the average net financial obligations (the debt and
+        preferred stock minus the cash and investments) by the average common equity. It is
+        negative for a company with net financial assets, which then dilute rather than lever
+        the return on equity. Unlike the debt to equity ratio, it nets the financial assets
+        against the debt, and unlike the equity multiplier, it leaves the operating
+        liabilities out (they are part of the net operating assets).
+
+        In the Nissim-Penman decomposition, ROCE = RNOA + FLEV x (RNOA - NBC)
+        (`Toolkit.models.get_nissim_penman_decomposition`), the financial leverage scales the
+        spread between the return on net operating assets and the net borrowing cost.
+
+        The formula is as follows:
+
+        - Net Financial Obligations = Total Debt + Preferred Stock - Cash and Short Term Investments -
+          Long Term Investments
+        - Common Equity = Total Shareholder Equity - Preferred Stock
+        - Financial Leverage = Average Net Financial Obligations / Average Common Equity
+        The balance sheet is split into operating and financial items as follows:
+
+        - Financial assets: the cash and cash equivalents, the short term investments and the
+        long term investments. Nissim and Penman treat the marketable securities as financial;
+        the long term investments of the statements are mostly those securities (Apple's long
+        term marketable securities), but also hold equity method stakes (Coca-Cola's bottlers),
+        which Nissim and Penman count as operating and which are financial here.
+        - Financial obligations: the Total Debt, which holds the short and long term debt and
+        the lease obligations (capital leases are debt in Nissim and Penman), and the preferred
+        stock, which Nissim and Penman treat as a financial claim.
+        - Common equity: the Total Shareholder Equity minus the preferred stock.
+        - Operating: everything else, so the net operating assets are the net financial
+        obligations plus the common equity (the operating assets minus the operating
+        liabilities and the minority interest).
+
+        Also known as: FLEV, net financial leverage.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default
+                average of the opening and closing balance. E.g. 4 with quarterly data gives the
+                trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                Defaults to None, which uses single-period flows (per quarter and not annualized
+                with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Financial leverage (FLEV) values.
+
+        Notes:
+        - Nissim, D. and S. H. Penman, "Ratio Analysis and Equity Valuation: From Research to
+        Practice," Review of Accounting Studies 6, 2001, pp. 109-154.
+        - Negative common equity (after large buybacks) makes the ratio flip sign.
+        - A short or long term investment or preferred stock that is not reported is absent and
+        counts as zero; a missing Total Debt or Total Shareholder Equity gives NaN. The ratio
+        needs no interest data, so it is available for periods whose return on net operating
+        assets and net borrowing cost are NaN for lack of interest rows.
+        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "KO", "DUK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_financial_leverage()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -0.962  | -0.7966 | -0.663  | -0.6361 | -0.441  |
+        | DUK  |  1.2292 |  1.3348 |  1.4697 |  1.5123 |  1.6533 |
+        | KO   |  0.644  |  0.5033 |  0.4032 |  0.4304 |  0.4383 |
+        """
+        _, _, average_nfo, average_cse = self._get_nissim_penman_inputs(trailing)
+        dataset = profitability_model.get_financial_leverage(average_nfo, average_cse)
+
+        return finalize_dataset(
+            dataset=dataset,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

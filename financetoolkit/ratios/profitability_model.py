@@ -284,6 +284,180 @@ def get_return_on_invested_capital(
     )
 
 
+def get_net_financial_obligations(
+    total_debt: pd.Series | pd.DataFrame,
+    preferred_stock: pd.Series | pd.DataFrame,
+    cash_and_short_term_investments: pd.Series | pd.DataFrame,
+    long_term_investments: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the net financial obligations (NFO) of Nissim and Penman (2001): the financial
+    obligations minus the financial assets. A negative value means the company holds more
+    financial assets than it owes (net financial assets).
+
+    The financial obligations are the debt, including the lease obligations that the Total
+    Debt of the statements holds, and the preferred stock, which Nissim and Penman count as
+    a financial claim rather than common equity. The financial assets are the cash, the
+    short term investments and the long term investments, as Nissim and Penman treat the
+    marketable securities as financial.
+
+    The formula is as follows:
+
+        Net Financial Obligations = Total Debt + Preferred Stock -
+            Cash and Short Term Investments - Long Term Investments
+
+    Also known as: NFO, net debt (Nissim-Penman).
+
+    Args:
+        total_debt (float or pd.Series): The short and long term debt and lease obligations.
+        preferred_stock (float or pd.Series): The preferred stock.
+        cash_and_short_term_investments (float or pd.Series): The cash and cash equivalents
+            plus the short term investments.
+        long_term_investments (float or pd.Series): The long term investments.
+
+    Returns:
+        float | pd.Series: The net financial obligations.
+    """
+    return (
+        total_debt
+        + preferred_stock
+        - cash_and_short_term_investments
+        - long_term_investments
+    )
+
+
+def get_net_financial_expense(
+    interest_expense: pd.Series | pd.DataFrame,
+    interest_income: pd.Series | pd.DataFrame,
+    income_tax_expense: pd.Series | pd.DataFrame,
+    income_before_tax: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the net financial expense (NFE) of Nissim and Penman (2001): the interest
+    expense minus the interest income, after the tax the interest saves.
+
+    Nissim and Penman tax the net interest at the marginal statutory rate; here it is taxed
+    at the effective tax rate, Income Tax Expense / Income Before Tax bounded to [0, 1] and
+    set to 0 for a period with a pre-tax loss, the same rate as the net operating profit
+    after taxes of the return on invested capital. A negative value is net financial income.
+
+    The formula is as follows:
+
+        Net Financial Expense = (Interest Expense - Interest Income) x (1 - Effective Tax Rate)
+
+    Also known as: NFE, after-tax net interest expense.
+
+    Args:
+        interest_expense (float or pd.Series): The interest expense.
+        interest_income (float or pd.Series): The interest income.
+        income_tax_expense (float or pd.Series): The income tax expense.
+        income_before_tax (float or pd.Series): The income before taxes.
+
+    Returns:
+        float | pd.Series: The net financial expense.
+    """
+    # As in the return on invested capital: only a pre-tax loss (or zero) sets the rate to 0,
+    # a missing tax expense or income before tax stays NaN.
+    effective_tax_rate = (
+        income_tax_expense / income_before_tax.where(income_before_tax > 0)
+    ).clip(lower=0, upper=1)
+    effective_tax_rate = effective_tax_rate.mask(income_before_tax <= 0, 0)
+
+    return (interest_expense - interest_income) * (1 - effective_tax_rate)
+
+
+def get_return_on_net_operating_assets(
+    net_income: pd.Series | pd.DataFrame,
+    net_financial_expense: pd.Series | pd.DataFrame,
+    average_net_financial_obligations: pd.Series | pd.DataFrame,
+    average_common_equity: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the return on net operating assets (RNOA) of Nissim and Penman (2001): the
+    operating income after tax over the average net operating assets.
+
+    The operating income after tax is the net income with the net financial expense added
+    back, so everything that is not financing (including other income and one-off items)
+    counts as operating, as in Nissim and Penman. The net operating assets are the net
+    financial obligations plus the common equity, which by the balance sheet identity equal
+    the operating assets minus the operating liabilities (less the minority interest, see
+    `get_nissim_penman_decomposition`).
+
+    The formula is as follows:
+
+        Return on Net Operating Assets = (Net Income + Net Financial Expense) /
+            (Average Net Financial Obligations + Average Common Equity)
+
+    Also known as: RNOA, return on operating assets.
+
+    Args:
+        net_income (float or pd.Series): The net income attributable to the shareholders.
+        net_financial_expense (float or pd.Series): The after-tax net interest expense.
+        average_net_financial_obligations (float or pd.Series): The average net financial
+            obligations.
+        average_common_equity (float or pd.Series): The average common equity.
+
+    Returns:
+        float | pd.Series: The return on net operating assets.
+    """
+    return (net_income + net_financial_expense) / (
+        average_net_financial_obligations + average_common_equity
+    )
+
+
+def get_net_borrowing_cost(
+    net_financial_expense: pd.Series | pd.DataFrame,
+    average_net_financial_obligations: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the net borrowing cost (NBC) of Nissim and Penman (2001): the after-tax net
+    interest expense over the average net financial obligations. With net financial assets
+    (negative obligations) and net interest income, both are negative and the ratio is the
+    after-tax return on the net financial assets.
+
+    The formula is as follows:
+
+        Net Borrowing Cost = Net Financial Expense / Average Net Financial Obligations
+
+    Also known as: NBC, after-tax cost of net debt.
+
+    Args:
+        net_financial_expense (float or pd.Series): The after-tax net interest expense.
+        average_net_financial_obligations (float or pd.Series): The average net financial
+            obligations.
+
+    Returns:
+        float | pd.Series: The net borrowing cost.
+    """
+    return net_financial_expense / average_net_financial_obligations
+
+
+def get_financial_leverage(
+    average_net_financial_obligations: pd.Series | pd.DataFrame,
+    average_common_equity: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the financial leverage (FLEV) of Nissim and Penman (2001): the average net
+    financial obligations over the average common equity. It is negative for a company with
+    net financial assets.
+
+    The formula is as follows:
+
+        Financial Leverage = Average Net Financial Obligations / Average Common Equity
+
+    Also known as: FLEV, net financial leverage.
+
+    Args:
+        average_net_financial_obligations (float or pd.Series): The average net financial
+            obligations.
+        average_common_equity (float or pd.Series): The average common equity.
+
+    Returns:
+        float | pd.Series: The financial leverage.
+    """
+    return average_net_financial_obligations / average_common_equity
+
+
 def get_income_quality_ratio(
     cash_flow_from_operating_activities: pd.Series | pd.DataFrame,
     net_income: pd.Series | pd.DataFrame,

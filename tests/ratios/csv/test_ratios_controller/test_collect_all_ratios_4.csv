@@ -43,6 +43,9 @@ AAPL,Return on Assets,,,,-0.0156
 AAPL,Cash Return on Assets,,,,0.0008
 AAPL,Return on Equity,,,,0.0303
 AAPL,Return on Invested Capital,,,,0.0417
+AAPL,Return on Net Operating Assets,,,,-0.4403
+AAPL,Net Borrowing Cost,,,,-4.5249
+AAPL,Financial Leverage,,,,0.0997
 AAPL,Return on Capital Employed,,,0.3639,0.0694
 AAPL,Return on Tangible Assets,,,,-0.0156
 AAPL,Income Quality Ratio,,,-0.0424,0.0167
@@ -158,6 +161,9 @@ MSFT,Return on Assets,,,,-0.0251
 MSFT,Cash Return on Assets,,,,-0.0408
 MSFT,Return on Equity,,,,-0.1022
 MSFT,Return on Invested Capital,,,,-0.0323
+MSFT,Return on Net Operating Assets,,,,-0.231
+MSFT,Net Borrowing Cost,,,,6.7918
+MSFT,Financial Leverage,,,,0.2032
 MSFT,Return on Capital Employed,,,0.1488,-0.0004
 MSFT,Return on Tangible Assets,,,,-0.0184
 MSFT,Income Quality Ratio,,,-0.0498,-0.016

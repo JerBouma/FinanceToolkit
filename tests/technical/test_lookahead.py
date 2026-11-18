@@ -61,6 +61,11 @@ PER_SECURITY_INDICATORS = {
             close, 12, 26
         )
     ),
+    "get_percentage_volume_oscillator": (
+        lambda high, low, close, opening, volume: momentum.get_percentage_volume_oscillator(
+            volume, 12, 26, 9
+        )
+    ),
     "get_detrended_price_oscillator": (
         lambda high, low, close, opening, volume: momentum.get_detrended_price_oscillator(
             close, WINDOW
@@ -181,8 +186,14 @@ PER_SECURITY_INDICATORS = {
     "get_average_true_range": lambda high, low, close, opening, volume: volatility.get_average_true_range(
         high, low, close, WINDOW
     ),
+    "get_mass_index": lambda high, low, close, opening, volume: volatility.get_mass_index(
+        high, low, 9, 25
+    ),
     "get_supertrend": lambda high, low, close, opening, volume: volatility.get_supertrend(
         high, low, close
+    ),
+    "get_chandelier_exit": lambda high, low, close, opening, volume: volatility.get_chandelier_exit(
+        high, low, close, 22, 3.0
     ),
     "get_keltner_channels": lambda high, low, close, opening, volume: volatility.get_keltner_channels(
         high, low, close, 20, 10, 2.0
@@ -200,6 +211,9 @@ PER_SECURITY_INDICATORS = {
         close
     ),
     "get_on_balance_volume": lambda high, low, close, opening, volume: breadth.get_on_balance_volume(
+        close, volume
+    ),
+    "get_price_volume_trend": lambda high, low, close, opening, volume: breadth.get_price_volume_trend(
         close, volume
     ),
     "get_accumulation_distribution_line": (

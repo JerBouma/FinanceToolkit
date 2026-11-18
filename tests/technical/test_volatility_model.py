@@ -117,3 +117,51 @@ def test_recursive_averages_stop_where_the_prices_stop():
     assert wilder.iloc[41] == pytest.approx(
         wilder.iloc[39] + (true_range.iloc[41] - wilder.iloc[39]) / 14
     )
+
+
+def test_mass_index_sums_the_ratio_of_the_single_and_double_ema():
+    from financetoolkit.technicals.overlap_model import (  # noqa: PLC0415
+        get_exponential_moving_average,
+    )
+
+    prices = sample_prices()
+    result = volatility_model.get_mass_index(prices["High"], prices["Low"], 9, 25)
+
+    single_ema = get_exponential_moving_average(prices["High"] - prices["Low"], 9)
+    double_ema = get_exponential_moving_average(single_ema, 9)
+    expected = (single_ema / double_ema).rolling(25).sum()
+
+    pd.testing.assert_series_equal(result, expected)
+    # The double EMA starts on the 17th period and the 25-period sum 24 periods later.
+    assert result.first_valid_index() == prices.index[40]
+
+
+def test_mass_index_of_a_constant_range_is_the_sum_window():
+    index = pd.RangeIndex(80)
+    result = volatility_model.get_mass_index(
+        pd.Series(101.0, index=index), pd.Series(99.0, index=index), 9, 25
+    )
+
+    assert result.dropna().round(12).eq(25).all()
+
+
+def test_chandelier_exit_hangs_from_the_extremes_by_the_average_true_range():
+    prices = sample_prices()
+    result = volatility_model.get_chandelier_exit(
+        prices["High"], prices["Low"], prices["Close"], 22, 3.0
+    )
+    average_true_range = volatility_model.get_average_true_range(
+        prices["High"], prices["Low"], prices["Close"], 22
+    )
+
+    pd.testing.assert_series_equal(
+        result["Long Exit"],
+        prices["High"].rolling(22).max() - 3.0 * average_true_range,
+        check_names=False,
+    )
+    pd.testing.assert_series_equal(
+        result["Short Exit"],
+        prices["Low"].rolling(22).min() + 3.0 * average_true_range,
+        check_names=False,
+    )
+    assert result["Long Exit"].first_valid_index() == prices.index[21]

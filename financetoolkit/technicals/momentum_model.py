@@ -481,6 +481,63 @@ def get_percentage_price_oscillator(
     return ppo
 
 
+def get_percentage_volume_oscillator(
+    volumes: pd.Series, short_window: int, long_window: int, signal_window: int
+) -> pd.DataFrame:
+    """
+    Calculate the Percentage Volume Oscillator (PVO) for a given volume series.
+
+    The Percentage Volume Oscillator is the Percentage Price Oscillator applied to volume:
+    the difference between a short-term and a long-term EMA of volume as a share of the
+    long-term EMA. It rises when recent volume runs above its longer-term average and
+    falls when it runs below, which makes it a measure of volume momentum that can be
+    compared across securities whatever the number of shares they trade.
+
+    The formula is as follows:
+
+    - PVO = (EMA(Volume, short_window) - EMA(Volume, long_window)) / EMA(Volume, long_window)
+    - Signal Line = EMA(PVO, signal_window)
+    - Histogram = PVO - Signal Line
+
+    The conventional parameters are 12, 26 and 9 periods, as for MACD and the PPO.
+
+    Also known as: PVO, volume oscillator.
+
+    Reference: StockCharts ChartSchool, "Percentage Volume Oscillator (PVO)". The PVO is the
+    volume counterpart of the Percentage Price Oscillator, a normalized variant of Appel's
+    Moving Average Convergence Divergence (Appel, G. (1979). "The Moving Average
+    Convergence-Divergence Trading Method." Signalert Corp.).
+
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values (see
+          `get_exponential_moving_average`), so the PVO starts on period `long_window` - 1
+          and the signal line and histogram `signal_window` - 1 periods later.
+        - A long-term EMA of zero (a series without volume, such as an index or a currency
+          pair with no reported volume) has no PVO rather than an infinite one.
+
+    Args:
+        volumes (pd.Series): Series of trading volumes.
+        short_window (int): Number of periods for the short-term EMA.
+        long_window (int): Number of periods for the long-term EMA.
+        signal_window (int): Number of periods for the signal line EMA.
+
+    Returns:
+        pd.DataFrame: The Percentage Volume Oscillator, Signal Line and Histogram as
+        columns, as decimals (0.02 is 2%).
+    """
+    short_ema = get_exponential_moving_average(volumes, short_window)
+    long_ema = get_exponential_moving_average(volumes, long_window)
+
+    pvo = (short_ema - long_ema) / long_ema.where(long_ema != 0)
+    signal_line = get_exponential_moving_average(pvo, signal_window)
+
+    return pd.concat(
+        [pvo, signal_line, pvo - signal_line],
+        keys=["Percentage Volume Oscillator", "Signal Line", "Histogram"],
+        axis=1,
+    )
+
+
 def get_detrended_price_oscillator(
     prices_close: pd.Series,
     window: int,

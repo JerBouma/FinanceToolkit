@@ -54,6 +54,7 @@ DE_NEDERLANDSCHE_BANK = "DeNederlandscheBank"
 EUROPEAN_SYSTEMIC_RISK_BOARD = "ESRB"
 DAMODARAN = "Damodaran"
 FINRA = "FINRA"
+FEDERAL_HOUSING_FINANCE_AGENCY = "FHFA"
 
 # The market risk premium is published per country, so it is one cache entry. The name
 # marks the premiums as decimals, so an entry holding percentages under another name is
@@ -326,6 +327,11 @@ POLICIES: dict[str, CachePolicy] = {
     # A published day of short sale volume does not change, but FINRA publishes the file of
     # a day in the evening, so once a day has passed the last week is asked for again.
     f"{FINRA}.short_volume": CachePolicy(ttl_seconds=DAY, revision_days=7),
+    # The National Mortgage Database statistics are published once a quarter, about three
+    # months after the quarter ends, as one file with the full history.
+    f"{FEDERAL_HOUSING_FINANCE_AGENCY}.outstanding_mortgages": CachePolicy(
+        ttl_seconds=7 * DAY
+    ),
     f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
         ttl_seconds=DAY, revision_days=365
     ),

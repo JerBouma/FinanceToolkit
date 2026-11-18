@@ -60,6 +60,7 @@ SOURCE_NAMES = {
     policy_model.EUROPEAN_SYSTEMIC_RISK_BOARD: "European Systemic Risk Board",
     policy_model.DAMODARAN: "Aswath Damodaran (NYU Stern)",
     policy_model.FINRA: "FINRA",
+    policy_model.FEDERAL_HOUSING_FINANCE_AGENCY: "Federal Housing Finance Agency (FHFA)",
 }
 
 # The publisher behind each host the Finance Toolkit requests data from, matched on the end
@@ -115,6 +116,7 @@ HOST_SOURCES = {
     "esrb.europa.eu": policy_model.EUROPEAN_SYSTEMIC_RISK_BOARD,
     "stern.nyu.edu": policy_model.DAMODARAN,
     "finra.org": policy_model.FINRA,
+    "fhfa.gov": policy_model.FEDERAL_HOUSING_FINANCE_AGENCY,
 }
 
 TrackedClass = TypeVar("TrackedClass", bound=type)

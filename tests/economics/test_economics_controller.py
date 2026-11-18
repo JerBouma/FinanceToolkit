@@ -572,3 +572,8 @@ def test_get_government_expenditure_by_function_refuses_unknown_functions():
     assert economics.get_government_expenditure_by_function(
         functions="Space Exploration"
     ).empty
+
+
+def test_get_outstanding_mortgage_rates(recorder, economics_module):
+    recorder.capture(economics_module.get_outstanding_mortgage_rates())
+    recorder.capture(economics_module.get_outstanding_mortgage_rates(cumulative=True))

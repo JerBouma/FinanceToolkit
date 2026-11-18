@@ -583,3 +583,54 @@ def get_bollinger_bands(
         axis=1,
         keys=["Upper Band", "Middle Band", "Lower Band", "Close"],
     )
+
+
+def get_bollinger_percent_b_and_bandwidth(
+    prices: pd.Series, window: int, num_std_dev: float
+) -> pd.DataFrame:
+    """
+    Calculate the Bollinger %B and BandWidth of a given price series.
+
+    Bollinger derived two indicators from his bands. %B places the close within the bands:
+    0 is on the lower band, 0.5 on the middle band and 1 on the upper band, with values
+    below 0 or above 1 for a close outside the bands. BandWidth is the distance between the
+    bands relative to the middle band, a normalized measure of volatility in which a
+    six-month low marks "the Squeeze" that often precedes a volatility expansion.
+
+    The formula is as follows:
+
+    - %B = (Close - Lower Band) / (Upper Band - Lower Band)
+    - BandWidth = (Upper Band - Lower Band) / Middle Band
+
+    Both are returned as decimals (a %B of 1 is a close on the upper band, a BandWidth of
+    0.10 is bands 10% of the middle band apart); StockCharts shows BandWidth multiplied by
+    100.
+
+    Also known as: Percent B, %b, Bollinger Band Width, BBW.
+
+    Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill, chapters
+    7 (%b) and 8 (BandWidth).
+
+    Notes:
+        - The bands are those of `get_bollinger_bands`: a Simple Moving Average with the
+          *population* standard deviation (ddof=0), as Bollinger specifies.
+        - A window of identical prices has bands with no width, which leaves %B undefined
+          (missing) and BandWidth at 0.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods for the moving average and standard deviation.
+        num_std_dev (float): Number of standard deviations for the bands.
+
+    Returns:
+        pd.DataFrame: %B and BandWidth as columns, both decimals.
+    """
+    bollinger_bands = get_bollinger_bands(prices, window, num_std_dev)
+    band_range = bollinger_bands["Upper Band"] - bollinger_bands["Lower Band"]
+
+    percent_b = (prices - bollinger_bands["Lower Band"]) / band_range.where(
+        band_range != 0
+    )
+    bandwidth = band_range / bollinger_bands["Middle Band"]
+
+    return pd.concat([percent_b, bandwidth], keys=["%B", "BandWidth"], axis=1)

@@ -1,5 +1,6 @@
 """Volatility Model Tests"""
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -117,3 +118,42 @@ def test_recursive_averages_stop_where_the_prices_stop():
     assert wilder.iloc[41] == pytest.approx(
         wilder.iloc[39] + (true_range.iloc[41] - wilder.iloc[39]) / 14
     )
+
+
+def test_get_bollinger_percent_b_and_bandwidth(recorder):
+    prices = sample_prices()
+    result = volatility_model.get_bollinger_percent_b_and_bandwidth(
+        prices["Close"], 20, 2
+    ).round(4)
+
+    # The window fills within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
+
+
+def test_bollinger_percent_b_and_bandwidth_match_talib():
+    """%B and BandWidth from TA-Lib's BBANDS(20, 2, 2) with a simple average."""
+    rng = np.random.default_rng(7)
+    closes = pd.Series(100 + rng.normal(0, 1, 80).cumsum())
+
+    result = volatility_model.get_bollinger_percent_b_and_bandwidth(closes, 20, 2)
+
+    assert result["%B"].first_valid_index() == 19
+    assert result["%B"].iloc[-3:].tolist() == pytest.approx(
+        [0.285528, 0.26088, 0.573318], abs=1e-6
+    )
+    assert result["BandWidth"].iloc[-3:].tolist() == pytest.approx(
+        [0.064015, 0.060603, 0.057505], abs=1e-6
+    )
+
+
+def test_bollinger_percent_b_without_band_width_is_missing():
+    result = volatility_model.get_bollinger_percent_b_and_bandwidth(
+        pd.Series([10.0] * 5 + [11.0]), 5, 2
+    )
+
+    assert np.isnan(result["%B"].iloc[4])
+    assert result["BandWidth"].iloc[4] == 0
+    # The jump to 11 lifts the mean to 10.2 and the deviation to 0.4, which puts the close
+    # exactly on the upper band (10.2 + 2 * 0.4), a %B of 1.
+    assert result["%B"].iloc[5] == pytest.approx(1.0)

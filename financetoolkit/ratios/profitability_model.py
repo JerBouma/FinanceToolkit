@@ -413,7 +413,9 @@ def get_net_borrowing_cost(
     Calculate the net borrowing cost (NBC) of Nissim and Penman (2001): the after-tax net
     interest expense over the average net financial obligations. With net financial assets
     (negative obligations) and net interest income, both are negative and the ratio is the
-    after-tax return on the net financial assets.
+    after-tax return on the net financial assets. With net financial assets and a net interest
+    expense (or net obligations and net interest income) the signs differ and the ratio is
+    negative.
 
     The formula is as follows:
 

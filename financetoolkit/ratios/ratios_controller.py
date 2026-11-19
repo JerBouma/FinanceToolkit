@@ -6972,6 +6972,7 @@ class Ratios:
         - Common Equity = Total Shareholder Equity - Preferred Stock
         - Net Operating Assets = Net Financial Obligations + Common Equity
         - Return on Net Operating Assets = Operating Income / Average Net Operating Assets
+
         The balance sheet is split into operating and financial items as follows:
 
         - Financial assets: the cash and cash equivalents, the short term investments and the
@@ -7111,6 +7112,7 @@ class Ratios:
         - Net Financial Obligations = Total Debt + Preferred Stock - Cash and Short Term Investments -
           Long Term Investments
         - Net Borrowing Cost = Net Financial Expense / Average Net Financial Obligations
+
         The balance sheet is split into operating and financial items as follows:
 
         - Financial assets: the cash and cash equivalents, the short term investments and the
@@ -7247,6 +7249,7 @@ class Ratios:
           Long Term Investments
         - Common Equity = Total Shareholder Equity - Preferred Stock
         - Financial Leverage = Average Net Financial Obligations / Average Common Equity
+
         The balance sheet is split into operating and financial items as follows:
 
         - Financial assets: the cash and cash equivalents, the short term investments and the

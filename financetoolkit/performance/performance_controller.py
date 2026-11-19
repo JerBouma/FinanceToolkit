@@ -21,6 +21,7 @@ from financetoolkit.risk.helpers import (
 from financetoolkit.risk.risk_model import (
     get_kurtosis,
     get_max_drawdown,
+    get_pain_index,
     get_rolling_kurtosis,
     get_rolling_skewness,
     get_skewness,
@@ -455,13 +456,13 @@ class Performance:
 
         Which returns:
 
-        |      |    Alpha |   Beta |     CAPM |   Jensen's Alpha |   Treynor Ratio |   Sharpe Ratio |   Sortino Ratio |   Ulcer Performance Index |   Calmar Ratio |   Sterling Ratio |   Burke Ratio |   Omega Ratio |   Kappa Ratio |   Gain to Pain Ratio |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |   Information Ratio |   Appraisal Ratio |   STARR Ratio |   Rachev Ratio |   Returns |   Excess Return |
-        |:-----|---------:|-------:|---------:|-----------------:|----------------:|---------------:|----------------:|--------------------------:|---------------:|-----------------:|--------------:|--------------:|--------------:|---------------------:|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|--------------------:|------------------:|--------------:|---------------:|----------:|----------------:|
-        | 2022 |  -0.0823 | 1.3027 |  -0.2457 |          -0.0184 |         -0.2253 |        -0.0483 |         -0.0676 |                   -1.7999 |        -0.87   |          -1.067  |       -0.1136 |        0.8941 |       -0.0521 |              -0.1059 |     0.4781 |                 1.3037 |                   1.3243 |    -0.1699 |           0.0115 |             -0.025  |           -0.1106 |       -0.4074 |         1.0649 |   -0.264  |         -0.2935 |
-        | 2023 |   0.2283 | 1.1139 |   0.2871 |           0.203  |          0.4045 |         0.1191 |          0.1843 |                    8.175  |         3.282  |           3.3708 |        0.517  |        1.4108 |        0.1286 |               0.4108 |     0.588  |                 1.1755 |                   0.9847 |     0.3297 |           0.009  |              0.0797 |            1.4414 |        1.0738 |         1.0942 |    0.4901 |          0.4505 |
-        | 2024 |   0.0582 | 0.9687 |   0.2424 |           0.0647 |          0.2732 |         0.0701 |          0.1072 |                    4.1634 |         1.9997 |           1.971  |        0.2623 |        1.251  |        0.0767 |               0.251  |     0.504  |                 1.1048 |                   1.0687 |     0.1891 |           0.0121 |              0.0208 |            0.3379 |        0.5637 |         1.1444 |    0.3071 |          0.2646 |
-        | 2025 |  -0.0867 | 1.2551 |   0.2114 |          -0.1209 |          0.0379 |         0.0189 |          0.0283 |                    0.3943 |         0.2913 |           0.4451 |        0.0249 |        1.0903 |        0.0187 |               0.0903 |     0.472  |                 1.015  |                   1.1072 |     0.0715 |           0.0139 |             -0.0126 |           -0.5667 |        0.0659 |         1.0731 |    0.0905 |          0.0476 |
-        | 2021 | nan      | 1.3195 | nan      |         nan      |        nan      |         0.0858 |          0.1289 |                  nan      |       nan      |         nan      |      nan      |        1.2629 |        0.0942 |               0.2629 |     0.494  |                 1.3706 |                   1.4316 |   nan      |           0.0118 |              0.0267 |          nan      |      nan      |         0.9961 |    0.3806 |          0.3663 |
+        |      |    Alpha |   Beta |     CAPM |   Jensen's Alpha |   Treynor Ratio |   Sharpe Ratio |   Safety-First Ratio |   Sortino Ratio |   Upside Potential Ratio |   Ulcer Performance Index |   Calmar Ratio |   Sterling Ratio |   Burke Ratio |   Pain Ratio |   Omega Ratio |   Kappa Ratio |   Gain to Pain Ratio |   Win Rate |   Upside Capture Ratio |   Downside Capture Ratio |   M2 Ratio |   Tracking Error |   Information Ratio |   Appraisal Ratio |   STARR Ratio |   Rachev Ratio |   Returns |   Excess Return |
+        |:-----|---------:|-------:|---------:|-----------------:|----------------:|---------------:|---------------------:|----------------:|-------------------------:|--------------------------:|---------------:|-----------------:|--------------:|-------------:|--------------:|--------------:|---------------------:|-----------:|-----------------------:|-------------------------:|-----------:|-----------------:|--------------------:|------------------:|--------------:|---------------:|----------:|----------------:|
+        | 2022 |  -0.0823 | 1.3027 |  -0.2457 |          -0.0184 |         -0.2253 |        -0.0483 |              -0.0431 |         -0.0676 |                   0.5071 |                   -1.7999 |        -0.87   |          -1.067  |       -0.1136 |      -1.9984 |        0.8941 |       -0.0521 |              -0.1059 |     0.4781 |                 1.3037 |                   1.3243 |    -0.1699 |           0.0115 |             -0.025  |           -0.1106 |       -0.4074 |         1.0649 |   -0.264  |         -0.2935 |
+        | 2023 |   0.2283 | 1.1139 |   0.2871 |           0.203  |          0.4045 |         0.1191 |               0.1312 |          0.1843 |                   0.6867 |                    8.175  |         3.282  |           3.3708 |        0.517  |      12.346  |        1.4108 |        0.1286 |               0.4108 |     0.588  |                 1.1755 |                   0.9847 |     0.3297 |           0.009  |              0.0797 |            1.4414 |        1.0738 |         1.0942 |    0.4901 |          0.4505 |
+        | 2024 |   0.0582 | 0.9687 |   0.2424 |           0.0647 |          0.2732 |         0.0701 |               0.0815 |          0.1072 |                   0.6117 |                    4.1633 |         1.9997 |           1.971  |        0.2623 |       5.4831 |        1.251  |        0.0767 |               0.251  |     0.504  |                 1.1048 |                   1.0687 |     0.1891 |           0.0121 |              0.0208 |            0.3379 |        0.5637 |         1.1444 |    0.3071 |          0.2646 |
+        | 2025 |  -0.0867 | 1.2551 |   0.2114 |          -0.1209 |          0.0379 |         0.0189 |               0.027  |          0.0283 |                   0.4827 |                    0.3943 |         0.2913 |           0.4451 |        0.0249 |       0.4983 |        1.0903 |        0.0187 |               0.0903 |     0.472  |                 1.015  |                   1.1072 |     0.0715 |           0.0139 |             -0.0126 |           -0.5667 |        0.0659 |         1.0731 |    0.0905 |          0.0476 |
+        | 2021 | nan      | 1.3195 | nan      |         nan      |        nan      |         0.0858 |               0.0894 |          0.1289 |                   0.642  |                  nan      |       nan      |         nan      |      nan      |     nan      |        1.2629 |        0.0942 |               0.2629 |     0.494  |                 1.3706 |                   1.4316 |   nan      |           0.0118 |              0.0267 |          nan      |      nan      |         0.9961 |    0.3806 |          0.3663 |
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
         rounding = rounding if rounding is not None else self._rounding
@@ -509,7 +510,21 @@ class Performance:
                 lag=lag,
                 standardize=standardize,
             ),
+            "Safety-First Ratio": self.get_safety_first_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
             "Sortino Ratio": self.get_sortino_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Upside Potential Ratio": self.get_upside_potential_ratio(
                 period=period,
                 rounding=rounding,
                 growth=growth,
@@ -538,6 +553,13 @@ class Performance:
                 standardize=standardize,
             ),
             "Burke Ratio": self.get_burke_ratio(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
+            "Pain Ratio": self.get_pain_ratio(
                 period=period,
                 rounding=rounding,
                 growth=growth,
@@ -3052,6 +3074,292 @@ class Performance:
 
     @handle_portfolio
     @handle_errors
+    def get_safety_first_ratio(
+        self,
+        period: str | None = None,
+        threshold: float = 0.0,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate Roy's Safety-First Ratio of an investment portfolio or asset's returns.
+
+        Roy (1952) argues that an investor first of all wants to avoid a disaster, a return
+        below a threshold, and so prefers the portfolio with the lowest probability of falling
+        below it. For normally distributed returns that probability is N(-Safety-First Ratio),
+        so the best portfolio is the one with the highest ratio: the number of standard
+        deviations the expected return lies above the threshold.
+
+        The formula is as follows:
+
+        - Safety-First Ratio = (Mean(Return) - Threshold per Observation) / Standard Deviation(Return)
+        - Threshold per Observation = (1 + Threshold)^(1 / Observations per Year) - 1
+
+        The threshold is an annual return, compounded down to the returns the ratio is computed
+        from: by default the **daily** returns falling inside each `period`, 252 a year for a
+        ticker that trades on trading days and 365 for one that also trades on weekends (such
+        as a cryptocurrency). With `rolling`, `period` instead sets the frequency of the returns
+        and the ratio is computed over a rolling window of `rolling` such returns, with the
+        threshold compounded to that frequency. The standard deviation is the sample one
+        (ddof=1). With the risk-free rate as the threshold the ratio is the Sharpe Ratio
+        (`get_sharpe_ratio`); the default threshold of 0 is Roy's disaster of losing money.
+
+        As with the Sharpe Ratio, the result is **not annualized**: it is a per-observation
+        ratio, so multiply by SQRT(252), SQRT(52), SQRT(12) or SQRT(4) for daily, weekly,
+        monthly or quarterly returns respectively before comparing against published
+        annualized figures.
+
+        For more information, see the following paper:
+
+        - Roy, A.D. (1952). "Safety First and the Holding of Assets." Econometrica, 20(3),
+        431-449.
+
+        Also known as: SFRatio, Roy's safety-first criterion.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            threshold (float, optional): The minimum acceptable (shortfall) return as an annual decimal return,
+                e.g. 0.02 for 2% a year. Defaults to 0.0.
+            rolling (int | None, optional): The rolling window size to use for the calculation. If set, the
+                ratio is calculated over a rolling window of this many periods across the full return history
+                instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Safety-First Ratio values.
+
+        Notes:
+        - period="daily" needs intraday data (initialise the Toolkit with an intraday_period): the ratio per day
+        is then computed from the intraday bars within each day, with the threshold compounded over the bars
+        of a year. Without intraday data a single day holds one return, so the result is empty and logs why.
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "MDLZ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_safety_first_ratio(threshold=0.02)
+        ```
+
+        Which returns:
+
+        | Date   |      KO |     PEP |    MDLZ |
+        |:-------|--------:|--------:|--------:|
+        | 2021   |  0.0589 |  0.0893 |  0.0602 |
+        | 2022   |  0.0323 |  0.0211 |  0.0093 |
+        | 2023   | -0.0264 | -0.0177 |  0.0366 |
+        | 2024   |  0.0361 | -0.0329 | -0.0637 |
+        | 2025   |  0.0509 | -0.0036 | -0.0195 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._get_column(period, "Return", within_period=not rolling)
+
+        # The observations in a year of the returns the ratio is computed from, per ticker,
+        # as in get_sharpe_ratio: the periods in a year for a rolling ratio (the daily
+        # observations of each ticker for period="daily"), the daily (or intraday)
+        # returns within each period otherwise.
+        if rolling:
+            observations_per_year = (
+                get_observations_per_year(self._daily_returns)
+                if period == "daily"
+                else pd.Series(float(PERIODS_PER_YEAR[period]), index=returns.columns)
+            )
+        else:
+            observations_per_year = self._get_observations_per_year(period)
+        observations_per_year = observations_per_year.reindex(returns.columns).fillna(
+            float(PERIODS_PER_YEAR["daily"])
+        )
+        threshold_per_observation = (1 + threshold) ** (1 / observations_per_year) - 1
+
+        safety_first_ratio = (
+            performance_model.get_rolling_safety_first_ratio(
+                returns, rolling, threshold_per_observation
+            )
+            if rolling
+            else performance_model.get_safety_first_ratio(
+                returns, threshold_per_observation
+            )
+        )
+
+        return finalize_dataset(
+            dataset=safety_first_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_upside_potential_ratio(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Upside Potential Ratio of an investment portfolio or asset's returns.
+
+        The Upside Potential Ratio of Sortino, van der Meer & Plantinga (1999) divides the
+        expected return above a minimum acceptable return (MAR) by the downside deviation below
+        it. Where the Sortino Ratio rewards the mean excess return, which the losses lower, this
+        ratio rewards only the potential above the MAR and penalizes only the risk below it,
+        each counted once.
+
+        The formula is as follows:
+
+        - Upside Potential Ratio = Upside Potential / Downside Deviation
+        - Upside Potential = (1 / N) * SUM( MAX(Excess Return, 0) )
+        - Downside Deviation = SQRT( (1 / N) * SUM( MIN(Excess Return, 0)^2 ) )
+
+        Where N is the *total* number of observations in both, as the paper weighs every outcome
+        by its probability, and the Excess Return is the return minus the risk-free rate, the
+        MAR of `get_sortino_ratio` (whose Downside Deviation this is). By default one ratio is
+        reported per `period`, computed from the **daily** excess returns falling inside that
+        period. For a rolling period, `period` instead sets the frequency of the returns
+        themselves and the ratio is computed over a rolling window of `rolling` such returns.
+
+        A period needs at least two observations, and a period without a return below the MAR
+        has no downside to divide by; both are left out.
+
+        As with the Sortino Ratio, the result is a ratio of the observations within the period
+        and is not annualized.
+
+        For more information, see the following paper:
+
+        - Sortino, F.A., van der Meer, R., & Plantinga, A. (1999). "The Dutch Triangle."
+        Journal of Portfolio Management, 26(1), 50-57.
+
+        Also known as: UPR.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            rolling (int | None, optional): The rolling window size to use for the calculation. If set, the
+                ratio is calculated over a rolling window of this many periods across the full return history
+                instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Upside Potential Ratio values.
+
+        Notes:
+        - period="daily" needs intraday data (initialise the Toolkit with an intraday_period): the ratio per day
+        is then computed from the intraday bars within each day, with the daily risk free rate spread over the
+        bars of a day. Without intraday data a single day holds one return, so the result is empty and logs why.
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NKE", "LULU", "ADDYY"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_upside_potential_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |    NKE |   LULU |   ADDYY |
+        |:-------|-------:|-------:|--------:|
+        | 2021   | 0.6044 | 0.5902 |  0.493  |
+        | 2022   | 0.4878 | 0.513  |  0.4846 |
+        | 2023   | 0.4598 | 0.6448 |  0.6168 |
+        | 2024   | 0.3159 | 0.4143 |  0.5526 |
+        | 2025   | 0.464  | 0.3496 |  0.4248 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if rolling:
+            period_returns = self._get_column(period, "Return", within_period=False)
+            excess_return = performance_model.get_excess_return(
+                period_returns,
+                self._risk_free_rate_data[period][period_returns.columns],
+            )
+            upside_potential_ratio = (
+                performance_model.get_rolling_upside_potential_ratio(
+                    excess_return, rolling
+                )
+            )
+        else:
+            excess_return = self._get_column(
+                period, "Excess Return", within_period=True
+            )
+            upside_potential_ratio = performance_model.get_upside_potential_ratio(
+                excess_return
+            )
+
+        return finalize_dataset(
+            dataset=upside_potential_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_ulcer_performance_index(
         self,
         period: str | None = None,
@@ -3486,6 +3794,133 @@ class Performance:
 
         return finalize_dataset(
             dataset=burke_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_pain_ratio(
+        self,
+        period: str | None = None,
+        within_period: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Pain Ratio of an investment portfolio or asset's returns.
+
+        The Pain Ratio divides the excess return (return minus the risk-free rate) of an
+        investment portfolio or asset by its Pain Index, the mean depth of its drawdowns. Where
+        the Ulcer Performance Index squares the drawdowns, which makes the deep ones dominate,
+        the Pain Index weighs every observation under water by its depth alone.
+
+        The formula is as follows:
+
+        - Pain Ratio = (Period Return - Risk-Free Rate) / Pain Index
+        - Pain Index = SUM(|Drawdown_t|) / N
+        - Drawdown_t = Wealth_t / Peak_t - 1, with Peak_t the highest wealth since the first return
+
+        With within_period=True (the default) the observations are the daily returns within each
+        period: N is the number of days in the period, and the wealth and its peak restart from 1
+        before the first return of every period, so a loss on its first day is a drawdown as
+        well. With within_period=False the observations are the `period` returns (such as the
+        yearly returns) of the full history: N is the number of those periods, and every period's
+        excess return is divided by that one Pain Index, as the Calmar, Sterling and Burke ratios
+        do. Observations at a new high count as a drawdown of 0. The risk-free rate is compounded over the days of the
+        period, so a partial period (such as the current year) earns the rate of the days it
+        covers. Bacon (2013) divides the annualized return minus the risk-free rate; for
+        period="yearly" that is the same for every full year, and for other periods the ratio
+        uses the period's own (not annualized) excess return, as the Ulcer Performance Index
+        and the Burke Ratio do.
+
+        For more information, see the following source:
+
+        - Bacon, C.R. (2013). "Practical Risk-Adjusted Performance Measurement." John Wiley &
+        Sons, chapter 5 (the Pain Index and Pain Ratio of Zephyr Associates).
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            within_period (bool, optional): Whether to calculate the Pain Index from the daily drawdowns
+                within each period (if period = 'yearly', a Pain Index per year) or from the drawdowns of the
+                `period` returns over the full history (one Pain Index from the yearly returns of all years).
+                Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Pain Ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the Pain Ratio for each asset in
+        the Toolkit instance.
+        - A period without a drawdown has a Pain Index of 0 and no ratio (NaN).
+        - The risk-free rate is the Toolkit's risk_free_rate, the 10-year US Treasury yield by default. Many
+        textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
+        the Toolkit uses when initialised with risk_free_rate="13w".
+        - If `growth` is set to True, the method calculates the growth of the ratio values using
+        the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["HD", "LOW", "TGT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_pain_ratio()
+        ```
+
+        Which returns:
+
+        | Date   |      HD |     LOW |     TGT |
+        |:-------|--------:|--------:|--------:|
+        | 2022   | -1.0217 | -1.1848 | -1.468  |
+        | 2023   |  1.0889 |  1.3693 | -0.2573 |
+        | 2024   |  1.7048 |  1.3511 | -0.5582 |
+        | 2025   | -1.3355 | -0.4223 | -1.0867 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._get_column(period, "Return", within_period=within_period)
+
+        pain_index = get_pain_index(returns)
+
+        period_returns = self._get_column(period, "Return", within_period=False)
+        excess_return = performance_model.get_excess_return(
+            period_returns, self._risk_free_rate_data[period][period_returns.columns]
+        )
+
+        pain_ratio = performance_model.get_pain_ratio(excess_return, pain_index)
+
+        return finalize_dataset(
+            dataset=pain_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -181,3 +181,45 @@ def test_monthly_credit_returns_handle_independently_unsorted_histories():
     assert len(result) == 1
     expected = pd.DataFrame({"current": [np.log(1.2) - np.log(1.1)]}, index=["AAA"])
     pd.testing.assert_frame_equal(result[0], expected)
+
+
+def test_least_squares_coefficients_match_statsmodels():
+    sm = pytest.importorskip("statsmodels.api")
+    rng = np.random.default_rng(1)
+    regressors = rng.normal(size=(30, 3))
+    dependent = regressors @ [0.5, -1.0, 2.0] + rng.normal(size=30)
+    dependent[4] = np.nan
+    regressors[7, 1] = np.inf
+
+    coefficients = helpers.least_squares_coefficients(dependent, regressors, 10)
+
+    complete = np.isfinite(dependent) & np.isfinite(regressors).all(axis=1)
+    expected = sm.OLS(dependent[complete], regressors[complete]).fit().params
+    np.testing.assert_allclose(coefficients, expected, rtol=0, atol=1e-10)
+    # Too few complete observations, or collinear regressors, give no fit.
+    assert np.isnan(helpers.least_squares_coefficients(dependent, regressors, 29)).all()
+    collinear = np.column_stack(
+        [regressors[:, 0], 2 * regressors[:, 0], regressors[:, 2]]
+    )
+    assert np.isnan(helpers.least_squares_coefficients(dependent, collinear, 3)).all()
+
+
+def test_least_squares_coefficients_scale_columns_of_very_different_magnitudes():
+    sm = pytest.importorskip("statsmodels.api")
+    rng = np.random.default_rng(2)
+    # One over total assets in the order of 1e15 next to ratios around one, as for a
+    # company reporting in Indonesian rupiah.
+    inverse_assets = 1 / rng.uniform(1e15, 5e15, 20)
+    regressors = np.column_stack(
+        [inverse_assets, rng.normal(0.1, 0.05, 20), rng.uniform(0.2, 0.6, 20)]
+    )
+    dependent = regressors @ [3e13, 0.05, -0.08] + rng.normal(0, 0.01, 20)
+
+    coefficients = helpers.least_squares_coefficients(dependent, regressors, 10)
+
+    norms = np.linalg.norm(regressors, axis=0)
+    expected = sm.OLS(dependent, regressors / norms).fit().params / norms
+    np.testing.assert_allclose(coefficients, expected, rtol=1e-8)
+    # A regressor that is zero in every observation has no coefficient.
+    regressors[:, 1] = 0
+    assert np.isnan(helpers.least_squares_coefficients(dependent, regressors, 10)).all()

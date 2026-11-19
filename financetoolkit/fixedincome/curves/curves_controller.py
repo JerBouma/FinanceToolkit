@@ -1475,12 +1475,15 @@ class CurvesFixedIncome:
         bootstrap solves for. z(T - h) and z(h) are interpolated linearly on it, as for
         `get_forward_rate`, and held flat below the shortest maturity, so where the curve
         starts beyond the horizon (Germany at one year) the financing rate is the shortest
-        rate. Each bond is repriced exactly on the unchanged curve: the carry is what it earns
-        over the financing if its own yield stays z(T), the roll-down the price change from
-        its yield moving to z(T - h), valued at the horizon. Every value is a return over the
-        horizon, not annualized. Germany and Japan quote maturities from one year, so a
-        horizon of a year avoids the flat extrapolation there. For a curve or a financing
-        rate of your own, use `yieldcurve_model.get_carry_and_roll_down`.
+        rate. Beyond the longest maturity L the curve is held flat as well, so a bond with
+        T - h at or beyond L has a roll-down of 0 and only the carry
+        (1 + z(L))^h - (1 + z(h))^h. Each bond is repriced exactly on the unchanged curve: the
+        carry is what it earns over the financing if its own yield stays z(T), the roll-down
+        the price change from its yield moving to z(T - h), valued at the horizon. Every
+        value is a return over the horizon, not annualized. Germany and Japan quote
+        maturities from one year, so a horizon of a year avoids the flat extrapolation there.
+        For a curve or a financing rate of your own, use
+        `yieldcurve_model.get_carry_and_roll_down`.
 
         To first order, with D = (T - h) / (1 + z(T)) the modified duration (annual
         compounding) of the bond at the horizon, as Koijen et al. (2018) approximate it:
@@ -1553,6 +1556,14 @@ class CurvesFixedIncome:
                 maturities,
                 [maturity for maturity in quoted if maturity > horizon_years],
             )
+            if not years:
+                logger.warning(
+                    "The %s yield curve has no maturity longer than the horizon of %s years, "
+                    "so no bond is held over it.",
+                    country,
+                    horizon_years,
+                )
+                continue
             measures = {}
             for date, par_curve in curve.iterrows():
                 try:

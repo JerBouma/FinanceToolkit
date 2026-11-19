@@ -171,6 +171,15 @@ def test_carry_and_roll_down_horizon_and_maturities(fixedincome):
     assert fixedincome.get_carry_and_roll_down(horizon=0).empty
 
 
+def test_carry_and_roll_down_horizon_beyond_the_curve(fixedincome, caplog):
+    # No maturity of the curve outlasts a 40-year horizon, so no bond is held over it.
+    with caplog.at_level("WARNING"):
+        result = fixedincome.get_carry_and_roll_down(horizon="40Y", period="monthly")
+
+    assert result.empty
+    assert "no maturity longer than the horizon" in caplog.text
+
+
 def test_principal_components(fixedincome):
     loadings = fixedincome.get_yield_curve_principal_components(components=2)
     scores = fixedincome.get_yield_curve_principal_components(components=2, scores=True)

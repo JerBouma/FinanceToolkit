@@ -1777,7 +1777,11 @@ def _fiscal_year_ends(models_module):
 
 def _daily(models_module, column, data=None):
     """A daily column of the historical data with a DatetimeIndex."""
-    daily = (data or models_module._historical_data)["daily"][column].copy()
+    # Not `data or ...`: the risk free rate data is a LazyDict, empty (so falsy) until a
+    # calculation first asks for a period.
+    daily = (models_module._historical_data if data is None else data)["daily"][
+        column
+    ].copy()
     daily.index = daily.index.to_timestamp()
     return daily
 

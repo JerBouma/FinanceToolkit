@@ -280,8 +280,8 @@ def get_relative_vigor_index(
 
     - Numerator = [(Close - Open) + 2 * (Close(t-1) - Open(t-1)) + 2 * (Close(t-2) -
       Open(t-2)) + (Close(t-3) - Open(t-3))] / 6
-    - Denominator = [(High - Low) + 2 * (High(t-1) - Low(t-1)) + 2 * (High(t-2) - Low(t-2))
-      + (High(t-3) - Low(t-3))] / 6
+    - Denominator = [(High - Low) + 2 * (High(t-1) - Low(t-1)) + 2 * (High(t-2) - Low(t-2)) +
+      (High(t-3) - Low(t-3))] / 6
     - RVI = SMA(Numerator, window) / SMA(Denominator, window)
     - Signal Line = [RVI + 2 * RVI(t-1) + 2 * RVI(t-2) + RVI(t-3)] / 6
 

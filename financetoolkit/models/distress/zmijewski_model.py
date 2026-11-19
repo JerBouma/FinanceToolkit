@@ -107,8 +107,8 @@ def get_zmijewski_score(
 
     The formula is as follows:
 
-        X = -4.336 - 4.513 * (Net Income / Total Assets) + 5.679 * (Total Liabilities / Total Assets)
-        - 0.004 * (Current Assets / Current Liabilities)
+        X = -4.336 - 4.513 * (Net Income / Total Assets) + 5.679 * (Total Liabilities / Total Assets) -
+          0.004 * (Current Assets / Current Liabilities)
 
     Also known as: Zmijewski Score, ZFC score, bankruptcy prediction, financial distress score.
 

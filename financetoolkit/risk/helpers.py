@@ -543,3 +543,26 @@ def compound_into_shared_dates(returns: pd.DataFrame) -> pd.DataFrame:
     compounded = growth.groupby(group[within], sort=False).prod() - 1
 
     return compounded.set_axis(returns.index[shared])
+
+
+def average_two_day_spreads(spreads: pd.Series, rolling: int | None, name) -> pd.Series:
+    """
+    The mean of the two-day spreads per period, or over the last `rolling` periods, for
+    the Corwin-Schultz and Abdi-Ranaldo spreads.
+    """
+    if spreads.empty:
+        return pd.Series(dtype=float, name=name)
+
+    grouped = spreads.groupby(level=0)
+
+    if not rolling:
+        return grouped.mean().rename(name)
+
+    # The mean of every two-day spread in the window, not the mean of the period means.
+    full_range = pd.period_range(
+        spreads.index.min(), spreads.index.max(), freq=spreads.index.freq
+    )
+    totals = grouped.sum().reindex(full_range).rolling(rolling).sum()
+    counts = grouped.count().reindex(full_range).rolling(rolling).sum()
+
+    return (totals / counts).rename(name)

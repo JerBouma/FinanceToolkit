@@ -891,6 +891,18 @@ def test_get_corwin_schultz_spread(recorder, risk_module):
     )
 
 
+def test_get_abdi_ranaldo_spread(recorder, risk_module):
+    recorder.capture(risk_module.get_abdi_ranaldo_spread())
+    recorder.capture(risk_module.get_abdi_ranaldo_spread(period="quarterly"))
+    recorder.capture(risk_module.get_abdi_ranaldo_spread(period="quarterly", rolling=2))
+
+
+def test_get_edge_spread(recorder, risk_module):
+    recorder.capture(risk_module.get_edge_spread())
+    recorder.capture(risk_module.get_edge_spread(period="quarterly"))
+    recorder.capture(risk_module.get_edge_spread(period="quarterly", rolling=2))
+
+
 def test_get_share_turnover(recorder, risk_module):
     recorder.capture(risk_module.get_share_turnover())
     recorder.capture(risk_module.get_share_turnover(period="quarterly", rolling=2))
@@ -1096,3 +1108,62 @@ def test_the_excess_volatility_of_a_stock_ignores_a_cryptocurrency_next_to_it(pe
     assert monthly.loc["2021-08", "SPY"] == pytest.approx(1.04 ** (32 / 365) - 1)
     assert monthly.loc["2021-07", "BTC"] == pytest.approx(1.04 ** (31 / 365) - 1)
     assert monthly.loc["2021-08", "BTC"] == pytest.approx(1.04 ** (31 / 365) - 1)
+
+
+def _weekend_ohlc_risk(tickers=("BTC", "SPY")):
+    """
+    Daily Open, High, Low and Close of a cryptocurrency (every calendar day) and a stock
+    (trading days), with the stock's weekends as the flat bars without a Return that the
+    Toolkit fills in when another ticker trades on them.
+    """
+    from financetoolkit.risk.risk_controller import Risk  # noqa: PLC0415
+
+    rng = np.random.default_rng(3)
+    days = pd.period_range("2021-01-01", "2021-12-31", freq="D")
+    weekday = days.dayofweek < 5  # noqa: PLR2004
+    fields = {field: {} for field in ("Open", "High", "Low", "Close", "Return")}
+    for ticker in ("BTC", "SPY", "Benchmark"):
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(days))))
+        open_ = close * np.exp(rng.normal(0, 0.003, len(days)))
+        high = np.maximum(open_, close) * np.exp(rng.uniform(0, 0.01, len(days)))
+        low = np.minimum(open_, close) * np.exp(-rng.uniform(0, 0.01, len(days)))
+        traded = np.ones(len(days), dtype=bool) if ticker == "BTC" else weekday
+        for field, values in zip(
+            ("Open", "High", "Low", "Close"), (open_, high, low, close), strict=True
+        ):
+            fields[field][ticker] = pd.Series(values, index=days)[traded]
+        fields["Return"][ticker] = fields["Close"][ticker].pct_change()
+    selected = [*tickers, "Benchmark"]
+    frames = {field: pd.DataFrame(values)[selected] for field, values in fields.items()}
+    # A flat bar at the last Close on the dates only another ticker traded, without a Return.
+    last_close = frames["Close"].ffill()
+    for field in ("Open", "High", "Low", "Close"):
+        frames[field] = frames[field].fillna(last_close)
+    frames["Adj Close"] = frames["Close"]
+    data = pd.concat(frames, axis=1)
+    return Risk(
+        tickers=list(tickers),
+        historical_data={"daily": data, "intraday": pd.DataFrame()},
+        risk_free_rate_data={"daily": pd.Series(0.04, index=days)},
+        rounding=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["get_corwin_schultz_spread", "get_abdi_ranaldo_spread", "get_edge_spread"],
+)
+def test_the_spread_of_a_stock_ignores_a_cryptocurrency_next_to_it(method):
+    mixed = _weekend_ohlc_risk()
+    alone = _weekend_ohlc_risk(tickers=("SPY",))
+
+    for period, rolling in (("monthly", None), ("quarterly", 2), ("weekly", None)):
+        mixed_spread = getattr(mixed, method)(period=period, rolling=rolling)
+        # The rows of the cryptocurrency's own periods (a first week holding a single
+        # trading day of the stock) are NaN for the stock.
+        for column in ("SPY", "Benchmark"):
+            pd.testing.assert_series_equal(
+                mixed_spread[column].dropna(),
+                getattr(alone, method)(period=period, rolling=rolling)[column].dropna(),
+            )
+        assert mixed_spread["SPY"].notna().sum() > 0

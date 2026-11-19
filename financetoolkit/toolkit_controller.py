@@ -944,6 +944,8 @@ class Toolkit:
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
             sp500_function=sp500,
+            # The same fetch and cache as the forward ratios, so the estimates are retrieved once; the lambda keeps the Ratios module from being built until a model asks for them.
+            analyst_estimates=lambda: self.ratios._get_or_fetch_analyst_estimates(),  # noqa: PLW0108, SLF001
         )
 
     @property

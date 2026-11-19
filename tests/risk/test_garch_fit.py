@@ -132,6 +132,9 @@ def simulate_egarch(omega, alpha, gamma, beta, n=1500, seed=0):
     return np.exp(log_variance / 2) * shocks
 
 
+# The multi-start EGARCH fit on 1,500 observations takes about a minute on its own, so the
+# suite's 60-second limit failed it whenever the machine was busy.
+@pytest.mark.timeout(300)
 def test_egarch_parameters_match_the_arch_package():
     arch = pytest.importorskip("arch")
 

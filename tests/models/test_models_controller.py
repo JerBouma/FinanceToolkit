@@ -1,4 +1,5 @@
 """Models Controller Tests""" ""
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -2152,3 +2153,68 @@ def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
     assert pd.isna(wacc.loc[("AAPL", "Cost of Debt"), period])
     assert pd.isna(wacc.loc[("AAPL", "Weighted Average Cost of Capital"), period])
     assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0
+
+
+def _models_with_estimates(test_toolkit):
+    """A Models instance with yearly consensus EPS estimates for 2017-2026."""
+    models = test_toolkit.models
+    years = pd.period_range("2017", periods=10, freq="Y")
+    models._analyst_estimates = pd.DataFrame(
+        [
+            [1 + 0.1 * year for year in range(10)],
+            [12] * 10,
+            [2 + 0.3 * year for year in range(10)],
+            [12] * 5 + [3] + [12] * 4,
+        ],
+        index=pd.MultiIndex.from_tuples(
+            [
+                ("AAPL", "Estimated EPS Average"),
+                ("AAPL", "Number of Analysts EPS"),
+                ("MSFT", "Estimated EPS Average"),
+                ("MSFT", "Number of Analysts EPS"),
+            ]
+        ),
+        columns=years,
+    )
+    return models
+
+
+def test_get_implied_cost_of_capital(recorder, test_toolkit):
+    models = _models_with_estimates(test_toolkit)
+
+    recorder.capture(models.get_implied_cost_of_capital())
+    recorder.capture(models.get_implied_cost_of_capital(modified=False))
+    recorder.capture(models.get_implied_cost_of_capital(min_analysts=5))
+
+
+def test_implied_cost_of_capital_uses_the_next_two_years_and_the_period_end_close(
+    test_toolkit,
+):
+    models = _models_with_estimates(test_toolkit)
+    result = models.get_implied_cost_of_capital(rounding=None)
+    peg = models.get_implied_cost_of_capital(modified=False, rounding=None)
+
+    # 2020: EPS1 the 2021 estimate (1.4), EPS2 the 2022 estimate (1.5), the close on
+    # 2020-12-31 and the dividends paid over 2020.
+    daily = test_toolkit._get_module_historical_data("daily")
+    price = daily["Close"]["AAPL"].loc["2020-12-31"]
+    dividends = daily["Dividends"]["AAPL"].loc["2020-01-01":"2020-12-31"].sum()
+    half_yield = dividends / (2 * price)
+    expected = half_yield + np.sqrt(half_yield**2 + 0.1 / price)
+
+    assert result.loc["AAPL", "2020"] == pytest.approx(expected, abs=1e-4)
+    assert peg.loc["AAPL", "2020"] == pytest.approx(np.sqrt(0.1 / price), abs=1e-4)
+    # 2023 has no price in the offline data; MSFT 2021 needs the 2022 estimate, which
+    # three analysts cover.
+    assert result.loc[:, "2023"].isna().all()
+    restricted = models.get_implied_cost_of_capital(min_analysts=5)
+    assert pd.isna(restricted.loc["MSFT", "2021"])
+    assert pd.isna(restricted.loc["MSFT", "2020"])
+    assert not pd.isna(restricted.loc["MSFT", "2022"])
+
+
+def test_implied_cost_of_capital_without_estimates_is_empty(test_toolkit):
+    models = test_toolkit.models
+    models._analyst_estimates = pd.DataFrame()
+
+    assert models.get_implied_cost_of_capital().empty

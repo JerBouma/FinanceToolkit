@@ -53,6 +53,7 @@ class ModelsBase:
         sp500_function: (
             Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
         ) = None,
+        analyst_estimates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -93,6 +94,10 @@ class ModelsBase:
                 DatetimeIndex) and the latest total market value of its companies (a Series
                 with the date as index). Defaults to None, which leaves the excess returns
                 and the relative size NaN.
+            analyst_estimates (pd.DataFrame | Callable[[], pd.DataFrame] | None, optional): The
+                analyst consensus estimates per ticker and estimate row (index) and fiscal period
+                (columns), as the forward ratios of the Ratios module use them, for
+                get_implied_cost_of_capital. Defaults to None, which leaves it NaN.
 
         As an example:
 
@@ -132,6 +137,7 @@ class ModelsBase:
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
         self._sp500_function = sp500_function
+        self._analyst_estimates_source = analyst_estimates
 
         # Historical Data
         self._historical_data = historical_data
@@ -166,6 +172,14 @@ class ModelsBase:
         """The fiscal period end dates, retrieved when a model first needs them."""
         source = self._period_end_dates_source
         return source() if callable(source) else source
+
+    @cached_property
+    def _analyst_estimates(self) -> pd.DataFrame:
+        """The analyst consensus estimates, retrieved when a model first needs them."""
+        source = self._analyst_estimates_source
+        estimates = source() if callable(source) else source
+
+        return pd.DataFrame() if estimates is None else estimates
 
     @cached_property
     def _country_risk_premiums(self) -> pd.Series:

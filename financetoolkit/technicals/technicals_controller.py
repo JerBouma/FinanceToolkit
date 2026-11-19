@@ -7331,9 +7331,9 @@ class Technicals:
 
         A long position is closed when the price closes below the long exit, and a short position
         when it closes above the short exit. Because the distance is in ATRs, the stop is wider in
-        volatile markets and tighter in quiet ones, and it rises with every new high but never falls
-        while the high holds. The exits are in price units, so they are compared with the stock's own
-        price rather than across stocks.
+        volatile markets and tighter in quiet ones. The stop moves with both the highest high and
+        the ATR, so it can fall while the high holds when volatility rises. The exits are in price
+        units, so they are compared with the stock's own price rather than across stocks.
 
         Also known as: Chandelier Exit, Chandelier Stop, CE.
 

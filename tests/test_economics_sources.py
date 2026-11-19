@@ -1192,6 +1192,137 @@ def test_department_of_labor_outage_serves_the_cached_claims(cache, monkeypatch)
     assert dol_model.get_initial_jobless_claims().equals(claims)
 
 
+CLAIMS_REPORT = (
+    '<r539cyNational rundate="11/19/2026">'
+    "<week><weekEnded>10/17/2026</weekEnded><InitialClaims><NSA>190,000</NSA><SF>97.1</SF>"
+    "<SA>195,000</SA><SA4WK>201,500</SA4WK></InitialClaims><ContinuedClaims><NSA>1,500,000"
+    "</NSA><SF>88.0</SF><SA>1,695,000</SA><SA4WK>1,700,000</SA4WK></ContinuedClaims><IUR>"
+    "<NSA>1.0</NSA><SA>1.1</SA></IUR><CoveredEmployment>153,911,765</CoveredEmployment>"
+    "</week>"
+    "<week><weekEnded>10/24/2026</weekEnded><InitialClaims><NSA>192,000</NSA><SF>98.0</SF>"
+    "<SA>196,000</SA><SA4WK>&#160;</SA4WK></InitialClaims><ContinuedClaims><NSA>&#160;</NSA>"
+    "<SF>87.5</SF><SA>&#160;</SA><SA4WK>&#160;</SA4WK></ContinuedClaims><IUR><NSA>&#160;"
+    "</NSA><SA>&#160;</SA></IUR><CoveredEmployment>&#160;</CoveredEmployment></week>"
+    "<week><weekEnded>10/31/2026</weekEnded><InitialClaims><NSA>&#160;</NSA><SF>103.6</SF>"
+    "<SA>&#160;</SA><SA4WK>&#160;</SA4WK></InitialClaims><ContinuedClaims><NSA>&#160;</NSA>"
+    "<SF>87.5</SF><SA>&#160;</SA><SA4WK>&#160;</SA4WK></ContinuedClaims><IUR><NSA>&#160;"
+    "</NSA><SA>&#160;</SA></IUR><CoveredEmployment>&#160;</CoveredEmployment></week>"
+    "</r539cyNational>"
+)
+
+
+def test_department_of_labor_claims_report_gives_every_measure_from_one_request(
+    cache, monkeypatch
+):
+    from financetoolkit.economics.sources import dol_model
+
+    requests_made = []
+
+    def post(url, **kwargs):
+        requests_made.append(kwargs)
+        return FakeResponse(text=CLAIMS_REPORT)
+
+    monkeypatch.setattr(dol_model, "get_request", post)
+
+    initial = dol_model.get_initial_jobless_claims()
+    continued = dol_model.get_continuing_jobless_claims()
+    rate = dol_model.get_insured_unemployment_rate()
+
+    # The three series come from the one cached report.
+    assert len(requests_made) == 1
+    # The seasonally adjusted figures, not the unadjusted ones or the four-week averages;
+    # a week without a figure is left out of that series only.
+    assert initial["United States"].tolist() == [195000, 196000]
+    assert continued["United States"].tolist() == [1695000]
+    assert continued.index.tolist() == [pd.Period("2026-10-17", "D")]
+    assert continued.index.name == "Date"
+    # The rate is published in percent and returned as a decimal.
+    assert rate["United States"].tolist() == [pytest.approx(0.011)]
+
+
+def test_department_of_labor_claims_report_without_claims_is_a_changed_layout():
+    from financetoolkit.economics.sources import dol_model
+
+    with pytest.raises(ValueError, match="layout changed"):
+        dol_model.parse_claims_report("<html>A different page</html>")
+
+
+def test_weekly_series_aggregate_into_complete_periods_by_the_day_the_week_ends():
+    # Saturdays from 2026-08-29 to 2026-10-24: August's last week, all of September (four
+    # Saturdays) and October without its last Saturday (October 31).
+    saturdays = pd.PeriodIndex(
+        pd.date_range("2026-08-29", "2026-10-24", freq="W-SAT"), freq="D", name="Date"
+    )
+    claims = pd.DataFrame(
+        {"United States": [10.0, 20.0, 50.0, 30.0, 40.0, 60.0, 70.0, 80.0, 90.0]},
+        index=saturdays,
+    )
+
+    mean = helpers.aggregate_weekly_series(claims, "monthly")
+    highest = helpers.aggregate_weekly_series(claims, "monthly", "max")
+    lowest = helpers.aggregate_weekly_series(claims, "monthly", "min")
+    last = helpers.aggregate_weekly_series(claims, "monthly", "last")
+
+    # The week ending Saturday August 29 belongs to August, which starts before the data
+    # and so is incomplete, and October still misses its fifth week: only September is
+    # returned, the weeks ending 5, 12, 19 and 26 September.
+    assert mean.index.tolist() == [pd.Period("2026-09", "M")]
+    assert mean.index.name == "Date"
+    assert mean["United States"].iloc[0] == 35.0
+    assert highest["United States"].iloc[0] == 50.0
+    assert lowest["United States"].iloc[0] == 20.0
+    assert last["United States"].iloc[0] == 40.0
+
+    # The week ending on the last day of a month belongs to that month.
+    october = pd.PeriodIndex(
+        pd.date_range("2026-10-03", "2026-10-31", freq="W-SAT"), freq="D", name="Date"
+    )
+    full_october = helpers.aggregate_weekly_series(
+        pd.DataFrame({"United States": [1.0, 2.0, 3.0, 4.0, 5.0]}, index=october),
+        "monthly",
+    )
+    assert full_october.index.tolist() == [pd.Period("2026-10", "M")]
+    assert full_october["United States"].iloc[0] == 3.0
+
+    # Weekly data is returned as it is, and the quarter and year are incomplete here.
+    assert helpers.aggregate_weekly_series(claims, "weekly") is claims
+    assert helpers.aggregate_weekly_series(claims, "quarterly").empty
+    with pytest.raises(ValueError, match="aggregation 'median'"):
+        helpers.aggregate_weekly_series(claims, "monthly", "median")
+
+
+def test_claims_are_combined_before_growth_and_cut_to_complete_months(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import dol_model
+
+    saturdays = pd.PeriodIndex(
+        pd.date_range("2025-01-04", "2026-10-24", freq="W-SAT"), freq="D", name="Date"
+    )
+    claims = pd.DataFrame(
+        {"United States": [float(day.month) for day in saturdays]}, index=saturdays
+    )
+    monkeypatch.setattr(dol_model, "get_initial_jobless_claims", lambda: claims)
+
+    economics = Economics(
+        start_date="2026-01-01",
+        end_date="2026-12-31",
+        gmdb_source=False,
+        fred_api_key="",
+    )
+    monthly = economics.get_initial_jobless_claims(period="monthly")
+    growth = economics.get_initial_jobless_claims(period="monthly", growth=True, lag=12)
+
+    # January to September 2026; October misses the week ending 31 October.
+    assert monthly.index.tolist() == list(
+        pd.period_range("2026-01", "2026-09", freq="M")
+    )
+    assert monthly["United States"].tolist() == [float(month) for month in range(1, 10)]
+    # The growth compares a month with the same month a year earlier, from the history
+    # before the start date.
+    assert growth["United States"].eq(0).all()
+    assert economics.get_initial_jobless_claims(period="daily").empty
+
+
 def test_census_retail_sales_leave_out_the_seasonal_factors(monkeypatch):
     from financetoolkit.economics.sources import census_model
 
@@ -1317,6 +1448,8 @@ def test_bls_nonfarm_payrolls_are_dated_on_the_first_of_the_month(monkeypatch):
     [
         ("get_nonfarm_payrolls", "bls_model"),
         ("get_initial_jobless_claims", "dol_model"),
+        ("get_continuing_jobless_claims", "dol_model"),
+        ("get_insured_unemployment_rate", "dol_model"),
         ("get_retail_sales", "census_model"),
         ("get_housing_starts", "census_model"),
         ("get_real_personal_income", "bea_model"),

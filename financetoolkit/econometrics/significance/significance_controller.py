@@ -98,6 +98,12 @@ class SignificanceEconometrics:
         - Annualised Change = (x(T) / x(0)) ^ (1 / years) - 1, years between the two dates
         - Largest Drawdown = min over t of (x(t) - max(x(s), s <= t)) / |max(x(s), s <= t)|
         - Recovery Date = the first date after the trough with x >= the peak before it
+        - First Above Level = the first date s with x(s) > level
+        - Above Level Since = the first date of the run above the level the latest value is in
+        - Last Above Level = the last date s < T with x(s) > level
+        - Last At Or Below Level = the last date s < T with x(s) <= level
+        - Observations Above Level = Count(x(s) > level), over s <= T
+        - Observations At Or Below Level = Count(x(s) <= level), over s <= T
 
         Where x(T) is the latest value of a series, x(0) its first observation and s runs over its
         earlier observations. An
@@ -123,7 +129,7 @@ class SignificanceEconometrics:
         change between two dates, cumulative change, event window, peak, trough, drawdown
         from the peak, change from the high, change from the low, multiple, compound annual
         growth rate (CAGR), annualised change, peak to trough, time to recover the peak,
-        change in percentage points.
+        change in percentage points, how often at or below a level, the last time above a level.
 
         Args:
             period (str | None, optional): The data frequency (daily, weekly, monthly, quarterly, or
@@ -145,9 +151,13 @@ class SignificanceEconometrics:
                 Defaults to False.
             level (float | None, optional): A level to compare every series with, such as an
                 earlier peak, which adds the Level, the First Above Level (the first date the
-                series exceeded it) and Above Level Since (the date it has been above it since
-                without a break, empty when the latest value is not above it). Defaults to
-                None, which leaves them out.
+                series exceeded it), Above Level Since (the date it has been above it since
+                without a break, empty when the latest value is not above it), the Last Above
+                Level and Last At Or Below Level (the last date before the latest observation
+                on either side of it, empty when there is none) and the Observations Above
+                Level and Observations At Or Below Level (how many observations of the range,
+                the latest included, are on either side of it: "6 weeks at or below 203,000
+                between 1970 and 2020"). Defaults to None, which leaves them out.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the class (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -164,7 +174,9 @@ class SignificanceEconometrics:
             Lowest Since dates, the Highest and Lowest with their Highest Date and Lowest Date
             and the Change From Highest and Change From Lowest (decimals), and the Largest
             Drawdown (decimal) with its Drawdown Peak Date, Drawdown Trough Date and Recovery
-            Date (NaN while it has not recovered). The dates are text: the dates of the observations, e.g.
+            Date (NaN while it has not recovered), and with a level the Level, First Above
+            Level, Above Level Since, Last Above Level, Last At Or Below Level, Observations
+            Above Level and Observations At Or Below Level. The dates are text: the dates of the observations, e.g.
             2002-05-31 for a monthly series, or the periods, e.g. 2002-05 with period="monthly".
 
         Notes:
@@ -189,35 +201,42 @@ class SignificanceEconometrics:
 
         econometrics = Econometrics(data=long_term_rates)
 
-        econometrics.get_level_significance().T
+        econometrics.get_level_significance(level=0.05).T
         ```
 
         Which returns:
 
-        |                      | United States   | Germany    | Japan      |
-        |:---------------------|:----------------|:-----------|:-----------|
-        | Start Date           | 2000-01-31      | 2000-01-31 | 2000-01-31 |
-        | Start Value          | 0.0666          | 0.0554     | 0.0169     |
-        | Observations         | 322             | 322        | 322        |
-        | Latest Date          | 2026-10-31      | 2026-10-31 | 2026-10-31 |
-        | Latest Value         | 0.0513          | 0.0342     | 0.0276     |
-        | Change Since Start   | -0.2297         | -0.3834    | 0.6292     |
-        | Multiple Since Start | 0.7703          | 0.6166     | 1.6292     |
-        | Annualised Change    | -0.0097         | -0.0179    | 0.0184     |
-        | Percentile           | 0.9377          | 0.6854     | 0.9907     |
-        | Rank                 | 21              | 102        | 4          |
-        | Highest Since        | 2002-05-31      | 2026-09-30 | 2026-09-30 |
-        | Lowest Since         | 2026-09-30      | 2026-08-31 | 2026-06-30 |
-        | Highest              | 0.0666          | 0.0554     | 0.0305     |
-        | Highest Date         | 2000-01-31      | 2000-01-31 | 2026-09-30 |
-        | Change From Highest  | -0.2297         | -0.3834    | -0.0967    |
-        | Lowest               | 0.0062          | -0.0065    | -0.0028    |
-        | Lowest Date          | 2020-07-31      | 2019-08-31 | 2019-08-31 |
-        | Change From Lowest   | 7.2742          | 6.2626     | 10.8393    |
-        | Largest Drawdown     | -0.9069         | -1.1172    | -1.1431    |
-        | Drawdown Peak Date   | 2000-01-31      | 2000-01-31 | 2006-04-30 |
-        | Drawdown Trough Date | 2020-07-31      | 2019-08-31 | 2019-08-31 |
-        | Recovery Date        | nan             | nan        | 2025-12-31 |
+        |                                | United States   | Germany    | Japan      |
+        |:-------------------------------|:----------------|:-----------|:-----------|
+        | Start Date                     | 2000-01-31      | 2000-01-31 | 2000-01-31 |
+        | Start Value                    | 0.0666          | 0.0554     | 0.0169     |
+        | Observations                   | 322             | 322        | 322        |
+        | Latest Date                    | 2026-10-31      | 2026-10-31 | 2026-10-31 |
+        | Latest Value                   | 0.0513          | 0.0342     | 0.0276     |
+        | Change Since Start             | -0.2297         | -0.3834    | 0.6292     |
+        | Multiple Since Start           | 0.7703          | 0.6166     | 1.6292     |
+        | Annualised Change              | -0.0097         | -0.0179    | 0.0184     |
+        | Percentile                     | 0.9377          | 0.6854     | 0.9907     |
+        | Rank                           | 21              | 102        | 4          |
+        | Highest Since                  | 2002-05-31      | 2026-09-30 | 2026-09-30 |
+        | Lowest Since                   | 2026-09-30      | 2026-08-31 | 2026-06-30 |
+        | Highest                        | 0.0666          | 0.0554     | 0.0305     |
+        | Highest Date                   | 2000-01-31      | 2000-01-31 | 2026-09-30 |
+        | Change From Highest            | -0.2297         | -0.3834    | -0.0967    |
+        | Lowest                         | 0.0062          | -0.0065    | -0.0028    |
+        | Lowest Date                    | 2020-07-31      | 2019-08-31 | 2019-08-31 |
+        | Change From Lowest             | 7.2742          | 6.2626     | 10.8393    |
+        | Largest Drawdown               | -0.9069         | -1.1172    | -1.1431    |
+        | Drawdown Peak Date             | 2000-01-31      | 2000-01-31 | 2006-04-30 |
+        | Drawdown Trough Date           | 2020-07-31      | 2019-08-31 | 2019-08-31 |
+        | Recovery Date                  | nan             | nan        | 2025-12-31 |
+        | Level                          | 0.05            | 0.05       | 0.05       |
+        | First Above Level              | 2000-01-31      | 2000-01-31 | nan        |
+        | Above Level Since              | 2026-10-31      | nan        | nan        |
+        | Last Above Level               | 2007-06-30      | 2002-06-30 | nan        |
+        | Last At Or Below Level         | 2026-09-30      | 2026-09-30 | 2026-09-30 |
+        | Observations Above Level       | 28              | 17         | 0          |
+        | Observations At Or Below Level | 294             | 305        | 322        |
         """
         period = period if period else "daily"
         levels = self._get_spreads(

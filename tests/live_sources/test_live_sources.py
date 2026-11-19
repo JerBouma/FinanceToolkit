@@ -535,6 +535,18 @@ SOURCES = {
         "monthly",
         (50_000, 5_000_000),
     ),
+    "Department of Labor continuing jobless claims": (
+        dol_model.get_continuing_jobless_claims,
+        "United States",
+        "monthly",
+        (500_000, 30_000_000),
+    ),
+    "Department of Labor insured unemployment rate": (
+        dol_model.get_insured_unemployment_rate,
+        "United States",
+        "monthly",
+        (0.003, 0.2),
+    ),
     "New York Fed term premium": (
         lambda: nyfed_model.get_term_premium()["Term Premium"][["10Y"]].rename(
             columns={"10Y": "United States"}

@@ -731,6 +731,64 @@ def resample_to_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     return resampled
 
 
+# How the weeks of a weekly series can be combined into a month, quarter or year.
+WEEKLY_AGGREGATIONS = ["mean", "max", "min", "last"]
+
+
+def aggregate_weekly_series(
+    data: pd.DataFrame, period: str, aggregation: str = "mean"
+) -> pd.DataFrame:
+    """
+    Converts a weekly series, indexed by the day each week ends, to a monthly, quarterly or
+    yearly one: the average of the weeks of every period (the default with which FRED
+    converts its weekly series), or the highest, lowest or last week. A week
+    belongs to the period of the day it ends, as FRED aggregates its weekly series. A period
+    is only returned once all of its weeks are published, so a month that is still running
+    is not mistaken for a full one (nor the first period when the data starts within it).
+
+    Args:
+        data (pd.DataFrame): The weekly series, indexed by a daily PeriodIndex of the days
+            the weeks end (all on the same weekday).
+        period (str): "weekly", which returns the data as it is, "monthly", "quarterly" or
+            "yearly".
+        aggregation (str, optional): "mean", "max", "min" or "last". Defaults to "mean".
+
+    Returns:
+        pd.DataFrame: The series at the requested frequency.
+
+    Raises:
+        ValueError: When the aggregation is not one of the options.
+    """
+    if aggregation not in WEEKLY_AGGREGATIONS:
+        raise ValueError(
+            f"The aggregation '{aggregation}' does not exist. Choose from "
+            f"{', '.join(repr(option) for option in WEEKLY_AGGREGATIONS)}."
+        )
+
+    if data.empty or period == "weekly":
+        return data
+
+    days = data.index.to_timestamp()
+    periods = days.to_period(PERIOD_FREQUENCIES[period])
+    grouped = data.groupby(periods)
+    aggregated = grouped.agg(aggregation)
+
+    # The weeks every period has: its days on the weekday the weeks end.
+    weekday = days[0].strftime("%a").upper()
+    expected = pd.Series(
+        [
+            len(pd.date_range(period.start_time, period.end_time, freq=f"W-{weekday}"))
+            for period in aggregated.index
+        ],
+        index=aggregated.index,
+    )
+
+    aggregated = aggregated.where(grouped.count().eq(expected, axis=0))
+    aggregated.index.name = data.index.name
+
+    return aggregated.dropna(how="all")
+
+
 def average_monthly_index(data: pd.DataFrame, period: str) -> pd.DataFrame:
     """
     Converts a monthly index to a quarterly or yearly one by averaging the months of

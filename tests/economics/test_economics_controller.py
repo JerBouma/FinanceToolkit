@@ -415,6 +415,18 @@ def test_get_nonfarm_payrolls(recorder, economics_module):
 def test_get_initial_jobless_claims(recorder, economics_module):
     recorder.capture(economics_module.get_initial_jobless_claims())
     recorder.capture(economics_module.get_initial_jobless_claims(growth=True))
+    recorder.capture(
+        economics_module.get_initial_jobless_claims(period="monthly", aggregation="max")
+    )
+
+
+def test_get_continuing_jobless_claims(recorder, economics_module):
+    recorder.capture(economics_module.get_continuing_jobless_claims())
+    recorder.capture(economics_module.get_continuing_jobless_claims(period="monthly"))
+
+
+def test_get_insured_unemployment_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_insured_unemployment_rate())
 
 
 def test_get_retail_sales(recorder, economics_module):

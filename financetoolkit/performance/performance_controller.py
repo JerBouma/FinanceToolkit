@@ -3822,19 +3822,23 @@ class Performance:
         Calculate the Pain Ratio of an investment portfolio or asset's returns.
 
         The Pain Ratio divides the excess return (return minus the risk-free rate) of an
-        investment portfolio or asset by its Pain Index, the mean depth of its drawdowns over
-        every day. Where the Ulcer Performance Index squares the drawdowns, which makes the deep
-        ones dominate, the Pain Index weighs every day under water by its depth alone.
+        investment portfolio or asset by its Pain Index, the mean depth of its drawdowns. Where
+        the Ulcer Performance Index squares the drawdowns, which makes the deep ones dominate,
+        the Pain Index weighs every observation under water by its depth alone.
 
         The formula is as follows:
 
         - Pain Ratio = (Period Return - Risk-Free Rate) / Pain Index
-        - Pain Index = SUM(|Drawdown_d|) / N
-        - Drawdown_d = Wealth_d / Peak_d - 1, with Peak_d the highest wealth since the start of the period
+        - Pain Index = SUM(|Drawdown_t|) / N
+        - Drawdown_t = Wealth_t / Peak_t - 1, with Peak_t the highest wealth since the first return
 
-        Where N is the number of days, the days at a new high counting as a drawdown of 0, and
-        the wealth starts from 1 before the first return of the period, so a loss on the first
-        day is a drawdown as well. The risk-free rate is compounded over the days of the
+        With within_period=True (the default) the observations are the daily returns within each
+        period: N is the number of days in the period, and the wealth and its peak restart from 1
+        before the first return of every period, so a loss on its first day is a drawdown as
+        well. With within_period=False the observations are the `period` returns (such as the
+        yearly returns) of the full history: N is the number of those periods, and every period's
+        excess return is divided by that one Pain Index, as the Calmar, Sterling and Burke ratios
+        do. Observations at a new high count as a drawdown of 0. The risk-free rate is compounded over the days of the
         period, so a partial period (such as the current year) earns the rate of the days it
         covers. Bacon (2013) divides the annualized return minus the risk-free rate; for
         period="yearly" that is the same for every full year, and for other periods the ratio
@@ -3849,9 +3853,10 @@ class Performance:
         Args:
             period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
                 initialised with quarterly=True, otherwise "yearly".
-            within_period (bool, optional): Whether to calculate the Pain Index within the specified period or for
-                the entire period. Thus whether to look at the drawdowns within a specific year (if period =
-                'yearly') or look at the entirety of all years. Defaults to True.
+            within_period (bool, optional): Whether to calculate the Pain Index from the daily drawdowns
+                within each period (if period = 'yearly', a Pain Index per year) or from the drawdowns of the
+                `period` returns over the full history (one Pain Index from the yearly returns of all years).
+                Defaults to True.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.

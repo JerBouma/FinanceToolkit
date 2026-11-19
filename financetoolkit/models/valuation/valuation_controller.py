@@ -9,6 +9,7 @@ import pandas as pd
 from financetoolkit.models import helpers
 from financetoolkit.models.profitability import growth_model
 from financetoolkit.models.valuation import (
+    easton_model,
     enterprise_model,
     eva_model,
     intrinsic_model,
@@ -642,6 +643,207 @@ class ValuationModels:
         return weighted_average_cost_of_capital.loc[
             :, self._start_date : self._end_date
         ]
+
+    @handle_errors
+    def get_implied_cost_of_capital(
+        self,
+        modified: bool = True,
+        min_analysts: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate Easton's (2004) implied cost of equity capital, the expected rate of return
+        on equity at which the share price equals the value of the next two years of earnings
+        expected by analysts. Where the Cost of Equity of `get_weighted_average_cost_of_capital`
+        is the return the Capital Asset Pricing Model (CAPM) requires from a beta and a market
+        risk premium, this is the return the market price itself implies (ex-ante).
+
+        The formula is as follows:
+
+            - PEG: r = √((EPS₂ − EPS₁) / P₀)
+            - MPEG: r = A + √(A² + (EPS₂ − EPS₁) / P₀)
+            - A = DPS₁ / (2 × P₀)
+
+        Where EPS₁ and EPS₂ are the analyst consensus (average) EPS estimates of the two fiscal
+        years after the period, P₀ the share price at the end of the period and DPS₁ the
+        dividends per share of the next year. The MPEG rate is the positive root of Easton's
+        valuation equation P₀ = EPS₁ / r + (EPS₂ + r × DPS₁ − (1 + r) × EPS₁) / r², which assumes the
+        abnormal growth in earnings stays constant after the second year; the PEG rate leaves
+        the dividends out (DPS₁ = 0). The rate is a yearly rate, annually compounded.
+
+        See: Easton, P. D. (2004). PE Ratios, PEG Ratios, and Estimating the Implied Expected
+        Rate of Return on Equity Capital. The Accounting Review, 79(1), 73-95.
+
+        The estimates are the analysts' consensus from FinancialModelingPrep, the same estimates
+        as `get_forward_price_earnings_ratio` of the Ratios module uses, which requires an
+        `api_key` and a Premium FMP subscription. They are fetched once per Toolkit instance.
+
+        Also known as: implied cost of capital, ICC, PEG / MPEG cost of equity, Easton model.
+
+        Args:
+            modified (bool, optional): Whether to return the MPEG rate, which includes the
+                dividends and is the version Easton prefers, instead of the PEG rate. Defaults to
+                True.
+            min_analysts (int | None, optional): The minimum number of analysts behind the EPS
+                consensus of an estimate period; a period that relies on one covered by fewer is
+                NaN. The number per period is the "Number of Analysts EPS" of
+                `Toolkit.get_analyst_estimates`. Defaults to None, which keeps every period.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The implied cost of equity capital per ticker (rows) and fiscal period
+                (columns) as a decimal.
+
+        Notes:
+        - EPS₁ and EPS₂ of a fiscal year are the consensus estimates of the next two fiscal years.
+        On quarterly data each is a year of estimates, as in the forward P/E: EPS₁ the sum of the
+        estimates of the four quarters after the period and EPS₂ that of the four quarters after
+        those.
+        - P₀ is the traded close (adjusted for splits, not for dividends) on the last trading day up
+        to the end of the fiscal period, as the other market values of the Models module.
+        - DPS₁ is the dividends per share paid over the year up to the end of the fiscal period.
+        FinancialModelingPrep has no dividend forecasts, and Easton allows the current dividend in
+        their place; a growth assumption on top would add an input the data does not give. The
+        dividends move the rate little: A is half the dividend yield.
+        - The rate is NaN where the estimated earnings do not grow (EPS₂ ≤ EPS₁), the price is not
+        positive or an estimate is missing: the model has no real, positive rate there, so it is
+        never shown as 0.
+        - FinancialModelingPrep keeps the latest consensus for every fiscal year, not the consensus as
+        it stood at the end of each period, so for past periods the estimates may include later
+        revisions, the same as the forward P/E. Only the latest periods are ex-ante estimates;
+        earlier ones show the rate the price implied for the earnings now expected for those years.
+        - On quarterly data FinancialModelingPrep gives estimates for the coming quarters only, and a
+        rate needs eight quarters of estimates after its period, so only the latest periods have one.
+        - Without daily data from a year before the start date, the dividends of the first periods
+        cover less than a year, which is logged.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "MDLZ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_implied_cost_of_capital()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |     2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|---------:|-------:|-------:|
+        | KO   | 0.0736 | 0.0665 |   0.0665 | 0.0921 | 0.0685 |
+        | MDLZ | 0.0793 | 0.0653 | nan      | 0.0695 | 0.0944 |
+        | PEP  | 0.0803 | 0.071  | nan      | 0.0639 | 0.0588 |
+        """
+        analyst_estimates = self._analyst_estimates
+
+        if analyst_estimates.empty:
+            logger.error(
+                "No analyst estimates available. This requires an api_key to be set and a "
+                "Premium FMP subscription."
+            )
+            return pd.DataFrame()
+
+        estimated_eps = analyst_estimates.loc[:, "Estimated EPS Average", :]
+        if min_analysts is not None:
+            # A period without a reported count is left out too: its depth is unknown.
+            analyst_count = (
+                analyst_estimates.loc[:, "Number of Analysts EPS", :]
+                if "Number of Analysts EPS"
+                in analyst_estimates.index.get_level_values(1)
+                else pd.DataFrame(
+                    float("nan"),
+                    index=estimated_eps.index,
+                    columns=estimated_eps.columns,
+                )
+            )
+            estimated_eps = estimated_eps.where(
+                analyst_count.reindex_like(estimated_eps) >= min_analysts
+            )
+
+        # Every period from the first statement period to the last estimate, so that a shift by one column is a shift by one period and a missing estimate leaves a gap.  # noqa: E501
+        columns = self._balance_sheet_statement.columns
+        estimated_eps.columns = pd.PeriodIndex(estimated_eps.columns).asfreq(
+            columns.freq
+        )
+        periods = pd.period_range(
+            min(columns.min(), estimated_eps.columns.min()),
+            max(columns.max(), estimated_eps.columns.max()),
+            freq=columns.freq,
+        )
+        estimated_eps = estimated_eps.reindex(
+            index=self._tickers, columns=periods
+        ).astype(float)
+
+        # A year of estimates: on quarterly data each quarter with the three after it (a rolling sum over the reversed columns).  # noqa: E501
+        periods_per_year = 4 if self._quarterly else 1
+        if self._quarterly:
+            estimated_eps = (
+                estimated_eps.iloc[:, ::-1]
+                .T.rolling(4, min_periods=4)
+                .sum()
+                .T.iloc[:, ::-1]
+            )
+
+        earnings_per_share_one = estimated_eps.shift(-1, axis=1).reindex(
+            columns=columns
+        )
+        earnings_per_share_two = estimated_eps.shift(
+            -1 - periods_per_year, axis=1
+        ).reindex(columns=columns)
+
+        # The dividends paid over the year up to each fiscal period end, from the daily data of a year before the start date where available so the first periods have a full year.  # noqa: E501
+        daily = self._historical_data.get("lookback")
+        if daily is None or daily.empty:
+            daily = self._historical_data["daily"]
+            logger.warning(
+                "No daily data from a year before the start date, so the dividends per share of "
+                "the first periods cover less than a year in the implied cost of capital."
+            )
+        dividends = daily["Dividends"].reindex(columns=self._tickers).fillna(0)
+        dividends.index = dividends.index.to_timestamp()
+        dividends_per_share = self._values_at_market_dates(
+            dividends.rolling("365D").sum()
+        )
+
+        implied_cost_of_capital = easton_model.get_implied_cost_of_capital(
+            earnings_per_share_one=earnings_per_share_one,
+            earnings_per_share_two=earnings_per_share_two,
+            share_price=self._period_prices(),
+            dividends_per_share=dividends_per_share,
+            modified=modified,
+        )
+
+        return finalize_dataset(
+            dataset=implied_cost_of_capital,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
 
     @handle_errors
     def get_economic_value_added(

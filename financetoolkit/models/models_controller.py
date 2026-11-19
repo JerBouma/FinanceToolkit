@@ -54,6 +54,7 @@ class ModelsBase:
         sp500_function: (
             Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
         ) = None,
+        analyst_estimates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
         profile: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
         corporate_bond_yield_function: Callable[[str, str], pd.Series] | None = None,
     ):
@@ -106,6 +107,10 @@ class ModelsBase:
                 get_size_age_index and get_whited_wu_index use, or a function that retrieves
                 them when a model first needs them. Defaults to None, which leaves the firm
                 age and the industry averages NaN.
+            analyst_estimates (pd.DataFrame | Callable[[], pd.DataFrame] | None, optional): The
+                analyst consensus estimates per ticker and estimate row (index) and fiscal period
+                (columns), as the forward ratios of the Ratios module use them, for
+                get_implied_cost_of_capital. Defaults to None, which leaves it NaN.
 
         As an example:
 
@@ -145,6 +150,7 @@ class ModelsBase:
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
         self._sp500_function = sp500_function
+        self._analyst_estimates_source = analyst_estimates
         self._profile_source = profile
         self._corporate_bond_yield_function = corporate_bond_yield_function
 
@@ -181,6 +187,14 @@ class ModelsBase:
         """The fiscal period end dates, retrieved when a model first needs them."""
         source = self._period_end_dates_source
         return source() if callable(source) else source
+
+    @cached_property
+    def _analyst_estimates(self) -> pd.DataFrame:
+        """The analyst consensus estimates, retrieved when a model first needs them."""
+        source = self._analyst_estimates_source
+        estimates = source() if callable(source) else source
+
+        return pd.DataFrame() if estimates is None else estimates
 
     @cached_property
     def _profile(self) -> pd.DataFrame | None:

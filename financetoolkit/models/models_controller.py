@@ -9,6 +9,7 @@ import pandas as pd
 
 from financetoolkit.helpers import LazyDict
 from financetoolkit.models import helpers
+from financetoolkit.models.constraints.constraints_controller import ConstraintsModels
 from financetoolkit.models.distress.distress_controller import DistressModels
 from financetoolkit.models.profitability.profitability_controller import (
     ProfitabilityModels,
@@ -53,6 +54,7 @@ class ModelsBase:
         sp500_function: (
             Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
         ) = None,
+        profile: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
         corporate_bond_yield_function: Callable[[str, str], pd.Series] | None = None,
     ):
         """
@@ -99,6 +101,11 @@ class ModelsBase:
                 with a DatetimeIndex or PeriodIndex, the bond yield of
                 get_graham_intrinsic_value. Defaults to None, which requires that method to
                 be given a bond_yield.
+            profile (pd.DataFrame | Callable | None, optional): The company profiles, with
+                the tickers as columns and the "IPO Date" and "Industry" rows that
+                get_size_age_index and get_whited_wu_index use, or a function that retrieves
+                them when a model first needs them. Defaults to None, which leaves the firm
+                age and the industry averages NaN.
 
         As an example:
 
@@ -138,6 +145,7 @@ class ModelsBase:
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
         self._sp500_function = sp500_function
+        self._profile_source = profile
         self._corporate_bond_yield_function = corporate_bond_yield_function
 
         # Historical Data
@@ -172,6 +180,12 @@ class ModelsBase:
     def _period_end_dates(self) -> pd.DataFrame | None:
         """The fiscal period end dates, retrieved when a model first needs them."""
         source = self._period_end_dates_source
+        return source() if callable(source) else source
+
+    @cached_property
+    def _profile(self) -> pd.DataFrame | None:
+        """The company profiles, retrieved when a model first needs them."""
+        source = self._profile_source
         return source() if callable(source) else source
 
     @cached_property
@@ -461,7 +475,12 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["scores"] + [
 @filter_shown_columns
 @track_sources
 class Models(
-    ValuationModels, QualityModels, DistressModels, ProfitabilityModels, ModelsBase
+    ValuationModels,
+    QualityModels,
+    DistressModels,
+    ProfitabilityModels,
+    ConstraintsModels,
+    ModelsBase,
 ):
     """
     The Models module is meant to execute well-known models such

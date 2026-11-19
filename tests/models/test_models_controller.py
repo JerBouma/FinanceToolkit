@@ -2158,6 +2158,134 @@ def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
     assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0
 
 
+# The US CPI-U of the BIS (2010 = 100) that the size-age index deflates the total assets with,
+# rising 0.25% a month from its 2004 level.
+CONSUMER_PRICES = pd.DataFrame(
+    {"United States": [85.0 * 1.0025**month for month in range(240)]},
+    index=pd.period_range("2004-01", periods=240, freq="M"),
+)
+
+PROFILE = pd.DataFrame(
+    {
+        "AAPL": {"IPO Date": "1980-12-12", "Industry": "Consumer Electronics"},
+        "MSFT": {"IPO Date": "1986-03-13", "Industry": "Software - Infrastructure"},
+    }
+)
+
+
+@pytest.fixture
+def constraints_module(test_toolkit, monkeypatch):
+    """A Models instance with company profiles and the CPI, without a download."""
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        bis_model, "get_consumer_prices", lambda *args, **kwargs: CONSUMER_PRICES
+    )
+    module = test_toolkit.models
+    module._profile_source = PROFILE
+    return module
+
+
+def test_get_kaplan_zingales_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_kaplan_zingales_index())
+    recorder.capture(constraints_module.get_kaplan_zingales_index(growth=True))
+    recorder.capture(constraints_module.get_kaplan_zingales_index(standardize=True))
+
+
+def test_get_whited_wu_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_whited_wu_index())
+    recorder.capture(constraints_module.get_whited_wu_index(growth=True))
+
+
+def test_get_whited_wu_index_averages_the_industry(constraints_module):
+    constraints_module._profile_source = PROFILE.replace(
+        "Software - Infrastructure", "Consumer Electronics"
+    )
+    result = constraints_module.get_whited_wu_index()
+    sales_growth = result.xs("Sales Growth", level=1)
+    industry = result.xs("Industry Sales Growth", level=1)
+
+    # Rounded to the Toolkit's 4 decimals after averaging.
+    for ticker in ["AAPL", "MSFT"]:
+        pd.testing.assert_series_equal(
+            industry.loc[ticker], sales_growth.mean(), check_names=False, atol=1e-4
+        )
+
+
+def test_get_size_age_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_size_age_index())
+    recorder.capture(constraints_module.get_size_age_index(growth=True))
+
+
+def test_get_size_age_index_without_a_profile_is_nan(constraints_module):
+    constraints_module._profile_source = None
+    result = constraints_module.get_size_age_index()
+
+    assert result.empty or result.xs("Size-Age Index", level=1).isna().all().all()
+
+
+def test_get_size_age_index_deflates_periods_before_the_base_year(
+    constraints_module, monkeypatch
+):
+    import copy  # noqa: PLC0415
+    import math  # noqa: PLC0415
+
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    # The CPI from 1990, 0.25% a month, returned from the requested start onwards.
+    consumer_prices = pd.DataFrame(
+        {"United States": [60.0 * 1.0025**month for month in range(480)]},
+        index=pd.period_range("1990-01", periods=480, freq="M"),
+    )
+    requested = []
+
+    def get_consumer_prices(measure, start_date, end_date):
+        requested.append(start_date)
+        return consumer_prices[consumer_prices.index >= pd.Period(start_date, "M")]
+
+    monkeypatch.setattr(bis_model, "get_consumer_prices", get_consumer_prices)
+
+    models = copy.copy(constraints_module)
+    balance = constraints_module._balance_sheet_statement.copy()
+    # The same statements labelled 1998 onwards, ending on the calendar year end.
+    balance.columns = pd.period_range("1998", periods=len(balance.columns), freq="Y")
+    # $100 million of assets, below the cap, so the Size moves with the price level.
+    balance.loc[(slice(None), "Total Assets"), :] = 100e6
+    models._balance_sheet_statement = balance
+    models._period_end_dates = None
+
+    size = models.get_size_age_index(rounding=10).xs("Size", level=1)
+
+    assert requested[0] < "1998-01-01"
+    base = consumer_prices.loc["2004"].mean().iloc[0]
+    for period in size.columns:
+        price_level = consumer_prices.loc[pd.Period(f"{period.year}-12", "M")].iloc[0]
+        assert size.loc["AAPL", period] == pytest.approx(
+            math.log(100 / (price_level / base))
+        )
+
+
+def test_get_size_age_index_does_not_warn_about_the_basket_total(
+    constraints_module, caplog
+):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(constraints_module)
+    # The basket's Total has no profile, so no IPO date, and is no company.
+    models._tickers = ["AAPL", "MSFT", "Total"]
+
+    with caplog.at_level("WARNING"):
+        models.get_size_age_index()
+
+    assert "No IPO date" not in caplog.text
+
+    models._profile = PROFILE.drop(columns="MSFT")
+    with caplog.at_level("WARNING"):
+        models.get_size_age_index()
+
+    assert "No IPO date is available for MSFT," in caplog.text
+
+
 def test_get_graham_intrinsic_value(recorder, models_module, monkeypatch):
     import pandas as pd
 

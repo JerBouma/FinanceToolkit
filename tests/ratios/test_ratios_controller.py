@@ -1962,3 +1962,88 @@ def test_return_on_equity_excludes_minority_interest(ratios_module):
         _ratios_with(ratios_module, balance=balance).get_return_on_equity(),
         _ratios_with(ratios_module).get_return_on_equity(),
     )
+
+
+def test_get_cyclically_adjusted_price_to_earnings_ratio(
+    recorder, ratios_module, monkeypatch
+):
+    # A monthly consumer price index that rises by one point a month from 100 in January 2018.
+    consumer_price_index = pd.Series(
+        range(100, 160),
+        index=pd.period_range("2018-01", periods=60, freq="M"),
+        dtype=float,
+    )
+    monkeypatch.setattr(
+        ratios_module,
+        "_consumer_price_index_function",
+        lambda country: consumer_price_index,
+    )
+
+    cape = ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(
+        years=2, rounding=None
+    )
+    nominal_cape = ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(
+        years=2, inflation_adjusted=False, rounding=None
+    )
+    one_year = ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(
+        years=1, inflation_adjusted=False, rounding=None
+    )
+    price_to_earnings = ratios_module.get_price_to_earnings_ratio(rounding=None)
+    eps = ratios_module.get_earnings_per_share(rounding=None)
+    price = price_to_earnings * eps
+
+    recorder.capture(cape)
+    recorder.capture(nominal_cape)
+
+    # With one year and no inflation adjustment it is the P/E (the earnings are positive).
+    pd.testing.assert_frame_equal(one_year, price_to_earnings, atol=1e-3)
+
+    # 2021 against the 2020 and 2021 EPS, the 2020 EPS in December 2021 prices (CPI 147 / 135).
+    year, previous = pd.Period("2021", "Y"), pd.Period("2020", "Y")
+    real_average = (eps.loc["AAPL", previous] * 147 / 135 + eps.loc["AAPL", year]) / 2
+    assert cape.loc["AAPL", year] == pytest.approx(
+        price.loc["AAPL", year] / real_average, rel=1e-3
+    )
+    nominal_average = (eps.loc["AAPL", previous] + eps.loc["AAPL", year]) / 2
+    assert nominal_cape.loc["AAPL", year] == pytest.approx(
+        price.loc["AAPL", year] / nominal_average, rel=1e-3
+    )
+
+    # The first year has no year before it, so the two-year window is incomplete.
+    assert cape[previous].isna().all()
+
+    # A country without a consumer price index gives an empty result.
+    monkeypatch.setattr(
+        ratios_module,
+        "_consumer_price_index_function",
+        lambda country: pd.Series(dtype=float),
+    )
+    assert ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(
+        country="Atlantis"
+    ).empty
+
+
+def test_consumer_price_index_function_accepts_country_aliases(
+    ratios_module, monkeypatch
+):
+    from financetoolkit.economics.economics_controller import Economics
+
+    # Economics returns the names its sources use, whatever form of the name was requested.
+    consumer_price_index = pd.DataFrame(
+        {"United States": [100.0, 101.0], "Netherlands": [100.0, 102.0]},
+        index=pd.period_range("2020-01", periods=2, freq="M"),
+    )
+    monkeypatch.setattr(
+        Economics,
+        "get_consumer_price_index",
+        lambda self, countries=None, period=None: consumer_price_index,
+    )
+
+    function = ratios_module._consumer_price_index_function
+    pd.testing.assert_series_equal(
+        function("USA"), consumer_price_index["United States"]
+    )
+    pd.testing.assert_series_equal(
+        function("netherlands"), consumer_price_index["Netherlands"]
+    )
+    assert function("Atlantis").empty

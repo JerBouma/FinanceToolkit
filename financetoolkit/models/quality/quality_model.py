@@ -251,9 +251,9 @@ def get_dechow_f_score(
     performance (the change in cash sales and in return on assets) and the market incentive
     to look good (issuing debt or equity):
 
-        Predicted Value = -7.893 + 0.790 RSST Accruals + 2.518 ΔReceivables
-                          + 1.191 ΔInventory + 1.979 Soft Assets + 0.171 ΔCash Sales
-                          - 0.932 ΔROA + 1.029 Issuance
+        Predicted Value = -7.893 + 0.790 RSST Accruals + 2.518 ΔReceivables +
+                          1.191 ΔInventory + 1.979 Soft Assets + 0.171 ΔCash Sales -
+                          0.932 ΔROA + 1.029 Issuance
         Probability = e^PV / (1 + e^PV),  F-Score = Probability / 0.0037
 
     The accruals and changes are scaled by average total assets, soft assets are total

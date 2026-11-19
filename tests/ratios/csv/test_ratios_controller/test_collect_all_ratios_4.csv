@@ -43,6 +43,9 @@ AAPL,Return on Assets,,,,-0.0156
 AAPL,Cash Return on Assets,,,,0.0008
 AAPL,Return on Equity,,,,0.0303
 AAPL,Return on Invested Capital,,,,0.0417
+AAPL,Return on Net Operating Assets,,,,-0.4403
+AAPL,Net Borrowing Cost,,,,-4.5249
+AAPL,Financial Leverage,,,,0.0997
 AAPL,Return on Capital Employed,,,0.3639,0.0694
 AAPL,Return on Tangible Assets,,,,-0.0156
 AAPL,Income Quality Ratio,,,-0.0424,0.0167
@@ -55,7 +58,7 @@ AAPL,Tax Rate Divergence,,,-0.1951,-0.8052
 AAPL,Gross Profitability,,,0.2491,0.0509
 AAPL,Operating Profitability,,,0.6345,-0.1698
 AAPL,Cash-Based Operating Profitability,,,,-0.0313
-AAPL,Cash Return on Invested Capital,,,0.2433,0.1089
+AAPL,Cash Return on Invested Capital,,,,0.0591
 AAPL,Free Cash Flow Conversion,,,-0.0389,0.0203
 AAPL,Free Cash Flow to EBITDA,,,-0.0318,0.0099
 AAPL,Percent Accruals,,,0.2399,-0.1188
@@ -66,6 +69,7 @@ AAPL,Debt Service Coverage Ratio,,,0.0472,-0.0123
 AAPL,Equity Multiplier,,,,0.0466
 AAPL,Free Cash Flow Yield,,,0.735,
 AAPL,Net-Debt to EBITDA Ratio,,,-0.1559,-0.2709
+AAPL,Net-Debt to Equity Ratio,,,0.2782,-0.0897
 AAPL,Gross Debt to EBITDA Ratio,,,-0.2355,-0.1797
 AAPL,Cash Flow Coverage Ratio,,,0.2619,0.2269
 AAPL,CAPEX Coverage Ratio,,,0.0336,0.0347
@@ -85,6 +89,7 @@ AAPL,Earnings per Share,,,0.321,0.0447
 AAPL,Revenue per Share,,,0.2263,0.0562
 AAPL,Price-to-Earnings,,,-0.4461,
 AAPL,Price-to-Earnings-Growth,,,4.396,
+AAPL,Dividend-Adjusted PEG,,,4.0362,
 AAPL,Book Value per Share,,,-0.0821,0.0242
 AAPL,Price-to-Book,,0.3335,-0.1181,
 AAPL,Interest Debt per Share,,,0.0759,-0.0515
@@ -158,6 +163,9 @@ MSFT,Return on Assets,,,,-0.0251
 MSFT,Cash Return on Assets,,,,-0.0408
 MSFT,Return on Equity,,,,-0.1022
 MSFT,Return on Invested Capital,,,,-0.0323
+MSFT,Return on Net Operating Assets,,,,-0.231
+MSFT,Net Borrowing Cost,,,,6.7918
+MSFT,Financial Leverage,,,,0.2032
 MSFT,Return on Capital Employed,,,0.1488,-0.0004
 MSFT,Return on Tangible Assets,,,,-0.0184
 MSFT,Income Quality Ratio,,,-0.0498,-0.016
@@ -170,7 +178,7 @@ MSFT,Tax Rate Divergence,,,0.1023,-0.2009
 MSFT,Gross Profitability,,,0.0812,-0.0081
 MSFT,Operating Profitability,,,0.0763,-0.0901
 MSFT,Cash-Based Operating Profitability,,,,0.0181
-MSFT,Cash Return on Invested Capital,,,0.0912,-0.0897
+MSFT,Cash Return on Invested Capital,,,,-0.0846
 MSFT,Free Cash Flow Conversion,,,-0.0576,-0.0509
 MSFT,Free Cash Flow to EBITDA,,,-0.0175,-0.079
 MSFT,Percent Accruals,,,0.2147,0.0836
@@ -181,6 +189,7 @@ MSFT,Debt Service Coverage Ratio,,,0.3399,0.413
 MSFT,Equity Multiplier,,,,-0.079
 MSFT,Free Cash Flow Yield,,,0.6931,
 MSFT,Net-Debt to EBITDA Ratio,,,-0.2741,-0.5218
+MSFT,Net-Debt to Equity Ratio,,,-0.233,-0.4044
 MSFT,Gross Debt to EBITDA Ratio,,,-0.2576,-0.1229
 MSFT,Cash Flow Coverage Ratio,,,0.3345,0.0886
 MSFT,CAPEX Coverage Ratio,,,-0.0225,-0.088
@@ -200,6 +209,7 @@ MSFT,Earnings per Share,,,0.2811,0.0926
 MSFT,Revenue per Share,,,0.1882,0.1298
 MSFT,Price-to-Earnings,,,-0.4434,
 MSFT,Price-to-Earnings-Growth,,,0.1954,
+MSFT,Dividend-Adjusted PEG,,,0.1542,
 MSFT,Book Value per Share,,,0.1965,0.2191
 MSFT,Price-to-Book,,0.2476,-0.3975,
 MSFT,Interest Debt per Share,,,-0.0638,-0.0536

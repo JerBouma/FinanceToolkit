@@ -444,3 +444,36 @@ def test_net_cash_paths_round_trip_with_the_intrinsic_value():
     assert epv["Equity Value"] == pytest.approx(
         200 * 0.8 / 0.10 + 50 + 30 - 200 - 40 - 25
     )
+
+
+def test_graham_intrinsic_value_matches_grahams_table():
+    # The Intelligent Investor (chapter 11) tabulates the multiple of current earnings his
+    # formula gives per expected growth rate; at the 1962 AAA yield of 4.4% the 4.4 / Y
+    # adjustment is 1, so an EPS of 1 returns that multiple.
+    growth_rates = pd.Series([0.0, 0.025, 0.05, 0.072, 0.10, 0.143, 0.20])
+    multiples = [8.5, 13.5, 18.5, 22.9, 28.5, 37.1, 48.5]
+
+    values = intrinsic_model.get_graham_intrinsic_value(
+        earnings_per_share=1.0, growth_rate=growth_rates, bond_yield=0.044
+    )
+
+    assert values.round(1).tolist() == multiples
+
+    # A higher bond yield scales the value down by 4.4 / Y.
+    assert intrinsic_model.get_graham_intrinsic_value(
+        2.0, 0.05, 0.055
+    ) == pytest.approx(2.0 * 18.5 * 4.4 / 5.5)
+
+
+def test_graham_intrinsic_value_needs_positive_earnings_and_bond_yield():
+    import numpy as np
+
+    values = intrinsic_model.get_graham_intrinsic_value(
+        earnings_per_share=pd.Series([2.0, -2.0, 2.0, 0.0]),
+        growth_rate=0.05,
+        bond_yield=pd.Series([0.05, 0.05, 0.0, 0.05]),
+    )
+
+    assert values.iloc[0] == pytest.approx(2.0 * 18.5 * 4.4 / 5)
+    assert values.iloc[1:].isna().all()
+    assert np.isnan(intrinsic_model.get_graham_intrinsic_value(-1.0, 0.05, 0.05))

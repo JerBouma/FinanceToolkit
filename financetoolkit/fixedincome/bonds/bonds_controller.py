@@ -792,7 +792,7 @@ class BondsFixedIncome(MarketsFixedIncome):
         at the same yield and the issuer pays in full. It is the standard way to quote and compare bonds, but it is one average
         rate for all cash flows: bonds with the same maturity but different coupons have different yields even when both are
         priced in line with the same spot curve, which the Z-spread (`get_z_spread`) accounts for. For callable bonds the
-        yield to worst is quoted instead.
+        yield to worst is quoted instead, which `bond_model.get_yield_to_worst` calculates from a call schedule.
 
         Also known as: YTM, bond return to maturity, redemption yield.
 

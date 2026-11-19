@@ -11,6 +11,9 @@ AAPL,Price-to-Earnings,Lag 3,,,,
 AAPL,Price-to-Earnings-Growth,Lag 1,,,4.396,
 AAPL,Price-to-Earnings-Growth,Lag 2,,,,
 AAPL,Price-to-Earnings-Growth,Lag 3,,,,
+AAPL,Dividend-Adjusted PEG,Lag 1,,,4.0362,
+AAPL,Dividend-Adjusted PEG,Lag 2,,,,
+AAPL,Dividend-Adjusted PEG,Lag 3,,,,
 AAPL,Book Value per Share,Lag 1,,0.0036,-0.1703,0.2662
 AAPL,Book Value per Share,Lag 2,,,-0.1674,0.0506
 AAPL,Book Value per Share,Lag 3,,,,0.0543
@@ -110,6 +113,9 @@ MSFT,Price-to-Earnings,Lag 3,,,,
 MSFT,Price-to-Earnings-Growth,Lag 1,,,0.1954,
 MSFT,Price-to-Earnings-Growth,Lag 2,,,,
 MSFT,Price-to-Earnings-Growth,Lag 3,,,,
+MSFT,Dividend-Adjusted PEG,Lag 1,,,0.1542,
+MSFT,Dividend-Adjusted PEG,Lag 2,,,,
+MSFT,Dividend-Adjusted PEG,Lag 3,,,,
 MSFT,Book Value per Share,Lag 1,,0.212,0.1835,0.2495
 MSFT,Book Value per Share,Lag 2,,,0.4344,0.4788
 MSFT,Book Value per Share,Lag 3,,,,0.7924

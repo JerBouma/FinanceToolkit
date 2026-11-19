@@ -115,6 +115,17 @@ PER_SECURITY_INDICATORS = {
     "get_know_sure_thing": lambda high, low, close, opening, volume: momentum.get_know_sure_thing(
         close
     ),
+    "get_stochastic_relative_strength_index": (
+        lambda high, low, close, opening, volume: momentum.get_stochastic_relative_strength_index(
+            close, WINDOW, WINDOW, 3
+        )
+    ),
+    "get_true_strength_index": lambda high, low, close, opening, volume: momentum.get_true_strength_index(
+        close, 25, 13, 7
+    ),
+    "get_coppock_curve": lambda high, low, close, opening, volume: momentum.get_coppock_curve(
+        close, 14, 11, 10
+    ),
     "get_moving_average": lambda high, low, close, opening, volume: overlap.get_moving_average(
         close, WINDOW
     ),
@@ -192,6 +203,11 @@ PER_SECURITY_INDICATORS = {
     ),
     "get_bollinger_bands": lambda high, low, close, opening, volume: volatility.get_bollinger_bands(
         close, 20, 2
+    ),
+    "get_bollinger_percent_b_and_bandwidth": (
+        lambda high, low, close, opening, volume: volatility.get_bollinger_percent_b_and_bandwidth(
+            close, 20, 2
+        )
     ),
     "get_mcclellan_oscillator": lambda high, low, close, opening, volume: breadth.get_mcclellan_oscillator(
         close, 19, 39

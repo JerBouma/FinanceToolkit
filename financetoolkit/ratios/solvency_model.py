@@ -198,6 +198,32 @@ def get_net_debt_to_ebitda_ratio(
     return net_debt / ebitda.where(ebitda > 0)
 
 
+def get_net_debt_to_equity_ratio(
+    net_debt: pd.Series | pd.DataFrame,
+    total_equity: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculates the net debt to equity ratio (net gearing), which measures the debt of the
+    company net of its cash relative to its equity.
+
+    The formula is as follows:
+
+        Net Debt to Equity Ratio = Net Debt / Total Equity
+
+    With an equity of zero or less the ratio no longer measures leverage (a negative ratio
+    would read as a net cash position), so those periods are NaN.
+
+    Args:
+        net_debt (pd.Series | pd.DataFrame): Net debt of the company, the total debt minus
+            the cash and cash equivalents.
+        total_equity (pd.Series | pd.DataFrame): Total equity of the company.
+
+    Returns:
+        pd.Series | pd.DataFrame: The net debt to equity ratio.
+    """
+    return net_debt / total_equity.where(total_equity > 0)
+
+
 def get_gross_debt_to_ebitda_ratio(
     total_debt: pd.Series | pd.DataFrame,
     operating_income: pd.Series | pd.DataFrame,

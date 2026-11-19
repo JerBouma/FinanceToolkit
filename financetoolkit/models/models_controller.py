@@ -53,6 +53,7 @@ class ModelsBase:
         sp500_function: (
             Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
         ) = None,
+        corporate_bond_yield_function: Callable[[str, str], pd.Series] | None = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -93,6 +94,11 @@ class ModelsBase:
                 DatetimeIndex) and the latest total market value of its companies (a Series
                 with the date as index). Defaults to None, which leaves the excess returns
                 and the relative size NaN.
+            corporate_bond_yield_function (Callable | None, optional): Retrieves the daily
+                yield of Moody's seasoned Aaa corporate bonds between two dates, as decimals
+                with a DatetimeIndex or PeriodIndex, the bond yield of
+                get_graham_intrinsic_value. Defaults to None, which requires that method to
+                be given a bond_yield.
 
         As an example:
 
@@ -132,6 +138,7 @@ class ModelsBase:
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
         self._sp500_function = sp500_function
+        self._corporate_bond_yield_function = corporate_bond_yield_function
 
         # Historical Data
         self._historical_data = historical_data

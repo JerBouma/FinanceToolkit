@@ -6,6 +6,7 @@ AAPL,Debt Service Coverage Ratio,5.6612,5.9286,5.8555
 AAPL,Equity Multiplier,,5.7378,6.0051
 AAPL,Free Cash Flow Yield,0.0555,0.0964,
 AAPL,Net-Debt to EBITDA Ratio,0.5141,0.434,0.3164
+AAPL,Net-Debt to Equity Ratio,1.4471,1.8496,1.6837
 AAPL,Gross Debt to EBITDA Ratio,0.691,0.5283,0.4333
 AAPL,Cash Flow Coverage Ratio,1.353,1.7073,2.0947
 AAPL,CAPEX Coverage Ratio,10.042,10.379,10.7396
@@ -28,6 +29,7 @@ MSFT,Debt Service Coverage Ratio,8.7932,11.7823,16.6481
 MSFT,Equity Multiplier,,2.3427,2.1575
 MSFT,Free Cash Flow Yield,0.0396,0.0671,
 MSFT,Net-Debt to EBITDA Ratio,0.3634,0.2638,0.1262
+MSFT,Net-Debt to Equity Ratio,0.4263,0.327,0.1948
 MSFT,Gross Debt to EBITDA Ratio,0.4599,0.3414,0.2995
 MSFT,Cash Flow Coverage Ratio,2.0275,2.7056,2.9453
 MSFT,CAPEX Coverage Ratio,3.8104,3.7246,3.3969

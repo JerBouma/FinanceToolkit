@@ -222,6 +222,59 @@ def get_graham_number(
     return float(np.sqrt(product)) if profitable_with_equity else np.nan
 
 
+def get_graham_intrinsic_value(
+    earnings_per_share: float | pd.Series | pd.DataFrame,
+    growth_rate: float | pd.Series | pd.DataFrame,
+    bond_yield: float | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Calculate the intrinsic value of a share with Benjamin Graham's growth formula, in the
+    form he gave it in 1974 with the yield of high grade corporate bonds.
+
+    The formula is as follows:
+
+        Intrinsic Value = Earnings per Share x (8.5 + 2 x g) x 4.4 / Y
+
+    Graham wrote g, the expected annual growth rate of the earnings over the next 7 to 10
+    years, and Y, the current yield of AAA corporate bonds, in percent (5 for 5%), and 4.4 is
+    the average AAA yield of 1962. Here both are decimals (0.05 for 5%), which the formula
+    multiplies by 100 before it applies Graham's constants, so the value is the same.
+
+    Args:
+        earnings_per_share (float | pd.Series | pd.DataFrame): The annual earnings per share.
+        growth_rate (float | pd.Series | pd.DataFrame): The expected annual growth rate of
+            the earnings, as a decimal.
+        bond_yield (float | pd.Series | pd.DataFrame): The yield of AAA corporate bonds, as a
+            decimal.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The intrinsic value per share, NaN where the
+        earnings or the bond yield are not positive.
+
+    References:
+    - Graham, Benjamin. "The Intelligent Investor." Fourth revised edition, Harper & Row,
+    1973, chapter 11 (Intrinsic Value = Earnings per Share x (8.5 + 2 x g)).
+    - Graham, Benjamin. "The Decade 1965-1974: Its Significance for Financial Analysts." In
+    "The Renaissance of Value," Financial Analysts Research Foundation, 1974 (the 4.4 / Y
+    adjustment).
+    """
+    # Graham's constants are in percent: 8.5 is the multiple of a company without growth,
+    # 2 the multiple per percentage point of growth and 4.4 the AAA yield of 1962 in percent.
+    value = (
+        earnings_per_share * (8.5 + 2 * growth_rate * 100) * 4.4 / (bond_yield * 100)
+    )
+
+    # A loss has no growth value, and a yield of zero or less divides by nothing meaningful.
+    valid = (earnings_per_share > 0) & (bond_yield > 0)
+
+    if isinstance(valid, pd.Series | pd.DataFrame):
+        return value.where(valid)
+    if isinstance(value, pd.Series | pd.DataFrame):
+        return value if valid else value * np.nan
+
+    return float(value) if valid else np.nan
+
+
 def get_free_cash_flow_to_firm(
     net_operating_profit_after_taxes: float | pd.Series | pd.DataFrame,
     depreciation_and_amortization: float | pd.Series | pd.DataFrame,

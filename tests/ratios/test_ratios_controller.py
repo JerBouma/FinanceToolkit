@@ -1962,3 +1962,41 @@ def test_return_on_equity_excludes_minority_interest(ratios_module):
         _ratios_with(ratios_module, balance=balance).get_return_on_equity(),
         _ratios_with(ratios_module).get_return_on_equity(),
     )
+
+
+def test_get_dividend_adjusted_price_to_earnings_growth_ratio(recorder, ratios_module):
+    recorder.capture(
+        ratios_module.get_dividend_adjusted_price_to_earnings_growth_ratio()
+    )
+
+    # The P/E and EPS growth of the PEG ratio, with the dividend yield of the same period
+    # added to the growth, both in percent.
+    pegy = ratios_module.get_dividend_adjusted_price_to_earnings_growth_ratio(
+        rounding=10
+    )
+    peg = ratios_module.get_price_to_earnings_growth_ratio(rounding=15)
+    price_earnings = ratios_module.get_price_to_earnings_ratio(rounding=15)
+    dividend_yield = ratios_module.get_dividend_yield(rounding=15)
+    growth_rate = price_earnings / peg / 100
+    expected = price_earnings / ((growth_rate + dividend_yield) * 100)
+    pd.testing.assert_frame_equal(
+        pegy,
+        expected.loc[pegy.index, pegy.columns].round(10),
+        check_names=False,
+        rtol=1e-8,
+    )
+
+
+def test_get_net_debt_to_equity_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_debt_to_equity_ratio())
+    recorder.capture(ratios_module.get_net_debt_to_equity_ratio(trailing=2))
+
+    # The net debt of the balance sheet (total debt minus cash) over the total equity.
+    balance = ratios_module._balance_sheet_statement
+    expected = (
+        balance.loc[:, "Total Debt", :] - balance.loc[:, "Cash and Cash Equivalents", :]
+    ) / balance.loc[:, "Total Equity", :]
+    ratio = ratios_module.get_net_debt_to_equity_ratio(rounding=10)
+    pd.testing.assert_frame_equal(
+        ratio, expected.loc[ratio.index, ratio.columns].round(10), check_names=False
+    )

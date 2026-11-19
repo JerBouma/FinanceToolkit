@@ -2152,3 +2152,57 @@ def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
     assert pd.isna(wacc.loc[("AAPL", "Cost of Debt"), period])
     assert pd.isna(wacc.loc[("AAPL", "Weighted Average Cost of Capital"), period])
     assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0
+
+
+def test_get_graham_intrinsic_value(recorder, models_module, monkeypatch):
+    import pandas as pd
+
+    # Moody's Aaa yield offline: 4% rising by a basis point a month.
+    days = pd.date_range("2015-01-01", "2023-12-31", freq="B")
+    aaa = pd.Series(
+        0.04 + 0.0001 * ((days.year - 2015) * 12 + days.month - 1), index=days
+    )
+    monkeypatch.setattr(
+        models_module,
+        "_corporate_bond_yield_function",
+        lambda start, end: aaa.loc[start:end],
+    )
+
+    recorder.capture(models_module.get_graham_intrinsic_value())
+    recorder.capture(models_module.get_graham_intrinsic_value(0.05, 0.044))
+
+    # By hand: the EPS of the period, its compound growth since the first period (from
+    # three years of history, kept within 0 and 0.20) and the yield on the last business
+    # day up to the period end.
+    income = models_module._income_statement
+    earnings_per_share = (
+        income.loc[:, "Net Income", :]
+        / income.loc[:, "Weighted Average Shares Diluted", :]
+    )
+    value = models_module.get_graham_intrinsic_value(rounding=10)
+    market_dates = models_module._market_dates()
+    checked = 0
+    for ticker in value.index:
+        history = earnings_per_share.loc[ticker].dropna()
+        for position, period in enumerate(history.index[1:], start=1):
+            if period not in value.columns:
+                continue
+            if position < 3:
+                assert pd.isna(value.loc[ticker, period])
+                continue
+            growth = min(
+                max((history[period] / history.iloc[0]) ** (1 / position) - 1, 0), 0.2
+            )
+            bond_yield = aaa.loc[: market_dates.loc[ticker, period]].iloc[-1]
+            expected = history[period] * (8.5 + 200 * growth) * 4.4 / (bond_yield * 100)
+            assert value.loc[ticker, period] == pytest.approx(expected, rel=1e-9)
+            checked += 1
+    assert checked >= 2
+
+
+def test_graham_intrinsic_value_without_a_bond_yield_source(models_module, monkeypatch):
+    monkeypatch.setattr(models_module, "_corporate_bond_yield_function", None)
+
+    # Without a source the bond yield must be given.
+    assert models_module.get_graham_intrinsic_value().empty
+    assert not models_module.get_graham_intrinsic_value(bond_yield=0.05).empty

@@ -1104,11 +1104,15 @@ class MarketOptions:
             expiration), Volatility (annualized), Skewness and Kurtosis of the log return.
 
         Notes:
-        - The moments depend on how far the strikes reach into the tails: a narrow strip
-          understates the kurtosis most, then the skewness. On a Black-Scholes chain (20%
-          volatility, 30 days) with strikes from 50% to 150% of the price they are within
-          0.03 of the normal values (skewness 0, kurtosis 3), and with strikes from 10% to
-          190% within 0.001.
+        - The sums approximate the integrals over the strikes, so the moments depend on how
+          finely the strikes are spaced and how far they reach into the tails; the kurtosis is
+          the most sensitive. On a Black-Scholes chain (20% volatility, 30 days) with strikes
+          from 50% to 150% of the price, the kurtosis is within 0.031 of the normal value of 3
+          (and the skewness within 0.001 of 0) for strikes 1% of the price apart, and within
+          0.001 for strikes 0.1% apart; strikes from 10% to 190% give the same values, as the
+          options beyond 50% and 150% are worth almost nothing. The reach matters when the
+          strip ends within a few standard deviations of the price: from 80% to 120% (3.5
+          standard deviations) the kurtosis is 0.008 low at the finest spacing.
         - Prices are the middle of the bid and ask, or the last price of an option with
           volume or open interest when there is no two-sided quote. Outside market hours,
           when bids are missing, an expiry has no strip and its moments are NaN.

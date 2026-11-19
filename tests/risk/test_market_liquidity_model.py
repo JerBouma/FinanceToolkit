@@ -405,3 +405,181 @@ def test_get_idiosyncratic_volatility_runs_up_to_the_last_return():
         assert result.index[-1] == pd.Period("2024-04", "M")
         assert result.loc[pd.Period("2024-03", "M") :].isna().all()
         assert not np.isnan(result[pd.Period("2024-02", "M")])
+
+
+def abdi_ranaldo_two_day_spread(first, second):
+    """The two-day corrected spread of equation (11) of the paper, written out."""
+    high_1, low_1, close_1 = np.log(first)
+    high_2, low_2, _ = np.log(second)
+    squared = 4 * (close_1 - (high_1 + low_1) / 2) * (close_1 - (high_2 + low_2) / 2)
+
+    return np.sqrt(max(squared, 0))
+
+
+def test_get_abdi_ranaldo_spread_matches_the_paper(recorder):
+    prices = corwin_schultz_prices()
+    rows = list(prices.itertuples(index=False))
+
+    result = market_liquidity_model.get_abdi_ranaldo_spread(
+        prices["High"], prices["Low"], prices["Close"], "monthly"
+    )
+
+    # The pair 31 January - 1 February spans two months and is left out.
+    january = np.mean(
+        [
+            abdi_ranaldo_two_day_spread(rows[0], rows[1]),
+            abdi_ranaldo_two_day_spread(rows[1], rows[2]),
+        ]
+    )
+    assert np.isclose(result[pd.Period("2024-01", "M")], january)
+    assert np.isclose(
+        result[pd.Period("2024-02", "M")],
+        abdi_ranaldo_two_day_spread(rows[3], rows[4]),
+    )
+
+    # A day only the other ticker traded is not part of a pair, and a rolling window
+    # averages every two-day spread in it.
+    gapped = prices.copy()
+    gapped.loc[pd.Period("2024-01-30", "D")] = np.nan
+    frames = {
+        column: pd.DataFrame({"A": prices[column], "B": gapped[column]})
+        for column in ["High", "Low", "Close"]
+    }
+    both = market_liquidity_model.get_abdi_ranaldo_spread(
+        frames["High"], frames["Low"], frames["Close"], "monthly"
+    )
+    assert np.isclose(
+        both.loc[pd.Period("2024-01", "M"), "B"],
+        abdi_ranaldo_two_day_spread(rows[0], rows[2]),
+    )
+    rolling = market_liquidity_model.get_abdi_ranaldo_spread(
+        frames["High"], frames["Low"], frames["Close"], "monthly", rolling=2
+    )
+    assert np.isnan(rolling.loc[pd.Period("2024-01", "M"), "A"])
+    assert np.isclose(
+        rolling.loc[pd.Period("2024-02", "M"), "A"],
+        (2 * january + result[pd.Period("2024-02", "M")]) / 3,
+    )
+    recorder.capture(result.round(6))
+    recorder.capture(rolling.round(6))
+
+
+def simulated_quotes(spread, volatility, seed=7, days=250):
+    """
+    Intraday random walks of 390 trades a day, each at the bid or the ask of a quoted
+    spread, with overnight jumps on some days: the Open is the first trade, the High and
+    Low the highest and lowest and the Close the last.
+    """
+    rng = np.random.default_rng(seed)
+    dates = pd.period_range("2021-01-01", periods=days, freq="D")
+    price = 100.0
+    rows = []
+
+    for _ in dates:
+        path = price * np.exp(np.cumsum(rng.normal(0, volatility / np.sqrt(390), 390)))
+        if rng.random() < 0.3:  # noqa: PLR2004
+            path *= np.exp(rng.normal(0, volatility))
+        trades = path * (1 + rng.choice([-1, 1], 390) * spread / 2)
+        rows.append([trades[0], trades.max(), trades.min(), trades[-1]])
+        price = path[-1]
+
+    return pd.DataFrame(rows, index=dates, columns=["Open", "High", "Low", "Close"])
+
+
+def test_get_abdi_ranaldo_spread_recovers_the_spread():
+    # The average of the two-day square roots is close to the spread when the volatility
+    # is small relative to it (and lower when it is not, see the docstring).
+    prices = simulated_quotes(spread=0.01, volatility=0.002)
+
+    result = market_liquidity_model.get_abdi_ranaldo_spread(
+        prices["High"], prices["Low"], prices["Close"], "yearly"
+    )
+
+    assert abs(result.iloc[0] - 0.01) < 0.001  # noqa: PLR2004
+
+
+def edge_reference(prices, keep=None):
+    """
+    The squared EDGE spread written out as in the authors' `bidask` package (equations
+    23 to 25 of the paper), over the pairs of consecutive rows marked in `keep`.
+    """
+    o, h, lo, c = (np.log(prices[column].to_numpy()) for column in prices.columns)
+    m = (h + lo) / 2
+    h1, l1, c1, m1 = h[:-1], lo[:-1], c[:-1], m[:-1]
+    o, h, lo, m = o[1:], h[1:], lo[1:], m[1:]
+    keep = np.ones(len(o), dtype=bool) if keep is None else keep
+    r1, r2, r3, r4, r5 = (
+        value[keep] for value in (m - o, o - m1, m - c1, c1 - m1, o - c1)
+    )
+    tau = ((h != lo) | (lo != c1))[keep].astype(float)
+    po = np.mean(tau * (o != h)[keep]) + np.mean(tau * (o != lo)[keep])
+    pc = np.mean(tau * (c1 != h1)[keep]) + np.mean(tau * (c1 != l1)[keep])
+    pt = tau.mean()
+    d1 = r1 - r1.mean() / pt * tau
+    d3 = r3 - r3.mean() / pt * tau
+    d5 = r5 - r5.mean() / pt * tau
+    x1 = -4 / po * d1 * r2 - 4 / pc * d3 * r4
+    x2 = -4 / po * d1 * r5 - 4 / pc * d5 * r4
+    e1, e2 = x1.mean(), x2.mean()
+    v1, v2 = x1.var(), x2.var()
+
+    return (v2 * e1 + v1 * e2) / (v1 + v2)
+
+
+def test_get_edge_spread_matches_the_reference(recorder):
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    prices = {column: historical[column] for column in ["Open", "High", "Low", "Close"]}
+
+    result = market_liquidity_model.get_edge_spread(*prices.values(), "monthly")
+
+    # Each month on its own days, a negative squared spread set to 0 (equation 26).
+    for ticker in result.columns:
+        days = pd.DataFrame({column: prices[column][ticker] for column in prices})
+        for month, month_days in days.groupby(days.index.asfreq("M")):
+            if len(month_days) < 3:  # noqa: PLR2004
+                continue
+            assert result.loc[month, ticker] == pytest.approx(
+                np.sqrt(max(edge_reference(month_days), 0)), abs=1e-15
+            )
+    assert (result == 0).any().any()
+    assert (result > 0).any().any()
+
+    # A rolling window takes every pair of its periods together, apart from the pair across
+    # the month end.
+    rolling = market_liquidity_model.get_edge_spread(
+        *prices.values(), "monthly", rolling=2
+    )
+    days = pd.DataFrame({column: prices[column]["AAPL"] for column in prices})
+    window = days.loc["2021-01-01":"2021-02-28"]
+    months = window.index.asfreq("M")
+    squared = edge_reference(window, keep=np.asarray(months[1:] == months[:-1]))
+    assert rolling.loc[pd.Period("2021-02", "M"), "AAPL"] == pytest.approx(
+        np.sqrt(max(squared, 0)), abs=1e-15
+    )
+    assert rolling.iloc[0].isna().all()
+    recorder.capture(result.round(6))
+    recorder.capture(rolling.round(6))
+
+
+def test_get_edge_spread_recovers_the_spread():
+    prices = simulated_quotes(spread=0.01, volatility=0.01)
+
+    result = market_liquidity_model.get_edge_spread(
+        prices["Open"], prices["High"], prices["Low"], prices["Close"], "yearly"
+    )
+
+    assert abs(result.iloc[0] - 0.01) < 0.002  # noqa: PLR2004
+
+
+def test_get_edge_spread_without_price_changes_is_nan():
+    # A month of flat days (no trades repeat the previous Close) has no estimate.
+    dates = pd.period_range("2024-01-01", periods=10, freq="D")
+    flat = pd.Series(100.0, index=dates)
+
+    result = market_liquidity_model.get_edge_spread(flat, flat, flat, flat)
+
+    assert result.isna().all()
+    with pytest.raises(TypeError):
+        market_liquidity_model.get_edge_spread(1, 2, 3, 4)  # type: ignore
+    with pytest.raises(TypeError):
+        market_liquidity_model.get_abdi_ranaldo_spread(1, 2, 3)  # type: ignore

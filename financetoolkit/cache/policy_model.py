@@ -293,7 +293,7 @@ POLICIES: dict[str, CachePolicy] = {
     f"{EIOPA}.releases": CachePolicy(ttl_seconds=DAY),
     # Republished monthly with the full daily history.
     f"{EIOPA}.symmetric_adjustment": CachePolicy(ttl_seconds=7 * DAY),
-    f"{INTERNATIONAL_MONETARY_FUND}.codelist": CachePolicy(ttl_seconds=30 * DAY),
+    f"{INTERNATIONAL_MONETARY_FUND}.codelist_raw": CachePolicy(ttl_seconds=30 * DAY),
     # Updated about once a month.
     f"{SHILLER}.stock_market_data": CachePolicy(ttl_seconds=7 * DAY),
     # The Pink Sheet is updated in the first days of every month.
@@ -332,12 +332,17 @@ POLICIES: dict[str, CachePolicy] = {
     f"{FEDERAL_HOUSING_FINANCE_AGENCY}.outstanding_mortgages": CachePolicy(
         ttl_seconds=7 * DAY
     ),
-    f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices": CachePolicy(
+    f"{INTERNATIONAL_MONETARY_FUND}.consumer_prices_by_code": CachePolicy(
         ttl_seconds=DAY, revision_days=365
     ),
-    # Government finance and national accounts, published quarterly or yearly and revised
-    # back years when a country revises its national accounts.
-    f"{INTERNATIONAL_MONETARY_FUND}.government_finance": CachePolicy(
+    # Government finance, national accounts, the international investment position and
+    # end-of-period exchange rates, published quarterly or yearly and revised back years
+    # when a country revises its national accounts or balance of payments. Stored
+    # by IMF code under a name of its own, so that no entry stored under "government_finance",
+    # read while a series without observations (<Series .../>) took the observations of the
+    # series after it, is ever served: its revision window would never reach the older
+    # misread years.
+    f"{INTERNATIONAL_MONETARY_FUND}.series_by_code": CachePolicy(
         ttl_seconds=7 * DAY, revision_days=1095
     ),
     f"{EUROPEAN_CENTRAL_BANK}.convergence_yields": CachePolicy(

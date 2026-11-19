@@ -2,10 +2,11 @@
 
 __docformat__ = "google"
 
-from financetoolkit.economics.helpers import buffered_start_date
+from financetoolkit.economics.helpers import buffered_start_date, validate_period
 from financetoolkit.economics.sources import (
     eurostat_model,
     gmdb_model,
+    imf_model,
     oecd_model,
     ons_model,
 )
@@ -24,7 +25,7 @@ logger = get_logger()
 @track_sources
 class OutputEconomics:
     """
-    National accounts and trade: GDP, its growth and deflator, real GDP per capita, the output gap, consumption, investment, exports, imports, the trade balance and the current account.
+    National accounts and trade: GDP, its growth and deflator, real GDP per capita, the output gap, consumption, investment, exports, imports, the trade balance, the current account and the net international investment position.
     """
 
     @staticmethod
@@ -2013,4 +2014,257 @@ class OutputEconomics:
             standardize=standardize,
             axis="rows",
             row_slice=True,
+        )
+
+    @handle_errors
+    def get_net_international_investment_position(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Net International Investment Position (NIIP) for a variety of countries over time from the International
+        Monetary Fund (IMF). The Net International Investment Position is the value of the external financial assets of a
+        country's residents (direct investment, portfolio investment, financial derivatives, other investment and reserve
+        assets) less the value of their external liabilities, at the end of each period.
+
+        Where the current account is the flow, the international investment position is the stock it builds up: a country
+        that runs current account deficits for years finances them by borrowing from or selling assets to the rest of the
+        world, and ends up with a negative position, a net debtor. The position also moves without any transaction, with
+        exchange rates and the prices of the assets and liabilities held.
+
+        The position follows the IMF's Balance of Payments and International Investment Position Manual, sixth edition
+        (BPM6), and is published by the IMF in millions of US dollars, converted at the exchange rate at the end of the
+        period, for about 130 economies quarterly and 175 yearly, and the euro area. A negative value marks a net
+        debtor, a positive value a net creditor.
+
+        For more information, see the following sources:
+
+        - International Monetary Fund (2009). Balance of Payments and International Investment Position Manual, Sixth
+          Edition (BPM6), chapter 7: https://www.imf.org/external/pubs/ft/bop/2007/pdf/bpm6.pdf
+        - IMF International Investment Position dataset: https://data.imf.org
+
+        The formula is as follows:
+
+        - Net International Investment Position = External Financial Assets - External Liabilities, at the end of the
+          quarter (period="quarterly") or the year (period="yearly")
+
+        Also known as: NIIP, net foreign assets, net external position, net external assets.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" (the position at the end of each quarter)
+                or "yearly" (at the end of each year). Defaults to None, which is quarterly, the
+                highest frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Net International Investment Position in millions of US dollars
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        economics.get_net_international_investment_position(
+            countries=['United States', 'Netherlands', 'Spain', 'Japan'], period='yearly')
+        ```
+
+        Which returns:
+
+        |      |   United States |   Netherlands |    Spain |   Japan |
+        |:-----|----------------:|--------------:|---------:|--------:|
+        | 2015 |        -7590470 |        208976 | -1038360 | 2715260 |
+        | 2016 |        -8258387 |        299722 |  -997827 | 2879336 |
+        | 2017 |        -7830723 |        356302 | -1183935 | 2916758 |
+        | 2018 |        -9795821 |        455332 | -1082426 | 3080841 |
+        | 2019 |       -11666440 |        634921 | -1013505 | 3271768 |
+        | 2020 |       -11894319 |        884178 | -1159871 | 3473817 |
+        | 2021 |       -15357982 |        730264 |  -971356 | 3659120 |
+        | 2022 |       -14226691 |        590199 |  -825201 | 3166226 |
+        | 2023 |       -17123596 |        625354 |  -818813 | 3327381 |
+        | 2024 |       -22127875 |        753541 |  -663085 | 3435052 |
+        | 2025 |       -21873581 |        656342 |  -847469 | 3594052 |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "net international investment position",
+        )
+
+        net_international_investment_position = (
+            imf_model.get_net_international_investment_position(
+                period, self._start_date, self._end_date, to_gdp=False
+            )
+        )
+
+        return finalize_dataset(
+            dataset=net_international_investment_position,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Net International Investment Position",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_net_international_investment_position_to_gdp_ratio(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Get the Net International Investment Position (NIIP) to GDP Ratio for a variety of countries over time from the
+        International Monetary Fund (IMF). The ratio is the value of the external financial assets of a country's residents
+        less the value of their external liabilities, at the end of each period, relative to the country's nominal Gross
+        Domestic Product (GDP).
+
+        The ratio shows how much a country owes to (negative) or is owed by (positive) the rest of the world compared to the
+        size of its economy. A large negative position leaves a country dependent on foreign financing and exposed to a
+        sudden stop of capital inflows, which is why the European Union's macroeconomic imbalance procedure (MIP) uses a
+        position below -35% of GDP as its indicative threshold. Large creditors, such as Japan, Germany and the Netherlands,
+        earn net investment income on their position.
+
+        The IMF publishes the position in US dollars only, converted at the exchange rate at the end of the period. It is
+        converted back to national currency at that same IMF end-of-period exchange rate (the euro area's for the euro
+        members) and divided by the IMF's nominal GDP in national currency, so the ratio does not move with the gap between
+        the end-of-period and the average exchange rate. This is the convention of Eurostat's MIP scoreboard (tipsii10),
+        whose figures differ from it only by the vintage of the GDP and the position each publisher holds. The
+        IMF's national accounts of some countries, such as the euro members, end a few quarters before their position,
+        which leaves the latest periods of those countries empty.
+
+        For more information, see the following sources:
+
+        - International Monetary Fund (2009). Balance of Payments and International Investment Position Manual, Sixth
+          Edition (BPM6), chapter 7: https://www.imf.org/external/pubs/ft/bop/2007/pdf/bpm6.pdf
+        - European Commission (2016). The Macroeconomic Imbalance Procedure: Rationale, Process, Application: A
+          Compendium. Institutional Paper 039 (scoreboard threshold of -35% of GDP).
+        - Eurostat MIP scoreboard: https://ec.europa.eu/eurostat/databrowser/view/tipsii10/default/table
+
+        The ratio is expressed as a decimal fraction (-0.35 for -35% of GDP).
+
+        The formula is as follows:
+
+        - Net International Investment Position to GDP Ratio = (External Financial Assets - External Liabilities) in US
+          Dollars x National Currency per US Dollar at the End of the Period / Nominal GDP in National Currency
+        - The position is the stock at the end of the quarter or year; the GDP is summed over the four quarters up to and
+          including that quarter (not seasonally adjusted) for period="quarterly" or over the calendar year for
+          period="yearly"
+
+        Also known as: NIIP to GDP, net foreign assets to GDP, net external position.
+
+        Args:
+            countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
+            period (str | None, optional): "quarterly" (the position at the end of each quarter)
+                or "yearly" (at the end of each year). Defaults to None, which is quarterly, the
+                highest frequency published.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the growth data. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Net International Investment Position to GDP Ratio
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2015-01-01', end_date="2025-12-31")
+
+        economics.get_net_international_investment_position_to_gdp_ratio(
+            countries=['United States', 'Netherlands', 'Spain', 'Japan'], period='yearly')
+        ```
+
+        Which returns:
+
+        |      |   United States |   Netherlands |    Spain |   Japan |
+        |:-----|----------------:|--------------:|---------:|--------:|
+        | 2015 |         -0.4149 |        0.2745 |  -0.8773 |  0.5961 |
+        | 2016 |         -0.4392 |        0.3948 |  -0.843  |  0.6049 |
+        | 2017 |         -0.3993 |        0.3957 |  -0.8437 |  0.5827 |
+        | 2018 |         -0.4742 |        0.5051 |  -0.7798 |  0.5999 |
+        | 2019 |         -0.5416 |        0.6811 |  -0.7196 |  0.6243 |
+        | 2020 |         -0.5565 |        0.8825 |  -0.8371 |  0.6497 |
+        | 2021 |         -0.6473 |        0.7232 |  -0.6942 |  0.7285 |
+        | 2022 |         -0.546  |        0.5568 |  -0.5632 |  0.7186 |
+        | 2023 |         -0.6157 |        0.5301 |  -0.4946 |  0.7657 |
+        | 2024 |         -0.7553 |        0.6396 |  -0.401  |  0.8449 |
+        | 2025 |         -0.7111 |      nan      | nan      |  0.8429 |
+        """
+        period = validate_period(
+            self._default_period(period, "quarterly"),
+            list(imf_model.PERIOD_CODES),
+            "net international investment position to GDP ratio",
+        )
+
+        net_international_investment_position_to_gdp_ratio = (
+            imf_model.get_net_international_investment_position(
+                period, self._start_date, self._end_date, to_gdp=True
+            )
+        )
+
+        return finalize_dataset(
+            dataset=net_international_investment_position_to_gdp_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Net International Investment Position to GDP Ratio",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
         )

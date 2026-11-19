@@ -3,6 +3,7 @@ AAPL,Earnings per Share,,9.0182,11.9126,12.4457
 AAPL,Revenue per Share,,37.9683,46.5609,49.177
 AAPL,Price-to-Earnings,,19.6902,10.9069,
 AAPL,Price-to-Earnings-Growth,,0.443,2.3903,
+AAPL,Dividend-Adjusted PEG,,0.44,2.2158,
 AAPL,Book Value per Share,,3.7341,3.4275,3.5104
 AAPL,Price-to-Book,35.5962,47.4672,41.8617,
 AAPL,Interest Debt per Share,,7.8456,8.4407,8.0059
@@ -36,6 +37,7 @@ MSFT,Earnings per Share,,13.8738,17.7731,19.419
 MSFT,Revenue per Share,,40.8916,48.5886,54.8963
 MSFT,Price-to-Earnings,,24.2413,13.4934,
 MSFT,Price-to-Earnings-Growth,,1.051,1.2564,
+MSFT,Dividend-Adjusted PEG,,1.0333,1.1926,
 MSFT,Book Value per Share,,17.0226,20.3677,24.8311
 MSFT,Price-to-Book,14.4446,18.0207,10.8576,
 MSFT,Interest Debt per Share,,9.7212,9.1011,8.6129

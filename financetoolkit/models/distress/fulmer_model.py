@@ -301,8 +301,8 @@ def get_fulmer_h_score(
 
     The formula is as follows:
 
-        H-Score = 5.528 * V1 + 0.212 * V2 + 0.073 * V3 + 1.270 * V4 - 0.120 * V5 + 2.335 * V6
-        + 0.575 * V7 + 1.083 * V8 + 0.894 * V9 - 6.075
+        H-Score = 5.528 * V1 + 0.212 * V2 + 0.073 * V3 + 1.270 * V4 - 0.120 * V5 + 2.335 * V6 +
+          0.575 * V7 + 1.083 * V8 + 0.894 * V9 - 6.075
 
     The nine variables are:
 

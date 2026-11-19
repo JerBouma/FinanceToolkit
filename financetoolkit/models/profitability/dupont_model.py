@@ -29,9 +29,9 @@ def get_dupont_analysis(
         net_income (pd.Series): Net profit of the company.
         total_revenue (pd.Series): Total revenue of the company.
         average_total_assets (pd.Series): The average of the company's total assets over the
-        beginning and the end of the period.
+        period ends that open and close the period over which the flows are measured.
         average_total_equity (pd.Series): The average of the company's total equity over the
-        beginning and the end of the period.
+        period ends that open and close the period over which the flows are measured.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Dupont analysis components.
@@ -108,9 +108,9 @@ def get_extended_dupont_analysis(
         net_income (pd.Series): Net profit of the company.
         total_revenue (pd.Series): Total revenue of the company.
         average_total_assets (pd.Series): The average of the company's total assets over the
-        beginning and the end of the period.
+        period ends that open and close the period over which the flows are measured.
         average_total_equity (pd.Series): The average of the company's total equity over the
-        beginning and the end of the period.
+        period ends that open and close the period over which the flows are measured.
 
     Returns:
         pd.DataFrame: A DataFrame containing the Dupont analysis components.

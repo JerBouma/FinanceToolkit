@@ -84,6 +84,39 @@ def get_price_to_earnings_growth_ratio(
     return price_earnings / growth_rate
 
 
+def get_dividend_adjusted_price_to_earnings_growth_ratio(
+    price_earnings: pd.Series | pd.DataFrame,
+    growth_rate: pd.Series | pd.DataFrame | float,
+    dividend_yield: pd.Series | pd.DataFrame | float,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the dividend-adjusted price earnings to growth (PEGY) ratio of Peter Lynch, the
+    price-to-earnings ratio divided by the growth rate of the earnings plus the dividend yield.
+
+    The formula is as follows:
+
+        PEGY Ratio = Price Earnings Ratio / ((EPS Growth Rate + Dividend Yield) * 100)
+
+    Lynch added the growth rate and the dividend yield in percent, so the decimals are
+    multiplied by 100, as in the PEG ratio. Lynch divided the sum by the P/E, the reciprocal
+    of this ratio, and called a result below 1 poor and 2 or more good; the PEGY ratio puts
+    the P/E on top, as the PEG ratio does, so above 1 is poor and 0.5 or less good.
+
+    Args:
+        price_earnings (float or pd.Series): The company's price-to-earnings ratio.
+        growth_rate (float or pd.Series): The growth rate of the earnings, as a decimal.
+        dividend_yield (float or pd.Series): The dividend yield, as a decimal.
+
+    Returns:
+        float | pd.Series: The PEGY ratio value.
+
+    References:
+    - Lynch, Peter. "One Up On Wall Street." Simon & Schuster, 1989, chapter 13 ("Some
+    Famous Numbers").
+    """
+    return price_earnings / ((growth_rate + dividend_yield) * 100)
+
+
 def get_estimated_eps_growth_rate(
     estimated_eps: float | pd.Series | pd.DataFrame,
     trailing_eps: float | pd.Series | pd.DataFrame,
@@ -734,8 +767,8 @@ def get_composite_equity_issuance(
 
     The formula is as follows:
 
-        Composite Equity Issuance = ln(Market Cap / Beginning Market Cap)
-            - ln(Total Return Price / Beginning Total Return Price)
+        Composite Equity Issuance = ln(Market Cap / Beginning Market Cap) -
+            ln(Total Return Price / Beginning Total Return Price)
 
     The second term is the log total return over the window (dividends reinvested), so
     a company that pays dividends without issuing shares has a negative value. A value

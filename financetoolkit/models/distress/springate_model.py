@@ -130,8 +130,8 @@ def get_springate_score(
 
     The formula is as follows:
 
-        Springate Score = 1.03 * Working Capital to Total Assets Ratio + 3.07 * EBIT to Total Assets Ratio
-        + 0.66 * EBT to Current Liabilities Ratio + 0.4 * Sales to Total Assets Ratio
+        Springate Score = 1.03 * Working Capital to Total Assets Ratio + 3.07 * EBIT to Total Assets Ratio +
+          0.66 * EBT to Current Liabilities Ratio + 0.4 * Sales to Total Assets Ratio
 
     Also known as: Springate Score, S-Score, bankruptcy prediction, financial distress score.
 

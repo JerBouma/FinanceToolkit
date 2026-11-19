@@ -390,6 +390,13 @@ class Risk(
                 lag=lag,
                 standardize=standardize,
             ),
+            "Pain Index": self.get_pain_index(
+                period=period,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            ),
             # GARCH stays a whole-series fit: it models the conditional variance of the
             # per-period returns, and a per-period refit would also break on the lone
             # boundary observation the first period of a date range typically holds.

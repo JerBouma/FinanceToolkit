@@ -1249,3 +1249,35 @@ def test_the_default_implied_volatility_expiry_is_a_day_or_more_away(
     monkeypatch.setattr(module, "_valuation_time", today + pd.Timedelta(hours=10))
 
     assert module.get_implied_volatility().name == expiries[1]
+
+
+def test_get_risk_neutral_moments(recorder, option_market):
+    module, labels = option_market
+    moments = module.get_risk_neutral_moments()
+    recorder.capture(stable(moments, labels))
+    # The simulated chains carry a higher volatility at lower strikes: a left skew.
+    assert (moments["Skewness"] < 0).all()
+    assert (moments["Volatility"] > 0).all()
+
+
+def test_get_skew_index(recorder, option_market):
+    module, labels = option_market
+    skew = module.get_skew_index()
+    recorder.capture(stable(skew, labels))
+    assert (skew["SKEW Index"] > 100).all()
+    assert skew["SKEW Index"].tolist() == pytest.approx(
+        (100 - 10 * skew["Skewness"]).tolist(), abs=1e-3
+    )
+
+
+def test_the_skew_index_uses_the_terms_of_the_model_free_volatility(option_market):
+    module, _ = option_market
+    ticker = module._tickers[0]
+    skew = module._skew_index(ticker, days=30)
+    volatility = module._model_free_volatility(ticker, days=30)
+
+    for column in ("Near-Term Expiration", "Next-Term Expiration", "Forward Price"):
+        assert skew[column] == volatility[column]
+    with pytest.raises(ValueError, match=f"longest usable expiry of {ticker}"):
+        module._skew_index(ticker, days=365)
+    assert module.get_skew_index(days=365).empty

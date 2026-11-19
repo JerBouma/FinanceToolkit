@@ -350,3 +350,83 @@ def test_dollar_duration_and_dv01_of_a_zero_coupon_bond():
     dv01 = bond_model.get_dv01(100, 0.0, 2, 0.05, 1)
     assert dv01 == pytest.approx(modified_duration * price * 0.0001, rel=1e-6)
     assert dv01 == pytest.approx(dollar_duration / 100, rel=1e-6)
+
+
+def test_yield_to_call_matches_quantlib_and_excel_yield():
+    """
+    A 6% semi-annual bond maturing 2036-11-15, settled 2026-12-03 (30/360: 9.95 years) at
+    106, callable at 103. QuantLib's bondYield (Compounded, Semiannual, 30/360) of the bond
+    redeemed at 103 on the call date, and Excel's YIELD with the call date as maturity.
+    """
+    # On a coupon date (2031-11-15): QuantLib 0.051503727095507046, Excel YIELD 0.05150372709550677.  # noqa: E501
+    assert bond_model.get_yield_to_call(
+        100, 0.06, 9.95, 4.95, 103, 106, 2, tolerance=1e-12
+    ) == pytest.approx(0.051503727095507046, abs=1e-12)
+
+    # A month after a coupon date (2031-12-15) the call pays a sixth of a coupon accrued on top.  # noqa: E501
+    assert bond_model.get_yield_to_call(
+        100, 0.06, 9.95, 5.033333333333332, 103, 106, 2, tolerance=1e-12
+    ) == pytest.approx(0.051609214458571855, abs=1e-12)
+
+
+def test_yield_to_call_of_a_closed_form_price():
+    """26 semi-annual coupons of 55 and a call at 1,055, priced at 4.5% a period, yield 9%."""
+    rate = 0.045
+    price = 55 * (1 - (1 + rate) ** -26) / rate + 1055 / (1 + rate) ** 26
+
+    assert bond_model.get_yield_to_call(1000, 0.11, 18, 13, 1055, price, 2) == (
+        pytest.approx(0.09, abs=1e-6)
+    )
+
+
+def test_yield_to_call_at_maturity_at_par_is_the_yield_to_maturity():
+    assert bond_model.get_yield_to_call(100, 0.05, 7.3, 7.3, 100, 97, 2) == (
+        pytest.approx(
+            bond_model.get_yield_to_maturity(100, 0.05, 7.3, 97, 2), abs=1e-12
+        )
+    )
+
+    with pytest.raises(ValueError, match="years to call"):
+        bond_model.get_yield_to_call(100, 0.05, 10, 0, 100, 97, 2)
+    with pytest.raises(ValueError, match="years to call"):
+        bond_model.get_yield_to_call(100, 0.05, 10, 11, 100, 97, 2)
+
+
+def test_yield_to_call_before_the_next_coupon_date():
+    """Called before its next coupon: the dirty price buys the call price plus accrued."""
+    # 9.9 years of semi-annual coupons: 0.2 of the period elapsed, 0.3 at the call in 0.05 years.  # noqa: E501
+    ytc = bond_model.get_yield_to_call(100, 0.06, 9.9, 0.05, 100, 100.5, 2)
+
+    assert (100 + 3 * 0.3) / (1 + ytc / 2) ** 0.1 == pytest.approx(
+        100.5 + 3 * 0.2, rel=1e-3
+    )
+    assert ytc < 0
+
+
+def test_yield_to_worst():
+    """The lowest of the yield to maturity and the yields to every call date."""
+    schedule = [(5, 103), (7, 101.5), (9, 100)]
+    yields = [bond_model.get_yield_to_maturity(100, 0.06, 10, 106, 2)] + [
+        bond_model.get_yield_to_call(100, 0.06, 10, years, price, 106, 2)
+        for years, price in schedule
+    ]
+
+    # A premium bond is worst to a call, here the one in seven years.
+    assert bond_model.get_yield_to_worst(100, 0.06, 10, schedule, 106, 2) == min(yields)
+    assert min(yields) == yields[2]
+    assert bond_model.get_yield_to_worst(100, 0.06, 10, dict(schedule), 106, 2) == min(
+        yields
+    )
+
+    # A discount bond callable at par is worst to maturity.
+    assert bond_model.get_yield_to_worst(
+        100, 0.04, 10, [(5, 100)], 95, 2
+    ) == bond_model.get_yield_to_maturity(100, 0.04, 10, 95, 2)
+
+    # Calls that have passed or fall on or after maturity are skipped.
+    assert bond_model.get_yield_to_worst(
+        100, 0.06, 10, [(-1, 100), (0, 100), (10, 100), (12, 100)], 106, 2
+    ) == bond_model.get_yield_to_maturity(100, 0.06, 10, 106, 2)
+
+    # A yield that cannot be solved leaves the worst unknown.
+    assert np.isnan(bond_model.get_yield_to_worst(100, 0.05, 10, [(5, 100)], 1000, 2))

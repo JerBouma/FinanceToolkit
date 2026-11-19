@@ -543,3 +543,52 @@ def compound_into_shared_dates(returns: pd.DataFrame) -> pd.DataFrame:
     compounded = growth.groupby(group[within], sort=False).prod() - 1
 
     return compounded.set_axis(returns.index[shared])
+
+
+def get_paired_windows(
+    returns: pd.Series,
+    market_returns: pd.Series,
+    period: str,
+    rolling: int | None,
+):
+    """
+    Yields the returns of an asset and of the market within each period (or within the
+    last `rolling` periods), on the dates both have a return.
+
+    A date only one of the two traded on (a weekend of a cryptocurrency next to a stock
+    market index, or a holiday on one exchange) is compounded into the next shared date
+    (see `compound_into_shared_dates`), so each pair keeps the trading days it shares and
+    the other tickers of the Toolkit do not change it. The windows
+    run from the period in which the pair first spans `rolling` periods to the last period
+    of `returns`, so a period without shared returns yields empty arrays.
+
+    Args:
+        returns (pd.Series): The daily returns of the asset.
+        market_returns (pd.Series): The daily returns of the market (the system).
+        period (str): The period of each window: weekly, monthly, quarterly or yearly.
+        rolling (int | None): The number of periods in each window, None for one.
+
+    Yields:
+        tuple[pd.Period, np.ndarray, np.ndarray]: The last period of the window and the
+        returns of the asset and of the market within it.
+    """
+    aligned = compound_into_shared_dates(
+        pd.concat([returns, market_returns], axis=1, keys=["Asset", "Market"])
+    )
+
+    if aligned.empty:
+        return
+
+    periods = to_period_index(aligned.index).asfreq(PERIOD_TRANSLATION[period])
+    last_period = (
+        to_period_index(returns.index).asfreq(PERIOD_TRANSLATION[period]).max()
+    )
+    window = rolling if rolling else 1
+    asset = aligned["Asset"].to_numpy()
+    market = aligned["Market"].to_numpy()
+
+    for end in pd.period_range(
+        periods.min() + window - 1, max(periods.max(), last_period), freq=periods.freq
+    ):
+        rows = np.asarray((periods > end - window) & (periods <= end))
+        yield end, asset[rows], market[rows]

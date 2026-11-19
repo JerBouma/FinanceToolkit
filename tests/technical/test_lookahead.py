@@ -61,6 +61,11 @@ PER_SECURITY_INDICATORS = {
             close, 12, 26
         )
     ),
+    "get_percentage_volume_oscillator": (
+        lambda high, low, close, opening, volume: momentum.get_percentage_volume_oscillator(
+            volume, 12, 26, 9
+        )
+    ),
     "get_detrended_price_oscillator": (
         lambda high, low, close, opening, volume: momentum.get_detrended_price_oscillator(
             close, WINDOW
@@ -114,6 +119,17 @@ PER_SECURITY_INDICATORS = {
     ),
     "get_know_sure_thing": lambda high, low, close, opening, volume: momentum.get_know_sure_thing(
         close
+    ),
+    "get_stochastic_relative_strength_index": (
+        lambda high, low, close, opening, volume: momentum.get_stochastic_relative_strength_index(
+            close, WINDOW, WINDOW, 3
+        )
+    ),
+    "get_true_strength_index": lambda high, low, close, opening, volume: momentum.get_true_strength_index(
+        close, 25, 13, 7
+    ),
+    "get_coppock_curve": lambda high, low, close, opening, volume: momentum.get_coppock_curve(
+        close, 14, 11, 10
     ),
     "get_moving_average": lambda high, low, close, opening, volume: overlap.get_moving_average(
         close, WINDOW
@@ -181,8 +197,14 @@ PER_SECURITY_INDICATORS = {
     "get_average_true_range": lambda high, low, close, opening, volume: volatility.get_average_true_range(
         high, low, close, WINDOW
     ),
+    "get_mass_index": lambda high, low, close, opening, volume: volatility.get_mass_index(
+        high, low, 9, 25
+    ),
     "get_supertrend": lambda high, low, close, opening, volume: volatility.get_supertrend(
         high, low, close
+    ),
+    "get_chandelier_exit": lambda high, low, close, opening, volume: volatility.get_chandelier_exit(
+        high, low, close, 22, 3.0
     ),
     "get_keltner_channels": lambda high, low, close, opening, volume: volatility.get_keltner_channels(
         high, low, close, 20, 10, 2.0
@@ -193,6 +215,11 @@ PER_SECURITY_INDICATORS = {
     "get_bollinger_bands": lambda high, low, close, opening, volume: volatility.get_bollinger_bands(
         close, 20, 2
     ),
+    "get_bollinger_percent_b_and_bandwidth": (
+        lambda high, low, close, opening, volume: volatility.get_bollinger_percent_b_and_bandwidth(
+            close, 20, 2
+        )
+    ),
     "get_mcclellan_oscillator": lambda high, low, close, opening, volume: breadth.get_mcclellan_oscillator(
         close, 19, 39
     ),
@@ -200,6 +227,9 @@ PER_SECURITY_INDICATORS = {
         close
     ),
     "get_on_balance_volume": lambda high, low, close, opening, volume: breadth.get_on_balance_volume(
+        close, volume
+    ),
+    "get_price_volume_trend": lambda high, low, close, opening, volume: breadth.get_price_volume_trend(
         close, volume
     ),
     "get_accumulation_distribution_line": (

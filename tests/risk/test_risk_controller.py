@@ -345,6 +345,50 @@ def test_get_ulcer_index(recorder, risk_module):
     recorder.capture(risk_module.get_ulcer_index(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_pain_index(recorder, risk_module):
+    recorder.capture(risk_module.get_pain_index())
+    recorder.capture(risk_module.get_pain_index(period="quarterly"))
+    recorder.capture(risk_module.get_pain_index(period="monthly"))
+    recorder.capture(risk_module.get_pain_index(growth=True, lag=[1, 2]))
+
+
+def test_get_pain_index_is_the_pain_index_of_the_pain_ratio(
+    risk_module, performance_module
+):
+    from financetoolkit.performance import performance_controller  # noqa: PLC0415
+
+    pain_index = risk_module.get_pain_index(rounding=10)
+    # The Pain Ratio divides by the same function on the same daily returns within each year.  # noqa: E501
+    assert performance_controller.get_pain_index is risk_model.get_pain_index
+    returns = performance_module._get_column("yearly", "Return", within_period=True)
+    expected = risk_model.get_pain_index(returns).loc[
+        performance_module._start_date : performance_module._end_date
+    ]
+
+    # The Performance module keeps the Benchmark apart, the Risk module shows it as a column.  # noqa: E501
+    assert list(pain_index.columns) == [*expected.columns, "Benchmark"]
+    pd.testing.assert_frame_equal(
+        pain_index[expected.columns],
+        expected.round(10),
+        check_names=False,
+        check_freq=False,
+    )
+    benchmark = performance_module._get_column(
+        "yearly", "Return", within_period=True, benchmark=True
+    )
+    assert pain_index["Benchmark"].to_numpy() == pytest.approx(
+        risk_model.get_pain_index(benchmark.to_frame())
+        .iloc[:, 0]
+        .loc[performance_module._start_date : performance_module._end_date],
+        abs=1e-10,
+    )
+    assert (
+        (pain_index <= risk_module.get_ulcer_index(rolling=None, rounding=10))
+        .all()
+        .all()
+    )
+
+
 def test_get_skewness(recorder, risk_module):
     recorder.capture(risk_module.get_skewness())
     recorder.capture(risk_module.get_skewness(within_period=False))
@@ -1096,3 +1140,88 @@ def test_the_excess_volatility_of_a_stock_ignores_a_cryptocurrency_next_to_it(pe
     assert monthly.loc["2021-08", "SPY"] == pytest.approx(1.04 ** (32 / 365) - 1)
     assert monthly.loc["2021-07", "BTC"] == pytest.approx(1.04 ** (31 / 365) - 1)
     assert monthly.loc["2021-08", "BTC"] == pytest.approx(1.04 ** (31 / 365) - 1)
+
+
+def test_get_marginal_expected_shortfall(recorder, risk_module):
+    recorder.capture(risk_module.get_marginal_expected_shortfall())
+    recorder.capture(
+        risk_module.get_marginal_expected_shortfall(period="quarterly", rolling=4)
+    )
+
+    # The average return of AAPL on the 5% worst days of the benchmark in 2021.
+    returns = risk_module._historical_data["daily"]["Return"][["AAPL", "Benchmark"]]
+    year = returns[returns.index.year == 2021].dropna()  # noqa: PLR2004
+    tail = year["Benchmark"] <= np.percentile(year["Benchmark"], 5)
+    assert np.isclose(
+        risk_module.get_marginal_expected_shortfall(rounding=10).loc["2021", "AAPL"],
+        year.loc[tail, "AAPL"].mean(),
+    )
+
+
+def test_get_srisk(recorder, risk_module):
+    recorder.capture(risk_module.get_srisk())
+    recorder.capture(
+        risk_module.get_srisk(
+            ticker="AAPL", decline=0.3, capital_ratio=0.055, period="quarterly"
+        )
+    )
+
+    # SRISK of AAPL at the end of 2022 from the liabilities and shares of fiscal 2022 (which
+    # ended in September 2022) and the last close of 2022.
+    srisk = risk_module.get_srisk(rounding=10).loc["2022"]
+    liabilities, _, shares, _ = risk_module._capital_shortfall_function()
+    close = risk_module._get_prices("Close")["AAPL"]
+    close = close[close.index.year == 2022].dropna().iloc[-1]  # noqa: PLR2004
+    market_cap = close * shares.loc["AAPL", "2022"]
+    lrmes = 0.6 ** srisk[("Beta", "AAPL")] - 1
+    assert np.isclose(
+        srisk[("Total Liabilities", "AAPL")], liabilities.loc["AAPL", "2022"]
+    )
+    assert np.isclose(srisk[("Market Cap", "AAPL")], market_cap)
+    assert np.isclose(srisk[("LRMES", "AAPL")], lrmes)
+    assert np.isclose(
+        srisk[("SRISK", "AAPL")],
+        0.08 * liabilities.loc["AAPL", "2022"] - 0.92 * (1 + lrmes) * market_cap,
+    )
+
+
+def test_get_srisk_takes_a_fiscal_period_that_ends_on_a_weekend(risk_module):
+    # A fiscal quarter that ends on Saturday 31 December 2022, after the last trading day of
+    # the year, still belongs to 2022.
+    liabilities, liability_dates, shares, share_dates = (
+        risk_module._capital_shortfall_function()
+    )
+    weekend = liability_dates.copy()
+    weekend.loc["AAPL", "2022"] = pd.Timestamp("2022-12-31")
+    shifted = share_dates.copy()
+    shifted.loc["AAPL", "2022"] = pd.Timestamp("2022-12-31")
+    original = risk_module._capital_shortfall_function
+    risk_module._capital_shortfall_function = lambda: (
+        liabilities,
+        weekend,
+        shares,
+        shifted,
+    )
+    try:
+        srisk = risk_module.get_srisk(rounding=None).loc["2022"]
+    finally:
+        risk_module._capital_shortfall_function = original
+
+    assert srisk[("Total Liabilities", "AAPL")] == liabilities.loc["AAPL", "2022"]
+    close = risk_module._get_prices("Close")["AAPL"]
+    close = close[close.index.year == 2022].dropna().iloc[-1]  # noqa: PLR2004
+    assert np.isclose(srisk[("Market Cap", "AAPL")], close * shares.loc["AAPL", "2022"])
+
+
+def test_the_marginal_expected_shortfall_of_a_stock_ignores_a_cryptocurrency_next_to_it():
+    mixed = _weekend_risk()
+    alone = _weekend_risk(tickers=("SPY",))
+    mixed._tickers_source = ["BTC", "SPY", "Benchmark"]
+    alone._tickers_source = ["SPY", "Benchmark"]
+
+    pd.testing.assert_series_equal(
+        mixed.get_marginal_expected_shortfall(rounding=None)["SPY"],
+        alone.get_marginal_expected_shortfall(rounding=None)["SPY"],
+    )
+    # The cryptocurrency's weekend returns are compounded into the Monday of the market.
+    assert mixed.get_marginal_expected_shortfall(rounding=None)["BTC"].notna().all()

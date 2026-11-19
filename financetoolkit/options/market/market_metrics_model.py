@@ -411,40 +411,40 @@ def get_implied_move(
     )
 
 
-def get_model_free_variance(
+def get_model_free_strip(
     calls: pd.DataFrame,
     puts: pd.DataFrame,
     time_to_expiration: float,
     risk_free_rate: float,
-) -> tuple[float, float]:
+) -> tuple[pd.DataFrame, float]:
     """
-    The model-free implied variance of one expiry, as in the Cboe VIX methodology: the
-    forward price follows from put-call parity at the strike where call and put prices are
-    closest, and the variance is a weighted sum of out-of-the-money option prices,
-
-        σ² = (2/T) Σ (ΔK_i / K_i²) e^(RT) Q(K_i) - (1/T) (F/K_0 - 1)²,
-
-    with K_0 the first strike below the forward and Q the price of the out-of-the-money put
-    (below K_0) or call (above), averaged at K_0. Quotes stop after two consecutive strikes
-    without a bid, as in the methodology.
+    The strikes of one expiry that the Cboe VIX and SKEW methodologies use, and the forward
+    price. The forward price follows from put-call parity at the strike where call and put
+    prices are closest, F = K + e^(RT) (C - P). K_0 is the first strike at or below the
+    forward; from there the puts below and the calls above are added strike by strike
+    while they have a bid, stopping after two consecutive strikes without one.
 
     Args:
         calls (pd.DataFrame): The calls of one expiry, indexed by strike, with Bid and Ask.
         puts (pd.DataFrame): The puts of the same expiry.
         time_to_expiration (float): The time to expiration in years.
-        risk_free_rate (float): The risk free rate.
+        risk_free_rate (float): The continuously compounded risk free rate.
 
     Returns:
-        tuple[float, float]: The annualized variance and the forward price.
+        tuple[pd.DataFrame, float]: The Call Price and Put Price (see get_mid_prices) of the
+        strikes used, indexed by strike in ascending order, and the forward price. Without
+        a strip of puts and calls with a bid on both sides of K_0 the strikes are empty,
+        and without three strikes quoted on both sides the forward price is NaN as well.
     """
     call_prices = get_mid_prices(calls).groupby(level=0).mean()
     put_prices = get_mid_prices(puts).groupby(level=0).mean()
     call_bids = pd.to_numeric(calls["Bid"], errors="coerce").groupby(level=0).max()
     put_bids = pd.to_numeric(puts["Bid"], errors="coerce").groupby(level=0).max()
+    empty = pd.DataFrame(columns=["Call Price", "Put Price"], dtype=float)
 
     common = call_prices.dropna().index.intersection(put_prices.dropna().index)
     if len(common) < 3:  # noqa: PLR2004
-        return np.nan, np.nan
+        return empty, np.nan
 
     difference = (call_prices[common] - put_prices[common]).abs()
     parity_strike = float(difference.idxmin())
@@ -458,7 +458,7 @@ def get_model_free_variance(
     )
     below = strikes[strikes <= forward]
     if below.size == 0:
-        return np.nan, forward
+        return empty, float(forward)
     k0 = float(below.max())
 
     def selected(side_strikes: np.ndarray, bids: pd.Series) -> list[float]:
@@ -476,28 +476,123 @@ def get_model_free_variance(
 
     puts_used = selected(strikes[strikes < k0][::-1], put_bids)[::-1]
     calls_used = selected(strikes[strikes > k0], call_bids)
-    # Without a strip of bid options on both sides there is no variance to measure: K0
-    # alone gives only the (negative) correction term.
+    # Without a strip of bid options on both sides there is nothing to measure: K0 alone
+    # gives only the correction terms.
     if not puts_used or not calls_used:
-        return np.nan, float(forward)
+        return empty, float(forward)
 
-    # Puts below K0, calls above and the average of both at K0.
-    prices = np.array(
-        [put_prices.get(strike, np.nan) for strike in puts_used]
-        + [np.nanmean([put_prices.get(k0, np.nan), call_prices.get(k0, np.nan)])]
-        + [call_prices.get(strike, np.nan) for strike in calls_used],
-        dtype=float,
+    strikes_used = pd.Index(puts_used + [k0] + calls_used, name="Strike Price")
+    strip = pd.DataFrame(
+        {
+            "Call Price": call_prices.reindex(strikes_used),
+            "Put Price": put_prices.reindex(strikes_used),
+        },
+        index=strikes_used,
     )
+    return strip, float(forward)
 
-    # Both sides hold at least one strike, so there are always three or more.
-    strikes_used = np.array(puts_used + [k0] + calls_used)
-    spacing = np.empty_like(strikes_used)
-    spacing[1:-1] = (strikes_used[2:] - strikes_used[:-2]) / 2
-    spacing[0] = strikes_used[1] - strikes_used[0]
-    spacing[-1] = strikes_used[-1] - strikes_used[-2]
 
-    contributions = spacing / strikes_used**2 * growth * prices
-    variance = (2 / time_to_expiration) * float(np.nansum(contributions)) - (
+def get_out_of_the_money_prices(
+    strike_prices: np.ndarray,
+    call_prices: np.ndarray,
+    put_prices: np.ndarray,
+    forward_price: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """
+    The out-of-the-money option prices Q(K_i) and the strike intervals ΔK_i that discretise
+    the integrals over option prices of the Cboe VIX and SKEW methodologies:
+
+        - K_0 = the highest strike at or below the forward price
+        - Q(K_i) = the put price for K_i < K_0, the call price for K_i > K_0 and the average
+          of both at K_0
+        - ΔK_i = (K_(i+1) - K_(i-1)) / 2, and the distance to the neighbouring strike at the
+          lowest and highest strike
+
+    Strikes without a price for their side are left out before the intervals are taken, so
+    that their neighbours cover the gap.
+
+    Args:
+        strike_prices (np.ndarray): The strikes.
+        call_prices (np.ndarray): The call price at each strike, NaN where there is none.
+        put_prices (np.ndarray): The put price at each strike, NaN where there is none.
+        forward_price (float): The forward price of the underlying for the expiry.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray, float]: The strikes in ascending order, their
+        prices Q(K_i) and intervals ΔK_i, and K_0. The arrays are empty when fewer than three
+        strikes are priced or no strike lies at or below the forward price.
+    """
+    strikes = np.asarray(strike_prices, dtype=float)
+    order = np.argsort(strikes)
+    strikes = strikes[order]
+    calls = np.asarray(call_prices, dtype=float)[order]
+    puts = np.asarray(put_prices, dtype=float)[order]
+    nothing = (np.array([]), np.array([]), np.array([]), np.nan)
+
+    below = strikes[strikes <= forward_price]
+    if below.size == 0:
+        return nothing
+    k0 = float(below.max())
+
+    # At K0 the average of the put and the call, or the one of the two that has a price.
+    average = np.where(
+        np.isnan(puts), calls, np.where(np.isnan(calls), puts, (puts + calls) / 2)
+    )
+    prices = np.where(strikes < k0, puts, np.where(strikes == k0, average, calls))
+    priced = np.isfinite(prices)
+    strikes, prices = strikes[priced], prices[priced]
+    if strikes.size < 3:  # noqa: PLR2004
+        return nothing
+
+    spacing = np.empty_like(strikes)
+    spacing[1:-1] = (strikes[2:] - strikes[:-2]) / 2
+    spacing[0] = strikes[1] - strikes[0]
+    spacing[-1] = strikes[-1] - strikes[-2]
+    return strikes, prices, spacing, k0
+
+
+def get_model_free_variance(
+    calls: pd.DataFrame,
+    puts: pd.DataFrame,
+    time_to_expiration: float,
+    risk_free_rate: float,
+) -> tuple[float, float]:
+    """
+    The model-free implied variance of one expiry, as in the Cboe VIX methodology: a
+    weighted sum of out-of-the-money option prices,
+
+        σ² = (2/T) Σ (ΔK_i / K_i²) e^(RT) Q(K_i) - (1/T) (F/K_0 - 1)²,
+
+    with the forward price F, K_0 and the strikes from get_model_free_strip, and Q(K_i) and
+    ΔK_i from get_out_of_the_money_prices. R is the continuously compounded risk free rate.
+
+    Args:
+        calls (pd.DataFrame): The calls of one expiry, indexed by strike, with Bid and Ask.
+        puts (pd.DataFrame): The puts of the same expiry.
+        time_to_expiration (float): The time to expiration in years.
+        risk_free_rate (float): The continuously compounded risk free rate.
+
+    Returns:
+        tuple[float, float]: The annualized variance and the forward price.
+    """
+    strip, forward = get_model_free_strip(
+        calls, puts, time_to_expiration, risk_free_rate
+    )
+    if strip.empty:
+        return np.nan, forward
+
+    strikes, prices, spacing, k0 = get_out_of_the_money_prices(
+        strip.index.to_numpy(dtype=float),
+        strip["Call Price"].to_numpy(),
+        strip["Put Price"].to_numpy(),
+        forward,
+    )
+    if strikes.size == 0:
+        return np.nan, forward
+
+    growth = np.exp(risk_free_rate * time_to_expiration)
+    contributions = spacing / strikes**2 * growth * prices
+    variance = (2 / time_to_expiration) * float(contributions.sum()) - (
         1 / time_to_expiration
     ) * (forward / k0 - 1) ** 2
 
@@ -540,3 +635,223 @@ def get_constant_maturity_volatility(
     weight_next = (target_days - near_days) / (next_days - near_days)
     variance = (t1 * near_variance * weight_near + t2 * next_variance * weight_next) / t
     return float(np.sqrt(variance)) if variance > 0 else np.nan
+
+
+def get_risk_neutral_moments(
+    strike_prices: np.ndarray,
+    call_prices: np.ndarray,
+    put_prices: np.ndarray,
+    forward_price: float,
+    risk_free_rate: float,
+    time_to_expiration: float,
+) -> pd.Series:
+    """
+    The risk-neutral volatility, skewness and kurtosis of the log return up to an expiry,
+    from the prices of the quadratic, cubic and quartic contracts of Bakshi, Kapadia and
+    Madan (2003), each a strip of out-of-the-money options (Carr and Madan, 2001). With
+    R = ln(S_T / K_0), y_i = ln(K_i / K_0) and Q(K_i) and ΔK_i from
+    get_out_of_the_money_prices, the integrals over option prices are summed like the VIX:
+
+        - V = Σ 2 (1 - y_i) Q(K_i) ΔK_i / K_i²
+        - W = Σ (6 y_i - 3 y_i²) Q(K_i) ΔK_i / K_i²
+        - X = Σ (12 y_i² - 4 y_i³) Q(K_i) ΔK_i / K_i²
+        - μ = F / K_0 - 1 - e^(rT) V / 2 - e^(rT) W / 6 - e^(rT) X / 24
+        - Skewness = (e^(rT) W - 3 μ e^(rT) V + 2 μ³) / (e^(rT) V - μ²)^(3/2)
+        - Kurtosis = (e^(rT) X - 4 μ e^(rT) W + 6 e^(rT) μ² V - 3 μ⁴) / (e^(rT) V - μ²)²
+        - Volatility = sqrt((e^(rT) V - μ²) / T)
+
+    e^(rT) V, e^(rT) W and e^(rT) X are E[R²], E[R³] and E[R⁴] under the risk-neutral
+    measure, and μ = E[R] follows from the expansion of E[e^R] = F / K_0 up to the fourth
+    power, as in the paper. Bakshi, Kapadia and Madan expand around the spot price without
+    dividends, where F / S = e^(rT); expanding around K_0, the strike that separates the
+    puts from the calls, keeps the replication exact and takes in dividends through the
+    forward price. Skewness and kurtosis do not depend on that choice, since moments about
+    the mean are the same for every expansion point, and the expected log return is given
+    relative to the forward price, E[ln(S_T / F)] = μ - ln(F / K_0), which is -σ²T / 2 for
+    a lognormal price.
+
+    For more information, see the following papers:
+
+    - Bakshi, G., Kapadia, N. and Madan, D. (2003). "Stock Return Characteristics, Skew
+      Laws, and the Differential Pricing of Individual Equity Options." The Review of
+      Financial Studies, 16(1), 101-143.
+    - Carr, P. and Madan, D. (2001). "Optimal Positioning in Derivative Securities."
+      Quantitative Finance, 1(1), 19-37.
+
+    Args:
+        strike_prices (np.ndarray): The strikes.
+        call_prices (np.ndarray): The call price at each strike, NaN where there is none.
+        put_prices (np.ndarray): The put price at each strike, NaN where there is none.
+        forward_price (float): The forward price of the underlying for the expiry.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        time_to_expiration (float): The time to expiration in years.
+
+    Returns:
+        pd.Series: The Expected Log Return (E[ln(S_T / F)], over the time to expiration),
+        the annualized Volatility, the Skewness and the Kurtosis (3 for a normal
+        distribution) of the log return. NaN when fewer than three strikes are priced or the variance is not positive.
+    """
+    columns = ["Expected Log Return", "Volatility", "Skewness", "Kurtosis"]
+    strikes, prices, spacing, k0 = get_out_of_the_money_prices(
+        strike_prices, call_prices, put_prices, forward_price
+    )
+    if strikes.size == 0:
+        return pd.Series(dict.fromkeys(columns, np.nan))
+
+    growth = np.exp(risk_free_rate * time_to_expiration)
+    log_moneyness = np.log(strikes / k0)
+    weights = prices * spacing / strikes**2
+    # The second derivatives of R², R³ and R⁴ with respect to the price at strike K, times K².
+    quadratic = float(np.sum(2 * (1 - log_moneyness) * weights))
+    cubic = float(np.sum((6 * log_moneyness - 3 * log_moneyness**2) * weights))
+    quartic = float(np.sum((12 * log_moneyness**2 - 4 * log_moneyness**3) * weights))
+
+    mean = (
+        forward_price / k0
+        - 1
+        - growth * quadratic / 2
+        - growth * cubic / 6
+        - growth * quartic / 24
+    )
+    variance = growth * quadratic - mean**2
+    if not variance > 0:
+        return pd.Series(dict.fromkeys(columns, np.nan))
+
+    skewness = (
+        growth * cubic - 3 * mean * growth * quadratic + 2 * mean**3
+    ) / variance**1.5
+    kurtosis = (
+        growth * quartic
+        - 4 * mean * growth * cubic
+        + 6 * growth * mean**2 * quadratic
+        - 3 * mean**4
+    ) / variance**2
+
+    return pd.Series(
+        {
+            "Expected Log Return": mean - np.log(forward_price / k0),
+            "Volatility": float(np.sqrt(variance / time_to_expiration)),
+            "Skewness": skewness,
+            "Kurtosis": kurtosis,
+        }
+    )
+
+
+def get_cboe_skewness(
+    strike_prices: np.ndarray,
+    call_prices: np.ndarray,
+    put_prices: np.ndarray,
+    forward_price: float,
+    risk_free_rate: float,
+    time_to_expiration: float,
+) -> float:
+    """
+    The price of skewness S of one expiry as in the Cboe SKEW Index white paper (2010): the
+    risk-neutral skewness of the log return R = ln(S_T / F_0) from the prices P_1, P_2 and
+    P_3 of R, R² and R³, each a strip of out-of-the-money options. With y_i = ln(K_i / F_0),
+    Q(K_i) and ΔK_i from get_out_of_the_money_prices and K_0 the first strike at or below
+    the forward price F_0:
+
+        - P_1 = -e^(rT) Σ Q(K_i) ΔK_i / K_i² + ε_1
+        - P_2 = e^(rT) Σ 2 (1 - y_i) Q(K_i) ΔK_i / K_i² + ε_2
+        - P_3 = e^(rT) Σ 3 (2 y_i - y_i²) Q(K_i) ΔK_i / K_i² + ε_3
+        - ε_1 = -(1 + ln(F_0 / K_0) - F_0 / K_0)
+        - ε_2 = 2 ln(K_0 / F_0) (F_0 / K_0 - 1) + ln(K_0 / F_0)²
+        - ε_3 = 3 ln(K_0 / F_0)² (ln(K_0 / F_0) / 3 - 1 + F_0 / K_0)
+        - S = (P_3 - 3 P_1 P_2 + 2 P_1³) / (P_2 - P_1²)^(3/2)
+
+    The ε terms correct for the expansion around F_0 while the puts and calls are split at
+    K_0: ε_n = f(K_0) + f'(K_0) (F_0 - K_0) for the payoff f(S) = ln(S / F_0)^n. The white
+    paper prints ε_2 with ln(K_0 / F_0)² / 2, half of the f(K_0) = ln(K_0 / F_0)² of that
+    expansion; with the full term the skewness does not depend on whether the expansion is
+    centred on F_0 or K_0. The difference is negligible for index options with strikes close
+    together (below 10⁻⁴ of P_2), but reaches several percent of P_2 for a stock whose
+    forward price lies far from the nearest strike. Unlike the mean of Bakshi, Kapadia and
+    Madan (2003), P_1 is the exact price of the log contract, without a truncated expansion.
+
+    For more information, see the following papers:
+
+    - Cboe Global Markets (2010). "The Cboe SKEW Index - SKEW." White paper.
+    - Bakshi, G., Kapadia, N. and Madan, D. (2003). "Stock Return Characteristics, Skew
+      Laws, and the Differential Pricing of Individual Equity Options." The Review of
+      Financial Studies, 16(1), 101-143.
+
+    Args:
+        strike_prices (np.ndarray): The strikes.
+        call_prices (np.ndarray): The call price at each strike, NaN where there is none.
+        put_prices (np.ndarray): The put price at each strike, NaN where there is none.
+        forward_price (float): The forward price F_0 of the underlying for the expiry.
+        risk_free_rate (float): The continuously compounded risk free rate.
+        time_to_expiration (float): The time to expiration in years.
+
+    Returns:
+        float: The skewness S, NaN when fewer than three strikes are priced or the variance
+        is not positive.
+    """
+    strikes, prices, spacing, k0 = get_out_of_the_money_prices(
+        strike_prices, call_prices, put_prices, forward_price
+    )
+    if strikes.size == 0:
+        return np.nan
+
+    growth = np.exp(risk_free_rate * time_to_expiration)
+    log_moneyness = np.log(strikes / forward_price)
+    weights = prices * spacing / strikes**2
+    # ln(K_0 / F_0) and F_0 / K_0 of the correction terms.
+    log_k0 = np.log(k0 / forward_price)
+    ratio = forward_price / k0
+    epsilon_1 = -(1 - log_k0 - ratio)
+    epsilon_2 = 2 * log_k0 * (ratio - 1) + log_k0**2
+    epsilon_3 = 3 * log_k0**2 * (log_k0 / 3 - 1 + ratio)
+
+    first = -growth * float(np.sum(weights)) + epsilon_1
+    second = growth * float(np.sum(2 * (1 - log_moneyness) * weights)) + epsilon_2
+    third = (
+        growth * float(np.sum(3 * (2 * log_moneyness - log_moneyness**2) * weights))
+        + epsilon_3
+    )
+
+    variance = second - first**2
+    if not variance > 0:
+        return np.nan
+    return float((third - 3 * first * second + 2 * first**3) / variance**1.5)
+
+
+def get_skew_index(
+    near_skewness: float,
+    near_days: float,
+    next_skewness: float,
+    next_days: float,
+    target_days: int = 30,
+) -> tuple[float, float]:
+    """
+    Interpolate the skewness of two expiries to a constant maturity and turn it into an
+    index as the Cboe does for the SKEW Index:
+
+        - w = (T_next - T_target) / (T_next - T_near)
+        - S = w S_near + (1 - w) S_next
+        - SKEW = 100 - 10 S
+
+    Unlike the variance of the VIX, the skewness is interpolated linearly in time. A target
+    outside the two expiries is extrapolated with the same weights. A SKEW of 100 means a
+    symmetric distribution of log returns; equity indices usually lie between 110 and 150.
+
+    Args:
+        near_skewness (float): The skewness S of the near expiry.
+        near_days (float): The days to the near expiry.
+        next_skewness (float): The skewness S of the next expiry.
+        next_days (float): The days to the next expiry.
+        target_days (int, optional): The constant maturity in days. Defaults to 30.
+
+    Returns:
+        tuple[float, float]: The skewness at the constant maturity and the SKEW index. NaN
+        when either expiry has no skewness.
+    """
+    if not (np.isfinite(near_skewness) and np.isfinite(next_skewness)):
+        return np.nan, np.nan
+    if next_days == near_days:
+        skewness = float(near_skewness)
+    else:
+        weight = (next_days - target_days) / (next_days - near_days)
+        skewness = float(weight * near_skewness + (1 - weight) * next_skewness)
+    return skewness, 100 - 10 * skewness

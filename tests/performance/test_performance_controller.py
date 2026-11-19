@@ -268,6 +268,33 @@ def test_get_ulcer_performance_index(recorder, performance_module):
     )
 
 
+def test_get_safety_first_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_safety_first_ratio())
+    recorder.capture(performance_module.get_safety_first_ratio(threshold=0.02))
+    recorder.capture(performance_module.get_safety_first_ratio(period="quarterly"))
+    recorder.capture(performance_module.get_safety_first_ratio(growth=True))
+    recorder.capture(
+        performance_module.get_safety_first_ratio(
+            period="monthly", rolling=6, threshold=0.02
+        )
+    )
+
+
+def test_get_upside_potential_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_upside_potential_ratio())
+    recorder.capture(performance_module.get_upside_potential_ratio(period="quarterly"))
+    recorder.capture(performance_module.get_upside_potential_ratio(growth=True))
+    recorder.capture(
+        performance_module.get_upside_potential_ratio(period="monthly", rolling=6)
+    )
+
+
+def test_get_pain_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_pain_ratio())
+    recorder.capture(performance_module.get_pain_ratio(period="quarterly"))
+    recorder.capture(performance_module.get_pain_ratio(growth=True, lag=[1, 2]))
+
+
 def test_get_m2_ratio(recorder, performance_module):
     recorder.capture(performance_module.get_m2_ratio())
     recorder.capture(performance_module.get_m2_ratio(period="quarterly"))
@@ -689,6 +716,8 @@ def test_a_constant_price_gives_nan_instead_of_dropping_other_tickers(
         "get_sortino_ratio",
         "get_omega_ratio",
         "get_gain_to_pain_ratio",
+        "get_upside_potential_ratio",
+        "get_pain_ratio",
     ],
 )
 def test_weeks_without_a_drawdown_or_a_loss_are_nan_not_infinite(
@@ -1137,6 +1166,8 @@ def test_the_rolling_measures_of_a_stock_ignore_a_cryptocurrency_next_to_it(
         "get_m2_ratio",
         "get_appraisal_ratio",
         "get_minimum_track_record_length",
+        "get_safety_first_ratio",
+        "get_upside_potential_ratio",
     ):
         pd.testing.assert_series_equal(
             spy(getattr(mixed, name)(period=period, rolling=rolling)),
@@ -1179,7 +1210,14 @@ def test_the_excess_return_of_a_stock_ignores_a_cryptocurrency_next_to_it(period
         pd.testing.assert_series_equal(
             result["SPY"].dropna(), expected["SPY"].dropna(), rtol=1e-12
         )
-    for name in ("get_sortino_ratio", "get_burke_ratio", "get_starr_ratio"):
+    for name in (
+        "get_sortino_ratio",
+        "get_burke_ratio",
+        "get_starr_ratio",
+        "get_safety_first_ratio",
+        "get_upside_potential_ratio",
+        "get_pain_ratio",
+    ):
         pd.testing.assert_series_equal(
             getattr(mixed, name)(period=period)["SPY"].dropna(),
             getattr(alone, name)(period=period)["SPY"].dropna(),
@@ -1264,4 +1302,63 @@ def test_the_rolling_measures_of_a_ticker_ignore_a_later_listing_before_it():
     pd.testing.assert_frame_equal(
         m2_ratio,
         earlier_first.get_m2_ratio(period="monthly", rolling=12)[m2_ratio.columns],
+    )
+
+
+def test_get_safety_first_ratio_compounds_the_threshold_per_return(performance_module):
+    result = performance_module.get_safety_first_ratio(threshold=0.02, rounding=10)
+    returns = _daily_returns_in(performance_module, "AAPL", "2021").dropna()
+
+    # Roy (1952) on the daily returns of the year, with the annual threshold compounded
+    # down to a trading day.
+    threshold = 1.02 ** (1 / 252) - 1
+    assert result.loc["2021", "AAPL"] == pytest.approx(
+        (returns.mean() - threshold) / returns.std(ddof=1), abs=1e-9
+    )
+
+
+def test_get_safety_first_ratio_compounds_the_threshold_per_calendar_day():
+    performance = _weekend_performance()
+    result = performance.get_safety_first_ratio(threshold=0.05)
+    returns = performance._get_column("yearly", "Return", True)["BTC"].loc["2022"]
+    returns = returns.dropna()
+
+    assert result.loc["2022", "BTC"] == pytest.approx(
+        (returns.mean() - (1.05 ** (1 / 365) - 1)) / returns.std(ddof=1), rel=1e-9
+    )
+
+
+def test_get_upside_potential_ratio_divides_the_gains_by_the_downside_deviation(
+    performance_module,
+):
+    result = performance_module.get_upside_potential_ratio(rounding=10)
+    within = performance_module._get_column(
+        "yearly", "Excess Return", within_period=True
+    )
+    excess = within.loc["2022", "MSFT"].dropna().to_numpy()
+
+    # PerformanceAnalytics' UpsidePotentialRatio(method="full") with the risk-free rate
+    # as the MAR: both partial moments over every observation.
+    upside_potential = excess[excess > 0].sum() / len(excess)
+    downside_deviation = np.sqrt((excess[excess < 0] ** 2).sum() / len(excess))
+    assert result.loc["2022", "MSFT"] == pytest.approx(
+        upside_potential / downside_deviation, abs=1e-9
+    )
+
+
+def test_get_pain_ratio_divides_the_excess_return_by_the_mean_drawdown(
+    performance_module,
+):
+    result = performance_module.get_pain_ratio(rounding=10)
+    drawdowns = _drawdowns(
+        _daily_returns_in(performance_module, "AAPL", "2021").dropna()
+    )
+    excess_return = (
+        _year_return(performance_module, "AAPL", "2021")
+        - performance_module._risk_free_rate_data["yearly"].loc["2021", "AAPL"]
+    )
+
+    # Bacon (2013): the Pain Index is the mean absolute drawdown over every day.
+    assert result.loc["2021", "AAPL"] == pytest.approx(
+        excess_return / drawdowns.abs().mean(), abs=1e-9
     )

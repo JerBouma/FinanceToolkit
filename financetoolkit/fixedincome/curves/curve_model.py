@@ -87,9 +87,9 @@ def nelson_siegel_svensson_yield(
     """
     The yield of the Nelson-Siegel-Svensson model at the given maturities:
 
-        y(m) = β0 + β1 (1 - e^(-m/τ1)) / (m/τ1)
-               + β2 [(1 - e^(-m/τ1)) / (m/τ1) - e^(-m/τ1)]
-               + β3 [(1 - e^(-m/τ2)) / (m/τ2) - e^(-m/τ2)]
+        y(m) = β0 + β1 (1 - e^(-m/τ1)) / (m/τ1) +
+               β2 [(1 - e^(-m/τ1)) / (m/τ1) - e^(-m/τ1)] +
+               β3 [(1 - e^(-m/τ2)) / (m/τ2) - e^(-m/τ2)]
 
     Args:
         maturities (np.ndarray | float): The maturities in years.

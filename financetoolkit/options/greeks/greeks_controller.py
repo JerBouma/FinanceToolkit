@@ -1052,10 +1052,10 @@ class GreeksOptions:
 
         - d1 = (ln(S / K) + (r — q + (σ^2) / 2) * t) / (σ * sqrt(t))
         - d2 = d1 — σ * sqrt(t)
-        - Call Theta = [—e^(—q * t) * (S * N'(d1) * σ) / (2 * sqrt(t)) — r * K * e^(—r * t) * N(d2)
-        + q * S * e^(—q * t) * N(d1)] / 365
-        - Put Theta = [—e^(—q * t) * (S * N'(d1) * σ) / (2 * sqrt(t)) + r * K * e^(—r * t) * N(—d2)
-        — q * S * e^(—q * t) * N(—d1)] / 365
+        - Call Theta = [—e^(—q * t) * (S * N'(d1) * σ) / (2 * sqrt(t)) — r * K * e^(—r * t) * N(d2) +
+          q * S * e^(—q * t) * N(d1)] / 365
+        - Put Theta = [—e^(—q * t) * (S * N'(d1) * σ) / (2 * sqrt(t)) + r * K * e^(—r * t) * N(—d2) —
+          q * S * e^(—q * t) * N(—d1)] / 365
 
         Where S is the stock price, K is the strike price, r is the risk free rate, q is the dividend yield, σ is the
         volatility, t is the time to expiration, N'(d1) is the standard normal probability density at d1 and N(d2) is

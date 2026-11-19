@@ -652,9 +652,9 @@ def get_cash_based_operating_profitability(
     The formula is as follows:
 
         Cash-Based Operating Profitability = (Revenue - Cost of Goods Sold - Selling,
-            General and Administrative Expenses (without research and development)
-            - Δ Receivables - Δ Inventory - Δ Prepaids + Δ Deferred Revenue
-            + Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total Assets
+            General and Administrative Expenses (without research and development) -
+            Δ Receivables - Δ Inventory - Δ Prepaids + Δ Deferred Revenue +
+            Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total Assets
 
     Research and development is not deducted, as the paper adds it back (XSGA - XRD in
     Compustat): it is an investment rather than an expense of the period. The changes

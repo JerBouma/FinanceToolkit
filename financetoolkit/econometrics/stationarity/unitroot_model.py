@@ -282,12 +282,12 @@ def get_phillips_perron_test(
     - s = sqrt(SUM(u_hat_t^2) / (n - k))    (degrees-of-freedom corrected residual
     standard error, with `k` the number of estimated coefficients)
     - lambda^2 = Newey-West long-run variance of u_hat_t, `lags` truncation lag
-    - Z_t = sqrt(gamma_0 / lambda^2) * t_rho
-            - (lambda^2 - gamma_0) / (2 * sqrt(lambda^2) * s) * (n * se(rho_hat))
+    - Z_t = sqrt(gamma_0 / lambda^2) * t_rho -
+      (lambda^2 - gamma_0) / (2 * sqrt(lambda^2) * s) * (n * se(rho_hat))
 
-    This "Z_t" variant (as opposed to the "Z_rho" variant, which corrects `n * (rho_hat
-    - 1)` directly rather than the t-statistic) is implemented here because it is
-    asymptotically pivotal to the same Dickey-Fuller tau distribution as the ADF
+    This "Z_t" variant (as opposed to the "Z_rho" variant, which corrects
+    `n * (rho_hat - 1)` directly rather than the t-statistic) is implemented here because it
+    is asymptotically pivotal to the same Dickey-Fuller tau distribution as the ADF
     t-statistic, so the same MacKinnon response surfaces apply: the finite-sample
     critical values for `n` observations of MacKinnon (2010) and the approximate p-value
     of MacKinnon (1994), via `statsmodels.tsa.adfvalues.mackinnoncrit` and `mackinnonp`.

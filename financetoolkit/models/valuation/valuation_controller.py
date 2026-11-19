@@ -3302,8 +3302,8 @@ class ValuationModels:
             - Normalized Operating Income = Average Operating Margin * Latest Revenue
             - NOPAT = Normalized Operating Income * (1 - Average Tax Rate)
             - Earnings Power Value = NOPAT / WACC
-            - EPV per Share = (EPV + Cash + Short Term Investments - Total Debt - Minority Interest
-              - Preferred Stock) / Shares Outstanding
+            - EPV per Share = (EPV + Cash + Short Term Investments - Total Debt - Minority Interest -
+              Preferred Stock) / Shares Outstanding
 
         A share price well above the EPV per share means the market pays for growth, which
         only adds value when the company earns more than its cost of capital on it.

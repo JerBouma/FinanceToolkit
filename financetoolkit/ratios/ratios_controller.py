@@ -712,7 +712,7 @@ class Ratios:
         | Net Current Asset Value     | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 | -1.55043e+11 | -1.37551e+11 |
         | EV-to-Free-Cash-Flow        | 27.4513      | 22.7925      | 27.8121      | 32.7525      | 39.3935      |
         | Buyback Yield               |  0.0343      |  0.0364      |  0.0286      |  0.0271      |  0.0237      |
-        | Shareholder Yield           |  0.0391      |  0.0434      |  0.0336      |  0.031       |  0.0275      |
+        | Shareholder Yield           |  0.04        |  0.0424      |  0.0341      |  0.0314      |  0.0277      |
         | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |  9.7119e+10  |  8.5904e+10  |
         """
         self._load_statements()
@@ -8360,8 +8360,8 @@ class Ratios:
         The formula is as follows:
 
         - Cash-Based Operating Profitability = (Revenue - Cost of Goods Sold - Selling,
-          General and Administrative Expenses - Δ Receivables - Δ Inventory - Δ Prepaids
-          + Δ Deferred Revenue + Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total
+          General and Administrative Expenses - Δ Receivables - Δ Inventory - Δ Prepaids +
+          Δ Deferred Revenue + Δ Accounts Payable + Δ Accrued Expenses) / Beginning Total
           Assets
 
         The selling, general and administrative expenses are without research and
@@ -11981,14 +11981,14 @@ class Ratios:
         | Revenue per Share           |  21.691       |  24.1536      |  24.2393      |  25.3785      | 27.7354      |
         | Price-to-Earnings           |  26.1702      |  24.6074      |  27.9114      |  37.4436      | 34.2211      |
         | Price-to-Earnings-Growth    |   0.3665      |   2.7675      |  81.8253      | -45.4836      |  1.507       |
-        | Dividend-Adjusted PEG       |   0.364       |   2.5654      |  33.4453      | -87.5062      |  1.4823      |
+        | Dividend-Adjusted PEG       |   0.3636      |   2.593       |  31.3561      | -95.2735      |  1.481       |
         | Book Value per Share        |   3.7409      |   3.1038      |   3.9302      |   3.6961      |  4.914       |
         | Price-to-Book               |  39.274       |  48.4665      |  43.563       |  61.6297      | 51.9862      |
         | Interest Debt per Share     |   8.2519      |   8.2943      |   8.0862      |   7.727       |  7.4895      |
         | CAPEX per Share             |  -0.6573      |  -0.6559      |  -0.6931      |  -0.6131      | -0.8474      |
         | Earnings Yield              |   0.0382      |   0.0406      |   0.0358      |   0.0267      |  0.0292      |
         | Dividend Payout Ratio       |   0.1528      |   0.1487      |   0.1549      |   0.1625      |  0.1377      |
-        | Dividend Yield              |   0.0049      |   0.007       |   0.0049      |   0.004       |  0.0038      |
+        | Dividend Yield              |   0.0058      |   0.006       |   0.0055      |   0.0043      |  0.004       |
         | Weighted Dividend Yield     |   0.0058      |   0.006       |   0.0055      |   0.0043      |  0.004       |
         | Price-to-Cash-Flow          |  23.8162      |  20.1054      |  24.4906      |  29.6803      | 34.3831      |
         | Price-to-Free-Cash-Flow     |  26.6564      |  22.0372      |  27.1858      |  32.2572      | 38.8095      |
@@ -12003,7 +12003,7 @@ class Ratios:
         | Net Current Asset Value     |  -1.53076e+11 |  -1.66678e+11 |  -1.46871e+11 |  -1.55043e+11 | -1.37551e+11 |
         | EV-to-Free-Cash-Flow        |  27.4513      |  22.7925      |  27.8121      |  32.7525      | 39.3935      |
         | Buyback Yield               |   0.0343      |   0.0364      |   0.0286      |   0.0271      |  0.0237      |
-        | Shareholder Yield           |   0.0391      |   0.0434      |   0.0336      |   0.031       |  0.0275      |
+        | Shareholder Yield           |   0.04        |   0.0424      |   0.0341      |   0.0314      |  0.0277      |
         | SBC-Adjusted Free Cash Flow |   8.5047e+10  |   1.02405e+11 |   8.8751e+10  |   9.7119e+10  |  8.5904e+10  |
         | Free Cash Flow Payout Ratio |   0.1556      |   0.1332      |   0.1509      |   0.14        |  0.1561      |
         | EV-to-Invested-Capital      |  18.6291      |  18.8365      |  22.2424      |  32.1523      | 29.6073      |
@@ -12827,8 +12827,8 @@ class Ratios:
 
         |      |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:-----|-------:|-------:|-------:|-------:|-------:|
-        | ADP  | 4.0715 | 1.7437 | 1.379  | 2.0392 | 2.5487 |
-        | COST | 1.5656 | 2.3297 | 3.6227 | 3.0793 | 4.9284 |
+        | ADP  | 3.9205 | 1.7338 | 1.3813 | 1.9893 | 2.6594 |
+        | COST | 1.434  | 2.3471 | 4.5521 | 2.8098 | 4.9592 |
         | MA   | 1.0825 | 1.9604 | 2.2175 | 2.1234 | 1.7727 |
         """
         # The growth and the P/E of the PEG ratio: on quarterly data trailing twelve month
@@ -13829,9 +13829,16 @@ class Ratios:
 
         - Dividend Yield = Dividends per Share / Share Price
 
-        The dividends per share are those paid over a year: the trailing four quarters with
-        quarterly data, each year with annual data and, with show_daily, the 365 calendar
-        days up to each day. The share price is the close at the end of the period (or day).
+        The dividends per share are those paid over a year: each fiscal year with annual data,
+        the trailing four fiscal quarters with quarterly data and, with show_daily, the 365
+        calendar days up to each day. The share price is the close on the last trading day of
+        the fiscal period (or the day), the same close as the price-to-earnings ratio of that
+        period, and the year of dividends ends on that same day (the filing day with
+        point_in_time, so no dividend after the price date is counted). So for a fiscal year ending in June the column 2024 holds the dividends paid
+        from July 2023 through June 2024 against the close of June 2024. A period outside the
+        financial statements uses the calendar period of its label, and a period that has not
+        ended yet the year of dividends up to the last close, against that close. The dividends are FinancialModelingPrep's
+        split-adjusted dividends on their ex-dividend dates.
 
         Also known as: annual dividend yield, income yield.
 
@@ -13889,9 +13896,9 @@ class Ratios:
 
         |     |   2021 |   2022 |   2023 |   2024 |   2025 |
         |:----|-------:|-------:|-------:|-------:|-------:|
-        | JNJ | 0.0245 | 0.0252 | 0.03   | 0.034  | 0.0248 |
+        | JNJ | 0.0245 | 0.0252 | 0.03   | 0.0339 | 0.0248 |
         | KO  | 0.0284 | 0.0277 | 0.0312 | 0.0312 | 0.0292 |
-        | PEP | 0.0245 | 0.025  | 0.0291 | 0.0351 | 0.0392 |
+        | PEP | 0.0245 | 0.025  | 0.0291 | 0.0351 | 0.0391 |
         """
         # A dividend yield compares the price with a year of dividends, so quarterly data defaults
         # to the trailing twelve months.
@@ -13923,48 +13930,102 @@ class Ratios:
             ] = np.nan
             dividends.index = daily_dividends.index
         else:
-            share_prices = self._historical_data.loc[:, "Close"][
-                self._tickers_without_portfolio
-            ].T
+            periods = pd.PeriodIndex(self._historical_data.index)
+
+            # The close on the day every price-based period ratio takes: the end of each
+            # ticker's fiscal period, so the yield covers the same months as the statements
+            # and the price-to-earnings ratio of that column.
+            share_prices = self._get_share_prices(str(periods[0]), str(periods[-1]))
             periods = pd.PeriodIndex(share_prices.columns)
 
-            # The dividends of each period are summed from the daily prices, which also cover
-            # the days before the start date, so the period the start date falls in is complete.
             daily_dates = (
                 self._daily_historical_data.index.to_timestamp()
                 if isinstance(self._daily_historical_data.index, pd.PeriodIndex)
                 else pd.DatetimeIndex(self._daily_historical_data.index)
-            )
-            daily_dividends = (
-                self._daily_historical_data["Dividends"]
-                .reindex(columns=self._tickers_without_portfolio)
-                .set_axis(daily_dates)
-            )
-            dividends = self._sum_trailing(
-                daily_dividends.groupby(daily_dates.to_period(periods.freq))
-                .sum()
-                .reindex(periods)
-                .T,
-                trailing,
-            )
+            ).normalize()
+            daily = self._daily_historical_data.set_axis(daily_dates)
 
-            # A window that starts before the first price of a ticker misses the dividends paid
-            # before it, so it is NaN rather than the yield of the dividends seen (often 0).
-            first_prices = (
-                self._daily_historical_data["Close"]
+            # The dividends paid up to each day, so that the dividends of a window are the
+            # difference between its end and its start. The daily prices also cover the year
+            # before the start date, so the window of the first period is complete.
+            paid_to_date = (
+                daily["Dividends"]
                 .reindex(columns=self._tickers_without_portfolio)
-                .set_axis(daily_dates)
-                .apply(lambda close: close.first_valid_index())
+                .fillna(0)
+                .cumsum()
             )
-            window_starts = (periods - ((trailing or 1) - 1)).start_time
+            closes = daily["Close"].reindex(columns=self._tickers_without_portfolio)
+            first_prices = closes.apply(lambda close: close.first_valid_index())
+            last_prices = closes.apply(lambda close: close.last_valid_index())
 
-            for ticker in dividends.index:
+            label_ends = pd.Series(
+                periods.to_timestamp(how="end").normalize(), index=periods
+            )
+            period_end_dates = self._period_end_dates
+            fiscal_ends = (
+                pd.DataFrame(index=share_prices.index, columns=periods)
+                if period_end_dates is None or period_end_dates.empty
+                else period_end_dates.reindex(index=share_prices.index, columns=periods)
+            ).apply(lambda dates: pd.to_datetime(dates).dt.normalize())
+
+            # The dividends of a year: one fiscal year, or the trailing periods (four fiscal
+            # quarters by default with quarterly data).
+            window = trailing or 1
+            window_months = (3 if self._quarterly else 12) * window
+
+            dividends = pd.DataFrame(np.nan, index=share_prices.index, columns=periods)
+
+            for ticker in share_prices.index:
                 first_price = first_prices.get(ticker)
 
                 if first_price is None or pd.isna(first_price):
-                    dividends.loc[ticker] = np.nan
-                else:
-                    dividends.loc[ticker, window_starts < first_price] = np.nan
+                    continue
+
+                # Each window runs from the day after the end of the fiscal period `window`
+                # periods earlier up to and including the end of its own, so consecutive
+                # windows hold every dividend once, also for 52-53 week fiscal years. Where
+                # either end is unknown (a period before or after the statements) the window
+                # ends with the calendar period of the label, like its price, and starts
+                # `window_months` before it. A period that has not ended yet is priced at the
+                # last close, so its window is the year up to that close rather than the
+                # part of the period so far, which would understate the yield.
+                ends = fiscal_ends.loc[ticker].fillna(label_ends)
+                unfinished = ends > last_prices[ticker]
+                ends = ends.mask(unfinished, last_prices[ticker])
+                offset_starts = pd.Series(
+                    [
+                        end
+                        - pd.DateOffset(months=window_months)
+                        + (
+                            pd.offsets.MonthEnd(0)
+                            if end.is_month_end
+                            else pd.DateOffset()
+                        )
+                        for end in ends
+                    ],
+                    index=periods,
+                )
+                previous_ends = fiscal_ends.loc[ticker].shift(window)
+                fiscal = (
+                    ~unfinished
+                    & fiscal_ends.loc[ticker].notna()
+                    & previous_ends.notna()
+                    & (previous_ends < ends)
+                )
+                starts = previous_ends.where(fiscal, offset_starts)
+
+                cumulative = paid_to_date[ticker]
+                dividends.loc[ticker] = (
+                    cumulative.asof(pd.DatetimeIndex(ends)).to_numpy()
+                    - cumulative.asof(pd.DatetimeIndex(starts)).to_numpy()
+                )
+
+                # A window that starts before the first price of a ticker misses the
+                # dividends paid before it, so it is NaN rather than the yield of the
+                # dividends seen (often 0).
+                dividends.loc[
+                    ticker, (starts + pd.Timedelta(days=1) < first_price).to_numpy()
+                ] = np.nan
 
         dividend_yield = valuation_model.get_dividend_yield(dividends, share_prices)
 
@@ -14807,8 +14868,8 @@ class Ratios:
 
         The formula is as follows:
 
-        - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity
-            — (Cash and Cash Equivalents + Short Term Investments)
+        - Enterprise Value = Market Capitalization + Total Debt + Minority Interest + Preferred Equity —
+          (Cash and Cash Equivalents + Short Term Investments)
 
         Enterprise value is the price of the whole business, equity and debt together,
         which makes it the right numerator for multiples of operating results such as EV
@@ -15736,9 +15797,9 @@ class Ratios:
         - Net Current Asset Value = Total Current Assets — Total Liabilities
 
         Also known as: NCAV. Note that NCAV is related to, but distinct from, the Graham Number
-        (`sqrt(22.5 * Earnings per Share * Book Value per Share)`, see `Toolkit.models.get_graham_number`)
-        — both are Benjamin Graham value-investing metrics, but NCAV is a liquidation-value estimate
-        while the Graham Number is a fair-value price estimate based on earnings and book value.
+        (`sqrt(22.5 * Earnings per Share * Book Value per Share)`, see `Toolkit.models.get_graham_number`) —
+        both are Benjamin Graham value-investing metrics, but NCAV is a liquidation-value estimate while
+        the Graham Number is a fair-value price estimate based on earnings and book value.
 
         Args:
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
@@ -16252,8 +16313,8 @@ class Ratios:
 
         |     |   2021 |   2022 |   2023 |   2024 |
         |:----|-------:|-------:|-------:|-------:|
-        | HD  | 0.0532 | 0.0439 | 0.0455 | 0.0238 |
-        | LOW | 0.09   | 0.1222 | 0.0672 | 0.0457 |
+        | HD  | 0.0553 | 0.0438 | 0.045  | 0.0225 |
+        | LOW | 0.092  | 0.1219 | 0.0677 | 0.045  |
         """
         # Both yields default to the trailing twelve months on quarterly data.
         trailing = self._get_valuation_trailing(trailing)
@@ -16908,8 +16969,8 @@ class Ratios:
 
         The formula is as follows:
 
-        - Composite Equity Issuance = ln(Market Cap / Market Cap Five Years Earlier)
-          - ln(Total Return over the Five Years)
+        - Composite Equity Issuance = ln(Market Cap / Market Cap Five Years Earlier) -
+          ln(Total Return over the Five Years)
 
         The total return is the log change in the price adjusted for dividends and splits,
         so a company that pays dividends without issuing shares has a negative value. The

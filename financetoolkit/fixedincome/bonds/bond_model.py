@@ -233,8 +233,8 @@ def get_bond_price(
 
     The formula is as follows:
 
-        Dirty Price = SUM_(i=1)^(n) [ (Coupon Rate * Par Value / m) / (1 + y / m)^(t_i) ]
-                      + Par Value / (1 + y / m)^(t_n)
+        Dirty Price = SUM_(i=1)^(n) [ (Coupon Rate * Par Value / m) / (1 + y / m)^(t_i) ] +
+                      Par Value / (1 + y / m)^(t_n)
 
         Price = Dirty Price - Coupon Rate * Par Value / m * a
 
@@ -796,9 +796,9 @@ def get_z_spread(
 
     The formula to solve for the Z-spread (Z) is as follows:
 
-        Bond Price = SUM_(i=1)^(n) [ Coupon / m / (1 + (spot_rate(t_i / m) + Z) / m)^(t_i) ]
-                     + Par Value / (1 + (spot_rate(t_n / m) + Z) / m)^(t_n)
-                     - Accrued Interest
+        Bond Price = SUM_(i=1)^(n) [ Coupon / m / (1 + (spot_rate(t_i / m) + Z) / m)^(t_i) ] +
+                     Par Value / (1 + (spot_rate(t_n / m) + Z) / m)^(t_n) -
+                     Accrued Interest
 
     where m = frequency and t_i is the time of the i-th cash flow in periods (see
     `get_cash_flow_periods`), so t_n / m = years_to_maturity. The spot rates are read as

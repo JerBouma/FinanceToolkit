@@ -79,8 +79,8 @@ class TestingEconometrics:
         The formula is as follows:
 
         - Welch (the default): t = (mean_a - mean_b) / sqrt(s_a^2 / n_a + s_b^2 / n_b)
-        - Welch-Satterthwaite: df = (s_a^2 / n_a + s_b^2 / n_b)^2 / ((s_a^2 / n_a)^2 / (n_a - 1)
-          + (s_b^2 / n_b)^2 / (n_b - 1))
+        - Welch-Satterthwaite: df = (s_a^2 / n_a + s_b^2 / n_b)^2 / ((s_a^2 / n_a)^2 / (n_a - 1) +
+          (s_b^2 / n_b)^2 / (n_b - 1))
         - Student (equal_variance=True): t = (mean_a - mean_b) / (s_p·sqrt(1 / n_a + 1 / n_b)), with
           s_p^2 = ((n_a - 1)·s_a^2 + (n_b - 1)·s_b^2) / (n_a + n_b - 2) and df = n_a + n_b - 2
         - s_a^2 and s_b^2 are sample variances (ddof=1) of the two tickers' `column` (Return by

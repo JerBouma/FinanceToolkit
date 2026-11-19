@@ -1462,8 +1462,8 @@ class Performance:
 
         The regression formula is as follows for the Multi Linear Regression:
 
-            - Excess Return = Intercept + Beta1 * Mkt-RF + Beta2 * SMB + Beta3 * HML + Beta4 * RMW
-                + Beta5 * CMA + Residuals
+            - Excess Return = Intercept + Beta1 * Mkt-RF + Beta2 * SMB + Beta3 * HML + Beta4 * RMW +
+              Beta5 * CMA + Residuals
 
         And the following for the Simple Linear Regression:
 
@@ -4104,9 +4104,9 @@ class Performance:
 
         The formula is as follows:
 
-        - Win Rate = Number of Days with Asset Return > Benchmark Return / Number of Days with both an Asset
-          and a Benchmark Return, using the daily returns within each period (e.g. each year), as a decimal
-          (0.55 = 55%)
+        - Win Rate = (Number of Days with Asset Return > Benchmark Return) /
+          (Number of Days with both an Asset and a Benchmark Return), using the daily returns within each
+          period (e.g. each year), as a decimal (0.55 = 55%)
 
         Days on which the asset or the benchmark has no return are left out of both counts rather than
         counted as losses.
@@ -5743,10 +5743,10 @@ class Performance:
 
         The formulas are as follows:
 
-        - Selectivity = (Asset Return − Risk-Free Rate) − (Sigma_Portfolio / Sigma_Market)
-            * (Benchmark Return − Risk-Free Rate)
-        - Diversification = [Risk-Free Rate + (Sigma_Portfolio / Sigma_Market)
-            * (Benchmark Return − Risk-Free Rate)] − [Risk-Free Rate + Beta * (Benchmark Return − Risk-Free Rate)]
+        - Selectivity = (Asset Return − Risk-Free Rate) − (Sigma_Portfolio / Sigma_Market) *
+          (Benchmark Return − Risk-Free Rate)
+        - Diversification = [Risk-Free Rate + (Sigma_Portfolio / Sigma_Market) * (Benchmark Return − Risk-Free Rate)] −
+          [Risk-Free Rate + Beta * (Benchmark Return − Risk-Free Rate)]
 
         Selectivity is the return earned above what would be required for a fully
         diversified portfolio carrying the same total risk, i.e. genuine security
@@ -6263,8 +6263,8 @@ class Performance:
 
         The formula is as follows:
 
-        - Excess Return = Alpha + Beta * Benchmark Excess Return
-            + Up Market Beta * max(Benchmark Excess Return, 0) + Residuals
+        - Excess Return = Alpha + Beta * Benchmark Excess Return +
+          Up Market Beta * max(Benchmark Excess Return, 0) + Residuals
 
         Beta is the "down-market" Beta (the portfolio's market exposure when the
         benchmark excess return is negative), and Beta + Up Market Beta is the

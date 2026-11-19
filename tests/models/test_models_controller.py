@@ -2218,3 +2218,65 @@ def test_get_size_age_index_without_a_profile_is_nan(constraints_module):
     result = constraints_module.get_size_age_index()
 
     assert result.empty or result.xs("Size-Age Index", level=1).isna().all().all()
+
+
+def test_get_size_age_index_deflates_periods_before_the_base_year(
+    constraints_module, monkeypatch
+):
+    import copy  # noqa: PLC0415
+    import math  # noqa: PLC0415
+
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    # The CPI from 1990, 0.25% a month, returned from the requested start onwards.
+    consumer_prices = pd.DataFrame(
+        {"United States": [60.0 * 1.0025**month for month in range(480)]},
+        index=pd.period_range("1990-01", periods=480, freq="M"),
+    )
+    requested = []
+
+    def get_consumer_prices(measure, start_date, end_date):
+        requested.append(start_date)
+        return consumer_prices[consumer_prices.index >= pd.Period(start_date, "M")]
+
+    monkeypatch.setattr(bis_model, "get_consumer_prices", get_consumer_prices)
+
+    models = copy.copy(constraints_module)
+    balance = constraints_module._balance_sheet_statement.copy()
+    # The same statements labelled 1998 onwards, ending on the calendar year end.
+    balance.columns = pd.period_range("1998", periods=len(balance.columns), freq="Y")
+    # $100 million of assets, below the cap, so the Size moves with the price level.
+    balance.loc[(slice(None), "Total Assets"), :] = 100e6
+    models._balance_sheet_statement = balance
+    models._period_end_dates = None
+
+    size = models.get_size_age_index(rounding=10).xs("Size", level=1)
+
+    assert requested[0] < "1998-01-01"
+    base = consumer_prices.loc["2004"].mean().iloc[0]
+    for period in size.columns:
+        price_level = consumer_prices.loc[pd.Period(f"{period.year}-12", "M")].iloc[0]
+        assert size.loc["AAPL", period] == pytest.approx(
+            math.log(100 / (price_level / base))
+        )
+
+
+def test_get_size_age_index_does_not_warn_about_the_basket_total(
+    constraints_module, caplog
+):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(constraints_module)
+    # The basket's Total has no profile, so no IPO date, and is no company.
+    models._tickers = ["AAPL", "MSFT", "Total"]
+
+    with caplog.at_level("WARNING"):
+        models.get_size_age_index()
+
+    assert "No IPO date" not in caplog.text
+
+    models._profile = PROFILE.drop(columns="MSFT")
+    with caplog.at_level("WARNING"):
+        models.get_size_age_index()
+
+    assert "No IPO date is available for MSFT," in caplog.text

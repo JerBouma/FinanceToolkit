@@ -170,8 +170,9 @@ def get_kaplan_zingales_index(
     """
     The Kaplan-Zingales (KZ) index of financial constraints, with the coefficients of
     Lamont, Polk and Saa-Requejo (2001): Steven Kaplan's re-estimation of the ordered logit
-    of Kaplan and Zingales (1997) on the variables available in Compustat (their Table 9,
-    719 firm-years of low-dividend manufacturing firms). A higher index means a more
+    of Kaplan and Zingales (1997) on the variables available in Compustat (Table 9 of
+    Lamont, Polk and Saa-Requejo: 719 observations, the firm-years of the low-dividend
+    manufacturing firms of Kaplan and Zingales). A higher index means a more
     constrained firm: high debt, low cash flow, low cash and low dividends, and a high Q
     (a constrained firm needs good investment opportunities to be constrained).
 
@@ -453,8 +454,9 @@ def get_size_age_index(
 
     Notes:
     - Within the caps the index falls with size (its slope -0.737 + 0.086 * Size is negative
-      up to a Size of 8.57, beyond the cap of ln(4,500) = 8.41), so it lies between -4.64
-      (a firm at both caps) and 0 (a new firm with $1 million of assets).
+      up to a Size of 8.57, beyond the cap of ln(4,500) = 8.41), so its lowest value is -4.64
+      (a firm at both caps). A new firm with $1 million of assets has 0, and a smaller one
+      above 0 (its Size is negative).
 
     References:
     - Hadlock, Charles J. and Joshua R. Pierce. "New Evidence on Measuring Financial

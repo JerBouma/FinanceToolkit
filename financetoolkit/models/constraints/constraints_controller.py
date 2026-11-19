@@ -86,11 +86,20 @@ class ConstraintsModels:
         """
         columns = self._balance_sheet_statement.columns
         unavailable = pd.DataFrame(float("nan"), index=self._tickers, columns=columns)
+        market_dates = self._market_dates()
+
+        # From a year before the earliest period end (or from the base year when that is
+        # earlier still), so periods before 2004 are deflated as well, with the months the
+        # tolerance looks back over.
+        earliest = market_dates.min().min()
+        start_year = int(SIZE_AGE_BASE_YEAR)
+        if pd.notna(earliest):
+            start_year = min(start_year, earliest.year - 1)
 
         try:
             prices = bis_model.get_consumer_prices(
                 "consumer_price_index",
-                f"{SIZE_AGE_BASE_YEAR}-01-01",
+                f"{start_year}-01-01",
                 datetime.today().strftime("%Y-%m-%d"),
             )
         except (requests.RequestException, ValueError) as error:
@@ -116,7 +125,7 @@ class ConstraintsModels:
 
         return helpers.values_on_or_before(
             pd.DataFrame({ticker: price_level for ticker in self._tickers}),
-            self._market_dates(),
+            market_dates,
             tolerance=PRICE_LEVEL_TOLERANCE_DAYS,
         )
 
@@ -174,8 +183,11 @@ class ConstraintsModels:
             - A higher index means a more constrained firm. Lamont, Polk and Saa-Requejo call
               the top third of firms ranked on the index each year constrained and the bottom
               third unconstrained; the index has no absolute cut-off.
-            - Whited and Wu (2006, Table 2) find quartile means of 0.25, 0.77, 1.15 and 1.81
-              on quarterly Compustat data for 1975-2001.
+            - Whited and Wu (2006, Table 2) report quartile means of 0.25, 0.77, 1.15 and 1.81
+              on quarterly Compustat data for 1975-2001, with the cash flow, the dividends, the
+              cash and the long-term debt scaled by total assets instead of capital and total
+              capital, so the levels of this index (ratios to net PP&E) are not comparable to
+              theirs; compare firms by their rank.
 
         Also known as: KZ index, Kaplan-Zingales, financing constraints, external finance.
 
@@ -535,9 +547,10 @@ class ConstraintsModels:
         The size-age index can be interpreted as follows:
 
             - A higher (less negative) index means a more constrained firm: a small, young firm.
-            - It lies between -4.64 (a firm at both caps: $4.5 billion of 2004 assets and 37 years
-              listed) and 0 (a new firm with $1 million of assets). A firm listed 10 years with
-              $100 million of 2004 assets has -2.88.
+            - Its lowest value is -4.64, for a firm at both caps ($4.5 billion of 2004 assets and
+              37 years listed). A new firm with $1 million of 2004 assets has 0, and a smaller one
+              above 0 (its Size is negative). A firm listed 10 years with $100 million of 2004
+              assets has -2.88.
             - As with the other indices, the literature calls the top third of firms constrained
               and the bottom third unconstrained, each year; the index has no absolute cut-off.
 
@@ -604,7 +617,12 @@ class ConstraintsModels:
         listing_dates = pd.to_datetime(
             self._profile_row("IPO Date"), errors="coerce"
         ).reindex(self._tickers)
-        if without_date := listing_dates[listing_dates.isna()].index.tolist():
+        # The basket's Total has no IPO date of its own.
+        if without_date := (
+            listing_dates[listing_dates.isna()]
+            .index.intersection(self._peer_tickers)
+            .tolist()
+        ):
             logger.warning(
                 "No IPO date is available for %s, so their Age and Size-Age Index are NaN.",
                 ", ".join(without_date),

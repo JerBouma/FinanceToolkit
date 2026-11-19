@@ -67,7 +67,11 @@ class ProfitabilityModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The number of periods to sum flows (income statement items)
+                over, with the Total Assets and Total Shareholder Equity averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default average
+                of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM). Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -112,18 +116,21 @@ class ProfitabilityModels:
         | Equity Multiplier | 1.4317 | 1.4269 | 1.4228 | 1.4013 | 1.4122 |
         | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
-        # Without trailing, the balances are averaged over the period's opening and closing balance.
+        # The balances are averaged over the period ends that open and close the (trailing) periods,
+        # as in the Return on Equity, Asset Turnover and Return on Assets of the Ratios module, so
+        # that the components multiply to the Return on Equity that module reports.
+        period_ends = (trailing or 1) + 1
         dupont_analysis = dupont_model.get_dupont_analysis(
             helpers.trailing_sum(
                 self._income_statement.loc[:, "Net Income", :], trailing
             ),
             helpers.trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             helpers.trailing_mean(
-                self._balance_sheet_statement.loc[:, "Total Assets", :], trailing or 2
+                self._balance_sheet_statement.loc[:, "Total Assets", :], period_ends
             ),
             helpers.trailing_mean(
                 self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
-                trailing or 2,
+                period_ends,
             ),
         )
 
@@ -190,7 +197,11 @@ class ProfitabilityModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The number of periods to sum flows (income statement items)
+                over, with the Total Assets and Total Shareholder Equity averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default average
+                of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM). Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -245,7 +256,10 @@ class ProfitabilityModels:
         | Equity Multiplier       | 2.4399 | 2.2643 | 2.0839 | 1.9468 | 1.8484 |
         | Return on Equity        | 0.4708 | 0.4715 | 0.3882 | 0.3713 | 0.3328 |
         """
-        # Without trailing, the balances are averaged over the period's opening and closing balance.
+        # The balances are averaged over the period ends that open and close the (trailing) periods,
+        # as in the Return on Equity, Asset Turnover and Return on Assets of the Ratios module, so
+        # that the components multiply to the Return on Equity that module reports.
+        period_ends = (trailing or 1) + 1
         income = self._income_statement
         balance = self._balance_sheet_statement
         extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
@@ -258,10 +272,10 @@ class ProfitabilityModels:
             net_income=helpers.trailing_sum(income.loc[:, "Net Income", :], trailing),
             total_revenue=helpers.trailing_sum(income.loc[:, "Revenue", :], trailing),
             average_total_assets=helpers.trailing_mean(
-                balance.loc[:, "Total Assets", :], trailing or 2
+                balance.loc[:, "Total Assets", :], period_ends
             ),
             average_total_equity=helpers.trailing_mean(
-                balance.loc[:, "Total Shareholder Equity", :], trailing or 2
+                balance.loc[:, "Total Shareholder Equity", :], period_ends
             ),
         )
 

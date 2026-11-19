@@ -239,3 +239,14 @@ def test_debt_to_ebitda_of_non_positive_ebitda_is_nan():
     for ratio in [net_debt_to_ebitda, gross_debt_to_ebitda]:
         assert ratio.iloc[0] == pytest.approx(5.0)
         assert ratio.iloc[1:].isna().all()
+
+
+def test_get_net_debt_to_equity_ratio():
+    ratio = solvency_model.get_net_debt_to_equity_ratio(
+        net_debt=pd.Series([500.0, -200.0, 500.0, 500.0]),
+        total_equity=pd.Series([1000.0, 1000.0, 0.0, -100.0]),
+    )
+
+    assert ratio.iloc[:2].tolist() == [0.5, -0.2]
+    # Without positive equity the ratio does not measure leverage.
+    assert ratio.iloc[2:].isna().all()

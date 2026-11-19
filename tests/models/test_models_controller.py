@@ -1777,7 +1777,11 @@ def _fiscal_year_ends(models_module):
 
 def _daily(models_module, column, data=None):
     """A daily column of the historical data with a DatetimeIndex."""
-    daily = (data or models_module._historical_data)["daily"][column].copy()
+    # Not `data or ...`: the risk free rate data is a LazyDict, empty (so falsy) until a
+    # calculation first asks for a period.
+    daily = (models_module._historical_data if data is None else data)["daily"][
+        column
+    ].copy()
     daily.index = daily.index.to_timestamp()
     return daily
 
@@ -2280,3 +2284,176 @@ def test_get_size_age_index_does_not_warn_about_the_basket_total(
         models.get_size_age_index()
 
     assert "No IPO date is available for MSFT," in caplog.text
+
+
+def test_get_graham_intrinsic_value(recorder, models_module, monkeypatch):
+    import pandas as pd
+
+    # Moody's Aaa yield offline: 4% rising by a basis point a month.
+    days = pd.date_range("2015-01-01", "2023-12-31", freq="B")
+    aaa = pd.Series(
+        0.04 + 0.0001 * ((days.year - 2015) * 12 + days.month - 1), index=days
+    )
+    monkeypatch.setattr(
+        models_module,
+        "_corporate_bond_yield_function",
+        lambda start, end: aaa.loc[start:end],
+    )
+
+    recorder.capture(models_module.get_graham_intrinsic_value())
+    recorder.capture(models_module.get_graham_intrinsic_value(0.05, 0.044))
+
+    # By hand: the EPS of the period, its compound growth since the first period (from
+    # three years of history, kept within 0 and 0.20) and the yield on the last business
+    # day up to the period end.
+    income = models_module._income_statement
+    earnings_per_share = (
+        income.loc[:, "Net Income", :]
+        / income.loc[:, "Weighted Average Shares Diluted", :]
+    )
+    value = models_module.get_graham_intrinsic_value(rounding=10)
+    market_dates = models_module._market_dates()
+    checked = 0
+    for ticker in value.index:
+        history = earnings_per_share.loc[ticker].dropna()
+        for position, period in enumerate(history.index[1:], start=1):
+            if period not in value.columns:
+                continue
+            if position < 3:
+                assert pd.isna(value.loc[ticker, period])
+                continue
+            growth = min(
+                max((history[period] / history.iloc[0]) ** (1 / position) - 1, 0), 0.2
+            )
+            bond_yield = aaa.loc[: market_dates.loc[ticker, period]].iloc[-1]
+            expected = history[period] * (8.5 + 200 * growth) * 4.4 / (bond_yield * 100)
+            assert value.loc[ticker, period] == pytest.approx(expected, rel=1e-9)
+            checked += 1
+    assert checked >= 2
+
+
+def test_graham_intrinsic_value_without_a_bond_yield_source(models_module, monkeypatch):
+    monkeypatch.setattr(models_module, "_corporate_bond_yield_function", None)
+
+    # Without a source the bond yield must be given.
+    assert models_module.get_graham_intrinsic_value().empty
+    assert not models_module.get_graham_intrinsic_value(bond_yield=0.05).empty
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_dupont_analyses_multiply_to_the_reported_return_on_equity(quarterly, trailing):
+    from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    statements = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        # Eight quarters out of the four years of the datasets, so that a trailing year of
+        # four quarters, which averages the balances over five quarter ends, has values.
+        statements = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in statements
+        ]
+
+    tickers = ["AAPL", "MSFT"]
+    models = Models(tickers, {}, {}, *statements, quarterly=quarterly, rounding=None)
+    ratios = Ratios(tickers, {}, *statements, quarterly=quarterly, rounding=None)
+
+    return_on_equity = ratios.get_return_on_equity(trailing=trailing)
+    asset_turnover = ratios.get_asset_turnover_ratio(trailing=trailing)
+    return_on_assets = ratios.get_return_on_assets(trailing=trailing)
+    dupont = models.get_dupont_analysis(trailing=trailing)
+    extended = models.get_extended_dupont_analysis(trailing=trailing)
+
+    for ticker in tickers:
+        reported = return_on_equity.loc[ticker]
+        assert reported.notna().sum() >= 2
+
+        margin = dupont.loc[(ticker, "Net Profit Margin")]
+        turnover = dupont.loc[(ticker, "Asset Turnover")]
+        product = margin * turnover * dupont.loc[(ticker, "Equity Multiplier")]
+        extended_product = (
+            extended.loc[(ticker, "Interest Burden Ratio")]
+            * extended.loc[(ticker, "Tax Burden Ratio")]
+            * extended.loc[(ticker, "Operating Profit Margin")]
+            * extended.loc[(ticker, "Asset Turnover")]
+            * extended.loc[(ticker, "Equity Multiplier")]
+        )
+
+        for decomposed in (
+            product,
+            extended_product,
+            dupont.loc[(ticker, "Return on Equity")],
+            extended.loc[(ticker, "Return on Equity")],
+        ):
+            pd.testing.assert_series_equal(
+                decomposed, reported, check_names=False, rtol=1e-12, atol=0
+            )
+        pd.testing.assert_series_equal(
+            turnover, asset_turnover.loc[ticker], check_names=False, rtol=1e-12
+        )
+        pd.testing.assert_series_equal(
+            margin * turnover,
+            return_on_assets.loc[ticker],
+            check_names=False,
+            rtol=1e-12,
+            atol=0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_economic_value_added_uses_the_invested_capital_of_the_roic(
+    quarterly, trailing
+):
+    from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    statements = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        statements = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in statements
+        ]
+
+    tickers = ["AAPL", "MSFT"]
+    models = Models(tickers, {}, {}, *statements, quarterly=quarterly, rounding=None)
+    ratios = Ratios(tickers, {}, *statements, quarterly=quarterly, rounding=None)
+    # The WACC needs market data and does not enter the NOPAT or the invested capital.
+    wacc = pd.DataFrame(
+        0.08,
+        index=pd.MultiIndex.from_product(
+            [tickers, ["Weighted Average Cost of Capital"]]
+        ),
+        columns=statements[0].columns,
+    )
+    models._weighted_average_cost_of_capital = lambda **_: wacc
+
+    eva = models.get_economic_value_added(trailing=trailing)
+    return_on_invested_capital = ratios.get_return_on_invested_capital(
+        trailing=trailing
+    )
+
+    for ticker in tickers:
+        reported = return_on_invested_capital.loc[ticker]
+        assert reported.notna().sum() >= 2
+        pd.testing.assert_series_equal(
+            eva.loc[(ticker, "Net Operating Profit After Taxes")]
+            / eva.loc[(ticker, "Invested Capital")],
+            reported,
+            check_names=False,
+            rtol=1e-12,
+            atol=0,
+        )

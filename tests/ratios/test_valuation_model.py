@@ -397,3 +397,20 @@ def test_multiples_of_non_positive_denominators_are_nan():
     assert ev_to_ebitda.iloc[1:].isna().all()
     assert price_to_book.iloc[0] == pytest.approx(5.0)
     assert price_to_book.iloc[1:].isna().all()
+
+
+def test_get_dividend_adjusted_price_to_earnings_growth_ratio():
+    price_earnings = pd.Series([30.0, 11.0, 12.0])
+    growth_rate = pd.Series([0.2, 0.1, 0.05])
+    dividend_yield = pd.Series([0.0, 0.02, 0.03])
+
+    pegy = valuation_model.get_dividend_adjusted_price_to_earnings_growth_ratio(
+        price_earnings, growth_rate, dividend_yield
+    )
+
+    # Growth and yield enter in percent: 12 / (5 + 3) = 1.5.
+    assert pegy.tolist() == pytest.approx([30 / 20, 11 / 12, 12 / 8])
+    # Without a dividend it is the PEG ratio.
+    assert pegy.iloc[0] == pytest.approx(
+        valuation_model.get_price_to_earnings_growth_ratio(30.0, 0.2 * 100)
+    )

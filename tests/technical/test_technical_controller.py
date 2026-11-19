@@ -178,6 +178,26 @@ def test_get_relative_strength_index(recorder, technical_module):
     )
 
 
+def test_get_stochastic_relative_strength_index(recorder, technical_module):
+    recorder.capture(technical_module.get_stochastic_relative_strength_index())
+    recorder.capture(
+        technical_module.get_stochastic_relative_strength_index(stochastic_window=5)
+    )
+    recorder.capture(
+        technical_module.get_stochastic_relative_strength_index(
+            growth=True, lag=[1, 2, 3]
+        )
+    )
+
+
+def test_get_true_strength_index(recorder, technical_module):
+    recorder.capture(technical_module.get_true_strength_index())
+    recorder.capture(technical_module.get_true_strength_index(period="weekly"))
+    recorder.capture(
+        technical_module.get_true_strength_index(growth=True, lag=[1, 2, 3])
+    )
+
+
 def test_get_balance_of_power(recorder, technical_module):
     recorder.capture(technical_module.get_balance_of_power())
     recorder.capture(technical_module.get_balance_of_power(growth=True))
@@ -244,6 +264,20 @@ def test_get_bollinger_bands(recorder, technical_module):
     recorder.capture(technical_module.get_bollinger_bands())
     recorder.capture(technical_module.get_bollinger_bands(growth=True))
     recorder.capture(technical_module.get_bollinger_bands(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_bollinger_percent_b_and_bandwidth(recorder, technical_module):
+    recorder.capture(technical_module.get_bollinger_percent_b_and_bandwidth())
+    recorder.capture(
+        technical_module.get_bollinger_percent_b_and_bandwidth(
+            window=10, num_std_dev=1.5
+        )
+    )
+    recorder.capture(
+        technical_module.get_bollinger_percent_b_and_bandwidth(
+            growth=True, lag=[1, 2, 3]
+        )
+    )
 
 
 def test_get_moving_average_triangular(recorder, technical_module):
@@ -397,6 +431,12 @@ def test_get_know_sure_thing(recorder, technical_module):
     recorder.capture(technical_module.get_know_sure_thing())
     recorder.capture(technical_module.get_know_sure_thing(growth=True))
     recorder.capture(technical_module.get_know_sure_thing(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_coppock_curve(recorder, technical_module):
+    recorder.capture(technical_module.get_coppock_curve())
+    recorder.capture(technical_module.get_coppock_curve(period="monthly"))
+    recorder.capture(technical_module.get_coppock_curve(growth=True, lag=[1, 2, 3]))
 
 
 def test_get_kaufman_adaptive_moving_average(recorder, technical_module):
@@ -738,6 +778,10 @@ def test_a_stock_keeps_its_indicators_next_to_a_cryptocurrency():
         "get_money_flow_index",
         "get_ease_of_movement",
         "get_relative_strength_index",
+        "get_stochastic_relative_strength_index",
+        "get_true_strength_index",
+        "get_coppock_curve",
+        "get_bollinger_percent_b_and_bandwidth",
         "get_balance_of_power",
         "get_parabolic_sar",
         "get_supertrend",

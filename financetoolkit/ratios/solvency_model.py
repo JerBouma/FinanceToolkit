@@ -258,8 +258,8 @@ def get_asset_coverage_ratio(
 
     The formula is as follows:
 
-        Asset Coverage Ratio = [(Total Assets - Intangible Assets)
-            - (Current Liabilities - Short-Term Debt)] / Total Debt
+        Asset Coverage Ratio = [(Total Assets - Intangible Assets) -
+            (Current Liabilities - Short-Term Debt)] / Total Debt
 
     Args:
         total_assets (float or pd.Series): Total assets of the company.
@@ -455,8 +455,8 @@ def get_ebitda_minus_capex_interest_coverage_ratio(
 
     The formula is as follows (Moody's):
 
-        (EBITDA - CapEx) / Interest = (Operating Income + Depreciation and Amortization
-            - |Capital Expenditure|) / Interest Expense
+        (EBITDA - CapEx) / Interest = (Operating Income + Depreciation and Amortization -
+            |Capital Expenditure|) / Interest Expense
 
     Capital expenditure is reported as a negative cash outflow, so its magnitude is
     deducted. A zero interest expense gives NaN.
@@ -493,8 +493,8 @@ def get_cash_interest_coverage_ratio(
 
     The formula is as follows (CFA Institute):
 
-        Cash Interest Coverage = (Cash Flow from Operations + Interest Paid
-            + Income Taxes Paid) / Interest Paid
+        Cash Interest Coverage = (Cash Flow from Operations + Interest Paid +
+            Income Taxes Paid) / Interest Paid
 
     The interest and taxes paid are added back because the cash flow from operations
     is after both (US GAAP). A zero interest paid gives NaN.
@@ -583,8 +583,8 @@ def get_discretionary_cash_flow_to_debt_ratio(
 
     The formula is as follows (S&P Global Ratings):
 
-        DCF = Cash Flow from Operations - |Capital Expenditure| - |Dividends Paid|
-            - |Share Buybacks|
+        DCF = Cash Flow from Operations - |Capital Expenditure| - |Dividends Paid| -
+            |Share Buybacks|
 
         DCF to Debt = DCF / Total Debt
 

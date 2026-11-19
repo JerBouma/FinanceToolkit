@@ -362,8 +362,8 @@ class DistressModels:
             - FUTL = Operating Cash Flow / Total Liabilities
             - INTWO = 1 if Net Income was negative for the last two years else 0
             - CHIN = (Net Income (t) - Net Income (t-1)) / (|Net Income (t)| + |Net Income (t-1)|)
-            - O-Score = -1.32 - 0.407 * SIZE + 6.03 * TLTA - 1.43 * WCTA + 0.0757 * CLCA
-            - 1.72 * OENEG - 2.37 * NITA - 1.83 * FUTL + 0.285 * INTWO - 0.521 * CHIN
+            - O-Score = -1.32 - 0.407 * SIZE + 6.03 * TLTA - 1.43 * WCTA + 0.0757 * CLCA -
+              1.72 * OENEG - 2.37 * NITA - 1.83 * FUTL + 0.285 * INTWO - 0.521 * CHIN
             - Bankruptcy Probability = 1 / (1 + e^(-O-Score))
 
         The Ohlson O-Score can be interpreted as follows:
@@ -590,8 +590,8 @@ class DistressModels:
             - Net Income to Total Assets = Net Income / Total Assets
             - Total Liabilities to Total Assets = Total Liabilities / Total Assets
             - Current Assets to Current Liabilities = Current Assets / Current Liabilities
-            - X = -4.336 - 4.513 * Net Income to Total Assets + 5.679 * Total Liabilities to Total Assets
-            - 0.004 * Current Assets to Current Liabilities
+            - X = -4.336 - 4.513 * Net Income to Total Assets + 5.679 * Total Liabilities to Total Assets -
+              0.004 * Current Assets to Current Liabilities
             - Bankruptcy Probability = Phi(X), the standard normal cumulative distribution function
 
         The Zmijewski Score can be interpreted as follows:
@@ -1607,8 +1607,8 @@ class DistressModels:
 
         The model is the 12-month-ahead logit of Table IV, column (3), of the paper:
 
-            - LPFD = -9.164 - 20.264 NIMTAAVG + 1.416 TLMTA - 7.129 EXRETAVG + 1.411 SIGMA
-              - 0.045 RSIZE - 2.132 CASHMTA + 0.075 MB - 0.058 PRICE
+            - LPFD = -9.164 - 20.264 NIMTAAVG + 1.416 TLMTA - 7.129 EXRETAVG + 1.411 SIGMA -
+              0.045 RSIZE - 2.132 CASHMTA + 0.075 MB - 0.058 PRICE
             - Failure Probability = 1 / (1 + e^(-LPFD))
 
         with:

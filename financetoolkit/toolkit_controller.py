@@ -1208,8 +1208,8 @@ class Toolkit:
         """
         This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
         as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models. It also
-        houses cross-asset systemic risk and liquidity measures (CoVaR, Tail Dependence, Amihud Illiquidity,
-        Roll Spread).
+        houses cross-asset systemic risk and liquidity measures (CoVaR, Marginal Expected Shortfall, SRISK,
+        Tail Dependence, Amihud Illiquidity, Roll Spread).
 
         Note that the time-series diagnostic and econometric tests (unit root tests, cointegration, Granger
         causality, ARCH-LM, Jarque-Bera and similar tests) live in the separate Econometrics module instead.
@@ -1272,6 +1272,52 @@ class Toolkit:
             )
 
         risk._shares_outstanding_function = shares_outstanding
+
+        # SRISK takes the debt from the balance sheet and the market cap from the diluted
+        # share count, as get_market_cap does, each from the day its period's figures apply.
+        def capital_shortfall() -> (
+            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        ):
+            balance_sheet = self._get_module_statement(
+                "balance_sheet_statement", "Ratios"
+            )
+            income_statement = self._get_module_statement("income_statement", "Ratios")
+
+            # Without a conversion the liabilities stay in the reported currency while the market
+            # cap is in the currency the ticker is listed in, so SRISK would mix the two.
+            if (
+                not (self._convert_currency and not self._statement_currencies.empty)
+                and not self._statistics_statement.empty
+            ):
+                reported = (
+                    self._statistics_statement.xs("Reported Currency", axis=0, level=1)
+                    .T.ffill()
+                    .iloc[-1]
+                )
+                listed = self._get_listing_currencies().reindex(reported.index)
+                mismatched = [
+                    f"{ticker} ({reported[ticker]} statements, {listed[ticker]} prices)"
+                    for ticker in reported.index
+                    if pd.notna(reported[ticker])
+                    and pd.notna(listed[ticker])
+                    and reported[ticker] != listed[ticker]
+                ]
+                if mismatched:
+                    logger.warning(
+                        "SRISK compares the liabilities with the market cap, but the statements "
+                        "are in another currency than the prices for %s; set convert_currency=True "
+                        "to convert the statements to the currency of the historical data.",
+                        ", ".join(mismatched),
+                    )
+
+            return (
+                balance_sheet.loc[:, "Total Liabilities", :],
+                self._get_daily_start_dates(balance_sheet),
+                income_statement.loc[:, "Weighted Average Shares Diluted", :],
+                self._get_daily_start_dates(income_statement),
+            )
+
+        risk._capital_shortfall_function = capital_shortfall
 
         if self._portfolio_weights:
             risk._portfolio_weights = self._portfolio_weights

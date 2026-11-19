@@ -37,8 +37,8 @@ PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 
 # The indicators per collection that get_factor_analysis compares across tickers. Left out are
 # the market-wide breadth measures (one value for all tickers), the volume-scaled ones (on
-# balance volume, accumulation/distribution, Chaikin oscillator, force index, ease of
-# movement), whose level reflects how many shares trade, and the pivot points and Fibonacci
+# balance volume, price volume trend, accumulation/distribution, Chaikin oscillator, force
+# index, ease of movement), whose level reflects how many shares trade, and the pivot points and Fibonacci
 # levels, which only restate the latest high, low and close.
 FACTOR_COLLECTIONS = {
     "momentum": [
@@ -49,6 +49,7 @@ FACTOR_COLLECTIONS = {
         "get_relative_vigor_index",
         "get_ultimate_oscillator",
         "get_percentage_price_oscillator",
+        "get_percentage_volume_oscillator",
         "get_detrended_price_oscillator",
         "get_average_directional_index",
         "get_chande_momentum_oscillator",
@@ -79,7 +80,9 @@ FACTOR_COLLECTIONS = {
         "get_bollinger_percent_b_and_bandwidth",
         "get_true_range",
         "get_average_true_range",
+        "get_mass_index",
         "get_supertrend",
+        "get_chandelier_exit",
         "get_keltner_channels",
         "get_donchian_channels",
     ],
@@ -104,6 +107,7 @@ FACTOR_PRICE_LINES = (
     "get_ichimoku_cloud",
     "get_bollinger_bands",
     "get_supertrend",
+    "get_chandelier_exit",
     "get_keltner_channels",
     "get_donchian_channels",
     "get_pivot_points",
@@ -441,6 +445,9 @@ class Technicals:
             period=period, close_column=close_column
         )
         breadth_indicators["On-Balance Volume"] = self.get_on_balance_volume(
+            period=period, close_column=close_column
+        )
+        breadth_indicators["Price Volume Trend"] = self.get_price_volume_trend(
             period=period, close_column=close_column
         )
 
@@ -957,6 +964,132 @@ class Technicals:
 
         return finalize_dataset(
             dataset=on_balance_volume,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_price_volume_trend(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Price Volume Trend (PVT) for a given price series.
+
+        The Price Volume Trend is a running total of volume weighted by the period's percentage
+        change in price. On-Balance Volume adds or subtracts the whole volume depending on the
+        direction of the close; the PVT adds only the share of the volume that matches the size of
+        the move, so a small change in price moves the line only a little.
+
+        The formula is as follows:
+
+        - PVT = Previous PVT + Volume × (Close — Previous Close) / Previous Close
+        - PVT = 0 on the first date, which has no previous close
+
+        The level of the PVT has no meaning by itself, since it starts at 0 on the start date; only
+        its direction and its divergences from price matter. A rising PVT confirms an uptrend carried
+        by volume, and a PVT that fails to follow price to a new high warns that the move lacks
+        participation. The line is in shares, so it cannot be compared across stocks.
+
+        Also known as: PVT, Price and Volume Trend, Volume Price Trend.
+
+        See `breadth_model.get_price_volume_trend` for the references.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", so that the change in price is the return including dividends.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the PVT.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Price Volume Trend values, in shares.
+
+        Notes:
+        - The running total starts at 0 on each ticker's first date with a close and a volume on or
+          after the start date of the Toolkit.
+        - If `growth` is set to True, the method calculates the growth of the PVT using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_price_volume_trend().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |        AAPL |        MSFT |    Benchmark |
+        |:-----------|------------:|------------:|-------------:|
+        | 2025-12-24 | 6.67008e+07 | 2.02096e+07 | -9.46523e+06 |
+        | 2025-12-26 | 6.66686e+07 | 2.02039e+07 | -9.46945e+06 |
+        | 2025-12-29 | 6.66998e+07 | 2.01903e+07 | -9.69239e+06 |
+        | 2025-12-30 | 6.66449e+07 | 2.02012e+07 | -9.74998e+06 |
+        | 2025-12-31 | 6.65229e+07 | 2.00776e+07 | -1.02993e+07 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        # A running total starts at the start date, not at the earlier prices.
+        historical_data = self._historical_data[period].loc[self._start_date :]
+
+        price_volume_trend = calculate_per_ticker(
+            historical_data,
+            [close_column, "Volume"],
+            breadth_model.get_price_volume_trend,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=price_volume_trend,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -1869,6 +2002,21 @@ class Technicals:
                 period=period, close_column=close_column
             )
         )
+
+        percentage_volume_oscillator = self.get_percentage_volume_oscillator(
+            period=period
+        )
+
+        momentum_indicators["Percentage Volume Oscillator"] = (
+            percentage_volume_oscillator["Percentage Volume Oscillator"]
+        )
+        momentum_indicators["Percentage Volume Oscillator Signal Line"] = (
+            percentage_volume_oscillator["Signal Line"]
+        )
+        momentum_indicators["Percentage Volume Oscillator Histogram"] = (
+            percentage_volume_oscillator["Histogram"]
+        )
+
         momentum_indicators["Detrended Price Oscillator"] = (
             self.get_detrended_price_oscillator(
                 period=period, close_column=close_column, window=window
@@ -3008,6 +3156,144 @@ class Technicals:
 
         return finalize_dataset(
             dataset=percentage_price_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_percentage_volume_oscillator(
+        self,
+        period: str = "daily",
+        short_window: int = 12,
+        long_window: int = 26,
+        signal_window: int = 9,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Percentage Volume Oscillator (PVO) for a given volume series.
+
+        The Percentage Volume Oscillator is the Percentage Price Oscillator applied to volume: the
+        difference between a short-term and a long-term EMA of volume as a share of the long-term
+        EMA, with a signal line and a histogram as for the MACD.
+
+        The formula is as follows:
+
+        - PVO = (EMA(Volume, short_window) — EMA(Volume, long_window)) /
+          EMA(Volume, long_window)
+        - Signal Line = EMA(PVO, signal_window)
+        - Histogram = PVO — Signal Line
+
+        A positive PVO means recent volume runs above its longer-term average, which gives weight to
+        a breakout or a trend in price; a PVO below zero in a rising market says the move happens on
+        thinning volume. Because it is a share of the average volume, the PVO can be compared across
+        stocks whatever the number of shares they trade. It says nothing about the direction of
+        price.
+
+        Also known as: PVO, volume oscillator. See `momentum_model.get_percentage_volume_oscillator`
+        for the references.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            short_window (int, optional): The number of periods for the short-term moving average.
+                Defaults to 12, as for the PPO and MACD.
+            long_window (int, optional): The number of periods for the long-term moving average.
+                Defaults to 26, as for the PPO and MACD.
+            signal_window (int, optional): The number of periods for the signal line.
+                Defaults to 9.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: The Percentage Volume Oscillator, Signal Line and Histogram
+            as decimals (0.02 is 2%), as the Percentage Price Oscillator.
+
+        Notes:
+        - The method retrieves the volumes of the specified `period` and calculates the PVO for each
+          asset in the Toolkit instance. Every EMA is seeded with the simple average of its first
+          values, so the PVO starts on the `long_window`-th period and the signal line and histogram
+          `signal_window` - 1 periods later.
+        - A ticker without volume, such as an index or a currency pair, has no PVO.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["NVDA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_percentage_volume_oscillator().xs("NVDA", level=1, axis="columns").tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   Histogram |   Percentage Volume Oscillator |   Signal Line |
+        |:-----------|------------:|-------------------------------:|--------------:|
+        | 2025-12-24 |     -0.0392 |                        -0.0687 |       -0.0295 |
+        | 2025-12-26 |     -0.0393 |                        -0.0786 |       -0.0393 |
+        | 2025-12-29 |     -0.0451 |                        -0.0957 |       -0.0506 |
+        | 2025-12-30 |     -0.0559 |                        -0.1205 |       -0.0646 |
+        | 2025-12-31 |     -0.0509 |                        -0.1282 |       -0.0773 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday" and self._historical_data[period].empty:
+            raise ValueError(
+                "Please define the 'intraday_period' parameter when initializing the Toolkit."
+            )
+
+        historical_data = self._historical_data[period]
+
+        percentage_volume_oscillator = calculate_per_ticker(
+            historical_data,
+            ["Volume"],
+            momentum_model.get_percentage_volume_oscillator,
+            short_window,
+            long_window,
+            signal_window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=percentage_volume_oscillator,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -7001,12 +7287,23 @@ class Technicals:
             period=period, close_column=close_column, window=window
         )
 
+        volatility_indicators["Mass Index"] = self.get_mass_index(
+            period=period, close_column=close_column
+        )
+
         supertrend = self.get_supertrend(period=period, close_column=close_column)
 
         volatility_indicators["Supertrend"] = supertrend["Supertrend"]
         volatility_indicators["Supertrend Trend Direction"] = supertrend[
             "Trend Direction"
         ]
+
+        chandelier_exit = self.get_chandelier_exit(
+            period=period, close_column=close_column
+        )
+
+        volatility_indicators["Chandelier Exit Long"] = chandelier_exit["Long Exit"]
+        volatility_indicators["Chandelier Exit Short"] = chandelier_exit["Short Exit"]
 
         keltner_channels = self.get_keltner_channels(
             period=period, close_column=close_column, window=window
@@ -7333,6 +7630,142 @@ class Technicals:
 
     @handle_portfolio
     @handle_errors
+    def get_mass_index(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        ema_window: int = 9,
+        sum_window: int = 25,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Mass Index for a given price series.
+
+        The Mass Index, developed by Donald Dorsey, looks for reversals in the width of the trading
+        range rather than in price. It divides an EMA of the High — Low range by an EMA of that EMA,
+        a ratio above 1 while the range widens and below 1 while it narrows, and sums the ratio over
+        `sum_window` periods.
+
+        The formula is as follows:
+
+        - Single EMA = EMA(High — Low, ema_window)
+        - Double EMA = EMA(Single EMA, ema_window)
+        - Mass Index = Sum(Single EMA / Double EMA, sum_window)
+
+        With the default windows a range that neither widens nor narrows gives a Mass Index of 25.
+        Dorsey's "reversal bulge" is the index rising above 27 and then falling back below 26.5,
+        after which the current trend is expected to reverse. The index does not say in which
+        direction, so it is read together with a trend indicator such as a moving average. The ratio
+        has no unit, so the level can be compared across stocks.
+
+        Also known as: Mass Index, MI. See `volatility_model.get_mass_index` for the references.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The close the high and low are taken on the basis of.
+                Defaults to "Adj Close", in which case the high and low prices are adjusted
+                for dividends in the same way.
+            ema_window (int, optional): The number of periods of the single and double EMA.
+                Defaults to 9, as defined by Dorsey.
+            sum_window (int, optional): The number of periods over which the EMA ratio is summed.
+                Defaults to 25, as defined by Dorsey.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Mass Index values.
+
+        Notes:
+        - Both EMAs are seeded with the simple average of their first values, as in TA-Lib and on
+          StockCharts, so the first Mass Index is on period 2 × (`ema_window` — 1) + `sum_window`,
+          the 41st with the default windows.
+        - If `growth` is set to True, the method calculates the growth of the indicator values
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AMZN", "GOOGL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_mass_index().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    AMZN |   GOOGL |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2025-12-24 | 23.5078 | 24.9252 |     24.0591 |
+        | 2025-12-26 | 23.285  | 24.4336 |     23.7267 |
+        | 2025-12-29 | 22.9215 | 23.8576 |     23.1418 |
+        | 2025-12-30 | 22.6104 | 23.4152 |     22.5802 |
+        | 2025-12-31 | 22.4079 | 23.0341 |     22.2524 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        mass_index = calculate_per_ticker(
+            historical_data,
+            ["High", "Low"],
+            volatility_model.get_mass_index,
+            ema_window,
+            sum_window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=mass_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_supertrend(
         self,
         period: str = "daily",
@@ -7466,6 +7899,144 @@ class Technicals:
 
         return finalize_dataset(
             dataset=supertrend,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_chandelier_exit(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 22,
+        multiplier: float = 3.0,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Chandelier Exit for a given price series.
+
+        The Chandelier Exit, developed by Chuck Le Beau, is a trailing stop set a multiple of the
+        Average True Range away from the most extreme price of the last `window` periods: the long
+        exit "hangs" below the highest high like a chandelier from a ceiling, and the short exit sits
+        above the lowest low.
+
+        The formula is as follows:
+
+        - Long Exit = Highest High(window) — multiplier × ATR(window)
+        - Short Exit = Lowest Low(window) + multiplier × ATR(window)
+
+        A long position is closed when the price closes below the long exit, and a short position
+        when it closes above the short exit. Because the distance is in ATRs, the stop is wider in
+        volatile markets and tighter in quiet ones. The stop moves with both the highest high and
+        the ATR, so it can fall while the high holds when volatility rises. The exits are in price
+        units, so they are compared with the stock's own price rather than across stocks.
+
+        Also known as: Chandelier Exit, Chandelier Stop, CE.
+
+        See `volatility_model.get_chandelier_exit` for the references.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
+            window (int, optional): The number of periods of the highest high, the lowest low and the
+                Average True Range. Defaults to 22, about a month of trading days, as defined by Le Beau.
+            multiplier (float, optional): The number of Average True Ranges the exits sit from the
+                highest high and the lowest low. Defaults to 3.0, as defined by Le Beau.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Long Exit and Short Exit.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: The Long Exit and Short Exit, in price units.
+
+        Notes:
+        - The Average True Range is that of `get_average_true_range`: Wilder's smoothing of the True
+          Range, with the first True Range High — Low and the first ATR the average of the first
+          `window` True Ranges (the StockCharts convention), so the exits start on the `window`-th
+          period. The highest high and the lowest low include the current period.
+        - If `growth` is set to True, the method calculates the growth of the Long Exit and Short Exit
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["TSLA"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_chandelier_exit().xs("TSLA", level=1, axis="columns").tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   Long Exit |   Short Exit |
+        |:-----------|------------:|-------------:|
+        | 2025-12-24 |     444.423 |      455.497 |
+        | 2025-12-26 |     444.814 |      459.966 |
+        | 2025-12-29 |     445.062 |      470.658 |
+        | 2025-12-30 |     446.239 |      474.711 |
+        | 2025-12-31 |     447.641 |      473.309 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        chandelier_exit = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            volatility_model.get_chandelier_exit,
+            window,
+            multiplier,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=chandelier_exit,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

@@ -196,6 +196,7 @@ class Ratios:
         period_end_dates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
         currency_function: Callable[[], pd.Series] | None = None,
         gross_domestic_product_function: Callable[[], pd.DataFrame] | None = None,
+        consumer_price_index_function: Callable[[str], pd.Series] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -251,6 +252,10 @@ class Ratios:
                 millions of US dollars, with the years as index and the countries as columns,
                 for the market cap to GDP ratio. Defaults to None, which leaves that ratio
                 unavailable.
+            consumer_price_index_function (Callable[[str], pd.Series], optional): A function
+                that takes a country and returns its monthly consumer price index, with the
+                months as index, for the cyclically adjusted price earnings ratio. Defaults to
+                None, which leaves that ratio available without the inflation adjustment only.
 
         As an example:
 
@@ -302,6 +307,7 @@ class Ratios:
         self._period_end_dates_source = period_end_dates
         self._currency_function = currency_function
         self._gross_domestic_product_function = gross_domestic_product_function
+        self._consumer_price_index_function = consumer_price_index_function
         self._historical = historical
         self._api_key: str = api_key
         self._sleep_timer: bool = sleep_timer
@@ -13102,6 +13108,222 @@ class Ratios:
             standardize=standardize,
             axis="rows" if show_daily else "columns",
             row_slice=show_daily,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_cyclically_adjusted_price_to_earnings_ratio(
+        self,
+        years: int = 10,
+        inflation_adjusted: bool = True,
+        country: str = "United States",
+        include_dividends: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the cyclically adjusted price earnings ratio (CAPE), the share price divided
+        by the average inflation-adjusted earnings per share of the last ten years.
+
+        Graham and Dodd (1934) advised valuing a company on its average earnings over "not
+        less than five years, preferably seven to ten years" rather than on a single year,
+        which can be far above or below what the company earns over a business cycle. Campbell
+        and Shiller (1998) applied this to the S&P 500 as the price divided by the ten-year
+        average of real earnings, the Shiller CAPE
+        (toolkit.economics.get_shiller_stock_market_data). This is the same ratio for a single
+        company.
+
+        The formula is as follows:
+
+        - Real EPS (s) = EPS (s) x CPI (t) / CPI (s)
+        - CAPE (t) = Share Price (t) / Average of Real EPS (s) over the years s = t - years + 1 to t
+
+        The earnings per share are those of the price earnings ratio
+        (`get_price_to_earnings_ratio`): net income (less preferred dividends with
+        include_dividends) over the weighted average (diluted) shares of each fiscal year. With
+        quarterly data, each quarter averages the trailing twelve month earnings per share of
+        that quarter and of the same quarter in each earlier year, so every quarter of earnings
+        enters once. The share price is the traded close at the end of each fiscal period (or
+        the filing day with point_in_time), the same as for the price earnings ratio, so with
+        years=1 and inflation_adjusted=False the ratio equals the price earnings ratio wherever
+        the earnings are positive.
+
+        The consumer price index is the monthly all items index of `country`
+        (toolkit.economics.get_consumer_price_index with period="monthly": the Bank for
+        International Settlements, with the latest months of the Bureau of Labor Statistics for
+        the United States, and Eurostat, the ONS or the Statistics Bureau of Japan for their
+        countries), taken in the month each fiscal period ends (the latest published month for
+        a period that ends after it). The monthly index of Japan (Statistics Bureau of Japan)
+        starts in January 2015, so with years=10 its values start in about 2024. The United
+        States index is used for every company unless another country is given, so choose the
+        country of the currency the earnings are in: with convert_currency the statements are
+        in the listing currency, so the currency the shares trade in (e.g. country="Netherlands"
+        for ASML.AS), and otherwise the currency of the statements.
+
+        Every year of the window must be available, as in Campbell and Shiller (1998), so the
+        first `years` - 1 years after the first statement (4 x `years` - 1 quarters with
+        quarterly data) are NaN: choose a start_date that many years before the first ratio of
+        interest. The FinancialModelingPrep plan can limit
+        the history to five years of statements; years=5 is the shortest window Graham and Dodd
+        recommend. An average real EPS of zero or below gives NaN, as the ratio has no meaning
+        for a company that lost money over the cycle.
+
+        A high CAPE relative to the company's own history or its peers means the market prices
+        the company well above its average earnings power, which in Campbell and Shiller (1998)
+        foreshadowed lower returns over the following ten years for the market as a whole.
+
+        Also known as: Shiller P/E, P/E10, Graham and Dodd P/E, normalized P/E, CAPE ratio.
+
+        References:
+        - Graham, B. and Dodd, D. (1934). Security Analysis. McGraw-Hill, New York.
+        - Campbell, J. Y. and Shiller, R. J. (1998). Valuation Ratios and the Long-Run Stock
+          Market Outlook. The Journal of Portfolio Management, 24(2), 11-26.
+
+        Args:
+            years (int, optional): The number of years of earnings to average. Defaults to 10.
+            inflation_adjusted (bool, optional): Whether to express the earnings of every year
+                in the prices of the period of the ratio with the consumer price index.
+                Defaults to True.
+            country (str, optional): The country whose consumer price index adjusts the
+                earnings for inflation. Defaults to "United States".
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
+                Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Cyclically adjusted price earnings ratio (CAPE) values.
+
+        Notes:
+        - The method retrieves historical data and calculates the CAPE for each asset in the Toolkit instance.
+        - It is not part of collect_valuation_ratios, as it retrieves the consumer price index.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "JNJ", "AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2012-01-01",
+            end_date="2025-12-31",
+        )
+
+        # The last five years, each with ten years of earnings behind it.
+        toolkit.ratios.get_cyclically_adjusted_price_to_earnings_ratio().iloc[:, -5:]
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 51.6596 | 43.1482 | 42.3565 | 50.2245 | 50.0506 |
+        | JNJ  | 29.766  | 28.1009 | 21.813  | 20.1288 | 26.7847 |
+        | KO   | 31.7418 | 32.6074 | 29.2816 | 29.6145 | 31.2952 |
+        """
+        if years < 1:
+            raise ValueError("The number of years must be at least 1.")
+
+        # The earnings per share of the price earnings ratio: a year of earnings, the trailing
+        # twelve months with quarterly data.
+        eps = self._get_earnings_per_share(
+            include_dividends, diluted, self._get_valuation_trailing(None)
+        )
+
+        consumer_price_index = None
+
+        if inflation_adjusted:
+            if self._consumer_price_index_function is None:
+                raise ValueError(
+                    "The inflation adjustment needs the consumer price index, which the Toolkit "
+                    "provides (toolkit.ratios). Set inflation_adjusted=False to leave it out."
+                )
+
+            monthly_index = self._consumer_price_index_function(country).dropna()
+
+            if monthly_index.empty:
+                raise ValueError(
+                    f"There is no consumer price index for {country}. Choose a country as named "
+                    "in toolkit.economics.get_consumer_price_index()."
+                )
+
+            if isinstance(monthly_index.index, pd.PeriodIndex):
+                monthly_index.index = monthly_index.index.to_timestamp()
+            monthly_index = monthly_index.sort_index()
+
+            # The last day of each ticker's fiscal periods (the filing day with point_in_time),
+            # else the end of the calendar period the column is labelled with.
+            end_dates = pd.DataFrame(
+                [eps.columns.to_timestamp(how="end").normalize()] * len(eps.index),
+                index=eps.index,
+                columns=eps.columns,
+            )
+            period_end_dates = self._period_end_dates
+
+            if period_end_dates is not None and not period_end_dates.empty:
+                known_dates = (
+                    period_end_dates.reindex(index=eps.index, columns=eps.columns)
+                    .apply(pd.to_datetime)
+                    .apply(lambda dates: dates.dt.normalize())
+                )
+                end_dates = known_dates.where(known_dates.notna(), end_dates)
+
+            # The index of the month each period ends in (as asof finds the month that starts
+            # on or before the date), the latest published month for a period that ends after it.
+            consumer_price_index = end_dates.apply(
+                lambda dates: pd.Series(
+                    monthly_index.asof(pd.DatetimeIndex(dates)).to_numpy(),
+                    index=dates.index,
+                )
+            )
+
+        years_columns = eps.columns
+        share_prices = self._get_share_prices(
+            str(years_columns[0]), str(years_columns[-1])
+        )
+
+        cyclically_adjusted_price_to_earnings_ratio = (
+            valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+                share_prices,
+                eps.reindex(index=share_prices.index),
+                (
+                    consumer_price_index.reindex(index=share_prices.index)
+                    if consumer_price_index is not None
+                    else None
+                ),
+                years=years,
+                periods_per_year=4 if self._quarterly else 1,
+            )
+        )
+
+        return finalize_dataset(
+            dataset=cyclically_adjusted_price_to_earnings_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
         )
 
     @handle_portfolio

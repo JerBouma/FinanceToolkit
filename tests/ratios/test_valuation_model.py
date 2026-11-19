@@ -399,6 +399,39 @@ def test_multiples_of_non_positive_denominators_are_nan():
     assert price_to_book.iloc[1:].isna().all()
 
 
+def test_get_cyclically_adjusted_price_to_earnings_ratio():
+    periods = pd.period_range("2020", "2023", freq="Y")
+    price = pd.DataFrame([[10.0, 20.0, 30.0, 40.0]], index=["A"], columns=periods)
+    eps = pd.DataFrame([[1.0, 2.0, -9.0, 4.0]], index=["A"], columns=periods)
+    cpi = pd.DataFrame([[100.0, 110.0, 120.0, 132.0]], index=["A"], columns=periods)
+
+    cape = valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+        price, eps, cpi, years=2
+    )
+    nominal = valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+        price, eps, years=2
+    )
+
+    # 2021: the 2020 EPS in 2021 prices is 1 x 110 / 100.
+    assert cape.loc["A", periods[1]] == pytest.approx(20 / ((1.1 + 2) / 2))
+    assert nominal.loc["A", periods[1]] == pytest.approx(20 / 1.5)
+    # 2022 averages to a loss, so it is NaN; 2023 is (-9 x 132 / 120 + 4) / 2 < 0 as well.
+    assert cape.loc["A", periods[2:]].isna().all()
+    # 2020 has no year before it.
+    assert pd.isna(cape.loc["A", periods[0]])
+
+    # Quarterly: trailing twelve month EPS of the same quarter one year apart (lags 0 and 4).
+    quarters = pd.period_range("2020Q1", "2021Q4", freq="Q")
+    quarterly_eps = pd.DataFrame([[1.0] * 4 + [3.0] * 4], index=["A"], columns=quarters)
+    quarterly_price = pd.DataFrame([[40.0] * 8], index=["A"], columns=quarters)
+    quarterly = valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+        quarterly_price, quarterly_eps, years=2, periods_per_year=4
+    )
+
+    assert quarterly.loc["A", quarters[:4]].isna().all()
+    assert quarterly.loc["A", quarters[4:]].tolist() == pytest.approx([20.0] * 4)
+
+
 def test_get_dividend_adjusted_price_to_earnings_growth_ratio():
     price_earnings = pd.Series([30.0, 11.0, 12.0])
     growth_rate = pd.Series([0.2, 0.1, 0.05])

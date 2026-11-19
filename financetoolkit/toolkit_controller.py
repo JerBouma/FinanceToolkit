@@ -73,7 +73,11 @@ from financetoolkit.normalization_model import (
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
+from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
+    calculate_growth,
+    normalize_country_name,
+)
 
 if TYPE_CHECKING:
     # TYPE_CHECKING only: the module controllers are imported when first used, so that
@@ -735,6 +739,28 @@ class Toolkit:
                 api_key=self._api_key,
             ).get_gross_domestic_product(usd=True)
 
+        def consumer_price_index(country: str) -> pd.Series:
+            # Imported when first used, as only the cyclically adjusted P/E needs it.
+            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
+                Economics,
+            )
+
+            # Every month of the Economics history, as the earnings go back up to decades.
+            consumer_price_index = Economics(
+                rounding=None,
+                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
+                cache=self._cache,
+                api_key=self._api_key,
+            ).get_consumer_price_index(countries=country, period="monthly")
+
+            # Economics returns the name its sources use ("USA" gives "United States").
+            country = normalize_country_name(country, consumer_price_index.columns)
+
+            if country not in consumer_price_index.columns:
+                return pd.Series(dtype=float)
+
+            return consumer_price_index[country]
+
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
@@ -764,6 +790,7 @@ class Toolkit:
             ),
             currency_function=self._get_listing_currencies,
             gross_domestic_product_function=gross_domestic_product,
+            consumer_price_index_function=consumer_price_index,
         )
 
         if self._portfolio_weights:

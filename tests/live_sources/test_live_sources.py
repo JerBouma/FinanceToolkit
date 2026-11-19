@@ -260,6 +260,15 @@ SOURCES = {
         "Pakistan",
         "monthly",
     ),
+    # The ratio requests the position, the end-of-period exchange rates and the GDP.
+    "IMF net international investment position": (
+        lambda: imf_model.get_net_international_investment_position(
+            "quarterly", START, END, to_gdp=True
+        ),
+        "United States",
+        "quarterly",
+        (-2.0, 2.0),
+    ),
     "BIS policy rates": (
         lambda: bis_model.get_central_bank_policy_rate(START, END),
         "United States",

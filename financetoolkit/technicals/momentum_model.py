@@ -905,15 +905,15 @@ def get_stochastic_relative_strength_index(
     The formula is as follows:
 
     - RSI = Relative Strength Index(Close, window), with Wilder's smoothing
-    - %K = 100 * (RSI - Lowest RSI(stochastic_window)) / (Highest RSI(stochastic_window)
-      - Lowest RSI(stochastic_window))
+    - %K = 100 * (RSI - Lowest RSI) / (Highest RSI - Lowest RSI), over the last stochastic_window RSI values
     - %D = SMA(%K, smooth_window)
 
-    The defaults of 14, 5 and 3 are those of TA-Lib's `STOCHRSI` (timeperiod 14, fastk_period
-    5, fastd_period 3 with a simple average), which returns this fast %K and %D. TradingView
-    instead uses a 14-period stochastic of a 14-period RSI with a %K smoothed over 3 periods;
-    that is `stochastic_window=14` here, with its %K equal to this %D. StockCharts shows the
-    unsmoothed 14-period value on a scale of 0 to 1.
+    Chande and Kroll define it as a 14-period stochastic of a 14-period RSI, as StockCharts
+    and TradingView do (`window=14`, `stochastic_window=14`). StockCharts shows this %K on a
+    scale of 0 to 1; TradingView smooths it over 3 periods, so its %K equals this %D with
+    `smooth_window=3`. TA-Lib's `STOCHRSI` defaults to a 5-period stochastic instead
+    (timeperiod 14, fastk_period 5, fastd_period 3 with a simple average), which is
+    `stochastic_window=5` here and returns its fast %K and %D.
 
     Also known as: StochRSI, Stoch RSI.
 

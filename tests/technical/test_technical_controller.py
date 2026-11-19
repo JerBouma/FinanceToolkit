@@ -181,7 +181,7 @@ def test_get_relative_strength_index(recorder, technical_module):
 def test_get_stochastic_relative_strength_index(recorder, technical_module):
     recorder.capture(technical_module.get_stochastic_relative_strength_index())
     recorder.capture(
-        technical_module.get_stochastic_relative_strength_index(stochastic_window=14)
+        technical_module.get_stochastic_relative_strength_index(stochastic_window=5)
     )
     recorder.capture(
         technical_module.get_stochastic_relative_strength_index(

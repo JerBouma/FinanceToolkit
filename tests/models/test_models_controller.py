@@ -2156,3 +2156,122 @@ def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
     assert pd.isna(wacc.loc[("AAPL", "Cost of Debt"), period])
     assert pd.isna(wacc.loc[("AAPL", "Weighted Average Cost of Capital"), period])
     assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_dupont_analyses_multiply_to_the_reported_return_on_equity(quarterly, trailing):
+    from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    statements = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        # Eight quarters out of the four years of the datasets, so that a trailing year of
+        # four quarters, which averages the balances over five quarter ends, has values.
+        statements = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in statements
+        ]
+
+    tickers = ["AAPL", "MSFT"]
+    models = Models(tickers, {}, {}, *statements, quarterly=quarterly, rounding=None)
+    ratios = Ratios(tickers, {}, *statements, quarterly=quarterly, rounding=None)
+
+    return_on_equity = ratios.get_return_on_equity(trailing=trailing)
+    asset_turnover = ratios.get_asset_turnover_ratio(trailing=trailing)
+    return_on_assets = ratios.get_return_on_assets(trailing=trailing)
+    dupont = models.get_dupont_analysis(trailing=trailing)
+    extended = models.get_extended_dupont_analysis(trailing=trailing)
+
+    for ticker in tickers:
+        reported = return_on_equity.loc[ticker]
+        assert reported.notna().sum() >= 2
+
+        margin = dupont.loc[(ticker, "Net Profit Margin")]
+        turnover = dupont.loc[(ticker, "Asset Turnover")]
+        product = margin * turnover * dupont.loc[(ticker, "Equity Multiplier")]
+        extended_product = (
+            extended.loc[(ticker, "Interest Burden Ratio")]
+            * extended.loc[(ticker, "Tax Burden Ratio")]
+            * extended.loc[(ticker, "Operating Profit Margin")]
+            * extended.loc[(ticker, "Asset Turnover")]
+            * extended.loc[(ticker, "Equity Multiplier")]
+        )
+
+        for decomposed in (
+            product,
+            extended_product,
+            dupont.loc[(ticker, "Return on Equity")],
+            extended.loc[(ticker, "Return on Equity")],
+        ):
+            pd.testing.assert_series_equal(
+                decomposed, reported, check_names=False, rtol=1e-12, atol=0
+            )
+        pd.testing.assert_series_equal(
+            turnover, asset_turnover.loc[ticker], check_names=False, rtol=1e-12
+        )
+        pd.testing.assert_series_equal(
+            margin * turnover,
+            return_on_assets.loc[ticker],
+            check_names=False,
+            rtol=1e-12,
+            atol=0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_economic_value_added_uses_the_invested_capital_of_the_roic(
+    quarterly, trailing
+):
+    from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    statements = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        statements = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in statements
+        ]
+
+    tickers = ["AAPL", "MSFT"]
+    models = Models(tickers, {}, {}, *statements, quarterly=quarterly, rounding=None)
+    ratios = Ratios(tickers, {}, *statements, quarterly=quarterly, rounding=None)
+    # The WACC needs market data and does not enter the NOPAT or the invested capital.
+    wacc = pd.DataFrame(
+        0.08,
+        index=pd.MultiIndex.from_product(
+            [tickers, ["Weighted Average Cost of Capital"]]
+        ),
+        columns=statements[0].columns,
+    )
+    models._weighted_average_cost_of_capital = lambda **_: wacc
+
+    eva = models.get_economic_value_added(trailing=trailing)
+    return_on_invested_capital = ratios.get_return_on_invested_capital(
+        trailing=trailing
+    )
+
+    for ticker in tickers:
+        reported = return_on_invested_capital.loc[ticker]
+        assert reported.notna().sum() >= 2
+        pd.testing.assert_series_equal(
+            eva.loc[(ticker, "Net Operating Profit After Taxes")]
+            / eva.loc[(ticker, "Invested Capital")],
+            reported,
+            check_names=False,
+            rtol=1e-12,
+            atol=0,
+        )

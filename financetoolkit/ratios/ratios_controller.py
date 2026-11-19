@@ -8526,12 +8526,13 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (income and cash flow
-                statement items) over, with balance sheet items averaged over the same number of
-                period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
+                statement items) over, with balance sheet items averaged over the trailing + 1
+                period ends that open and close those periods, as for the return on invested
+                capital, so trailing=1 equals the default average of the opening and closing
+                balance. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
                 with annual data a three-year cumulative figure. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data) against
-                the average of the opening and closing invested capital, as for the return on
-                invested capital.
+                the average of the opening and closing invested capital.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8571,8 +8572,9 @@ class Ratios:
         | DE  | 0.0814 | 0.013  | 0.0521 | 0.0509 | 0.0362 |
         """
         # The same invested capital as the return on invested capital: averaged over the
-        # trailing period ends, or over the opening and closing balance of a single period.
-        window = trailing or 2
+        # trailing + 1 period ends that open and close the trailing periods, or over the opening
+        # and closing balance of a single period.
+        window = (trailing or 1) + 1
 
         cash_return_on_invested_capital = (
             profitability_model.get_cash_return_on_invested_capital(

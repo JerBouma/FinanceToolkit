@@ -680,7 +680,11 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The number of periods to sum the flows (EBIT, taxes)
+                over, with the Total Equity and Total Debt averaged over the trailing + 1 period ends
+                that open and close those periods, so trailing=1 equals the default average of the
+                opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM). Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -702,10 +706,11 @@ class ValuationModels:
         - The Corporate Tax Rate is the effective tax rate (Income Tax Expense / Income Before Tax)
         kept within 0 and 1, and 0 for a period without a pre-tax profit, the same rate the
         Weighted Average Cost of Capital uses (see `get_weighted_average_cost_of_capital`).
-        - Invested Capital is the sum of the two-period average of Total Equity and the two-period
-        average of Total Debt, i.e. the capital employed over the course of the period rather than
-        its closing balance, consistent with the Return on Invested Capital calculation in the
-        Ratios module.
+        - Invested Capital is the sum of the average Total Equity and the average Total Debt over
+        the period ends that open and close the period (the trailing + 1 period ends with
+        `trailing` set), i.e. the capital employed over the course of the period rather than its
+        closing balance, consistent with the Return on Invested Capital calculation in the Ratios
+        module.
         - The Weighted Average Cost of Capital comes from `get_weighted_average_cost_of_capital`,
         with the market risk premium given by `market_risk_premium` (by default the equity risk
         premium of the company's country) and the same `trailing`, so that it
@@ -742,11 +747,14 @@ class ValuationModels:
         income_before_tax = helpers.trailing_sum(
             self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
+        # The invested capital of the return on invested capital of the Ratios module: averaged
+        # over the period ends that open and close the (trailing) periods the NOPAT covers.
+        period_ends = (trailing or 1) + 1
         total_equity = helpers.trailing_mean(
-            self._balance_sheet_statement.loc[:, "Total Equity", :], trailing or 2
+            self._balance_sheet_statement.loc[:, "Total Equity", :], period_ends
         )
         total_debt = helpers.trailing_mean(
-            self._balance_sheet_statement.loc[:, "Total Debt", :], trailing or 2
+            self._balance_sheet_statement.loc[:, "Total Debt", :], period_ends
         )
 
         ebit = self._earnings_before_interest_and_taxes(trailing)

@@ -917,6 +917,19 @@ class Toolkit:
             )
             return index_data, market_value
 
+        def corporate_bond_yield(start: str, end: str) -> pd.Series:
+            # Imported when first used, as only the Graham intrinsic value needs it.
+            from financetoolkit.fixedincome.sources import fred_model  # noqa: PLC0415
+            from financetoolkit.helpers import require_fred_api_key  # noqa: PLC0415
+
+            require_fred_api_key(
+                self._fred_api_key,
+                "the Moody's Aaa corporate bond yield (or pass a bond_yield)",
+            )
+            return fred_model.get_moodys_corporate_bond_yields(
+                "daily", start, end, self._fred_api_key
+            )["Aaa"]
+
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
             # "lookback" is the daily data from a year before the start date, for the
@@ -944,6 +957,7 @@ class Toolkit:
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
             sp500_function=sp500,
+            corporate_bond_yield_function=corporate_bond_yield,
         )
 
     @property

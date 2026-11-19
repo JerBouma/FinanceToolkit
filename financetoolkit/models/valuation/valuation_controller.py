@@ -37,6 +37,10 @@ logger = get_logger()
 # the Monte Carlo valuation use it as their default perpetual growth rate as well.
 LONG_RUN_GROWTH_RATE = 0.025
 
+# The highest growth rate in Graham's table of the multiples his growth formula gives (The
+# Intelligent Investor, chapter 11), the limit of the growth rate the formula takes by default.
+GRAHAM_MAXIMUM_GROWTH_RATE = 0.20
+
 
 @filter_shown_columns
 @track_sources
@@ -2618,17 +2622,7 @@ class ValuationModels:
             "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
             :,
         ]
-
-        net_income = helpers.trailing_sum(
-            self._income_statement.loc[:, "Net Income", :], trailing
-        )
-        avg_shares = helpers.trailing_mean(average_shares, trailing)
-
-        earnings_per_share = valuation_model.get_earnings_per_share(
-            net_income=net_income,
-            preferred_dividends=0,
-            average_outstanding_shares=avg_shares,
-        )
+        earnings_per_share = self._trailing_earnings_per_share(diluted, trailing)
 
         # Book value is a stock at the balance sheet date, so equity and preferred stock stay point in time and are divided by the latest shares; only the earnings, a flow, cover the trailing year.  # noqa: E501
         book_value_per_share = valuation_model.get_book_value_per_share(
@@ -2654,6 +2648,239 @@ class ValuationModels:
             rounding=rounding,
             standardize=standardize,
             axis="columns",
+        )
+
+    @handle_errors
+    def get_graham_intrinsic_value(
+        self,
+        growth_rate: float | list | dict[str, float] | None = None,
+        bond_yield: float | list | dict[str, float] | None = None,
+        diluted: bool = True,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the intrinsic value of a share with Benjamin Graham's growth formula, the
+        value of a growth stock from its earnings, their expected growth and the yield of high
+        grade corporate bonds.
+
+        Graham gave the formula in The Intelligent Investor (fourth revised edition, 1973,
+        chapter 11) as Earnings per Share x (8.5 + 2g), with 8.5 the price-to-earnings ratio of
+        a company without growth and g the growth rate of its earnings expected over the next
+        7 to 10 years, in percent. In 1974 he scaled it by 4.4 / Y, with 4.4 the average yield
+        of AAA corporate bonds in 1962 and Y their current yield, so that the value falls when
+        interest rates rise.
+
+        The formula is as follows:
+
+        - Intrinsic Value = Earnings per Share x (8.5 + 2 x g) x 4.4 / Y
+
+        Graham wrote g and Y in percent (5 for 5%). The growth rate and the bond yield of this
+        method are decimals like every rate in the Finance Toolkit (0.05 for 5%), and the
+        formula multiplies them by 100 before it applies Graham's constants, so the value is
+        Graham's. The bond yield is Moody's seasoned Aaa corporate bond yield, the yield to
+        maturity of bonds with 20 years or more to maturity that Moody's publishes on their
+        semi-annual coupon basis, used as published, as Graham's 4.4 was.
+
+        Graham meant the formula as a way to compare growth stocks and warned that growth
+        projections are unreliable: a higher g raises the value without limit, so the value
+        of a fast grower rests mostly on the growth assumed. A company with a loss has no
+        value by the formula, so it is NaN.
+
+        Also known as: Graham formula, Graham growth formula, Benjamin Graham intrinsic value,
+        revised Graham formula.
+
+        Args:
+            growth_rate (float, list or dict, optional): The expected annual growth rate of the
+                earnings per share over the next 7 to 10 years, as a decimal: one number, or a
+                list or dict with a rate per ticker. Defaults to None, which uses the compound
+                annual growth of the company's Earnings per Share over the 10 years up to each
+                period (or all the years before it when there are fewer, at least three, NaN
+                with less history), kept within 0 and 0.20, the range of Graham's own table of
+                growth rates, and NaN where the earnings at either end are not positive.
+            bond_yield (float, list or dict, optional): The yield of AAA corporate bonds, as a
+                decimal: one number, or a list or dict with a yield per ticker. Defaults to None,
+                which uses Moody's seasoned Aaa corporate bond yield (FRED series DAAA) on the
+                last day up to the end of each fiscal period, which needs a FRED API key.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None,
+                which uses 4 (the trailing twelve months of earnings) with quarterly data and a single period
+                with yearly data.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the intrinsic value per share.
+
+        Notes:
+        - Graham's formula takes the earnings of the last twelve months, so with quarterly data the
+        Earnings per Share are the sum of the last four quarters by default; it is the Net Income divided
+        by the Weighted Average Shares Diluted (or the Weighted Average Shares with diluted=False), as in
+        `get_graham_number`.
+        - The default growth rate looks back, while Graham's g is the growth expected ahead: pass a
+        growth_rate (e.g. from analyst estimates, see `toolkit.get_analyst_estimates`) to value on a
+        forecast. Each period only uses the earnings up to it, and the bond yield of the end of that
+        period, so no period is valued with figures that were only known later. The growth reaches back
+        as far as the statements the Toolkit holds (a year before the start date) and needs three
+        years of them, so the first periods are NaN and an earlier start_date gives a longer growth
+        window.
+        - Compare the value with the share price (`toolkit.get_historical_data`) for Graham's margin of
+        safety.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "PEP", "JNJ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            fred_api_key="FRED_API_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_graham_intrinsic_value()
+        ```
+
+        Which returns:
+
+        |     |   2021 |   2022 |    2023 |     2024 |     2025 |
+        |:----|-------:|-------:|--------:|---------:|---------:|
+        | JNJ |    nan |    nan | 630.081 |  51.9832 | 349.49   |
+        | KO  |    nan |    nan |  72.556 |  50.1366 |  76.9353 |
+        | PEP |    nan |    nan | 160.224 | 138.396  |  74.4379 |
+        """
+        # Graham's formula values the earnings of the last twelve months, so a quarterly Earnings per Share is the trailing twelve months.  # noqa: E501
+        if trailing is None and self._quarterly:
+            trailing = 4
+
+        earnings_per_share = self._trailing_earnings_per_share(diluted, trailing)
+
+        growth_rates = helpers.rates_per_period(
+            growth_rate,
+            self._tickers,
+            earnings_per_share.columns,
+            "growth rate",
+            lambda: self._earnings_per_share_growth(earnings_per_share),
+        )
+        bond_yields = helpers.rates_per_period(
+            bond_yield,
+            self._tickers,
+            earnings_per_share.columns,
+            "bond yield",
+            self._aaa_corporate_bond_yields,
+        )
+
+        graham_intrinsic_value = intrinsic_model.get_graham_intrinsic_value(
+            earnings_per_share=earnings_per_share.reindex(self._tickers),
+            growth_rate=growth_rates,
+            bond_yield=bond_yields,
+        )
+
+        return finalize_dataset(
+            dataset=graham_intrinsic_value,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="columns",
+        )
+
+    def _trailing_earnings_per_share(
+        self, diluted: bool, trailing: int | None
+    ) -> pd.DataFrame:
+        """
+        The Earnings per Share of Graham's formulas per ticker (rows) and period (columns): the
+        Net Income summed over `trailing` periods divided by the average (diluted) shares over
+        those periods.
+        """
+        average_shares = self._income_statement.loc[
+            :,
+            "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
+            :,
+        ]
+
+        return valuation_model.get_earnings_per_share(
+            net_income=helpers.trailing_sum(
+                self._income_statement.loc[:, "Net Income", :], trailing
+            ),
+            preferred_dividends=0,
+            average_outstanding_shares=helpers.trailing_mean(average_shares, trailing),
+        )
+
+    def _earnings_per_share_growth(
+        self, earnings_per_share: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        The growth rate of Graham's intrinsic value when none is given: the compound annual
+        growth of the Earnings per Share over the 10 years up to each period (columns), or
+        from the first period with earnings when that is later, from at least three years
+        back, as a shorter span says little about the 7 to 10 years Graham's g looks ahead
+        (NaN with less history). Each period only uses the earnings up to it. A compound rate needs positive earnings
+        at both ends, so it is NaN otherwise, and it is kept within 0 and 0.20, the growth
+        rates Graham tabulated in The Intelligent Investor (chapter 11).
+        """
+        periods_per_year = 4 if self._quarterly else 1
+        window = 10 * periods_per_year
+        growth = pd.DataFrame(
+            float("nan"),
+            index=earnings_per_share.index,
+            columns=earnings_per_share.columns,
+        )
+
+        for ticker in earnings_per_share.index:
+            history = earnings_per_share.loc[ticker]
+            first = history.first_valid_index()
+            if first is None:
+                continue
+            first_position = history.index.get_loc(first)
+
+            for position in range(first_position + 3 * periods_per_year, len(history)):
+                base_position = max(first_position, position - window)
+                base, latest = history.iloc[base_position], history.iloc[position]
+                if base > 0 and latest > 0:
+                    years = (position - base_position) / periods_per_year
+                    growth.iloc[growth.index.get_loc(ticker), position] = (
+                        latest / base
+                    ) ** (1 / years) - 1
+
+        return growth.clip(lower=0, upper=GRAHAM_MAXIMUM_GROWTH_RATE)
+
+    def _aaa_corporate_bond_yields(self) -> pd.DataFrame:
+        """
+        Moody's seasoned Aaa corporate bond yield per ticker (rows) and period (columns), on
+        the last day with a yield up to each ticker's fiscal period end (see _market_dates),
+        so that no period is valued with a yield that was only known later.
+        """
+        if self._corporate_bond_yield_function is None:
+            raise ValueError(
+                "No source for the AAA corporate bond yield was given, so pass a bond_yield."
+            )
+
+        market_dates = self._market_dates()
+        # The yield up to 10 days before a date counts (a holiday or weekend before it).
+        start = (market_dates.min().min() - pd.Timedelta(days=15)).strftime("%Y-%m-%d")
+        end = market_dates.max().max().strftime("%Y-%m-%d")
+
+        return self._values_at_market_dates(
+            self._corporate_bond_yield_function(start, end)
         )
 
     def _latest_value(self, statement: pd.DataFrame, ticker: str, row: str) -> float:

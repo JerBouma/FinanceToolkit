@@ -22,7 +22,7 @@ logger = get_logger()
 @track_sources
 class QualityModels:
     """
-    Quality and earnings manipulation scores: Piotroski, Beneish, Mohanram, Dechow, Montier, the magic formula, the quality score and the accruals ratio.
+    Quality and earnings manipulation scores: Piotroski, Beneish, Mohanram, Dechow, Montier, the magic formula, the quality score, the accruals ratio and the modified Jones discretionary accruals.
     """
 
     @handle_errors
@@ -1408,3 +1408,181 @@ class QualityModels:
         )
         # The balance sheet changes look a year back, by when the trailing sums are complete.
         return self._finish_score(results, rounding, first_columns=trailing or 1)
+
+    @handle_errors
+    def get_discretionary_accruals(
+        self,
+        method: str = "time_series",
+        min_observations: int = 10,
+        intercept: bool = False,
+        trailing: int | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the discretionary accruals of the modified Jones model, the part of a
+        company's accruals that its change in revenues and its fixed assets do not explain
+        and that is therefore attributed to management's discretion. Jones (1991) modelled
+        the accruals a company needs as a function of its change in revenues (working
+        capital moves with sales) and its property, plant and equipment (depreciation).
+        Dechow, Sloan and Sweeney (1995) subtracted the change in receivables from the
+        change in revenues, because revenue booked on credit can itself be managed, and
+        found this modified model the most powerful at detecting earnings management.
+        Large positive discretionary accruals point at earnings that were managed up.
+
+        The formula is as follows:
+
+            - Total Accruals = (Net Income - Cash Flow from Operations) / Total Assets(t-1)
+            - Estimation: Total Accruals = a1 × 1 / A(t-1) + a2 × ΔRevenue / A(t-1) +
+              a3 × PPE / A(t-1) + e
+            - Non-Discretionary Accruals = a1 × 1 / A(t-1) +
+              a2 × (ΔRevenue - ΔReceivables) / A(t-1) + a3 × PPE / A(t-1)
+            - Discretionary Accruals = Total Accruals - Non-Discretionary Accruals
+
+        Here A(t-1) is the total assets at the start of the year, ΔRevenue and
+        ΔReceivables the changes over the year and PPE the property, plant and equipment
+        at the end of it. The coefficients a1, a2 and a3 are estimated with ordinary least
+        squares without an intercept, as in Jones (1991); with intercept=True a constant a0
+        is added to the estimation and the Non-Discretionary Accruals (Kothari, Leone and
+        Wasley, 2005).
+
+        For more information, see the following papers:
+
+        - Jones, J.J. (1991). "Earnings Management During Import Relief Investigations."
+          Journal of Accounting Research, 29(2), 193-228.
+        - Dechow, P.M., Sloan, R.G. and Sweeney, A.P. (1995). "Detecting Earnings
+          Management." The Accounting Review, 70(2), 193-225.
+        - Kothari, S.P., Leone, A.J. and Wasley, C.E. (2005). "Performance Matched
+          Discretionary Accrual Measures." Journal of Accounting and Economics, 39(1),
+          163-197.
+
+        Also known as: modified Jones model, abnormal accruals, Jones model, earnings
+        management.
+
+        Args:
+            method (str, optional): How the coefficients are estimated. "time_series"
+                estimates them for every year on the company's own earlier years, as Jones
+                (1991) and Dechow, Sloan and Sweeney (1995) did, with the change in revenues
+                in the estimation and the change in receivables subtracted only for the year
+                itself. "cross_section" estimates them per year across the tickers of the
+                Toolkit, with the change in revenues minus the change in receivables in the
+                estimation as well, which is meaningful with many companies of one industry.
+                Defaults to "time_series".
+            min_observations (int, optional): The fewest observations a regression is
+                estimated on: earlier years of the company with "time_series", tickers with
+                "cross_section". At least 3, the number of coefficients. Defaults to 10, the
+                minimum estimation period of Dechow, Sloan and Sweeney (1995).
+            intercept (bool, optional): Whether to add a constant to the regression, as
+                Kothari, Leone and Wasley (2005) do, in both methods. It removes the average
+                level of the accruals from the other coefficients at the cost of a degree of
+                freedom (one observation more is needed). Defaults to False, the formulation
+                of Jones (1991) and Dechow, Sloan and Sweeney (1995).
+            trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
+                quarters, a trailing twelve months) and compare with the values `trailing`
+                periods back, so that with quarterly data every change is year over year.
+                Balance sheet items are taken at the period end. Defaults to None, which is
+                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
+                compare quarter over quarter.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the Total Accruals, Non-Discretionary
+            Accruals and Discretionary Accruals, as a share of the total assets at the start
+            of the period. The last two are NaN where fewer than `min_observations`
+            observations are available.
+
+        Notes:
+        - Total accruals are Net Income minus Cash Flow from Operations, the cash flow form
+          of Hribar and Collins (2002) that the Beneish M-Score's Total Accruals to Total
+          Assets also uses; Jones (1991) and Dechow, Sloan and Sweeney (1995) derived them
+          from balance sheet changes, which misstate them around acquisitions and
+          divestitures.
+        - Jones (1991) uses gross property, plant and equipment. Where a company's
+          statements report no gross amount (Financial Modeling Prep's do not), the net
+          amount is used in every year, as switching between the two would move the ratio.
+        - The time series design estimates every year on the years before it only (an
+          expanding window ending a year earlier), so there is no look-ahead. With the
+          default of 10 observations, the first discretionary accruals are in the twelfth
+          year of statements (a year for the beginning assets and ten to estimate on), so set
+          a `start_date` well over a decade back; the Toolkit's data plan may cover fewer
+          years, in which case only the Total Accruals are returned. Lowering
+          `min_observations` gives earlier but noisier estimates.
+        - The cross-section design uses the companies of the same year, so it needs at
+          least `min_observations` tickers that report every input. Many later papers
+          estimate it per industry and year and add an intercept (Kothari, Leone and
+          Wasley, 2005), which `intercept=True` does.
+        - Without an intercept the PPE term carries the average level of the accruals, so a
+          company whose PPE intensity or size trends away from its estimation years gets
+          discretionary accruals of one sign. In the example below AAPL's and MSFT's PPE
+          averaged about 0.11 of their beginning assets in the estimation years and is 0.15
+          to 0.17 (AAPL) and 0.24 to 0.45 (MSFT) in the years shown, where their
+          discretionary accruals are positive in every year. `intercept=True` removes this
+          level bias within the estimation years at the cost of a degree of freedom, and
+          gives both companies discretionary accruals of either sign in these years.
+        - The expanding window of the time series design starts at the first year loaded,
+          so the estimates, and with them the discretionary accruals, depend on the
+          `start_date` of the Toolkit.
+        - On quarterly data the flows are summed over the trailing twelve months and the
+          time series estimation uses the same quarter of earlier years, so that the
+          observations do not overlap.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2005-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_discretionary_accruals().loc[:, "2021":]
+        ```
+
+        Which returns:
+
+        |                                        |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:---------------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | ('AAPL', 'Total Accruals')             | -0.0289 | -0.0637 | -0.0384 | -0.0695 |  0.0014 |
+        | ('AAPL', 'Non-Discretionary Accruals') | -0.1208 | -0.084  | -0.0696 | -0.0707 | -0.0794 |
+        | ('AAPL', 'Discretionary Accruals')     |  0.0919 |  0.0203 |  0.0312 |  0.0012 |  0.0808 |
+        | ('MSFT', 'Total Accruals')             | -0.0513 | -0.0488 | -0.0417 | -0.0738 | -0.067  |
+        | ('MSFT', 'Non-Discretionary Accruals') | -0.1076 | -0.0973 | -0.1047 | -0.0961 | -0.1061 |
+        | ('MSFT', 'Discretionary Accruals')     |  0.0563 |  0.0485 |  0.063  |  0.0223 |  0.039  |
+        """
+        # The model was estimated on yearly statements, so quarterly data is summed into a
+        # year (a trailing twelve months) unless a trailing period is given.
+        if trailing is None and self._quarterly:
+            trailing = 4
+        inputs = self._score_inputs(trailing)
+        lag = trailing or 1
+        # Jones (1991) uses gross fixed assets. A company whose statements have no gross
+        # amount uses the net amount in every period, as switching between the two would
+        # show a change that is not there.
+        gross = inputs["Gross Property, Plant and Equipment"]
+        fixed_assets = gross.where(
+            gross.notna().any(axis=1), inputs["Property, Plant and Equipment"], axis=0
+        )
+        results = quality_model.get_modified_jones_accruals(
+            net_income=inputs["Net Income"],
+            operating_cash_flow=inputs["Operating Cash Flow"],
+            total_assets=inputs["Total Assets"],
+            revenue=inputs["Revenue"],
+            accounts_receivable=inputs["Accounts Receivable"],
+            property_plant_and_equipment=fixed_assets,
+            lag=lag,
+            method=method,
+            min_observations=min_observations,
+            intercept=intercept,
+        )
+        # The accruals are scaled by the assets a year back.
+        return self._finish_score(
+            results, rounding, first_columns=lag, name="The modified Jones model"
+        )

@@ -2590,3 +2590,61 @@ def test_economic_value_added_uses_the_invested_capital_of_the_roic(
             rtol=1e-12,
             atol=0,
         )
+
+
+def test_get_discretionary_accruals(recorder, models_module):
+    # The offline statements cover too few years (and tickers) to estimate on, so only the
+    # Total Accruals have values; the estimates are tested on synthetic statements below.
+    recorder.capture(models_module.get_discretionary_accruals())
+
+
+def test_discretionary_accruals_estimate_on_the_same_quarter_of_earlier_years():
+    import numpy as np  # noqa: PLC0415
+
+    rng = np.random.default_rng(7)
+    quarters = 4 * 14
+    assets = 1000 * np.cumprod(1 + rng.normal(0.01, 0.03, quarters))
+    revenue = assets * rng.uniform(0.1, 0.3, quarters)
+    fixed_assets = assets * rng.uniform(0.2, 0.6, quarters)
+    # Accruals that follow the Jones model exactly on trailing twelve months and changes
+    # over a year: a1 + a2 ΔRevenue + a3 PPE, spread evenly over the quarters.
+    yearly_revenue = np.convolve(revenue, np.ones(4))[: len(revenue)]
+    change = np.full(quarters, np.nan)
+    change[4:] = yearly_revenue[4:] - yearly_revenue[:-4]
+    yearly_accruals = 30 + 0.04 * change + -0.06 * fixed_assets
+    quarterly_accruals = np.full(quarters, np.nan)
+    quarterly_accruals[:4] = 1.0
+    for quarter in range(4, quarters):
+        quarterly_accruals[quarter] = (
+            yearly_accruals[quarter] - quarterly_accruals[quarter - 3 : quarter].sum()
+        )
+
+    models = synthetic_models(
+        {
+            "Total Assets": {"A": list(assets)},
+            "Revenue": {"A": list(revenue)},
+            "Accounts Receivable": {"A": [50.0] * quarters},
+            "Property, Plant and Equipment": {"A": list(fixed_assets)},
+            "Net Income": {"A": list(quarterly_accruals)},
+            "Operating Cash Flow": {"A": [0.0] * quarters},
+        },
+        quarterly=True,
+    )
+    result = models.get_discretionary_accruals().loc["A"]
+    discretionary = result.loc["Discretionary Accruals"].dropna()
+    # The first change of trailing twelve months is in the eighth quarter (position 7),
+    # so the first estimate on ten earlier years of the same quarter is at position 47.
+    assert len(discretionary) == quarters - (7 + 4 * 10)
+    assert np.abs(discretionary.to_numpy()).max() < 1e-10
+    # Accruals that follow the model without a constant give a zero constant when one is added.
+    with_intercept = models.get_discretionary_accruals(intercept=True).loc["A"]
+    np.testing.assert_allclose(
+        with_intercept.loc["Discretionary Accruals"].dropna(), 0, atol=1e-10
+    )
+    assert with_intercept.loc["Discretionary Accruals"].notna().sum() == len(
+        discretionary
+    )
+
+    cross_section = models.get_discretionary_accruals(method="cross_section")
+    assert cross_section.loc["A"].loc["Discretionary Accruals"].isna().all()
+    assert models.get_discretionary_accruals(method="panel").empty

@@ -2158,6 +2158,73 @@ def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
     assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0
 
 
+def test_get_nissim_penman_decomposition(recorder, models_module):
+    recorder.capture(models_module.get_nissim_penman_decomposition())
+    recorder.capture(models_module.get_nissim_penman_decomposition(growth=True))
+
+
+def test_nissim_penman_decomposition_equals_the_ratios(models_module, test_toolkit):
+    decomposition = models_module.get_nissim_penman_decomposition(rounding=10)
+    ratios = test_toolkit.ratios
+    equity = models_module._balance_sheet_statement.xs(
+        "Total Shareholder Equity", level=1
+    ) - models_module._balance_sheet_statement.xs("Preferred Stock", level=1).fillna(0)
+    net_income = models_module._income_statement.xs("Net Income", level=1)
+    return_on_common_equity = net_income / equity.T.rolling(2).mean().T
+
+    for name, method in [
+        ("Return on Net Operating Assets", ratios.get_return_on_net_operating_assets),
+        ("Net Borrowing Cost", ratios.get_net_borrowing_cost),
+        ("Financial Leverage", ratios.get_financial_leverage),
+    ]:
+        expected = method(rounding=10)
+        shown = decomposition.xs(name, level=1)
+        pd.testing.assert_frame_equal(
+            shown, expected.reindex_like(shown), check_names=False, atol=1e-9
+        )
+
+    shown = decomposition.xs("Return on Common Equity", level=1)
+    pd.testing.assert_frame_equal(
+        shown,
+        return_on_common_equity.reindex_like(shown),
+        check_names=False,
+        atol=1e-9,
+    )
+
+
+def test_nissim_penman_decomposition_is_nan_without_interest_rows(models_module):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(models_module)
+    income = models_module._income_statement.copy()
+    period = pd.Period("2022", freq="Y")
+    income.loc[("AAPL", "Interest Expense"), period] = 0
+    income.loc[("AAPL", "Interest Income"), period] = 0
+    models._income_statement = income
+
+    base = models_module.get_nissim_penman_decomposition(rounding=10)
+    decomposition = models.get_nissim_penman_decomposition(rounding=10)
+
+    unknown = [
+        "Return on Net Operating Assets",
+        "Net Borrowing Cost",
+        "Spread",
+        "Leverage Effect",
+        "Return on Common Equity",
+    ]
+    assert decomposition.loc[[("AAPL", name) for name in unknown], period].isna().all()
+    assert decomposition.loc[("AAPL", "Financial Leverage"), period] == pytest.approx(
+        base.loc[("AAPL", "Financial Leverage"), period]
+    )
+    # Every other cell is unchanged.
+    pd.testing.assert_frame_equal(
+        decomposition.drop(columns=period), base.drop(columns=period)
+    )
+    pd.testing.assert_series_equal(
+        decomposition.loc["MSFT", period], base.loc["MSFT", period]
+    )
+
+
 # The US CPI-U of the BIS (2010 = 100) that the size-age index deflates the total assets with,
 # rising 0.25% a month from its 2004 level.
 CONSUMER_PRICES = pd.DataFrame(

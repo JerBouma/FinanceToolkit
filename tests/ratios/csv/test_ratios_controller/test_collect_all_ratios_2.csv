@@ -131,6 +131,15 @@ AAPL,Return on Equity,Lag 3,,,,
 AAPL,Return on Invested Capital,Lag 1,,,0.0719,0.046
 AAPL,Return on Invested Capital,Lag 2,,,,0.1213
 AAPL,Return on Invested Capital,Lag 3,,,,
+AAPL,Return on Net Operating Assets,Lag 1,,,-0.777,-0.1062
+AAPL,Return on Net Operating Assets,Lag 2,,,,-0.8006
+AAPL,Return on Net Operating Assets,Lag 3,,,,
+AAPL,Net Borrowing Cost,Lag 1,,,-1.7054,-0.8168
+AAPL,Net Borrowing Cost,Lag 2,,,,-2.2816
+AAPL,Net Borrowing Cost,Lag 3,,,,
+AAPL,Financial Leverage,Lag 1,,,0.1719,0.0248
+AAPL,Financial Leverage,Lag 2,,,,0.1925
+AAPL,Financial Leverage,Lag 3,,,,
 AAPL,Return on Capital Employed,Lag 1,,0.5924,0.2438,-0.0823
 AAPL,Return on Capital Employed,Lag 2,,,0.9806,0.1415
 AAPL,Return on Capital Employed,Lag 3,,,,0.8177
@@ -482,6 +491,15 @@ MSFT,Return on Equity,Lag 3,,,,
 MSFT,Return on Invested Capital,Lag 1,,,0.0967,-0.1231
 MSFT,Return on Invested Capital,Lag 2,,,,-0.0383
 MSFT,Return on Invested Capital,Lag 3,,,,
+MSFT,Return on Net Operating Assets,Lag 1,,,-0.2308,-0.2856
+MSFT,Return on Net Operating Assets,Lag 2,,,,-0.4505
+MSFT,Return on Net Operating Assets,Lag 3,,,,
+MSFT,Net Borrowing Cost,Lag 1,,,1.1676,31.8811
+MSFT,Net Borrowing Cost,Lag 2,,,,6.5093
+MSFT,Net Borrowing Cost,Lag 3,,,,
+MSFT,Financial Leverage,Lag 1,,,0.268,0.2231
+MSFT,Financial Leverage,Lag 2,,,,0.4313
+MSFT,Financial Leverage,Lag 3,,,,
 MSFT,Return on Capital Employed,Lag 1,,0.2334,0.0837,-0.0697
 MSFT,Return on Capital Employed,Lag 2,,,0.3366,0.0082
 MSFT,Return on Capital Employed,Lag 3,,,,0.2435

@@ -1964,6 +1964,106 @@ def test_return_on_equity_excludes_minority_interest(ratios_module):
     )
 
 
+def test_get_return_on_net_operating_assets(recorder, ratios_module):
+    recorder.capture(ratios_module.get_return_on_net_operating_assets())
+    recorder.capture(ratios_module.get_return_on_net_operating_assets(trailing=2))
+
+
+def test_get_net_borrowing_cost(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_borrowing_cost())
+
+
+def test_get_financial_leverage(recorder, ratios_module):
+    recorder.capture(ratios_module.get_financial_leverage())
+
+
+def test_nissim_penman_ratios_follow_the_statements(ratios_module):
+    balance = ratios_module._balance_sheet_statement
+    income = ratios_module._income_statement
+    period = pd.Period("2022", freq="Y")
+
+    def row(statement, name, ticker, at):
+        value = statement.loc[(ticker, name), at]
+        return 0.0 if pd.isna(value) else value
+
+    rnoa = ratios_module.get_return_on_net_operating_assets(rounding=10)
+    nbc = ratios_module.get_net_borrowing_cost(rounding=10)
+    flev = ratios_module.get_financial_leverage(rounding=10)
+    for ticker in ["AAPL", "MSFT"]:
+
+        def nfo(at, ticker=ticker):
+            return (
+                row(balance, "Total Debt", ticker, at)
+                + row(balance, "Preferred Stock", ticker, at)
+                - row(balance, "Cash and Cash Equivalents", ticker, at)
+                - row(balance, "Short Term Investments", ticker, at)
+                - row(balance, "Long Term Investments", ticker, at)
+            )
+
+        def cse(at, ticker=ticker):
+            return row(balance, "Total Shareholder Equity", ticker, at) - row(
+                balance, "Preferred Stock", ticker, at
+            )
+
+        before_tax = row(income, "Income Before Tax", ticker, period)
+        tax_rate = min(
+            max(row(income, "Income Tax Expense", ticker, period) / before_tax, 0), 1
+        )
+        nfe = (
+            row(income, "Interest Expense", ticker, period)
+            - row(income, "Interest Income", ticker, period)
+        ) * (1 - tax_rate)
+        average_nfo = (nfo(period) + nfo(period - 1)) / 2
+        average_cse = (cse(period) + cse(period - 1)) / 2
+        net_income = row(income, "Net Income", ticker, period)
+
+        assert rnoa.loc[ticker, period] == pytest.approx(
+            (net_income + nfe) / (average_nfo + average_cse)
+        )
+        assert nbc.loc[ticker, period] == pytest.approx(nfe / average_nfo)
+        assert flev.loc[ticker, period] == pytest.approx(average_nfo / average_cse)
+
+
+def test_nissim_penman_ratios_are_nan_without_interest_rows(ratios_module):
+    ratios = copy.copy(ratios_module)
+    income = ratios_module._income_statement.copy()
+    period = pd.Period("2022", freq="Y")
+    # Neither interest row reported for AAPL in 2022 (FMP gives zeros, as for Apple from 2024).
+    income.loc[("AAPL", "Interest Expense"), period] = 0
+    income.loc[("AAPL", "Interest Income"), period] = float("nan")
+    # Interest income alone missing for MSFT: counted as zero, the ratios remain.
+    income.loc[("MSFT", "Interest Income"), period] = float("nan")
+    ratios._income_statement = income
+
+    base_rnoa = ratios_module.get_return_on_net_operating_assets(rounding=10)
+    rnoa = ratios.get_return_on_net_operating_assets(rounding=10)
+    nbc = ratios.get_net_borrowing_cost(rounding=10)
+    flev = ratios.get_financial_leverage(rounding=10)
+
+    assert pd.isna(rnoa.loc["AAPL", period]) and pd.isna(nbc.loc["AAPL", period])
+    assert flev.loc["AAPL", period] == pytest.approx(
+        ratios_module.get_financial_leverage(rounding=10).loc["AAPL", period]
+    )
+    # With the same average obligations, only the interest income dropping out changes the NBC.
+    base = ratios_module._income_statement
+    expense = base.loc[("MSFT", "Interest Expense"), period]
+    interest_income = base.loc[("MSFT", "Interest Income"), period]
+    base_nbc = ratios_module.get_net_borrowing_cost(rounding=10)
+    assert nbc.loc["MSFT", period] == pytest.approx(
+        base_nbc.loc["MSFT", period] * expense / (expense - interest_income)
+    )
+    assert pd.notna(rnoa.loc["MSFT", period])
+    # Only the period itself is NaN; a trailing window over it is NaN as well.
+    other = period + 1
+    assert rnoa.loc["AAPL", other] == pytest.approx(base_rnoa.loc["AAPL", other])
+    assert (
+        ratios.get_net_borrowing_cost(trailing=2)
+        .loc["AAPL", [period, other]]
+        .isna()
+        .all()
+    )
+
+
 def test_get_dividend_adjusted_price_to_earnings_growth_ratio(recorder, ratios_module):
     recorder.capture(
         ratios_module.get_dividend_adjusted_price_to_earnings_growth_ratio()

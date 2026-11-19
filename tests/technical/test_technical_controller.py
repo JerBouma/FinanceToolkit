@@ -120,6 +120,16 @@ def test_get_percentage_price_oscillator(recorder, technical_module):
     )
 
 
+def test_get_percentage_volume_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_percentage_volume_oscillator())
+    recorder.capture(technical_module.get_percentage_volume_oscillator(growth=True))
+    recorder.capture(
+        technical_module.get_percentage_volume_oscillator(
+            short_window=5, long_window=20, signal_window=5
+        )
+    )
+
+
 def test_get_detrended_price_oscillator(recorder, technical_module):
     recorder.capture(technical_module.get_detrended_price_oscillator())
     recorder.capture(technical_module.get_detrended_price_oscillator(growth=True))
@@ -175,6 +185,26 @@ def test_get_relative_strength_index(recorder, technical_module):
     recorder.capture(technical_module.get_relative_strength_index(growth=True))
     recorder.capture(
         technical_module.get_relative_strength_index(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_stochastic_relative_strength_index(recorder, technical_module):
+    recorder.capture(technical_module.get_stochastic_relative_strength_index())
+    recorder.capture(
+        technical_module.get_stochastic_relative_strength_index(stochastic_window=5)
+    )
+    recorder.capture(
+        technical_module.get_stochastic_relative_strength_index(
+            growth=True, lag=[1, 2, 3]
+        )
+    )
+
+
+def test_get_true_strength_index(recorder, technical_module):
+    recorder.capture(technical_module.get_true_strength_index())
+    recorder.capture(technical_module.get_true_strength_index(period="weekly"))
+    recorder.capture(
+        technical_module.get_true_strength_index(growth=True, lag=[1, 2, 3])
     )
 
 
@@ -246,6 +276,20 @@ def test_get_bollinger_bands(recorder, technical_module):
     recorder.capture(technical_module.get_bollinger_bands(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_bollinger_percent_b_and_bandwidth(recorder, technical_module):
+    recorder.capture(technical_module.get_bollinger_percent_b_and_bandwidth())
+    recorder.capture(
+        technical_module.get_bollinger_percent_b_and_bandwidth(
+            window=10, num_std_dev=1.5
+        )
+    )
+    recorder.capture(
+        technical_module.get_bollinger_percent_b_and_bandwidth(
+            growth=True, lag=[1, 2, 3]
+        )
+    )
+
+
 def test_get_moving_average_triangular(recorder, technical_module):
     recorder.capture(technical_module.get_moving_average(method="triangular"))
     recorder.capture(
@@ -288,6 +332,12 @@ def test_get_average_true_range(recorder, technical_module):
     )
 
 
+def test_get_mass_index(recorder, technical_module):
+    recorder.capture(technical_module.get_mass_index())
+    recorder.capture(technical_module.get_mass_index(growth=True))
+    recorder.capture(technical_module.get_mass_index(ema_window=5, sum_window=10))
+
+
 def test_get_keltner_channels(recorder, technical_module):
     recorder.capture(technical_module.get_keltner_channels())
     recorder.capture(technical_module.get_keltner_channels(growth=True))
@@ -298,6 +348,12 @@ def test_get_on_balance_volume(recorder, technical_module):
     recorder.capture(technical_module.get_on_balance_volume())
     recorder.capture(technical_module.get_on_balance_volume(growth=True))
     recorder.capture(technical_module.get_on_balance_volume(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_price_volume_trend(recorder, technical_module):
+    recorder.capture(technical_module.get_price_volume_trend())
+    recorder.capture(technical_module.get_price_volume_trend(growth=True))
+    recorder.capture(technical_module.get_price_volume_trend(period="weekly"))
 
 
 def test_get_accumulation_distribution_line(recorder, technical_module):
@@ -399,6 +455,12 @@ def test_get_know_sure_thing(recorder, technical_module):
     recorder.capture(technical_module.get_know_sure_thing(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_coppock_curve(recorder, technical_module):
+    recorder.capture(technical_module.get_coppock_curve())
+    recorder.capture(technical_module.get_coppock_curve(period="monthly"))
+    recorder.capture(technical_module.get_coppock_curve(growth=True, lag=[1, 2, 3]))
+
+
 def test_get_kaufman_adaptive_moving_average(recorder, technical_module):
     recorder.capture(technical_module.get_kaufman_adaptive_moving_average())
     recorder.capture(technical_module.get_kaufman_adaptive_moving_average(growth=True))
@@ -441,6 +503,12 @@ def test_get_supertrend(recorder, technical_module):
     recorder.capture(technical_module.get_supertrend())
     recorder.capture(technical_module.get_supertrend(growth=True))
     recorder.capture(technical_module.get_supertrend(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_chandelier_exit(recorder, technical_module):
+    recorder.capture(technical_module.get_chandelier_exit())
+    recorder.capture(technical_module.get_chandelier_exit(growth=True))
+    recorder.capture(technical_module.get_chandelier_exit(window=10, multiplier=2.0))
 
 
 def test_period_ohlc_is_aggregated_from_the_adjusted_daily_prices(technical_module):
@@ -738,11 +806,19 @@ def test_a_stock_keeps_its_indicators_next_to_a_cryptocurrency():
         "get_money_flow_index",
         "get_ease_of_movement",
         "get_relative_strength_index",
+        "get_stochastic_relative_strength_index",
+        "get_true_strength_index",
+        "get_coppock_curve",
+        "get_bollinger_percent_b_and_bandwidth",
         "get_balance_of_power",
         "get_parabolic_sar",
         "get_supertrend",
         "get_moving_average_convergence_divergence",
         "get_on_balance_volume",
+        "get_mass_index",
+        "get_price_volume_trend",
+        "get_chandelier_exit",
+        "get_percentage_volume_oscillator",
         "get_candlestick_patterns",
         "get_signals",
     ):

@@ -944,6 +944,19 @@ class Toolkit:
             )
             return index_data, market_value
 
+        def corporate_bond_yield(start: str, end: str) -> pd.Series:
+            # Imported when first used, as only the Graham intrinsic value needs it.
+            from financetoolkit.fixedincome.sources import fred_model  # noqa: PLC0415
+            from financetoolkit.helpers import require_fred_api_key  # noqa: PLC0415
+
+            require_fred_api_key(
+                self._fred_api_key,
+                "the Moody's Aaa corporate bond yield (or pass a bond_yield)",
+            )
+            return fred_model.get_moodys_corporate_bond_yields(
+                "daily", start, end, self._fred_api_key
+            )["Aaa"]
+
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
             # "lookback" is the daily data from a year before the start date, for the
@@ -971,6 +984,8 @@ class Toolkit:
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
             sp500_function=sp500,
+            profile=self._get_statement_profile,
+            corporate_bond_yield_function=corporate_bond_yield,
         )
 
     @property
@@ -3567,6 +3582,28 @@ class Toolkit:
                     )
 
         return self._market_risk_premium
+
+    def _get_statement_profile(self) -> pd.DataFrame:
+        """
+        Returns the company profiles of the tickers (FinancialModelingPrep), with the profile
+        items as index and the tickers as columns, for the models that need a company's
+        industry or IPO date. Empty without an API key or with YahooFinance as the source.
+
+        Returns:
+            pd.DataFrame: The profiles, or an empty DataFrame when they are not available.
+        """
+        if not self._api_key or self._enforce_source == "YahooFinance":
+            return pd.DataFrame()
+
+        # With remove_invalid_tickers, the profile drops invalid tickers from the Toolkit;
+        # reading it for a model must not change the Toolkit's tickers.
+        toolkit_tickers = self._tickers
+        try:
+            profile = self.get_profile()
+        finally:
+            self._tickers = toolkit_tickers
+
+        return profile if profile is not None else pd.DataFrame()
 
     def _get_country_risk_premiums(self) -> pd.Series:
         """

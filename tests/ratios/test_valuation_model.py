@@ -430,3 +430,20 @@ def test_get_cyclically_adjusted_price_to_earnings_ratio():
 
     assert quarterly.loc["A", quarters[:4]].isna().all()
     assert quarterly.loc["A", quarters[4:]].tolist() == pytest.approx([20.0] * 4)
+
+
+def test_get_dividend_adjusted_price_to_earnings_growth_ratio():
+    price_earnings = pd.Series([30.0, 11.0, 12.0])
+    growth_rate = pd.Series([0.2, 0.1, 0.05])
+    dividend_yield = pd.Series([0.0, 0.02, 0.03])
+
+    pegy = valuation_model.get_dividend_adjusted_price_to_earnings_growth_ratio(
+        price_earnings, growth_rate, dividend_yield
+    )
+
+    # Growth and yield enter in percent: 12 / (5 + 3) = 1.5.
+    assert pegy.tolist() == pytest.approx([30 / 20, 11 / 12, 12 / 8])
+    # Without a dividend it is the PEG ratio.
+    assert pegy.iloc[0] == pytest.approx(
+        valuation_model.get_price_to_earnings_growth_ratio(30.0, 0.2 * 100)
+    )

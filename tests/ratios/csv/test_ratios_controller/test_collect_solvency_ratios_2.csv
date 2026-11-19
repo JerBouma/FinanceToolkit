@@ -20,6 +20,9 @@ AAPL,Free Cash Flow Yield,Lag 3,,,,
 AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.2245,-0.0132,-0.2266
 AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2347,-0.2369
 AAPL,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.4082
+AAPL,Net-Debt to Equity Ratio,Lag 1,,0.2485,0.334,-0.3922
+AAPL,Net-Debt to Equity Ratio,Lag 2,,,0.6655,-0.1893
+AAPL,Net-Debt to Equity Ratio,Lag 3,,,,0.0122
 AAPL,Gross Debt to EBITDA Ratio,Lag 1,,-0.2818,-0.1062,-0.13
 AAPL,Gross Debt to EBITDA Ratio,Lag 2,,,-0.3581,-0.2224
 AAPL,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4415
@@ -86,6 +89,9 @@ MSFT,Free Cash Flow Yield,Lag 3,,,,
 MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2485,-0.2627,-0.49
 MSFT,Net-Debt to EBITDA Ratio,Lag 2,,,-0.446,-0.624
 MSFT,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.7175
+MSFT,Net-Debt to Equity Ratio,Lag 1,,-0.223,-0.2463,-0.5691
+MSFT,Net-Debt to Equity Ratio,Lag 2,,,-0.4144,-0.6752
+MSFT,Net-Debt to Equity Ratio,Lag 3,,,,-0.7476
 MSFT,Gross Debt to EBITDA Ratio,Lag 1,,-0.2308,-0.246,-0.0647
 MSFT,Gross Debt to EBITDA Ratio,Lag 2,,,-0.42,-0.2948
 MSFT,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4576

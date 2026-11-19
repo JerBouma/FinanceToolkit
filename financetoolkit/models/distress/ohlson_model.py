@@ -317,8 +317,8 @@ def get_ohlson_o_score(
 
     The formula is as follows:
 
-        O-Score = -1.32 - 0.407 * SIZE + 6.03 * TLTA - 1.43 * WCTA + 0.0757 * CLCA - 1.72 * OENEG
-        - 2.37 * NITA - 1.83 * FUTL + 0.285 * INTWO - 0.521 * CHIN
+        O-Score = -1.32 - 0.407 * SIZE + 6.03 * TLTA - 1.43 * WCTA + 0.0757 * CLCA - 1.72 * OENEG -
+          2.37 * NITA - 1.83 * FUTL + 0.285 * INTWO - 0.521 * CHIN
 
     The nine variables are:
 

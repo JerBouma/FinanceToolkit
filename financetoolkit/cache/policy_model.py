@@ -298,6 +298,10 @@ POLICIES: dict[str, CachePolicy] = {
     f"{SHILLER}.stock_market_data": CachePolicy(ttl_seconds=7 * DAY),
     # The Pink Sheet is updated in the first days of every month.
     f"{WORLD_BANK}.commodity_prices": CachePolicy(ttl_seconds=7 * DAY),
+    # The World Development Indicators are yearly, updated a few times a year, and the list
+    # of economies and aggregates rarely changes.
+    f"{WORLD_BANK}.indicator": CachePolicy(ttl_seconds=7 * DAY),
+    f"{WORLD_BANK}.economies": CachePolicy(ttl_seconds=30 * DAY),
     # PortWatch adds the latest days once a week, on Tuesdays, and the chokepoints rarely.
     f"{IMF_PORTWATCH}.chokepoint_transits": CachePolicy(ttl_seconds=DAY),
     f"{IMF_PORTWATCH}.chokepoints": CachePolicy(ttl_seconds=30 * DAY),

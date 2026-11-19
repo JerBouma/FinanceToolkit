@@ -101,6 +101,34 @@ def get_nonfarm_payrolls(start_date: str, end_date: str, api_key: str) -> pd.Dat
     return _get_fred_series("PAYEMS", start_date, end_date, api_key)
 
 
+def get_job_openings_rate(start_date: str, end_date: str, api_key: str) -> pd.DataFrame:
+    """
+    Retrieves the job openings rate of total nonfarm from FRED (series JTSJOR), which
+    republishes the BLS Job Openings and Labor Turnover Survey, seasonally adjusted, from
+    December 2000.
+
+    Requires a free FRED API key. Register at https://fred.stlouisfed.org/docs/api/api_key.html.
+
+    Args:
+        start_date (str): Start date in YYYY-MM-DD format.
+        end_date (str): End date in YYYY-MM-DD format.
+        api_key (str): FRED API key.
+
+    Returns:
+        pd.DataFrame: The job openings rate as a decimal (0.045 for 4.5%), a single
+        "United States" column indexed by month.
+    """
+    data = _get_fred_series("JTSJOR", start_date, end_date, api_key)
+
+    if not data.empty:
+        # FRED dates a month on its first day; the other sources index it by month.
+        data.index = data.index.asfreq("M")
+        data.index.name = None
+
+    # FRED publishes the rate in percent.
+    return data / 100
+
+
 def get_initial_jobless_claims(
     start_date: str, end_date: str, api_key: str
 ) -> pd.DataFrame:

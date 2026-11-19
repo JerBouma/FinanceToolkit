@@ -32,6 +32,9 @@ SERIES = {
     # 2000 = 100 (International Price Program).
     "export_price_index": "EIUIQ",
     "import_price_index": "EIUIR",
+    # The job openings rate of total nonfarm, seasonally adjusted (Job Openings and Labor
+    # Turnover Survey), the source of FRED's JTSJOR series.
+    "job_openings_rate": "JTS000000000000000JOR",
 }
 
 # The Consumer Price Index for All Urban Consumers (CPI-U), U.S. city average, not
@@ -193,6 +196,27 @@ def get_nonfarm_payrolls() -> pd.DataFrame:
     payrolls.index.name = "Date"
 
     return payrolls
+
+
+def get_job_openings_rate() -> pd.DataFrame:
+    """
+    Retrieves the latest months of the US job openings rate of total nonfarm, seasonally
+    adjusted (series JTS000000000000000JOR), from the Job Openings and Labor Turnover
+    Survey (JOLTS): the job openings on the last business day of the month as a share of
+    employment plus job openings.
+
+    The BLS API returns about the last three years, so the full history, from December
+    2000, requires a FRED API key.
+
+    Returns:
+        pd.DataFrame: The job openings rate as a decimal (0.045 for 4.5%), a single
+        "United States" column indexed by month.
+    """
+    # The BLS publishes the rate in percent.
+    return (
+        collect_recent_bls_series(SERIES["job_openings_rate"], "US job openings rate")
+        / 100
+    )
 
 
 def get_price_index(measure: str) -> pd.DataFrame:

@@ -1,4 +1,5 @@
 """Models Controller Tests""" ""
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -1777,7 +1778,11 @@ def _fiscal_year_ends(models_module):
 
 def _daily(models_module, column, data=None):
     """A daily column of the historical data with a DatetimeIndex."""
-    daily = (data or models_module._historical_data)["daily"][column].copy()
+    # Not `data or ...`: the risk free rate data is a LazyDict, empty (so falsy) until a
+    # calculation first asks for a period.
+    daily = (models_module._historical_data if data is None else data)["daily"][
+        column
+    ].copy()
     daily.index = daily.index.to_timestamp()
     return daily
 
@@ -2152,3 +2157,436 @@ def test_the_wacc_with_debt_but_no_interest_expense_is_unknown(models_module):
     assert pd.isna(wacc.loc[("AAPL", "Cost of Debt"), period])
     assert pd.isna(wacc.loc[("AAPL", "Weighted Average Cost of Capital"), period])
     assert wacc.loc[("MSFT", "Weighted Average Cost of Capital"), period] > 0
+
+
+def _models_with_estimates(test_toolkit):
+    """A Models instance with yearly consensus EPS estimates for 2017-2026."""
+    models = test_toolkit.models
+    years = pd.period_range("2017", periods=10, freq="Y")
+    models._analyst_estimates = pd.DataFrame(
+        [
+            [1 + 0.1 * year for year in range(10)],
+            [12] * 10,
+            [2 + 0.3 * year for year in range(10)],
+            [12] * 5 + [3] + [12] * 4,
+        ],
+        index=pd.MultiIndex.from_tuples(
+            [
+                ("AAPL", "Estimated EPS Average"),
+                ("AAPL", "Number of Analysts EPS"),
+                ("MSFT", "Estimated EPS Average"),
+                ("MSFT", "Number of Analysts EPS"),
+            ]
+        ),
+        columns=years,
+    )
+    return models
+
+
+def test_get_implied_cost_of_capital(recorder, test_toolkit):
+    models = _models_with_estimates(test_toolkit)
+
+    recorder.capture(models.get_implied_cost_of_capital())
+    recorder.capture(models.get_implied_cost_of_capital(modified=False))
+    recorder.capture(models.get_implied_cost_of_capital(min_analysts=5))
+
+
+def test_implied_cost_of_capital_uses_the_next_two_years_and_the_period_end_close(
+    test_toolkit,
+):
+    models = _models_with_estimates(test_toolkit)
+    result = models.get_implied_cost_of_capital(rounding=None)
+    peg = models.get_implied_cost_of_capital(modified=False, rounding=None)
+
+    # 2020: EPS1 the 2021 estimate (1.4), EPS2 the 2022 estimate (1.5), the close on
+    # 2020-12-31 and the dividends paid over 2020.
+    daily = test_toolkit._get_module_historical_data("daily")
+    price = daily["Close"]["AAPL"].loc["2020-12-31"]
+    dividends = daily["Dividends"]["AAPL"].loc["2020-01-01":"2020-12-31"].sum()
+    half_yield = dividends / (2 * price)
+    expected = half_yield + np.sqrt(half_yield**2 + 0.1 / price)
+
+    assert result.loc["AAPL", "2020"] == pytest.approx(expected, abs=1e-4)
+    assert peg.loc["AAPL", "2020"] == pytest.approx(np.sqrt(0.1 / price), abs=1e-4)
+    # 2023 has no price in the offline data; MSFT 2021 needs the 2022 estimate, which
+    # three analysts cover.
+    assert result.loc[:, "2023"].isna().all()
+    restricted = models.get_implied_cost_of_capital(min_analysts=5)
+    assert pd.isna(restricted.loc["MSFT", "2021"])
+    assert pd.isna(restricted.loc["MSFT", "2020"])
+    assert not pd.isna(restricted.loc["MSFT", "2022"])
+
+
+def test_implied_cost_of_capital_without_estimates_is_empty(test_toolkit):
+    models = test_toolkit.models
+    models._analyst_estimates = pd.DataFrame()
+
+    assert models.get_implied_cost_of_capital().empty
+
+
+def test_get_nissim_penman_decomposition(recorder, models_module):
+    recorder.capture(models_module.get_nissim_penman_decomposition())
+    recorder.capture(models_module.get_nissim_penman_decomposition(growth=True))
+
+
+def test_nissim_penman_decomposition_equals_the_ratios(models_module, test_toolkit):
+    decomposition = models_module.get_nissim_penman_decomposition(rounding=10)
+    ratios = test_toolkit.ratios
+    equity = models_module._balance_sheet_statement.xs(
+        "Total Shareholder Equity", level=1
+    ) - models_module._balance_sheet_statement.xs("Preferred Stock", level=1).fillna(0)
+    net_income = models_module._income_statement.xs("Net Income", level=1)
+    return_on_common_equity = net_income / equity.T.rolling(2).mean().T
+
+    for name, method in [
+        ("Return on Net Operating Assets", ratios.get_return_on_net_operating_assets),
+        ("Net Borrowing Cost", ratios.get_net_borrowing_cost),
+        ("Financial Leverage", ratios.get_financial_leverage),
+    ]:
+        expected = method(rounding=10)
+        shown = decomposition.xs(name, level=1)
+        pd.testing.assert_frame_equal(
+            shown, expected.reindex_like(shown), check_names=False, atol=1e-9
+        )
+
+    shown = decomposition.xs("Return on Common Equity", level=1)
+    pd.testing.assert_frame_equal(
+        shown,
+        return_on_common_equity.reindex_like(shown),
+        check_names=False,
+        atol=1e-9,
+    )
+
+
+def test_nissim_penman_decomposition_is_nan_without_interest_rows(models_module):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(models_module)
+    income = models_module._income_statement.copy()
+    period = pd.Period("2022", freq="Y")
+    income.loc[("AAPL", "Interest Expense"), period] = 0
+    income.loc[("AAPL", "Interest Income"), period] = 0
+    models._income_statement = income
+
+    base = models_module.get_nissim_penman_decomposition(rounding=10)
+    decomposition = models.get_nissim_penman_decomposition(rounding=10)
+
+    unknown = [
+        "Return on Net Operating Assets",
+        "Net Borrowing Cost",
+        "Spread",
+        "Leverage Effect",
+        "Return on Common Equity",
+    ]
+    assert decomposition.loc[[("AAPL", name) for name in unknown], period].isna().all()
+    assert decomposition.loc[("AAPL", "Financial Leverage"), period] == pytest.approx(
+        base.loc[("AAPL", "Financial Leverage"), period]
+    )
+    # Every other cell is unchanged.
+    pd.testing.assert_frame_equal(
+        decomposition.drop(columns=period), base.drop(columns=period)
+    )
+    pd.testing.assert_series_equal(
+        decomposition.loc["MSFT", period], base.loc["MSFT", period]
+    )
+
+
+# The US CPI-U of the BIS (2010 = 100) that the size-age index deflates the total assets with,
+# rising 0.25% a month from its 2004 level.
+CONSUMER_PRICES = pd.DataFrame(
+    {"United States": [85.0 * 1.0025**month for month in range(240)]},
+    index=pd.period_range("2004-01", periods=240, freq="M"),
+)
+
+PROFILE = pd.DataFrame(
+    {
+        "AAPL": {"IPO Date": "1980-12-12", "Industry": "Consumer Electronics"},
+        "MSFT": {"IPO Date": "1986-03-13", "Industry": "Software - Infrastructure"},
+    }
+)
+
+
+@pytest.fixture
+def constraints_module(test_toolkit, monkeypatch):
+    """A Models instance with company profiles and the CPI, without a download."""
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        bis_model, "get_consumer_prices", lambda *args, **kwargs: CONSUMER_PRICES
+    )
+    module = test_toolkit.models
+    module._profile_source = PROFILE
+    return module
+
+
+def test_get_kaplan_zingales_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_kaplan_zingales_index())
+    recorder.capture(constraints_module.get_kaplan_zingales_index(growth=True))
+    recorder.capture(constraints_module.get_kaplan_zingales_index(standardize=True))
+
+
+def test_get_whited_wu_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_whited_wu_index())
+    recorder.capture(constraints_module.get_whited_wu_index(growth=True))
+
+
+def test_get_whited_wu_index_averages_the_industry(constraints_module):
+    constraints_module._profile_source = PROFILE.replace(
+        "Software - Infrastructure", "Consumer Electronics"
+    )
+    result = constraints_module.get_whited_wu_index()
+    sales_growth = result.xs("Sales Growth", level=1)
+    industry = result.xs("Industry Sales Growth", level=1)
+
+    # Rounded to the Toolkit's 4 decimals after averaging.
+    for ticker in ["AAPL", "MSFT"]:
+        pd.testing.assert_series_equal(
+            industry.loc[ticker], sales_growth.mean(), check_names=False, atol=1e-4
+        )
+
+
+def test_get_size_age_index(recorder, constraints_module):
+    recorder.capture(constraints_module.get_size_age_index())
+    recorder.capture(constraints_module.get_size_age_index(growth=True))
+
+
+def test_get_size_age_index_without_a_profile_is_nan(constraints_module):
+    constraints_module._profile_source = None
+    result = constraints_module.get_size_age_index()
+
+    assert result.empty or result.xs("Size-Age Index", level=1).isna().all().all()
+
+
+def test_get_size_age_index_deflates_periods_before_the_base_year(
+    constraints_module, monkeypatch
+):
+    import copy  # noqa: PLC0415
+    import math  # noqa: PLC0415
+
+    from financetoolkit.economics.sources import bis_model  # noqa: PLC0415
+
+    # The CPI from 1990, 0.25% a month, returned from the requested start onwards.
+    consumer_prices = pd.DataFrame(
+        {"United States": [60.0 * 1.0025**month for month in range(480)]},
+        index=pd.period_range("1990-01", periods=480, freq="M"),
+    )
+    requested = []
+
+    def get_consumer_prices(measure, start_date, end_date):
+        requested.append(start_date)
+        return consumer_prices[consumer_prices.index >= pd.Period(start_date, "M")]
+
+    monkeypatch.setattr(bis_model, "get_consumer_prices", get_consumer_prices)
+
+    models = copy.copy(constraints_module)
+    balance = constraints_module._balance_sheet_statement.copy()
+    # The same statements labelled 1998 onwards, ending on the calendar year end.
+    balance.columns = pd.period_range("1998", periods=len(balance.columns), freq="Y")
+    # $100 million of assets, below the cap, so the Size moves with the price level.
+    balance.loc[(slice(None), "Total Assets"), :] = 100e6
+    models._balance_sheet_statement = balance
+    models._period_end_dates = None
+
+    size = models.get_size_age_index(rounding=10).xs("Size", level=1)
+
+    assert requested[0] < "1998-01-01"
+    base = consumer_prices.loc["2004"].mean().iloc[0]
+    for period in size.columns:
+        price_level = consumer_prices.loc[pd.Period(f"{period.year}-12", "M")].iloc[0]
+        assert size.loc["AAPL", period] == pytest.approx(
+            math.log(100 / (price_level / base))
+        )
+
+
+def test_get_size_age_index_does_not_warn_about_the_basket_total(
+    constraints_module, caplog
+):
+    import copy  # noqa: PLC0415
+
+    models = copy.copy(constraints_module)
+    # The basket's Total has no profile, so no IPO date, and is no company.
+    models._tickers = ["AAPL", "MSFT", "Total"]
+
+    with caplog.at_level("WARNING"):
+        models.get_size_age_index()
+
+    assert "No IPO date" not in caplog.text
+
+    models._profile = PROFILE.drop(columns="MSFT")
+    with caplog.at_level("WARNING"):
+        models.get_size_age_index()
+
+    assert "No IPO date is available for MSFT," in caplog.text
+
+
+def test_get_graham_intrinsic_value(recorder, models_module, monkeypatch):
+    import pandas as pd
+
+    # Moody's Aaa yield offline: 4% rising by a basis point a month.
+    days = pd.date_range("2015-01-01", "2023-12-31", freq="B")
+    aaa = pd.Series(
+        0.04 + 0.0001 * ((days.year - 2015) * 12 + days.month - 1), index=days
+    )
+    monkeypatch.setattr(
+        models_module,
+        "_corporate_bond_yield_function",
+        lambda start, end: aaa.loc[start:end],
+    )
+
+    recorder.capture(models_module.get_graham_intrinsic_value())
+    recorder.capture(models_module.get_graham_intrinsic_value(0.05, 0.044))
+
+    # By hand: the EPS of the period, its compound growth since the first period (from
+    # three years of history, kept within 0 and 0.20) and the yield on the last business
+    # day up to the period end.
+    income = models_module._income_statement
+    earnings_per_share = (
+        income.loc[:, "Net Income", :]
+        / income.loc[:, "Weighted Average Shares Diluted", :]
+    )
+    value = models_module.get_graham_intrinsic_value(rounding=10)
+    market_dates = models_module._market_dates()
+    checked = 0
+    for ticker in value.index:
+        history = earnings_per_share.loc[ticker].dropna()
+        for position, period in enumerate(history.index[1:], start=1):
+            if period not in value.columns:
+                continue
+            if position < 3:
+                assert pd.isna(value.loc[ticker, period])
+                continue
+            growth = min(
+                max((history[period] / history.iloc[0]) ** (1 / position) - 1, 0), 0.2
+            )
+            bond_yield = aaa.loc[: market_dates.loc[ticker, period]].iloc[-1]
+            expected = history[period] * (8.5 + 200 * growth) * 4.4 / (bond_yield * 100)
+            assert value.loc[ticker, period] == pytest.approx(expected, rel=1e-9)
+            checked += 1
+    assert checked >= 2
+
+
+def test_graham_intrinsic_value_without_a_bond_yield_source(models_module, monkeypatch):
+    monkeypatch.setattr(models_module, "_corporate_bond_yield_function", None)
+
+    # Without a source the bond yield must be given.
+    assert models_module.get_graham_intrinsic_value().empty
+    assert not models_module.get_graham_intrinsic_value(bond_yield=0.05).empty
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_dupont_analyses_multiply_to_the_reported_return_on_equity(quarterly, trailing):
+    from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    statements = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        # Eight quarters out of the four years of the datasets, so that a trailing year of
+        # four quarters, which averages the balances over five quarter ends, has values.
+        statements = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in statements
+        ]
+
+    tickers = ["AAPL", "MSFT"]
+    models = Models(tickers, {}, {}, *statements, quarterly=quarterly, rounding=None)
+    ratios = Ratios(tickers, {}, *statements, quarterly=quarterly, rounding=None)
+
+    return_on_equity = ratios.get_return_on_equity(trailing=trailing)
+    asset_turnover = ratios.get_asset_turnover_ratio(trailing=trailing)
+    return_on_assets = ratios.get_return_on_assets(trailing=trailing)
+    dupont = models.get_dupont_analysis(trailing=trailing)
+    extended = models.get_extended_dupont_analysis(trailing=trailing)
+
+    for ticker in tickers:
+        reported = return_on_equity.loc[ticker]
+        assert reported.notna().sum() >= 2
+
+        margin = dupont.loc[(ticker, "Net Profit Margin")]
+        turnover = dupont.loc[(ticker, "Asset Turnover")]
+        product = margin * turnover * dupont.loc[(ticker, "Equity Multiplier")]
+        extended_product = (
+            extended.loc[(ticker, "Interest Burden Ratio")]
+            * extended.loc[(ticker, "Tax Burden Ratio")]
+            * extended.loc[(ticker, "Operating Profit Margin")]
+            * extended.loc[(ticker, "Asset Turnover")]
+            * extended.loc[(ticker, "Equity Multiplier")]
+        )
+
+        for decomposed in (
+            product,
+            extended_product,
+            dupont.loc[(ticker, "Return on Equity")],
+            extended.loc[(ticker, "Return on Equity")],
+        ):
+            pd.testing.assert_series_equal(
+                decomposed, reported, check_names=False, rtol=1e-12, atol=0
+            )
+        pd.testing.assert_series_equal(
+            turnover, asset_turnover.loc[ticker], check_names=False, rtol=1e-12
+        )
+        pd.testing.assert_series_equal(
+            margin * turnover,
+            return_on_assets.loc[ticker],
+            check_names=False,
+            rtol=1e-12,
+            atol=0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_economic_value_added_uses_the_invested_capital_of_the_roic(
+    quarterly, trailing
+):
+    from financetoolkit.models.models_controller import Models  # noqa: PLC0415
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    statements = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        statements = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in statements
+        ]
+
+    tickers = ["AAPL", "MSFT"]
+    models = Models(tickers, {}, {}, *statements, quarterly=quarterly, rounding=None)
+    ratios = Ratios(tickers, {}, *statements, quarterly=quarterly, rounding=None)
+    # The WACC needs market data and does not enter the NOPAT or the invested capital.
+    wacc = pd.DataFrame(
+        0.08,
+        index=pd.MultiIndex.from_product(
+            [tickers, ["Weighted Average Cost of Capital"]]
+        ),
+        columns=statements[0].columns,
+    )
+    models._weighted_average_cost_of_capital = lambda **_: wacc
+
+    eva = models.get_economic_value_added(trailing=trailing)
+    return_on_invested_capital = ratios.get_return_on_invested_capital(
+        trailing=trailing
+    )
+
+    for ticker in tickers:
+        reported = return_on_invested_capital.loc[ticker]
+        assert reported.notna().sum() >= 2
+        pd.testing.assert_series_equal(
+            eva.loc[(ticker, "Net Operating Profit After Taxes")]
+            / eva.loc[(ticker, "Invested Capital")],
+            reported,
+            check_names=False,
+            rtol=1e-12,
+            atol=0,
+        )

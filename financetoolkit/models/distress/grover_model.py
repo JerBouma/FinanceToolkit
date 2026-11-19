@@ -105,8 +105,8 @@ def get_grover_score(
 
     The formula is as follows:
 
-        Grover Score = 1.65 * Working Capital to Total Assets Ratio + 3.404 * EBIT to Total Assets Ratio
-        - 0.016 * Return on Assets Ratio + 0.057
+        Grover Score = 1.65 * Working Capital to Total Assets Ratio + 3.404 * EBIT to Total Assets Ratio -
+          0.016 * Return on Assets Ratio + 0.057
 
     Also known as: Grover Score, G-Score, bankruptcy prediction, financial distress score.
 

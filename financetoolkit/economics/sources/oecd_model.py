@@ -1242,6 +1242,26 @@ def get_labour_productivity(start_date: str | None = None, end_date: str | None 
     return labour_productivity
 
 
+def get_unit_labour_costs(start_date: str | None = None, end_date: str | None = None):
+    """
+    Unit labour costs (employment based) for the total economy from the OECD
+    Productivity Database: the compensation of employees per employee divided by real GDP
+    per person employed, the average cost of labour per unit of output. The OECD
+    publishes them quarterly, seasonally adjusted, as an index with 2015 = 100.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: The unit labour cost index (2015 = 100), indexed by quarter with a
+         column per country.
+    """
+    oecd_data_string = "OECD.SDD.TPS,DSD_PDB@DF_PDB_ULC_Q,1.0/.Q.ULCE._T.IX.V._Z.S.NC"
+
+    return collect_oecd_data(oecd_data_string, "Q", start_date, end_date)
+
+
 def get_output_gap(start_date: str | None = None, end_date: str | None = None):
     """
     Get the Output Gap for a variety of countries over time from the OECD Economic Outlook.

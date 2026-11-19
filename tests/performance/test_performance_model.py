@@ -1756,3 +1756,110 @@ def test_the_rolling_standard_deviation_pairs_the_asset_with_the_benchmark_dates
     )
     total_risk_ratio = result.div(benchmark_deviation, axis=0)
     assert (total_risk_ratio + 1e-12 >= beta.abs())[beta.notna()].all().all()
+
+
+def test_the_safety_first_ratio_is_the_sharpe_ratio_above_the_threshold():
+    returns = pd.Series([0.02, -0.01, 0.03, -0.02, 0.01])
+
+    result = performance_model.get_safety_first_ratio(returns, threshold=0.005)
+
+    assert result == pytest.approx((returns.mean() - 0.005) / returns.std(ddof=1))
+    assert performance_model.get_safety_first_ratio(returns) == pytest.approx(
+        performance_model.get_sharpe_ratio(returns)
+    )
+
+
+def test_constant_returns_have_no_sharpe_or_safety_first_ratio():
+    # A standard deviation of exactly 0 (0.01) and one of rounding noise once a constant
+    # risk-free rate is subtracted (0.001 - 0.0001) both leave the ratio undefined, not infinite.
+    returns = pd.DataFrame({"Flat": [0.01] * 250, "Noisy": [0.001 - 0.0001] * 250})
+    within_period = returns.set_axis(
+        pd.MultiIndex.from_product([["2024", "2025"], range(125)])
+    )
+
+    assert performance_model.get_sharpe_ratio(returns).isna().all()
+    assert np.isnan(performance_model.get_sharpe_ratio(returns["Flat"]))
+    assert performance_model.get_sharpe_ratio(within_period).isna().all().all()
+    assert performance_model.get_rolling_sharpe_ratio(returns, 20).isna().all().all()
+    assert performance_model.get_safety_first_ratio(returns).isna().all()
+    assert (
+        performance_model.get_rolling_safety_first_ratio(returns, 20).isna().all().all()
+    )
+
+    # Returns with variation keep their ratio.
+    varying = pd.Series([0.02, -0.01, 0.03, -0.02, 0.01])
+    assert performance_model.get_sharpe_ratio(varying) == pytest.approx(
+        varying.mean() / varying.std()
+    )
+
+
+def test_ratios_without_a_denominator_are_nan_rather_than_infinite():
+    # Gains only: no downside deviation, lower partial moment or losses to divide by.
+    gains = pd.DataFrame({"Gains": [0.01, 0.02, 0.005, 0.03] * 10})
+    within_period = gains.set_axis(
+        pd.MultiIndex.from_product([["2024", "2025"], range(20)])
+    )
+
+    assert performance_model.get_sortino_ratio(gains).isna().all()
+    assert np.isnan(performance_model.get_sortino_ratio(gains["Gains"]))
+    assert performance_model.get_sortino_ratio(within_period).isna().all().all()
+    assert performance_model.get_rolling_sortino_ratio(gains, 5).isna().all().all()
+    assert performance_model.get_kappa_ratio(gains).isna().all()
+    assert performance_model.get_kappa_ratio(within_period).isna().all().all()
+    assert performance_model.get_gain_to_pain_ratio(gains).isna().all()
+    assert performance_model.get_omega_ratio(gains).isna().all()
+    assert performance_model.get_upside_potential_ratio(gains).isna().all()
+
+    # A return series that tracks its benchmark exactly has no tracking error.
+    benchmark = pd.Series([0.01, -0.02, 0.015, -0.005] * 10, name="Benchmark")
+    tracking = pd.DataFrame({"Tracker": benchmark.to_numpy()})
+    assert performance_model.get_information_ratio(tracking, benchmark).isna().all()
+    assert (
+        performance_model.get_rolling_information_ratio(tracking, benchmark, 5)
+        .isna()
+        .all()
+        .all()
+    )
+
+    # A beta of 0 leaves the Treynor ratio undefined.
+    assert (
+        performance_model.get_treynor_ratio(pd.Series([0.05]), 0.02, pd.Series([0.0]))
+        .isna()
+        .all()
+    )
+
+    # A loss keeps the Sortino ratio defined.
+    mixed = pd.Series([0.02, -0.01, 0.03, -0.02, 0.01])
+    assert np.isfinite(performance_model.get_sortino_ratio(mixed))
+
+
+def test_the_upside_potential_ratio_averages_both_moments_over_every_return():
+    returns = pd.Series([0.02, -0.01, 0.03, -0.02, 0.0])
+
+    # Sortino, van der Meer & Plantinga (1999): (0.05 / 5) / sqrt(0.0005 / 5).
+    result = performance_model.get_upside_potential_ratio(returns)
+    assert result == pytest.approx(0.01 / np.sqrt(0.0001))
+
+    rolling = performance_model.get_rolling_upside_potential_ratio(returns, 5)
+    assert rolling.iloc[-1] == pytest.approx(result)
+
+
+def test_the_upside_potential_ratio_without_a_loss_or_with_one_return_is_nan():
+    assert np.isnan(
+        performance_model.get_upside_potential_ratio(pd.Series([0.01, 0.02, 0.0]))
+    )
+    assert np.isnan(performance_model.get_upside_potential_ratio(pd.Series([-0.01])))
+    assert (
+        performance_model.get_rolling_upside_potential_ratio(
+            pd.Series([0.01, 0.02, 0.03]), 2
+        )
+        .isna()
+        .all()
+    )
+
+
+def test_the_pain_ratio_without_a_drawdown_is_nan():
+    # Without a drawdown there is no pain to divide by.
+    assert performance_model.get_pain_ratio(
+        pd.Series([0.05, 0.02]), pd.Series([0.0, 0.01])
+    ).to_list() == [pytest.approx(2.0)]

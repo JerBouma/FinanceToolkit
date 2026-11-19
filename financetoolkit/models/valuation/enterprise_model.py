@@ -34,8 +34,8 @@ def get_enterprise_value_breakdown(
 
     The formula is as follows:
 
-        - Enterprise Value = Market Capitalization + Total Debt + Minority Interest
-        + Preferred Equity - (Cash and Cash Equivalents + Short Term Investments)
+        - Enterprise Value = Market Capitalization + Total Debt + Minority Interest +
+          Preferred Equity - (Cash and Cash Equivalents + Short Term Investments)
 
     Cash and marketable securities are deducted together (Damodaran), the same Enterprise
     Value as the Ratios module calculates. A missing Short Term Investments value counts as 0.

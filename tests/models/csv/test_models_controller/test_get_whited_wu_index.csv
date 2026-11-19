@@ -1,0 +1,15 @@
+,,2020,2021,2022,2023
+AAPL,Cash Flow to Total Assets,0.2114,0.3019,0.3144,0.3078
+AAPL,Dividend Payer,1.0,1.0,1.0,1.0
+AAPL,Long-Term Debt to Total Assets,0.3046,0.3108,0.2805,0.2702
+AAPL,Log of Total Assets,12.6882,12.7685,12.7735,12.773
+AAPL,Industry Sales Growth,,0.3326,0.0779,-0.028
+AAPL,Sales Growth,,0.3326,0.0779,-0.028
+AAPL,Whited-Wu Index,,-0.6225,-0.6415,-0.6482
+MSFT,Cash Flow to Total Assets,0.1894,0.2186,0.239,0.2093
+MSFT,Dividend Payer,1.0,1.0,1.0,1.0
+MSFT,Long-Term Debt to Total Assets,0.1977,0.15,0.1289,0.1019
+MSFT,Log of Total Assets,12.6159,12.7182,12.8072,12.9287
+MSFT,Industry Sales Growth,,0.1753,0.1796,0.0688
+MSFT,Sales Growth,,0.1753,0.1796,0.0688
+MSFT,Whited-Wu Index,,-0.6266,-0.6325,-0.6432

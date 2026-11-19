@@ -331,6 +331,42 @@ def test_get_brinson_attribution(recorder, test_toolkit):
     )
 
 
+def test_get_brinson_attribution_linked(recorder, test_toolkit):
+    construction = _offline_construction(test_toolkit)
+    weights = {"AAPL": 0.6, "MSFT": 0.4}
+    single = construction.get_brinson_attribution(weights=weights, rounding=16)
+    effects = ["Allocation Effect", "Selection Effect", "Interaction Effect"]
+
+    for period, linking in [("monthly", "carino"), ("quarterly", "menchero")]:
+        linked = construction.get_brinson_attribution(
+            weights=weights, period=period, linking=linking, rounding=16
+        )
+        recorder.capture(linked.round(6))
+        total = linked.loc["Total"]
+        # The linked effects add up to the compounded excess return, and buy and hold
+        # over the sub-periods compounds to the returns of the whole range.
+        assert total["Total Effect"] == pytest.approx(
+            total["Portfolio Return"] - total["Benchmark Return"], abs=1e-12
+        )
+        assert total[effects].sum() == pytest.approx(total["Total Effect"], abs=1e-12)
+        assert total["Total Effect"] == pytest.approx(
+            single.loc["Total", "Total Effect"], abs=1e-12
+        )
+        pd.testing.assert_frame_equal(
+            linked.iloc[:, :4], single.iloc[:, :4], check_exact=False, atol=1e-12
+        )
+        # The weights drift, so the effects differ from those of one period.
+        assert not np.allclose(linked[effects], single[effects])
+
+
+def test_get_brinson_attribution_invalid_period_and_linking(test_toolkit):
+    construction = _offline_construction(test_toolkit)
+    assert construction.get_brinson_attribution(period="hourly").empty
+    assert construction.get_brinson_attribution(
+        period="monthly", linking="frongello"
+    ).empty
+
+
 def test_get_brinson_attribution_looks_through_funds(test_toolkit):
     # MSFT stands in for a fund: its profile names the issuer's sector, while its sector
     # weightings split it over Technology and Healthcare.
@@ -352,6 +388,31 @@ def test_get_brinson_attribution_looks_through_funds(test_toolkit):
     assert "Financial Services" not in attribution.index
     assert attribution.loc["Technology", "Portfolio Weight"] == pytest.approx(0.75)
     assert attribution.loc["Healthcare", "Portfolio Weight"] == pytest.approx(0.25)
+
+    # Linked over weeks, the fund's slices drift with its return and the effects still add
+    # up to the excess return of the whole range.
+    for linking in ("carino", "menchero"):
+        linked = construction.get_brinson_attribution(
+            weights={"AAPL": 0.5, "MSFT": 0.5},
+            period="weekly",
+            linking=linking,
+            rounding=16,
+        )
+        pd.testing.assert_frame_equal(
+            linked.iloc[:, :4],
+            construction.get_brinson_attribution(
+                weights={"AAPL": 0.5, "MSFT": 0.5}, rounding=16
+            ).iloc[:, :4],
+            check_exact=False,
+            atol=1e-12,
+        )
+        total = linked.loc["Total"]
+        assert total["Total Effect"] == pytest.approx(
+            total["Portfolio Return"] - total["Benchmark Return"], abs=1e-12
+        )
+        assert linked["Total Effect"].iloc[:-1].sum() == pytest.approx(
+            total["Total Effect"], abs=1e-12
+        )
 
 
 def test_get_stress_test_notes_a_scenario_before_any_listing(test_toolkit, caplog):

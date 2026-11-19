@@ -25,8 +25,8 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class LiquidityRisk:
     """
-    Market liquidity: the Amihud illiquidity measure, the Roll and Corwin-Schultz spreads and
-    the share turnover, and the idiosyncratic volatility.
+    Market liquidity: the Amihud illiquidity measure, the Roll, Corwin-Schultz, Abdi-Ranaldo
+    and EDGE spreads and the share turnover, and the idiosyncratic volatility.
     """
 
     # The Toolkit sets this to a function returning the Weighted Average Shares of the
@@ -409,6 +409,286 @@ class LiquidityRisk:
             raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
 
         spread = market_liquidity_model.get_corwin_schultz_spread(
+            self._get_prices("High"),
+            self._get_prices("Low"),
+            self._get_prices("Close"),
+            period,
+            rolling,
+        )
+
+        spread = spread.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=spread,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_abdi_ranaldo_spread(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Abdi and Ranaldo (2017) close-high-low bid-ask spread, per asset and period.
+
+        The average of the daily High and Low (the mid-range) is a proxy for the efficient price
+        without the spread, while the Close is a trade at either the bid or the ask. The distance of
+        the Close to the mid-range of its own day and to that of the next day both hold half the
+        spread, and their product removes the volatility of the efficient price, which backs out the
+        spread from daily Close, High and Low prices alone, without quote data. Each pair of
+        consecutive trading days gives an estimate and the spread of a period is the average of the
+        estimates within it.
+
+        Unlike the Corwin-Schultz spread, the estimator uses the Close as well and needs no adjustment
+        for the overnight return (a weekend or a gap at the open). Like it, the estimate is mostly used
+        where no quotes are available and ranks assets by their spread; for liquid large caps the spread
+        is a few basis points and the estimate is dominated by the volatility, so read it as a relative
+        measure.
+
+        For more information about the method, see the following paper:
+
+        - Abdi, F., & Ranaldo, A. (2017). "A Simple Estimation of Bid-Ask Spreads from Daily Close, High,
+        and Low Prices." The Review of Financial Studies, 30(12), 4437-4480.
+
+        The formula is as follows:
+
+        - η_t = (ln H_t + ln L_t) / 2
+        - Two-Day Spread = √(max(4 * (ln C_t - η_t) * (ln C_t - η_(t+1)), 0))
+        - Abdi-Ranaldo Spread = Mean(Two-Day Spreads within the period)
+
+        Where H, L and C are the daily High, Low and Close of two consecutive trading days t and t+1 of
+        the asset. This is the "two-day corrected" version that the paper uses in its empirical analysis
+        (equation 11): a negative two-day estimate of the squared spread is set to 0 before the square
+        root and the average are taken.
+
+        Also known as: close-high-low spread estimator, CHL spread, AR spread.
+
+        Args:
+            period (str, optional): The period to average the two-day spreads over (weekly, monthly, quarterly
+                or yearly). Defaults to "monthly", as in the paper.
+            rolling (int, optional): Average the two-day spreads of the last `rolling` periods instead of one
+                period (e.g. period='monthly' and rolling=3 for a three-month spread at every month end).
+                Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the spread over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The spread as a decimal of the price (0.005 is 0.5%), with the periods as the index
+            and the assets as columns.
+
+        Notes:
+        - The method uses the daily High, Low and Close (split-adjusted) of each asset on its own trading
+        days: a day on which only another ticker or the benchmark traded is not part of a pair, so the pair
+        is always two consecutive trading days of the asset.
+        - Both days of a pair fall within the period; a pair across two periods is left out.
+        - A day with a price of 0 or below (a bad bar) is left out.
+        - Averaging the square roots of the two-day estimates lowers the level when the daily volatility
+        is large relative to the spread (in simulations with a 1% spread and a 1% daily volatility the
+        estimate is about 0.8%). The paper accepts this for the closer correlation with the effective
+        spread from trade and quote data; `get_edge_spread` has no such bias.
+        - The paper discards months with fewer than 12 applicable days; no such minimum is applied here,
+        as for `get_corwin_schultz_spread`, so a period with a single pair has an estimate.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SNAP", "ETSY", "LYFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-06-30",
+        )
+
+        toolkit.risk.get_abdi_ranaldo_spread()
+        ```
+
+        Which returns:
+
+        | Date    |   SNAP |   ETSY |   LYFT |   Benchmark |
+        |:--------|-------:|-------:|-------:|------------:|
+        | 2025-01 | 0.0115 | 0.0107 | 0.0084 |      0.0024 |
+        | 2025-02 | 0.014  | 0.0087 | 0.0176 |      0.0035 |
+        | 2025-03 | 0.0117 | 0.0065 | 0.0113 |      0.0053 |
+        | 2025-04 | 0.0287 | 0.0116 | 0.0284 |      0.013  |
+        | 2025-05 | 0.0168 | 0.0112 | 0.0137 |      0.0047 |
+        | 2025-06 | 0.0109 | 0.007  | 0.0101 |      0.0029 |
+        """
+        period = period if period else "monthly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        spread = market_liquidity_model.get_abdi_ranaldo_spread(
+            self._get_prices("High"),
+            self._get_prices("Low"),
+            self._get_prices("Close"),
+            period,
+            rolling,
+        )
+
+        spread = spread.loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=spread,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_edge_spread(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the EDGE bid-ask spread of Ardia, Guidotti and Kroencke (2024), per asset and period.
+
+        EDGE (the Efficient Discrete Generalized Estimator) estimates the spread from the daily Open,
+        High, Low and Close. The mid-range (the average of the High and Low) is a proxy for the efficient
+        price, while the Open and the Close are trades at the bid or the ask, so the returns between
+        them around the open and around the close bounce with the spread. Four such estimators, two at
+        the open and two at the close (one of them a generalization of the Abdi-Ranaldo spread), are
+        combined with the weights of the Generalized Method of Moments that minimize the variance of the
+        estimate. The probabilities in the formula correct for days without trades, which repeat the
+        previous Close. The estimate is asymptotically unbiased and, in the paper's simulations and
+        empirical tests, more precise than the Roll, Corwin-Schultz and Abdi-Ranaldo estimators.
+
+        Unlike the Corwin-Schultz and Abdi-Ranaldo spreads, which average two-day estimates, EDGE is
+        estimated from all pairs of consecutive trading days of the period at once. For liquid large caps
+        the spread is a few basis points, close to the estimation error, so read it as a relative
+        measure there.
+
+        For more information about the method, see the following paper:
+
+        - Ardia, D., Guidotti, E., & Kroencke, T. A. (2024). "Efficient Estimation of Bid-Ask Spreads from
+        Open, High, Low, and Close Prices." Journal of Financial Economics, 161, 103916.
+
+        The formula is as follows:
+
+        - η_t = (h_t + l_t) / 2 and τ_t = 1 if h_t ≠ l_t or l_t ≠ c_(t-1), else 0
+        - π_o = -8 / (P[o_t ≠ h_t, τ_t = 1] + P[o_t ≠ l_t, τ_t = 1])
+        - π_c = -8 / (P[c_(t-1) ≠ h_(t-1), τ_t = 1] + P[c_(t-1) ≠ l_(t-1), τ_t = 1])
+        - x_1 = π_o / 2 * (η_t - o_t) * (o_t - η_(t-1)) + π_c / 2 * (η_t - c_(t-1)) * (c_(t-1) - η_(t-1))
+        - x_2 = π_o / 2 * (η_t - o_t) * (o_t - c_(t-1)) + π_c / 2 * (o_t - c_(t-1)) * (c_(t-1) - η_(t-1))
+        - S^2 = (Var[x_2] * E[x_1] + Var[x_1] * E[x_2]) / (Var[x_1] + Var[x_2])
+        - EDGE Spread = √(max(S^2, 0))
+
+        Where o, h, l and c are the log Open, High, Low and Close of two consecutive trading days t-1 and
+        t of the asset, and the probabilities, expectations and variances are taken over the pairs within
+        the period. The returns η_t - o_t, η_t - c_(t-1) and o_t - c_(t-1) in the first factor of each
+        product are de-meaned over the pairs with τ_t = 1, as in the authors' implementation. A negative
+        squared spread of the period is set to 0, as in the paper (equation 26); setting the period's
+        estimate rather than each two-day estimate to 0 keeps the estimate consistent.
+
+        Also known as: Efficient Discrete Generalized Estimator, EDGE estimator, OHLC spread estimator.
+
+        Args:
+            period (str, optional): The period to estimate the spread over (weekly, monthly, quarterly or
+                yearly). Defaults to "monthly", as in the paper.
+            rolling (int, optional): Estimate the spread from the pairs of the last `rolling` periods together
+                instead of one period (e.g. period='monthly' and rolling=3 for a three-month spread at every
+                month end). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the spread over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The spread as a decimal of the price (0.005 is 0.5%), with the periods as the index
+            and the assets as columns.
+
+        Notes:
+        - The method uses the daily Open, High, Low and Close (split-adjusted) of each asset on its own
+        trading days: a day on which only another ticker or the benchmark traded is not part of a pair, so
+        the pair is always two consecutive trading days of the asset.
+        - Both days of a pair fall within the period; a pair across two periods is left out, also in a
+        rolling window.
+        - A day with a price of 0 or below (a bad bar) is left out.
+        - A period with fewer than two pairs with a price change, or in which the Open (or the previous
+        Close) equals both the High and the Low on every pair with a price change (only single-price days),
+        is NaN.
+        - The estimates equal those of the authors' `bidask` package (`edge` on the days of the period,
+        with negative squared spreads set to 0).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SNAP", "ETSY", "LYFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-06-30",
+        )
+
+        toolkit.risk.get_edge_spread()
+        ```
+
+        Which returns:
+
+        | Date    |   SNAP |   ETSY |   LYFT |   Benchmark |
+        |:--------|-------:|-------:|-------:|------------:|
+        | 2025-01 | 0      | 0.0032 | 0      |      0.0019 |
+        | 2025-02 | 0.0121 | 0      | 0.0296 |      0.0045 |
+        | 2025-03 | 0      | 0      | 0      |      0.003  |
+        | 2025-04 | 0.0245 | 0.0176 | 0.0219 |      0.0135 |
+        | 2025-05 | 0.0173 | 0.0134 | 0      |      0.007  |
+        | 2025-06 | 0      | 0      | 0.0061 |      0.0017 |
+        """
+        period = period if period else "monthly"
+
+        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+
+        spread = market_liquidity_model.get_edge_spread(
+            self._get_prices("Open"),
             self._get_prices("High"),
             self._get_prices("Low"),
             self._get_prices("Close"),

@@ -1059,3 +1059,84 @@ def test_the_risk_free_rate_per_ticker_is_in_date_order_with_a_later_listing_fir
     assert monthly.index.is_monotonic_increasing
     assert len(monthly) == 24  # noqa: PLR2004
     pd.testing.assert_frame_equal(monthly, swapped[monthly.columns])
+
+
+def test_the_pain_index_averages_the_drawdowns_over_every_day():
+    # Wealth 0.9, 0.99, 1.0395, 0.93555: drawdowns of 10%, 1%, 0 (a new high) and 10%.
+    returns = pd.Series([-0.1, 0.1, 0.05, -0.1])
+
+    assert risk_model.get_pain_index(returns) == pytest.approx(
+        (0.1 + 0.01 + 0 + 0.1) / 4
+    )
+
+
+def test_the_pain_index_restarts_every_period_and_skips_a_later_listing():
+    index = pd.MultiIndex.from_tuples(
+        [("2021", 1), ("2021", 2), ("2022", 3), ("2022", 4)]
+    )
+    returns = pd.DataFrame(
+        {"A": [-0.1, 0.1, -0.2, 0.0], "B": [np.nan, -0.1, -0.2, 0.0]}, index=index
+    )
+
+    result = risk_model.get_pain_index(returns)
+
+    assert result.loc["2021", "A"] == pytest.approx((0.1 + 0.01) / 2)
+    # The row before B's first return is no observation of it.
+    assert result.loc["2021", "B"] == pytest.approx(0.1)
+    assert result.loc["2022", "A"] == pytest.approx(0.2)
+
+
+def test_the_pain_index_matches_the_bacon_definition():
+    # PerformanceAnalytics' PainIndex (Bacon, 2013): sum(|D_i|) / n with D_i the drawdown
+    # from the highest wealth so far, written out with plain loops. The first return is a
+    # loss from the starting wealth of 1.
+    rng = np.random.default_rng(3)
+    returns = pd.DataFrame(
+        rng.normal(0.0003, 0.015, (300, 2)),
+        columns=["A", "B"],
+        index=pd.period_range("2022-01-03", periods=300, freq="D"),
+    )
+
+    expected = {}
+    for column in returns:
+        wealth, peak, total = 1.0, 1.0, 0.0
+        for value in returns[column]:
+            wealth *= 1 + value
+            peak = max(peak, wealth)
+            total += abs(wealth / peak - 1)
+        expected[column] = total / len(returns)
+
+    result = risk_model.get_pain_index(returns)
+
+    assert result.to_dict() == pytest.approx(expected)
+    # The Pain Index is never above the Ulcer Index on the same running peak.
+    assert (result <= risk_model.get_ui(returns, None)).all()
+
+
+def test_the_pain_index_of_a_stock_next_to_a_seven_day_ticker_is_the_stock_alone():
+    returns = _stock_and_crypto_returns()
+    within = returns.set_axis(
+        pd.MultiIndex.from_arrays([returns.index.asfreq("Y"), returns.index])
+    )
+    stock = returns[["Stock"]].dropna()
+    stock_within = stock.set_axis(
+        pd.MultiIndex.from_arrays([stock.index.asfreq("Y"), stock.index])
+    )
+
+    assert risk_model.get_pain_index(returns)["Stock"] == pytest.approx(
+        risk_model.get_pain_index(stock)["Stock"]
+    )
+    pd.testing.assert_series_equal(
+        risk_model.get_pain_index(within)["Stock"],
+        risk_model.get_pain_index(stock_within)["Stock"],
+    )
+
+
+def test_the_pain_index_skips_the_rows_before_a_later_listing():
+    returns = _late_listing_returns()
+    alone = returns[["Later"]].dropna()
+
+    assert risk_model.get_pain_index(returns)["Later"] == pytest.approx(
+        risk_model.get_pain_index(alone)["Later"]
+    )
+    assert np.isnan(risk_model.get_pain_index(pd.Series([np.nan, np.nan])))

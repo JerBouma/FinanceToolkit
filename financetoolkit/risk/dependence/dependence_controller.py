@@ -3,15 +3,22 @@
 __docformat__ = "google"
 
 import itertools
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
 
+from financetoolkit.ratios import valuation_model
+from financetoolkit.ratios.helpers import map_period_data_to_daily_data
 from financetoolkit.risk.dependence import copula_model, covar_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.statistics_model import (
+    PERIOD_TRANSLATION,
+    apply_rounding,
+    finalize_dataset,
+)
 
 # ruff: noqa: E501
 
@@ -22,8 +29,18 @@ MINIMUM_TICKERS_FOR_ALL_PAIRS = 2
 @track_sources
 class DependenceRisk:
     """
-    Dependence between assets: copula fits, simulations and the best fitting copula, the tail dependence coefficient and CoVaR.
+    Dependence between assets: copula fits, simulations and the best fitting copula, the tail dependence coefficient,
+    and the systemic risk measures CoVaR, Marginal Expected Shortfall and SRISK.
     """
+
+    # The Toolkit sets this to a function returning the Total Liabilities of the balance sheet
+    # and the Weighted Average Shares Diluted of the income statement (tickers as index,
+    # periods as columns), each with the day its periods' figures apply from, which SRISK
+    # takes the debt and the market capitalization from.
+    _capital_shortfall_function: (
+        Callable[[], tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]]
+        | None
+    ) = None
 
     def _resolve_ticker_pairs(
         self, ticker_a: str | None, ticker_b: str | None
@@ -844,4 +861,377 @@ class DependenceRisk:
 
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
+        )
+
+    def _market_pairs(
+        self, ticker: str | None, market_ticker: str | None
+    ) -> tuple[list[str], str]:
+        # The firms and the market of a systemic risk measure: every ticker against the benchmark by default.
+        pairs = self._benchmark_pairs(ticker, market_ticker)
+
+        return [firm for firm, _ in pairs], pairs[0][1]
+
+    @handle_errors
+    def get_marginal_expected_shortfall(
+        self,
+        ticker: str | None = None,
+        market_ticker: str | None = None,
+        period: str | None = None,
+        alpha: float = 0.05,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Marginal Expected Shortfall (MES) of each ticker per period: its average
+        return on the days the market (the benchmark) is in its worst `alpha` tail.
+
+        Acharya, Pedersen, Philippon and Richardson (2017) show that a financial institution's
+        contribution to the Expected Shortfall of the system is its MES, the return it is expected
+        to make when the system as a whole is in its tail. Measured over a year of daily returns
+        on the 5% worst days of the market, the MES of the financial firms before 2007 predicted
+        which of them lost the most in the crisis. Where the CoVaR asks how much the system
+        suffers when a firm is in distress, the MES asks how much a firm suffers when the system
+        is; it is the market component of SRISK (see `get_srisk`).
+
+        The formula is as follows (with the default alpha=0.05):
+
+        - VaR_alpha(Market) = Quantile(Market Returns within the period, alpha)
+        - MES = MEAN(Returns_t | Market Return_t <= VaR_alpha(Market))
+
+        Where the returns are the daily returns of the Adjusted Close within the period on the days the
+        ticker and the market both have a return, and the quantile interpolates linearly between the two
+        nearest returns. The MES is reported as a return, negative for a loss, like the Value at Risk and
+        the Conditional Value at Risk (the paper reports the loss, -MES). With `rolling`, the days of the
+        last `rolling` periods are used together.
+
+        For more information about the method, see the following paper:
+
+        - Acharya, V.V., Pedersen, L.H., Philippon, T., & Richardson, M. (2017). "Measuring Systemic
+        Risk." The Review of Financial Studies, 30(1), 2-47.
+
+        Also known as: MES, marginal expected shortfall, systemic expected shortfall, tail beta.
+
+        Args:
+            ticker (str | None, optional): The ticker whose MES to calculate. Defaults to None, which
+                uses every ticker except the market.
+            market_ticker (str | None, optional): The ticker that represents the market (the system).
+                Defaults to None, which uses the benchmark.
+            period (str, optional): The period of each estimate (monthly, quarterly or yearly). Defaults
+                to "yearly", as in the paper.
+            alpha (float, optional): The tail probability of the market returns. Defaults to 0.05, the
+                5% worst days of the market.
+            rolling (int, optional): Use the daily returns of the last `rolling` periods instead of one
+                period (e.g. period='monthly' and rolling=12 for a one-year window at every month end).
+                Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the MES over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Raises:
+            ValueError: If the period is not monthly, quarterly or yearly, or if the Toolkit has no
+                benchmark and no market_ticker is given.
+
+        Returns:
+            pd.DataFrame: The MES as a return, with the periods as the index and the tickers as columns.
+
+        Notes:
+        - Each ticker is paired with the market on the days both have a return: a market return on a day the
+        ticker did not trade is compounded into the next shared date, so the other tickers of the Toolkit (e.g.
+        a cryptocurrency that trades every day) do not change a ticker's MES.
+        - A period with fewer than 1 / alpha shared returns (20 at alpha=0.05) is NaN, as its tail would hold
+        less than one day on average.
+        - The market itself is left out: its MES is the average of its own worst days, its Conditional Value at
+        Risk.
+        - Closes on different exchanges are not synchronous (BNP.PA closes hours before SPY), so a market fall
+        after the ticker's close shows up in its next day and the MES understates the tail dependence; use a
+        local market index as market_ticker for such tickers.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["JPM", "BAC", "C", "GS"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_marginal_expected_shortfall()
+        ```
+
+        Which returns:
+
+        | Date   |     JPM |     BAC |       C |      GS |
+        |:-------|--------:|--------:|--------:|--------:|
+        | 2021   | -0.0126 | -0.0134 | -0.0152 | -0.0173 |
+        | 2022   | -0.0282 | -0.0315 | -0.029  | -0.0284 |
+        | 2023   | -0.0155 | -0.0205 | -0.0187 | -0.017  |
+        | 2024   | -0.02   | -0.0196 | -0.0232 | -0.0233 |
+        | 2025   | -0.029  | -0.0339 | -0.0393 | -0.0394 |
+        """
+        period = period if period else "yearly"
+
+        if period not in ["monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be monthly, quarterly, or yearly.")
+
+        tickers, market = self._market_pairs(ticker, market_ticker)
+        returns = self._historical_data["daily"]["Return"]
+
+        marginal_expected_shortfall = covar_model.get_marginal_expected_shortfall(
+            returns[tickers], returns[market], alpha, period, rolling
+        )
+
+        marginal_expected_shortfall = marginal_expected_shortfall.loc[
+            self._start_date : self._end_date
+        ]
+
+        return finalize_dataset(
+            dataset=marginal_expected_shortfall,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_errors
+    def get_srisk(
+        self,
+        ticker: str | None = None,
+        market_ticker: str | None = None,
+        period: str | None = None,
+        decline: float = 0.4,
+        capital_ratio: float = 0.08,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate SRISK, the capital each firm is expected to need in a crisis, per period, with
+        the Long-Run Marginal Expected Shortfall (LRMES) it is based on and each firm's share of
+        the total.
+
+        Brownlees and Engle (2017) define SRISK as the capital shortfall of a firm conditional
+        on a severe market decline: in a crisis the market falls by 40% over six months, the
+        firm's equity falls by its LRMES, and the firm has to hold a prudential share k of its
+        assets (8% for U.S. firms) as equity. The firms with the largest SRISK contribute most to
+        the undercapitalization of the financial system in a crisis, which NYU Stern's V-Lab
+        publishes as its systemic risk ranking (SRISK%). It is meant for financial firms, whose
+        liabilities are mostly debt; for other firms the liabilities include operating items.
+
+        The formula is as follows (with the defaults decline=0.4 and capital_ratio=0.08):
+
+        - Beta = Covariance(Returns, Market Returns) / Variance(Market Returns)
+        - LRMES = (1 - decline) ^ Beta - 1
+        - SRISK = k * Total Liabilities - (1 - k) * (1 + LRMES) * Market Cap
+        - SRISK Share = MAX(SRISK, 0) / SUM(MAX(SRISK, 0) of every ticker)
+
+        Where Beta is the market beta from the daily returns of the Adjusted Close within the period on the
+        days the ticker and the market (the benchmark) both have a return, k the capital ratio, Total
+        Liabilities those of the balance sheet and Market Cap the Close on the ticker's last trading day of the
+        period times the Weighted Average Shares Diluted. The LRMES is the approximation V-Lab
+        publishes (1 - exp(log(1 - d) * Beta)), reported as a return, negative for a loss, like the Marginal
+        Expected Shortfall; 1 + LRMES is the share of the equity left after the crisis. With `rolling`, the beta
+        uses the days of the last `rolling` periods.
+
+        For more information about the method, see the following papers:
+
+        - Brownlees, C., & Engle, R.F. (2017). "SRISK: A Conditional Capital Shortfall Measure of Systemic
+        Risk." The Review of Financial Studies, 30(1), 48-79.
+        - Acharya, V.V., Engle, R.F., & Richardson, M. (2012). "Capital Shortfall: A New Approach to Ranking
+        and Regulating Systemic Risks." American Economic Review, 102(3), 59-64.
+
+        Also known as: systemic risk, capital shortfall, SRISK%, long-run marginal expected shortfall,
+        LRMES.
+
+        Args:
+            ticker (str | None, optional): The ticker whose SRISK to calculate. Defaults to None, which
+                uses every ticker except the market.
+            market_ticker (str | None, optional): The ticker that represents the market. Defaults to None,
+                which uses the benchmark.
+            period (str, optional): The period of each estimate (monthly, quarterly or yearly). Defaults
+                to "yearly".
+            decline (float, optional): The fall of the market over six months that defines the crisis, as a
+                decimal. Defaults to 0.4, as in V-Lab.
+            capital_ratio (float, optional): The prudential capital ratio k, the share of the assets a firm
+                has to hold as equity. Defaults to 0.08, V-Lab's ratio for U.S. firms (5.5% for European
+                firms, whose IFRS balance sheets report more liabilities).
+            rolling (int, optional): Estimate the beta from the daily returns of the last `rolling` periods
+                instead of one period (e.g. period='monthly' and rolling=12 for a one-year beta at every
+                month end). Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the results over time. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Raises:
+            ValueError: If the period is not monthly, quarterly or yearly, or if the Toolkit has no
+                benchmark and no market_ticker is given.
+
+        Returns:
+            pd.DataFrame: The Beta, LRMES, Total Liabilities, Market Cap, SRISK and SRISK Share, with the
+            periods as the index and (item, ticker) as columns. SRISK, the liabilities and the market cap are
+            in currency units, the others decimals.
+
+        Notes:
+        - SRISK is positive for a capital shortfall and negative for a surplus. Each firm keeps its signed
+        SRISK; the SRISK Share (V-Lab's SRISK%) only adds the shortfalls, as a surplus does not offset another
+        firm's shortfall in a crisis, so a firm with a surplus has a share of 0.
+        - The liabilities and the share count are those of the last fiscal period that ended on or before the
+        last calendar day of the period (filed on or before it with point_in_time), so a fiscal year that ends
+        on a weekend still belongs to its own year and a period never uses figures that were not yet reported.
+        A Toolkit with quarterly=True uses the latest quarter, as V-Lab does. The market cap is the traded
+        (split-adjusted) Close times the diluted share count, which for periods that coincide with the fiscal
+        periods equals `toolkit.ratios.get_market_cap`.
+        - The Close is in the currency the ticker trades in, while the statements are in the currency they
+        are reported in unless the Toolkit converts them to the currency of the prices (convert_currency=True);
+        when the two differ without a conversion, a warning is logged.
+        - V-Lab estimates the beta with a GJR-GARCH volatility and a Dynamic Conditional Correlation (DCC)
+        model, a beta for every day, while this beta is the ordinary least squares beta over the period's daily
+        returns, so the figures are of the same order but do not match V-Lab's.
+        - The beta needs at least 15 shared returns in the window; the market and tickers without financial
+        statements (such as an index or a cryptocurrency) are left out or NaN.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["JPM", "BAC", "C"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+            quarterly=True,
+        )
+
+        toolkit.risk.get_srisk().xs("C", level=1, axis=1)
+        ```
+
+        Which returns:
+
+        | Date   |   Beta |   LRMES |   Total Liabilities |   Market Cap |       SRISK |   SRISK Share |
+        |:-------|-------:|--------:|--------------------:|-------------:|------------:|--------------:|
+        | 2021   | 0.9001 | -0.3686 |         2.08874e+12 |  1.20877e+11 | 9.68806e+10 |        0.832  |
+        | 2022   | 0.9657 | -0.3894 |         2.21484e+12 |  8.84654e+10 | 1.27491e+11 |        0.544  |
+        | 2023   | 1.1149 | -0.4342 |         2.20558e+12 |  9.8235e+10  | 1.25313e+11 |        0.5676 |
+        | 2024   | 1.0891 | -0.4267 |         2.14358e+12 |  1.35923e+11 | 9.97953e+10 |        0.7761 |
+        | 2025   | 1.2277 | -0.4659 |         2.44338e+12 |  2.17347e+11 | 8.86712e+10 |        0.8611 |
+        """
+        period = period if period else "yearly"
+
+        if period not in ["monthly", "quarterly", "yearly"]:
+            raise ValueError("Period must be monthly, quarterly, or yearly.")
+        if self._capital_shortfall_function is None:
+            raise ValueError(
+                "SRISK needs the Total Liabilities and share count of the financial statements, "
+                "which toolkit.risk of a Toolkit provides."
+            )
+
+        tickers, market = self._market_pairs(ticker, market_ticker)
+        returns = self._historical_data["daily"]["Return"]
+
+        beta = covar_model.get_market_beta(
+            returns[tickers], returns[market], period, rolling
+        )
+        long_run_marginal_expected_shortfall = (
+            covar_model.get_long_run_marginal_expected_shortfall(beta, decline)
+        )
+
+        liabilities, liability_dates, shares, share_dates = (
+            self._capital_shortfall_function()
+        )
+        close = self._get_prices("Close").reindex(columns=tickers)
+
+        # The Close is NaN on the days a ticker did not trade, so this is the close of each ticker's last trading day of the period.  # noqa: E501
+        period_close = (
+            close.groupby(close.index.asfreq(PERIOD_TRANSLATION[period]))
+            .last()
+            .reindex(beta.index)
+        )
+
+        # The figures are those of the last fiscal period that ended (or, with point_in_time, was filed) on or before the last calendar day of the period, not its last trading day: a fiscal year ending on Saturday 31 December 2022 belongs to 2022 although the last trading day is the 30th. The current period stops at the end date of the Toolkit, so no figures of a later day are used.  # noqa: E501
+        end_date = pd.Timestamp(self._end_date)
+        period_ends = pd.DatetimeIndex(
+            [
+                min(end, end_date)
+                for end in beta.index.to_timestamp(how="end").normalize()
+            ]
+        )
+        period_liabilities, period_shares = (
+            map_period_data_to_daily_data(
+                period_data=figures,
+                daily_dates=period_ends,
+                quarterly=self._quarterly,
+                period_end_dates=dates,
+            )
+            .set_axis(beta.index, axis=0)
+            .reindex(columns=tickers)
+            .where(period_close.notna())
+            for figures, dates in (
+                (liabilities, liability_dates),
+                (shares, share_dates),
+            )
+        )
+
+        period_market_cap = valuation_model.get_market_cap(period_close, period_shares)
+
+        srisk = covar_model.get_srisk(
+            period_liabilities,
+            period_market_cap,
+            long_run_marginal_expected_shortfall,
+            capital_ratio,
+        )
+
+        result = pd.concat(
+            {
+                "Beta": beta,
+                "LRMES": long_run_marginal_expected_shortfall,
+                "Total Liabilities": period_liabilities,
+                "Market Cap": period_market_cap,
+                "SRISK": srisk,
+                "SRISK Share": covar_model.get_srisk_share(srisk),
+            },
+            axis=1,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=result,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
         )

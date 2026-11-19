@@ -1964,6 +1964,229 @@ def test_return_on_equity_excludes_minority_interest(ratios_module):
     )
 
 
+def test_get_cyclically_adjusted_price_to_earnings_ratio(
+    recorder, ratios_module, monkeypatch
+):
+    # A monthly consumer price index that rises by one point a month from 100 in January 2018.
+    consumer_price_index = pd.Series(
+        range(100, 160),
+        index=pd.period_range("2018-01", periods=60, freq="M"),
+        dtype=float,
+    )
+    monkeypatch.setattr(
+        ratios_module,
+        "_consumer_price_index_function",
+        lambda country: consumer_price_index,
+    )
+
+    cape = ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(
+        years=2, rounding=None
+    )
+    nominal_cape = ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(
+        years=2, inflation_adjusted=False, rounding=None
+    )
+    one_year = ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(
+        years=1, inflation_adjusted=False, rounding=None
+    )
+    price_to_earnings = ratios_module.get_price_to_earnings_ratio(rounding=None)
+    eps = ratios_module.get_earnings_per_share(rounding=None)
+    price = price_to_earnings * eps
+
+    recorder.capture(cape)
+    recorder.capture(nominal_cape)
+
+    # With one year and no inflation adjustment it is the P/E (the earnings are positive).
+    pd.testing.assert_frame_equal(one_year, price_to_earnings, atol=1e-3)
+
+    # 2021 against the 2020 and 2021 EPS, the 2020 EPS in December 2021 prices (CPI 147 / 135).
+    year, previous = pd.Period("2021", "Y"), pd.Period("2020", "Y")
+    real_average = (eps.loc["AAPL", previous] * 147 / 135 + eps.loc["AAPL", year]) / 2
+    assert cape.loc["AAPL", year] == pytest.approx(
+        price.loc["AAPL", year] / real_average, rel=1e-3
+    )
+    nominal_average = (eps.loc["AAPL", previous] + eps.loc["AAPL", year]) / 2
+    assert nominal_cape.loc["AAPL", year] == pytest.approx(
+        price.loc["AAPL", year] / nominal_average, rel=1e-3
+    )
+
+    # The first year has no year before it, so the two-year window is incomplete.
+    assert cape[previous].isna().all()
+
+    # A country without a consumer price index gives an empty result.
+    monkeypatch.setattr(
+        ratios_module,
+        "_consumer_price_index_function",
+        lambda country: pd.Series(dtype=float),
+    )
+    assert ratios_module.get_cyclically_adjusted_price_to_earnings_ratio(
+        country="Atlantis"
+    ).empty
+
+
+def test_consumer_price_index_function_accepts_country_aliases(
+    ratios_module, monkeypatch
+):
+    from financetoolkit.economics.economics_controller import Economics
+
+    # Economics returns the names its sources use, whatever form of the name was requested.
+    consumer_price_index = pd.DataFrame(
+        {"United States": [100.0, 101.0], "Netherlands": [100.0, 102.0]},
+        index=pd.period_range("2020-01", periods=2, freq="M"),
+    )
+    monkeypatch.setattr(
+        Economics,
+        "get_consumer_price_index",
+        lambda self, countries=None, period=None: consumer_price_index,
+    )
+
+    function = ratios_module._consumer_price_index_function
+    pd.testing.assert_series_equal(
+        function("USA"), consumer_price_index["United States"]
+    )
+    pd.testing.assert_series_equal(
+        function("netherlands"), consumer_price_index["Netherlands"]
+    )
+    assert function("Atlantis").empty
+
+
+def test_get_return_on_net_operating_assets(recorder, ratios_module):
+    recorder.capture(ratios_module.get_return_on_net_operating_assets())
+    recorder.capture(ratios_module.get_return_on_net_operating_assets(trailing=2))
+
+
+def test_get_net_borrowing_cost(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_borrowing_cost())
+
+
+def test_get_financial_leverage(recorder, ratios_module):
+    recorder.capture(ratios_module.get_financial_leverage())
+
+
+def test_nissim_penman_ratios_follow_the_statements(ratios_module):
+    balance = ratios_module._balance_sheet_statement
+    income = ratios_module._income_statement
+    period = pd.Period("2022", freq="Y")
+
+    def row(statement, name, ticker, at):
+        value = statement.loc[(ticker, name), at]
+        return 0.0 if pd.isna(value) else value
+
+    rnoa = ratios_module.get_return_on_net_operating_assets(rounding=10)
+    nbc = ratios_module.get_net_borrowing_cost(rounding=10)
+    flev = ratios_module.get_financial_leverage(rounding=10)
+    for ticker in ["AAPL", "MSFT"]:
+
+        def nfo(at, ticker=ticker):
+            return (
+                row(balance, "Total Debt", ticker, at)
+                + row(balance, "Preferred Stock", ticker, at)
+                - row(balance, "Cash and Cash Equivalents", ticker, at)
+                - row(balance, "Short Term Investments", ticker, at)
+                - row(balance, "Long Term Investments", ticker, at)
+            )
+
+        def cse(at, ticker=ticker):
+            return row(balance, "Total Shareholder Equity", ticker, at) - row(
+                balance, "Preferred Stock", ticker, at
+            )
+
+        before_tax = row(income, "Income Before Tax", ticker, period)
+        tax_rate = min(
+            max(row(income, "Income Tax Expense", ticker, period) / before_tax, 0), 1
+        )
+        nfe = (
+            row(income, "Interest Expense", ticker, period)
+            - row(income, "Interest Income", ticker, period)
+        ) * (1 - tax_rate)
+        average_nfo = (nfo(period) + nfo(period - 1)) / 2
+        average_cse = (cse(period) + cse(period - 1)) / 2
+        net_income = row(income, "Net Income", ticker, period)
+
+        assert rnoa.loc[ticker, period] == pytest.approx(
+            (net_income + nfe) / (average_nfo + average_cse)
+        )
+        assert nbc.loc[ticker, period] == pytest.approx(nfe / average_nfo)
+        assert flev.loc[ticker, period] == pytest.approx(average_nfo / average_cse)
+
+
+def test_nissim_penman_ratios_are_nan_without_interest_rows(ratios_module):
+    ratios = copy.copy(ratios_module)
+    income = ratios_module._income_statement.copy()
+    period = pd.Period("2022", freq="Y")
+    # Neither interest row reported for AAPL in 2022 (FMP gives zeros, as for Apple from 2024).
+    income.loc[("AAPL", "Interest Expense"), period] = 0
+    income.loc[("AAPL", "Interest Income"), period] = float("nan")
+    # Interest income alone missing for MSFT: counted as zero, the ratios remain.
+    income.loc[("MSFT", "Interest Income"), period] = float("nan")
+    ratios._income_statement = income
+
+    base_rnoa = ratios_module.get_return_on_net_operating_assets(rounding=10)
+    rnoa = ratios.get_return_on_net_operating_assets(rounding=10)
+    nbc = ratios.get_net_borrowing_cost(rounding=10)
+    flev = ratios.get_financial_leverage(rounding=10)
+
+    assert pd.isna(rnoa.loc["AAPL", period]) and pd.isna(nbc.loc["AAPL", period])
+    assert flev.loc["AAPL", period] == pytest.approx(
+        ratios_module.get_financial_leverage(rounding=10).loc["AAPL", period]
+    )
+    # With the same average obligations, only the interest income dropping out changes the NBC.
+    base = ratios_module._income_statement
+    expense = base.loc[("MSFT", "Interest Expense"), period]
+    interest_income = base.loc[("MSFT", "Interest Income"), period]
+    base_nbc = ratios_module.get_net_borrowing_cost(rounding=10)
+    assert nbc.loc["MSFT", period] == pytest.approx(
+        base_nbc.loc["MSFT", period] * expense / (expense - interest_income)
+    )
+    assert pd.notna(rnoa.loc["MSFT", period])
+    # Only the period itself is NaN; a trailing window over it is NaN as well.
+    other = period + 1
+    assert rnoa.loc["AAPL", other] == pytest.approx(base_rnoa.loc["AAPL", other])
+    assert (
+        ratios.get_net_borrowing_cost(trailing=2)
+        .loc["AAPL", [period, other]]
+        .isna()
+        .all()
+    )
+
+
+def test_get_dividend_adjusted_price_to_earnings_growth_ratio(recorder, ratios_module):
+    recorder.capture(
+        ratios_module.get_dividend_adjusted_price_to_earnings_growth_ratio()
+    )
+
+    # The P/E and EPS growth of the PEG ratio, with the dividend yield of the same period
+    # added to the growth, both in percent.
+    pegy = ratios_module.get_dividend_adjusted_price_to_earnings_growth_ratio(
+        rounding=10
+    )
+    peg = ratios_module.get_price_to_earnings_growth_ratio(rounding=15)
+    price_earnings = ratios_module.get_price_to_earnings_ratio(rounding=15)
+    dividend_yield = ratios_module.get_dividend_yield(rounding=15)
+    growth_rate = price_earnings / peg / 100
+    expected = price_earnings / ((growth_rate + dividend_yield) * 100)
+    pd.testing.assert_frame_equal(
+        pegy,
+        expected.loc[pegy.index, pegy.columns].round(10),
+        check_names=False,
+        rtol=1e-8,
+    )
+
+
+def test_get_net_debt_to_equity_ratio(recorder, ratios_module):
+    recorder.capture(ratios_module.get_net_debt_to_equity_ratio())
+    recorder.capture(ratios_module.get_net_debt_to_equity_ratio(trailing=2))
+
+    # The net debt of the balance sheet (total debt minus cash) over the total equity.
+    balance = ratios_module._balance_sheet_statement
+    expected = (
+        balance.loc[:, "Total Debt", :] - balance.loc[:, "Cash and Cash Equivalents", :]
+    ) / balance.loc[:, "Total Equity", :]
+    ratio = ratios_module.get_net_debt_to_equity_ratio(rounding=10)
+    pd.testing.assert_frame_equal(
+        ratio, expected.loc[ratio.index, ratio.columns].round(10), check_names=False
+    )
+
+
 @pytest.mark.parametrize(
     ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
 )

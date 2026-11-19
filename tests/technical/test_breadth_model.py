@@ -215,3 +215,14 @@ def test_mcclellan_oscillator_continues_after_a_gap():
         oscillator.dropna().reset_index(drop=True),
         without_gap.dropna().reset_index(drop=True),
     )
+
+
+def test_price_volume_trend_weights_volume_with_the_change_in_price():
+    prices_close = pd.Series([100.0, 110.0, None, 99.0, 99.0])
+    volumes = pd.Series([1000.0, 500.0, 800.0, 200.0, 300.0])
+
+    result = breadth_model.get_price_volume_trend(prices_close, volumes)
+
+    # 0 on the first observation; the observation after the gap compares with 110.
+    expected = pd.Series([0.0, 50.0, None, 50.0 - 200.0 * 0.1, 30.0])
+    pd.testing.assert_series_equal(result, expected)

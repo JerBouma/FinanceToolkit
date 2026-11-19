@@ -9,6 +9,7 @@ import pandas as pd
 
 from financetoolkit.helpers import LazyDict
 from financetoolkit.models import helpers
+from financetoolkit.models.constraints.constraints_controller import ConstraintsModels
 from financetoolkit.models.distress.distress_controller import DistressModels
 from financetoolkit.models.profitability.profitability_controller import (
     ProfitabilityModels,
@@ -53,6 +54,9 @@ class ModelsBase:
         sp500_function: (
             Callable[[str, str], tuple[pd.DataFrame, pd.Series]] | None
         ) = None,
+        analyst_estimates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
+        profile: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
+        corporate_bond_yield_function: Callable[[str, str], pd.Series] | None = None,
     ):
         """
         Initializes the Models Controller Class.
@@ -93,6 +97,20 @@ class ModelsBase:
                 DatetimeIndex) and the latest total market value of its companies (a Series
                 with the date as index). Defaults to None, which leaves the excess returns
                 and the relative size NaN.
+            corporate_bond_yield_function (Callable | None, optional): Retrieves the daily
+                yield of Moody's seasoned Aaa corporate bonds between two dates, as decimals
+                with a DatetimeIndex or PeriodIndex, the bond yield of
+                get_graham_intrinsic_value. Defaults to None, which requires that method to
+                be given a bond_yield.
+            profile (pd.DataFrame | Callable | None, optional): The company profiles, with
+                the tickers as columns and the "IPO Date" and "Industry" rows that
+                get_size_age_index and get_whited_wu_index use, or a function that retrieves
+                them when a model first needs them. Defaults to None, which leaves the firm
+                age and the industry averages NaN.
+            analyst_estimates (pd.DataFrame | Callable[[], pd.DataFrame] | None, optional): The
+                analyst consensus estimates per ticker and estimate row (index) and fiscal period
+                (columns), as the forward ratios of the Ratios module use them, for
+                get_implied_cost_of_capital. Defaults to None, which leaves it NaN.
 
         As an example:
 
@@ -132,6 +150,9 @@ class ModelsBase:
         self._country_risk_premiums_source = country_risk_premiums
         self._period_end_dates_source = period_end_dates
         self._sp500_function = sp500_function
+        self._analyst_estimates_source = analyst_estimates
+        self._profile_source = profile
+        self._corporate_bond_yield_function = corporate_bond_yield_function
 
         # Historical Data
         self._historical_data = historical_data
@@ -165,6 +186,20 @@ class ModelsBase:
     def _period_end_dates(self) -> pd.DataFrame | None:
         """The fiscal period end dates, retrieved when a model first needs them."""
         source = self._period_end_dates_source
+        return source() if callable(source) else source
+
+    @cached_property
+    def _analyst_estimates(self) -> pd.DataFrame:
+        """The analyst consensus estimates, retrieved when a model first needs them."""
+        source = self._analyst_estimates_source
+        estimates = source() if callable(source) else source
+
+        return pd.DataFrame() if estimates is None else estimates
+
+    @cached_property
+    def _profile(self) -> pd.DataFrame | None:
+        """The company profiles, retrieved when a model first needs them."""
+        source = self._profile_source
         return source() if callable(source) else source
 
     @cached_property
@@ -454,7 +489,12 @@ FACTOR_COLLECTIONS["all"] = FACTOR_COLLECTIONS["scores"] + [
 @filter_shown_columns
 @track_sources
 class Models(
-    ValuationModels, QualityModels, DistressModels, ProfitabilityModels, ModelsBase
+    ValuationModels,
+    QualityModels,
+    DistressModels,
+    ProfitabilityModels,
+    ConstraintsModels,
+    ModelsBase,
 ):
     """
     The Models module is meant to execute well-known models such

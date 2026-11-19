@@ -2948,3 +2948,374 @@ def test_outstanding_mortgage_rates_select_and_add_up_the_buckets(monkeypatch):
     }
     assert by_balance.iloc[0]["Below 3%"] == pytest.approx(0.202)
     assert unknown.empty
+
+
+def test_eurostat_job_vacancies_and_capacity_utilization_pin_their_series(
+    monkeypatch,
+):
+    urls = []
+
+    # Excerpts of the jvs_q_r21 and ei_bsin_q_r2 answers for the euro area.
+    def fake(url, timeout):
+        urls.append(url)
+        values = [2.2, 2.1] if "jvs_q_r21" in url else [78.5, 78.2]
+        return FakeResponse(json_stat(["EA21"], ["2026-Q2", "2026-Q3"], values))
+
+    monkeypatch.setattr(eurostat_model, "get_request", fake)
+
+    vacancies = eurostat_model.get_job_vacancy_rate("2026-04-01", "2026-09-30")
+    utilization = eurostat_model.get_capacity_utilization("2026-04-01", "2026-09-30")
+
+    assert (
+        "jvs_q_r21?freq=Q&indic_em=JVR&nace_r2_1=B-T&s_adj=SA&sizeclas=TOTAL" in urls[0]
+    )
+    assert "ei_bsin_q_r2?freq=Q&indic=BS-ICU-PC&s_adj=SA" in urls[1]
+    # Published in percent, returned as decimals.
+    assert vacancies.loc[pd.Period("2026Q2", "Q"), "Euro Area"] == pytest.approx(0.022)
+    assert utilization.loc[pd.Period("2026Q3", "Q"), "Euro Area"] == pytest.approx(
+        0.782
+    )
+
+
+def test_bls_job_openings_rate_is_in_decimals(monkeypatch):
+    from financetoolkit.economics.sources import bls_model
+
+    payload = {
+        "status": "REQUEST_SUCCEEDED",
+        "Results": {
+            "series": [
+                {
+                    "seriesID": "JTS000000000000000JOR",
+                    "data": [
+                        {"year": "2026", "period": "M09", "value": "4.5"},
+                        {"year": "2026", "period": "M08", "value": "4.3"},
+                    ],
+                }
+            ]
+        },
+    }
+    requested = []
+
+    def respond(url, **kwargs):
+        requested.append(json.loads(kwargs["data"])["seriesid"])
+        return FakeResponse(payload)
+
+    monkeypatch.setattr(bls_model, "get_request", respond)
+
+    rate = bls_model.get_job_openings_rate()["United States"]
+
+    assert requested == [["JTS000000000000000JOR"]]
+    assert rate.to_dict() == {
+        pd.Period("2026-08", "M"): pytest.approx(0.043),
+        pd.Period("2026-09", "M"): pytest.approx(0.045),
+    }
+
+
+def test_capacity_utilization_reads_total_industry_in_decimals(monkeypatch):
+    from financetoolkit.economics.sources import frb_model
+
+    # An excerpt of utl_sa.txt: total industry, then manufacturing.
+    text = (
+        '"B50001: Total index"\n'
+        '"B50001"        2026      75.2420   75.8142   75.6178   76.1792   76.1997   '
+        "76.3367   76.4164   76.2918   76.7729   76.3633    0.0000    0.0000\n"
+        '"B00004"        2026      74.0000   74.0000\n'
+    )
+    urls = []
+
+    def fake(url, timeout):
+        urls.append(url)
+        return FakeResponse(text=text)
+
+    monkeypatch.setattr(frb_model, "get_request", fake)
+
+    utilization = frb_model.get_capacity_utilization()["United States"]
+
+    assert urls == [frb_model.UTILIZATION_URL]
+    # October 2026 is the 76.4 percent of the release; November and December are not
+    # published yet.
+    assert len(utilization) == 10  # noqa: PLR2004
+    assert utilization[pd.Period("2026-10", "M")] == pytest.approx(0.763633)
+
+
+def _labour_capacity_economics(monkeypatch, quarterly=False):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import bls_model, frb_model
+
+    months = pd.period_range("2026-01", "2026-08", freq="M")
+    us = pd.DataFrame({"United States": [0.04] * 6 + [0.05, 0.06]}, index=months)
+    quarters = pd.period_range("2026Q1", "2026Q2", freq="Q")
+    europe = pd.DataFrame(
+        {"Euro Area": [0.022, 0.021], "Germany": [0.026, 0.025]}, index=quarters
+    )
+
+    monkeypatch.setattr(bls_model, "get_job_openings_rate", lambda: us)
+    monkeypatch.setattr(frb_model, "get_capacity_utilization", lambda: us)
+    monkeypatch.setattr(eurostat_model, "get_job_vacancy_rate", lambda *a: europe)
+    monkeypatch.setattr(eurostat_model, "get_capacity_utilization", lambda *a: europe)
+
+    return Economics(
+        start_date="2026-01-01",
+        end_date="2026-09-30",
+        quarterly=quarterly,
+        fred_api_key="",
+    )
+
+
+@pytest.mark.parametrize("method", ["get_job_vacancy_rate", "get_capacity_utilization"])
+def test_vacancies_and_utilization_are_monthly_for_the_us_alone(
+    monkeypatch, caplog, method
+):
+    economics = _labour_capacity_economics(monkeypatch)
+
+    # The United States alone is published monthly.
+    monthly = getattr(economics, method)(countries="USA")
+    assert monthly.index.freqstr.startswith("M")
+    assert (
+        monthly.loc[pd.Period("2026-08", "M"), "United States"] == 0.06
+    )  # noqa: PLR2004
+
+    # With other countries, the quarters, the US as the average of complete quarters.
+    quarterly = getattr(economics, method)(countries=["United States", "Germany"])
+    assert quarterly.index.freqstr.startswith("Q")
+    assert (
+        quarterly.loc[pd.Period("2026Q2", "Q"), "United States"] == 0.04
+    )  # noqa: PLR2004
+    assert quarterly.loc[pd.Period("2026Q2", "Q"), "Germany"] == 0.025  # noqa: PLR2004
+    assert pd.Period("2026Q3", "Q") not in quarterly.index
+
+    # Asked for monthly, the quarterly countries are named rather than left out silently.
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        getattr(economics, method)(
+            countries=["United States", "Germany"], period="monthly"
+        )
+    assert "Germany is published quarterly" in caplog.text
+
+    # Every country asked for monthly: the quarterly ones are mentioned as well.
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        everything = getattr(economics, method)(period="monthly")
+    assert list(everything.columns) == ["United States"]
+    assert "the other countries quarterly" in caplog.text
+
+    # quarterly=True on the class asks for quarters, also for the United States.
+    quarterly_class = _labour_capacity_economics(monkeypatch, quarterly=True)
+    assert getattr(quarterly_class, method)(
+        countries="United States"
+    ).index.freqstr.startswith("Q")
+
+    # Yearly data is not published.
+    assert getattr(economics, method)(period="yearly").empty
+
+
+def test_a_fred_key_gives_the_full_history_of_the_job_openings_rate(monkeypatch):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import bls_model, fred_model
+
+    months = pd.period_range("2026-01", "2026-03", freq="M")
+    monkeypatch.setattr(
+        fred_model,
+        "get_job_openings_rate",
+        lambda *args: pd.DataFrame({"United States": [0.01] * 3}, index=months),
+    )
+    monkeypatch.setattr(
+        bls_model,
+        "get_job_openings_rate",
+        lambda: pd.DataFrame({"United States": [0.02] * 3}, index=months),
+    )
+
+    def rate(key):
+        return Economics(
+            start_date="2026-01-01", end_date="2026-03-31", fred_api_key=key
+        ).get_job_vacancy_rate(countries="United States")
+
+    assert rate("key").iloc[0, 0] == 0.01  # noqa: PLR2004
+    assert rate("").iloc[0, 0] == 0.02  # noqa: PLR2004
+
+
+def test_unit_labour_costs_are_the_oecd_quarterly_index(monkeypatch):
+    requested = []
+
+    def fake(oecd_data_string, period_code, start_date=None, end_date=None):
+        requested.append((oecd_data_string, period_code))
+        return pd.DataFrame(
+            {"United States": [128.2185, 128.8209]},
+            index=pd.period_range("2026Q1", periods=2, freq="Q"),
+        )
+
+    monkeypatch.setattr(oecd_model, "collect_oecd_data", fake)
+
+    from financetoolkit import Economics
+
+    costs = Economics(
+        start_date="2026-01-01", end_date="2026-06-30"
+    ).get_unit_labour_costs()
+
+    # Employment based, total economy, index 2015 = 100, seasonally adjusted.
+    assert requested == [
+        ("OECD.SDD.TPS,DSD_PDB@DF_PDB_ULC_Q,1.0/.Q.ULCE._T.IX.V._Z.S.NC", "Q")
+    ]
+    assert (
+        costs.loc[pd.Period("2026Q2", "Q"), "United States"] == 128.8209
+    )  # noqa: PLR2004
+
+
+def world_bank_page(records, page=1, pages=1):
+    """A page of a World Bank API answer: the page information, then the records."""
+    return [{"page": page, "pages": pages, "per_page": 20000}, records]
+
+
+# Excerpts of the World Bank list of economies: an economy the Finance Toolkit names
+# differently, one it does not know, the euro area and two aggregates, one of them an
+# income group with the two letter code the economic calendar uses for the euro area.
+WORLD_BANK_ECONOMIES = [
+    {"id": "KOR", "iso2Code": "KR", "name": "Korea, Rep.", "region": {"value": "East Asia & Pacific"}},
+    {"id": "BHS", "iso2Code": "BS", "name": "Bahamas, The", "region": {"value": "Latin America & Caribbean "}},
+    {"id": "CPV", "iso2Code": "CV", "name": "Cabo Verde", "region": {"value": "Sub-Saharan Africa "}},
+    {"id": "EMU", "iso2Code": "XC", "name": "Euro area", "region": {"value": "Aggregates"}},
+    {"id": "LIC", "iso2Code": "XM", "name": "Low income", "region": {"value": "Aggregates"}},
+    {"id": "SAS", "iso2Code": "8S", "name": "South Asia", "region": {"value": "Aggregates"}},
+]  # fmt: skip
+
+
+def wdi_record(code, year, value):
+    return {
+        "indicator": {"id": "FI.RES.TOTL.MO"},
+        "country": {"id": "", "value": ""},
+        "countryiso3code": code,
+        "date": year,
+        "value": value,
+    }
+
+
+def test_world_bank_indicators_name_economies_and_leave_out_aggregates(
+    cache, monkeypatch
+):
+    from financetoolkit.economics.sources import world_bank_model
+
+    # The indicator comes in two pages; values from FI.RES.TOTL.MO.
+    indicator_pages = [
+        world_bank_page(
+            [
+                wdi_record("KOR", "2025", 6.95),
+                wdi_record("KOR", "2024", None),
+                wdi_record("EMU", "2025", 3.49632888594924),
+                # Income groups have no three letter code, several per year.
+                wdi_record("", "2025", 7.91),
+                wdi_record("", "2025", 9.94),
+            ],
+            page=1,
+            pages=2,
+        ),
+        world_bank_page(
+            [
+                wdi_record("BHS", "2025", 4.1),
+                wdi_record("CPV", "2025", 5.2),
+                wdi_record("SAS", "2025", 8.0),
+            ],
+            page=2,
+            pages=2,
+        ),
+    ]
+    urls = []
+
+    def fake(url, timeout):
+        urls.append(url)
+        if "/indicator/" in url:
+            return FakeResponse(indicator_pages[int(url.split("page=")[-1]) - 1])
+        return FakeResponse(world_bank_page(WORLD_BANK_ECONOMIES))
+
+    monkeypatch.setattr(world_bank_model, "get_request", fake)
+
+    cover = world_bank_model.get_indicator("FI.RES.TOTL.MO", "import cover")
+
+    assert sum("FI.RES.TOTL.MO" in url for url in urls) == 2  # noqa: PLR2004
+    assert sorted(cover.columns) == [
+        "Bahamas",
+        "Cape Verde",
+        "Euro Area",
+        "South Korea",
+    ]
+    assert cover.index.tolist() == [pd.Period("2025", "Y")]
+    assert cover.loc["2025", "Euro Area"] == pytest.approx(3.49632888594924)
+
+
+def test_world_bank_economies_are_named_as_the_global_macro_database_names_them(
+    cache, monkeypatch
+):
+    from financetoolkit.economics.sources import world_bank_model
+
+    # Economies outside the OECD and two letter code lists, as the World Bank names them.
+    economies = [
+        {"id": code, "iso2Code": iso2, "name": name, "region": {"value": "Latin America & Caribbean "}}
+        for code, iso2, name in [
+            ("KNA", "KN", "St. Kitts and Nevis"),
+            ("LCA", "LC", "St. Lucia"),
+            ("VCT", "VC", "St. Vincent and the Grenadines"),
+            ("NRU", "NR", "Naoero"),
+            ("PRI", "PR", "Puerto Rico (US)"),
+            ("VIR", "VI", "Virgin Islands (U.S.)"),
+            ("ABW", "AW", "Aruba"),
+        ]
+    ]  # fmt: skip
+    monkeypatch.setattr(
+        world_bank_model,
+        "get_request",
+        lambda url, timeout: FakeResponse(world_bank_page(economies)),
+    )
+
+    names = world_bank_model.get_economy_names()["Country"].to_dict()
+
+    # The names of the Global Macro Database data, and the World Bank's name otherwise.
+    assert names == {
+        "KNA": "Saint Kitts and Nevis",
+        "LCA": "Saint Lucia",
+        "VCT": "St-Vincent",
+        "NRU": "Nauru",
+        "PRI": "Puerto Rico",
+        "VIR": "US Virgin Islands",
+        "ABW": "Aruba",
+    }
+
+
+def test_a_world_bank_error_message_is_a_changed_format(monkeypatch):
+    from financetoolkit.economics.sources import world_bank_model
+
+    message = [{"message": [{"id": "120", "key": "Invalid value"}]}]
+    monkeypatch.setattr(
+        world_bank_model, "get_request", lambda url, timeout: FakeResponse(message)
+    )
+
+    with pytest.raises(ValueError, match="not a page of records"):
+        world_bank_model.get_indicator("FI.RES.TOTL.XX", "unknown indicator")
+
+
+def test_foreign_exchange_reserves_are_in_millions_and_import_cover_in_months(
+    monkeypatch,
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import world_bank_model
+
+    years = pd.PeriodIndex(["2024", "2025"], freq="Y")
+    published = {
+        "FI.RES.TOTL.CD": pd.DataFrame(
+            {"China": [3456024808739.12, 3748744952817.94]}, index=years
+        ),
+        "FI.RES.TOTL.MO": pd.DataFrame(
+            {"China": [11.0155252612111, 11.9430464176221]}, index=years
+        ),
+    }
+    monkeypatch.setattr(
+        world_bank_model,
+        "get_indicator",
+        lambda indicator, description: published[indicator],
+    )
+
+    economics = Economics(start_date="2024-01-01", end_date="2025-12-31")
+
+    reserves = economics.get_foreign_exchange_reserves(countries="China")
+    cover = economics.get_reserves_import_cover(countries=["China", "Atlantis"])
+
+    assert reserves.loc["2025", "China"] == pytest.approx(3748744.9528)
+    assert cover.loc["2025", "China"] == pytest.approx(11.943)
+    assert "Atlantis" not in cover.columns

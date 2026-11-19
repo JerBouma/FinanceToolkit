@@ -10,6 +10,7 @@ from financetoolkit.technicals.overlap_model import (
     apply_to_rolling_windows,
     get_exponential_moving_average,
     get_moving_average,
+    get_weighted_moving_average,
 )
 from financetoolkit.technicals.volatility_model import (
     get_true_range,
@@ -481,6 +482,63 @@ def get_percentage_price_oscillator(
     return ppo
 
 
+def get_percentage_volume_oscillator(
+    volumes: pd.Series, short_window: int, long_window: int, signal_window: int
+) -> pd.DataFrame:
+    """
+    Calculate the Percentage Volume Oscillator (PVO) for a given volume series.
+
+    The Percentage Volume Oscillator is the Percentage Price Oscillator applied to volume:
+    the difference between a short-term and a long-term EMA of volume as a share of the
+    long-term EMA. It rises when recent volume runs above its longer-term average and
+    falls when it runs below, which makes it a measure of volume momentum that can be
+    compared across securities whatever the number of shares they trade.
+
+    The formula is as follows:
+
+    - PVO = (EMA(Volume, short_window) - EMA(Volume, long_window)) / EMA(Volume, long_window)
+    - Signal Line = EMA(PVO, signal_window)
+    - Histogram = PVO - Signal Line
+
+    The conventional parameters are 12, 26 and 9 periods, as for MACD and the PPO.
+
+    Also known as: PVO, volume oscillator.
+
+    Reference: StockCharts ChartSchool, "Percentage Volume Oscillator (PVO)". The PVO is the
+    volume counterpart of the Percentage Price Oscillator, a normalized variant of Appel's
+    Moving Average Convergence Divergence (Appel, G. (1979). "The Moving Average
+    Convergence-Divergence Trading Method." Signalert Corp.).
+
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values (see
+          `get_exponential_moving_average`), so the PVO starts on period `long_window` - 1
+          and the signal line and histogram `signal_window` - 1 periods later.
+        - A long-term EMA of zero (a series without volume, such as an index or a currency
+          pair with no reported volume) has no PVO rather than an infinite one.
+
+    Args:
+        volumes (pd.Series): Series of trading volumes.
+        short_window (int): Number of periods for the short-term EMA.
+        long_window (int): Number of periods for the long-term EMA.
+        signal_window (int): Number of periods for the signal line EMA.
+
+    Returns:
+        pd.DataFrame: The Percentage Volume Oscillator, Signal Line and Histogram as
+        columns, as decimals (0.02 is 2%).
+    """
+    short_ema = get_exponential_moving_average(volumes, short_window)
+    long_ema = get_exponential_moving_average(volumes, long_window)
+
+    pvo = (short_ema - long_ema) / long_ema.where(long_ema != 0)
+    signal_line = get_exponential_moving_average(pvo, signal_window)
+
+    return pd.concat(
+        [pvo, signal_line, pvo - signal_line],
+        keys=["Percentage Volume Oscillator", "Signal Line", "Histogram"],
+        axis=1,
+    )
+
+
 def get_detrended_price_oscillator(
     prices_close: pd.Series,
     window: int,
@@ -888,6 +946,140 @@ def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
     return rsi
 
 
+def get_stochastic_relative_strength_index(
+    prices: pd.Series, window: int, stochastic_window: int, smooth_window: int
+) -> pd.DataFrame:
+    """
+    Calculate the Stochastic RSI of a given price series.
+
+    The Stochastic RSI applies the Stochastic Oscillator to the Relative Strength Index
+    instead of to price: it shows where the current RSI sits within its own high-low range
+    over the last `stochastic_window` periods. Chande and Kroll designed it because the RSI
+    can spend long stretches between 30 and 70 without reaching either extreme; the
+    Stochastic RSI reaches its 0 and 100 extremes far more often, at the cost of being much
+    more sensitive.
+
+    The formula is as follows:
+
+    - RSI = Relative Strength Index(Close, window), with Wilder's smoothing
+    - %K = 100 * (RSI - Lowest RSI) / (Highest RSI - Lowest RSI), over the last stochastic_window RSI values
+    - %D = SMA(%K, smooth_window)
+
+    Chande and Kroll define it as a 14-period stochastic of a 14-period RSI, as StockCharts
+    and TradingView do (`window=14`, `stochastic_window=14`). StockCharts shows this %K on a
+    scale of 0 to 1; TradingView smooths it over 3 periods, so its %K equals this %D with
+    `smooth_window=3`. TA-Lib's `STOCHRSI` defaults to a 5-period stochastic instead
+    (timeperiod 14, fastk_period 5, fastd_period 3 with a simple average), which is
+    `stochastic_window=5` here and returns its fast %K and %D.
+
+    Also known as: StochRSI, Stoch RSI.
+
+    Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+
+    Notes:
+        - The RSI is that of `get_relative_strength_index`, seeded with a simple average of
+          the first `window` changes as Wilder and TA-Lib do, so %K starts on period
+          `window` + `stochastic_window` - 1 and %D `smooth_window` - 1 periods later.
+          TA-Lib starts both outputs on the first %D, with the same values from there.
+        - An RSI that did not move over the stochastic window has no range, which leaves %K
+          undefined (missing), as in `get_stochastic_oscillator`; TA-Lib sets it to 0.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods for the RSI.
+        stochastic_window (int): Number of periods of RSI values for the high-low range of %K.
+        smooth_window (int): Number of periods of the Simple Moving Average of %K that gives %D.
+
+    Returns:
+        pd.DataFrame: Stochastic RSI %K and %D as columns, bounded between 0 and 100.
+    """
+    relative_strength_index = get_relative_strength_index(prices, window)
+
+    stochastic_rsi = get_stochastic_oscillator(
+        relative_strength_index,
+        relative_strength_index,
+        relative_strength_index,
+        stochastic_window,
+        smooth_window,
+    )
+    stochastic_rsi.columns = ["Stochastic RSI %K", "Stochastic RSI %D"]
+
+    return stochastic_rsi
+
+
+def get_true_strength_index(
+    prices: pd.Series, long_window: int, short_window: int, signal_window: int
+) -> pd.DataFrame:
+    """
+    Calculate the True Strength Index (TSI) of a given price series.
+
+    The True Strength Index smooths the one-period price change twice with Exponential Moving
+    Averages and divides it by the same double smoothing of the absolute change. The double
+    smoothing filters out noise while lagging less than one long average would, and dividing
+    by the smoothed absolute change bounds the result between -100 (every change down) and
+    +100 (every change up). Crossings of the zero line and of the signal line, and readings
+    beyond about +25 or -25, are the usual signals.
+
+    The formula is as follows:
+
+    - Momentum(t) = Close(t) - Close(t - 1)
+    - TSI = 100 * EMA(EMA(Momentum, long_window), short_window) / EMA(EMA(|Momentum|,
+      long_window), short_window)
+    - Signal Line = EMA(TSI, signal_window)
+
+    Blau's parameters are 25 for the first and 13 for the second smoothing; the signal line
+    of 7 periods is the one StockCharts uses.
+
+    Also known as: TSI, double smoothed momentum.
+
+    Reference: Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley; first published
+    in Blau, W. (1991). "True Strength Index." Technical Analysis of Stocks & Commodities,
+    9(11).
+
+    Notes:
+        - Every EMA is seeded with the Simple Moving Average of its first values with an
+          empty warm-up (see `get_exponential_moving_average`), as TA-Lib and StockCharts
+          do, so the TSI starts on period `long_window` + `short_window` - 1 (the first
+          price has no change) and the signal line `signal_window` - 1 periods later.
+        - A stretch without any price change has no absolute change to divide by, which
+          leaves the TSI undefined (missing).
+
+    Args:
+        prices (pd.Series): Series of prices.
+        long_window (int): Number of periods of the first EMA of the price change.
+        short_window (int): Number of periods of the second EMA.
+        signal_window (int): Number of periods of the EMA of the TSI that gives the signal
+            line.
+
+    Returns:
+        pd.DataFrame: True Strength Index and Signal Line as columns, bounded between -100
+            and 100.
+    """
+    momentum = prices.diff(1)
+
+    double_smoothed_momentum = get_exponential_moving_average(
+        get_exponential_moving_average(momentum, long_window), short_window
+    )
+    double_smoothed_absolute_momentum = get_exponential_moving_average(
+        get_exponential_moving_average(momentum.abs(), long_window), short_window
+    )
+
+    true_strength_index = (
+        100
+        * double_smoothed_momentum
+        / double_smoothed_absolute_momentum.where(
+            double_smoothed_absolute_momentum != 0
+        )
+    )
+    signal_line = get_exponential_moving_average(true_strength_index, signal_window)
+
+    return pd.concat(
+        [true_strength_index, signal_line],
+        keys=["True Strength Index", "Signal Line"],
+        axis=1,
+    )
+
+
 def get_balance_of_power(
     prices_open: pd.Series,
     prices_high: pd.Series,
@@ -1269,3 +1461,57 @@ def get_know_sure_thing(
     signal_line = get_moving_average(kst, signal_window)
 
     return pd.concat([kst, signal_line], keys=["KST", "Signal Line"], axis=1)
+
+
+def get_coppock_curve(
+    prices_close: pd.Series | pd.DataFrame,
+    long_roc_window: int = 14,
+    short_roc_window: int = 11,
+    wma_window: int = 10,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Coppock Curve for a given price series.
+
+    The Coppock Curve is a long-term momentum indicator that Edwin Coppock designed for
+    monthly closes of a stock index, to time buying after a bear market. He took the 11 and
+    14 months from the time an Episcopal bishop told him mourning takes, as the period
+    investors need to get over a loss. The classic signal is the curve turning up from below
+    zero; Coppock did not use it for sell signals.
+
+    The formula is as follows:
+
+    - Coppock Curve = WMA(ROC(Close, long_roc_window) + ROC(Close, short_roc_window),
+      wma_window)
+
+    with ROC(Close, n) = Close(t) / Close(t - n) - 1 and WMA the linearly Weighted Moving
+    Average, so the defaults give WMA10(ROC14 + ROC11), in months for the original curve.
+
+    Also known as: Coppock Indicator, Coppock Guide.
+
+    Reference: Coppock, E.S.C. (1962). "Practical Relative Strength Charting." Trendex
+    Research Group; first presented in Barron's, October 15, 1962.
+
+    Notes:
+        - The Rates of Change are decimals, as in `get_rate_of_change`, so the curve is a
+          weighted sum of decimal returns (0.30 where charting platforms show 30).
+        - The curve starts on period `max(long_roc_window, short_roc_window)` +
+          `wma_window` - 1.
+
+    Args:
+        prices_close (pd.Series | pd.DataFrame): Series (or DataFrame with one column per
+            ticker) of closing prices, originally monthly.
+        long_roc_window (int): Number of periods of the longer Rate of Change. Defaults to 14.
+        short_roc_window (int): Number of periods of the shorter Rate of Change. Defaults
+            to 11.
+        wma_window (int): Number of periods of the Weighted Moving Average of the summed Rates
+            of Change. Defaults to 10.
+
+    Returns:
+        pd.Series | pd.DataFrame: Coppock Curve values, a weighted sum of decimal Rates of
+            Change.
+    """
+    summed_rate_of_change = get_rate_of_change(
+        prices_close, long_roc_window
+    ) + get_rate_of_change(prices_close, short_roc_window)
+
+    return get_weighted_moving_average(summed_rate_of_change, wma_window)

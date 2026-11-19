@@ -174,3 +174,79 @@ def get_extended_dupont_analysis(
         )
 
     return pd.DataFrame.from_dict(components, orient="index")
+
+
+def get_nissim_penman_decomposition(
+    net_income: pd.Series | pd.DataFrame,
+    net_financial_expense: pd.Series | pd.DataFrame,
+    average_net_financial_obligations: pd.Series | pd.DataFrame,
+    average_common_equity: pd.Series | pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Perform the Nissim and Penman (2001) decomposition of the return on common equity (ROCE)
+    into the return on the operations and the effect of how they are financed.
+
+    The formula is as follows:
+
+        - Operating Income = Net Income + Net Financial Expense
+        - Average Net Operating Assets = Average Net Financial Obligations + Average Common Equity
+        - Return on Net Operating Assets (RNOA) = Operating Income / Average Net Operating Assets
+        - Net Borrowing Cost (NBC) = Net Financial Expense / Average Net Financial Obligations
+        - Spread = RNOA - NBC
+        - Financial Leverage (FLEV) = Average Net Financial Obligations / Average Common Equity
+        - Leverage Effect = FLEV x Spread
+        - Return on Common Equity (ROCE) = RNOA + Leverage Effect
+
+    Also known as: Nissim-Penman decomposition, ROCE decomposition, advanced DuPont analysis.
+
+    Args:
+        net_income (pd.Series | pd.DataFrame): The net income attributable to the shareholders.
+        net_financial_expense (pd.Series | pd.DataFrame): The after-tax net interest expense.
+        average_net_financial_obligations (pd.Series | pd.DataFrame): The average financial
+            obligations minus the average financial assets.
+        average_common_equity (pd.Series | pd.DataFrame): The average common equity.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the decomposition components.
+
+    Notes:
+    - Since the net operating assets are the net financial obligations plus the common equity
+    and the operating income is the net income plus the net financial expense, the components
+    add up to Net Income / Average Common Equity exactly: RNOA + FLEV x (RNOA - NBC) =
+    (Operating Income - Net Financial Expense) / Average Common Equity. Averages keep the
+    identity, as the average of a sum is the sum of the averages.
+    """
+    return_on_net_operating_assets = (
+        profitability_model.get_return_on_net_operating_assets(
+            net_income,
+            net_financial_expense,
+            average_net_financial_obligations,
+            average_common_equity,
+        )
+    )
+    net_borrowing_cost = profitability_model.get_net_borrowing_cost(
+        net_financial_expense, average_net_financial_obligations
+    )
+    financial_leverage = profitability_model.get_financial_leverage(
+        average_net_financial_obligations, average_common_equity
+    )
+    spread = return_on_net_operating_assets - net_borrowing_cost
+    leverage_effect = financial_leverage * spread
+
+    components = {
+        "Return on Net Operating Assets": return_on_net_operating_assets,
+        "Net Borrowing Cost": net_borrowing_cost,
+        "Spread": spread,
+        "Financial Leverage": financial_leverage,
+        "Leverage Effect": leverage_effect,
+        "Return on Common Equity": return_on_net_operating_assets + leverage_effect,
+    }
+
+    if isinstance(return_on_net_operating_assets, pd.DataFrame):
+        return (
+            pd.concat(components)
+            .swaplevel(1, 0)
+            .sort_index(level=0, sort_remaining=False)
+        )
+
+    return pd.DataFrame.from_dict(components, orient="index")

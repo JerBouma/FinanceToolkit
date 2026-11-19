@@ -43,6 +43,7 @@ FACTOR_COLLECTIONS = {
     "valuation": [
         "get_price_to_earnings_ratio",
         "get_price_to_earnings_growth_ratio",
+        "get_dividend_adjusted_price_to_earnings_growth_ratio",
         "get_price_to_book_ratio",
         "get_price_to_sales_ratio",
         "get_price_to_cash_flow_ratio",
@@ -78,6 +79,9 @@ FACTOR_COLLECTIONS = {
         "get_cash_return_on_assets",
         "get_return_on_equity",
         "get_return_on_invested_capital",
+        "get_return_on_net_operating_assets",
+        "get_net_borrowing_cost",
+        "get_financial_leverage",
         "get_return_on_capital_employed",
         "get_return_on_tangible_assets",
         "get_income_quality_ratio",
@@ -103,6 +107,7 @@ FACTOR_COLLECTIONS = {
         "get_equity_multiplier",
         "get_free_cash_flow_yield",
         "get_net_debt_to_ebitda_ratio",
+        "get_net_debt_to_equity_ratio",
         "get_gross_debt_to_ebitda_ratio",
         "get_cash_flow_coverage_ratio",
         "get_capex_coverage_ratio",
@@ -191,6 +196,7 @@ class Ratios:
         period_end_dates: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
         currency_function: Callable[[], pd.Series] | None = None,
         gross_domestic_product_function: Callable[[], pd.DataFrame] | None = None,
+        consumer_price_index_function: Callable[[str], pd.Series] | None = None,
     ):
         """
         Initializes the Ratios Controller Class.
@@ -246,6 +252,10 @@ class Ratios:
                 millions of US dollars, with the years as index and the countries as columns,
                 for the market cap to GDP ratio. Defaults to None, which leaves that ratio
                 unavailable.
+            consumer_price_index_function (Callable[[str], pd.Series], optional): A function
+                that takes a country and returns its monthly consumer price index, with the
+                months as index, for the cyclically adjusted price earnings ratio. Defaults to
+                None, which leaves that ratio available without the inflation adjustment only.
 
         As an example:
 
@@ -297,6 +307,7 @@ class Ratios:
         self._period_end_dates_source = period_end_dates
         self._currency_function = currency_function
         self._gross_domestic_product_function = gross_domestic_product_function
+        self._consumer_price_index_function = consumer_price_index_function
         self._historical = historical
         self._api_key: str = api_key
         self._sleep_timer: bool = sleep_timer
@@ -630,6 +641,79 @@ class Ratios:
             pd.DataFrame: The trailing averages, or the data itself without trailing.
         """
         return data.T.rolling(trailing).mean().T if trailing else data
+
+    def _get_nissim_penman_inputs(
+        self, trailing: int | None
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        Returns the inputs of the Nissim and Penman (2001) ratios: the net income and the net
+        financial expense summed over the trailing periods, and the net financial obligations
+        and the common equity averaged over the period ends that open and close them (the
+        opening and closing balance without trailing).
+
+        The short and long term investments, the preferred stock and the interest income count
+        as zero where a company does not report them (they are absent); the other items give
+        NaN. A period with neither an interest expense nor an interest income (both missing or
+        zero) has an unknown net financial expense, so it is NaN, also in every trailing sum
+        that holds it.
+
+        Args:
+            trailing (int | None): The number of periods to sum the flows over, or None for
+                single-period flows.
+
+        Returns:
+            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]: The net income, the
+            net financial expense, the average net financial obligations and the average
+            common equity, with the tickers as index and the periods as columns.
+        """
+
+        def row(statement: pd.DataFrame, name: str) -> pd.DataFrame:
+            return statement.loc[:, name, :]
+
+        def optional(
+            statement: pd.DataFrame, name: str, like: pd.DataFrame
+        ) -> pd.DataFrame:
+            # A row that is not reported is zero; a period without any data stays NaN through
+            # the rows it is combined with (Total Debt, the equity and the interest expense).
+            if name not in statement.index.get_level_values(1):
+                return like * 0
+            return row(statement, name).fillna(0)
+
+        balance, income = self._balance_sheet_statement, self._income_statement
+        total_debt = row(balance, "Total Debt")
+        interest_expense = row(income, "Interest Expense")
+        preferred_stock = optional(balance, "Preferred Stock", total_debt)
+
+        net_financial_obligations = profitability_model.get_net_financial_obligations(
+            total_debt,
+            preferred_stock,
+            self._get_cash_and_short_term_investments(),
+            optional(balance, "Long Term Investments", total_debt),
+        )
+        common_equity = row(balance, "Total Shareholder Equity") - preferred_stock
+
+        interest_income = optional(income, "Interest Income", interest_expense)
+        # Interest income alone may be absent, but without either interest row the net financial
+        # expense is unknown, not zero: those periods are NaN before the trailing sums.
+        interest_expense = interest_expense.where(
+            (interest_expense.fillna(0) != 0) | (interest_income != 0)
+        )
+
+        net_financial_expense = profitability_model.get_net_financial_expense(
+            self._sum_trailing(interest_expense, trailing),
+            self._sum_trailing(interest_income, trailing),
+            self._sum_trailing(row(income, "Income Tax Expense"), trailing),
+            self._sum_trailing(row(income, "Income Before Tax"), trailing),
+        )
+
+        balance_periods = trailing + 1 if trailing else 2
+
+        return (
+            self._sum_trailing(row(income, "Net Income"), trailing),
+            net_financial_expense,
+            self._mean_trailing(net_financial_obligations, balance_periods),
+            self._mean_trailing(common_equity, balance_periods),
+        )
 
     @handle_errors
     def collect_all_ratios(
@@ -5373,6 +5457,9 @@ class Ratios:
         | Cash Return on Assets                       |  0.3083 |  0.3471 |  0.3134 |   0.3296 |   0.3079 |
         | Return on Equity                            |  1.4744 |  1.7546 |  1.7195 |   1.5741 |   1.7142 |
         | Return on Invested Capital                  |  0.4879 |  0.5229 |  0.528  |   0.5166 |   0.6201 |
+        | Return on Net Operating Assets              | 38.7091 |  8.6341 |  5.1105 | nan      | nan      |
+        | Net Borrowing Cost                          |  0.0028 | -0.002  | -0.0042 | nan      | nan      |
+        | Financial Leverage                          | -0.962  | -0.7966 | -0.663  |  -0.6361 |  -0.441  |
         | Return on Capital Employed                  |  0.4831 |  0.6009 |  0.5514 |   0.6534 |   0.6872 |
         | Return on Tangible Assets                   |  0.2806 |  0.2836 |  0.275  |   0.2613 |   0.3093 |
         | Income Quality Ratio                        |  1.0988 |  1.2239 |  1.1397 |   1.2616 |   0.9953 |
@@ -5388,6 +5475,7 @@ class Ratios:
         | Cash Return on Invested Capital             |  0.4801 |  0.5823 |  0.5394 |   0.601  |   0.5455 |
         | Free Cash Flow Conversion                   |  0.9818 |  1.1166 |  1.0267 |   1.1608 |   0.8818 |
         | Free Cash Flow to EBITDA                    |  0.7731 |  0.8537 |  0.7915 |   0.808  |   0.6823 |
+        | Percent Accruals                            | -0.0988 | -0.2239 | -0.1397 |  -0.2616 |   0.0047 |
         """
         self._load_statements()
         # The ratios are collected unrounded and rounded only when returned, so that their
@@ -5431,6 +5519,15 @@ class Ratios:
             )
             profitability_ratios_dict["Return on Invested Capital"] = (
                 self.get_return_on_invested_capital(trailing=trailing)
+            )
+            profitability_ratios_dict["Return on Net Operating Assets"] = (
+                self.get_return_on_net_operating_assets(trailing=trailing)
+            )
+            profitability_ratios_dict["Net Borrowing Cost"] = (
+                self.get_net_borrowing_cost(trailing=trailing)
+            )
+            profitability_ratios_dict["Financial Leverage"] = (
+                self.get_financial_leverage(trailing=trailing)
             )
             profitability_ratios_dict["Return on Capital Employed"] = (
                 self.get_return_on_capital_employed(trailing=trailing)
@@ -6834,6 +6931,416 @@ class Ratios:
 
         return finalize_dataset(
             dataset=return_on_invested_capital,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_return_on_net_operating_assets(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the return on net operating assets (RNOA) of Nissim and Penman (2001), the
+        after-tax return a company earns on its operations, separated from how they are financed.
+
+        The return on net operating assets divides the operating income after tax by the
+        average net operating assets. Nissim and Penman define the operating income as the
+        net income plus the net financial expense (the after-tax net interest expense), so
+        every item that is not financing counts as operating. Unlike the return on invested
+        capital, the financial assets are deducted from the capital, so a company that holds
+        much cash is not penalised for it and its interest income is not counted as an
+        operating return.
+
+        RNOA is the operating part of the return on common equity in the Nissim-Penman
+        decomposition, ROCE = RNOA + FLEV x (RNOA - NBC)
+        (`Toolkit.models.get_nissim_penman_decomposition`). Nissim and Penman find RNOA to be
+        the main driver of the future return on equity, and that it reverts to the mean
+        more slowly than the leverage effect.
+
+        The formula is as follows:
+
+        - Net Financial Expense = (Interest Expense - Interest Income) x (1 - Effective Tax Rate)
+        - Operating Income = Net Income + Net Financial Expense
+        - Net Financial Obligations = Total Debt + Preferred Stock - Cash and Short Term Investments -
+          Long Term Investments
+        - Common Equity = Total Shareholder Equity - Preferred Stock
+        - Net Operating Assets = Net Financial Obligations + Common Equity
+        - Return on Net Operating Assets = Operating Income / Average Net Operating Assets
+
+        The balance sheet is split into operating and financial items as follows:
+
+        - Financial assets: the cash and cash equivalents, the short term investments and the
+        long term investments. Nissim and Penman treat the marketable securities as financial;
+        the long term investments of the statements are mostly those securities (Apple's long
+        term marketable securities), but also hold equity method stakes (Coca-Cola's bottlers),
+        which Nissim and Penman count as operating and which are financial here.
+        - Financial obligations: the Total Debt, which holds the short and long term debt and
+        the lease obligations (capital leases are debt in Nissim and Penman), and the preferred
+        stock, which Nissim and Penman treat as a financial claim.
+        - Common equity: the Total Shareholder Equity minus the preferred stock.
+        - Operating: everything else, so the net operating assets are the net financial
+        obligations plus the common equity (the operating assets minus the operating
+        liabilities and the minority interest).
+
+        Also known as: RNOA, return on operating assets.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default
+                average of the opening and closing balance. E.g. 4 with quarterly data gives the
+                trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                Defaults to None, which uses single-period flows (per quarter and not annualized
+                with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Return on net operating assets (RNOA) values.
+
+        Notes:
+        - Nissim, D. and S. H. Penman, "Ratio Analysis and Equity Valuation: From Research to
+        Practice," Review of Accounting Studies 6, 2001, pp. 109-154.
+        - The net financial expense is taxed at the effective tax rate (bounded to [0, 1], 0 for
+        a pre-tax loss) instead of the marginal statutory rate of Nissim and Penman, and holds
+        no preferred dividends, which the statements do not report.
+        - Missing data is treated in two ways. A short or long term investment, preferred
+        stock or interest income that is not reported is absent and counts as zero (a company
+        with debt but no interest income is normal). A period with neither an interest
+        expense nor an interest income (both missing or zero, as in Apple's statements from
+        fiscal 2024) has an unknown net financial expense rather than a zero one, so the
+        ratio is NaN for that period and for every trailing window that holds it.
+        - A company whose operating liabilities (payables, deferred revenue, accruals) nearly
+        cover its operating assets has small net operating assets and an RNOA well above 1
+        (Apple); net operating assets of zero or below make the ratio meaningless (it flips
+        sign). Such periods are returned as calculated.
+        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "KO", "DUK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_return_on_net_operating_assets()
+        ```
+
+        Which returns:
+
+        |      |    2021 |   2022 |   2023 |     2024 |     2025 |
+        |:-----|--------:|-------:|-------:|---------:|---------:|
+        | AAPL | 38.7091 | 8.6341 | 5.1105 | nan      | nan      |
+        | DUK  |  0.0562 | 0.0423 | 0.0467 |   0.0607 |   0.0613 |
+        | KO   |  0.311  | 0.2795 | 0.3197 |   0.3076 |   0.337  |
+        """
+        net_income, net_financial_expense, average_nfo, average_cse = (
+            self._get_nissim_penman_inputs(trailing)
+        )
+        dataset = profitability_model.get_return_on_net_operating_assets(
+            net_income, net_financial_expense, average_nfo, average_cse
+        )
+
+        return finalize_dataset(
+            dataset=dataset,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_borrowing_cost(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the net borrowing cost (NBC) of Nissim and Penman (2001), the after-tax
+        interest rate a company pays on its net financial obligations.
+
+        The net borrowing cost divides the net financial expense (the interest expense minus
+        the interest income, after tax) by the average net financial obligations (the debt
+        and preferred stock minus the cash and investments). A company with net financial
+        assets and net interest income has a negative expense over negative obligations, so
+        the ratio is then the after-tax return it earns on its net financial assets.
+
+        In the Nissim-Penman decomposition, ROCE = RNOA + FLEV x (RNOA - NBC)
+        (`Toolkit.models.get_nissim_penman_decomposition`), borrowing raises the return on
+        equity only as long as the return on net operating assets exceeds the net borrowing
+        cost. When the net financial obligations are close to zero the ratio is volatile and
+        says little.
+
+        The formula is as follows:
+
+        - Net Financial Expense = (Interest Expense - Interest Income) x (1 - Effective Tax Rate)
+        - Net Financial Obligations = Total Debt + Preferred Stock - Cash and Short Term Investments -
+          Long Term Investments
+        - Net Borrowing Cost = Net Financial Expense / Average Net Financial Obligations
+
+        The balance sheet is split into operating and financial items as follows:
+
+        - Financial assets: the cash and cash equivalents, the short term investments and the
+        long term investments. Nissim and Penman treat the marketable securities as financial;
+        the long term investments of the statements are mostly those securities (Apple's long
+        term marketable securities), but also hold equity method stakes (Coca-Cola's bottlers),
+        which Nissim and Penman count as operating and which are financial here.
+        - Financial obligations: the Total Debt, which holds the short and long term debt and
+        the lease obligations (capital leases are debt in Nissim and Penman), and the preferred
+        stock, which Nissim and Penman treat as a financial claim.
+        - Common equity: the Total Shareholder Equity minus the preferred stock.
+        - Operating: everything else, so the net operating assets are the net financial
+        obligations plus the common equity (the operating assets minus the operating
+        liabilities and the minority interest).
+
+        Also known as: NBC, after-tax cost of net debt.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default
+                average of the opening and closing balance. E.g. 4 with quarterly data gives the
+                trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                Defaults to None, which uses single-period flows (per quarter and not annualized
+                with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Net borrowing cost (NBC) values.
+
+        Notes:
+        - Nissim, D. and S. H. Penman, "Ratio Analysis and Equity Valuation: From Research to
+        Practice," Review of Accounting Studies 6, 2001, pp. 109-154.
+        - The net financial expense is taxed at the effective tax rate (bounded to [0, 1], 0 for
+        a pre-tax loss) instead of the marginal statutory rate of Nissim and Penman, and holds
+        no preferred dividends, which the statements do not report.
+        - Missing data is treated in two ways. A short or long term investment, preferred
+        stock or interest income that is not reported is absent and counts as zero (a company
+        with debt but no interest income is normal). A period with neither an interest
+        expense nor an interest income (both missing or zero, as in Apple's statements from
+        fiscal 2024) has an unknown net financial expense rather than a zero one, so the
+        ratio is NaN for that period and for every trailing window that holds it.
+        - The interest on the lease obligations is part of the operating expenses for
+        operating leases, so the cost of the leases in the Total Debt is understated.
+        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "KO", "DUK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_net_borrowing_cost()
+        ```
+
+        Which returns:
+
+        |      |   2021 |    2022 |    2023 |     2024 |    2025 |
+        |:-----|-------:|--------:|--------:|---------:|--------:|
+        | AAPL | 0.0028 | -0.002  | -0.0042 | nan      | nan     |
+        | DUK  | 0.0357 |  0.0354 |  0.039  |   0.0404 |   0.039 |
+        | KO   | 0.0765 |  0.0299 |  0.0508 |   0.0497 |   0.057 |
+        """
+        _, net_financial_expense, average_nfo, _ = self._get_nissim_penman_inputs(
+            trailing
+        )
+        dataset = profitability_model.get_net_borrowing_cost(
+            net_financial_expense, average_nfo
+        )
+
+        return finalize_dataset(
+            dataset=dataset,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_financial_leverage(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the financial leverage (FLEV) of Nissim and Penman (2001), the net financial
+        obligations per unit of common equity.
+
+        The financial leverage divides the average net financial obligations (the debt and
+        preferred stock minus the cash and investments) by the average common equity. It is
+        negative for a company with net financial assets, which then dilute rather than lever
+        the return on equity. Unlike the debt to equity ratio, it nets the financial assets
+        against the debt, and unlike the equity multiplier, it leaves the operating
+        liabilities out (they are part of the net operating assets).
+
+        In the Nissim-Penman decomposition, ROCE = RNOA + FLEV x (RNOA - NBC)
+        (`Toolkit.models.get_nissim_penman_decomposition`), the financial leverage scales the
+        spread between the return on net operating assets and the net borrowing cost.
+
+        The formula is as follows:
+
+        - Net Financial Obligations = Total Debt + Preferred Stock - Cash and Short Term Investments -
+          Long Term Investments
+        - Common Equity = Total Shareholder Equity - Preferred Stock
+        - Financial Leverage = Average Net Financial Obligations / Average Common Equity
+
+        The balance sheet is split into operating and financial items as follows:
+
+        - Financial assets: the cash and cash equivalents, the short term investments and the
+        long term investments. Nissim and Penman treat the marketable securities as financial;
+        the long term investments of the statements are mostly those securities (Apple's long
+        term marketable securities), but also hold equity method stakes (Coca-Cola's bottlers),
+        which Nissim and Penman count as operating and which are financial here.
+        - Financial obligations: the Total Debt, which holds the short and long term debt and
+        the lease obligations (capital leases are debt in Nissim and Penman), and the preferred
+        stock, which Nissim and Penman treat as a financial claim.
+        - Common equity: the Total Shareholder Equity minus the preferred stock.
+        - Operating: everything else, so the net operating assets are the net financial
+        obligations plus the common equity (the operating assets minus the operating
+        liabilities and the minority interest).
+
+        Also known as: FLEV, net financial leverage.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of periods to sum flows (income and cash flow
+                statement items) over, with balance sheet items averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default
+                average of the opening and closing balance. E.g. 4 with quarterly data gives the
+                trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                Defaults to None, which uses single-period flows (per quarter and not annualized
+                with quarterly data).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Financial leverage (FLEV) values.
+
+        Notes:
+        - Nissim, D. and S. H. Penman, "Ratio Analysis and Equity Valuation: From Research to
+        Practice," Review of Accounting Studies 6, 2001, pp. 109-154.
+        - Negative common equity (after large buybacks) makes the ratio flip sign.
+        - A short or long term investment or preferred stock that is not reported is absent and
+        counts as zero; a missing Total Debt or Total Shareholder Equity gives NaN. The ratio
+        needs no interest data, so it is available for periods whose return on net operating
+        assets and net borrowing cost are NaN for lack of interest rows.
+        - The first period has no opening balance and is NaN, so set an earlier start_date to
+        obtain it.
+        - If `growth` is set to True, the method calculates the growth of the ratio values
+        using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "KO", "DUK"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_financial_leverage()
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | -0.962  | -0.7966 | -0.663  | -0.6361 | -0.441  |
+        | DUK  |  1.2292 |  1.3348 |  1.4697 |  1.5123 |  1.6533 |
+        | KO   |  0.644  |  0.5033 |  0.4032 |  0.4304 |  0.4383 |
+        """
+        _, _, average_nfo, average_cse = self._get_nissim_penman_inputs(trailing)
+        dataset = profitability_model.get_financial_leverage(average_nfo, average_cse)
+
+        return finalize_dataset(
+            dataset=dataset,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -9003,6 +9510,7 @@ class Ratios:
         | Equity Multiplier                  |   5.255  |   6.1862 |   6.252  |   6.0251 |   5.5418 |
         | Free Cash Flow Yield               |   0.0375 |   0.0454 |   0.0368 |   0.031  |   0.0258 |
         | Net-Debt to EBITDA Ratio           |   0.8449 |   0.8337 |   0.7468 |   0.6618 |   0.5281 |
+        | Net-Debt to Equity Ratio           |   1.6101 |   2.1478 |   1.512  |   1.5648 |   1.0368 |
         | Gross Debt to EBITDA Ratio         |   1.1355 |   1.0149 |   0.985  |   0.8841 |   0.7764 |
         | Cash Flow Coverage Ratio           |   0.7621 |   0.922  |   0.892  |   0.9932 |   0.992  |
         | CAPEX Coverage Ratio               |   9.3855 |  11.4075 |  10.087  |  12.5176 |   8.7678 |
@@ -9046,6 +9554,9 @@ class Ratios:
             )
             solvency_ratios_dict["Net-Debt to EBITDA Ratio"] = (
                 self.get_net_debt_to_ebitda_ratio(trailing=trailing)
+            )
+            solvency_ratios_dict["Net-Debt to Equity Ratio"] = (
+                self.get_net_debt_to_equity_ratio(trailing=trailing)
             )
             solvency_ratios_dict["Gross Debt to EBITDA Ratio"] = (
                 self.get_gross_debt_to_ebitda_ratio(trailing=trailing)
@@ -10118,6 +10629,109 @@ class Ratios:
 
         return finalize_dataset(
             dataset=net_debt_to_ebitda_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_net_debt_to_equity_ratio(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the net debt to equity ratio, also known as net gearing, which measures the
+        debt of the company net of its cash relative to its equity.
+
+        Net gearing is the debt to equity ratio after deducting the cash the company could
+        repay its debt with, the way European and UK companies and their lenders usually report
+        leverage. A ratio of 0.5 means the debt net of cash is half of the equity; a negative
+        ratio means the company holds more cash than debt (a net cash position).
+
+        The formula is as follows:
+
+        - Net Debt to Equity Ratio = Net Debt / Total Equity
+
+        The Net Debt is that of the balance sheet, the Total Debt minus the Cash and Cash
+        Equivalents, the same as in `get_net_debt_to_ebitda_ratio`, and the Total Equity
+        includes the minority interest, as in `get_debt_to_equity_ratio`. Both are balances at
+        the end of the period. Equity is a book value, so large buybacks or accumulated losses
+        can make it small or negative; with an equity of zero or less the ratio no longer
+        measures leverage, so those periods are NaN.
+
+        Also known as: net gearing, net gearing ratio, net debt to equity, net leverage ratio.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int, optional): The number of period ends to average the net debt and the
+                equity over. E.g. 4 with quarterly data averages the last four quarter ends. Defaults
+                to None, which uses the balances at the end of each period.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Net debt to equity ratio values.
+
+        Notes:
+        - The method retrieves historical data and calculates the ratio for each asset in the Toolkit instance.
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["VZ", "TMUS", "CHTR"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_net_debt_to_equity_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | CHTR | 5.0247 | 7.7499 | 6.6241 | 4.836  | 4.71   |
+        | TMUS | 1.4788 | 1.5402 | 1.6795 | 1.7654 | 1.9707 |
+        | VZ   | 2.1035 | 1.8789 | 1.8431 | 1.6322 | 1.5377 |
+        """
+        net_debt_to_equity_ratio = solvency_model.get_net_debt_to_equity_ratio(
+            self._mean_trailing(
+                self._balance_sheet_statement.loc[:, "Net Debt", :], trailing
+            ),
+            self._mean_trailing(
+                self._balance_sheet_statement.loc[:, "Total Equity", :], trailing
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=net_debt_to_equity_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -11868,38 +12482,42 @@ class Ratios:
 
         Which returns:
 
-        |                             |         2021 |         2022 |         2023 |          2024 |         2025 |
-        |:----------------------------|-------------:|-------------:|-------------:|--------------:|-------------:|
-        | Earnings per Share          |  5.614       |  6.1132      |  6.1341      |   6.0836      |  7.465       |
-        | Revenue per Share           | 21.691       | 24.1536      | 24.2393      |  25.3785      | 27.7354      |
-        | Price-to-Earnings           | 26.1702      | 24.6074      | 27.9114      |  37.4436      | 34.2211      |
-        | Price-to-Earnings-Growth    |  0.3665      |  2.7675      | 81.8253      | -45.4836      |  1.507       |
-        | Book Value per Share        |  3.7409      |  3.1038      |  3.9302      |   3.6961      |  4.914       |
-        | Price-to-Book               | 39.274       | 48.4665      | 43.563       |  61.6297      | 51.9862      |
-        | Interest Debt per Share     |  8.2519      |  8.2943      |  8.0862      |   7.727       |  7.4895      |
-        | CAPEX per Share             | -0.6573      | -0.6559      | -0.6931      |  -0.6131      | -0.8474      |
-        | Earnings Yield              |  0.0382      |  0.0406      |  0.0358      |   0.0267      |  0.0292      |
-        | Dividend Payout Ratio       |  0.1528      |  0.1487      |  0.1549      |   0.1625      |  0.1377      |
-        | Dividend Yield              |  0.0058      |  0.006       |  0.0055      |   0.0043      |  0.004       |
-        | Weighted Dividend Yield     |  0.0058      |  0.006       |  0.0055      |   0.0043      |  0.004       |
-        | Price-to-Cash-Flow          | 23.8162      | 20.1054      | 24.4906      |  29.6803      | 34.3831      |
-        | Price-to-Free-Cash-Flow     | 26.6564      | 22.0372      | 27.1858      |  32.2572      | 38.8095      |
-        | Price-to-Sales              |  6.7733      |  6.228       |  7.0633      |   8.9757      |  9.2106      |
-        | Market Cap                  |  2.47779e+12 |  2.45589e+12 |  2.70727e+12 |   3.50981e+12 |  3.8331e+12  |
-        | Enterprise Value            |  2.55168e+12 |  2.54007e+12 |  2.76964e+12 |   3.5637e+12  |  3.89078e+12 |
-        | EV-to-Sales                 |  6.9753      |  6.4415      |  7.2261      |   9.1135      |  9.3492      |
-        | EV-to-EBIT                  | 23.4208      | 21.267       | 24.2311      |  28.9224      | 29.243       |
-        | EV-to-EBITDA                | 21.2228      | 19.458       | 22.0127      |  26.4642      | 26.8797      |
-        | EV-to-Operating-Cash-Flow   | 24.5264      | 20.7945      | 25.0549      |  30.136       | 34.9005      |
-        | Tangible Asset Value        |  6.309e+10   |  5.0672e+10  |  6.2146e+10  |   5.695e+10   |  7.3733e+10  |
-        | Net Current Asset Value     | -1.53076e+11 | -1.66678e+11 | -1.46871e+11 |  -1.55043e+11 | -1.37551e+11 |
-        | EV-to-Free-Cash-Flow        | 27.4513      | 22.7925      | 27.8121      |  32.7525      | 39.3935      |
-        | Buyback Yield               |  0.0343      |  0.0364      |  0.0286      |   0.0271      |  0.0237      |
-        | Shareholder Yield           |  0.04        |  0.0424      |  0.0341      |   0.0314      |  0.0277      |
-        | SBC-Adjusted Free Cash Flow |  8.5047e+10  |  1.02405e+11 |  8.8751e+10  |   9.7119e+10  |  8.5904e+10  |
-        | Free Cash Flow Payout Ratio |  0.1556      |  0.1332      |  0.1509      |   0.14        |  0.1561      |
-        | EV-to-Invested-Capital      | 18.6291      | 18.8365      | 22.2424      |  32.1523      | 29.6073      |
-        | Price-to-Tangible-Book      | 39.274       | 48.4665      | 43.563       |  61.6297      | 51.9862      |
+        |                             |          2021 |          2022 |          2023 |          2024 |         2025 |
+        |:----------------------------|--------------:|--------------:|--------------:|--------------:|-------------:|
+        | Earnings per Share          |   5.614       |   6.1132      |   6.1341      |   6.0836      |  7.465       |
+        | Revenue per Share           |  21.691       |  24.1536      |  24.2393      |  25.3785      | 27.7354      |
+        | Price-to-Earnings           |  26.1702      |  24.6074      |  27.9114      |  37.4436      | 34.2211      |
+        | Price-to-Earnings-Growth    |   0.3665      |   2.7675      |  81.8253      | -45.4836      |  1.507       |
+        | Dividend-Adjusted PEG       |   0.3636      |   2.593       |  31.3561      | -95.2735      |  1.481       |
+        | Book Value per Share        |   3.7409      |   3.1038      |   3.9302      |   3.6961      |  4.914       |
+        | Price-to-Book               |  39.274       |  48.4665      |  43.563       |  61.6297      | 51.9862      |
+        | Interest Debt per Share     |   8.2519      |   8.2943      |   8.0862      |   7.727       |  7.4895      |
+        | CAPEX per Share             |  -0.6573      |  -0.6559      |  -0.6931      |  -0.6131      | -0.8474      |
+        | Earnings Yield              |   0.0382      |   0.0406      |   0.0358      |   0.0267      |  0.0292      |
+        | Dividend Payout Ratio       |   0.1528      |   0.1487      |   0.1549      |   0.1625      |  0.1377      |
+        | Dividend Yield              |   0.0058      |   0.006       |   0.0055      |   0.0043      |  0.004       |
+        | Weighted Dividend Yield     |   0.0058      |   0.006       |   0.0055      |   0.0043      |  0.004       |
+        | Price-to-Cash-Flow          |  23.8162      |  20.1054      |  24.4906      |  29.6803      | 34.3831      |
+        | Price-to-Free-Cash-Flow     |  26.6564      |  22.0372      |  27.1858      |  32.2572      | 38.8095      |
+        | Price-to-Sales              |   6.7733      |   6.228       |   7.0633      |   8.9757      |  9.2106      |
+        | Market Cap                  |   2.47779e+12 |   2.45589e+12 |   2.70727e+12 |   3.50981e+12 |  3.8331e+12  |
+        | Enterprise Value            |   2.55168e+12 |   2.54007e+12 |   2.76964e+12 |   3.5637e+12  |  3.89078e+12 |
+        | EV-to-Sales                 |   6.9753      |   6.4415      |   7.2261      |   9.1135      |  9.3492      |
+        | EV-to-EBIT                  |  23.4208      |  21.267       |  24.2311      |  28.9224      | 29.243       |
+        | EV-to-EBITDA                |  21.2228      |  19.458       |  22.0127      |  26.4642      | 26.8797      |
+        | EV-to-Operating-Cash-Flow   |  24.5264      |  20.7945      |  25.0549      |  30.136       | 34.9005      |
+        | Tangible Asset Value        |   6.309e+10   |   5.0672e+10  |   6.2146e+10  |   5.695e+10   |  7.3733e+10  |
+        | Net Current Asset Value     |  -1.53076e+11 |  -1.66678e+11 |  -1.46871e+11 |  -1.55043e+11 | -1.37551e+11 |
+        | EV-to-Free-Cash-Flow        |  27.4513      |  22.7925      |  27.8121      |  32.7525      | 39.3935      |
+        | Buyback Yield               |   0.0343      |   0.0364      |   0.0286      |   0.0271      |  0.0237      |
+        | Shareholder Yield           |   0.04        |   0.0424      |   0.0341      |   0.0314      |  0.0277      |
+        | SBC-Adjusted Free Cash Flow |   8.5047e+10  |   1.02405e+11 |   8.8751e+10  |   9.7119e+10  |  8.5904e+10  |
+        | Free Cash Flow Payout Ratio |   0.1556      |   0.1332      |   0.1509      |   0.14        |  0.1561      |
+        | EV-to-Invested-Capital      |  18.6291      |  18.8365      |  22.2424      |  32.1523      | 29.6073      |
+        | Price-to-Tangible-Book      |  39.274       |  48.4665      |  43.563       |  61.6297      | 51.9862      |
+        | Net Share Issuance          |  -0.0382      |  -0.0295      |  -0.0295      |  -0.0258      | -0.0261      |
+        | Composite Equity Issuance   | nan           | nan           | nan           | nan           | -0.176       |
+        | Net External Financing      |  -0.2568      |  -0.2966      |  -0.2906      |  -0.3238      | -0.3165      |
         """
         self._load_statements()
         # The ratios are collected unrounded and rounded only when returned, so that their
@@ -11923,6 +12541,11 @@ class Ratios:
             )
             valuation_ratios_dict["Price-to-Earnings-Growth"] = (
                 self.get_price_to_earnings_growth_ratio(
+                    include_dividends=include_dividends, diluted=diluted
+                )
+            )
+            valuation_ratios_dict["Dividend-Adjusted PEG"] = (
+                self.get_dividend_adjusted_price_to_earnings_growth_ratio(
                     include_dividends=include_dividends, diluted=diluted
                 )
             )
@@ -12489,6 +13112,222 @@ class Ratios:
 
     @handle_portfolio
     @handle_errors
+    def get_cyclically_adjusted_price_to_earnings_ratio(
+        self,
+        years: int = 10,
+        inflation_adjusted: bool = True,
+        country: str = "United States",
+        include_dividends: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the cyclically adjusted price earnings ratio (CAPE), the share price divided
+        by the average inflation-adjusted earnings per share of the last ten years.
+
+        Graham and Dodd (1934) advised valuing a company on its average earnings over "not
+        less than five years, preferably seven to ten years" rather than on a single year,
+        which can be far above or below what the company earns over a business cycle. Campbell
+        and Shiller (1998) applied this to the S&P 500 as the price divided by the ten-year
+        average of real earnings, the Shiller CAPE
+        (toolkit.economics.get_shiller_stock_market_data). This is the same ratio for a single
+        company.
+
+        The formula is as follows:
+
+        - Real EPS (s) = EPS (s) x CPI (t) / CPI (s)
+        - CAPE (t) = Share Price (t) / Average of Real EPS (s) over the years s = t - years + 1 to t
+
+        The earnings per share are those of the price earnings ratio
+        (`get_price_to_earnings_ratio`): net income (less preferred dividends with
+        include_dividends) over the weighted average (diluted) shares of each fiscal year. With
+        quarterly data, each quarter averages the trailing twelve month earnings per share of
+        that quarter and of the same quarter in each earlier year, so every quarter of earnings
+        enters once. The share price is the traded close at the end of each fiscal period (or
+        the filing day with point_in_time), the same as for the price earnings ratio, so with
+        years=1 and inflation_adjusted=False the ratio equals the price earnings ratio wherever
+        the earnings are positive.
+
+        The consumer price index is the monthly all items index of `country`
+        (toolkit.economics.get_consumer_price_index with period="monthly": the Bank for
+        International Settlements, with the latest months of the Bureau of Labor Statistics for
+        the United States, and Eurostat, the ONS or the Statistics Bureau of Japan for their
+        countries), taken in the month each fiscal period ends (the latest published month for
+        a period that ends after it). The monthly index of Japan (Statistics Bureau of Japan)
+        starts in January 2015, so with years=10 its values start in about 2024. The United
+        States index is used for every company unless another country is given, so choose the
+        country of the currency the earnings are in: with convert_currency the statements are
+        in the listing currency, so the currency the shares trade in (e.g. country="Netherlands"
+        for ASML.AS), and otherwise the currency of the statements.
+
+        Every year of the window must be available, as in Campbell and Shiller (1998), so the
+        first `years` - 1 years after the first statement (4 x `years` - 1 quarters with
+        quarterly data) are NaN: choose a start_date that many years before the first ratio of
+        interest. The FinancialModelingPrep plan can limit
+        the history to five years of statements; years=5 is the shortest window Graham and Dodd
+        recommend. An average real EPS of zero or below gives NaN, as the ratio has no meaning
+        for a company that lost money over the cycle.
+
+        A high CAPE relative to the company's own history or its peers means the market prices
+        the company well above its average earnings power, which in Campbell and Shiller (1998)
+        foreshadowed lower returns over the following ten years for the market as a whole.
+
+        Also known as: Shiller P/E, P/E10, Graham and Dodd P/E, normalized P/E, CAPE ratio.
+
+        References:
+        - Graham, B. and Dodd, D. (1934). Security Analysis. McGraw-Hill, New York.
+        - Campbell, J. Y. and Shiller, R. J. (1998). Valuation Ratios and the Long-Run Stock
+          Market Outlook. The Journal of Portfolio Management, 24(2), 11-26.
+
+        Args:
+            years (int, optional): The number of years of earnings to average. Defaults to 10.
+            inflation_adjusted (bool, optional): Whether to express the earnings of every year
+                in the prices of the period of the ratio with the consumer price index.
+                Defaults to True.
+            country (str, optional): The country whose consumer price index adjusts the
+                earnings for inflation. Defaults to "United States".
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income.
+                Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Cyclically adjusted price earnings ratio (CAPE) values.
+
+        Notes:
+        - The method retrieves historical data and calculates the CAPE for each asset in the Toolkit instance.
+        - It is not part of collect_valuation_ratios, as it retrieves the consumer price index.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "JNJ", "AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2012-01-01",
+            end_date="2025-12-31",
+        )
+
+        # The last five years, each with ten years of earnings behind it.
+        toolkit.ratios.get_cyclically_adjusted_price_to_earnings_ratio().iloc[:, -5:]
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | AAPL | 51.6596 | 43.1482 | 42.3565 | 50.2245 | 50.0506 |
+        | JNJ  | 29.766  | 28.1009 | 21.813  | 20.1288 | 26.7847 |
+        | KO   | 31.7418 | 32.6074 | 29.2816 | 29.6145 | 31.2952 |
+        """
+        if years < 1:
+            raise ValueError("The number of years must be at least 1.")
+
+        # The earnings per share of the price earnings ratio: a year of earnings, the trailing
+        # twelve months with quarterly data.
+        eps = self._get_earnings_per_share(
+            include_dividends, diluted, self._get_valuation_trailing(None)
+        )
+
+        consumer_price_index = None
+
+        if inflation_adjusted:
+            if self._consumer_price_index_function is None:
+                raise ValueError(
+                    "The inflation adjustment needs the consumer price index, which the Toolkit "
+                    "provides (toolkit.ratios). Set inflation_adjusted=False to leave it out."
+                )
+
+            monthly_index = self._consumer_price_index_function(country).dropna()
+
+            if monthly_index.empty:
+                raise ValueError(
+                    f"There is no consumer price index for {country}. Choose a country as named "
+                    "in toolkit.economics.get_consumer_price_index()."
+                )
+
+            if isinstance(monthly_index.index, pd.PeriodIndex):
+                monthly_index.index = monthly_index.index.to_timestamp()
+            monthly_index = monthly_index.sort_index()
+
+            # The last day of each ticker's fiscal periods (the filing day with point_in_time),
+            # else the end of the calendar period the column is labelled with.
+            end_dates = pd.DataFrame(
+                [eps.columns.to_timestamp(how="end").normalize()] * len(eps.index),
+                index=eps.index,
+                columns=eps.columns,
+            )
+            period_end_dates = self._period_end_dates
+
+            if period_end_dates is not None and not period_end_dates.empty:
+                known_dates = (
+                    period_end_dates.reindex(index=eps.index, columns=eps.columns)
+                    .apply(pd.to_datetime)
+                    .apply(lambda dates: dates.dt.normalize())
+                )
+                end_dates = known_dates.where(known_dates.notna(), end_dates)
+
+            # The index of the month each period ends in (as asof finds the month that starts
+            # on or before the date), the latest published month for a period that ends after it.
+            consumer_price_index = end_dates.apply(
+                lambda dates: pd.Series(
+                    monthly_index.asof(pd.DatetimeIndex(dates)).to_numpy(),
+                    index=dates.index,
+                )
+            )
+
+        years_columns = eps.columns
+        share_prices = self._get_share_prices(
+            str(years_columns[0]), str(years_columns[-1])
+        )
+
+        cyclically_adjusted_price_to_earnings_ratio = (
+            valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+                share_prices,
+                eps.reindex(index=share_prices.index),
+                (
+                    consumer_price_index.reindex(index=share_prices.index)
+                    if consumer_price_index is not None
+                    else None
+                ),
+                years=years,
+                periods_per_year=4 if self._quarterly else 1,
+            )
+        )
+
+        return finalize_dataset(
+            dataset=cyclically_adjusted_price_to_earnings_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_price_to_earnings_growth_ratio(
         self,
         use_ebitda_growth_rate: bool = False,
@@ -12616,6 +13455,136 @@ class Ratios:
 
         return finalize_dataset(
             dataset=price_to_earnings_growth_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            compound=compound,
+            rounding=rounding,
+            standardize=standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_dividend_adjusted_price_to_earnings_growth_ratio(
+        self,
+        include_dividends: bool = False,
+        diluted: bool = True,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        compound: bool = False,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the dividend-adjusted price earnings to growth (PEGY) ratio, the PEG ratio
+        with the dividend yield added to the earnings growth, as Peter Lynch proposed in One Up
+        On Wall Street (1989, chapter 13). A company that pays out much of its earnings grows
+        them more slowly, and the PEG ratio counts that against it; the PEGY ratio credits
+        the dividend as part of the return, which suits mature dividend payers.
+
+        The formula is as follows:
+
+        - PEGY Ratio = Price Earnings Ratio (P/E) / ((EPS Growth Rate + Dividend Yield) * 100)
+
+        The EPS growth rate is that of `get_price_to_earnings_growth_ratio`: the growth of the
+        (diluted) earnings per share on the previous year, with quarterly data of the trailing
+        twelve months on those of four quarters earlier. The dividend yield is that of
+        `get_dividend_yield`, the dividends per share paid over the year (the trailing four
+        quarters with quarterly data) divided by the close at the end of the period. Both are
+        decimals, and their sum is multiplied by 100 so that it enters in percent, as Lynch
+        wrote it and as in the PEG ratio.
+
+        Lynch divided the growth plus the yield by the P/E, the reciprocal of this ratio, and
+        called a result below 1 poor, 1.5 okay and 2 or more good, so a PEGY ratio above 1 is
+        poor and 0.5 or less good. Like the PEG ratio it uses a single year of earnings growth,
+        so it swings widely and turns negative when the earnings fall by more than the dividend
+        yield.
+
+        Also known as: PEGY ratio, dividend-adjusted PEG ratio, yield-adjusted PEG, Lynch ratio.
+
+        Args:
+            include_dividends (bool, optional): Whether to deduct preferred dividends from net income, in both
+                the P/E and the EPS growth. Defaults to False.
+            diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            compound (bool, optional): Whether the growth is the compound annual growth rate over
+                the lag (e.g. lag=5 for the five-year CAGR) instead of the total change. Defaults to False.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Dividend-adjusted price earnings to growth (PEGY) ratio values.
+
+        Notes:
+        - A company without dividends has a dividend yield of 0, so its PEGY ratio equals its PEG ratio.
+        - If `growth` is set to True, the method calculates the growth of the PEGY ratio values using the
+        specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["MA", "ADP", "COST"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.ratios.get_dividend_adjusted_price_to_earnings_growth_ratio()
+        ```
+
+        Which returns:
+
+        |      |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|
+        | ADP  | 3.9205 | 1.7338 | 1.3813 | 1.9893 | 2.6594 |
+        | COST | 1.434  | 2.3471 | 4.5521 | 2.8098 | 4.9592 |
+        | MA   | 1.0825 | 1.9604 | 2.2175 | 2.1234 | 1.7727 |
+        """
+        # The growth and the P/E of the PEG ratio: on quarterly data trailing twelve month
+        # earnings compared with those of four quarters earlier.
+        trailing_metric = 4 if self._quarterly else 1
+
+        growth_rate = self.get_earnings_per_share(
+            include_dividends,
+            diluted=diluted,
+            growth=True,
+            lag=trailing_metric,
+            trailing=trailing_metric,
+            rounding=15,
+        )
+
+        # Unrounded, as the ratio of rounded figures can be off in its last decimals.
+        price_earnings = self.get_price_to_earnings_ratio(
+            include_dividends=include_dividends, diluted=diluted, rounding=15
+        )
+        # The dividend yield covers the same year as the P/E: a year of dividends (the
+        # trailing four quarters on quarterly data) against the close at the end of the period.
+        dividend_yield = self.get_dividend_yield(rounding=15).reindex(
+            index=price_earnings.index, columns=price_earnings.columns
+        )
+
+        dividend_adjusted_price_to_earnings_growth_ratio = (
+            valuation_model.get_dividend_adjusted_price_to_earnings_growth_ratio(
+                price_earnings, growth_rate, dividend_yield
+            )
+        )
+
+        return finalize_dataset(
+            dataset=dividend_adjusted_price_to_earnings_growth_ratio,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

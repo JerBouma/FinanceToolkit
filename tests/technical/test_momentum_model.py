@@ -392,3 +392,165 @@ def test_wilder_indicators_stop_where_the_prices_stop():
     ):
         assert result.iloc[-5:].isna().all().all()
         assert result.iloc[-6:-5].notna().all().all()
+
+
+def test_percentage_volume_oscillator_matches_its_emas():
+    volumes = sample_prices()["Volume"]
+    result = momentum_model.get_percentage_volume_oscillator(volumes, 12, 26, 9)
+
+    # Each EMA seeds on the simple average of its first window, as in TA-Lib's ta_EMA.c.
+    def ema(values, window):
+        values = values.dropna()
+        averages = [values.iloc[:window].mean()]
+        for value in values.iloc[window:]:
+            averages.append(averages[-1] + 2 / (window + 1) * (value - averages[-1]))
+        return pd.Series(averages, index=values.index[window - 1 :])
+
+    pvo = (ema(volumes, 12) - ema(volumes, 26)) / ema(volumes, 26)
+    signal_line = ema(pvo, 9)
+
+    pd.testing.assert_series_equal(
+        result["Percentage Volume Oscillator"].dropna(), pvo.dropna(), check_names=False
+    )
+    pd.testing.assert_series_equal(
+        result["Signal Line"].dropna(), signal_line, check_names=False
+    )
+    assert (
+        result["Histogram"]
+        .dropna()
+        .equals(
+            (result["Percentage Volume Oscillator"] - result["Signal Line"]).dropna()
+        )
+    )
+    # A decimal, as the Percentage Price Oscillator, and no value before the long EMA.
+    assert (
+        result["Percentage Volume Oscillator"].first_valid_index() == volumes.index[25]
+    )
+
+
+def test_percentage_volume_oscillator_without_volume_is_nan():
+    result = momentum_model.get_percentage_volume_oscillator(
+        pd.Series(0.0, index=range(60)), 12, 26, 9
+    )
+
+    assert result.isna().all().all()
+
+
+def random_walk() -> pd.Series:
+    """80 closes of a seeded random walk, which moves both ways unlike the sample prices."""
+    rng = np.random.default_rng(7)
+    return pd.Series(100 + rng.normal(0, 1, 80).cumsum())
+
+
+def test_get_stochastic_relative_strength_index(recorder):
+    result = momentum_model.get_stochastic_relative_strength_index(
+        random_walk(), 14, 5, 3
+    ).round(3)
+
+    # The windows fill within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
+
+
+def test_stochastic_relative_strength_index_matches_talib():
+    """The values of TA-Lib's STOCHRSI(14, 5, 3, SMA) and STOCHRSI(14, 14, 3, SMA)."""
+    result = momentum_model.get_stochastic_relative_strength_index(
+        random_walk(), 14, 5, 3
+    )
+
+    # %K starts on period 14 + 5 - 1, %D two periods later, where TA-Lib starts both.
+    assert result["Stochastic RSI %K"].first_valid_index() == 18
+    assert result["Stochastic RSI %D"].first_valid_index() == 20
+    assert result["Stochastic RSI %K"].iloc[-4:].tolist() == pytest.approx(
+        [85.752577, 69.635095, 0.0, 100.0], abs=1e-6
+    )
+    assert result["Stochastic RSI %D"].iloc[-4:].tolist() == pytest.approx(
+        [84.999198, 85.129224, 51.795891, 56.545032], abs=1e-6
+    )
+
+    longer = momentum_model.get_stochastic_relative_strength_index(
+        random_walk(), 14, 14, 3
+    )
+    assert longer["Stochastic RSI %D"].iloc[-2:].tolist() == pytest.approx(
+        [42.871038, 52.826448], abs=1e-6
+    )
+
+
+def test_stochastic_relative_strength_index_without_a_range_is_missing():
+    # A steady rise has an RSI of 100 throughout, so there is no range to place it in.
+    result = momentum_model.get_stochastic_relative_strength_index(
+        pd.Series(range(1, 31), dtype="float64"), 5, 3, 2
+    )
+
+    assert result["Stochastic RSI %K"].isna().all()
+
+
+def test_get_true_strength_index(recorder):
+    result = momentum_model.get_true_strength_index(random_walk(), 25, 13, 7).round(3)
+
+    # The windows fill within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
+
+
+def test_true_strength_index_matches_blau():
+    """An independent loop of Blau's double smoothing with SMA-seeded EMAs."""
+
+    def exponential_moving_average(values, window):
+        averages, seed, previous = [np.nan] * len(values), [], None
+        for i, value in enumerate(values):
+            if np.isnan(value):
+                continue
+            if previous is None:
+                seed.append(value)
+                if len(seed) == window:
+                    previous = averages[i] = sum(seed) / window
+            else:
+                previous = averages[i] = previous + 2 / (window + 1) * (
+                    value - previous
+                )
+        return averages
+
+    closes = random_walk().tolist()
+    momentum = [np.nan] + [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    numerator = exponential_moving_average(exponential_moving_average(momentum, 25), 13)
+    denominator = exponential_moving_average(
+        exponential_moving_average([abs(value) for value in momentum], 25), 13
+    )
+    expected = [100 * n / d for n, d in zip(numerator, denominator)]
+
+    result = momentum_model.get_true_strength_index(random_walk(), 25, 13, 7)
+
+    # The first change is on period 1, so the TSI starts on 1 + 25 - 1 + 13 - 1.
+    assert result["True Strength Index"].first_valid_index() == 37
+    assert result["Signal Line"].first_valid_index() == 43
+    assert result["True Strength Index"].iloc[37:].tolist() == pytest.approx(
+        expected[37:]
+    )
+    assert result["Signal Line"].iloc[-1] == pytest.approx(
+        exponential_moving_average(expected, 7)[-1]
+    )
+    assert result["True Strength Index"].abs().max() <= 100
+
+
+def test_get_coppock_curve(recorder):
+    result = momentum_model.get_coppock_curve(random_walk()).round(6)
+
+    # The windows fill within the sample, so there is something to compare.
+    assert result.notna().to_numpy().any()
+    recorder.capture(result)
+
+
+def test_coppock_curve_matches_talib():
+    """TA-Lib's WMA(ROCP(14) + ROCP(11), 10), and the same per ticker of a DataFrame."""
+    closes = random_walk()
+    result = momentum_model.get_coppock_curve(closes)
+
+    assert result.first_valid_index() == 23
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-0.048365, -0.04872, -0.038604], abs=1e-6
+    )
+
+    tickers = pd.DataFrame({"A": closes, "B": closes.iloc[::-1].to_numpy()})
+    per_ticker = momentum_model.get_coppock_curve(tickers)
+    pd.testing.assert_series_equal(per_ticker["A"], result, check_names=False)

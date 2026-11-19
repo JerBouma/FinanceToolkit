@@ -62,6 +62,56 @@ def get_price_to_earnings_ratio(
     return stock_price / earnings_per_share
 
 
+def get_cyclically_adjusted_price_to_earnings_ratio(
+    stock_price: pd.DataFrame,
+    earnings_per_share: pd.DataFrame,
+    consumer_price_index: pd.DataFrame | None = None,
+    years: int = 10,
+    periods_per_year: int = 1,
+) -> pd.DataFrame:
+    """
+    Calculate the cyclically adjusted price earnings ratio (CAPE, P/E10), the share price
+    divided by the average of the last `years` years of inflation-adjusted earnings per
+    share (Graham and Dodd, 1934; Campbell and Shiller, 1998).
+
+    Each year's earnings per share are expressed in the prices of the period the ratio is
+    calculated for: EPS (s) x CPI (t) / CPI (s). The years are the earnings per share of
+    every `periods_per_year`-th period back from t, so with quarterly data and trailing
+    twelve month earnings per share (periods_per_year=4) every quarter enters the average
+    once. Every year must be available; an average of fewer years, or one that is zero or
+    negative, gives NaN.
+
+    Args:
+        stock_price (pd.DataFrame): The share price of each ticker (index) and period (columns).
+        earnings_per_share (pd.DataFrame): The annual (or trailing twelve month) earnings per
+            share, with the same tickers and consecutive periods as columns.
+        consumer_price_index (pd.DataFrame | None, optional): The consumer price index at the
+            end of each ticker's periods, in the same shape as the earnings per share. Defaults
+            to None, which leaves the earnings unadjusted for inflation.
+        years (int, optional): The number of years of earnings to average. Defaults to 10.
+        periods_per_year (int, optional): The number of periods in a year, 1 for annual and 4
+            for quarterly data. Defaults to 1.
+
+    Returns:
+        pd.DataFrame: The cyclically adjusted price earnings ratio.
+    """
+    # Average of EPS (s) / CPI (s) times CPI (t) equals the average of EPS (s) x CPI (t) / CPI (s),
+    # as CPI (t) is the same for every year of the window. Adding the shifted frames keeps NaN when
+    # any year is missing, so the full window is required.
+    price_level = consumer_price_index if consumer_price_index is not None else 1
+    deflated_earnings = earnings_per_share / price_level
+
+    total_deflated_earnings = deflated_earnings * 0
+    for year in range(years):
+        total_deflated_earnings = total_deflated_earnings + deflated_earnings.shift(
+            year * periods_per_year, axis=1
+        )
+
+    average_real_earnings = total_deflated_earnings / years * price_level
+
+    return stock_price / average_real_earnings.where(average_real_earnings > 0)
+
+
 def get_price_to_earnings_growth_ratio(
     price_earnings: pd.Series | pd.DataFrame,
     growth_rate: pd.Series | pd.DataFrame | float,
@@ -82,6 +132,39 @@ def get_price_to_earnings_growth_ratio(
         float | pd.Series: The PEG ratio value.
     """
     return price_earnings / growth_rate
+
+
+def get_dividend_adjusted_price_to_earnings_growth_ratio(
+    price_earnings: pd.Series | pd.DataFrame,
+    growth_rate: pd.Series | pd.DataFrame | float,
+    dividend_yield: pd.Series | pd.DataFrame | float,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the dividend-adjusted price earnings to growth (PEGY) ratio of Peter Lynch, the
+    price-to-earnings ratio divided by the growth rate of the earnings plus the dividend yield.
+
+    The formula is as follows:
+
+        PEGY Ratio = Price Earnings Ratio / ((EPS Growth Rate + Dividend Yield) * 100)
+
+    Lynch added the growth rate and the dividend yield in percent, so the decimals are
+    multiplied by 100, as in the PEG ratio. Lynch divided the sum by the P/E, the reciprocal
+    of this ratio, and called a result below 1 poor and 2 or more good; the PEGY ratio puts
+    the P/E on top, as the PEG ratio does, so above 1 is poor and 0.5 or less good.
+
+    Args:
+        price_earnings (float or pd.Series): The company's price-to-earnings ratio.
+        growth_rate (float or pd.Series): The growth rate of the earnings, as a decimal.
+        dividend_yield (float or pd.Series): The dividend yield, as a decimal.
+
+    Returns:
+        float | pd.Series: The PEGY ratio value.
+
+    References:
+    - Lynch, Peter. "One Up On Wall Street." Simon & Schuster, 1989, chapter 13 ("Some
+    Famous Numbers").
+    """
+    return price_earnings / ((growth_rate + dividend_yield) * 100)
 
 
 def get_estimated_eps_growth_rate(

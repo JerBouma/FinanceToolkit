@@ -18,6 +18,15 @@ logger = get_logger()
 # The trading days an asset's first price may come after the first day of an attribution.
 START_PRICE_TOLERANCE_DAYS = 5
 
+# The sub-periods of a linked attribution and their pandas frequencies. Days are left out:
+# every sub-period is an attribution of its own, which over years of days takes long.
+SUB_PERIODS = {
+    "weekly": "W",
+    "monthly": "M",
+    "quarterly": "Q",
+    "yearly": "Y",
+}
+
 
 @filter_shown_columns
 @track_sources
@@ -287,6 +296,8 @@ class AttributionConstruction:
     def get_brinson_attribution(
         self,
         weights: dict[str, float] | None = None,
+        period: str | None = None,
+        linking: str = "carino",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
@@ -308,12 +319,46 @@ class AttributionConstruction:
         come from the benchmark fund and its sector returns from the Select Sector SPDR
         funds (XLK, XLF, XLV, ...), which track the sectors of the S&P 500.
 
+        With a period, the range is split into sub-periods (weeks, months, quarters or
+        years). Every sub-period gets its own attribution with the weights at its start, and
+        the effects are linked into effects over the whole range that add up to the
+        compounded excess return. The holdings are bought at the start and held without
+        rebalancing, so the portfolio's weights drift with the returns of its assets; the
+        benchmark's sector weights drift with the returns of the sector funds in the same
+        way. The compounded returns of the sub-periods therefore equal the returns of the
+        attribution without a period, and only the effects differ: they reflect the
+        weights held in each sub-period rather than those at the start.
+
+        The formula is as follows:
+
+        - Allocation_t = (w_p,t - w_b,t) x (r_b,t - B_t)
+        - Selection_t = w_b,t x (r_p,t - r_b,t)
+        - Interaction_t = (w_p,t - w_b,t) x (r_p,t - r_b,t)
+        - Cariño: Linked Effect = Σ_t (k_t / K) x Effect_t, with
+          k_t = [ln(1 + R_t) - ln(1 + B_t)] / (R_t - B_t) and
+          K = [ln(1 + R) - ln(1 + B)] / (R - B), or 1 / (1 + R_t) and 1 / (1 + R) when the
+          returns are equal
+        - Menchero: Linked Effect = Σ_t (M + α_t) x Effect_t, with
+          M = [(R - B) / T] / [(1 + R)^(1 / T) - (1 + B)^(1 / T)] and
+          α_t = [R - B - M x Σ_s (R_s - B_s)] / Σ_s (R_s - B_s)² x (R_t - B_t)
+
+        Here w_p,t and w_b,t are the sector weights at the start of sub-period t, r_p,t and
+        r_b,t the sector returns, R_t and B_t the portfolio and benchmark returns in the
+        sub-period, R and B those returns compounded over all T sub-periods. Without a
+        period the first three lines apply once to the whole range.
+
         For more information, see the following papers:
 
         - Brinson, G.P. and Fachler, N. (1985). "Measuring Non-US Equity Portfolio
           Performance." The Journal of Portfolio Management, 11(3), 73-76.
         - Brinson, G.P., Hood, L.R. and Beebower, G.L. (1986). "Determinants of Portfolio
           Performance." Financial Analysts Journal, 42(4), 39-44.
+        - Cariño, D.R. (1999). "Combining Attribution Effects Over Time." The Journal of
+          Performance Measurement, 4(1), 5-14.
+        - Menchero, J. (2000). "An Optimized Approach to Linking Attribution Effects Over
+          Time." The Journal of Performance Measurement, 5(1), 36-42.
+        - Bacon, C. (2004). Practical Portfolio Performance Measurement and Attribution.
+          Wiley, pp. 191-196.
 
         Also known as: performance attribution, BHB attribution, sector attribution.
 
@@ -321,6 +366,13 @@ class AttributionConstruction:
             weights (dict[str, float] | None, optional): The weight per asset at the start of
                 the date range. Defaults to None, which uses the latest weights of the
                 Portfolio the Toolkit came from, or equal weights.
+            period (str | None, optional): The sub-periods whose attributions are linked:
+                "weekly", "monthly", "quarterly" or "yearly", each ending on the last
+                trading day of the calendar period. Defaults to None, which attributes the
+                whole range as one period.
+            linking (str, optional): How the effects of the sub-periods are linked when a
+                period is given: "carino" (Cariño, 1999) or "menchero" (Menchero, 2000).
+                Defaults to "carino".
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -329,9 +381,11 @@ class AttributionConstruction:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: Per sector and in total, the Portfolio Weight, Benchmark Weight,
-            Portfolio Return, Benchmark Return and the Allocation, Selection, Interaction
-            and Total Effect. The Total row's effects add up to the excess return.
+            pd.DataFrame: Per sector and in total, the Portfolio Weight, Benchmark Weight
+            (at the start of the range), Portfolio Return, Benchmark Return (over the whole
+            range) and the Allocation, Selection, Interaction and Total Effect, linked over
+            the sub-periods when a period is given. The Total row's effects add up to the
+            excess return.
 
         Notes:
         - The benchmark fund's sector weights are its current weights, applied to the whole
@@ -341,6 +395,10 @@ class AttributionConstruction:
           the fund's own return, as the return of a fund's sectors separately is not known.
           Assets without a sector are "Unclassified" and compared with the benchmark as a
           whole.
+        - Cariño's linking scales each sub-period by its logarithmic excess return relative
+          to the whole range; Menchero's keeps the scaling as close as possible to one
+          factor for every sub-period. Both make the linked effects add up exactly to the
+          compounded portfolio return minus the compounded benchmark return.
 
         As an example:
 
@@ -374,6 +432,15 @@ class AttributionConstruction:
         | Utilities              |                0   |             0.0204 |           nan      |             0.1511 |              0.0006 |             0      |              -0      |         0.0006 |
         | Total                  |                1   |             1      |             0.2596 |             0.1798 |             -0.0077 |             0.0233 |               0.0642 |         0.0798 |
         """
+        if period is not None and period not in SUB_PERIODS:
+            raise ValueError(
+                f"period must be {', '.join(SUB_PERIODS)}, or left out to attribute the whole "
+                "range as one period."
+            )
+        if linking not in attribution_model.LINKING_METHODS:
+            raise ValueError(
+                f"linking must be one of {', '.join(attribution_model.LINKING_METHODS)}."
+            )
         if not self._benchmark_name or self._fund_function is None:
             raise ValueError("The attribution needs a benchmark fund, e.g. SPY.")
 
@@ -423,8 +490,10 @@ class AttributionConstruction:
             if exposure.empty:
                 exposure = pd.Series({"Unclassified": 1.0})
             for sector, share in (exposure / exposure.sum()).items():
-                slices.append((sector, resolved[asset] * share, asset_returns[asset]))
-        slices = pd.DataFrame(slices, columns=["Sector", "Weight", "Return"])
+                slices.append(
+                    (sector, asset, resolved[asset] * share, asset_returns[asset])
+                )
+        slices = pd.DataFrame(slices, columns=["Sector", "Asset", "Weight", "Return"])
 
         portfolio_weights = slices.groupby("Sector")["Weight"].sum()
         portfolio_returns = (slices["Weight"] * slices["Return"]).groupby(
@@ -467,8 +536,67 @@ class AttributionConstruction:
             benchmark_weights.index.isin(benchmark_returns.index)
         ]
 
-        table = attribution_model.get_brinson_fachler_attribution(
-            portfolio_weights, portfolio_returns, benchmark_weights, benchmark_returns
-        )
+        if period is None:
+            table = attribution_model.get_brinson_fachler_attribution(
+                portfolio_weights,
+                portfolio_returns,
+                benchmark_weights,
+                benchmark_returns,
+            )
+        else:
+            # The sub-periods run from the first day (or the last trading day of the
+            # previous calendar period) to the last trading day of each calendar period.
+            positions = pd.Series(np.arange(len(dates)), index=dates)
+            ends = positions.groupby(dates.to_period(SUB_PERIODS[period])).max()
+            boundaries = dates[[0, *ends[ends > 0]]]
+
+            # Buy and hold: each sector slice grows with its asset from the start, before
+            # its first price at the start price, so the weights at every boundary are the
+            # drifted ones and the sub-period returns compound to the whole-range returns.
+            asset_growth = (
+                prices.ffill().fillna(start_prices).set_axis(dates).loc[boundaries]
+                / start_prices
+            )
+            slice_values = (
+                asset_growth[slices["Asset"]].to_numpy() * slices["Weight"].to_numpy()
+            )
+            sector_values = (
+                pd.DataFrame(slice_values, index=boundaries, columns=slices["Sector"])
+                .T.groupby(level=0)
+                .sum()
+                .T
+            )
+
+            # Each sector fund from its first to its last price within the range, as in
+            # the attribution without a period.
+            funds = sector_prices.set_axis(
+                pd.to_datetime(sector_prices.index.astype(str))
+            )[[sector_tickers[sector] for sector in benchmark_returns.index]]
+            fund_prices = (
+                funds.reindex(funds.index.union(boundaries))
+                .ffill()
+                .bfill()
+                .loc[boundaries]
+            )
+            fund_prices.columns = benchmark_returns.index
+            benchmark_values = (
+                fund_prices / fund_prices.iloc[0] * benchmark_weights
+            ).dropna(axis=1, how="all")
+
+            # Every sub-period is named after its last day and starts with the values at
+            # the previous boundary; a sector without value has no return.
+            starts, sub_periods = boundaries[:-1], boundaries[1:]
+            portfolio_values = sector_values.loc[starts].set_axis(sub_periods)
+            benchmark_values = benchmark_values.loc[starts].set_axis(sub_periods)
+            table = attribution_model.get_linked_brinson_fachler_attribution(
+                portfolio_values,
+                sector_values.loc[sub_periods].div(portfolio_values.replace(0, np.nan))
+                - 1,
+                benchmark_values,
+                fund_prices.loc[sub_periods]
+                / fund_prices.loc[starts].set_axis(sub_periods)
+                - 1,
+                linking,
+            )
         table.index.name = "Sector"
         return self._round(table, rounding)

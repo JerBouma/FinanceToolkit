@@ -35,7 +35,7 @@ _CHAIN_INPUTS_FROM_HISTORY = (
 @track_sources
 class MarketOptions:
     """
-    Metrics from the option chains: the put-call ratio, max pain, gamma exposure, the implied volatility term structure and skew, the implied move, the model-free implied volatility and the volatility risk premium.
+    Metrics from the option chains: the put-call ratio, max pain, gamma exposure, the implied volatility term structure and skew, the implied move, the model-free implied volatility, the volatility risk premium, the risk-neutral moments and the SKEW index.
     """
 
     def _expiries(
@@ -746,8 +746,14 @@ class MarketOptions:
             )
         return table
 
-    def _model_free_volatility(self, ticker: str, days: int) -> pd.Series:
-        """The constant-maturity model-free implied volatility of one ticker."""
+    def _constant_maturity_terms(
+        self, ticker: str, days: int
+    ) -> list[tuple[str, pd.DataFrame, pd.DataFrame, float, float]]:
+        """
+        The near and next term around `days` that the Cboe VIX and SKEW methodologies
+        interpolate between: per term the expiration date, calls, puts, time to expiration
+        and risk free rate. The terms have at least MINIMUM_DAYS to expiration.
+        """
         now = self._current_time()
         usable = [
             date
@@ -756,11 +762,11 @@ class MarketOptions:
         ]
         if len(usable) < 2:  # noqa: PLR2004
             raise ValueError(
-                f"{ticker} has too few expiries for a model-free volatility."
+                f"{ticker} has too few expiries to interpolate to {days} days."
             )
 
         # Beyond the furthest expiry there is nothing to interpolate towards, and holding
-        # the last expiry's variance would present it as the volatility of a longer span.
+        # the last expiry's value would present it as the value of a longer span.
         if days > get_days_to_expiration(usable[-1], now):
             raise ValueError(
                 f"The longest usable expiry of {ticker} is {usable[-1]} "
@@ -776,23 +782,30 @@ class MarketOptions:
         following = [date for date in usable if date > near]
         next_term = following[0] if following else near
 
-        terms = {}
-        for label, date in (("Near-Term", near), ("Next-Term", next_term)):
+        terms = []
+        for date in (near, next_term):
             calls, puts, _, time, rate, _ = self._expiry_inputs(ticker, date)
             # A ValueError reaches the per-ticker warning, so the other tickers still answer.
             if calls.empty or puts.empty:
                 raise ValueError(f"{ticker} has no option chain for {date}.")
-            variance, forward = market_metrics_model.get_model_free_variance(
-                calls, puts, time, rate
-            )
-            # The interpolation weighs the terms by the same time to expiration as the
-            # variance, in days with the fraction of the day left (the Cboe counts minutes).
-            terms[label] = (date, variance, forward, time * 365)
+            terms.append((date, calls, puts, time, rate))
+        return terms
 
-        near_date, near_variance, forward, near_days = terms["Near-Term"]
-        next_date, next_variance, _, next_days = terms["Next-Term"]
+    def _model_free_volatility(self, ticker: str, days: int) -> pd.Series:
+        """The constant-maturity model-free implied volatility of one ticker."""
+        near, following = self._constant_maturity_terms(ticker, days)
+        near_date, near_calls, near_puts, near_time, near_rate = near
+        next_date, next_calls, next_puts, next_time, next_rate = following
+        near_variance, forward = market_metrics_model.get_model_free_variance(
+            near_calls, near_puts, near_time, near_rate
+        )
+        next_variance, _ = market_metrics_model.get_model_free_variance(
+            next_calls, next_puts, next_time, next_rate
+        )
+        # The interpolation weighs the terms by the same time to expiration as the
+        # variance, in days with the fraction of the day left (the Cboe counts minutes).
         volatility = market_metrics_model.get_constant_maturity_volatility(
-            near_variance, near_days, next_variance, next_days, days
+            near_variance, near_time * 365, next_variance, next_time * 365, days
         )
         return pd.Series(
             {
@@ -1020,3 +1033,290 @@ class MarketOptions:
         return apply_rounding(
             pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
         )
+
+    @handle_errors
+    def get_risk_neutral_moments(
+        self,
+        expiration_dates: list[str] | None = None,
+        number_of_expirations: int = 4,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the risk-neutral (option-implied) volatility, skewness and kurtosis of the
+        log return up to every expiry with the method of Bakshi, Kapadia and Madan (2003).
+        Any payoff can be built from a position in the underlying and a strip of
+        out-of-the-money options (Carr and Madan, 2001), so the prices of the quadratic,
+        cubic and quartic contracts on the log return follow from the option prices, and
+        with them the moments the market prices in, without a pricing model. A negative
+        skewness means the options price a larger chance of a fall than of a rise of the
+        same size; a kurtosis above 3 means fatter tails than a normal distribution.
+
+        The formula is as follows, with R = ln(S_T / K_0), y_i = ln(K_i / K_0) and the
+        strikes K_i, prices Q(K_i) and intervals ΔK_i of the VIX methodology:
+
+            - V = Σ 2 (1 - y_i) Q(K_i) ΔK_i / K_i²
+            - W = Σ (6 y_i - 3 y_i²) Q(K_i) ΔK_i / K_i²
+            - X = Σ (12 y_i² - 4 y_i³) Q(K_i) ΔK_i / K_i²
+            - μ = F / K_0 - 1 - e^(rT) V / 2 - e^(rT) W / 6 - e^(rT) X / 24
+            - Skewness = (e^(rT) W - 3 μ e^(rT) V + 2 μ³) / (e^(rT) V - μ²)^(3/2)
+            - Kurtosis = (e^(rT) X - 4 μ e^(rT) W + 6 e^(rT) μ² V - 3 μ⁴) / (e^(rT) V - μ²)²
+            - Volatility = sqrt((e^(rT) V - μ²) / T)
+            - Expected Log Return = E[ln(S_T / F)] = μ - ln(F / K_0)
+
+        The integrals of the paper are discretised as in the Cboe VIX methodology: the
+        forward price F follows from put-call parity at the strike where call and put
+        prices are closest, K_0 is the first strike at or below it, Q(K_i) is the put price
+        below K_0, the call price above and their average at K_0, and ΔK_i is half the
+        distance between the neighbouring strikes (the distance to the one neighbour at the
+        ends). Puts and calls are added away from K_0 while they have a bid, up to two
+        consecutive strikes without one. The paper expands around the spot price without
+        dividends (F / S = e^(rT)); the expansion around K_0 keeps the replication exact and
+        takes in dividends through the forward price, and leaves the skewness and kurtosis
+        unchanged. r is the continuously compounded risk free rate.
+
+        For more information, see the following papers:
+
+        - Bakshi, G., Kapadia, N. and Madan, D. (2003). "Stock Return Characteristics, Skew
+          Laws, and the Differential Pricing of Individual Equity Options." The Review of
+          Financial Studies, 16(1), 101-143.
+        - Carr, P. and Madan, D. (2001). "Optimal Positioning in Derivative Securities."
+          Quantitative Finance, 1(1), 19-37.
+        - Cboe Global Markets (2023). "Cboe Volatility Index (VIX) White Paper."
+
+        Also known as: option-implied moments, implied skewness, implied kurtosis, BKM moments.
+
+        Args:
+            expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
+                None, the nearest `number_of_expirations` expiries.
+            number_of_expirations (int, optional): The number of nearest expiries to use when
+                no dates are given. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and expiry the Days to Expiration, Forward Price,
+            Expected Log Return (relative to the forward price, over the time to
+            expiration), Volatility (annualized), Skewness and Kurtosis of the log return.
+
+        Notes:
+        - The sums approximate the integrals over the strikes, so the moments depend on how
+          finely the strikes are spaced and how far they reach into the tails; the kurtosis is
+          the most sensitive. On a Black-Scholes chain (20% volatility, 30 days) with strikes
+          from 50% to 150% of the price, the kurtosis is within 0.031 of the normal value of 3
+          (and the skewness within 0.001 of 0) for strikes 1% of the price apart, and within
+          0.001 for strikes 0.1% apart; strikes from 10% to 190% give the same values, as the
+          options beyond 50% and 150% are worth almost nothing. The reach matters when the
+          strip ends within a few standard deviations of the price: from 80% to 120% (3.5
+          standard deviations) the kurtosis is 0.008 low at the finest spacing.
+        - Prices are the middle of the bid and ask, or the last price of an option with
+          volume or open interest when there is no two-sided quote. Outside market hours,
+          when bids are missing, an expiry has no strip and its moments are NaN.
+        - The time to each expiry runs from the current time to 16:00 New York time on the
+          expiration date, in minutes over the 525,600 minutes of a year. The risk free rate
+          comes from the historical data, so leave end_date at today: a warning is logged
+          when the history ends more than 5 days before today.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["^SPX", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_risk_neutral_moments(
+            number_of_expirations=3, show_columns=["Volatility", "Skewness", "Kurtosis"]
+        )
+        ```
+
+        Which returns:
+
+        |                        |   Volatility |   Skewness |   Kurtosis |
+        |:-----------------------|-------------:|-----------:|-----------:|
+        | ('^SPX', '2026-11-19') |       0.2852 |    -0.9794 |    10.6888 |
+        | ('^SPX', '2026-11-20') |       0.2745 |    -2.5062 |    28.0073 |
+        | ('^SPX', '2026-11-23') |       0.2381 |    -3.069  |    41.0756 |
+        | ('AAPL', '2026-11-20') |       0.3401 |    -1.4245 |    12.0253 |
+        | ('AAPL', '2026-11-23') |       0.2615 |    -1.4104 |     9.5121 |
+        | ('AAPL', '2026-11-25') |       0.2763 |    -1.4946 |     8.8768 |
+        """
+
+        def calculate(calls, puts, _, time, rate, *__):
+            strip, forward = market_metrics_model.get_model_free_strip(
+                calls, puts, time, rate
+            )
+            moments = market_metrics_model.get_risk_neutral_moments(
+                strip.index.to_numpy(dtype=float),
+                strip["Call Price"].to_numpy(),
+                strip["Put Price"].to_numpy(),
+                forward,
+                rate,
+                time,
+            )
+            return pd.concat([pd.Series({"Forward Price": forward}), moments])
+
+        return self._per_expiry(
+            calculate, expiration_dates, number_of_expirations, rounding
+        )
+
+    def _skew_index(self, ticker: str, days: int) -> pd.Series:
+        """The constant-maturity Cboe SKEW-style index of one ticker."""
+        terms = {}
+        for label, (date, calls, puts, time, rate) in zip(
+            ("Near-Term", "Next-Term"),
+            self._constant_maturity_terms(ticker, days),
+            strict=True,
+        ):
+            strip, forward = market_metrics_model.get_model_free_strip(
+                calls, puts, time, rate
+            )
+            skewness = market_metrics_model.get_cboe_skewness(
+                strip.index.to_numpy(dtype=float),
+                strip["Call Price"].to_numpy(),
+                strip["Put Price"].to_numpy(),
+                forward,
+                rate,
+                time,
+            )
+            # The weights use the time to expiration in days with the fraction of the day
+            # left, proportional to the minutes the Cboe counts.
+            terms[label] = (date, skewness, forward, time * 365)
+
+        near_date, near_skewness, forward, near_days = terms["Near-Term"]
+        next_date, next_skewness, _, next_days = terms["Next-Term"]
+        skewness, index = market_metrics_model.get_skew_index(
+            near_skewness, near_days, next_skewness, next_days, days
+        )
+        return pd.Series(
+            {
+                "Near-Term Expiration": near_date,
+                "Next-Term Expiration": next_date,
+                "Near-Term Skewness": near_skewness,
+                "Next-Term Skewness": next_skewness,
+                "Forward Price": forward,
+                "Skewness": skewness,
+                "SKEW Index": index,
+            }
+        )
+
+    @handle_errors
+    def get_skew_index(
+        self,
+        days: int = 30,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate a SKEW index with the Cboe SKEW Index methodology, for any ticker with
+        listed options: the risk-neutral skewness S of the log return over the coming
+        `days`, read from the prices of out-of-the-money options and expressed as
+        100 - 10 S. A SKEW of 100 means the options price a symmetric distribution; the
+        higher the index, the more the options price a large fall (tail risk). The Cboe
+        SKEW of the S&P 500 has mostly ranged between 110 and 150.
+
+        The formula is as follows, per expiry with R = ln(S_T / F_0), y_i = ln(K_i / F_0)
+        and the strikes K_i, prices Q(K_i) and intervals ΔK_i of the VIX methodology:
+
+            - P_1 = -e^(rT) Σ Q(K_i) ΔK_i / K_i² + ε_1
+            - P_2 = e^(rT) Σ 2 (1 - y_i) Q(K_i) ΔK_i / K_i² + ε_2
+            - P_3 = e^(rT) Σ 3 (2 y_i - y_i²) Q(K_i) ΔK_i / K_i² + ε_3
+            - ε_1 = -(1 + ln(F_0 / K_0) - F_0 / K_0)
+            - ε_2 = 2 ln(K_0 / F_0) (F_0 / K_0 - 1) + ln(K_0 / F_0)²
+            - ε_3 = 3 ln(K_0 / F_0)² (ln(K_0 / F_0) / 3 - 1 + F_0 / K_0)
+            - S = (P_3 - 3 P_1 P_2 + 2 P_1³) / (P_2 - P_1²)^(3/2)
+
+        and over the near and next term around `days`:
+
+            - w = (T_next - T_days) / (T_next - T_near)
+            - Skewness = w S_near + (1 - w) S_next
+            - SKEW Index = 100 - 10 Skewness
+
+        P_1, P_2 and P_3 are the prices of R, R² and R³, the ε terms correct for the
+        expansion around the forward price F_0 while the puts and calls are split at K_0,
+        the first strike at or below it, and r is the continuously compounded risk free
+        rate. The terms, the forward price, K_0 and the strikes used are those of the VIX
+        methodology (see get_model_free_implied_volatility), as the white paper prescribes.
+        ε_2 holds the full ln(K_0 / F_0)² of the expansion of R² around K_0, where the white
+        paper prints half of it (see market_metrics_model.get_cboe_skewness); for index
+        options the difference is negligible.
+        Unlike the variance of the VIX, the skewness is interpolated linearly in time.
+        Applied to the S&P 500 index options ("^SPX") with days=30 it approximates the Cboe
+        SKEW Index, which uses the Cboe's own quotes and Treasury bill rates per expiry.
+
+        For more information, see the following papers:
+
+        - Cboe Global Markets (2010). "The Cboe SKEW Index - SKEW." White paper.
+        - Bakshi, G., Kapadia, N. and Madan, D. (2003). "Stock Return Characteristics, Skew
+          Laws, and the Differential Pricing of Individual Equity Options." The Review of
+          Financial Studies, 16(1), 101-143.
+
+        Also known as: Cboe SKEW, tail risk index, black swan index, implied skewness index.
+
+        Args:
+            days (int, optional): The constant maturity in calendar days. Defaults to 30.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Near-Term and Next-Term Expiration and Skewness, the
+            Forward Price of the near term, the Skewness at `days` and the SKEW Index.
+
+        Notes:
+        - The skewness depends on how far the strikes reach into the tails, so a stock with
+          few listed strikes shows a SKEW closer to 100 than its options imply.
+        - A target shorter than the nearest usable expiry (at least 7 days away) is
+          extrapolated from the two nearest terms, as in the Cboe method. A target beyond
+          the longest usable expiry raises a ValueError naming the ticker and that expiry.
+        - Outside market hours, when bids are missing, an expiry has no strip and the
+          result is NaN.
+        - The time to each expiry runs from the current time to 16:00 New York time on the
+          expiration date, in minutes over the 525,600 minutes of a year. The risk free rate
+          comes from the historical data, so leave end_date at today: a warning is logged
+          when the history ends more than 5 days before today.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["^SPX", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_skew_index(
+            show_columns=["Near-Term Expiration", "Next-Term Expiration", "Skewness", "SKEW Index"]
+        )
+        ```
+
+        Which returns:
+
+        |      | Near-Term Expiration   | Next-Term Expiration   |   Skewness |   SKEW Index |
+        |:-----|:-----------------------|:-----------------------|-----------:|-------------:|
+        | ^SPX | 2026-12-18             | 2026-12-21             |    -4.2626 |      142.626 |
+        | AAPL | 2026-12-18             | 2026-12-24             |    -1.7288 |      117.288 |
+        """
+        self._warn_if_history_is_stale("the risk free rate comes from that date")
+        rows, errors = {}, []
+        for ticker in self._tickers:
+            try:
+                rows[ticker] = self._skew_index(ticker, days)
+            except ValueError as error:
+                logger.warning("%s", error)
+                errors.append(str(error))
+
+        if not rows:
+            raise ValueError("No SKEW index could be calculated. " + " ".join(errors))
+
+        table = pd.DataFrame(rows).T
+        numeric = table.columns.drop(["Near-Term Expiration", "Next-Term Expiration"])
+        table[numeric] = apply_rounding(
+            table[numeric].astype(float),
+            rounding if rounding is not None else self._rounding,
+        )
+        return table

@@ -1,0 +1,13 @@
+,,2020,2021,2022,2023
+AAPL,Cash Flow to Capital,,0.8955,0.1835,-1.079
+AAPL,Q,-0.0775,1.0365,-0.959,
+AAPL,Debt to Total Capital,-0.8797,0.1209,1.3601,-0.6013
+AAPL,Dividends to Capital,,1.053,-0.1163,-0.9368
+AAPL,Cash to Capital,,1.0109,-0.9887,-0.0222
+AAPL,Kaplan-Zingales Index,,-0.7071,0.7071,
+MSFT,Cash Flow to Capital,,0.9066,0.166,-1.0726
+MSFT,Q,-0.2862,1.1119,-0.8257,
+MSFT,Debt to Total Capital,1.1965,0.3758,-0.4773,-1.0951
+MSFT,Dividends to Capital,,1.0848,-0.1996,-0.8851
+MSFT,Cash to Capital,,1.1391,-0.4056,-0.7335
+MSFT,Kaplan-Zingales Index,,-0.7071,0.7071,

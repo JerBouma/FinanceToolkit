@@ -160,6 +160,50 @@ def get_on_balance_volume(
     return obv.cumsum().reindex(prices_close.index)
 
 
+def get_price_volume_trend(prices_close: pd.Series, volumes: pd.Series) -> pd.Series:
+    """
+    Calculate the Price Volume Trend (PVT) of a given price series.
+
+    The Price Volume Trend is a running total of volume weighted by the period's percentage
+    change in price. Where On-Balance Volume adds or subtracts the whole volume depending on
+    the direction of the close, the PVT adds only the share of the volume that matches the
+    size of the move, so a close 0.1% higher adds a tenth of what a close 1% higher adds.
+    A rising PVT confirms an uptrend carried by volume, and a divergence from price warns
+    that the move lacks participation.
+
+    The formula is as follows:
+
+    - PVT(t) = PVT(t-1) + Volume(t) * (Close(t) - Close(t-1)) / Close(t-1)
+    - PVT = 0 on the first observation, which has no previous close
+
+    Also known as: PVT, Price and Volume Trend, Volume Price Trend.
+
+    Reference: StockCharts ChartSchool, "Price Volume Trend (PVT)". The PVT has no single
+    published origin; it refines Granville's On-Balance Volume (Granville, J.E. (1963).
+    "Granville's New Key to Stock Market Profits." Prentice-Hall) by weighting volume with
+    the percentage change in price.
+
+    Notes:
+        - The running total starts at 0 on the first observation with both a close and a
+          volume, so its level depends on the first date of the data; only its direction
+          and its divergences from price carry meaning.
+        - The change is taken over the observations with both a close and a volume, so the
+          observation after a missing one compares with the last close before it; the
+          missing observations stay NaN.
+
+    Args:
+        prices_close (pd.Series): Series of closing prices.
+        volumes (pd.Series): Series of trading volumes.
+
+    Returns:
+        pd.Series: PVT values, in units of volume.
+    """
+    observed = prices_close.notna() & volumes.notna()
+    weighted_volume = prices_close[observed].pct_change() * volumes[observed]
+
+    return weighted_volume.fillna(0).cumsum().reindex(prices_close.index)
+
+
 def _get_money_flow_multiplier(
     prices_high: pd.Series, prices_low: pd.Series, prices_close: pd.Series
 ) -> pd.Series:

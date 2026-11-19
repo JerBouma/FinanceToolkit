@@ -345,6 +345,50 @@ def test_get_ulcer_index(recorder, risk_module):
     recorder.capture(risk_module.get_ulcer_index(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_pain_index(recorder, risk_module):
+    recorder.capture(risk_module.get_pain_index())
+    recorder.capture(risk_module.get_pain_index(period="quarterly"))
+    recorder.capture(risk_module.get_pain_index(period="monthly"))
+    recorder.capture(risk_module.get_pain_index(growth=True, lag=[1, 2]))
+
+
+def test_get_pain_index_is_the_pain_index_of_the_pain_ratio(
+    risk_module, performance_module
+):
+    from financetoolkit.performance import performance_controller  # noqa: PLC0415
+
+    pain_index = risk_module.get_pain_index(rounding=10)
+    # The Pain Ratio divides by the same function on the same daily returns within each year.  # noqa: E501
+    assert performance_controller.get_pain_index is risk_model.get_pain_index
+    returns = performance_module._get_column("yearly", "Return", within_period=True)
+    expected = risk_model.get_pain_index(returns).loc[
+        performance_module._start_date : performance_module._end_date
+    ]
+
+    # The Performance module keeps the Benchmark apart, the Risk module shows it as a column.  # noqa: E501
+    assert list(pain_index.columns) == [*expected.columns, "Benchmark"]
+    pd.testing.assert_frame_equal(
+        pain_index[expected.columns],
+        expected.round(10),
+        check_names=False,
+        check_freq=False,
+    )
+    benchmark = performance_module._get_column(
+        "yearly", "Return", within_period=True, benchmark=True
+    )
+    assert pain_index["Benchmark"].to_numpy() == pytest.approx(
+        risk_model.get_pain_index(benchmark.to_frame())
+        .iloc[:, 0]
+        .loc[performance_module._start_date : performance_module._end_date],
+        abs=1e-10,
+    )
+    assert (
+        (pain_index <= risk_module.get_ulcer_index(rolling=None, rounding=10))
+        .all()
+        .all()
+    )
+
+
 def test_get_skewness(recorder, risk_module):
     recorder.capture(risk_module.get_skewness())
     recorder.capture(risk_module.get_skewness(within_period=False))

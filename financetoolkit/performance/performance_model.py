@@ -12,7 +12,10 @@ from scipy.stats import linregress
 
 from financetoolkit.cache import policy_model
 from financetoolkit.cache.cache_controller import get_active_cache
-from financetoolkit.performance.helpers import get_newey_west_lags
+from financetoolkit.performance.helpers import (
+    get_newey_west_lags,
+    remove_undefined_ratios,
+)
 from financetoolkit.risk.risk_model import (
     apply_to_stacked_windows,
     get_move_significance,
@@ -1328,6 +1331,8 @@ def get_treynor_ratio(
     - Treynor, J.L. (1965). "How to Rate Management of Investment Funds." Harvard
     Business Review, 43(1), 63-75.
 
+    A beta of 0 (or of rounding noise) leaves the ratio undefined: NaN, not infinite.
+
     Args:
         asset_returns (pd.Series | float): The asset's or portfolio's return.
         risk_free_rate (pd.Series | pd.DataFrame | float): The risk-free rate over the same period,
@@ -1361,7 +1366,8 @@ def get_treynor_ratio(
             "for both Asset Returns and Beta"
         )
 
-    return treynor_ratio
+    # A beta of 0 (or of rounding noise) leaves the ratio undefined.
+    return remove_undefined_ratios(treynor_ratio)
 
 
 def get_sharpe_ratio(
@@ -1381,6 +1387,10 @@ def get_sharpe_ratio(
     each period, producing one Sharpe ratio per period; otherwise both are computed once
     over the entire series (or once per column, for a plain DataFrame), producing a single
     ratio (per column).
+
+    Returns without variation (a standard deviation of 0, or of rounding noise) have no
+    Sharpe ratio and give NaN rather than an infinite value (see
+    `financetoolkit.performance.helpers.remove_undefined_ratios`).
 
     For more information about the method, see the following papers:
 
@@ -1402,13 +1412,13 @@ def get_sharpe_ratio(
             sharpe_ratios = excess_returns.groupby(level=0).apply(
                 lambda x: x.mean() / x.std()
             )
-            return sharpe_ratios
+            return remove_undefined_ratios(sharpe_ratios)
 
-        return excess_returns.mean() / excess_returns.std()
+        return remove_undefined_ratios(excess_returns.mean() / excess_returns.std())
 
     if isinstance(excess_returns, pd.Series):
         # Calculate Sharpe ratio for a single asset (ticker)
-        return excess_returns.mean() / excess_returns.std()
+        return remove_undefined_ratios(excess_returns.mean() / excess_returns.std())
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -1427,14 +1437,13 @@ def get_rolling_sharpe_ratio(
             (e.g. 12 for a year of monthly returns).
 
     Returns:
-        pd.Series: A Series of rolling Sharpe ratios with time as index and assets as columns.
+        pd.Series: A Series of rolling Sharpe ratios with time as index and assets as columns,
+        NaN for windows without variation (see `get_sharpe_ratio`).
     """
-    sharpe_ratio = (
+    return remove_undefined_ratios(
         excess_returns.rolling(window=window_size).mean()
         / excess_returns.rolling(window=window_size).std()
     )
-
-    return sharpe_ratio
 
 
 def get_probabilistic_sharpe_ratio(
@@ -1647,6 +1656,9 @@ def get_sortino_ratio(
     or be infinite. Such periods (e.g. a period that holds only one trading day of the
     date range) are returned as NaN.
 
+    Without a return below 0 the downside deviation is 0 and the ratio is undefined: NaN, not
+    infinite.
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free
         rate already subtracted.
@@ -1657,7 +1669,8 @@ def get_sortino_ratio(
 
     def _sortino(returns: pd.Series | pd.DataFrame):
         downside_deviation = np.sqrt((returns.clip(upper=0) ** 2).mean())
-        ratio = returns.mean() / downside_deviation
+        # Without a loss the downside deviation is 0 and the ratio undefined.
+        ratio = remove_undefined_ratios(returns.mean() / downside_deviation)
         # A single observation only yields its own sign (see above).
         return (
             ratio.where(returns.count() >= MIN_SORTINO_OBSERVATIONS)
@@ -1690,6 +1703,8 @@ def get_rolling_sortino_ratio(
     1994), rather than as the standard deviation of only the negative observations
     within that window.
 
+    Windows without a loss have no ratio (NaN).
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with risk-free rate subtracted.
         window_size (int): The size of the rolling window.
@@ -1706,7 +1721,158 @@ def get_rolling_sortino_ratio(
         (excess_returns.clip(upper=0) ** 2).rolling(window=window_size).mean()
     )
 
-    return rolling_mean / rolling_downside_deviation
+    return remove_undefined_ratios(rolling_mean / rolling_downside_deviation)
+
+
+def get_safety_first_ratio(
+    returns: pd.Series | pd.DataFrame,
+    threshold: float | pd.Series = 0.0,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate Roy's Safety-First Ratio of returns, i.e. the mean return in excess of a
+    threshold (shortfall) return per unit of total volatility.
+
+    The formula is as follows:
+
+        - Safety-First Ratio = (Mean(Return) - Threshold) / Standard Deviation(Return)
+
+    Roy (1952) chooses the portfolio that minimizes the probability of a return below the
+    threshold (the "disaster level"); for normally distributed returns that is the
+    portfolio with the highest Safety-First Ratio, as the probability is N(-Ratio). With
+    the risk-free rate as the threshold the ratio is the Sharpe Ratio (see
+    `get_sharpe_ratio`). The standard deviation is the sample one (ddof=1), and the
+    threshold is in the units of the returns: per observation, so a daily threshold for
+    daily returns. A "within period" (period, date) Multi Index gives one ratio per period.
+
+    For more information about the method, see the following paper:
+
+    - Roy, A.D. (1952). "Safety First and the Holding of Assets." Econometrica, 20(3),
+    431-449.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
+        threshold (float | pd.Series, optional): The threshold return per observation, a
+        number or one per column. Defaults to 0.0.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: Safety-First Ratio values, one per period with a
+        "within period" Multi Index and otherwise one per column (or one for a Series).
+    """
+    # Subtracting a constant leaves the standard deviation as it is, so this is the
+    # Sharpe ratio of the returns in excess of the threshold.
+    return get_sharpe_ratio(returns - threshold)
+
+
+def get_rolling_safety_first_ratio(
+    returns: pd.Series | pd.DataFrame,
+    window_size: int,
+    threshold: float | pd.Series = 0.0,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Safety-First Ratio of returns, see `get_safety_first_ratio`,
+    each column over its own trading days (see `get_rolling_sharpe_ratio`).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
+        window_size (int): The size of the rolling window.
+        threshold (float | pd.Series, optional): The threshold return per observation, a
+        number or one per column. Defaults to 0.0.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Safety-First Ratio values with time as index.
+    """
+    return get_rolling_sharpe_ratio(returns - threshold, window_size)
+
+
+def get_upside_potential_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Upside Potential Ratio of returns, i.e. the first order upper partial
+    moment (the expected return above the minimum acceptable return) per unit of the
+    downside deviation (the square root of the second order lower partial moment).
+
+    The formula is as follows:
+
+        - Upside Potential Ratio = UPM_1 / SQRT(LPM_2)
+        - UPM_1 = (1/N) * sum( max(Excess Return, 0) )
+        - LPM_2 = (1/N) * sum( min(Excess Return, 0)^2 )
+
+    Where the minimum acceptable return is already subtracted from `excess_returns` (the
+    risk-free rate, as in `get_sortino_ratio`) and N is the *total* number of observations
+    in both moments, as Sortino, van der Meer & Plantinga (1999) weigh each outcome by its
+    probability: observations on the other side of the minimum acceptable return add 0 but
+    still count. The denominator is the downside deviation of `get_sortino_ratio`, so the
+    two ratios differ only in their numerator: the Sortino Ratio rewards the mean excess
+    return, which losses lower, and the Upside Potential Ratio only the gains.
+
+    For more information about the method, see the following paper:
+
+    - Sortino, F.A., van der Meer, R., & Plantinga, A. (1999). "The Dutch Triangle."
+    Journal of Portfolio Management, 26(1), 50-57.
+
+    A ratio needs at least two observations (with a single one either moment is 0), and
+    without a return below the minimum acceptable return there is no downside to divide by:
+    both are returned as NaN.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
+        minimum acceptable return (the risk-free rate) subtracted.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: Upside Potential Ratio values, one per period with a
+        "within period" (period, date) Multi Index and otherwise one per column (or one for a
+        Series).
+    """
+
+    def _upside_potential(returns: pd.DataFrame) -> pd.Series:
+        upside_potential = returns.clip(lower=0).mean()
+        downside_deviation = np.sqrt((returns.clip(upper=0) ** 2).mean())
+
+        return remove_undefined_ratios(upside_potential / downside_deviation).where(
+            returns.count() >= MIN_SORTINO_OBSERVATIONS
+        )
+
+    if isinstance(excess_returns, pd.Series):
+        return _upside_potential(excess_returns.to_frame()).iloc[0]
+
+    if isinstance(excess_returns, pd.DataFrame):
+        if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            return excess_returns.groupby(level=0).apply(_upside_potential)
+
+        return _upside_potential(excess_returns)
+
+    raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
+
+
+@by_own_trading_days
+def get_rolling_upside_potential_ratio(
+    excess_returns: pd.Series | pd.DataFrame, window_size: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the rolling Upside Potential Ratio of returns, see
+    `get_upside_potential_ratio`, with both partial moments averaged over every
+    observation in the window.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
+        minimum acceptable return (the risk-free rate) subtracted.
+        window_size (int): The size of the rolling window.
+
+    Returns:
+        pd.Series | pd.DataFrame: Rolling Upside Potential Ratio values with time as index,
+        NaN for a window without a return below the minimum acceptable return.
+    """
+    # A window of a single observation has one of the two moments at 0.
+    if window_size < MIN_SORTINO_OBSERVATIONS:
+        return excess_returns * np.nan
+
+    upside_potential = excess_returns.clip(lower=0).rolling(window=window_size).mean()
+    downside_deviation = np.sqrt(
+        (excess_returns.clip(upper=0) ** 2).rolling(window=window_size).mean()
+    )
+
+    return remove_undefined_ratios(upside_potential / downside_deviation)
 
 
 def get_ulcer_performance_index(
@@ -1728,15 +1894,17 @@ def get_ulcer_performance_index(
     Winning Strategies for Mutual Fund Investors." John Wiley & Sons. (Peter Martin's
     Ulcer Index, on which this ratio is based, was originally introduced in 1987.)
 
+    Without a drawdown the Ulcer Index is 0 and the ratio is undefined (NaN).
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series of returns with risk-free rate subtracted.
         ulcer_index (pd.Series | pd.DataFrame): The corresponding Ulcer Index values (see
-        `financetoolkit.risk.risk_model.get_ulcer_index`).
+        `financetoolkit.risk.risk_model.get_ui`).
 
     Returns:
         pd.Series: A Series of Ulcer Performance Index values with time as index and assets as columns.
     """
-    return (excess_returns / ulcer_index).dropna(how="all")
+    return remove_undefined_ratios(excess_returns / ulcer_index).dropna(how="all")
 
 
 def get_m2_ratio(
@@ -1770,6 +1938,8 @@ def get_m2_ratio(
     - Modigliani, F., & Modigliani, L. (1997). "Risk-Adjusted Performance." Journal of
     Portfolio Management, 23(2), 45-54.
 
+    Returns without variation have no Sharpe ratio, which leaves the M2 Ratio NaN.
+
     Args:
         asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
         risk_free_rate (pd.Series | pd.DataFrame): The risk-free rate, aligned to the same period as
@@ -1794,16 +1964,19 @@ def get_m2_ratio(
                 if isinstance(risk_free_rate, pd.DataFrame)
                 else risk_free_rate
             )
-            sharpe_ratio = (
-                asset_returns[column] - column_risk_free_rate
-            ) / asset_standard_deviation[column]
+            sharpe_ratio = remove_undefined_ratios(
+                (asset_returns[column] - column_risk_free_rate)
+                / asset_standard_deviation[column]
+            )
             m2_ratio.loc[:, column] = (
                 column_risk_free_rate + sharpe_ratio * benchmark_standard_deviation
             )
     elif isinstance(asset_returns, (pd.Series | float)) and isinstance(
         asset_standard_deviation, (pd.Series | float)
     ):
-        sharpe_ratio = (asset_returns - risk_free_rate) / asset_standard_deviation
+        sharpe_ratio = remove_undefined_ratios(
+            (asset_returns - risk_free_rate) / asset_standard_deviation
+        )
         m2_ratio = risk_free_rate + sharpe_ratio * benchmark_standard_deviation
     else:
         raise TypeError(
@@ -1825,6 +1998,8 @@ def get_rolling_m2_ratio(
     Calculate the rolling M2 Ratio (Modigliani-Modigliani Measure) of returns. See
     `get_m2_ratio` for the formula.
 
+    Windows without variation have no ratio (NaN).
+
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
         risk_free_rate (pd.Series | pd.DataFrame): The risk free rate, aligned to the same period as
@@ -1840,7 +2015,7 @@ def get_rolling_m2_ratio(
 
     rolling_mean = excess_returns.rolling(window=window_size).mean()
     rolling_std = asset_returns.rolling(window=window_size).std()
-    rolling_sharpe_ratio = rolling_mean / rolling_std
+    rolling_sharpe_ratio = remove_undefined_ratios(rolling_mean / rolling_std)
 
     rolling_risk_free_rate = risk_free_rate.rolling(window=window_size).mean()
     rolling_benchmark_std = benchmark_returns.rolling(window=window_size).std()
@@ -1932,6 +2107,8 @@ def get_information_ratio(
     - Grinold, R.C. (1989). "The Fundamental Law of Active Management." Journal of
     Portfolio Management, 15(3), 30-37.
 
+    Returns that track the benchmark exactly have a tracking error of 0 and no ratio (NaN).
+
     Args:
         asset_returns (pd.Series | pd.DataFrame): A Series or DataFrame of asset returns.
         benchmark_returns (pd.Series): The benchmark's returns over the same period.
@@ -1950,16 +2127,18 @@ def get_information_ratio(
                 )
             )
 
-            return information_ratio
+            return remove_undefined_ratios(information_ratio)
 
         # One value per asset over the whole series.
         difference = asset_returns.sub(benchmark_returns, axis=0)
 
-        return difference.mean() / difference.std()
+        return remove_undefined_ratios(difference.mean() / difference.std())
 
     if isinstance(asset_returns, (pd.Series | float)):
         difference = asset_returns - benchmark_returns
-        information_ratio = difference.mean() / difference.std()
+        information_ratio = remove_undefined_ratios(
+            difference.mean() / difference.std()
+        )
 
     return information_ratio
 
@@ -1972,6 +2151,8 @@ def get_rolling_information_ratio(
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the rolling Information Ratio of returns.
+
+    Windows without tracking error have no ratio (NaN).
 
     Args:
         asset_returns (pd.Series | pd.DataFrame): Asset returns.
@@ -1986,7 +2167,7 @@ def get_rolling_information_ratio(
     rolling_mean = difference.rolling(window=window_size).mean()
     rolling_std = difference.rolling(window=window_size).std()
 
-    return rolling_mean / rolling_std
+    return remove_undefined_ratios(rolling_mean / rolling_std)
 
 
 def get_calmar_ratio(
@@ -2007,6 +2188,8 @@ def get_calmar_ratio(
 
     - Young, T.W. (1991). "Calmar Ratio: A Smoother Tool." Futures, 20(1), 40.
 
+    Without a drawdown the ratio is undefined (NaN).
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
         maximum_drawdown (pd.Series | pd.DataFrame): The corresponding Maximum Drawdown values.
@@ -2015,7 +2198,7 @@ def get_calmar_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Calmar ratios with time as index
         and assets as columns.
     """
-    return (returns / maximum_drawdown.abs()).dropna(how="all")
+    return remove_undefined_ratios(returns / maximum_drawdown.abs()).dropna(how="all")
 
 
 @by_own_trading_days
@@ -2164,6 +2347,8 @@ def get_burke_ratio(
     """
     Calculate the Burke Ratio of returns.
 
+    Without a drawdown the ratio is undefined (NaN).
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
         risk-free rate subtracted.
@@ -2174,7 +2359,40 @@ def get_burke_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Burke ratios with time as index
         and assets as columns.
     """
-    return (excess_returns / burke_drawdown_measure).dropna(how="all")
+    return remove_undefined_ratios(excess_returns / burke_drawdown_measure).dropna(
+        how="all"
+    )
+
+
+def get_pain_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+    pain_index: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Pain Ratio of returns, i.e. the excess return per unit of Pain Index.
+
+    The formula is as follows:
+
+        - Pain Ratio = (Return - Risk-Free Rate) / Pain Index
+
+    Without a drawdown the Pain Index is 0 and the ratio is undefined (NaN).
+
+    For more information about the method, see the following source:
+
+    - Bacon, C.R. (2013). "Practical Risk-Adjusted Performance Measurement." John Wiley &
+    Sons, chapter 5.
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with the
+        risk-free rate subtracted.
+        pain_index (pd.Series | pd.DataFrame): The corresponding Pain Index values (see
+        `financetoolkit.risk.risk_model.get_pain_index`).
+
+    Returns:
+        pd.Series | pd.DataFrame: A Series or DataFrame of Pain Ratios with time as index
+        and assets as columns.
+    """
+    return (excess_returns / pain_index.where(pain_index > 0)).dropna(how="all")
 
 
 def _geometric_mean_return(returns: pd.Series | pd.DataFrame) -> pd.Series | float:
@@ -2368,6 +2586,8 @@ def get_kappa_ratio(
     - Kaplan, P.D., & Knowles, J.A. (2004). "Kappa: A Generalized Downside Risk-Adjusted
     Performance Measure." Journal of Performance Measurement, 8(3), 42-54.
 
+    Without a return below 0 the lower partial moment is 0 and the ratio is undefined (NaN).
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
         risk-free rate subtracted.
@@ -2380,19 +2600,25 @@ def get_kappa_ratio(
     """
     if isinstance(excess_returns, pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            return excess_returns.groupby(level=0).apply(
-                lambda x: x.mean()
-                / (x.clip(upper=0).abs() ** order).mean() ** (1 / order)
+            return remove_undefined_ratios(
+                excess_returns.groupby(level=0).apply(
+                    lambda x: x.mean()
+                    / (x.clip(upper=0).abs() ** order).mean() ** (1 / order)
+                )
             )
 
         lower_partial_moment = (excess_returns.clip(upper=0).abs() ** order).mean()
 
-        return excess_returns.mean() / lower_partial_moment ** (1 / order)
+        return remove_undefined_ratios(
+            excess_returns.mean() / lower_partial_moment ** (1 / order)
+        )
 
     if isinstance(excess_returns, pd.Series):
         lower_partial_moment = (excess_returns.clip(upper=0).abs() ** order).mean()
 
-        return excess_returns.mean() / lower_partial_moment ** (1 / order)
+        return remove_undefined_ratios(
+            excess_returns.mean() / lower_partial_moment ** (1 / order)
+        )
 
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
 
@@ -2525,6 +2751,8 @@ def get_gain_to_pain_ratio(
     Wiley & Sons. (Popularized this simple ratio as a robustness-focused alternative to
     the Sharpe ratio for evaluating trading strategies.)
 
+    Without a loss the ratio is undefined (NaN).
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
 
@@ -2553,9 +2781,9 @@ def get_gain_to_pain_ratio(
     if isinstance(returns, pd.Series):
         losses = returns[returns < 0].abs().sum()
 
-        # A period without losses (or without returns) divides by zero, which is inf or NaN.
+        # A period without losses (or without returns) divides by zero: no ratio.
         with np.errstate(divide="ignore", invalid="ignore"):
-            return returns.sum() / losses
+            return remove_undefined_ratios(returns.sum() / losses)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -3148,6 +3376,8 @@ def get_appraisal_ratio(
     - Treynor, J.L., & Black, F. (1973). "How to Use Security Analysis to Improve
     Portfolio Selection." Journal of Business, 46(1), 66-86.
 
+    Without residual risk the ratio is undefined (NaN).
+
     Args:
         jensens_alpha (pd.Series | pd.DataFrame): Jensen's Alpha, see `get_jensens_alpha`.
         capm_residuals (pd.Series | pd.DataFrame): The pointwise CAPM regression residuals
@@ -3187,7 +3417,7 @@ def get_appraisal_ratio(
     else:
         residual_standard_deviation = capm_residuals.std()
 
-    return jensens_alpha / residual_standard_deviation
+    return remove_undefined_ratios(jensens_alpha / residual_standard_deviation)
 
 
 @by_own_trading_days(compound=True)
@@ -3265,6 +3495,8 @@ def get_rolling_appraisal_ratio(
 
         - Appraisal Ratio = Jensen's Alpha / Residual Standard Deviation
 
+    Windows without residual risk have no ratio (NaN).
+
     Args:
         jensens_alpha (pd.DataFrame): The rolling Jensen's Alpha, see `get_jensens_alpha`.
         excess_returns (pd.DataFrame): The excess returns of the assets.
@@ -3275,8 +3507,11 @@ def get_rolling_appraisal_ratio(
     Returns:
         pd.DataFrame: Appraisal Ratio values.
     """
-    return jensens_alpha / get_rolling_residual_standard_deviation(
-        excess_returns, benchmark_excess_returns, window_size
+    return remove_undefined_ratios(
+        jensens_alpha
+        / get_rolling_residual_standard_deviation(
+            excess_returns, benchmark_excess_returns, window_size
+        )
     )
 
 
@@ -3306,10 +3541,10 @@ def get_fama_decomposition(
 
     The formulas are as follows:
 
-        - Selectivity = (Asset Return − Risk-Free Rate) − (Sigma_Portfolio / Sigma_Market)
-            * (Benchmark Return − Risk-Free Rate)
-        - Diversification = [Risk-Free Rate + (Sigma_Portfolio / Sigma_Market)
-            * (Benchmark Return − Risk-Free Rate)] − [Risk-Free Rate + Beta * (Benchmark Return − Risk-Free Rate)]
+        - Selectivity = (Asset Return − Risk-Free Rate) − (Sigma_Portfolio / Sigma_Market) *
+          (Benchmark Return − Risk-Free Rate)
+        - Diversification = [Risk-Free Rate + (Sigma_Portfolio / Sigma_Market) * (Benchmark Return − Risk-Free Rate)] −
+          [Risk-Free Rate + Beta * (Benchmark Return − Risk-Free Rate)]
 
     Selectivity is the return earned above what would be required for a *fully
     diversified* portfolio carrying the same total risk, i.e. genuine security selection
@@ -3513,6 +3748,8 @@ def get_starr_ratio(
     - Martin, R.D., Rachev, S.T., & Siboulet, F. (2003). "Phi-Alpha Optimal Portfolios and
     Extreme Risk Management." Wilmott Magazine of Finance, 6, 70-83.
 
+    A CVaR of 0 leaves the ratio undefined (NaN).
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns with
         the risk-free rate subtracted, already aggregated to one value per period (see
@@ -3539,7 +3776,9 @@ def get_starr_ratio(
             observations_per_period
         )
 
-    starr_ratio = excess_returns / abs(conditional_value_at_risk)
+    starr_ratio = remove_undefined_ratios(
+        excess_returns / abs(conditional_value_at_risk)
+    )
 
     if isinstance(starr_ratio, pd.Series | pd.DataFrame):
         return starr_ratio.dropna(how="all")
@@ -3582,6 +3821,8 @@ def get_rachev_ratio(
     - Biglova, A., Ortobelli, S., Rachev, S.T., & Stoyanov, S. (2004). "Different Approaches
     to Risk Estimation in Portfolio Theory." Journal of Portfolio Management, 31(1), 103-112.
 
+    A left tail expected shortfall of 0 leaves the ratio undefined (NaN).
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
         alpha (float, optional): The confidence level used for both tails (e.g. 0.05 for
@@ -3593,7 +3834,9 @@ def get_rachev_ratio(
     right_tail_expected_shortfall = -cvar_model.get_cvar_historic(-returns, alpha)
     left_tail_expected_shortfall = -cvar_model.get_cvar_historic(returns, alpha)
 
-    rachev_ratio = right_tail_expected_shortfall / left_tail_expected_shortfall
+    rachev_ratio = remove_undefined_ratios(
+        right_tail_expected_shortfall / left_tail_expected_shortfall
+    )
 
     if isinstance(rachev_ratio, pd.Series | pd.DataFrame):
         return rachev_ratio.dropna(how="all")
@@ -4198,6 +4441,8 @@ def get_lo_sharpe_ratio(
     - Newey, W.K., & West, K.D. (1994). "Automatic Lag Selection in Covariance Matrix
     Estimation." Review of Economic Studies, 61(4), 631-653.
 
+    Returns without variation have no ratio (NaN).
+
     Args:
         excess_returns (pd.Series | pd.DataFrame): The excess returns. With a "within
         period" (period, date) Multi Index, one ratio is calculated per period.
@@ -4248,7 +4493,9 @@ def get_lo_sharpe_ratio(
         for lag in range(1, lags + 1)
     ]
 
-    return (values.mean() / values.std(ddof=1)) * get_lo_annualization_factor(rho, q)
+    return remove_undefined_ratios(
+        (values.mean() / values.std(ddof=1)) * get_lo_annualization_factor(rho, q)
+    )
 
 
 @by_own_trading_days

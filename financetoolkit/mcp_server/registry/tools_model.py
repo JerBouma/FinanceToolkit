@@ -118,6 +118,16 @@ SEARCH_CONCEPTS: dict[str, tuple[str, ...]] = {
         "get_zmijewski_score",
         "get_campbell_hilscher_szilagyi_score",
     ),
+    "constraints": (
+        "get_kaplan_zingales_index",
+        "get_whited_wu_index",
+        "get_size_age_index",
+    ),
+    "constrained": (
+        "get_kaplan_zingales_index",
+        "get_whited_wu_index",
+        "get_size_age_index",
+    ),
     "default": (
         "get_altman_z_score",
         "get_default_rates",

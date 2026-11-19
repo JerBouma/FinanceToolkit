@@ -760,8 +760,8 @@ def _psi(
     before t1 is the higher one, since the early-exercise boundary of a call falls towards
     the strike as expiration approaches.
 
-    - ψ = e^(λT) * S^γ * [M(—e1, —f1, ρ) — (I2 / S)^κ * M(—e2, —f2, ρ)
-      — (I1 / S)^κ * M(—e3, —f3, —ρ) + (I1 / I2)^κ * M(—e4, —f4, —ρ)]
+    - ψ = e^(λT) * S^γ * [M(—e1, —f1, ρ) — (I2 / S)^κ * M(—e2, —f2, ρ) —
+      (I1 / S)^κ * M(—e3, —f3, —ρ) + (I1 / I2)^κ * M(—e4, —f4, —ρ)]
 
     With M the cumulative bivariate normal distribution, ρ = sqrt(t1 / T), μ = b + (γ —
     0.5)σ², λ and κ as in phi and:
@@ -1097,10 +1097,10 @@ def get_bjerksund_stensland(
 
     If S ≥ I2 the option is exercised immediately and is worth S — K. Otherwise:
 
-    - C = α2 * S^β — α2 * φ(S, t1, β, I2, I2) + φ(S, t1, 1, I2, I2) — φ(S, t1, 1, I1, I2)
-      — K * φ(S, t1, 0, I2, I2) + K * φ(S, t1, 0, I1, I2) + α1 * φ(S, t1, β, I1, I2)
-      — α1 * ψ(S, T, β, I1, I2, I1, t1) + ψ(S, T, 1, I1, I2, I1, t1) — ψ(S, T, 1, K, I2, I1, t1)
-      — K * ψ(S, T, 0, I1, I2, I1, t1) + K * ψ(S, T, 0, K, I2, I1, t1)
+    - C = α2 * S^β — α2 * φ(S, t1, β, I2, I2) + φ(S, t1, 1, I2, I2) — φ(S, t1, 1, I1, I2) —
+      K * φ(S, t1, 0, I2, I2) + K * φ(S, t1, 0, I1, I2) + α1 * φ(S, t1, β, I1, I2) —
+      α1 * ψ(S, T, β, I1, I2, I1, t1) + ψ(S, T, 1, I1, I2, I1, t1) — ψ(S, T, 1, K, I2, I1, t1) —
+      K * ψ(S, T, 0, I1, I2, I1, t1) + K * ψ(S, T, 0, K, I2, I1, t1)
 
     Where φ is a knock-out claim over one period (a univariate normal expression) and ψ
     its two-period counterpart (a bivariate normal expression), see ``_phi`` and ``_psi``.

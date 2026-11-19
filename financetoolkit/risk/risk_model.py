@@ -355,6 +355,67 @@ def get_ui(
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
 
+@by_own_trading_days
+def get_pain_index(
+    returns: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Pain Index of returns, i.e. the mean depth of the drawdowns from the
+    running peak over every observation.
+
+    The formula is as follows:
+
+        - Pain Index = (1/N) * sum( |Drawdown_t| )
+        - Drawdown_t = Wealth_t / Highest Wealth up to t - 1
+
+    Where N is the number of observations, those at a new peak counting as a drawdown of 0,
+    and the wealth starts from 1 before the first return (see `get_wealth_and_peak`). Like
+    the Ulcer Index (`get_ui` with rolling=None) it grows with both the depth and the
+    duration of the drawdowns, but it averages their absolute size where the Ulcer Index
+    takes the root mean square, so deep drawdowns weigh less in it. A "within period"
+    (period, date) Multi Index restarts the wealth and its peak in every period. It is
+    the denominator of the Pain Ratio
+    (`financetoolkit.performance.performance_model.get_pain_ratio`).
+
+    For more information about the method, see the following sources:
+
+    - Bacon, C.R. (2013). "Practical Risk-Adjusted Performance Measurement." John Wiley &
+    Sons, chapter 5 (the Pain Index of Zephyr Associates).
+    - PerformanceAnalytics (R), `PainIndex`.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: Pain Index values as positive decimals, one per
+        period with a "within period" Multi Index and otherwise one per column (or one for a
+        Series). The rows before a ticker's first and after its last return are no
+        observations of it.
+    """
+    if (
+        isinstance(returns, pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
+
+        def per_period(data):
+            return data.groupby(level=0, sort=False)
+
+        wealth = per_period(1 + returns.fillna(0)).cumprod()
+        peak = per_period(wealth).cummax().clip(lower=1)
+        drawdowns = (wealth / peak - 1).where(
+            get_observed_span(returns, by_period=True)
+        )
+        pain_index = per_period(drawdowns.abs()).mean()
+        pain_index.index.name = None
+
+        return pain_index
+
+    wealth, peak = get_wealth_and_peak(returns)
+    drawdowns = (wealth / peak - 1).where(get_observed_span(returns))
+
+    return drawdowns.abs().mean()
+
+
 def get_skewness(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
     """
     Computes the skewness of dataset.

@@ -14,6 +14,7 @@ from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
     calculate_standardization,
+    drop_non_finite,
     finalize_dataset,
 )
 
@@ -24,7 +25,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class ProfitabilityModels:
     """
-    Return decompositions and growth: the DuPont analyses, the return decomposition and the sustainable and internal growth rates.
+    Return decompositions and growth: the DuPont analyses, the Nissim-Penman decomposition, the return decomposition and the sustainable and internal growth rates.
     """
 
     @handle_errors
@@ -67,7 +68,11 @@ class ProfitabilityModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The number of periods to sum flows (income statement items)
+                over, with the Total Assets and Total Shareholder Equity averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default average
+                of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM). Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -112,18 +117,21 @@ class ProfitabilityModels:
         | Equity Multiplier | 1.4317 | 1.4269 | 1.4228 | 1.4013 | 1.4122 |
         | Return on Equity  | 0.3207 | 0.2362 | 0.2736 | 0.3291 | 0.357  |
         """
-        # Without trailing, the balances are averaged over the period's opening and closing balance.
+        # The balances are averaged over the period ends that open and close the (trailing) periods,
+        # as in the Return on Equity, Asset Turnover and Return on Assets of the Ratios module, so
+        # that the components multiply to the Return on Equity that module reports.
+        period_ends = (trailing or 1) + 1
         dupont_analysis = dupont_model.get_dupont_analysis(
             helpers.trailing_sum(
                 self._income_statement.loc[:, "Net Income", :], trailing
             ),
             helpers.trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             helpers.trailing_mean(
-                self._balance_sheet_statement.loc[:, "Total Assets", :], trailing or 2
+                self._balance_sheet_statement.loc[:, "Total Assets", :], period_ends
             ),
             helpers.trailing_mean(
                 self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
-                trailing or 2,
+                period_ends,
             ),
         )
 
@@ -190,7 +198,11 @@ class ProfitabilityModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The number of periods to sum flows (income statement items)
+                over, with the Total Assets and Total Shareholder Equity averaged over the trailing + 1
+                period ends that open and close those periods, so trailing=1 equals the default average
+                of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM). Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -245,7 +257,10 @@ class ProfitabilityModels:
         | Equity Multiplier       | 2.4399 | 2.2643 | 2.0839 | 1.9468 | 1.8484 |
         | Return on Equity        | 0.4708 | 0.4715 | 0.3882 | 0.3713 | 0.3328 |
         """
-        # Without trailing, the balances are averaged over the period's opening and closing balance.
+        # The balances are averaged over the period ends that open and close the (trailing) periods,
+        # as in the Return on Equity, Asset Turnover and Return on Assets of the Ratios module, so
+        # that the components multiply to the Return on Equity that module reports.
+        period_ends = (trailing or 1) + 1
         income = self._income_statement
         balance = self._balance_sheet_statement
         extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
@@ -258,10 +273,10 @@ class ProfitabilityModels:
             net_income=helpers.trailing_sum(income.loc[:, "Net Income", :], trailing),
             total_revenue=helpers.trailing_sum(income.loc[:, "Revenue", :], trailing),
             average_total_assets=helpers.trailing_mean(
-                balance.loc[:, "Total Assets", :], trailing or 2
+                balance.loc[:, "Total Assets", :], period_ends
             ),
             average_total_equity=helpers.trailing_mean(
-                balance.loc[:, "Total Shareholder Equity", :], trailing or 2
+                balance.loc[:, "Total Shareholder Equity", :], period_ends
             ),
         )
 
@@ -291,6 +306,219 @@ class ProfitabilityModels:
             extended_dupont_analysis = extended_dupont_analysis.droplevel(level=0)
 
         return extended_dupont_analysis.loc[:, self._start_date : self._end_date]
+
+    @handle_errors
+    def get_nissim_penman_decomposition(
+        self,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        trailing: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Perform the Nissim and Penman (2001) decomposition of the return on common equity (ROCE)
+        into the return on the operations and the effect of how they are financed.
+
+        Where the DuPont analyses split the return on equity into margins, turnover and an equity
+        multiplier that mixes operating and financing liabilities, Nissim and Penman separate the
+        operating activities from the financing activities. The return on common equity becomes
+        the return on net operating assets (RNOA) plus a leverage effect: the financial leverage
+        (FLEV) times the spread between the RNOA and the net borrowing cost (NBC). Borrowing
+        raises the return on equity only while the operations earn more than the debt costs, and
+        a company with net financial assets (negative FLEV) has a return on equity below its
+        RNOA when its financial assets earn less than its operations.
+
+        The formula is as follows:
+
+            - Net Financial Expense = (Interest Expense - Interest Income) x (1 - Effective Tax Rate)
+            - Operating Income = Net Income + Net Financial Expense
+            - Net Financial Obligations = Total Debt + Preferred Stock - Cash and Short Term Investments -
+              Long Term Investments
+            - Common Equity = Total Shareholder Equity - Preferred Stock
+            - Net Operating Assets = Net Financial Obligations + Common Equity
+            - Return on Net Operating Assets (RNOA) = Operating Income / Average Net Operating Assets
+            - Net Borrowing Cost (NBC) = Net Financial Expense / Average Net Financial Obligations
+            - Spread = RNOA - NBC
+            - Financial Leverage (FLEV) = Average Net Financial Obligations / Average Common Equity
+            - Leverage Effect = FLEV x Spread
+            - Return on Common Equity (ROCE) = RNOA + Leverage Effect
+
+        The balance sheet is split into operating and financial items as follows:
+
+            - Financial assets: the cash and cash equivalents, the short term investments and the
+            long term investments. Nissim and Penman treat the marketable securities as financial;
+            the long term investments of the statements are mostly those securities (Apple's long
+            term marketable securities), but also hold equity method stakes (Coca-Cola's bottlers),
+            which Nissim and Penman count as operating and which are financial here.
+            - Financial obligations: the Total Debt, which holds the short and long term debt and
+            the lease obligations (capital leases are debt in Nissim and Penman), and the preferred
+            stock, which Nissim and Penman treat as a financial claim.
+            - Common equity: the Total Shareholder Equity minus the preferred stock.
+            - Operating: everything else, so the net operating assets are the net financial
+            obligations plus the common equity (the operating assets minus the operating
+            liabilities and the minority interest).
+
+        Also known as: Nissim-Penman decomposition, ROCE decomposition, advanced DuPont analysis.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            trailing (int | None, optional): The number of periods to sum the income statement items
+                over, with the balance sheet items averaged over the trailing + 1 period ends that
+                open and close those periods, as in the Ratios module. E.g. 4 with quarterly data
+                gives the trailing twelve months (TTM). Defaults to None, which uses single-period
+                flows over the average of the opening and closing balance.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: DataFrame containing the Return on Net Operating Assets, the Net Borrowing
+                Cost, the Spread, the Financial Leverage, the Leverage Effect and the Return on Common
+                Equity per ticker and period.
+
+        Notes:
+            - Nissim, D. and S. H. Penman, "Ratio Analysis and Equity Valuation: From Research to
+            Practice," Review of Accounting Studies 6, 2001, pp. 109-154.
+            - The Return on Common Equity equals Net Income / Average Common Equity exactly, as the
+            net operating assets are the net financial obligations plus the common equity and the
+            operating income the net income plus the net financial expense. It differs from the
+            Return on Equity of the Ratios module only by the preferred stock, which that ratio
+            keeps in the equity.
+            - Nissim and Penman add the minority interest to the net operating assets and its share
+            of the income to the operating income, and multiply the decomposition by a minority
+            sharing ratio. The statements give no minority share of the income, so the minority
+            interest is deducted from the net operating assets instead: the operating income and
+            the net operating assets are both the share of the parent's shareholders, and the
+            decomposition adds up without a sharing ratio.
+            - Nissim and Penman use the comprehensive income to common shareholders; the net
+            income here leaves out the other comprehensive income (such as currency translation
+            differences). The net financial expense is taxed at the effective tax rate (bounded to
+            [0, 1], 0 for a pre-tax loss) instead of the marginal statutory rate, and holds no
+            preferred dividends, which the statements do not report.
+            - Missing data is treated in two ways. A short or long term investment, preferred
+            stock or interest income that is not reported is absent and counts as zero (a company
+            with debt but no interest income is normal). A period with neither an interest
+            expense nor an interest income (both missing or zero, as in Apple's statements from
+            fiscal 2024) has an unknown net financial expense rather than a zero one, so the
+            Return on Net Operating Assets, the Net Borrowing Cost, the Spread, the Leverage
+            Effect and the Return on Common Equity are NaN for that period (and every trailing
+            window that holds it); the Financial Leverage remains.
+            - The Return on Net Operating Assets, the Net Borrowing Cost and the Financial Leverage
+            are also available as `Toolkit.ratios.get_return_on_net_operating_assets`,
+            `get_net_borrowing_cost` and `get_financial_leverage`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_nissim_penman_decomposition()
+        ```
+
+        Which returns:
+
+        |                                |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-------------------------------|-------:|-------:|-------:|-------:|-------:|
+        | Return on Net Operating Assets | 0.311  | 0.2795 | 0.3197 | 0.3076 | 0.337  |
+        | Net Borrowing Cost             | 0.0765 | 0.0299 | 0.0508 | 0.0497 | 0.057  |
+        | Spread                         | 0.2345 | 0.2496 | 0.2689 | 0.2579 | 0.28   |
+        | Financial Leverage             | 0.644  | 0.5033 | 0.4032 | 0.4304 | 0.4383 |
+        | Leverage Effect                | 0.151  | 0.1256 | 0.1085 | 0.111  | 0.1227 |
+        | Return on Common Equity        | 0.462  | 0.4051 | 0.4282 | 0.4186 | 0.4597 |
+        """
+        income = self._income_statement
+        balance = self._balance_sheet_statement
+        # The short and long term investments, the preferred stock and the interest income count
+        # as zero where they are not reported (they are absent); a period without any data stays
+        # NaN through the Total Debt, the equity and the interest expense.
+        preferred_stock = self._rows(balance, "Preferred Stock").fillna(0)
+        net_financial_obligations = profitability_model.get_net_financial_obligations(
+            self._rows(balance, "Total Debt"),
+            preferred_stock,
+            self._rows(balance, "Cash and Cash Equivalents").add(
+                self._rows(balance, "Short Term Investments"), fill_value=0
+            ),
+            self._rows(balance, "Long Term Investments").fillna(0),
+        )
+        common_equity = (
+            self._rows(balance, "Total Shareholder Equity") - preferred_stock
+        )
+
+        interest_income = self._rows(income, "Interest Income").fillna(0)
+        interest_expense = self._rows(income, "Interest Expense")
+        # Interest income alone may be absent, but without either interest row the net financial
+        # expense is unknown, not zero: those periods are NaN before the trailing sums.
+        interest_expense = interest_expense.where(
+            (interest_expense.fillna(0) != 0) | (interest_income != 0)
+        )
+
+        net_financial_expense = profitability_model.get_net_financial_expense(
+            helpers.trailing_sum(interest_expense, trailing),
+            helpers.trailing_sum(interest_income, trailing),
+            helpers.trailing_sum(self._rows(income, "Income Tax Expense"), trailing),
+            helpers.trailing_sum(self._rows(income, "Income Before Tax"), trailing),
+        )
+
+        # The balances are averaged over the period ends that open and close the (trailing)
+        # periods, as the Ratios module does, so the components equal those ratios.
+        balance_periods = trailing + 1 if trailing else 2
+        nissim_penman_decomposition = drop_non_finite(
+            dupont_model.get_nissim_penman_decomposition(
+                net_income=helpers.trailing_sum(
+                    self._rows(income, "Net Income"), trailing
+                ),
+                net_financial_expense=net_financial_expense,
+                average_net_financial_obligations=helpers.trailing_mean(
+                    net_financial_obligations, balance_periods
+                ),
+                average_common_equity=helpers.trailing_mean(
+                    common_equity, balance_periods
+                ),
+            )
+        )
+
+        if growth:
+            nissim_penman_decomposition = calculate_growth(
+                dataset=nissim_penman_decomposition,
+                lag=lag,
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+        else:
+            nissim_penman_decomposition = apply_rounding(
+                nissim_penman_decomposition,
+                rounding if rounding is not None else self._rounding,
+            )
+
+        if standardize:
+            nissim_penman_decomposition = calculate_standardization(
+                dataset=nissim_penman_decomposition.loc[
+                    :, self._start_date : self._end_date
+                ],
+                rounding=rounding if rounding is not None else self._rounding,
+                axis="columns",
+            )
+
+        if len(self._tickers) == 1:
+            nissim_penman_decomposition = nissim_penman_decomposition.droplevel(level=0)
+
+        return nissim_penman_decomposition.loc[:, self._start_date : self._end_date]
 
     @handle_errors
     def get_return_decomposition(

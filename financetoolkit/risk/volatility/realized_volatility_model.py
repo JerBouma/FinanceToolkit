@@ -165,8 +165,8 @@ def get_garman_klass_volatility(
 
     The formula is as follows:
 
-    - Garman-Klass Variance = (1 / N) * SUM[0.5 * ln(High_t / Low_t)^2
-    - (2 * ln(2) - 1) * ln(Close_t / Open_t)^2]
+    - Garman-Klass Variance = (1 / N) * SUM[0.5 * ln(High_t / Low_t)^2 -
+      (2 * ln(2) - 1) * ln(Close_t / Open_t)^2]
 
     Where `N` is the number of trading days within the period. The daily Variance is
     scaled to the given period in the same way as `risk_model.get_volatility` and the
@@ -246,8 +246,8 @@ def get_rogers_satchell_volatility(
 
     The formula is as follows:
 
-    - Rogers-Satchell Variance = (1 / N) * SUM[ln(High_t / Close_t) * ln(High_t / Open_t)
-    - + ln(Low_t / Close_t) * ln(Low_t / Open_t)]
+    - Rogers-Satchell Variance = (1 / N) * SUM[ln(High_t / Close_t) * ln(High_t / Open_t) +
+      ln(Low_t / Close_t) * ln(Low_t / Open_t)]
 
     Where `N` is the number of trading days within the period. The daily Variance is
     scaled to the given period in the same way as `risk_model.get_volatility` and the
@@ -330,8 +330,8 @@ def get_yang_zhang_volatility(
 
     The formula is as follows:
 
-    - Yang-Zhang Variance = Overnight Variance + k * Open-to-Close Variance
-    - + (1 - k) * Rogers-Satchell Variance
+    - Yang-Zhang Variance = Overnight Variance + k * Open-to-Close Variance +
+      (1 - k) * Rogers-Satchell Variance
 
     Where:
 

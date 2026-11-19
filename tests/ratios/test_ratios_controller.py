@@ -1962,3 +1962,47 @@ def test_return_on_equity_excludes_minority_interest(ratios_module):
         _ratios_with(ratios_module, balance=balance).get_return_on_equity(),
         _ratios_with(ratios_module).get_return_on_equity(),
     )
+
+
+@pytest.mark.parametrize(
+    ("quarterly", "trailing"), [(False, None), (False, 2), (True, None), (True, 4)]
+)
+def test_cash_return_on_invested_capital_uses_the_invested_capital_of_the_roic(
+    quarterly, trailing
+):
+    from financetoolkit.ratios.ratios_controller import Ratios  # noqa: PLC0415
+
+    balance, income, cash = [
+        pd.read_pickle(f"tests/datasets/{name}_dataset.pickle")
+        for name in ("balance", "income", "cash")
+    ]
+    if quarterly:
+        balance, income, cash = [
+            pd.concat([statement, statement * 1.07], axis=1).set_axis(
+                pd.period_range("2019Q1", periods=8, freq="Q"), axis=1
+            )
+            for statement in (balance, income, cash)
+        ]
+
+    ratios = Ratios(
+        ["AAPL", "MSFT"], {}, balance, income, cash, quarterly=quarterly, rounding=None
+    )
+    cash_return = ratios.get_cash_return_on_invested_capital(trailing=trailing)
+
+    # The return on invested capital averages the balances over the trailing + 1 period
+    # ends, or the opening and closing balance without trailing.
+    invested_capital = (
+        (balance.xs("Total Equity", level=1) + balance.xs("Total Debt", level=1))
+        .T.rolling((trailing or 1) + 1)
+        .mean()
+        .T
+    )
+    free_cash_flow = cash.xs("Free Cash Flow", level=1)
+    if trailing:
+        free_cash_flow = free_cash_flow.T.rolling(trailing).sum().T
+
+    expected = free_cash_flow / invested_capital
+    assert cash_return.notna().sum().sum() >= 4
+    pd.testing.assert_frame_equal(
+        cash_return, expected, check_names=False, check_freq=False, rtol=1e-12
+    )

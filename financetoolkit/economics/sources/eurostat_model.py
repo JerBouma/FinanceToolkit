@@ -451,6 +451,78 @@ def get_gross_domestic_product_growth(
     return growth / 100
 
 
+# The job vacancy statistics by NACE Rev. 2.1 activity, which continue the NACE Rev. 2
+# dataset jvs_q_nace2 (to 2025) with its history. B-T, industry,
+# construction and services except households as employers, is the scope Eurostat
+# headlines (B-S under NACE Rev. 2).
+JOB_VACANCY_DATASET = "jvs_q_r21"
+
+# The quarterly results of the harmonised EU business survey in industry.
+INDUSTRY_SURVEY_DATASET = "ei_bsin_q_r2"
+
+
+def get_job_vacancy_rate(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the quarterly job vacancy rate, seasonally adjusted, of industry,
+    construction and services (NACE Rev. 2.1 B-T) for the euro area, the European Union
+    and the countries Eurostat covers: the job vacancies as a share of the occupied posts
+    plus the job vacancies (Regulation (EC) No 453/2008).
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The job vacancy rate as a decimal (0.022 for 2.2%), indexed by
+        quarter with a column per country.
+    """
+    job_vacancy_rate = collect_eurostat_data(
+        JOB_VACANCY_DATASET,
+        {
+            "freq": "Q",
+            "s_adj": "SA",
+            "nace_r2_1": "B-T",
+            "sizeclas": "TOTAL",
+            "indic_em": "JVR",
+        },
+        "job vacancy rate",
+        start_date,
+        end_date,
+    )
+
+    # Eurostat publishes the rate in percent.
+    return job_vacancy_rate / 100
+
+
+def get_capacity_utilization(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Retrieves the capacity utilisation of manufacturing, seasonally adjusted, from the
+    quarterly business survey of the Joint Harmonised EU Programme of Business and
+    Consumer Surveys (indicator BS-ICU-PC) for the euro area, the European Union and the
+    countries Eurostat covers. Manufacturers answer at what percentage of full capacity
+    their company operates in the first month of each quarter, and the answers are
+    averaged weighted by company size.
+
+    Args:
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+
+    Returns:
+        pd.DataFrame: The capacity utilisation as a decimal (0.786 for 78.6%), indexed by
+        quarter with a column per country.
+    """
+    capacity_utilization = collect_eurostat_data(
+        INDUSTRY_SURVEY_DATASET,
+        {"freq": "Q", "s_adj": "SA", "indic": "BS-ICU-PC"},
+        "capacity utilisation",
+        start_date,
+        end_date,
+    )
+
+    # Eurostat publishes the utilisation in percent of full capacity.
+    return capacity_utilization / 100
+
+
 # The life table measures, by the name the Finance Toolkit uses for them.
 LIFE_TABLE_MEASURES = {
     "death_rate": "DEATHRATE",

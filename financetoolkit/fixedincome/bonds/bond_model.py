@@ -99,10 +99,17 @@ def _get_dirty_bond_price(
     years_to_maturity: float,
     yield_to_maturity: float,
     frequency: int,
+    years_to_redemption: float | None = None,
+    redemption_price: float | None = None,
 ) -> float:
     """
     The full (dirty) price: every remaining cash flow discounted at the yield to maturity
     over its fractional number of periods, accrued interest included.
+
+    A redemption before maturity (a call) receives the coupons paid up to and including
+    the redemption date, then the redemption price plus the coupon accrued since the last
+    coupon date before it, all on the bond's own coupon schedule (which runs back from
+    maturity).
 
     Args:
         par_value (float): The face value of the bond.
@@ -110,17 +117,36 @@ def _get_dirty_bond_price(
         years_to_maturity (float): The number of years until the bond matures.
         yield_to_maturity (float): The yield to maturity of the bond (in decimal).
         frequency (int): The number of coupon payments per year.
+        years_to_redemption (float | None): The number of years until the bond is
+            redeemed. Defaults to None, at maturity.
+        redemption_price (float | None): The amount paid at redemption. Defaults to None,
+            the par value.
 
     Returns:
         float: The dirty price of the bond.
     """
     coupon_payment = (par_value * coupon_rate) / frequency
     periods = get_cash_flow_periods(years_to_maturity, frequency)
-    discount_factors = (1 + yield_to_maturity / frequency) ** -periods
 
-    # The principal is repaid with the last coupon, at the last payment time.
+    if years_to_redemption is None:
+        redemption_period = periods[-1]
+        accrued_at_redemption = 0.0
+    else:
+        redemption_period = years_to_redemption * frequency
+        # The coupons paid up to the redemption date, one on that date included (floating point noise aside).  # noqa: E501
+        periods = periods[periods <= redemption_period + 1e-9]
+        accrued_at_redemption = coupon_payment * get_accrued_fraction(
+            years_to_maturity - years_to_redemption, frequency
+        )
+
+    discount_factors = (1 + yield_to_maturity / frequency) ** -periods
+    redemption = par_value if redemption_price is None else redemption_price
+
+    # The principal (or call price) is repaid at the last payment time, with the last coupon at maturity or on a coupon date.  # noqa: E501
     return float(
-        coupon_payment * discount_factors.sum() + par_value * discount_factors[-1]
+        coupon_payment * discount_factors.sum()
+        + (redemption + accrued_at_redemption)
+        * (1 + yield_to_maturity / frequency) ** -redemption_period
     )
 
 
@@ -377,6 +403,256 @@ def get_yield_to_maturity(
         max_iterations,
         residual_tolerance=RESIDUAL_PRICE_TOLERANCE * max(abs(bond_price), 1),
     )
+
+
+def get_yield_to_call(
+    par_value: float,
+    coupon_rate: float,
+    years_to_maturity: float,
+    years_to_call: float,
+    call_price: float,
+    bond_price: float,
+    frequency: int,
+    guess: float = 0.05,
+    tolerance: float = 0.0001,
+    max_iterations: int = 100,
+) -> float:
+    """
+    Calculate the yield to call of a callable bond using the secant method: the yield to
+    maturity of the bond if the issuer redeems it at the call price on the call date
+    (Fabozzi, Bond Markets, Analysis, and Strategies, chapter 3).
+
+    The yield is the nominal annual rate, compounded `frequency` times per year (the
+    bond-equivalent yield for semi-annual coupons), at which the coupons up to the call
+    date and the call price on that date are worth the price, with the same conventions as
+    `get_yield_to_maturity`: the price is the clean (quoted) price, the accrued interest is
+    added to it, and every cash flow is discounted over its fractional number of periods.
+
+    The coupon schedule is the bond's own, running back from maturity. A call date on a
+    coupon date receives that coupon and the call price, which is what Excel's YIELD
+    returns with the call date as maturity and the call price as redemption. A call date
+    between coupon dates receives the call price plus the coupon accrued since the
+    previous coupon date, as an issuer redeeming between coupon dates pays it.
+
+    Also known as: YTC, yield to first call, yield to par call.
+
+    The formula is as follows, solved for y:
+
+        Price + C * a = SUM_(t_i <= t_c) [ C / (1 + y / m)^(t_i) ] +
+                        (Call Price + C * a_c) / (1 + y / m)^(t_c)
+
+    where C = Coupon Rate * Par Value / m is the coupon per period, m = frequency, a is
+    the elapsed fraction of the current coupon period (0 on a coupon date), t_i = i - a
+    is the time of the i-th coupon in periods, t_c = years_to_call * m is the time of the
+    call and a_c is the elapsed fraction of the coupon period the call date falls in (0
+    when it is a coupon date).
+
+    For more information, see: https://www.investopedia.com/terms/y/yieldtocall.asp
+
+    Args:
+        par_value (float): The face value of the bond.
+        coupon_rate (float): The annual coupon rate (in decimal).
+        years_to_maturity (float): The number of years until the bond matures.
+        years_to_call (float): The number of years until the call date, at most
+            years_to_maturity.
+        call_price (float): The price the issuer pays on the call date, in the same units as
+            par_value (e.g. 102 for a call at 102% of a par value of 100).
+        bond_price (float): The current clean (quoted) market price of the bond.
+        frequency (int): The number of coupon payments per year.
+        guess (float): Initial guess for the yield to call. Defaults to 0.05.
+        tolerance (float): The desired level of accuracy. Defaults to 0.0001.
+        max_iterations (int): Maximum number of iterations to perform. Defaults to 100.
+
+    Returns:
+        float: The yield to call of the bond (in decimal), or NaN when no yield prices the
+        bond at bond_price.
+
+    Raises:
+        ValueError: If the call date is not after today or after the maturity date.
+
+    The bond in the example yields 5.22% to maturity but 5.16% if it is called in five years.
+
+    As an example:
+
+    ```python
+    from financetoolkit.fixedincome.bonds import bond_model
+
+    # A 6% bond with 10 years to maturity, callable at 103 in 5 years, priced at 106.
+    bond_model.get_yield_to_call(
+        par_value=100,
+        coupon_rate=0.06,
+        years_to_maturity=10,
+        years_to_call=5,
+        call_price=103,
+        bond_price=106,
+        frequency=2,
+    )
+    ```
+
+    Which returns:
+
+    ```
+    0.051569435615871954
+    ```
+    """
+    if not 0 < years_to_call <= years_to_maturity:
+        raise ValueError(
+            f"The years to call must be positive and at most the years to maturity "
+            f"({years_to_maturity}), got {years_to_call}."
+        )
+
+    dirty_price = bond_price + get_accrued_interest(
+        par_value, coupon_rate, years_to_maturity, frequency
+    )
+
+    def bond_value(ytc):
+        return (
+            _get_dirty_bond_price(
+                par_value,
+                coupon_rate,
+                years_to_maturity,
+                ytc,
+                frequency,
+                years_to_redemption=years_to_call,
+                redemption_price=call_price,
+            )
+            - dirty_price
+        )
+
+    return solve_with_secant_method(
+        bond_value,
+        guess,
+        tolerance,
+        max_iterations,
+        residual_tolerance=RESIDUAL_PRICE_TOLERANCE * max(abs(bond_price), 1),
+    )
+
+
+def get_yield_to_worst(
+    par_value: float,
+    coupon_rate: float,
+    years_to_maturity: float,
+    call_schedule: list[tuple[float, float]] | dict[float, float],
+    bond_price: float,
+    frequency: int,
+    guess: float = 0.05,
+    tolerance: float = 0.0001,
+    max_iterations: int = 100,
+) -> float:
+    """
+    Calculate the yield to worst of a callable bond: the lowest of its yield to maturity
+    and its yield to every call date of the call schedule, the yield an investor receives
+    if the issuer redeems the bond at the moment least favourable to the investor
+    (Fabozzi, Bond Markets, Analysis, and Strategies, chapter 3). It is the yield callable
+    corporate and municipal bonds are commonly quoted at.
+
+    Every yield follows the conventions of `get_yield_to_maturity` and `get_yield_to_call`:
+    a clean price, the bond's own coupon schedule and a nominal annual rate compounded
+    `frequency` times per year (the bond-equivalent yield for semi-annual coupons). A bond
+    priced above its call price is usually worst to a call date, as the premium is lost
+    sooner. A bond priced below par usually has a yield to worst equal to its yield to
+    maturity, since a call at par or above returns the discount sooner.
+
+    The call schedule holds the fixed-price calls only: a make-whole call redeems at the
+    present value of the remaining cash flows at a Treasury yield plus a spread, which is
+    usually below the bond's own yield, so the call price is above the bond's value and the
+    yield to that call above the yield to maturity: it is not the worst and is left out by
+    convention. A bond that is callable at any time from a date on is entered with that
+    date and its call price. Call dates that are not after today, or not before maturity,
+    are skipped.
+
+    Also known as: YTW, lowest yield.
+
+    The formula is as follows:
+
+        YTW = MIN(YTM, YTC_1, ..., YTC_k)
+
+    where YTM is the yield to maturity and YTC_j the yield to the j-th call date at its
+    call price, see `get_yield_to_call`.
+
+    For more information, see: https://www.investopedia.com/terms/y/yieldtoworst.asp
+
+    Args:
+        par_value (float): The face value of the bond.
+        coupon_rate (float): The annual coupon rate (in decimal).
+        years_to_maturity (float): The number of years until the bond matures.
+        call_schedule (list[tuple[float, float]] | dict[float, float]): The call dates and
+            their call prices, as (years to call, call price) pairs or a dictionary of call
+            prices by years to call, e.g. [(5, 103), (7, 101.5), (9, 100)]. The years to a
+            call date are the years to maturity less the years from the call date to
+            maturity in the bond's day count, so that the call falls on the bond's own
+            coupon schedule.
+        bond_price (float): The current clean (quoted) market price of the bond.
+        frequency (int): The number of coupon payments per year.
+        guess (float): Initial guess for the yields. Defaults to 0.05.
+        tolerance (float): The desired level of accuracy. Defaults to 0.0001.
+        max_iterations (int): Maximum number of iterations to perform. Defaults to 100.
+
+    Returns:
+        float: The yield to worst of the bond (in decimal), or NaN when one of the yields
+        does not price the bond at bond_price.
+
+    In the example the worst is the call in seven years: the yields to the three calls are
+    5.157%, 5.149% and 5.158% and the yield to maturity is 5.222%.
+
+    As an example:
+
+    ```python
+    from financetoolkit.fixedincome.bonds import bond_model
+
+    # A 6% bond with 10 years to maturity priced at 106, callable at 103 in 5 years,
+    # at 101.5 in 7 years and at par in 9 years.
+    bond_model.get_yield_to_worst(
+        par_value=100,
+        coupon_rate=0.06,
+        years_to_maturity=10,
+        call_schedule=[(5, 103), (7, 101.5), (9, 100)],
+        bond_price=106,
+        frequency=2,
+    )
+    ```
+
+    Which returns:
+
+    ```
+    0.05148938270856816
+    ```
+    """
+    calls = call_schedule.items() if isinstance(call_schedule, dict) else call_schedule
+
+    yields = [
+        get_yield_to_maturity(
+            par_value,
+            coupon_rate,
+            years_to_maturity,
+            bond_price,
+            frequency,
+            guess,
+            tolerance,
+            max_iterations,
+        )
+    ]
+    for years_to_call, call_price in calls:
+        # A call date that has passed can no longer be exercised, and a call on the
+        # maturity date is the redemption at par the yield to maturity already covers.
+        if 0 < years_to_call < years_to_maturity:
+            yields.append(
+                get_yield_to_call(
+                    par_value,
+                    coupon_rate,
+                    years_to_maturity,
+                    years_to_call,
+                    call_price,
+                    bond_price,
+                    frequency,
+                    guess,
+                    tolerance,
+                    max_iterations,
+                )
+            )
+
+    # NaN propagates: a yield that cannot be solved leaves the worst unknown.
+    return float(np.min(yields))
 
 
 def get_macaulays_duration(

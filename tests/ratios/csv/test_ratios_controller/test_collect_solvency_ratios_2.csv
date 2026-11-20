@@ -1,40 +1,43 @@
 ,,,2020,2021,2022,2023
-AAPL,Debt-to-Assets Ratio,Lag 1,,0.0302,-0.0342,-0.1611
-AAPL,Debt-to-Assets Ratio,Lag 2,,,-0.005,-0.1898
-AAPL,Debt-to-Assets Ratio,Lag 3,,,,-0.1653
-AAPL,Asset Coverage Ratio,Lag 1,,-0.0701,-0.0604,0.21
+AAPL,Debt-to-Assets Ratio,Lag 1,,0.0302,-0.0344,-0.1611
+AAPL,Debt-to-Assets Ratio,Lag 2,,,-0.0052,-0.1899
+AAPL,Debt-to-Assets Ratio,Lag 3,,,,-0.1655
+AAPL,Asset Coverage Ratio,Lag 1,,-0.0701,-0.0603,0.2099
 AAPL,Asset Coverage Ratio,Lag 2,,,-0.1262,0.137
 AAPL,Asset Coverage Ratio,Lag 3,,,,0.0572
 AAPL,Debt-to-Equity Ratio,Lag 1,,0.1563,0.2082,-0.3163
-AAPL,Debt-to-Equity Ratio,Lag 2,,,0.3971,-0.1739
+AAPL,Debt-to-Equity Ratio,Lag 2,,,0.397,-0.1739
 AAPL,Debt-to-Equity Ratio,Lag 3,,,,-0.0448
-AAPL,Debt Service Coverage Ratio,Lag 1,,0.4169,-0.1754,0.1739
-AAPL,Debt Service Coverage Ratio,Lag 2,,,0.1683,-0.0321
+AAPL,Debt Service Coverage Ratio,Lag 1,,0.4169,-0.1754,0.1738
+AAPL,Debt Service Coverage Ratio,Lag 2,,,0.1684,-0.0321
 AAPL,Debt Service Coverage Ratio,Lag 3,,,,0.3715
 AAPL,Equity Multiplier,Lag 1,,,0.1772,0.0106
 AAPL,Equity Multiplier,Lag 2,,,,0.1897
 AAPL,Equity Multiplier,Lag 3,,,,
-AAPL,Free Cash Flow Yield,Lag 1,,-0.0159,0.6935,
-AAPL,Free Cash Flow Yield,Lag 2,,,0.6667,
+AAPL,Free Cash Flow Yield,Lag 1,,-0.016,0.6926,
+AAPL,Free Cash Flow Yield,Lag 2,,,0.6655,
 AAPL,Free Cash Flow Yield,Lag 3,,,,
-AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.2244,-0.0133,-0.2266
-AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2347,-0.2368
-AAPL,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.4081
-AAPL,Gross Debt to EBITDA Ratio,Lag 1,,-0.2818,-0.1062,-0.1301
-AAPL,Gross Debt to EBITDA Ratio,Lag 2,,,-0.3581,-0.2225
-AAPL,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4416
-AAPL,Cash Flow Coverage Ratio,Lag 1,,0.155,0.2098,0.0793
-AAPL,Cash Flow Coverage Ratio,Lag 2,,,0.3974,0.3057
-AAPL,Cash Flow Coverage Ratio,Lag 3,,,,0.5082
+AAPL,Net-Debt to EBITDA Ratio,Lag 1,,-0.2245,-0.0132,-0.2266
+AAPL,Net-Debt to EBITDA Ratio,Lag 2,,,-0.2347,-0.2369
+AAPL,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.4082
+AAPL,Net-Debt to Equity Ratio,Lag 1,,0.2485,0.334,-0.3922
+AAPL,Net-Debt to Equity Ratio,Lag 2,,,0.6655,-0.1893
+AAPL,Net-Debt to Equity Ratio,Lag 3,,,,0.0122
+AAPL,Gross Debt to EBITDA Ratio,Lag 1,,-0.2818,-0.1062,-0.13
+AAPL,Gross Debt to EBITDA Ratio,Lag 2,,,-0.3581,-0.2224
+AAPL,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4415
+AAPL,Cash Flow Coverage Ratio,Lag 1,,0.1551,0.2099,0.0792
+AAPL,Cash Flow Coverage Ratio,Lag 2,,,0.3975,0.3058
+AAPL,Cash Flow Coverage Ratio,Lag 3,,,,0.5083
 AAPL,CAPEX Coverage Ratio,Lag 1,,-0.1497,0.2154,-0.1158
 AAPL,CAPEX Coverage Ratio,Lag 2,,,0.0335,0.0747
 AAPL,CAPEX Coverage Ratio,Lag 3,,,,-0.0861
-AAPL,Dividend CAPEX Coverage Ratio,Lag 1,,0.0795,0.1742,-0.1102
-AAPL,Dividend CAPEX Coverage Ratio,Lag 2,,,0.2676,0.0449
+AAPL,Dividend CAPEX Coverage Ratio,Lag 1,,0.0796,0.1742,-0.1102
+AAPL,Dividend CAPEX Coverage Ratio,Lag 2,,,0.2677,0.0449
 AAPL,Dividend CAPEX Coverage Ratio,Lag 3,,,,0.128
-AAPL,Debt-to-Capital Ratio,Lag 1,,0.0494,0.0576,-0.1134
-AAPL,Debt-to-Capital Ratio,Lag 2,,,0.1099,-0.0623
-AAPL,Debt-to-Capital Ratio,Lag 3,,,,-0.016
+AAPL,Debt-to-Capital Ratio,Lag 1,,0.0494,0.0576,-0.1135
+AAPL,Debt-to-Capital Ratio,Lag 2,,,0.1098,-0.0624
+AAPL,Debt-to-Capital Ratio,Lag 3,,,,-0.0161
 AAPL,Preferred Dividend Coverage Ratio,Lag 1,,,,
 AAPL,Preferred Dividend Coverage Ratio,Lag 2,,,,
 AAPL,Preferred Dividend Coverage Ratio,Lag 3,,,,
@@ -50,56 +53,59 @@ AAPL,(EBITDA - CapEx) Interest Coverage,Lag 3,,,,0.198
 AAPL,Cash Interest Coverage,Lag 1,,0.5841,0.0265,-0.3069
 AAPL,Cash Interest Coverage,Lag 2,,,0.626,-0.2886
 AAPL,Cash Interest Coverage,Lag 3,,,,0.127
-AAPL,FFO to Debt,Lag 1,,0.2506,0.2063,0.1624
+AAPL,FFO to Debt,Lag 1,,0.2505,0.2063,0.1623
 AAPL,FFO to Debt,Lag 2,,,0.5086,0.4022
-AAPL,FFO to Debt,Lag 3,,,,0.7536
-AAPL,DCF to Debt,Lag 1,,0.4874,1.9909,0.1621
-AAPL,DCF to Debt,Lag 2,,,1.508,2.1515
-AAPL,DCF to Debt,Lag 3,,,,1.5903
-AAPL,Degree of Operating Leverage,Lag 1,,,-0.3617,0.2431
-AAPL,Degree of Operating Leverage,Lag 2,,,,-0.2065
+AAPL,FFO to Debt,Lag 3,,,,0.7535
+AAPL,DCF to Debt,Lag 1,,0.4872,1.9913,0.1609
+AAPL,DCF to Debt,Lag 2,,,1.5083,2.1508
+AAPL,DCF to Debt,Lag 3,,,,1.5901
+AAPL,Degree of Operating Leverage,Lag 1,,,-0.3617,0.2432
+AAPL,Degree of Operating Leverage,Lag 2,,,,-0.2064
 AAPL,Degree of Operating Leverage,Lag 3,,,,
-AAPL,Degree of Financial Leverage,Lag 1,,,-0.4427,0.164
+AAPL,Degree of Financial Leverage,Lag 1,,,-0.4428,0.164
 AAPL,Degree of Financial Leverage,Lag 2,,,,-0.3513
 AAPL,Degree of Financial Leverage,Lag 3,,,,
 AAPL,Degree of Total Leverage,Lag 1,,,-0.6443,0.4471
-AAPL,Degree of Total Leverage,Lag 2,,,,-0.4852
+AAPL,Degree of Total Leverage,Lag 2,,,,-0.4853
 AAPL,Degree of Total Leverage,Lag 3,,,,
-MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1379,-0.1733,-0.1328
-MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2874,-0.2831
-MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.382
+MSFT,Debt-to-Assets Ratio,Lag 1,,-0.1383,-0.1729,-0.1333
+MSFT,Debt-to-Assets Ratio,Lag 2,,,-0.2873,-0.2832
+MSFT,Debt-to-Assets Ratio,Lag 3,,,,-0.3823
 MSFT,Asset Coverage Ratio,Lag 1,,0.1241,0.0949,0.2441
-MSFT,Asset Coverage Ratio,Lag 2,,,0.2308,0.3621
+MSFT,Asset Coverage Ratio,Lag 2,,,0.2307,0.3621
 MSFT,Asset Coverage Ratio,Lag 3,,,,0.5311
-MSFT,Debt-to-Equity Ratio,Lag 1,,-0.2046,-0.2292,-0.2096
-MSFT,Debt-to-Equity Ratio,Lag 2,,,-0.3869,-0.3907
-MSFT,Debt-to-Equity Ratio,Lag 3,,,,-0.5154
+MSFT,Debt-to-Equity Ratio,Lag 1,,-0.2046,-0.2293,-0.2096
+MSFT,Debt-to-Equity Ratio,Lag 2,,,-0.387,-0.3908
+MSFT,Debt-to-Equity Ratio,Lag 3,,,,-0.5155
 MSFT,Debt Service Coverage Ratio,Lag 1,,-0.2448,1.5959,-0.3021
 MSFT,Debt Service Coverage Ratio,Lag 2,,,0.9605,0.8117
 MSFT,Debt Service Coverage Ratio,Lag 3,,,,0.3682
 MSFT,Equity Multiplier,Lag 1,,,-0.072,-0.0797
 MSFT,Equity Multiplier,Lag 2,,,,-0.1459
 MSFT,Equity Multiplier,Lag 3,,,,
-MSFT,Free Cash Flow Yield,Lag 1,,-0.1736,0.6438,
-MSFT,Free Cash Flow Yield,Lag 2,,,0.3585,
+MSFT,Free Cash Flow Yield,Lag 1,,-0.1715,0.6428,
+MSFT,Free Cash Flow Yield,Lag 2,,,0.3611,
 MSFT,Free Cash Flow Yield,Lag 3,,,,
-MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2486,-0.2627,-0.4901
+MSFT,Net-Debt to EBITDA Ratio,Lag 1,,-0.2485,-0.2627,-0.49
 MSFT,Net-Debt to EBITDA Ratio,Lag 2,,,-0.446,-0.624
 MSFT,Net-Debt to EBITDA Ratio,Lag 3,,,,-0.7175
-MSFT,Gross Debt to EBITDA Ratio,Lag 1,,-0.2307,-0.2461,-0.0647
+MSFT,Net-Debt to Equity Ratio,Lag 1,,-0.223,-0.2463,-0.5691
+MSFT,Net-Debt to Equity Ratio,Lag 2,,,-0.4144,-0.6752
+MSFT,Net-Debt to Equity Ratio,Lag 3,,,,-0.7476
+MSFT,Gross Debt to EBITDA Ratio,Lag 1,,-0.2308,-0.246,-0.0647
 MSFT,Gross Debt to EBITDA Ratio,Lag 2,,,-0.42,-0.2948
-MSFT,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4575
+MSFT,Gross Debt to EBITDA Ratio,Lag 3,,,,-0.4576
 MSFT,Cash Flow Coverage Ratio,Lag 1,,0.3249,0.2834,0.0051
 MSFT,Cash Flow Coverage Ratio,Lag 2,,,0.7004,0.2899
-MSFT,Cash Flow Coverage Ratio,Lag 3,,,,0.7091
-MSFT,CAPEX Coverage Ratio,Lag 1,,-0.053,0.0017,-0.1641
-MSFT,CAPEX Coverage Ratio,Lag 2,,,-0.0514,-0.1627
+MSFT,Cash Flow Coverage Ratio,Lag 3,,,,0.709
+MSFT,CAPEX Coverage Ratio,Lag 1,,-0.053,0.0017,-0.164
+MSFT,CAPEX Coverage Ratio,Lag 2,,,-0.0514,-0.1626
 MSFT,CAPEX Coverage Ratio,Lag 3,,,,-0.207
 MSFT,Dividend CAPEX Coverage Ratio,Lag 1,,0.0412,0.0255,-0.1372
 MSFT,Dividend CAPEX Coverage Ratio,Lag 2,,,0.0678,-0.1151
 MSFT,Dividend CAPEX Coverage Ratio,Lag 3,,,,-0.0787
-MSFT,Debt-to-Capital Ratio,Lag 1,,-0.1386,-0.1677,-0.1621
-MSFT,Debt-to-Capital Ratio,Lag 2,,,-0.2831,-0.3027
+MSFT,Debt-to-Capital Ratio,Lag 1,,-0.1385,-0.1676,-0.1624
+MSFT,Debt-to-Capital Ratio,Lag 2,,,-0.2829,-0.3028
 MSFT,Debt-to-Capital Ratio,Lag 3,,,,-0.3994
 MSFT,Preferred Dividend Coverage Ratio,Lag 1,,,,
 MSFT,Preferred Dividend Coverage Ratio,Lag 2,,,,
@@ -119,15 +125,15 @@ MSFT,Cash Interest Coverage,Lag 3,,,,
 MSFT,FFO to Debt,Lag 1,,,,
 MSFT,FFO to Debt,Lag 2,,,,
 MSFT,FFO to Debt,Lag 3,,,,
-MSFT,DCF to Debt,Lag 1,,0.7948,0.2969,0.2439
-MSFT,DCF to Debt,Lag 2,,,1.3277,0.6132
-MSFT,DCF to Debt,Lag 3,,,,1.8954
-MSFT,Degree of Operating Leverage,Lag 1,,,-0.4127,-0.165
+MSFT,DCF to Debt,Lag 1,,0.7945,0.2969,0.2438
+MSFT,DCF to Debt,Lag 2,,,1.3273,0.6132
+MSFT,DCF to Debt,Lag 3,,,,1.8948
+MSFT,Degree of Operating Leverage,Lag 1,,,-0.4126,-0.165
 MSFT,Degree of Operating Leverage,Lag 2,,,,-0.5096
 MSFT,Degree of Operating Leverage,Lag 3,,,,
-MSFT,Degree of Financial Leverage,Lag 1,,,-0.1892,-1.0866
+MSFT,Degree of Financial Leverage,Lag 1,,,-0.1892,-1.0865
 MSFT,Degree of Financial Leverage,Lag 2,,,,-1.0702
 MSFT,Degree of Financial Leverage,Lag 3,,,,
-MSFT,Degree of Total Leverage,Lag 1,,,-0.5237,-1.0722
+MSFT,Degree of Total Leverage,Lag 1,,,-0.5238,-1.0723
 MSFT,Degree of Total Leverage,Lag 2,,,,-1.0344
 MSFT,Degree of Total Leverage,Lag 3,,,,

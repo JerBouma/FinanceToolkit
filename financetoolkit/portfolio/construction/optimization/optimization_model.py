@@ -800,15 +800,27 @@ def get_exponential_covariance(returns: pd.DataFrame, span: int = 180) -> pd.Dat
     periods count most and the matrix follows changes in volatility and correlation.
 
     The deviations are taken from the mean over the whole range and the weights are
-    normalized to sum to one.
+    normalized to sum to one, as PyPortfolioOpt's `exp_cov` does. The weighting is the one
+    of RiskMetrics with decay factor λ = 1 − α, but the matrix differs from the RiskMetrics
+    estimate in two ways: RiskMetrics assumes a mean return of zero rather than demeaning
+    by the sample mean, and its daily decay factor λ = 0.94 is a span of about 32 periods,
+    while the default span of 180 is λ ≈ 0.989 (a half-life of about 62 periods). Pass
+    `span=32` for the RiskMetrics daily weighting.
 
-    See RiskMetrics Technical Document (J.P. Morgan/Reuters, 1996), chapter 5.
+    See RiskMetrics Technical Document (J.P. Morgan/Reuters, 1996), chapter 5, for the
+    exponential weighting.
+
+    The formula is as follows:
+
+    - α = 2 / (span + 1), λ = 1 − α
+    - w_t = λ^(T − t) / Σ λ^(T − s), for the periods t = 1, ..., T
+    - Covariance(i, j) = Σ w_t × (r_i,t − mean(r_i)) × (r_j,t − mean(r_j))
 
     Args:
         returns (pd.DataFrame): The returns per period, one column per asset, without
             missing values.
         span (int, optional): The span of the weights in periods; the weight halves
-            after about span / 2.9 periods. Defaults to 180.
+            after about span / 2.9 periods. Defaults to 180 (λ ≈ 0.989).
 
     Returns:
         pd.DataFrame: The covariance matrix per period.

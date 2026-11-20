@@ -73,7 +73,11 @@ from financetoolkit.normalization_model import (
 from financetoolkit.utilities import logger_model, validation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding, calculate_growth
+from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
+    calculate_growth,
+    normalize_country_name,
+)
 
 if TYPE_CHECKING:
     # TYPE_CHECKING only: the module controllers are imported when first used, so that
@@ -297,8 +301,9 @@ class Toolkit:
             on the Toolkit as _fiscal_year_adjustments.
 
             The last day of each fiscal period is kept as well: daily ratios apply a period's figures
-            from that day on (not from the end of its calendar label), and currency translation uses
-            the closing rate on that day and the average rate over the fiscal period. The dates come
+            from that day on (not from the end of its calendar label), the price-based ratios of the
+            period take the close of that day, and currency translation uses the closing rate on that
+            day and the average rate over the fiscal period. The dates come
             from the Period End Date in the statistics statement; when a source does not report it,
             the latest day the period can end on given its label is used, so that figures are never
             applied before the period ended.
@@ -734,6 +739,28 @@ class Toolkit:
                 api_key=self._api_key,
             ).get_gross_domestic_product(usd=True)
 
+        def consumer_price_index(country: str) -> pd.Series:
+            # Imported when first used, as only the cyclically adjusted P/E needs it.
+            from financetoolkit.economics.economics_controller import (  # noqa: PLC0415
+                Economics,
+            )
+
+            # Every month of the Economics history, as the earnings go back up to decades.
+            consumer_price_index = Economics(
+                rounding=None,
+                allow_stale_oecd_cache=self._allow_stale_oecd_cache,
+                cache=self._cache,
+                api_key=self._api_key,
+            ).get_consumer_price_index(countries=country, period="monthly")
+
+            # Economics returns the name its sources use ("USA" gives "United States").
+            country = normalize_country_name(country, consumer_price_index.columns)
+
+            if country not in consumer_price_index.columns:
+                return pd.Series(dtype=float)
+
+            return consumer_price_index[country]
+
         ratios = Ratios(
             tickers=lambda: self._get_statement_tickers("Ratios")
             + (["Portfolio"] if "Portfolio" in self._tickers else []),
@@ -763,6 +790,7 @@ class Toolkit:
             ),
             currency_function=self._get_listing_currencies,
             gross_domestic_product_function=gross_domestic_product,
+            consumer_price_index_function=consumer_price_index,
         )
 
         if self._portfolio_weights:
@@ -916,6 +944,19 @@ class Toolkit:
             )
             return index_data, market_value
 
+        def corporate_bond_yield(start: str, end: str) -> pd.Series:
+            # Imported when first used, as only the Graham intrinsic value needs it.
+            from financetoolkit.fixedincome.sources import fred_model  # noqa: PLC0415
+            from financetoolkit.helpers import require_fred_api_key  # noqa: PLC0415
+
+            require_fred_api_key(
+                self._fred_api_key,
+                "the Moody's Aaa corporate bond yield (or pass a bond_yield)",
+            )
+            return fred_model.get_moodys_corporate_bond_yields(
+                "daily", start, end, self._fred_api_key
+            )["Aaa"]
+
         return Models(
             tickers=lambda: self._get_statement_tickers("Models"),
             # "lookback" is the daily data from a year before the start date, for the
@@ -943,6 +984,10 @@ class Toolkit:
                 self._get_module_statement("balance_sheet_statement", "Models")
             ),
             sp500_function=sp500,
+            # The same fetch and cache as the forward ratios, so the estimates are retrieved once; the lambda keeps the Ratios module from being built until a model asks for them.
+            analyst_estimates=lambda: self.ratios._get_or_fetch_analyst_estimates(),  # noqa: PLW0108, SLF001
+            profile=self._get_statement_profile,
+            corporate_bond_yield_function=corporate_bond_yield,
         )
 
     @property
@@ -1192,8 +1237,8 @@ class Toolkit:
         """
         This gives access to the Risk module. The Risk Module is meant to calculate metrics related to risk such
         as Value at Risk (VaR), Conditional Value at Risk (cVaR), EMWA/GARCH models and similar models. It also
-        houses cross-asset systemic risk and liquidity measures (CoVaR, Tail Dependence, Amihud Illiquidity,
-        Roll Spread).
+        houses cross-asset systemic risk and liquidity measures (CoVaR, Marginal Expected Shortfall, SRISK,
+        Tail Dependence, Amihud Illiquidity, Roll Spread).
 
         Note that the time-series diagnostic and econometric tests (unit root tests, cointegration, Granger
         causality, ARCH-LM, Jarque-Bera and similar tests) live in the separate Econometrics module instead.
@@ -1244,6 +1289,64 @@ class Toolkit:
             start_date=self._start_date,
             end_date=self._end_date,
         )
+
+        # The Share Turnover divides the Volume by the share count of the statements, which
+        # are retrieved when it is first calculated, as are the days the counts apply from.
+        def shares_outstanding() -> tuple[pd.DataFrame, pd.DataFrame]:
+            income_statement = self._get_module_statement("income_statement", "Ratios")
+
+            return (
+                income_statement.loc[:, "Weighted Average Shares", :],
+                self._get_daily_start_dates(income_statement),
+            )
+
+        risk._shares_outstanding_function = shares_outstanding
+
+        # SRISK takes the debt from the balance sheet and the market cap from the diluted
+        # share count, as get_market_cap does, each from the day its period's figures apply.
+        def capital_shortfall() -> (
+            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        ):
+            balance_sheet = self._get_module_statement(
+                "balance_sheet_statement", "Ratios"
+            )
+            income_statement = self._get_module_statement("income_statement", "Ratios")
+
+            # Without a conversion the liabilities stay in the reported currency while the market
+            # cap is in the currency the ticker is listed in, so SRISK would mix the two.
+            if (
+                not (self._convert_currency and not self._statement_currencies.empty)
+                and not self._statistics_statement.empty
+            ):
+                reported = (
+                    self._statistics_statement.xs("Reported Currency", axis=0, level=1)
+                    .T.ffill()
+                    .iloc[-1]
+                )
+                listed = self._get_listing_currencies().reindex(reported.index)
+                mismatched = [
+                    f"{ticker} ({reported[ticker]} statements, {listed[ticker]} prices)"
+                    for ticker in reported.index
+                    if pd.notna(reported[ticker])
+                    and pd.notna(listed[ticker])
+                    and reported[ticker] != listed[ticker]
+                ]
+                if mismatched:
+                    logger.warning(
+                        "SRISK compares the liabilities with the market cap, but the statements "
+                        "are in another currency than the prices for %s; set convert_currency=True "
+                        "to convert the statements to the currency of the historical data.",
+                        ", ".join(mismatched),
+                    )
+
+            return (
+                balance_sheet.loc[:, "Total Liabilities", :],
+                self._get_daily_start_dates(balance_sheet),
+                income_statement.loc[:, "Weighted Average Shares Diluted", :],
+                self._get_daily_start_dates(income_statement),
+            )
+
+        risk._capital_shortfall_function = capital_shortfall
 
         if self._portfolio_weights:
             risk._portfolio_weights = self._portfolio_weights
@@ -1402,6 +1505,12 @@ class Toolkit:
                 return pd.Series(dtype=object)
             return profile.loc["Sector"]
 
+        def holding_currencies(tickers: list[str]) -> pd.Series:
+            # The holdings' prices are converted into the fund's currency for their contributions.
+            return self._other_toolkit(
+                tickers, self._start_date, self._end_date
+            )._get_listing_currencies()
+
         return ETF(
             tickers=self._tickers,
             historical_function=historical,
@@ -1413,6 +1522,8 @@ class Toolkit:
             currency_function=self._get_listing_currencies,
             prices_function=prices,
             sector_function=sectors,
+            holding_currency_function=holding_currencies,
+            benchmark_ticker=self._benchmark_ticker,
         )
 
     @property
@@ -1651,10 +1762,11 @@ class Toolkit:
         if not self._basket or statement.empty:
             return statement
 
+        # The basket is made of the tickers requested, not of the tickers that have statements:
+        # a ticker without any leaves the Total empty, as a missing value does, rather than
+        # the Total quietly becoming the sum of the others.
         tickers = [
-            ticker
-            for ticker in statement.index.unique(level=0)
-            if ticker not in ("Portfolio", "Total")
+            ticker for ticker in self._tickers if ticker not in ("Portfolio", "Total")
         ]
         if len(tickers) < 2:  # noqa: PLR2004
             logger.warning(
@@ -1686,6 +1798,18 @@ class Toolkit:
             )
             return statement
 
+        without_statements = [
+            ticker
+            for ticker in tickers
+            if ticker not in statement.index.unique(level=0)
+        ]
+        if without_statements:
+            logger.warning(
+                "%s has no financial statements, so the Total of the basket is left empty, "
+                "as the sum of the other tickers would understate it.",
+                ", ".join(without_statements),
+            )
+
         return add_basket_total(
             statement,
             tickers,
@@ -1694,6 +1818,10 @@ class Toolkit:
                 "EPS Diluted",
                 "Weighted Average Shares",
                 "Weighted Average Shares Diluted",
+                "Share Issued",
+                "Ordinary Shares Number",
+                "Treasury Shares Number",
+                "Tax Rate for Calcs",
             ],
         )
 
@@ -3502,6 +3630,28 @@ class Toolkit:
                     )
 
         return self._market_risk_premium
+
+    def _get_statement_profile(self) -> pd.DataFrame:
+        """
+        Returns the company profiles of the tickers (FinancialModelingPrep), with the profile
+        items as index and the tickers as columns, for the models that need a company's
+        industry or IPO date. Empty without an API key or with YahooFinance as the source.
+
+        Returns:
+            pd.DataFrame: The profiles, or an empty DataFrame when they are not available.
+        """
+        if not self._api_key or self._enforce_source == "YahooFinance":
+            return pd.DataFrame()
+
+        # With remove_invalid_tickers, the profile drops invalid tickers from the Toolkit;
+        # reading it for a model must not change the Toolkit's tickers.
+        toolkit_tickers = self._tickers
+        try:
+            profile = self.get_profile()
+        finally:
+            self._tickers = toolkit_tickers
+
+        return profile if profile is not None else pd.DataFrame()
 
     def _get_country_risk_premiums(self) -> pd.Series:
         """
@@ -5927,6 +6077,12 @@ class Toolkit:
                         exchange_rate_data=self._get_statement_exchange_rates(
                             self._balance_sheet_statement, rate="closing"
                         ),
+                        # Yahoo Finance's share counts are numbers of shares, not amounts.
+                        items_not_to_adjust=[
+                            "Share Issued",
+                            "Ordinary Shares Number",
+                            "Treasury Shares Number",
+                        ],
                         financial_statement_name="balance sheet statement",
                     )
 
@@ -6834,8 +6990,9 @@ class Toolkit:
         Statement columns are calendar periods (see "Fiscal periods and calendar periods" on
         the Toolkit), while the fiscal period they hold ends on its own date, e.g. 30 June for
         Microsoft's yearly statements and the end of January for NVIDIA's. These dates are
-        what the daily ratios apply the figures from and what the closing and average exchange
-        rates of the statements are taken over. They come from the Period End Date statistic
+        what the daily ratios apply the figures from, the day whose close the price-based period
+        ratios take, and what the closing and average exchange rates of the statements are taken
+        over. They come from the Period End Date statistic
         (FinancialModelingPrep) and otherwise from the latest date the period can end on given
         its label and _fiscal_year_adjustments (see helpers.determine_period_end_dates).
 

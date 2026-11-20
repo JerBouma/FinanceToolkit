@@ -8,6 +8,8 @@ from functools import reduce
 import numpy as np
 import pandas as pd
 
+from financetoolkit.models import helpers
+
 # The coefficients of Model 1 of Dechow, Ge, Larson and Sloan (2011), and the share of firms
 # with a misstatement in their sample, which scales the probability into the F-Score.
 DECHOW_INTERCEPT = -7.893
@@ -29,6 +31,16 @@ MONTIER_ASSET_GROWTH = 0.10
 # five years and requires at least three of them.
 MOHANRAM_VARIANCE_PERIODS = 5
 MOHANRAM_MINIMUM_VARIANCE_PERIODS = 3
+
+# The modified Jones model regresses the total accruals on these three terms, without an
+# intercept as in Jones (1991) unless one is asked for (Kothari, Leone and Wasley, 2005), and
+# Dechow, Sloan and Sweeney (1995) estimated it on at least ten years of each company's history.
+JONES_REGRESSORS = [
+    "Inverse of Beginning Assets",
+    "Change in Revenue",
+    "Property, Plant and Equipment",
+]
+JONES_MINIMUM_OBSERVATIONS = 10
 
 # Z-scores of ranks need a spread of ranks, which three tickers are the fewest to give in a useful way.
 QUALITY_MINIMUM_TICKERS = 3
@@ -251,9 +263,9 @@ def get_dechow_f_score(
     performance (the change in cash sales and in return on assets) and the market incentive
     to look good (issuing debt or equity):
 
-        Predicted Value = -7.893 + 0.790 RSST Accruals + 2.518 ΔReceivables
-                          + 1.191 ΔInventory + 1.979 Soft Assets + 0.171 ΔCash Sales
-                          - 0.932 ΔROA + 1.029 Issuance
+        Predicted Value = -7.893 + 0.790 RSST Accruals + 2.518 ΔReceivables +
+                          1.191 ΔInventory + 1.979 Soft Assets + 0.171 ΔCash Sales -
+                          0.932 ΔROA + 1.029 Issuance
         Probability = e^PV / (1 + e^PV),  F-Score = Probability / 0.0037
 
     The accruals and changes are scaled by average total assets, soft assets are total
@@ -487,6 +499,149 @@ def get_accruals_ratios(
     return {
         "Balance Sheet Accruals Ratio": balance_sheet_accruals / average_assets,
         "Cash Flow Accruals Ratio": cash_flow_accruals / average_assets,
+    }
+
+
+def get_modified_jones_accruals(
+    net_income: pd.DataFrame,
+    operating_cash_flow: pd.DataFrame,
+    total_assets: pd.DataFrame,
+    revenue: pd.DataFrame,
+    accounts_receivable: pd.DataFrame,
+    property_plant_and_equipment: pd.DataFrame,
+    lag: int = 1,
+    method: str = "time_series",
+    min_observations: int = JONES_MINIMUM_OBSERVATIONS,
+    intercept: bool = False,
+) -> dict[str, pd.DataFrame]:
+    """
+    The discretionary accruals of the modified Jones model (Dechow, Sloan and Sweeney,
+    1995): the part of the total accruals that the change in revenues and the fixed assets
+    do not explain. Every term is scaled by the total assets at the start of the period:
+
+    - Total Accruals = (Net Income - Cash Flow from Operations) / Total Assets(t-1)
+    - Estimation (Jones, 1991): Total Accruals = a1 × 1 / A(t-1) + a2 × ΔREV / A(t-1) +
+      a3 × PPE / A(t-1) + e, without an intercept
+    - Non-Discretionary Accruals = a1 × 1 / A(t-1) + a2 × (ΔREV - ΔREC) / A(t-1) +
+      a3 × PPE / A(t-1)
+    - Discretionary Accruals = Total Accruals - Non-Discretionary Accruals
+
+    With intercept=True a constant a0 is added to the estimation and to the non-discretionary
+    accruals (Kothari, Leone and Wasley, 2005).
+
+    With method="time_series" the coefficients of every period are estimated on the
+    ticker's own earlier periods (`lag` periods apart, so that quarterly trailing twelve
+    months do not overlap), with the change in revenues as in Jones (1991), and the change in
+    receivables is subtracted only for the period itself, as in Dechow, Sloan and Sweeney
+    (1995). With method="cross_section" they are estimated per period across the tickers,
+    with the change in revenues minus the change in receivables in the estimation as well,
+    as in the cross-sectional modified Jones model of the later literature.
+
+    Args:
+        net_income (pd.DataFrame): Net income per ticker (rows) and period (columns).
+        operating_cash_flow (pd.DataFrame): Cash flow from operations.
+        total_assets (pd.DataFrame): Total assets.
+        revenue (pd.DataFrame): Revenue.
+        accounts_receivable (pd.DataFrame): Accounts receivable.
+        property_plant_and_equipment (pd.DataFrame): Property, plant and equipment (gross in
+            Jones, 1991).
+        lag (int, optional): The number of periods back that the changes and the beginning
+            assets are taken, one year: 1 for yearly statements and 4 for quarterly flows
+            summed over the trailing twelve months. Defaults to 1.
+        method (str, optional): "time_series" (each ticker's earlier periods) or
+            "cross_section" (the tickers of each period). Defaults to "time_series".
+        min_observations (int, optional): The fewest observations a regression is estimated
+            on, earlier periods or tickers. Defaults to 10.
+        intercept (bool, optional): Whether to add a constant to the regression (Kothari,
+            Leone and Wasley, 2005), which then needs one observation more. Defaults to False,
+            the formulation of Jones (1991) and Dechow, Sloan and Sweeney (1995).
+
+    Raises:
+        ValueError: If the method is not "time_series" or "cross_section", or fewer
+            observations than the coefficients (three, or four with the intercept) are asked for.
+
+    Returns:
+        dict[str, pd.DataFrame]: The Total Accruals, Non-Discretionary Accruals and
+        Discretionary Accruals, scaled by the beginning total assets; the last two NaN where
+        fewer than `min_observations` observations are available.
+    """
+    if method not in {"time_series", "cross_section"}:
+        raise ValueError(
+            f"The method {method} is not supported, use 'time_series' or 'cross_section'."
+        )
+    coefficient_count = len(JONES_REGRESSORS) + intercept
+    if min_observations < coefficient_count:
+        raise ValueError(
+            f"The model estimates {coefficient_count} coefficients and needs at least "
+            f"as many observations, not {min_observations}."
+        )
+
+    # A company with no or negative assets at the start of the period has no scale.
+    beginning_assets = _previous(total_assets, lag)
+    beginning_assets = beginning_assets.where(beginning_assets > 0)
+
+    total_accruals = (net_income - operating_cash_flow) / beginning_assets
+    inverse_assets = 1 / beginning_assets
+    revenue_change = _change(revenue, lag) / beginning_assets
+    cash_revenue_change = (
+        revenue_change - _change(accounts_receivable, lag) / beginning_assets
+    )
+    fixed_assets = property_plant_and_equipment / beginning_assets
+
+    # Observations (tickers by periods) by regressor, in the order of JONES_REGRESSORS and
+    # followed by a column of ones for the intercept, which enters the estimation and the
+    # non-discretionary accruals alike.
+    constant = [np.ones(inverse_assets.shape)] if intercept else []
+    estimation = np.stack(
+        [
+            inverse_assets.to_numpy(float),
+            (
+                revenue_change if method == "time_series" else cash_revenue_change
+            ).to_numpy(float),
+            fixed_assets.to_numpy(float),
+            *constant,
+        ],
+        axis=-1,
+    )
+    event = np.stack(
+        [
+            inverse_assets.to_numpy(float),
+            cash_revenue_change.to_numpy(float),
+            fixed_assets.to_numpy(float),
+            *constant,
+        ],
+        axis=-1,
+    )
+    dependent = total_accruals.to_numpy(float)
+
+    non_discretionary = np.full(dependent.shape, np.nan)
+    tickers, periods = dependent.shape
+    for period in range(periods):
+        if method == "cross_section":
+            coefficients = helpers.least_squares_coefficients(
+                dependent[:, period], estimation[:, period], min_observations
+            )
+            non_discretionary[:, period] = event[:, period] @ coefficients
+            continue
+        # Only the periods before, one year apart, so the estimate uses what was known
+        # at the start of the period and quarterly trailing sums do not overlap.
+        earlier = np.arange(period - lag, -1, -lag)
+        for ticker in range(tickers):
+            coefficients = helpers.least_squares_coefficients(
+                dependent[ticker, earlier],
+                estimation[ticker, earlier],
+                min_observations,
+            )
+            non_discretionary[ticker, period] = event[ticker, period] @ coefficients
+
+    non_discretionary_accruals = pd.DataFrame(
+        non_discretionary, index=total_accruals.index, columns=total_accruals.columns
+    )
+
+    return {
+        "Total Accruals": total_accruals,
+        "Non-Discretionary Accruals": non_discretionary_accruals,
+        "Discretionary Accruals": total_accruals - non_discretionary_accruals,
     }
 
 

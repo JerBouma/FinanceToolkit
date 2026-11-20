@@ -186,3 +186,30 @@ def test_the_dataset_is_read_once_and_shared(monkeypatch):
 
     assert first is second
     assert reads == [False]
+
+
+def test_countries_carry_the_names_of_the_other_sources(monkeypatch):
+    data = pd.DataFrame(
+        {
+            "countryname": ["Russian Federation", "Eswatini", "Congo DR", "Germany"],
+            "ISO3": ["RUS", "SWZ", "COD", "DEU"],
+            "id": ["RUS", "SWZ", "COD", "DEU"],
+            "year": [2024.0] * 4,
+            "income_group": ["Upper middle income"] * 4,
+            "infl": [8.4, 4.0, 17.7, 2.3],
+        }
+    )
+    buffer = io.BytesIO()
+    data.to_stata(buffer, write_index=False)
+    _serve(monkeypatch, buffer.getvalue())
+
+    dataset = gmdb_model.collect_global_macro_database_dataset()
+
+    # The OECD, the BIS and the IMF name these countries so, which lets a GMDB series
+    # line up with theirs (the real interest rate, the misery index).
+    assert sorted(gmdb_model.get_series(dataset, "infl").columns) == [
+        "Democratic Republic of the Congo",
+        "Germany",
+        "Russia",
+        "Swaziland",
+    ]

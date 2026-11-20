@@ -56,7 +56,9 @@ def get_event_study(
             date. Must cover both the estimation and event windows.
         market_returns (pd.Series): Daily returns of the market/benchmark used to
             estimate normal returns. Reindexed to `returns`'s index.
-        event_date (str): The date of the event. Must be present in `returns.index`.
+        event_date (str): The date of the event, between the first and the last date of
+            `returns`. A date without a return (a weekend or holiday) moves to the next
+            date with one, the first trading day the event can be priced.
         estimation_window (int): Number of trading days used to estimate the market
             model. Defaults to 250 (approximately one trading year).
         gap_days (int): Number of trading days between the end of the estimation
@@ -75,7 +77,7 @@ def get_event_study(
 
     Raises:
         TypeError: If `returns` or `market_returns` is not a pd.Series.
-        ValueError: If `event_date` is not in `returns.index`, there is not enough
+        ValueError: If `event_date` is outside the dates of `returns`, there is not enough
             history before/after the event date for the requested windows, or
             `gap_days` is too small to keep the estimation window from overlapping
             the event window (i.e. `pre_event_days > gap_days`).
@@ -86,8 +88,24 @@ def get_event_study(
     returns = returns.sort_index()
     market_returns = market_returns.reindex(returns.index)
 
-    if event_date not in returns.index:
-        raise ValueError(f"event_date {event_date} was not found in returns.index.")
+    # An event on a weekend or holiday (a release on a Saturday) is first priced on the
+    # next trading day, so the event day is the first date on or after event_date.
+    timestamps = (
+        returns.index.to_timestamp()
+        if isinstance(returns.index, pd.PeriodIndex)
+        else pd.DatetimeIndex(returns.index)
+    )
+    event = pd.Timestamp(event_date)
+    # A date without a time zone is read in the time zone of the returns.
+    if timestamps.tz is not None and event.tzinfo is None:
+        event = event.tz_localize(timestamps.tz)
+    if returns.empty:
+        raise ValueError("There are no returns to study the event with.")
+    if not timestamps[0] <= event <= timestamps[-1]:
+        raise ValueError(
+            f"event_date {event_date} is outside the returns, which run from "
+            f"{returns.index[0]} to {returns.index[-1]}."
+        )
 
     if pre_event_days > gap_days:
         raise ValueError(
@@ -98,7 +116,7 @@ def get_event_study(
             "model's 'normal return' estimate with event-window observations."
         )
 
-    event_position = returns.index.get_loc(event_date)
+    event_position = int(timestamps.searchsorted(event, side="left"))
 
     estimation_end = event_position - gap_days
     estimation_start = estimation_end - estimation_window

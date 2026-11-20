@@ -5,13 +5,17 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit import helpers
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
+    average_monthly_index,
+    buffered_start_date,
     check_period_type,
+    normalize_requested_countries,
+    validate_period,
 )
 from financetoolkit.economics.sources import (
     bea_model,
     census_model,
+    eurostat_model,
     fmp_model as economics_fmp_model,
     frb_model,
     fred_model,
@@ -23,12 +27,8 @@ from financetoolkit.economics.sources import (
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -37,9 +37,9 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class ActivityEconomics(EconomicsBase):
+class ActivityEconomics:
     """
-    Activity and sentiment: consumer and business confidence, the composite leading indicator, share prices, retail sales, industrial production, housing starts, real personal income, the recession indicator, supply chain pressure, chokepoint transits and the economic calendar.
+    Activity and sentiment: consumer and business confidence, the composite leading indicator, share prices, retail sales, industrial production, capacity utilization, housing starts, real personal income, the recession indicator, supply chain pressure, chokepoint transits and the economic calendar.
     """
 
     @handle_errors
@@ -80,7 +80,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -166,7 +167,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -261,7 +263,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -359,7 +362,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -424,6 +428,7 @@ class ActivityEconomics(EconomicsBase):
     @handle_errors
     def get_retail_sales(
         self,
+        inflation_adjusted: bool = False,
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -444,7 +449,18 @@ class ActivityEconomics(EconomicsBase):
 
         The series is monthly, in millions of US dollars, seasonally adjusted, and covers
         retail trade and food services. It is nominal, so growth=True mixes volume and price
-        changes together; compare against the Consumer Price Index to separate the two.
+        changes together. With inflation_adjusted=True the sales are deflated by the US
+        Consumer Price Index for All Urban Consumers, all items, of the same month (see
+        get_consumer_price_index), in the money of its latest month, so growth=True returns
+        the real change: the change in volume. The growth is taken of the deflated level,
+        so the real growth equals (1 + nominal growth) / (1 + CPI growth) - 1 over the same
+        months. The index is not seasonally adjusted, so the real change is best read over
+        12 months (lag=12), and a month without a published index, such as October 2025 or
+        a month whose index is not released yet, has no real value.
+
+        The formula is as follows:
+
+        - Real Retail Sales (t) = Retail Sales (t) * CPI (latest month) / CPI (t)
 
         Without a FRED API key the data comes from the Census Bureau directly, which gives
         the same figures. When a FRED API key is set (see the `fred_api_key` parameter of
@@ -455,6 +471,9 @@ class ActivityEconomics(EconomicsBase):
         Also known as: retail trade, consumer spending (proxy).
 
         Args:
+            inflation_adjusted (bool, optional): Whether to return the sales deflated by the US
+                consumer price index (real sales, in the money of the index's latest month)
+                instead of the nominal sales. Defaults to False.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -464,7 +483,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -472,7 +492,8 @@ class ActivityEconomics(EconomicsBase):
 
         Returns:
             pd.DataFrame: A single-column ("United States") DataFrame of total retail
-            and food services sales, in millions of dollars.
+            and food services sales, in millions of dollars (of the latest month of the
+            consumer price index with inflation_adjusted=True).
 
         As an example:
 
@@ -506,6 +527,28 @@ class ActivityEconomics(EconomicsBase):
             if self._fred_api_key
             else census_model.get_retail_sales()
         )
+
+        if inflation_adjusted:
+            consumer_price_index = self._get_consumer_price_index(
+                countries=["United States"], period="monthly"
+            )
+            if "United States" not in consumer_price_index.columns:
+                raise ValueError(
+                    "There is no monthly US consumer price index to deflate the retail "
+                    "sales with."
+                )
+            price_index = consumer_price_index["United States"].dropna()
+            # The sales are dated on the first day of each month and deflated with the
+            # index of that month. A month without an index (skipped, or not released yet)
+            # has no real value rather than one deflated with the prices of another month.
+            months = (
+                retail_sales.index.asfreq("M")
+                if isinstance(retail_sales.index, pd.PeriodIndex)
+                else pd.DatetimeIndex(retail_sales.index).to_period("M")
+            )
+            retail_sales = retail_sales.mul(
+                price_index.iloc[-1] / price_index.reindex(months).to_numpy(), axis=0
+            )
 
         return finalize_dataset(
             dataset=retail_sales,
@@ -563,7 +606,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -619,6 +663,181 @@ class ActivityEconomics(EconomicsBase):
         )
 
     @handle_errors
+    def get_capacity_utilization(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Capacity utilization is the share of the productive capacity of industry that is
+        in use. Output close to capacity means firms have little slack: they raise prices
+        sooner and invest to expand, so a high utilization rate points to inflationary
+        pressure and future investment, while a low one points to slack and, with the
+        output gap (see get_output_gap), to an economy producing below its potential. It
+        moves with the business cycle alongside industrial production.
+
+        The two publishers measure it differently, so compare each country with its own
+        history rather than levels between the United States and Europe:
+
+        - The Federal Reserve for the United States (G.17 release, the source of FRED's TCU
+          series): the capacity utilization of total industry (manufacturing, mining and
+          electric and gas utilities), monthly from 1967. It is computed rather than
+          surveyed, as the industrial production index over the Federal Reserve's index
+          of capacity, the sustainable maximum output, which it estimates from industry
+          capacity data and surveys of plant utilization.
+        - Eurostat for the euro area, the European Union and around 30 European countries:
+          the capacity utilization of manufacturing from the quarterly business survey of
+          the Joint Harmonised EU Programme of Business and Consumer Surveys (indicator
+          BS-ICU-PC), quarterly from 1980. It is surveyed: manufacturers answer at what
+          percentage of full capacity their company operates in the first month of the
+          quarter, so the value of a quarter is known in that month.
+
+        Both are seasonally adjusted and returned as a decimal fraction of capacity
+        (0.764 for 76.4%). The quarterly US value is the average of its three months, for
+        complete quarters only.
+
+        The formula of the Federal Reserve's rate is as follows:
+
+        - Capacity Utilization = Industrial Production Index / Capacity Index
+
+        The rates are the publishers' own figures, published in percent and divided by 100
+        here.
+
+        See definitions: https://www.federalreserve.gov/releases/g17/About.htm and
+        https://economy-finance.ec.europa.eu/economic-forecast-and-surveys/business-and-consumer-surveys_en
+
+        Also known as: capacity utilisation, plant utilization, TCU, industrial slack.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly or the quarterly data.
+                Defaults to None, which is monthly when only the United States, the one country
+                published monthly, is requested and quarterly otherwise (and quarterly when the
+                Economics class was initialized with quarterly=True). With period='monthly'
+                the other countries are left out with a warning.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Capacity Utilization per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2024-01-01', end_date='2026-09-30')
+
+        economics.get_capacity_utilization(
+            countries=['United States', 'Euro Area', 'Germany', 'France']
+        )
+        ```
+
+        Which returns:
+
+        |        |   United States |   Euro Area |   Germany |   France |
+        |:-------|----------------:|------------:|----------:|---------:|
+        | 2024Q1 |          0.7629 |       0.789 |     0.809 |    0.809 |
+        | 2024Q2 |          0.7664 |       0.787 |     0.797 |    0.807 |
+        | 2024Q3 |          0.76   |       0.777 |     0.779 |    0.816 |
+        | 2024Q4 |          0.7547 |       0.773 |     0.768 |    0.801 |
+        | 2025Q1 |          0.7599 |       0.772 |     0.768 |    0.815 |
+        | 2025Q2 |          0.7606 |       0.777 |     0.769 |    0.822 |
+        | 2025Q3 |          0.7618 |       0.779 |     0.772 |    0.825 |
+        | 2025Q4 |          0.7555 |       0.781 |     0.778 |    0.803 |
+        | 2026Q1 |          0.7556 |       0.778 |     0.776 |    0.809 |
+        | 2026Q2 |          0.7624 |       0.785 |     0.782 |    0.824 |
+        | 2026Q3 |          0.7649 |       0.782 |     0.782 |    0.821 |
+        """
+        check_period_type(period)
+
+        # Only the United States is published monthly, so a request for other countries
+        # defaults to the quarters they are published in.
+        requested = normalize_requested_countries(countries, ["United States"])
+        period = validate_period(
+            self._default_period(
+                period,
+                "monthly" if requested == ["United States"] else "quarterly",
+            ),
+            ["monthly", "quarterly"],
+            "capacity utilization",
+        )
+
+        if period == "monthly":
+            capacity_utilization = frb_model.get_capacity_utilization()
+
+            # Every country was requested, so the quarterly ones are left out as well.
+            if requested is None:
+                logger.warning(
+                    "The capacity utilization is published monthly for the United States alone, the "
+                    "other countries quarterly: use period='quarterly' for them."
+                )
+            elif other := [
+                country for country in requested if country != "United States"
+            ]:
+                logger.warning(
+                    "The capacity utilization of %s is published quarterly, not monthly: "
+                    "use period='quarterly' for it.",
+                    ", ".join(other),
+                )
+        else:
+            capacity_utilization = self._combine_sources_for(
+                [
+                    (
+                        lambda: eurostat_model.get_capacity_utilization(
+                            buffered_start_date(self._start_date, "quarterly"),
+                            self._end_date,
+                        ),
+                        None,
+                    ),
+                    (
+                        lambda: average_monthly_index(
+                            frb_model.get_capacity_utilization(), "quarterly"
+                        ),
+                        "United States",
+                    ),
+                ],
+                countries,
+            )
+
+        return finalize_dataset(
+            dataset=capacity_utilization,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Capacity Utilization",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Rows empty for every selected country, e.g. a quarter only one source has.
+            dropna=True,
+        )
+
+    @handle_errors
     def get_housing_starts(
         self,
         rolling: int | None = None,
@@ -658,7 +877,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -760,7 +980,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -864,7 +1085,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -963,7 +1185,8 @@ class ActivityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

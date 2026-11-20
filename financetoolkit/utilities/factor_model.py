@@ -98,33 +98,65 @@ def sample_by_period(data: pd.DataFrame, period: str) -> pd.DataFrame:
     return data.groupby(periods).last()
 
 
-def get_forward_returns(prices: pd.DataFrame, horizon: int) -> pd.DataFrame:
+def get_forward_returns(
+    prices: pd.DataFrame, horizon: int, period: str
+) -> pd.DataFrame:
     """
-    Calculates the return from the close of each period to the close horizon periods later,
-    per ticker over its own periods with a price. The return of a period therefore starts
-    after the factor of that period is known, so it can be compared with the factor without
-    look-ahead.
+    Calculates the return from the close of each period to the close horizon periods later.
+    The return of a period therefore starts after the factor of that period is known, so it
+    can be compared with the factor without look-ahead.
+
+    Daily returns count each ticker's own trading days: a day another ticker trades in but
+    it does not (a holiday on its exchange, NaN in the prices) is skipped rather than
+    cutting its return short. Weekly, monthly, quarterly and yearly returns count calendar
+    periods, so a ticker without a price in a period has no return over it, and a return
+    over horizon periods never stretches across a longer span.
 
     Args:
         prices (pd.DataFrame): The (dividend and split adjusted) prices with the periods as
-            index and the tickers as columns.
+            index and the tickers as columns, NaN where a ticker did not trade.
         horizon (int): The number of periods the return covers.
+        period (str): The period frequency: daily, weekly, monthly, quarterly or yearly.
 
     Returns:
         pd.DataFrame: The forward returns on the index of the prices, NaN for the last
         horizon periods of each ticker.
     """
+    if period != "daily":
+        return prices.shift(-horizon) / prices - 1
+
     forward_returns = {}
 
     for ticker in prices.columns:
-        # Each ticker counts its own periods with a price, so a period another ticker trades
-        # in but it does not (a holiday on its exchange) does not cut its return short.
         price = prices[ticker].dropna()
         forward_returns[ticker] = (price.shift(-horizon) / price - 1).reindex(
             prices.index
         )
 
     return pd.DataFrame(forward_returns, index=prices.index, columns=prices.columns)
+
+
+def mask_non_trading_days(prices: pd.DataFrame, returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sets the prices on the days a ticker did not trade to NaN. On a date only another
+    ticker or the benchmark traded, the historical data carries a ticker's last price
+    forward without a Return (see `historical_model.fill_non_trading_days`), which a
+    forward return would count as a trading day without a move. A day without a Return
+    whose previous day has a price is such a filled day; a ticker's first price has no
+    Return by construction and is kept.
+
+    Args:
+        prices (pd.DataFrame): The daily prices with the dates as index and tickers as columns.
+        returns (pd.DataFrame): The daily returns of the historical data on the same dates.
+            Tickers without a column here keep all their prices.
+
+    Returns:
+        pd.DataFrame: The prices, NaN on the days the ticker did not trade.
+    """
+    without_return = returns.reindex(index=prices.index, columns=prices.columns).isna()
+    without_return.loc[:, ~prices.columns.isin(returns.columns)] = False
+
+    return prices.mask(without_return & prices.shift().notna())
 
 
 def get_row_correlation(
@@ -600,7 +632,7 @@ def analyse_factor(
         {
             get_horizon_label(horizon, period): get_information_coefficient(
                 sampled_factor,
-                get_forward_returns(sampled_prices, horizon).reindex(
+                get_forward_returns(sampled_prices, horizon, period).reindex(
                     sampled_factor.index
                 ),
             )
@@ -613,7 +645,7 @@ def analyse_factor(
         {
             get_horizon_label(horizon, period): get_quantile_returns(
                 quantile_assignment,
-                get_forward_returns(sampled_prices, horizon).reindex(
+                get_forward_returns(sampled_prices, horizon, period).reindex(
                     sampled_factor.index
                 ),
             )
@@ -641,6 +673,7 @@ def get_factor_analysis(
     detail: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    returns: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Analyses the predictive power of each factor: a summary row per factor and horizon, or
@@ -668,11 +701,18 @@ def get_factor_analysis(
             to None.
         end_date (str | None, optional): The last date a factor is evaluated on. Defaults
             to None.
+        returns (pd.DataFrame | None, optional): The daily returns of the historical data,
+            which mark the days a ticker did not trade (see `mask_non_trading_days`), so
+            daily forward returns count trading days only. Defaults to None, which treats
+            every price as traded.
 
     Returns:
         pd.DataFrame: The summary per factor and horizon (index), or the detail.
     """
     horizon_list = get_horizons(period, horizons)
+
+    if returns is not None:
+        prices = mask_non_trading_days(prices, returns)
 
     if detail is not None and detail not in DETAILS:
         raise ValueError(f"detail must be one of {', '.join(DETAILS)}.")

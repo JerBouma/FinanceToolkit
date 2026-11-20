@@ -1,6 +1,6 @@
 ,,,2020,2021,2022,2023
 AAPL,Earnings per Share,Lag 1,,0.714,0.0889,0.0034
-AAPL,Earnings per Share,Lag 2,,,0.8665,0.0926
+AAPL,Earnings per Share,Lag 2,,,0.8664,0.0926
 AAPL,Earnings per Share,Lag 3,,,,0.8728
 AAPL,Revenue per Share,Lag 1,,0.385,0.1135,0.0035
 AAPL,Revenue per Share,Lag 2,,,0.5422,0.1175
@@ -8,12 +8,15 @@ AAPL,Revenue per Share,Lag 3,,,,0.5477
 AAPL,Price-to-Earnings,Lag 1,,-0.2192,-0.328,
 AAPL,Price-to-Earnings,Lag 2,,,-0.4754,
 AAPL,Price-to-Earnings,Lag 3,,,,
-AAPL,Price-to-Earnings-Growth,Lag 1,,,4.3968,
+AAPL,Price-to-Earnings-Growth,Lag 1,,,4.396,
 AAPL,Price-to-Earnings-Growth,Lag 2,,,,
 AAPL,Price-to-Earnings-Growth,Lag 3,,,,
-AAPL,Book Value per Share,Lag 1,,0.0036,-0.1703,0.2663
-AAPL,Book Value per Share,Lag 2,,,-0.1673,0.0506
-AAPL,Book Value per Share,Lag 3,,,,0.0544
+AAPL,Dividend-Adjusted PEG,Lag 1,,,4.0362,
+AAPL,Dividend-Adjusted PEG,Lag 2,,,,
+AAPL,Dividend-Adjusted PEG,Lag 3,,,,
+AAPL,Book Value per Share,Lag 1,,0.0036,-0.1703,0.2662
+AAPL,Book Value per Share,Lag 2,,,-0.1674,0.0506
+AAPL,Book Value per Share,Lag 3,,,,0.0543
 AAPL,Price-to-Book,Lag 1,,0.3335,-0.1181,
 AAPL,Price-to-Book,Lag 2,,,0.176,
 AAPL,Price-to-Book,Lag 3,,,,
@@ -21,19 +24,19 @@ AAPL,Interest Debt per Share,Lag 1,,0.1557,0.0051,-0.123
 AAPL,Interest Debt per Share,Lag 2,,,0.1617,-0.1185
 AAPL,Interest Debt per Share,Lag 3,,,,0.0188
 AAPL,CAPEX per Share,Lag 1,,-0.5763,0.0021,-0.0567
-AAPL,CAPEX per Share,Lag 2,,,-0.5729,-0.0545
+AAPL,CAPEX per Share,Lag 2,,,-0.5729,-0.0544
 AAPL,CAPEX per Share,Lag 3,,,,-0.6621
-AAPL,Earnings Yield,Lag 1,,0.2794,0.4873,
-AAPL,Earnings Yield,Lag 2,,,0.9028,
+AAPL,Earnings Yield,Lag 1,,0.2808,0.4882,
+AAPL,Earnings Yield,Lag 2,,,0.9061,
 AAPL,Earnings Yield,Lag 3,,,,
-AAPL,Dividend Payout Ratio,Lag 1,,-0.3771,-0.0268,0.0417
-AAPL,Dividend Payout Ratio,Lag 2,,,-0.3938,0.0137
-AAPL,Dividend Payout Ratio,Lag 3,,,,-0.3685
-AAPL,Dividend Yield,Lag 1,,-0.7513,0.4286,
-AAPL,Dividend Yield,Lag 2,,,-0.6447,
+AAPL,Dividend Payout Ratio,Lag 1,,-0.377,-0.0268,0.0417
+AAPL,Dividend Payout Ratio,Lag 2,,,-0.3937,0.0138
+AAPL,Dividend Payout Ratio,Lag 3,,,,-0.3684
+AAPL,Dividend Yield,Lag 1,,-0.7528,0.4378,
+AAPL,Dividend Yield,Lag 2,,,-0.6446,
 AAPL,Dividend Yield,Lag 3,,,,
-AAPL,Weighted Dividend Yield,Lag 1,,-0.2131,0.4583,
-AAPL,Weighted Dividend Yield,Lag 2,,,0.1475,
+AAPL,Weighted Dividend Yield,Lag 1,,-0.2021,0.4483,
+AAPL,Weighted Dividend Yield,Lag 2,,,0.1556,
 AAPL,Weighted Dividend Yield,Lag 3,,,,
 AAPL,Price-to-Cash-Flow,Lag 1,,-0.0016,-0.3967,
 AAPL,Price-to-Cash-Flow,Lag 2,,,-0.3977,
@@ -71,31 +74,31 @@ AAPL,Net Current Asset Value,Lag 3,,,,-0.279
 AAPL,EV-to-Free-Cash-Flow,Lag 1,,0.0275,-0.4005,
 AAPL,EV-to-Free-Cash-Flow,Lag 2,,,-0.3841,
 AAPL,EV-to-Free-Cash-Flow,Lag 3,,,,
-AAPL,Buyback Yield,Lag 1,,-0.0782,0.4876,
-AAPL,Buyback Yield,Lag 2,,,0.3713,
+AAPL,Buyback Yield,Lag 1,,-0.0779,0.4872,
+AAPL,Buyback Yield,Lag 2,,,0.3714,
 AAPL,Buyback Yield,Lag 3,,,,
-AAPL,Shareholder Yield,Lag 1,,-0.3413,0.4819,
-AAPL,Shareholder Yield,Lag 2,,,-0.0238,
+AAPL,Shareholder Yield,Lag 1,,-0.3416,0.48,
+AAPL,Shareholder Yield,Lag 2,,,-0.0256,
 AAPL,Shareholder Yield,Lag 3,,,,
 AAPL,SBC-Adjusted Free Cash Flow,Lag 1,,0.2782,0.2041,-0.1333
 AAPL,SBC-Adjusted Free Cash Flow,Lag 2,,,0.5391,0.0436
 AAPL,SBC-Adjusted Free Cash Flow,Lag 3,,,,0.3339
-AAPL,Free Cash Flow Payout Ratio,Lag 1,,-0.1892,-0.144,0.1329
-AAPL,Free Cash Flow Payout Ratio,Lag 2,,,-0.3059,-0.0302
-AAPL,Free Cash Flow Payout Ratio,Lag 3,,,,-0.2137
+AAPL,Free Cash Flow Payout Ratio,Lag 1,,-0.1891,-0.1444,0.133
+AAPL,Free Cash Flow Payout Ratio,Lag 2,,,-0.3061,-0.0306
+AAPL,Free Cash Flow Payout Ratio,Lag 3,,,,-0.2139
 AAPL,EV-to-Invested-Capital,Lag 1,,-0.0812,-0.27,
 AAPL,EV-to-Invested-Capital,Lag 2,,,-0.3292,
 AAPL,EV-to-Invested-Capital,Lag 3,,,,
 AAPL,Price-to-Tangible-Book,Lag 1,,0.3335,-0.1181,
 AAPL,Price-to-Tangible-Book,Lag 2,,,0.176,
 AAPL,Price-to-Tangible-Book,Lag 3,,,,
-AAPL,Net Share Issuance,Lag 1,,,0.2277,0.0
-AAPL,Net Share Issuance,Lag 2,,,,0.2277
+AAPL,Net Share Issuance,Lag 1,,,0.2286,-0.0011
+AAPL,Net Share Issuance,Lag 2,,,,0.2278
 AAPL,Net Share Issuance,Lag 3,,,,
 AAPL,Composite Equity Issuance,Lag 1,,,,
 AAPL,Composite Equity Issuance,Lag 2,,,,
 AAPL,Composite Equity Issuance,Lag 3,,,,
-AAPL,Net External Financing,Lag 1,,,-0.0735,0.0202
+AAPL,Net External Financing,Lag 1,,,-0.0736,0.0203
 AAPL,Net External Financing,Lag 2,,,,-0.0518
 AAPL,Net External Financing,Lag 3,,,,
 MSFT,Earnings per Share,Lag 1,,0.3973,0.1979,0.0039
@@ -107,9 +110,12 @@ MSFT,Revenue per Share,Lag 3,,,,0.5236
 MSFT,Price-to-Earnings,Lag 1,,0.0821,-0.4047,
 MSFT,Price-to-Earnings,Lag 2,,,-0.3558,
 MSFT,Price-to-Earnings,Lag 3,,,,
-MSFT,Price-to-Earnings-Growth,Lag 1,,,0.1951,
+MSFT,Price-to-Earnings-Growth,Lag 1,,,0.1954,
 MSFT,Price-to-Earnings-Growth,Lag 2,,,,
 MSFT,Price-to-Earnings-Growth,Lag 3,,,,
+MSFT,Dividend-Adjusted PEG,Lag 1,,,0.1542,
+MSFT,Dividend-Adjusted PEG,Lag 2,,,,
+MSFT,Dividend-Adjusted PEG,Lag 3,,,,
 MSFT,Book Value per Share,Lag 1,,0.212,0.1835,0.2495
 MSFT,Book Value per Share,Lag 2,,,0.4344,0.4788
 MSFT,Book Value per Share,Lag 3,,,,0.7924
@@ -117,22 +123,22 @@ MSFT,Price-to-Book,Lag 1,,0.2476,-0.3975,
 MSFT,Price-to-Book,Lag 2,,,-0.2483,
 MSFT,Price-to-Book,Lag 3,,,,
 MSFT,Interest Debt per Share,Lag 1,,-0.0377,-0.0887,-0.0132
-MSFT,Interest Debt per Share,Lag 2,,,-0.1231,-0.1007
+MSFT,Interest Debt per Share,Lag 2,,,-0.123,-0.1007
 MSFT,Interest Debt per Share,Lag 3,,,,-0.1346
 MSFT,CAPEX per Share,Lag 1,,-0.3487,-0.1687,-0.1874
-MSFT,CAPEX per Share,Lag 2,,,-0.5762,-0.3877
-MSFT,CAPEX per Share,Lag 3,,,,-0.8716
-MSFT,Earnings Yield,Lag 1,,-0.0772,0.682,
-MSFT,Earnings Yield,Lag 2,,,0.5521,
+MSFT,CAPEX per Share,Lag 2,,,-0.5763,-0.3878
+MSFT,CAPEX per Share,Lag 3,,,,-0.8717
+MSFT,Earnings Yield,Lag 1,,-0.0759,0.6799,
+MSFT,Earnings Yield,Lag 2,,,0.5524,
 MSFT,Earnings Yield,Lag 3,,,,
-MSFT,Dividend Payout Ratio,Lag 1,,-0.2112,-0.0753,0.0975
-MSFT,Dividend Payout Ratio,Lag 2,,,-0.2706,0.0148
+MSFT,Dividend Payout Ratio,Lag 1,,-0.2112,-0.0754,0.0975
+MSFT,Dividend Payout Ratio,Lag 2,,,-0.2707,0.0148
 MSFT,Dividend Payout Ratio,Lag 3,,,,-0.1995
-MSFT,Dividend Yield,Lag 1,,-0.2766,0.5588,
-MSFT,Dividend Yield,Lag 2,,,0.1277,
+MSFT,Dividend Yield,Lag 1,,-0.2722,0.5487,
+MSFT,Dividend Yield,Lag 2,,,0.1271,
 MSFT,Dividend Yield,Lag 3,,,,
-MSFT,Weighted Dividend Yield,Lag 1,,-0.2697,0.5385,
-MSFT,Weighted Dividend Yield,Lag 2,,,0.1236,
+MSFT,Weighted Dividend Yield,Lag 1,,-0.2711,0.5533,
+MSFT,Weighted Dividend Yield,Lag 2,,,0.1322,
 MSFT,Weighted Dividend Yield,Lag 3,,,,
 MSFT,Price-to-Cash-Flow,Lag 1,,0.1839,-0.3909,
 MSFT,Price-to-Cash-Flow,Lag 2,,,-0.2789,
@@ -170,30 +176,30 @@ MSFT,Net Current Asset Value,Lag 3,,,,-18.685
 MSFT,EV-to-Free-Cash-Flow,Lag 1,,0.2244,-0.391,
 MSFT,EV-to-Free-Cash-Flow,Lag 2,,,-0.2544,
 MSFT,EV-to-Free-Cash-Flow,Lag 3,,,,
-MSFT,Buyback Yield,Lag 1,,-0.2126,0.71,
-MSFT,Buyback Yield,Lag 2,,,0.3465,
+MSFT,Buyback Yield,Lag 1,,-0.2065,0.6994,
+MSFT,Buyback Yield,Lag 2,,,0.3484,
 MSFT,Buyback Yield,Lag 3,,,,
-MSFT,Shareholder Yield,Lag 1,,-0.2353,0.6391,
-MSFT,Shareholder Yield,Lag 2,,,0.2534,
+MSFT,Shareholder Yield,Lag 1,,-0.2345,0.6383,
+MSFT,Shareholder Yield,Lag 2,,,0.2541,
 MSFT,Shareholder Yield,Lag 3,,,,
 MSFT,SBC-Adjusted Free Cash Flow,Lag 1,,0.2517,0.1529,-0.135
 MSFT,SBC-Adjusted Free Cash Flow,Lag 2,,,0.4432,-0.0027
 MSFT,SBC-Adjusted Free Cash Flow,Lag 3,,,,0.2483
-MSFT,Free Cash Flow Payout Ratio,Lag 1,,-0.1201,-0.0543,0.1958
-MSFT,Free Cash Flow Payout Ratio,Lag 2,,,-0.168,0.1308
-MSFT,Free Cash Flow Payout Ratio,Lag 3,,,,-0.0051
+MSFT,Free Cash Flow Payout Ratio,Lag 1,,-0.1202,-0.0545,0.196
+MSFT,Free Cash Flow Payout Ratio,Lag 2,,,-0.1682,0.1308
+MSFT,Free Cash Flow Payout Ratio,Lag 3,,,,-0.0052
 MSFT,EV-to-Invested-Capital,Lag 1,,0.0083,-0.5433,
 MSFT,EV-to-Invested-Capital,Lag 2,,,-0.5395,
 MSFT,EV-to-Invested-Capital,Lag 3,,,,
 MSFT,Price-to-Tangible-Book,Lag 1,,0.2038,-0.3194,
 MSFT,Price-to-Tangible-Book,Lag 2,,,-0.1807,
 MSFT,Price-to-Tangible-Book,Lag 3,,,,
-MSFT,Net Share Issuance,Lag 1,,,0.1807,0.0147
-MSFT,Net Share Issuance,Lag 2,,,,0.1928
+MSFT,Net Share Issuance,Lag 1,,,0.1843,0.013
+MSFT,Net Share Issuance,Lag 2,,,,0.1949
 MSFT,Net Share Issuance,Lag 3,,,,
 MSFT,Composite Equity Issuance,Lag 1,,,,
 MSFT,Composite Equity Issuance,Lag 2,,,,
 MSFT,Composite Equity Issuance,Lag 3,,,,
-MSFT,Net External Financing,Lag 1,,,-0.1479,0.3347
+MSFT,Net External Financing,Lag 1,,,-0.1474,0.3345
 MSFT,Net External Financing,Lag 2,,,,0.2364
 MSFT,Net External Financing,Lag 3,,,,

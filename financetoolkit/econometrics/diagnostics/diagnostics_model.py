@@ -702,7 +702,7 @@ def get_window_change_by_year(
     than it starts (November to February) runs into the next year and is labelled by the
     year it ends; the same month for both is the change over twelve months. A year without
     the value of either month has no change, so the current year is empty until its last
-    month is published. Largest Since is NaN when no earlier year had a change as large,
+    month is published. Largest Since is <NA> when no earlier year had a change as large,
     which makes the change the largest of the history up to that year.
 
     Args:
@@ -716,7 +716,7 @@ def get_window_change_by_year(
 
     Returns:
         pd.DataFrame: Per year the Start Value, End Value, Change (decimal), Rank and
-        Largest Since.
+        Largest Since, the last two as whole numbers (Int64) that are <NA> when missing.
 
     Raises:
         ValueError: When a month is not between 1 and 12.
@@ -758,6 +758,11 @@ def get_window_change_by_year(
         for position, change in enumerate(changes)
     ]
     window.index.name = "Year"
+
+    # Whole numbers (a rank and a year), with <NA> for a year without a change or without
+    # an earlier change as large, rather than floats such as 2022.0.
+    window["Rank"] = window["Rank"].astype("Int64")
+    window["Largest Since"] = window["Largest Since"].astype("Int64")
 
     return window
 

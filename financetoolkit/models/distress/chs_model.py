@@ -286,8 +286,8 @@ def get_chs_score(
     The logit of the probability of failure 12 months ahead of Campbell, Hilscher and
     Szilagyi (2008), Table IV, column (3):
 
-        - LPFD = -9.164 - 20.264 NIMTAAVG + 1.416 TLMTA - 7.129 EXRETAVG + 1.411 SIGMA
-          - 0.045 RSIZE - 2.132 CASHMTA + 0.075 MB - 0.058 PRICE
+        - LPFD = -9.164 - 20.264 NIMTAAVG + 1.416 TLMTA - 7.129 EXRETAVG + 1.411 SIGMA -
+          0.045 RSIZE - 2.132 CASHMTA + 0.075 MB - 0.058 PRICE
 
     Args:
         net_income_to_market_total_assets_average (pd.DataFrame): NIMTAAVG.

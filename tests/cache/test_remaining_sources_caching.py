@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit import fmp_model, yfinance_model
-from financetoolkit.cache import cache_controller, request_model
+from financetoolkit.cache import cache_controller, policy_model, request_model
 from financetoolkit.discovery import discovery_model
 from financetoolkit.fixedincome.sources import fmp_model as fixedincome_fmp_model
 
@@ -41,6 +41,20 @@ def test_redact_credentials_handles_a_trailing_key():
             "https://example.invalid/data?symbol=AAPL&apikey=secret"
         )
         == "https://example.invalid/data?symbol=AAPL"
+    )
+
+
+def test_redact_credentials_removes_every_key_the_log_redacts():
+    """Test that a message never shows a key the log would hide, such as FRED's."""
+    assert (
+        request_model.redact_credentials(
+            "https://api.example/fred?series_id=GDP&fred_api_key=SECRET1&key=SECRET2"
+        )
+        == "https://api.example/fred?series_id=GDP"
+    )
+    assert (
+        request_model.redact_credentials("Rejected api_key=SECRET3 for GDP")
+        == "Rejected api_key=*** for GDP"
     )
 
 
@@ -258,3 +272,72 @@ def test_store_claims_coverage_for_surplus_data(cache):
     )
 
     assert plan.fully_cached
+
+
+def test_redact_credentials_keeps_parameters_that_end_in_key():
+    """Test that only credential names are removed from a URL, not any name ending in "key"."""
+    assert (
+        request_model.redact_credentials(
+            "https://example.invalid/a?keyword=apple&monkey=1&fred_key=SECRET"
+        )
+        == "https://example.invalid/a?keyword=apple&monkey=1"
+    )
+
+
+def test_treasury_rates_keep_the_cache_of_a_window_that_failed(cache, monkeypatch):
+    """Test that a failed window neither deletes its cached rows nor counts as covered."""
+    windows: list[tuple[str, str]] = []
+    failing = {"active": False}
+
+    def fake_fetch(url, sleep_timer=True, user_subscription="Free"):  # noqa: ARG001
+        start = url.split("from=")[1].split("&")[0]
+        end = url.split("to=")[1].split("&")[0]
+        windows.append((start, end))
+
+        if failing["active"] and start > "2023-10-01":
+            return pd.DataFrame(columns=["LIMIT REACH"])
+
+        return pd.DataFrame(
+            {
+                "date": pd.date_range(start=start, end=end, freq="D").strftime(
+                    "%Y-%m-%d"
+                ),
+                "month1": 6.0 if failing["active"] else 5.0,
+            }
+        )
+
+    monkeypatch.setattr(fixedincome_fmp_model, "get_financial_data", fake_fetch)
+
+    def plan():
+        return cache.plan(
+            source="FinancialModelingPrep",
+            dataset="treasury_rates",
+            entities=["united_states"],
+            start="2023-01-01",
+            end="2023-12-31",
+        )
+
+    fixedincome_fmp_model.get_treasury_rates(
+        api_key="key", start_date="2023-01-01", end_date="2023-12-31"
+    )
+    assert len(plan().cached_frame("united_states")) == 365
+
+    # A stored range that is stale at once is requested again in full, here with the last window failing.  # noqa: E501
+    monkeypatch.setitem(
+        policy_model.POLICIES,
+        f"{policy_model.FINANCIAL_MODELING_PREP}.treasury_rates",
+        policy_model.CachePolicy(ttl_seconds=0),
+    )
+    failing["active"] = True
+    windows.clear()
+    rates = fixedincome_fmp_model.get_treasury_rates(
+        api_key="key", start_date="2023-01-01", end_date="2023-12-31"
+    )
+
+    cached = plan().cached_frame("united_states")
+
+    assert len(windows) > 1
+    assert len(cached) == 365
+    assert len(rates) == 365
+    assert cached.loc["2023-11-01", "1 Month"] == 5.0
+    assert cached.loc["2023-02-01", "1 Month"] == 6.0

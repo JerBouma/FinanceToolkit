@@ -6,6 +6,7 @@ import tempfile
 import pandas as pd
 import pytest
 
+from financetoolkit.portfolio.helpers import get_trading_day_locations
 from financetoolkit.portfolio.portfolio_model import (
     convert_historical_data,
     convert_prices,
@@ -523,3 +524,34 @@ def test_a_column_reads_its_separators_once(column, numbers):
     converted = convert_column_to_float(pd.Series(column, dtype=object))
 
     assert converted.tolist() == pytest.approx(numbers, nan_ok=True)
+
+
+def test_a_transaction_is_located_on_its_own_tickers_next_trading_day():
+    # Friday 2021-01-29 to Tuesday 2021-02-02: the stock carries Friday's close over the weekend the cryptocurrency trades on, without a return.  # noqa: E501
+    dates = pd.period_range("2021-01-29", "2021-02-02", freq="D")
+    close = pd.DataFrame(
+        {"AAPL": [100.0, 100.0, 100.0, 102.0, 103.0], "BTC": [1.0, 2.0, 3.0, 4.0, 5.0]},
+        index=dates,
+    )
+    returns = pd.DataFrame(
+        {
+            "AAPL": [0.01, None, None, 0.02, 0.01],
+            "BTC": [0.1, 1.0, 0.5, 0.33, 0.25],
+        },
+        index=dates,
+    )
+    historical_data = pd.concat({"Close": close, "Return": returns}, axis=1)
+    transaction_dates = pd.PeriodIndex(
+        ["2021-01-30", "2021-01-30", "2021-01-31", "2021-02-03"], freq="D"
+    )
+    tickers = pd.Index(["AAPL", "BTC", "UNKNOWN", "AAPL"])
+
+    locations = get_trading_day_locations(historical_data, transaction_dates, tickers)
+
+    # The stock waits for Monday, the cryptocurrency trades on Saturday, a ticker without data takes the first date on or after it and a transaction after the data its last date.  # noqa: E501
+    assert dates[locations].astype(str).tolist() == [
+        "2021-02-01",
+        "2021-01-30",
+        "2021-01-31",
+        "2021-02-02",
+    ]

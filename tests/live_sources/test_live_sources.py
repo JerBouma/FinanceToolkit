@@ -51,6 +51,7 @@ from financetoolkit.economics.sources import (
     eex_model,
     esrb_model,
     eurostat_model,
+    fhfa_model,
     frb_model,
     freddie_mac_model,
     gmdb_model,
@@ -172,6 +173,17 @@ SOURCES = {
         "Euro Area",
         "quarterly",
     ),
+    "Eurostat job vacancy rate": (
+        lambda: eurostat_model.get_job_vacancy_rate(YEARLY_START, END),
+        "Euro Area",
+        "quarterly",
+    ),
+    "Eurostat capacity utilisation": (
+        lambda: eurostat_model.get_capacity_utilization(START, END),
+        "Euro Area",
+        "quarterly",
+        (0.5, 1),
+    ),
     "ONS inflation rate": (ons_model.get_inflation_rate, "United Kingdom", "monthly"),
     "ONS consumer price index": (
         ons_model.get_consumer_price_index,
@@ -190,6 +202,11 @@ SOURCES = {
     ),
     "BLS unemployment rate": (
         bls_model.get_unemployment_rate,
+        "United States",
+        "monthly",
+    ),
+    "BLS job openings rate": (
+        bls_model.get_job_openings_rate,
         "United States",
         "monthly",
     ),
@@ -242,6 +259,15 @@ SOURCES = {
         lambda: imf_model.get_inflation_rate(START, END),
         "Pakistan",
         "monthly",
+    ),
+    # The ratio requests the position, the end-of-period exchange rates and the GDP.
+    "IMF net international investment position": (
+        lambda: imf_model.get_net_international_investment_position(
+            "quarterly", START, END, to_gdp=True
+        ),
+        "United States",
+        "quarterly",
+        (-2.0, 2.0),
     ),
     "BIS policy rates": (
         lambda: bis_model.get_central_bank_policy_rate(START, END),
@@ -413,10 +439,22 @@ SOURCES = {
         "United States",
         "daily",
     ),
+    "FHFA outstanding mortgage rates": (
+        fhfa_model.get_outstanding_mortgage_interest_rates,
+        ("United States", "All Mortgages", "Loans", "Below 3%"),
+        "quarterly",
+        (0, 1),
+    ),
     "Federal Reserve industrial production index": (
         frb_model.get_industrial_production_index,
         "United States",
         "monthly",
+    ),
+    "Federal Reserve capacity utilization": (
+        frb_model.get_capacity_utilization,
+        "United States",
+        "monthly",
+        (0.5, 1),
     ),
     "Federal Reserve excess bond premium": (
         lambda: frb_model.get_excess_bond_premium().rename(
@@ -741,6 +779,23 @@ STATIC_SOURCES = {
         ),
         ("Germany", 0),
         (60, 100),
+    ),
+    "OECD unit labour costs": (
+        lambda: oecd_model.get_unit_labour_costs(YEARLY_START, END),
+        "United States",
+        (50, 500),
+    ),
+    "World Bank total reserves": (
+        lambda: world_bank_model.get_indicator("FI.RES.TOTL.CD", "total reserves"),
+        "United States",
+        (1e10, 1e13),
+    ),
+    "World Bank reserves in months of imports": (
+        lambda: world_bank_model.get_indicator(
+            "FI.RES.TOTL.MO", "total reserves in months of imports"
+        ),
+        "Japan",
+        (1, 50),
     ),
     "OECD household savings rate": (
         lambda: oecd_model.get_household_savings_rate(False, YEARLY_START, END),

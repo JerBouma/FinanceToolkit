@@ -760,8 +760,8 @@ def _psi(
     before t1 is the higher one, since the early-exercise boundary of a call falls towards
     the strike as expiration approaches.
 
-    - ψ = e^(λT) * S^γ * [M(—e1, —f1, ρ) — (I2 / S)^κ * M(—e2, —f2, ρ)
-      — (I1 / S)^κ * M(—e3, —f3, —ρ) + (I1 / I2)^κ * M(—e4, —f4, —ρ)]
+    - ψ = e^(λT) * S^γ * [M(—e1, —f1, ρ) — (I2 / S)^κ * M(—e2, —f2, ρ) —
+      (I1 / S)^κ * M(—e3, —f3, —ρ) + (I1 / I2)^κ * M(—e4, —f4, —ρ)]
 
     With M the cumulative bivariate normal distribution, ρ = sqrt(t1 / T), μ = b + (γ —
     0.5)σ², λ and κ as in phi and:
@@ -1053,8 +1053,8 @@ def _bjerksund_stensland_call(
         value = european_value
 
     # The flat-boundary approximation is a lower bound that can fall below the European
-    # price (high volatility, long maturities) or the exercise value; as in QuantLib the
-    # result is floored at both.
+    # price (high volatility, long maturities) or the exercise value, both lower bounds of
+    # an American option, so the result is floored at both.
     return float(max(value, european_value, exercise_value))
 
 
@@ -1097,10 +1097,10 @@ def get_bjerksund_stensland(
 
     If S ≥ I2 the option is exercised immediately and is worth S — K. Otherwise:
 
-    - C = α2 * S^β — α2 * φ(S, t1, β, I2, I2) + φ(S, t1, 1, I2, I2) — φ(S, t1, 1, I1, I2)
-      — K * φ(S, t1, 0, I2, I2) + K * φ(S, t1, 0, I1, I2) + α1 * φ(S, t1, β, I1, I2)
-      — α1 * ψ(S, T, β, I1, I2, I1, t1) + ψ(S, T, 1, I1, I2, I1, t1) — ψ(S, T, 1, K, I2, I1, t1)
-      — K * ψ(S, T, 0, I1, I2, I1, t1) + K * ψ(S, T, 0, K, I2, I1, t1)
+    - C = α2 * S^β — α2 * φ(S, t1, β, I2, I2) + φ(S, t1, 1, I2, I2) — φ(S, t1, 1, I1, I2) —
+      K * φ(S, t1, 0, I2, I2) + K * φ(S, t1, 0, I1, I2) + α1 * φ(S, t1, β, I1, I2) —
+      α1 * ψ(S, T, β, I1, I2, I1, t1) + ψ(S, T, 1, I1, I2, I1, t1) — ψ(S, T, 1, K, I2, I1, t1) —
+      K * ψ(S, T, 0, I1, I2, I1, t1) + K * ψ(S, T, 0, K, I2, I1, t1)
 
     Where φ is a knock-out claim over one period (a univariate normal expression) and ψ
     its two-period counterpart (a bivariate normal expression), see ``_phi`` and ``_psi``.
@@ -1113,10 +1113,10 @@ def get_bjerksund_stensland(
 
     An American option is worth at least its European counterpart and its exercise value,
     while the flat-boundary approximation can fall below the European price at high
-    volatility and long maturities. The result is therefore floored at both, as QuantLib
-    does. Where the boundary I2 falls to or below the strike (a negative cost of carry at low
-    volatility, or a non-positive risk-free rate), the approximation would exercise options
-    that are out of the money, and a 1,000-step binomial tree prices the option instead.
+    volatility and long maturities. The result is therefore floored at both. Where the
+    boundary I2 falls to or below the strike (a negative cost of carry at low volatility, or
+    a non-positive risk-free rate), the approximation would exercise options that are out
+    of the money, and a 1,000-step binomial tree prices the option instead.
 
     Args:
         stock_price (float): The current stock price.
@@ -1141,7 +1141,10 @@ def get_bjerksund_stensland(
         Administration (NHH). As presented in Haug, E. G. (2007). "The Complete Guide to
         Option Pricing Formulas" (2nd ed.), section 3.1.4. Compared with a finite-difference
         American price, the approximation is slightly low; for S = K = 100, r = 5%,
-        q = 3%, σ = 25% and T = 1 the put is 8.8439 against 8.8823.
+        q = 3%, σ = 25% and T = 1 the put is 8.8439 against 8.8823. QuantLib's
+        BjerksundStenslandApproximationEngine implements the 1993 model with its single flat
+        boundary, so its prices are close to but not a reference for the 2002 version; the
+        prices of Haug (2007) and a finite-difference American price are.
     """
     validate_numeric_inputs(
         stock_price=stock_price,

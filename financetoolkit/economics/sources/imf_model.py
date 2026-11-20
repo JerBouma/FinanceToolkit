@@ -11,6 +11,7 @@ from financetoolkit.cache import policy_model
 from financetoolkit.economics.helpers import collect_cached_data, collect_ranged_data
 from financetoolkit.economics.sources.oecd_model import CODE_TO_COUNTRY
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.statistics_model import EURO_AREA_MEMBERS
 
 BASE_URL = "https://api.imf.org/external/sdmx/2.1/"
 
@@ -28,7 +29,9 @@ CODELIST_PATTERN = re.compile(
 )
 CODE_PATTERN = re.compile(r'<str:Code id="([A-Z]{3})"[^>]*>(.*?)</str:Code>', re.S)
 NAME_PATTERN = re.compile(r'<com:Name xml:lang="en">([^<]+)</com:Name>')
-SERIES_PATTERN = re.compile(r"<Series\b([^>]*)>(.*?)</Series>", re.S)
+# A series without observations is written as an empty element, <Series .../>, which must
+# not take the observations of the series after it.
+SERIES_PATTERN = re.compile(r"<Series\b([^>]*?)(?:/>|>(.*?)</Series>)", re.S)
 OBSERVATION_PATTERN = re.compile(r"<Obs\b([^>]*)/?>")
 COUNTRY_ATTRIBUTE = re.compile(r'\bCOUNTRY="([A-Z0-9]+)"')
 INDICATOR_ATTRIBUTE = re.compile(r'\bINDICATOR="([^"]+)"')
@@ -37,12 +40,20 @@ VALUE_ATTRIBUTE = re.compile(r'\bOBS_VALUE="([^"]+)"')
 
 
 # The IMF countries whose common name differs from the one the other sources (Eurostat, the
-# BIS and the Global Macro Database) use, so the inflation of a country is one column no
-# matter which source it came from.
+# BIS and the Global Macro Database) use, so a country is one column no matter which source
+# it came from and the IMF methods name it as the gross domestic product does. The IMF's
+# "Curaçao and Sint Maarten" (CWX) is their monetary union, not Curaçao alone, so it
+# keeps the IMF's name.
 IMF_TO_COUNTRY_NAMES = {
     "CPV": "Cape Verde",
+    "KNA": "Saint Kitts and Nevis",
+    "LCA": "Saint Lucia",
     "MAC": "Macau",
+    "NRU": "Nauru",
     "STP": "Sao Tome and Principe",
+    "TCA": "Turks and Caicos",
+    "VCT": "St-Vincent",
+    "WBG": "Palestine",
 }
 
 
@@ -77,6 +88,9 @@ def get_countries() -> pd.DataFrame:
     """
     description = "IMF consumer price index countries"
 
+    # The IMF's own names are cached and the common names applied to them on every read,
+    # so a change of IMF_TO_COUNTRY_NAMES applies at once rather than when the codelist
+    # expires. A common name read back maps to itself.
     def fetch() -> pd.DataFrame:
         structure = get_request(STRUCTURE_URL, timeout=120).text
         codelist = CODELIST_PATTERN.search(structure)
@@ -90,30 +104,41 @@ def get_countries() -> pd.DataFrame:
             code: (name.group(1) if (name := NAME_PATTERN.search(block)) else code)
             for code, block in CODE_PATTERN.findall(codelist.group(1))
         }
-        names = {
-            code: CODE_TO_COUNTRY.get(
-                code, IMF_TO_COUNTRY_NAMES.get(code, _short_name(imf_name))
-            )
-            for code, imf_name in imf_names.items()
-        }
 
-        # A historical country can shorten to the name of its successor, such as North
-        # Vietnam (VDR) to "Vietnam", so a name used twice keeps the IMF's full name.
-        used = {code: name for code, name in names.items() if code in CODE_TO_COUNTRY}
-        for code, name in names.items():
-            if code not in CODE_TO_COUNTRY and name in used.values():
-                names[code] = imf_names[code]
-            used[code] = names[code]
+        return pd.DataFrame(
+            {"Country": list(imf_names.values())}, index=list(imf_names)
+        )
 
-        return pd.DataFrame({"Country": list(names.values())}, index=list(names))
-
-    return collect_cached_data(
+    # The IMF's own names, under a key apart from "codelist", which holds the common names, so a
+    # cache shared with code that reads "codelist" as it is never mixes the two.
+    codelist = collect_cached_data(
         source=policy_model.INTERNATIONAL_MONETARY_FUND,
-        dataset="codelist",
+        dataset="codelist_raw",
         entity="CPI/CL_COUNTRY",
         fetch=fetch,
         description=description,
     )
+
+    if codelist.empty:
+        return codelist
+
+    imf_names = codelist["Country"].to_dict()
+    names = {
+        code: CODE_TO_COUNTRY.get(
+            code, IMF_TO_COUNTRY_NAMES.get(code, _short_name(imf_name))
+        )
+        for code, imf_name in imf_names.items()
+    }
+
+    # A historical country can shorten to the name of its successor, such as North
+    # Vietnam (VDR) to "Vietnam", so a name used twice keeps the IMF's full name.
+    used = {code: name for code, name in names.items() if code in CODE_TO_COUNTRY}
+    for code, name in names.items():
+        if code not in CODE_TO_COUNTRY and name in used.values():
+            names[code] = imf_names[code]
+        used[code] = names[code]
+
+    return pd.DataFrame({"Country": list(names.values())}, index=list(names))
 
 
 def _parse_observations(text: str) -> list[tuple[str, str, str, float]]:
@@ -205,7 +230,6 @@ def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
         rates = data.pivot_table(
             index="period", columns="country", values="value", aggfunc="last"
         )
-        rates = rates.rename(columns=countries["Country"].to_dict())
         # Months are written as "2026-M07".
         rates.index = pd.PeriodIndex(rates.index.str.replace("M", ""), freq="M")
         rates.index.name = None
@@ -214,15 +238,19 @@ def get_inflation_rate(start_date: str, end_date: str) -> pd.DataFrame:
         # The IMF publishes the rate in percent.
         return rates.sort_index() / 100
 
-    return collect_ranged_data(
+    # Cached by IMF code and named on every read, so a change of a country's name never
+    # splits it into two columns. Not "consumer_prices", which holds named columns.
+    rates = collect_ranged_data(
         source=policy_model.INTERNATIONAL_MONETARY_FUND,
-        dataset="consumer_prices",
+        dataset="consumer_prices_by_code",
         entity=INFLATION_SERIES,
         fetch=fetch,
         start_date=start_date,
         end_date=end_date,
         description=description,
     )
+
+    return rates.rename(columns=countries["Country"].to_dict())
 
 
 # The Government Finance Statistics and national accounts the IMF compiles from the
@@ -262,7 +290,7 @@ EXPENDITURE_FUNCTIONS = {
 DIVISIONS = list(EXPENDITURE_FUNCTIONS)[:10]
 
 # The aggregates that are not in the country codelist.
-AGGREGATE_NAMES = {"G163": "Euro Area"}
+AGGREGATE_NAMES = {"G163": "Euro Area", "G309": "Eastern Caribbean Currency Union"}
 
 PERIOD_CODES = {"quarterly": "Q", "yearly": "Y"}
 
@@ -307,11 +335,7 @@ def collect_government_finance(
             values="value",
             aggfunc="last",
         )
-        names = {**get_countries()["Country"].to_dict(), **AGGREGATE_NAMES}
-        data.columns = pd.MultiIndex.from_tuples(
-            [(names.get(code, code), indicator) for code, indicator in data.columns],
-            names=["Country", "Indicator"],
-        )
+        data.columns.names = ["Country", "Indicator"]
         # Quarters are written as "2026-Q2" and years as "2026".
         data.index = pd.PeriodIndex(
             data.index.str.replace("-", ""), freq="Y" if yearly else "Q"
@@ -320,15 +344,28 @@ def collect_government_finance(
 
         return data.sort_index().sort_index(axis=1)
 
-    return collect_ranged_data(
+    # Cached by IMF code and named on every read, so a change of a country's name never
+    # splits it into two columns. Not "government_finance": see the policy of "series_by_code".
+    data = collect_ranged_data(
         source=policy_model.INTERNATIONAL_MONETARY_FUND,
-        dataset="government_finance",
+        dataset="series_by_code",
         entity=f"{dataflow}/{key}",
         fetch=fetch,
         start_date=start_date,
         end_date=end_date,
         description=description,
     )
+
+    if data.empty:
+        return data
+
+    names = {**get_countries()["Country"].to_dict(), **AGGREGATE_NAMES}
+    data.columns = pd.MultiIndex.from_tuples(
+        [(names.get(code, code), indicator) for code, indicator in data.columns],
+        names=["Country", "Indicator"],
+    )
+
+    return data
 
 
 def get_government_interest(
@@ -392,7 +429,10 @@ def get_government_interest(
         if gross_domestic_product.empty:
             return pd.DataFrame()
 
+        # A GDP of zero or less is a placeholder (the QNEA states Uzbekistan's 2024
+        # quarters as 0), so it is missing rather than a divisor.
         divisor = gross_domestic_product.droplevel("Indicator", axis=1)
+        divisor = divisor.where(divisor > 0)
 
     divisor = divisor.reindex(index=interest.index, columns=interest.columns)
 
@@ -447,3 +487,124 @@ def get_expenditure_by_function(
 
     # The ratio is published in percent of GDP and the level in units of national currency.
     return expenditure / 100 if to_gdp else expenditure / 1_000_000
+
+
+# The net international investment position of the IMF's International Investment Position
+# statistics (BPM6): the external financial assets less the liabilities of all resident
+# sectors at the end of each period. The IMF publishes it in US dollars only (the national
+# currency series are empty), converted at the exchange rate at the end of the period. That
+# rate, national currency per US dollar, comes from the IMF exchange rates dataset, where
+# the euro members use the euro area's.
+NET_INTERNATIONAL_INVESTMENT_POSITION_KEYS = {
+    "Q": ".NETAL_P.NIIP.USD.Q",
+    "Y": ".NETAL_P.NIIP.USD.A",
+}
+END_OF_PERIOD_EXCHANGE_RATE_KEYS = {
+    "Q": ".XDC_USD.EOP_RT.Q",
+    "Y": ".XDC_USD.EOP_RT.A",
+}
+
+
+def get_net_international_investment_position(
+    period: str, start_date: str, end_date: str, to_gdp: bool = False
+) -> pd.DataFrame:
+    """
+    Retrieves the net international investment position (external financial assets less
+    liabilities) at the end of each quarter or year, for about 130 economies quarterly and
+    175 yearly, and the euro area.
+
+    As a share of GDP, the position is converted to national currency at the IMF's
+    end-of-period exchange rate and divided by the nominal GDP in national currency of the
+    same year: the four quarters up to and including each quarter (not seasonally
+    adjusted) or the calendar year. Both are then in one currency, so the ratio does not
+    move with the gap between the end-of-period and the average exchange rate, the
+    convention of Eurostat's macroeconomic imbalance procedure scoreboard.
+
+    Args:
+        period (str): "quarterly" or "yearly".
+        start_date (str): The start date (YYYY-MM-DD).
+        end_date (str): The end date (YYYY-MM-DD).
+        to_gdp (bool): Whether to return the position as a share of GDP (a decimal, -0.35
+            for -35%) instead of in millions of US dollars. Defaults to False.
+
+    Returns:
+        pd.DataFrame: The position, indexed by quarter or year with a column per country.
+    """
+    frequency = PERIOD_CODES[period]
+    # The year before the start date, for the four quarters of GDP of the first quarter.
+    fetch_start = f"{int(start_date[:4]) - 1}{start_date[4:]}" if to_gdp else start_date
+    position = collect_government_finance(
+        "IIP",
+        NET_INTERNATIONAL_INVESTMENT_POSITION_KEYS[frequency],
+        fetch_start,
+        end_date,
+        "IMF international investment position",
+    )
+
+    if position.empty:
+        return pd.DataFrame()
+
+    position = position.droplevel("Indicator", axis=1)
+    position.columns.name = None
+
+    if not to_gdp:
+        # Published in US dollars.
+        return position / 1_000_000
+
+    exchange_rate = collect_government_finance(
+        "ER",
+        END_OF_PERIOD_EXCHANGE_RATE_KEYS[frequency],
+        fetch_start,
+        end_date,
+        "IMF exchange rates",
+    )
+    dataflow, key = GROSS_DOMESTIC_PRODUCT_KEYS[frequency]
+    gross_domestic_product = collect_government_finance(
+        dataflow, key, fetch_start, end_date, "IMF national accounts"
+    )
+
+    if exchange_rate.empty or gross_domestic_product.empty:
+        return pd.DataFrame()
+
+    exchange_rate = exchange_rate.droplevel("Indicator", axis=1)
+
+    # The Marshall Islands use the US dollar as their currency, and the IMF publishes no
+    # exchange rate for them (the other dollarized economies have a series of ones).
+    if "Marshall Islands" not in exchange_rate.columns:
+        exchange_rate["Marshall Islands"] = 1.0
+
+    if "Euro Area" in exchange_rate.columns:
+        # The IMF states the national accounts of a euro member in euro for every year,
+        # also before it joined, while its exchange rate series, where there is one, ends
+        # with its former currency (the litas for Lithuania until 2014).
+        for member in EURO_AREA_MEMBERS:
+            exchange_rate[member] = exchange_rate["Euro Area"]
+
+    exchange_rate = exchange_rate.reindex(
+        index=position.index, columns=position.columns
+    )
+    gross_domestic_product = gross_domestic_product.droplevel("Indicator", axis=1)
+    # A GDP of zero or less is a placeholder (the QNEA states Uzbekistan's 2024 quarters
+    # as 0), so it is missing and leaves the trailing year of its quarters empty.
+    gross_domestic_product = gross_domestic_product.where(gross_domestic_product > 0)
+
+    if frequency == "Q":
+        # Summed over every quarter, also those without a position, and a missing quarter
+        # leaves the trailing year empty rather than three quarters long.
+        gross_domestic_product = (
+            gross_domestic_product.reindex(
+                pd.period_range(
+                    gross_domestic_product.index.min(),
+                    gross_domestic_product.index.max(),
+                    freq="Q",
+                )
+            )
+            .rolling(4)
+            .sum()
+        )
+
+    gross_domestic_product = gross_domestic_product.reindex(
+        index=position.index, columns=position.columns
+    )
+
+    return position * exchange_rate / gross_domestic_product

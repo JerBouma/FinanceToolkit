@@ -5,7 +5,6 @@ __docformat__ = "google"
 import pandas as pd
 
 from financetoolkit import helpers
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
     OVERNIGHT_RATE_DAY_COUNTS,
     average_monthly_index,
@@ -32,9 +31,7 @@ from financetoolkit.economics.sources import (
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
+from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
     EURO_AREA_MEMBERS,
     finalize_dataset,
@@ -47,7 +44,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class PricesEconomics(EconomicsBase):
+class PricesEconomics:
     """
     Prices: consumer prices and inflation, purchasing power, producer, export and import prices, house, rent and commercial real estate prices, and commodity prices.
     """
@@ -196,6 +193,8 @@ class PricesEconomics(EconomicsBase):
         from 2015, on its latest base) and the Bank for International Settlements for
         every other country (2010 = 100). The base year differs between countries, so
         compare the changes rather than the levels.
+        Countries that publish their consumer prices quarterly, such as Australia and New
+        Zealand, have a value in the last month of each quarter only.
 
         The measure parameter selects the core index (all items less energy and food;
         Eurostat also leaves out alcohol and tobacco) or a component: energy, food (Eurostat
@@ -242,7 +241,8 @@ class PricesEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -391,7 +391,12 @@ class PricesEconomics(EconomicsBase):
         Finance Toolkit.
 
         The rates are the sources' own figures (published in percent and divided by 100 here),
-        except for Japan, which is calculated from the Statistics Bureau of Japan's CPI.
+        except for Japan, which is calculated from the Statistics Bureau of Japan's CPI, and
+        the US months the BLS has published after the BIS, which are calculated from the
+        BLS's CPI-U.
+
+        Countries that publish their consumer prices quarterly, such as Australia and New
+        Zealand, have a value in the last month of each quarter only.
 
         The formula is as follows:
 
@@ -422,7 +427,8 @@ class PricesEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -553,7 +559,8 @@ class PricesEconomics(EconomicsBase):
                 currency instead of being held as banknotes. Defaults to False.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the data by. Defaults to 1.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -695,7 +702,7 @@ class PricesEconomics(EconomicsBase):
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: PPI, wholesale prices, factory gate prices, upstream inflation.
 
@@ -711,7 +718,8 @@ class PricesEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -819,7 +827,7 @@ class PricesEconomics(EconomicsBase):
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpp_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: export prices, XPI, trade prices.
 
@@ -835,7 +843,8 @@ class PricesEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -872,9 +881,9 @@ class PricesEconomics(EconomicsBase):
         | 2026-04 |          0.0931 |      0.0323 |  0.1809 |
         | 2026-05 |          0.1135 |      0.042  |  0.2057 |
         | 2026-06 |          0.0998 |      0.042  |  0.2126 |
-        | 2026-07 |          0.0812 |      0.0525 |  0.1936 |
-        | 2026-08 |          0.0928 |      0.0623 |  0.1796 |
-        | 2026-09 |          0.1163 |      0.0747 |  0.1786 |
+        | 2026-07 |          0.0812 |      0.0525 |  0.195  |
+        | 2026-08 |          0.0928 |      0.0623 |  0.1811 |
+        | 2026-09 |          0.1163 |      0.0747 |  0.1822 |
         """
         check_period_type(period)
 
@@ -941,7 +950,7 @@ class PricesEconomics(EconomicsBase):
         5.7%). The base year differs per country, so compare growth rather than levels.
         Quarterly and yearly values are the average of the months, for complete periods only.
 
-        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_inpi_esms.htm
+        See definition: https://ec.europa.eu/eurostat/cache/metadata/en/sts_esms.htm
 
         Also known as: import prices, MPI, trade prices.
 
@@ -957,7 +966,8 @@ class PricesEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -996,7 +1006,7 @@ class PricesEconomics(EconomicsBase):
         | 2026-06 |          0.0675 |      0.0604 |  0.3042 |
         | 2026-07 |          0.0602 |      0.064  |  0.2939 |
         | 2026-08 |          0.0674 |      0.0835 |  0.2506 |
-        | 2026-09 |          0.081  |      0.1072 |  0.2447 |
+        | 2026-09 |          0.081  |      0.1072 |  0.2376 |
         """
         check_period_type(period)
 
@@ -1029,6 +1039,52 @@ class PricesEconomics(EconomicsBase):
             dropna=True,
         )
 
+    def _with_bis_house_prices_of_china(
+        self, house_prices: pd.DataFrame, quarterly: bool, inflation_adjusted: bool
+    ) -> pd.DataFrame:
+        """
+        Replaces China's OECD house price index with the BIS one.
+
+        The OECD's index for China kept rising after 2021, while the National Bureau of
+        Statistics' prices of newly built homes in 70 cities, which the BIS publishes and
+        the Global Macro Database follows, fell from 2022 and were below a year earlier in
+        almost every month since. China's index therefore comes from the BIS, rebased to
+        2015 = 100 like the OECD indices; a year is the average of its four quarters. When
+        the BIS can't be reached, China is left out rather than shown with the OECD index.
+
+        Args:
+            house_prices (pd.DataFrame): The OECD house price indices, a column per country.
+            quarterly (bool): Whether the indices are quarterly (else yearly).
+            inflation_adjusted (bool): Whether the indices are real (else nominal).
+
+        Returns:
+            pd.DataFrame: The house price indices with China's from the BIS.
+        """
+        house_prices = house_prices.drop(columns="China", errors="ignore")
+        end_date = self._end_date or pd.Timestamp.today().strftime("%Y-%m-%d")
+        # Read the whole of 2015, the base year, whatever the date range: a range ending
+        # before 2016 would otherwise rebase on part of the year, or on nothing at all.
+        china = bis_model.get_residential_property_prices(
+            "CN",
+            inflation_adjusted=inflation_adjusted,
+            start_date=min(self._start_date or "2015-01-01", "2015-01-01"),
+            end_date=max(end_date, "2015-12-31"),
+        )
+
+        if china.empty:
+            return house_prices
+
+        china = china / china[china.index.year == 2015].mean() * 100  # noqa: PLR2004
+        # Cut to the end date before averaging the years, so a year the range ends in
+        # stays out as it does for the OECD indices.
+        china = china.loc[:end_date]
+
+        if not quarterly:
+            years = china.groupby(china.index.asfreq("Y"))
+            china = years.mean()[years.count() == 4]  # noqa: PLR2004
+
+        return house_prices.join(china.rename("China"), how="outer")
+
     @handle_errors
     def get_house_prices(
         self,
@@ -1050,14 +1106,18 @@ class PricesEconomics(EconomicsBase):
         and existing dwellings, following the recommendations from the RPPI (Residential
         Property Prices Indices) manual.
 
-        By default the data comes from the Global Macro Database (GMDB), annual with
-        2015 = 100. Set gmdb_source=False to retrieve it from the OECD instead, which is
-        the only source with quarterly data: asking for quarterly data takes it from the
-        OECD unless gmdb_source=True is given.
+        By default the data is quarterly, from the OECD, the only source with quarterly
+        data. With quarterly=False the data is annual and comes from the Global Macro
+        Database (GMDB), with 2015 = 100, unless gmdb_source=False is given (or the
+        Economics class was initialized with gmdb_source=False), which takes the annual
+        data from the OECD.
 
         In the OECD data, the real house price index is given by the ratio of the nominal
         house price index to the consumers' expenditure deflator in each country from the
-        OECD national accounts database. Both indices are seasonally adjusted.
+        OECD national accounts database. Both indices are seasonally adjusted. China's
+        index comes from the BIS instead: the National Bureau of Statistics' prices of newly
+        built homes in 70 cities (nominal, or deflated by consumer prices), rebased to
+        2015 = 100. The OECD's own index for China kept rising while these prices fell.
 
         Both are an index based on 2015 = 100.
 
@@ -1082,7 +1142,8 @@ class PricesEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -1155,6 +1216,9 @@ class PricesEconomics(EconomicsBase):
                 start_date=self._start_date,
                 end_date=self._end_date,
             )
+            house_prices = self._with_bis_house_prices_of_china(
+                house_prices, quarterly=quarterly, inflation_adjusted=inflation_adjusted
+            )
 
         return finalize_dataset(
             dataset=house_prices,
@@ -1210,7 +1274,8 @@ class PricesEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1319,7 +1384,8 @@ class PricesEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1386,6 +1452,7 @@ class PricesEconomics(EconomicsBase):
     def get_commodity_prices(
         self,
         commodity: str | list[str] | None = None,
+        currency: str | None = None,
         deflate_with: str | None = None,
         rounding: int | None = None,
         growth: bool = False,
@@ -1407,9 +1474,29 @@ class PricesEconomics(EconomicsBase):
         month of the consumer price index, which is published a few weeks late, keeps its
         nominal price, and a month the consumer price index skipped has no real price.
 
+        With currency, the prices are in another currency than the US dollar, such as the
+        euro, the pound sterling, the yen, the Swiss franc or the renminbi: each month's
+        average price is converted at the average exchange rate of the same month, from the
+        Bank for International Settlements (BIS), which publishes the monthly averages of
+        around 130 currencies against the US dollar from the central banks (the euro as the
+        euro area series, from June 1974). An average price is converted at an average rate
+        so that both cover the same days. A month without a rate, such as the latest month
+        before the BIS publishes its average a few days after the month ends, has no price in
+        the currency (NaN), and a warning names those months. The Natural gas index is an
+        index rather than a price in US dollars and is not converted.
+
+        With both, the prices are converted first and deflated after, so deflate_with is the
+        country whose money the currency is, e.g. currency="EUR" with deflate_with="Euro
+        Area" for prices in euros of the latest month of the euro area consumer price index.
+
         The formula is as follows:
 
+        - Price in Currency (t) = Price in US Dollars (t) * Exchange Rate (t)
         - Real Price (t) = Price (t) * CPI (latest month) / CPI (t)
+
+        Where the Exchange Rate (t) is the average of month t in units of the currency per US
+        dollar (e.g. 0.854 euro per US dollar, an EUR/USD rate of 1.171) and the Price (t) is
+        the price in US dollars, or in the currency when one is given.
 
         The units are those of the World Bank: US dollars per barrel ($/bbl) for crude oil,
         per million British thermal units ($/mmbtu) for natural gas, per troy ounce ($/troy oz)
@@ -1417,18 +1504,26 @@ class PricesEconomics(EconomicsBase):
         and fertilizers, per kilogram ($/kg) for cocoa, coffee, tea, sugar, meat, fruit, cotton
         and rubber, per dry metric ton unit ($/dmtu) for iron ore, per cubic meter for logs and
         sawnwood and cents per sheet for plywood. The Natural gas index is an index (2010=100).
+        With currency, the same units hold in that currency (euros per barrel, euro cents per
+        sheet of plywood), except for the Natural gas index.
 
         Also known as: Pink Sheet, commodity price history, long-run gold price, real gold
-        price, real oil price, inflation-adjusted commodity prices.
+        price, real oil price, inflation-adjusted commodity prices, oil price in euros, gold
+        price in local currency.
 
         Args:
             commodity (str | list[str] | None, optional): The commodities, e.g. "Gold" or
                 ["Gold", "Crude oil Brent"], as named by the World Bank without commas ("Crude
                 oil, Brent" is "Crude oil Brent"), in any casing. Defaults to None, which
                 returns all of them.
+            currency (str | None, optional): The ISO 4217 code of the currency to express
+                the prices in, e.g. "EUR", "GBP", "JPY", "CHF" or "CNY", converted at the BIS
+                average exchange rate of each month. Defaults to None, which keeps the US
+                dollar prices of the World Bank ("USD" does the same).
             deflate_with (str | None, optional): The country whose consumer price index the
-                prices are deflated with, e.g. "United States" for US dollar prices. Defaults
-                to None, which returns nominal prices.
+                prices are deflated with, after the conversion into currency, e.g. "United
+                States" for US dollar prices or "Euro Area" for euro prices. Defaults to None,
+                which returns nominal prices.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Economics class.
             growth (bool, optional): Whether to calculate the growth. Defaults to False.
@@ -1449,25 +1544,41 @@ class PricesEconomics(EconomicsBase):
         CC BY 4.0.
         - The prices are monthly averages: a peak within a month, such as gold's $850 London
         fix of 21 January 1980, is higher than the average of its month.
+        - BIS, "Bilateral exchange rates" (WS_XRU), the monthly averages (collection A) in
+        units of national currency per US dollar. A price converted at the rate of the end of
+        each month, or at the latest rate, differs from it by the move of the currency within
+        the month.
+        - A currency is converted for the months the BIS has a rate for: from June 1974 for
+        the euro (the BIS euro area series) and from the start of its BIS history for the
+        others; earlier months are NaN.
 
         As an example:
 
         ```python
         from financetoolkit import Economics
 
-        economics = Economics(start_date="1979-01-01", end_date="2026-10-31")
+        economics = Economics(start_date="2025-10-01", end_date="2026-10-31")
 
-        prices = economics.get_commodity_prices(commodity="Gold", deflate_with="United States")
-        prices.loc[["1980-01", "2011-09", "2026-01"]]
+        economics.get_commodity_prices(commodity=["Crude oil Brent", "Gold"], currency="EUR")
         ```
 
         Which returns:
 
-        |         |    Gold |
-        |:--------|--------:|
-        | 1980-01 | 2923.32 |
-        | 2011-09 | 2631.5  |
-        | 2026-01 | 4923.8  |
+        |         |   Crude oil Brent |    Gold |
+        |:--------|------------------:|--------:|
+        | 2025-10 |           55.6312 | 3489.2  |
+        | 2025-11 |           55.017  | 3535.45 |
+        | 2025-12 |           53.551  | 3680.24 |
+        | 2026-01 |           56.9133 | 4049.53 |
+        | 2026-02 |           60.133  | 4245.68 |
+        | 2026-03 |           89.7212 | 4201.41 |
+        | 2026-04 |          102.854  | 4032.99 |
+        | 2026-05 |           92.0936 | 3929.61 |
+        | 2026-06 |           74.1506 | 3671.06 |
+        | 2026-07 |           73.0464 | 3567.36 |
+        | 2026-08 |           78.4106 | 3804.94 |
+        | 2026-09 |          101.456  | 3751.61 |
+        | 2026-10 |          111.593  | 3664.7  |
         """
         prices = world_bank_model.get_commodity_prices()
 
@@ -1488,6 +1599,52 @@ class PricesEconomics(EconomicsBase):
                     if name not in missing
                 ]
             ]
+
+        if currency is not None and currency.strip().upper() != "USD":
+            currency = currency.strip().upper()
+            # The rates reach back far enough for growth over lag months, so the first months
+            # of the range have a growth rate as they have in US dollars.
+            rate_start = min(
+                buffered_start_date(self._start_date, "monthly"),
+                pd.date_range(
+                    end=pd.Timestamp(self._start_date).replace(day=1),
+                    periods=lag + 2,
+                    freq="MS",
+                )[0].strftime("%Y-%m-%d"),
+            )
+            exchange_rate = bis_model.get_monthly_average_exchange_rate(
+                currency, rate_start, self._end_date
+            )
+            if exchange_rate.empty:
+                raise ValueError(
+                    f"The BIS publishes no monthly average exchange rate of {currency} against "
+                    "the US dollar to convert the prices with. Pass an ISO 4217 code such as "
+                    "'EUR', 'GBP' or 'JPY'."
+                )
+
+            # Each month's average price at the same month's average rate; a month without a
+            # rate has no price in the currency rather than one at another month's rate.
+            in_dollars = [
+                name
+                for name in prices.columns
+                if name not in world_bank_model.INDEX_COMMODITIES
+            ]
+            prices = prices.copy()
+            prices[in_dollars] = prices[in_dollars].mul(
+                exchange_rate.reindex(prices.index), axis=0
+            )
+
+            # The BIS publishes the average of a month a few days after it ends, so the
+            # latest Pink Sheet month can lack a rate for a while.
+            in_range = prices.loc[self._start_date[:7] : self._end_date[:7]]
+            without_rate = in_range.index[in_range.index > exchange_rate.index[-1]]
+            if len(without_rate) > 0:
+                logger.warning(
+                    "The BIS has no monthly average %s exchange rate for %s yet, so the "
+                    "prices of those months are NaN.",
+                    currency,
+                    ", ".join(str(month) for month in without_rate),
+                )
 
         if deflate_with is not None:
             consumer_price_index = self.get_consumer_price_index(

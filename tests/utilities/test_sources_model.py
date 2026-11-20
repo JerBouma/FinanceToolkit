@@ -174,3 +174,73 @@ def test_combined_sources_name_only_the_source_of_each_requested_country():
         with collect_sources() as sources:
             economics._combine_sources_for([(eurostat, None), (bis, None)], countries)
         assert sources == expected
+
+
+@track_sources
+class _DictHolder:
+    """Keeps retrieved data in a dictionary it fills between calls, as Economics does
+    with the Global Macro Database."""
+
+    def __init__(self):
+        self._datasets = {}
+
+    def get_dataset(self, key):
+        if key not in self._datasets:
+            record_source("GMDB")
+            self._datasets[key] = pd.DataFrame({"Value": [1.0]})
+        return self._datasets[key]
+
+
+def test_data_stored_in_a_kept_dictionary_still_names_its_source_when_reused():
+    holder = _DictHolder()
+
+    with collect_sources() as first:
+        holder.get_dataset(False)
+    with collect_sources() as reused:
+        holder.get_dataset(False)
+
+    assert first == {"GMDB"}
+    assert reused == {"GMDB"}
+
+
+def test_the_shared_gmdb_copy_and_its_cache_hit_name_the_gmdb(monkeypatch, tmp_path):
+    from financetoolkit.cache.cache_controller import Cache  # noqa: PLC0415
+    from financetoolkit.economics.sources import gmdb_model  # noqa: PLC0415
+
+    dataset = pd.DataFrame(
+        {("govdebt", "United States"): [2.0e7, 2.1e7]}, index=[2023, 2024]
+    )
+    downloads = []
+
+    class FakeResponse:
+        content = b""
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get_request(url, **kwargs):
+        # The real get_request records the URL it requests.
+        record_url(url)
+        downloads.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(gmdb_model, "get_latest_version", lambda: "2026_09")
+    monkeypatch.setattr(gmdb_model, "get_request", fake_get_request)
+    monkeypatch.setattr(
+        gmdb_model, "_parse_dataset", lambda content, include_forecasts: dataset
+    )
+    monkeypatch.setattr(gmdb_model, "_SHARED_DATASETS", {})
+    cache = Cache(location=tmp_path)
+
+    answers = []
+    for clear_shared_copy in (True, True, False):
+        # Cleared as in a new process: the dataset is downloaded, then read from the
+        # cache, then served from the copy kept in memory.
+        if clear_shared_copy:
+            gmdb_model._SHARED_DATASETS.clear()
+        with collect_sources() as sources:
+            gmdb_model.get_shared_dataset(cache=cache)
+        answers.append(sources)
+
+    assert len(downloads) == 1
+    assert answers == [{"GlobalMacroDatabase"}] * 3

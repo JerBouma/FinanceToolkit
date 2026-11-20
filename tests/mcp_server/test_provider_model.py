@@ -288,3 +288,32 @@ def test_an_instance_unused_for_the_idle_time_is_dropped(monkeypatch):
     assert list(cache) == ["a", "b", "c"]
     # A second instance for a kept key leaves the kept one in place.
     assert cache.keep("a", "other") == "a"
+
+
+def test_the_conversion_note_names_every_currency_a_company_reported_in(provider):
+    toolkit = provider.get_toolkit_instance(
+        tickers=["SHEL"],
+        start_date="2020-01-01",
+        end_date="2022-12-31",
+        quarterly=False,
+        benchmark_ticker="SPY",
+        api_key="test-key",
+    )
+    # Reported in GBP until 2021 and in USD after, while priced in USD.
+    latest = pd.Series({"SHEL": "USDUSD=X"})
+    latest.attrs["pairs"] = pd.DataFrame(
+        {"2021": ["GBPUSD=X"], "2022": ["USDUSD=X"]}, index=["SHEL"]
+    )
+    toolkit._statement_currencies = latest
+    toolkit._convert_currency = True
+
+    notes = provider.get_transformation_notes(
+        tickers=["SHEL"],
+        start_date="2020-01-01",
+        end_date="2022-12-31",
+        quarterly=False,
+        benchmark_ticker="SPY",
+        api_key="test-key",
+    )
+
+    assert any("SHEL (GBP to USD)" in note for note in notes)

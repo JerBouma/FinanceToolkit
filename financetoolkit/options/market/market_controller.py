@@ -6,7 +6,10 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.options import options_model
-from financetoolkit.options.base.base_controller import OptionsBase, _days_to_expiration
+from financetoolkit.options.helpers import (
+    get_days_to_expiration,
+    get_time_to_expiration,
+)
 from financetoolkit.options.market import market_metrics_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -30,9 +33,9 @@ _CHAIN_INPUTS_FROM_HISTORY = (
 
 @filter_shown_columns
 @track_sources
-class MarketOptions(OptionsBase):
+class MarketOptions:
     """
-    Metrics from the option chains: the put-call ratio, max pain, gamma exposure, the implied volatility term structure and skew, the implied move, the model-free implied volatility and the volatility risk premium.
+    Metrics from the option chains: the put-call ratio, max pain, gamma exposure, the implied volatility term structure and skew, the implied move, the model-free implied volatility, the volatility risk premium, the risk-neutral moments and the SKEW index.
     """
 
     def _expiries(
@@ -50,8 +53,20 @@ class MarketOptions(OptionsBase):
                     f"The expiration date(s) {', '.join(invalid)} are not available for "
                     f"{ticker}. Choose from {', '.join(available)}"
                 )
-            return list(expiration_dates)
-        upcoming = [date for date in available if _days_to_expiration(date) > 0]
+            # An expiry given for today has settled once the market closed.
+            open_dates = []
+            for date in expiration_dates:
+                if get_time_to_expiration(date, self._current_time()) <= 0:
+                    logger.warning(
+                        "The options of %s expiring on %s have expired and are left out.",
+                        ticker,
+                        date,
+                    )
+                else:
+                    open_dates.append(date)
+            return open_dates
+        now = self._current_time()
+        upcoming = [date for date in available if get_days_to_expiration(date, now) > 0]
         return upcoming[:number_of_expirations]
 
     def _warn_if_history_is_stale(self, purpose: str) -> None:
@@ -76,7 +91,10 @@ class MarketOptions(OptionsBase):
     ) -> tuple[pd.DataFrame, pd.DataFrame, float, float, float, float]:
         """
         The calls, puts, stock price, time to expiration, risk free rate and dividend yield.
-        The stock price is the one quoted with the chain when available (see _spot_price).
+        The stock price is the one quoted with the chain when available (see _spot_price),
+        the time to expiration runs from _current_time to 16:00 New York time on the
+        expiration date, and the dividend yield is the continuously compounded trailing
+        yield on the last historical date (see _dividend_yield_on).
         """
         calls = options_model.get_option_chains([ticker], expiration_date, False)
         puts = options_model.get_option_chains([ticker], expiration_date, True)
@@ -98,10 +116,20 @@ class MarketOptions(OptionsBase):
             if quoted(cboe_calls) + quoted(cboe_puts) > quoted(calls) + quoted(puts):
                 calls, puts = cboe_calls, cboe_puts
         stock_price = self._spot_price(ticker, calls, puts)
-        time_to_expiration = max(_days_to_expiration(expiration_date), 0.5) / 365
+        # The time left up to the close on the expiration date, so that an expiry this
+        # afternoon is not priced as a whole day away.
+        time_to_expiration = get_time_to_expiration(
+            expiration_date, self._current_time()
+        )
+        if time_to_expiration <= 0:
+            raise ValueError(
+                f"The options of {ticker} expiring on {expiration_date} have expired."
+            )
         risk_free_rate = float(self._risk_free_rate.dropna().iloc[-1])
+        # The trailing dividend yield on the last historical date, continuously compounded
+        # as ln(1 + q) like the risk free rate, and 0 for a ticker without dividend data.
         dividend_yield = (
-            float(self._dividend_yield[ticker].iloc[-1])
+            self._dividend_yield_on(ticker, self._daily_historical.index[-1])
             if not self._dividend_yield[ticker].empty
             else 0.0
         )
@@ -146,7 +174,11 @@ class MarketOptions(OptionsBase):
                 rows[(ticker, expiration_date)] = pd.concat(
                     [
                         pd.Series(
-                            {"Days to Expiration": _days_to_expiration(expiration_date)}
+                            {
+                                "Days to Expiration": get_days_to_expiration(
+                                    expiration_date, self._current_time()
+                                )
+                            }
                         ),
                         result,
                     ]
@@ -207,16 +239,10 @@ class MarketOptions(OptionsBase):
 
         Which returns:
 
-        |                        |   Days to Expiration |   Call Volume |   Put Volume |   Volume Put-Call Ratio |   Call Open Interest |   Put Open Interest |   Open Interest Put-Call Ratio |
-        |:-----------------------|---------------------:|--------------:|-------------:|------------------------:|---------------------:|--------------------:|-------------------------------:|
-        | ('AAPL', '2026-10-26') |                    2 |         90053 |        85187 |                  0.946  |                14688 |               22097 |                         1.5044 |
-        | ('AAPL', '2026-10-28') |                    4 |         27330 |        21152 |                  0.7739 |                17505 |               10137 |                         0.5791 |
-        | ('AAPL', '2026-10-30') |                    6 |         76540 |       134401 |                  1.756  |                81432 |               86739 |                         1.0652 |
-        | ('AAPL', 'All')        |                  nan |        193923 |       240740 |                  1.2414 |               113625 |              118973 |                         1.0471 |
-        | ('TSLA', '2026-10-26') |                    2 |        149535 |       129459 |                  0.8657 |                68890 |               34714 |                         0.5039 |
-        | ('TSLA', '2026-10-28') |                    4 |         32602 |        24491 |                  0.7512 |                14542 |               15028 |                         1.0334 |
-        | ('TSLA', '2026-10-30') |                    6 |        121542 |       101610 |                  0.836  |               104417 |               97818 |                         0.9368 |
-        | ('TSLA', 'All')        |                  nan |        303679 |       255560 |                  0.8415 |               187849 |              147560 |                         0.7855 |
+        |                 |   Days to Expiration |   Call Volume |   Put Volume |   Volume Put-Call Ratio |   Call Open Interest |   Put Open Interest |   Open Interest Put-Call Ratio |
+        |:----------------|---------------------:|--------------:|-------------:|------------------------:|---------------------:|--------------------:|-------------------------------:|
+        | ('AAPL', 'All') |                  nan |        117895 |       172939 |                  1.4669 |               467397 |              454917 |                         0.9733 |
+        | ('TSLA', 'All') |                  nan |        222838 |       192067 |                  0.8619 |               383562 |              508747 |                         1.3264 |
         """
         table = self._per_expiry(
             lambda calls, puts, *_: market_metrics_model.get_put_call_ratio(
@@ -299,10 +325,10 @@ class MarketOptions(OptionsBase):
 
         |                        |   Days to Expiration |   Max Pain |   Stock Price |   Distance to Max Pain |
         |:-----------------------|---------------------:|-----------:|--------------:|-----------------------:|
-        | ('AAPL', '2026-10-26') |                    2 |      345   |        347.73 |                -0.0079 |
-        | ('AAPL', '2026-10-28') |                    4 |      345   |        347.73 |                -0.0079 |
-        | ('AAPL', '2026-10-30') |                    6 |      342.5 |        347.73 |                -0.015  |
-        | ('AAPL', '2026-11-06') |                   13 |      340   |        347.73 |                -0.0222 |
+        | ('AAPL', '2026-11-18') |                    2 |      355   |        352.78 |                 0.0063 |
+        | ('AAPL', '2026-11-20') |                    4 |      337.5 |        352.78 |                -0.0433 |
+        | ('AAPL', '2026-11-23') |                    7 |      355   |        352.78 |                 0.0063 |
+        | ('AAPL', '2026-11-25') |                    9 |      357.5 |        352.78 |                 0.0134 |
         """
 
         def calculate(calls, puts, stock_price, *_):
@@ -393,8 +419,8 @@ class MarketOptions(OptionsBase):
 
         |      |   Stock Price |   Call Gamma Exposure |   Put Gamma Exposure |   Net Gamma Exposure |   Gamma Flip Point |
         |:-----|--------------:|----------------------:|---------------------:|---------------------:|-------------------:|
-        | QQQ  |        704.4  |           1.83881e+09 |         -6.41458e+09 |         -4.57577e+09 |            727.993 |
-        | AAPL |        347.73 |           7.48337e+08 |         -4.80606e+08 |          2.67731e+08 |            342.412 |
+        | QQQ  |        661.75 |           1.57107e+09 |         -4.27908e+09 |         -2.708e+09   |            689.003 |
+        | AAPL |        352.78 |           1.02921e+09 |         -6.02256e+08 |          4.26958e+08 |            346.506 |
         """
         self._warn_if_history_is_stale(_CHAIN_INPUTS_FROM_HISTORY)
         summary, strikes = {}, {}
@@ -507,16 +533,16 @@ class MarketOptions(OptionsBase):
 
         |                        |   Days to Expiration |   At-the-Money Volatility |
         |:-----------------------|---------------------:|--------------------------:|
-        | ('AAPL', '2026-10-26') |                    2 |                    0.1637 |
-        | ('AAPL', '2026-10-28') |                    4 |                    0.2136 |
-        | ('AAPL', '2026-10-30') |                    6 |                    0.2273 |
-        | ('AAPL', '2026-11-06') |                   13 |                    0.319  |
-        | ('AAPL', '2026-11-13') |                   20 |                    0.2967 |
-        | ('TSLA', '2026-10-26') |                    2 |                    0.297  |
-        | ('TSLA', '2026-10-28') |                    4 |                    0.3781 |
-        | ('TSLA', '2026-10-30') |                    6 |                    0.4003 |
-        | ('TSLA', '2026-11-06') |                   13 |                    0.4124 |
-        | ('TSLA', '2026-11-13') |                   20 |                    0.4058 |
+        | ('AAPL', '2026-11-18') |                    2 |                    0.2889 |
+        | ('AAPL', '2026-11-20') |                    4 |                    0.2983 |
+        | ('AAPL', '2026-11-23') |                    7 |                    0.2516 |
+        | ('AAPL', '2026-11-25') |                    9 |                    0.2711 |
+        | ('AAPL', '2026-11-27') |                   11 |                    0.2508 |
+        | ('TSLA', '2026-11-18') |                    2 |                    0.6121 |
+        | ('TSLA', '2026-11-20') |                    4 |                    0.6225 |
+        | ('TSLA', '2026-11-23') |                    7 |                    0.526  |
+        | ('TSLA', '2026-11-25') |                    9 |                    0.5349 |
+        | ('TSLA', '2026-11-27') |                   11 |                    0.5078 |
         """
         return self._per_expiry(
             lambda calls, puts, stock_price, *_: pd.Series(
@@ -597,12 +623,12 @@ class MarketOptions(OptionsBase):
 
         |                        |   Days to Expiration |   25-Delta Put Volatility |   At-the-Money Volatility |   25-Delta Call Volatility |   25-Delta Risk Reversal |   25-Delta Butterfly |
         |:-----------------------|---------------------:|--------------------------:|--------------------------:|---------------------------:|-------------------------:|---------------------:|
-        | ('QQQ', '2026-10-26')  |                    2 |                    0.1908 |                    0.1938 |                     0.1855 |                  -0.0052 |              -0.0056 |
-        | ('QQQ', '2026-10-27')  |                    3 |                    0.2287 |                    0.2253 |                     0.213  |                  -0.0157 |              -0.0044 |
-        | ('QQQ', '2026-10-28')  |                    4 |                    0.2629 |                    0.2545 |                     0.2396 |                  -0.0233 |              -0.0033 |
-        | ('AAPL', '2026-10-26') |                    2 |                    0.1716 |                    0.1637 |                     0.1555 |                  -0.0161 |              -0.0002 |
-        | ('AAPL', '2026-10-28') |                    4 |                    0.2238 |                    0.2136 |                     0.2031 |                  -0.0207 |              -0.0002 |
-        | ('AAPL', '2026-10-30') |                    6 |                    0.2349 |                    0.2273 |                     0.215  |                  -0.0199 |              -0.0023 |
+        | ('QQQ', '2026-11-17')  |                    1 |                    0.4167 |                    0.3999 |                     0.3738 |                  -0.0429 |              -0.0047 |
+        | ('QQQ', '2026-11-18')  |                    2 |                    0.4336 |                    0.4161 |                     0.3949 |                  -0.0387 |              -0.0019 |
+        | ('QQQ', '2026-11-19')  |                    3 |                    0.4302 |                    0.4128 |                     0.3904 |                  -0.0398 |              -0.0025 |
+        | ('AAPL', '2026-11-18') |                    2 |                    0.3172 |                    0.2889 |                     0.2724 |                  -0.0448 |               0.0059 |
+        | ('AAPL', '2026-11-20') |                    4 |                    0.3142 |                    0.2983 |                     0.2728 |                  -0.0414 |              -0.0048 |
+        | ('AAPL', '2026-11-23') |                    7 |                    0.27   |                    0.2516 |                     0.2324 |                  -0.0376 |              -0.0004 |
         """
         return self._per_expiry(
             market_metrics_model.get_volatility_skew,
@@ -679,8 +705,8 @@ class MarketOptions(OptionsBase):
 
         |                        | Earnings Date   |   Days to Expiration |   Straddle Strike |   Straddle Price |   Implied Move |   Lower Price |   Upper Price |
         |:-----------------------|:----------------|---------------------:|------------------:|-----------------:|---------------:|--------------:|--------------:|
-        | ('AAPL', '2026-11-06') | 2026-11-02      |                   13 |               350 |            16.85 |         0.0485 |        330.88 |        364.58 |
-        | ('NVDA', '2026-11-20') | 2026-11-18      |                   27 |               210 |            20.5  |         0.0972 |        190.46 |        231.46 |
+        | ('AAPL', '2027-02-19') | 2027-02-04      |                   95 |               350 |            38.2  |         0.1083 |        314.58 |        390.98 |
+        | ('NVDA', '2026-11-18') | 2026-11-17      |                    2 |               155 |            13.05 |         0.0836 |        143.09 |        169.19 |
         """
         earnings_dates = None
         if around_earnings:
@@ -720,48 +746,66 @@ class MarketOptions(OptionsBase):
             )
         return table
 
-    def _model_free_volatility(self, ticker: str, days: int) -> pd.Series:
-        """The constant-maturity model-free implied volatility of one ticker."""
+    def _constant_maturity_terms(
+        self, ticker: str, days: int
+    ) -> list[tuple[str, pd.DataFrame, pd.DataFrame, float, float]]:
+        """
+        The near and next term around `days` that the Cboe VIX and SKEW methodologies
+        interpolate between: per term the expiration date, calls, puts, time to expiration
+        and risk free rate. The terms have at least MINIMUM_DAYS to expiration.
+        """
+        now = self._current_time()
         usable = [
             date
             for date in options_model.get_option_expiry_dates(ticker)
-            if _days_to_expiration(date) >= market_metrics_model.MINIMUM_DAYS
+            if get_days_to_expiration(date, now) >= market_metrics_model.MINIMUM_DAYS
         ]
         if len(usable) < 2:  # noqa: PLR2004
             raise ValueError(
-                f"{ticker} has too few expiries for a model-free volatility."
+                f"{ticker} has too few expiries to interpolate to {days} days."
             )
 
         # Beyond the furthest expiry there is nothing to interpolate towards, and holding
-        # the last expiry's variance would present it as the volatility of a longer span.
-        if days > _days_to_expiration(usable[-1]):
+        # the last expiry's value would present it as the value of a longer span.
+        if days > get_days_to_expiration(usable[-1], now):
             raise ValueError(
                 f"The longest usable expiry of {ticker} is {usable[-1]} "
-                f"({_days_to_expiration(usable[-1])} days), shorter than days={days}."
+                f"({get_days_to_expiration(usable[-1], now)} days), shorter than days={days}."
             )
 
         # A target shorter than the nearest usable expiry is extrapolated from the two
         # nearest terms, as the Cboe does when no expiry lies before the 30 days.
-        near_candidates = [date for date in usable if _days_to_expiration(date) <= days]
+        near_candidates = [
+            date for date in usable if get_days_to_expiration(date, now) <= days
+        ]
         near = near_candidates[-1] if near_candidates else usable[0]
         following = [date for date in usable if date > near]
         next_term = following[0] if following else near
 
-        terms = {}
-        for label, date in (("Near-Term", near), ("Next-Term", next_term)):
+        terms = []
+        for date in (near, next_term):
             calls, puts, _, time, rate, _ = self._expiry_inputs(ticker, date)
             # A ValueError reaches the per-ticker warning, so the other tickers still answer.
             if calls.empty or puts.empty:
                 raise ValueError(f"{ticker} has no option chain for {date}.")
-            variance, forward = market_metrics_model.get_model_free_variance(
-                calls, puts, time, rate
-            )
-            terms[label] = (date, variance, forward, _days_to_expiration(date))
+            terms.append((date, calls, puts, time, rate))
+        return terms
 
-        near_date, near_variance, forward, near_days = terms["Near-Term"]
-        next_date, next_variance, _, next_days = terms["Next-Term"]
+    def _model_free_volatility(self, ticker: str, days: int) -> pd.Series:
+        """The constant-maturity model-free implied volatility of one ticker."""
+        near, following = self._constant_maturity_terms(ticker, days)
+        near_date, near_calls, near_puts, near_time, near_rate = near
+        next_date, next_calls, next_puts, next_time, next_rate = following
+        near_variance, forward = market_metrics_model.get_model_free_variance(
+            near_calls, near_puts, near_time, near_rate
+        )
+        next_variance, _ = market_metrics_model.get_model_free_variance(
+            next_calls, next_puts, next_time, next_rate
+        )
+        # The interpolation weighs the terms by the same time to expiration as the
+        # variance, in days with the fraction of the day left (the Cboe counts minutes).
         volatility = market_metrics_model.get_constant_maturity_volatility(
-            near_variance, near_days, next_variance, next_days, days
+            near_variance, near_time * 365, next_variance, next_time * 365, days
         )
         return pd.Series(
             {
@@ -830,6 +874,9 @@ class MarketOptions(OptionsBase):
           extrapolated from the two nearest terms, as in the Cboe method. A target beyond
           the longest usable expiry raises a ValueError naming the ticker and that expiry,
           since there is no later term to interpolate towards.
+        - The time to each expiry runs from the current time to 16:00 New York time on the
+          expiration date, in minutes over the 525,600 minutes of a year as in the Cboe method, and
+          the variance of a term and its weight in the interpolation use that same time.
         - The risk free rate comes from the historical data, so leave end_date at today: a
           warning is logged when the history ends more than 5 days before today.
 
@@ -847,8 +894,8 @@ class MarketOptions(OptionsBase):
 
         |      | Near-Term Expiration   | Next-Term Expiration   |   Near-Term Volatility |   Next-Term Volatility |   Forward Price |   Model-Free Implied Volatility |
         |:-----|:-----------------------|:-----------------------|-----------------------:|-----------------------:|----------------:|--------------------------------:|
-        | ^SPX | 2026-11-23             | 2026-11-24             |                 0.1955 |                 0.1965 |        7649.3   |                          0.1955 |
-        | AAPL | 2026-11-20             | 2026-11-27             |                 0.297  |                 0.2817 |         348.495 |                          0.2897 |
+        | ^SPX | 2026-12-16             | 2026-12-17             |                 0.2274 |                 0.2284 |        7436.64  |                          0.2276 |
+        | AAPL | 2026-12-11             | 2026-12-18             |                 0.2655 |                 0.2724 |         353.871 |                          0.2709 |
         """
         self._warn_if_history_is_stale("the risk free rate comes from that date")
         rows, errors = {}, []
@@ -944,9 +991,9 @@ class MarketOptions(OptionsBase):
 
         |      |   Implied Volatility |   Realized Volatility |   Volatility Risk Premium |   Variance Risk Premium |   Implied to Realized Ratio |
         |:-----|---------------------:|----------------------:|--------------------------:|------------------------:|----------------------------:|
-        | QQQ  |               0.2846 |                0.1769 |                    0.1077 |                  0.0497 |                      1.609  |
-        | AAPL |               0.2897 |                0.1641 |                    0.1256 |                  0.057  |                      1.7653 |
-        | TSLA |               0.4357 |                0.3516 |                    0.0841 |                  0.0662 |                      1.2392 |
+        | QQQ  |               0.3272 |                0.3555 |                   -0.0283 |                 -0.0193 |                      0.9203 |
+        | AAPL |               0.2709 |                0.2745 |                   -0.0036 |                 -0.002  |                      0.9867 |
+        | TSLA |               0.5498 |                0.5943 |                   -0.0445 |                 -0.0509 |                      0.9251 |
         """
         self._warn_if_history_is_stale(
             "the realized volatility covers the days up to that date instead of the days "
@@ -986,3 +1033,290 @@ class MarketOptions(OptionsBase):
         return apply_rounding(
             pd.DataFrame(rows).T, rounding if rounding is not None else self._rounding
         )
+
+    @handle_errors
+    def get_risk_neutral_moments(
+        self,
+        expiration_dates: list[str] | None = None,
+        number_of_expirations: int = 4,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the risk-neutral (option-implied) volatility, skewness and kurtosis of the
+        log return up to every expiry with the method of Bakshi, Kapadia and Madan (2003).
+        Any payoff can be built from a position in the underlying and a strip of
+        out-of-the-money options (Carr and Madan, 2001), so the prices of the quadratic,
+        cubic and quartic contracts on the log return follow from the option prices, and
+        with them the moments the market prices in, without a pricing model. A negative
+        skewness means the options price a larger chance of a fall than of a rise of the
+        same size; a kurtosis above 3 means fatter tails than a normal distribution.
+
+        The formula is as follows, with R = ln(S_T / K_0), y_i = ln(K_i / K_0) and the
+        strikes K_i, prices Q(K_i) and intervals ΔK_i of the VIX methodology:
+
+            - V = Σ 2 (1 - y_i) Q(K_i) ΔK_i / K_i²
+            - W = Σ (6 y_i - 3 y_i²) Q(K_i) ΔK_i / K_i²
+            - X = Σ (12 y_i² - 4 y_i³) Q(K_i) ΔK_i / K_i²
+            - μ = F / K_0 - 1 - e^(rT) V / 2 - e^(rT) W / 6 - e^(rT) X / 24
+            - Skewness = (e^(rT) W - 3 μ e^(rT) V + 2 μ³) / (e^(rT) V - μ²)^(3/2)
+            - Kurtosis = (e^(rT) X - 4 μ e^(rT) W + 6 e^(rT) μ² V - 3 μ⁴) / (e^(rT) V - μ²)²
+            - Volatility = sqrt((e^(rT) V - μ²) / T)
+            - Expected Log Return = E[ln(S_T / F)] = μ - ln(F / K_0)
+
+        The integrals of the paper are discretised as in the Cboe VIX methodology: the
+        forward price F follows from put-call parity at the strike where call and put
+        prices are closest, K_0 is the first strike at or below it, Q(K_i) is the put price
+        below K_0, the call price above and their average at K_0, and ΔK_i is half the
+        distance between the neighbouring strikes (the distance to the one neighbour at the
+        ends). Puts and calls are added away from K_0 while they have a bid, up to two
+        consecutive strikes without one. The paper expands around the spot price without
+        dividends (F / S = e^(rT)); the expansion around K_0 keeps the replication exact and
+        takes in dividends through the forward price, and leaves the skewness and kurtosis
+        unchanged. r is the continuously compounded risk free rate.
+
+        For more information, see the following papers:
+
+        - Bakshi, G., Kapadia, N. and Madan, D. (2003). "Stock Return Characteristics, Skew
+          Laws, and the Differential Pricing of Individual Equity Options." The Review of
+          Financial Studies, 16(1), 101-143.
+        - Carr, P. and Madan, D. (2001). "Optimal Positioning in Derivative Securities."
+          Quantitative Finance, 1(1), 19-37.
+        - Cboe Global Markets (2023). "Cboe Volatility Index (VIX) White Paper."
+
+        Also known as: option-implied moments, implied skewness, implied kurtosis, BKM moments.
+
+        Args:
+            expiration_dates (list[str] | None, optional): The expiries to use. Defaults to
+                None, the nearest `number_of_expirations` expiries.
+            number_of_expirations (int, optional): The number of nearest expiries to use when
+                no dates are given. Defaults to 4.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and expiry the Days to Expiration, Forward Price,
+            Expected Log Return (relative to the forward price, over the time to
+            expiration), Volatility (annualized), Skewness and Kurtosis of the log return.
+
+        Notes:
+        - The sums approximate the integrals over the strikes, so the moments depend on how
+          finely the strikes are spaced and how far they reach into the tails; the kurtosis is
+          the most sensitive. On a Black-Scholes chain (20% volatility, 30 days) with strikes
+          from 50% to 150% of the price, the kurtosis is within 0.031 of the normal value of 3
+          (and the skewness within 0.001 of 0) for strikes 1% of the price apart, and within
+          0.001 for strikes 0.1% apart; strikes from 10% to 190% give the same values, as the
+          options beyond 50% and 150% are worth almost nothing. The reach matters when the
+          strip ends within a few standard deviations of the price: from 80% to 120% (3.5
+          standard deviations) the kurtosis is 0.008 low at the finest spacing.
+        - Prices are the middle of the bid and ask, or the last price of an option with
+          volume or open interest when there is no two-sided quote. Outside market hours,
+          when bids are missing, an expiry has no strip and its moments are NaN.
+        - The time to each expiry runs from the current time to 16:00 New York time on the
+          expiration date, in minutes over the 525,600 minutes of a year. The risk free rate
+          comes from the historical data, so leave end_date at today: a warning is logged
+          when the history ends more than 5 days before today.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["^SPX", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_risk_neutral_moments(
+            number_of_expirations=3, show_columns=["Volatility", "Skewness", "Kurtosis"]
+        )
+        ```
+
+        Which returns:
+
+        |                        |   Volatility |   Skewness |   Kurtosis |
+        |:-----------------------|-------------:|-----------:|-----------:|
+        | ('^SPX', '2026-11-19') |       0.2852 |    -0.9794 |    10.6888 |
+        | ('^SPX', '2026-11-20') |       0.2745 |    -2.5062 |    28.0073 |
+        | ('^SPX', '2026-11-23') |       0.2381 |    -3.069  |    41.0756 |
+        | ('AAPL', '2026-11-20') |       0.3401 |    -1.4245 |    12.0253 |
+        | ('AAPL', '2026-11-23') |       0.2615 |    -1.4104 |     9.5121 |
+        | ('AAPL', '2026-11-25') |       0.2763 |    -1.4946 |     8.8768 |
+        """
+
+        def calculate(calls, puts, _, time, rate, *__):
+            strip, forward = market_metrics_model.get_model_free_strip(
+                calls, puts, time, rate
+            )
+            moments = market_metrics_model.get_risk_neutral_moments(
+                strip.index.to_numpy(dtype=float),
+                strip["Call Price"].to_numpy(),
+                strip["Put Price"].to_numpy(),
+                forward,
+                rate,
+                time,
+            )
+            return pd.concat([pd.Series({"Forward Price": forward}), moments])
+
+        return self._per_expiry(
+            calculate, expiration_dates, number_of_expirations, rounding
+        )
+
+    def _skew_index(self, ticker: str, days: int) -> pd.Series:
+        """The constant-maturity Cboe SKEW-style index of one ticker."""
+        terms = {}
+        for label, (date, calls, puts, time, rate) in zip(
+            ("Near-Term", "Next-Term"),
+            self._constant_maturity_terms(ticker, days),
+            strict=True,
+        ):
+            strip, forward = market_metrics_model.get_model_free_strip(
+                calls, puts, time, rate
+            )
+            skewness = market_metrics_model.get_cboe_skewness(
+                strip.index.to_numpy(dtype=float),
+                strip["Call Price"].to_numpy(),
+                strip["Put Price"].to_numpy(),
+                forward,
+                rate,
+                time,
+            )
+            # The weights use the time to expiration in days with the fraction of the day
+            # left, proportional to the minutes the Cboe counts.
+            terms[label] = (date, skewness, forward, time * 365)
+
+        near_date, near_skewness, forward, near_days = terms["Near-Term"]
+        next_date, next_skewness, _, next_days = terms["Next-Term"]
+        skewness, index = market_metrics_model.get_skew_index(
+            near_skewness, near_days, next_skewness, next_days, days
+        )
+        return pd.Series(
+            {
+                "Near-Term Expiration": near_date,
+                "Next-Term Expiration": next_date,
+                "Near-Term Skewness": near_skewness,
+                "Next-Term Skewness": next_skewness,
+                "Forward Price": forward,
+                "Skewness": skewness,
+                "SKEW Index": index,
+            }
+        )
+
+    @handle_errors
+    def get_skew_index(
+        self,
+        days: int = 30,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate a SKEW index with the Cboe SKEW Index methodology, for any ticker with
+        listed options: the risk-neutral skewness S of the log return over the coming
+        `days`, read from the prices of out-of-the-money options and expressed as
+        100 - 10 S. A SKEW of 100 means the options price a symmetric distribution; the
+        higher the index, the more the options price a large fall (tail risk). The Cboe
+        SKEW of the S&P 500 has mostly ranged between 110 and 150.
+
+        The formula is as follows, per expiry with R = ln(S_T / F_0), y_i = ln(K_i / F_0)
+        and the strikes K_i, prices Q(K_i) and intervals ΔK_i of the VIX methodology:
+
+            - P_1 = -e^(rT) Σ Q(K_i) ΔK_i / K_i² + ε_1
+            - P_2 = e^(rT) Σ 2 (1 - y_i) Q(K_i) ΔK_i / K_i² + ε_2
+            - P_3 = e^(rT) Σ 3 (2 y_i - y_i²) Q(K_i) ΔK_i / K_i² + ε_3
+            - ε_1 = -(1 + ln(F_0 / K_0) - F_0 / K_0)
+            - ε_2 = 2 ln(K_0 / F_0) (F_0 / K_0 - 1) + ln(K_0 / F_0)²
+            - ε_3 = 3 ln(K_0 / F_0)² (ln(K_0 / F_0) / 3 - 1 + F_0 / K_0)
+            - S = (P_3 - 3 P_1 P_2 + 2 P_1³) / (P_2 - P_1²)^(3/2)
+
+        and over the near and next term around `days`:
+
+            - w = (T_next - T_days) / (T_next - T_near)
+            - Skewness = w S_near + (1 - w) S_next
+            - SKEW Index = 100 - 10 Skewness
+
+        P_1, P_2 and P_3 are the prices of R, R² and R³, the ε terms correct for the
+        expansion around the forward price F_0 while the puts and calls are split at K_0,
+        the first strike at or below it, and r is the continuously compounded risk free
+        rate. The terms, the forward price, K_0 and the strikes used are those of the VIX
+        methodology (see get_model_free_implied_volatility), as the white paper prescribes.
+        ε_2 holds the full ln(K_0 / F_0)² of the expansion of R² around K_0, where the white
+        paper prints half of it (see market_metrics_model.get_cboe_skewness); for index
+        options the difference is negligible.
+        Unlike the variance of the VIX, the skewness is interpolated linearly in time.
+        Applied to the S&P 500 index options ("^SPX") with days=30 it approximates the Cboe
+        SKEW Index, which uses the Cboe's own quotes and Treasury bill rates per expiry.
+
+        For more information, see the following papers:
+
+        - Cboe Global Markets (2010). "The Cboe SKEW Index - SKEW." White paper.
+        - Bakshi, G., Kapadia, N. and Madan, D. (2003). "Stock Return Characteristics, Skew
+          Laws, and the Differential Pricing of Individual Equity Options." The Review of
+          Financial Studies, 16(1), 101-143.
+
+        Also known as: Cboe SKEW, tail risk index, black swan index, implied skewness index.
+
+        Args:
+            days (int, optional): The constant maturity in calendar days. Defaults to 30.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker the Near-Term and Next-Term Expiration and Skewness, the
+            Forward Price of the near term, the Skewness at `days` and the SKEW Index.
+
+        Notes:
+        - The skewness depends on how far the strikes reach into the tails, so a stock with
+          few listed strikes shows a SKEW closer to 100 than its options imply.
+        - A target shorter than the nearest usable expiry (at least 7 days away) is
+          extrapolated from the two nearest terms, as in the Cboe method. A target beyond
+          the longest usable expiry raises a ValueError naming the ticker and that expiry.
+        - Outside market hours, when bids are missing, an expiry has no strip and the
+          result is NaN.
+        - The time to each expiry runs from the current time to 16:00 New York time on the
+          expiration date, in minutes over the 525,600 minutes of a year. The risk free rate
+          comes from the historical data, so leave end_date at today: a warning is logged
+          when the history ends more than 5 days before today.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(["^SPX", "AAPL"], api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        toolkit.options.get_skew_index(
+            show_columns=["Near-Term Expiration", "Next-Term Expiration", "Skewness", "SKEW Index"]
+        )
+        ```
+
+        Which returns:
+
+        |      | Near-Term Expiration   | Next-Term Expiration   |   Skewness |   SKEW Index |
+        |:-----|:-----------------------|:-----------------------|-----------:|-------------:|
+        | ^SPX | 2026-12-18             | 2026-12-21             |    -4.2626 |      142.626 |
+        | AAPL | 2026-12-18             | 2026-12-24             |    -1.7288 |      117.288 |
+        """
+        self._warn_if_history_is_stale("the risk free rate comes from that date")
+        rows, errors = {}, []
+        for ticker in self._tickers:
+            try:
+                rows[ticker] = self._skew_index(ticker, days)
+            except ValueError as error:
+                logger.warning("%s", error)
+                errors.append(str(error))
+
+        if not rows:
+            raise ValueError("No SKEW index could be calculated. " + " ".join(errors))
+
+        table = pd.DataFrame(rows).T
+        numeric = table.columns.drop(["Near-Term Expiration", "Next-Term Expiration"])
+        table[numeric] = apply_rounding(
+            table[numeric].astype(float),
+            rounding if rounding is not None else self._rounding,
+        )
+        return table

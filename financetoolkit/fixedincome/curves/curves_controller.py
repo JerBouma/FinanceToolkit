@@ -8,9 +8,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from financetoolkit import (
-    helpers,
-)
+from financetoolkit import helpers
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     resample_to_period,
@@ -24,12 +22,8 @@ from financetoolkit.economics.sources import (
     treasury_model,
 )
 from financetoolkit.fixedincome import helpers as fixedincome_helpers
-from financetoolkit.fixedincome.base.base_controller import (
-    FixedIncomeBase,
-    _maturities,
-    _maturity_key,
-)
 from financetoolkit.fixedincome.curves import curve_model, yieldcurve_model
+from financetoolkit.fixedincome.helpers import maturity_key, parse_maturities
 from financetoolkit.fixedincome.sources import eiopa_model, fmp_model
 from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -78,37 +72,87 @@ CURVE_COVERAGE = 0.9
 
 @filter_shown_columns
 @track_sources
-class CurvesFixedIncome(FixedIncomeBase):
+class CurvesFixedIncome:
     """
-    Yield curves: government bond yields and curves, Treasury rates, forward rates, par yields, spreads, breakeven inflation, zero-coupon curves, Nelson-Siegel-Svensson fits, principal components, the term premium, the Bank of England curves and the EIOPA risk-free rates.
+    Yield curves: government bond yields and curves, Treasury rates, forward rates, par yields, spreads, breakeven inflation, zero-coupon curves, Nelson-Siegel-Svensson fits, carry and roll-down, principal components, the term premium, the Bank of England curves and the EIOPA risk-free rates.
     """
 
-    def _latest_zero_curve(self, country: str, date: str | None = None) -> pd.Series:
+    def _latest_zero_curve(
+        self, country: str, date: str | None = None, coupon_grid: bool = True
+    ) -> pd.Series:
         """
-        The zero-coupon curve of a country on a day, bootstrapped from its par yield curve
-        as `get_zero_coupon_curve` does.
+        The zero-coupon curve of a country on a day, see `_zero_curve`.
 
         Args:
             country (str): The country, see get_zero_coupon_curve.
             date (str | None): The day (YYYY-MM-DD), or the last day before it with a curve.
                 Defaults to None, the end date.
+            coupon_grid (bool): Whether to return the zero rate of every coupon date, or only
+                those of the quoted maturities (the points key rate durations shock).
+                Defaults to True.
 
         Returns:
             pd.Series: The annually compounded zero-coupon rates by maturity in years.
         """
-        par_curve = self._latest_yield_curve(country, date)
-        zero_curve = self._to_zero_coupon(par_curve.to_frame().T, country)
-        if zero_curve.empty:
+        return self._zero_curve(
+            self._latest_yield_curve(country, date), country, coupon_grid
+        )
+
+    @staticmethod
+    def _zero_curve(
+        par_curve: pd.Series, country: str, coupon_grid: bool = True
+    ) -> pd.Series:
+        """
+        The zero-coupon curve of one day of a country's yield curve, bootstrapped from its
+        par yields as `get_zero_coupon_curve` does, with the zero rate of every coupon date
+        rather than only those of the quoted maturities. Interpolating between the quoted
+        maturities alone would misprice par bonds at long maturities (a 20-year par bond at
+        about 99.95), as the bootstrap interpolates the par yields, not the zero rates.
+
+        Args:
+            par_curve (pd.Series): The yields as decimals by maturity label.
+            country (str): The country, which sets the coupon frequency and the quote
+                convention of the bills.
+            coupon_grid (bool): Whether to return the zero rate of every coupon date, or only
+                those of the quoted maturities (the points key rate durations shock).
+                Defaults to True.
+
+        Returns:
+            pd.Series: The annually compounded zero-coupon rates by maturity in years.
+        """
+        par_curve = par_curve.dropna()
+
+        if country in ZERO_COUPON_CURVES:
+            zero_curve = CurvesFixedIncome._to_zero_coupon(
+                par_curve.to_frame().T, country
+            ).iloc[0]
+            return pd.Series(
+                zero_curve.to_numpy(dtype=float),
+                index=[maturity_key(label) for label in zero_curve.index],
+            )
+
+        maturities = np.array(
+            [curve_model.maturity_in_years(label) for label in par_curve.index]
+        )
+        if par_curve.empty or maturities.min() > 1:
             raise ValueError(
                 f"The {country} yield curve has no maturity of a year or less to bootstrap "
                 "zero-coupon rates from."
             )
-        zero_curve = zero_curve.iloc[0].dropna()
-
-        return pd.Series(
-            zero_curve.to_numpy(dtype=float),
-            index=[_maturity_key(label) for label in zero_curve.index],
+        bootstrap = curve_model.bootstrap_zero_rates(
+            maturities,
+            par_curve.to_numpy(dtype=float),
+            COUPON_FREQUENCIES.get(country, 2),
+            BILL_CONVENTIONS.get(country),
+            return_grid=coupon_grid,
         )
+        if not coupon_grid:
+            return pd.Series(
+                bootstrap, index=[maturity_key(label) for label in par_curve.index]
+            )
+
+        years, zero_rates = bootstrap
+        return pd.Series(zero_rates, index=years)
 
     @handle_errors
     def get_forward_rate(
@@ -139,7 +183,8 @@ class CurvesFixedIncome(FixedIncomeBase):
 
         The curve is the zero-coupon curve of `get_zero_coupon_curve`, bootstrapped from the
         country's government bond par yields and annually compounded, so the forward rate is
-        annually compounded as well. For a curve of your own, use
+        annually compounded as well. It holds the zero rate of every coupon date the bootstrap
+        solves for, not only those of the quoted maturities. For a curve of your own, use
         `yieldcurve_model.get_forward_rate`.
 
         Also known as: implied forward rate, forward-forward rate.
@@ -186,8 +231,8 @@ class CurvesFixedIncome(FixedIncomeBase):
         |               5 | nan      | 0.0524 | 0.056  |
         """
         zero_curve = self._latest_zero_curve(country, date)
-        near = _maturities(near_maturity, range(1, 6))
-        far = _maturities(far_maturity, range(5, 11))
+        near = parse_maturities(near_maturity, range(1, 6))
+        far = parse_maturities(far_maturity, range(5, 11))
 
         def zero_rate(maturity: float) -> float:
             return float(np.interp(maturity, zero_curve.index, zero_curve.to_numpy()))
@@ -232,8 +277,10 @@ class CurvesFixedIncome(FixedIncomeBase):
         that maturity needs so that, discounted with the spot curve, its price equals par.
 
         The government bond yield curve quotes par yields at its own maturities; this gives the
-        par yield of any maturity in between (such as 4 or 15 years) with the interpolation done
-        on the zero-coupon rates, where it belongs, rather than on the par yields.
+        par yield of any maturity in between (such as 4 or 15 years) from the zero-coupon rates
+        of every coupon date the bootstrap of `get_zero_coupon_curve` solves for, so a maturity
+        on a coupon date reprices the par yield the bootstrap assumed there and a maturity
+        between coupon dates is interpolated on the zero-coupon rates.
 
         The formula is as follows:
 
@@ -243,7 +290,7 @@ class CurvesFixedIncome(FixedIncomeBase):
 
         where Spot Rate(τ) is the zero-coupon rate of `get_zero_coupon_curve` at τ years, restated from annual
         compounding to the country's coupon frequency (twice a year, once for Sweden and Norway) and interpolated
-        linearly, a is the elapsed fraction of the current coupon period (0 on a coupon date) and t_i = i - a is
+        linearly between the bills and the coupon dates of the bootstrap, a is the elapsed fraction of the current coupon period (0 on a coupon date) and t_i = i - a is
         the time of the i-th coupon in periods. The par yield is a nominal annual coupon rate paid at the coupon
         frequency, like the government bond yield curve. For a curve of your own, use
         `yieldcurve_model.get_par_yield`.
@@ -284,8 +331,8 @@ class CurvesFixedIncome(FixedIncomeBase):
         |                   1 |      0.0428 |
         |                   4 |      0.0456 |
         |                   8 |      0.0475 |
-        |                  15 |      0.0507 |
-        |                  25 |      0.0527 |
+        |                  15 |      0.0505 |
+        |                  25 |      0.0526 |
         """
         frequency = COUPON_FREQUENCIES.get(country, 2)
         zero_curve = self._latest_zero_curve(country, date)
@@ -298,7 +345,7 @@ class CurvesFixedIncome(FixedIncomeBase):
                     years_to_maturity=years,
                     frequency=frequency,
                 )
-                for years in _maturities(years_to_maturity, range(1, 31))
+                for years in parse_maturities(years_to_maturity, range(1, 31))
             },
             name="Par Yield",
             dtype=float,
@@ -332,7 +379,10 @@ class CurvesFixedIncome(FixedIncomeBase):
 
         Where both yields are the par yields of `get_government_bond_yield_curve`, as the
         Treasury and FRED (T10Y2Y, T10Y3M) calculate the spreads, interpolated linearly for a
-        maturity the curve does not quote. For the history of these spreads, take the
+        maturity the curve does not quote. They keep the source's quote convention: for the
+        United States bond-equivalent yields, compounded twice a year beyond a year and simple
+        interest for the bill maturities up to half a year, so a spread against a bill yield
+        mixes the two conventions, as the published spreads do. For the history of these spreads, take the
         difference of two columns of `get_government_bond_yield_curve`; for yields of your own,
         use `yieldcurve_model.get_yield_curve_spread`.
 
@@ -379,15 +429,15 @@ class CurvesFixedIncome(FixedIncomeBase):
         | 30Y             | 0.0108 | 0.0079 |
         """
         par_curve = self._latest_yield_curve(country, date)
-        maturities = [_maturity_key(label) for label in par_curve.index]
+        maturities = [maturity_key(label) for label in par_curve.index]
 
         def par_yield(maturity: float) -> float:
             return float(
                 np.interp(maturity, maturities, par_curve.to_numpy(dtype=float))
             )
 
-        long = _maturities(long_maturity, [5, 10, 30])
-        short = _maturities(short_maturity, [0.25, 2])
+        long = parse_maturities(long_maturity, [5, 10, 30])
+        short = parse_maturities(short_maturity, [0.25, 2])
         spreads = pd.DataFrame(
             {
                 fixedincome_helpers.maturity_label(short_years): {
@@ -427,8 +477,9 @@ class CurvesFixedIncome(FixedIncomeBase):
 
         - Breakeven Inflation Rate = Nominal Yield - Real Yield
 
-        Where both yields are the Treasury's par yield curve rates (nominal and real), the simple
-        difference FRED publishes as T5YIE and T10YIE, not (1 + Nominal) / (1 + Real) - 1.
+        Where both yields are the Treasury's par yield curve rates (nominal and real), quoted as
+        bond-equivalent yields compounded twice a year, and the breakeven rate is their simple
+        difference, as FRED publishes it as T5YIE and T10YIE, not (1 + Nominal) / (1 + Real) - 1.
 
         The breakeven rate is often read as the market's expected inflation, but it also
         contains an inflation risk premium, which raises it, and a liquidity premium on
@@ -990,8 +1041,8 @@ class CurvesFixedIncome(FixedIncomeBase):
                 column: f"{column.split()[0]}{column.split()[1][0]}"
                 for column in treasury_rates.columns
             }
-            columns = {_maturity_key(label): column for column, label in labels.items()}
-            requested = _maturities(maturities, [])
+            columns = {maturity_key(label): column for column, label in labels.items()}
+            requested = parse_maturities(maturities, [])
             if unknown := [
                 maturity for maturity in requested if maturity not in columns
             ]:
@@ -1384,6 +1435,172 @@ class CurvesFixedIncome(FixedIncomeBase):
         )
 
     @handle_errors
+    def get_carry_and_roll_down(
+        self,
+        countries: list[str] | str = "United States",
+        period: str = "daily",
+        horizon: float | str = 0.25,
+        maturities: list[float | str] | str | None = None,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculates the carry and roll-down of zero-coupon government bonds on every date: the
+        return in excess of financing that a bond of each maturity earns over the horizon if
+        the yield curve stays as it is. The bond earns its own yield over the financing rate
+        (the carry) and, as it ages, is priced at the yield of a shorter maturity, which on
+        an upward sloping curve is lower, so its price rises (the roll-down). Together they
+        are the return an unchanged curve gives, the bond carry of Koijen, Moskowitz,
+        Pedersen and Vrugt (2018): the yield spread over the short rate plus the roll-down.
+        It shows where on the curve a position is paid most for holding it, and where an
+        inverted curve makes holding a bond cost money.
+
+        The formula is as follows:
+
+        - Carry = (1 + z(T))^h - (1 + r)^h
+        - Roll-Down = (1 + z(T))^T / (1 + z(T - h))^(T - h) - (1 + z(T))^h
+        - Total = Carry + Roll-Down = P(T - h) / P(T) - (1 + r)^h
+
+        where:
+
+        - z(m) = The zero-coupon rate of maturity m, annually compounded
+        - P(m) = (1 + z(m))^(-m), the price of a zero-coupon bond paying 1 at m
+        - T = The maturity of the bond, in years
+        - h = The horizon, in years
+        - r = The financing rate over the horizon: the zero-coupon rate of the horizon, z(h)
+
+        The curve is the zero-coupon curve of `get_zero_coupon_curve`, bootstrapped from the
+        government bond par yields of the day (or published as zero-coupon rates for the Euro
+        Area and Germany) and annually compounded, with the zero rate of every coupon date the
+        bootstrap solves for. z(T - h) and z(h) are interpolated linearly on it, as for
+        `get_forward_rate`, and held flat below the shortest maturity, so where the curve
+        starts beyond the horizon (Germany at one year) the financing rate is the shortest
+        rate. Beyond the longest maturity L the curve is held flat as well, so a bond with
+        T - h at or beyond L has a roll-down of 0 and only the carry
+        (1 + z(L))^h - (1 + z(h))^h. Each bond is repriced exactly on the unchanged curve: the
+        carry is what it earns over the financing if its own yield stays z(T), the roll-down
+        the price change from its yield moving to z(T - h), valued at the horizon. Every
+        value is a return over the horizon, not annualized. Germany and Japan quote
+        maturities from one year, so a horizon of a year avoids the flat extrapolation there.
+        For a curve or a financing rate of your own, use
+        `yieldcurve_model.get_carry_and_roll_down`.
+
+        To first order, with D = (T - h) / (1 + z(T)) the modified duration (annual
+        compounding) of the bond at the horizon, as Koijen et al. (2018) approximate it:
+
+        - Carry ≈ (z(T) - r) × h
+        - Roll-Down ≈ -D × (z(T - h) - z(T))
+
+        For more information, see the following sources:
+
+        - Koijen, R.S.J., Moskowitz, T.J., Pedersen, L.H. and Vrugt, E.B. (2018). "Carry."
+          Journal of Financial Economics, 127(2), 197-225.
+        - Ilmanen, A. (2011). "Expected Returns: An Investor's Guide to Harvesting Market
+          Rewards." Wiley, chapter 9.
+
+        Also known as: bond carry, rolldown, roll yield, horizon return on an unchanged curve.
+
+        Args:
+            countries (list[str] | str, optional): The countries, see
+                `get_zero_coupon_curve`. Defaults to "United States".
+            period (str, optional): Whether to use the daily, weekly or monthly curves.
+                Defaults to "daily".
+            horizon (float | str, optional): The holding period, in years or as a label such
+                as "3M" or "1Y". Defaults to 0.25 (three months).
+            maturities (list[float | str] | str | None, optional): The maturities of the
+                bonds, in years or as labels such as "2Y" (a list or a comma-separated
+                string). A maturity shorter than the horizon is NaN. Defaults to None, every
+                maturity of the curve longer than the horizon.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Carry, Roll-Down and Total as decimals (returns over the
+            horizon), indexed by date with a column per country, component and maturity. A
+            date whose curve has no maturity of a year or less to bootstrap from (such as
+            Canada before its bill yields of the day are published) is left out.
+
+        As an example:
+
+        ```python
+        from financetoolkit import FixedIncome
+
+        fixedincome = FixedIncome(start_date='2026-10-19', end_date='2026-10-23')
+
+        carry_and_roll_down = fixedincome.get_carry_and_roll_down(maturities='2Y,5Y,10Y,30Y')
+
+        carry_and_roll_down['United States']['Total']
+        ```
+
+        Which returns:
+
+        |            |     2Y |     5Y |    10Y |    30Y |
+        |:-----------|-------:|-------:|-------:|-------:|
+        | 2026-10-19 | 0.0024 | 0.0022 | 0.0033 | 0.002  |
+        | 2026-10-20 | 0.0025 | 0.0022 | 0.0031 | 0.0019 |
+        | 2026-10-21 | 0.0026 | 0.0021 | 0.0032 | 0.0019 |
+        | 2026-10-22 | 0.0021 | 0.0017 | 0.0028 | 0.002  |
+        | 2026-10-23 | 0.0022 | 0.0019 | 0.003  | 0.002  |
+        """
+        horizon_years = fixedincome_helpers.maturity_in_years(horizon)
+        if horizon_years <= 0:
+            raise ValueError(f"The horizon must be longer than zero, not {horizon!r}.")
+
+        results = {}
+        for country, curve in self._yield_curves(countries, period).items():
+            quoted = [curve_model.maturity_in_years(label) for label in curve.columns]
+            years = parse_maturities(
+                maturities,
+                [maturity for maturity in quoted if maturity > horizon_years],
+            )
+            if not years:
+                logger.warning(
+                    "The %s yield curve has no maturity longer than the horizon of %s years, "
+                    "so no bond is held over it.",
+                    country,
+                    horizon_years,
+                )
+                continue
+            measures = {}
+            for date, par_curve in curve.iterrows():
+                try:
+                    zero_curve = self._zero_curve(par_curve, country)
+                except ValueError:
+                    # A day without a maturity of a year or less has no zero-coupon curve.
+                    continue
+                measures[date] = yieldcurve_model.get_carry_and_roll_down(
+                    zero_curve, years, horizon_years
+                ).T.stack()
+            if not measures:
+                logger.warning(
+                    "The %s yield curve has no maturity of a year or less to bootstrap "
+                    "zero-coupon rates from.",
+                    country,
+                )
+                continue
+            result = pd.DataFrame.from_dict(measures, orient="index")
+            result.columns = pd.MultiIndex.from_tuples(
+                [
+                    (component, fixedincome_helpers.maturity_label(maturity))
+                    for component, maturity in result.columns
+                ]
+            )
+            results[country] = result
+
+        if not results:
+            return pd.DataFrame()
+
+        carry_and_roll_down = pd.concat(results, axis=1).sort_index()
+        carry_and_roll_down.columns.names = ["Country", "Component", "Maturity"]
+
+        return apply_rounding(
+            carry_and_roll_down, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
     def get_yield_curve_principal_components(
         self,
         country: str = "United States",
@@ -1659,7 +1876,9 @@ class CurvesFixedIncome(FixedIncomeBase):
         values, so they are computed here with those formulas: upwards by the relative shock
         per maturity and at least one percentage point, downwards by the relative shock with
         negative rates left unchanged. Every value is a decimal fraction (0.0358 for 3.58%),
-        at the end of the month the release is for.
+        at the end of the month the release is for, and an annually compounded spot rate, as
+        Solvency II defines the term structure: a rate r discounts a payment in t years with
+        (1 + r)^(-t).
 
         EIOPA's page links the releases from January 2023; each is a
         separate file, so only the months between the start and end date are downloaded, and
@@ -1802,9 +2021,9 @@ class CurvesFixedIncome(FixedIncomeBase):
 
         - Type 1 Equity Charge = 0.39 + Symmetric Adjustment, for equities listed in the EEA or OECD
         - Type 2 Equity Charge = 0.49 + Symmetric Adjustment, for other equities
-        Every value is a decimal fraction (0.0771 for 7.71%). Weekly
-        and monthly periods take the value on the last day of each period, which is the
-        value insurers apply at that reporting date.
+
+        Every value is a decimal fraction (0.0771 for 7.71%). Weekly and monthly periods take the value on
+        the last day of each period, which is the value insurers apply at that reporting date.
 
         See definition: https://www.eiopa.europa.eu/tools-and-data/symmetric-adjustment-equity-capital-charge_en
 
@@ -1890,7 +2109,9 @@ class CurvesFixedIncome(FixedIncomeBase):
         UK government bonds (gilts) and the spot curve of overnight index swaps on SONIA (OIS,
         from 2009). Unlike the par yields of 5, 10 and 20 years in
         `get_government_bond_yield_curve`, these are zero-coupon spot rates over the full
-        range of maturities with history back to 1985.
+        range of maturities with history back to 1985. The Bank of England publishes them
+        continuously compounded, and they are returned that way: a spot rate r discounts a
+        payment in t years with exp(-r t).
 
         The Bank of England's real and implied inflation curves are part of
         `economics.get_real_yield_curve` and `economics.get_breakeven_inflation_expectations`

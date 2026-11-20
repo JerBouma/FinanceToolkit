@@ -242,3 +242,273 @@ def test_a_ticker_without_a_component_has_no_quality_score():
 
     assert pd.isna(scores["Quality Score"].loc["C", "2025"])
     assert scores["Quality Score"].loc[["A", "B"], "2025"].notna().all()
+
+
+def jones_company(seed: int, years: int = 15) -> dict[str, pd.DataFrame]:
+    """Random but plausible statements of one company, ticker by year."""
+    rng = np.random.default_rng(seed)
+    columns = pd.period_range("2005", periods=years, freq="Y")
+
+    def row(values):
+        return pd.DataFrame([values], index=[f"T{seed}"], columns=columns)
+
+    assets = 1000 * np.cumprod(1 + rng.normal(0.05, 0.1, years))
+    return {
+        "total_assets": row(assets),
+        "revenue": row(assets * rng.uniform(0.5, 1.5, years)),
+        "accounts_receivable": row(assets * rng.uniform(0.05, 0.2, years)),
+        "property_plant_and_equipment": row(assets * rng.uniform(0.2, 0.6, years)),
+    }
+
+
+def jones_accruals(company, coefficients, revenue_change):
+    """The total accruals that the Jones model explains exactly, in currency."""
+    a1, a2, a3 = coefficients
+    return a1 + a2 * revenue_change + a3 * company["property_plant_and_equipment"]
+
+
+def test_modified_jones_time_series_matches_statsmodels_on_earlier_years():
+    sm = pytest.importorskip("statsmodels.api")
+    company = jones_company(3)
+    rng = np.random.default_rng(4)
+    net_income = company["total_assets"] * rng.normal(0.08, 0.03, 15)
+    operating_cash_flow = company["total_assets"] * rng.normal(0.1, 0.03, 15)
+
+    result = quality_model.get_modified_jones_accruals(
+        net_income=net_income, operating_cash_flow=operating_cash_flow, **company
+    )
+
+    # 2016 (position 11) is estimated on 2006-2015, the ten years with beginning assets.
+    beginning = company["total_assets"].shift(1, axis=1).iloc[0]
+    revenue = company["revenue"].iloc[0]
+    receivables = company["accounts_receivable"].iloc[0]
+    ppe = company["property_plant_and_equipment"].iloc[0]
+    accruals = (net_income - operating_cash_flow).iloc[0] / beginning
+    design = pd.DataFrame(
+        {
+            "1/A": 1 / beginning,
+            "dREV": revenue.diff() / beginning,
+            "PPE": ppe / beginning,
+        }
+    )
+    fit = sm.OLS(accruals.iloc[1:11], design.iloc[1:11]).fit()
+    event = design.iloc[11].copy()
+    event["dREV"] = (revenue.diff() - receivables.diff()).iloc[11] / beginning.iloc[11]
+    expected = float(event @ fit.params)
+
+    non_discretionary = result["Non-Discretionary Accruals"].iloc[0]
+    assert non_discretionary.iloc[:11].isna().all()
+    assert non_discretionary.iloc[11] == pytest.approx(expected, abs=1e-10)
+    assert result["Discretionary Accruals"].iloc[0, 11] == pytest.approx(
+        accruals.iloc[11] - expected, abs=1e-10
+    )
+    assert result["Total Accruals"].iloc[0, 11] == pytest.approx(accruals.iloc[11])
+
+
+def test_modified_jones_accruals_that_follow_the_model_are_not_discretionary():
+    company = jones_company(5)
+    # Receivables that do not change leave the modification without effect.
+    company["accounts_receivable"] = company["accounts_receivable"] * 0 + 100
+    coefficients = (20.0, 0.05, -0.08)
+    accruals = jones_accruals(company, coefficients, company["revenue"].diff(axis=1))
+
+    result = quality_model.get_modified_jones_accruals(
+        net_income=accruals,
+        operating_cash_flow=accruals * 0,
+        **company,
+    )
+    discretionary = result["Discretionary Accruals"].iloc[0]
+    assert discretionary.notna().sum() == 15 - 11
+    np.testing.assert_allclose(discretionary.dropna(), 0, atol=1e-10)
+
+    # Revenue booked on credit is counted as discretionary: a2 times the change in
+    # receivables in the year itself, while the estimation keeps the change in revenues.
+    company["accounts_receivable"].iloc[0, -1] = 160.0
+    result = quality_model.get_modified_jones_accruals(
+        net_income=accruals,
+        operating_cash_flow=accruals * 0,
+        **company,
+    )
+    beginning = company["total_assets"].iloc[0, -2]
+    assert result["Discretionary Accruals"].iloc[0, -1] == pytest.approx(
+        0.05 * 60 / beginning
+    )
+
+
+def test_modified_jones_cross_section_explains_accruals_that_follow_the_model():
+    companies = [jones_company(seed, years=4) for seed in range(12)]
+    statements = {
+        name: pd.concat([company[name] for company in companies])
+        for name in companies[0]
+    }
+    coefficients = (15.0, 0.1, -0.05)
+    accruals = jones_accruals(
+        statements,
+        coefficients,
+        statements["revenue"].diff(axis=1)
+        - statements["accounts_receivable"].diff(axis=1),
+    )
+
+    result = quality_model.get_modified_jones_accruals(
+        net_income=accruals,
+        operating_cash_flow=accruals * 0,
+        method="cross_section",
+        **statements,
+    )
+    discretionary = result["Discretionary Accruals"]
+    assert discretionary.iloc[:, 0].isna().all()
+    assert discretionary.iloc[:, 1:].notna().all().all()
+    np.testing.assert_allclose(discretionary.iloc[:, 1:], 0, atol=1e-10)
+
+    # Twelve tickers are fewer than thirteen observations.
+    fewer = quality_model.get_modified_jones_accruals(
+        net_income=accruals,
+        operating_cash_flow=accruals * 0,
+        method="cross_section",
+        min_observations=13,
+        **statements,
+    )
+    assert fewer["Discretionary Accruals"].isna().all().all()
+
+
+def test_modified_jones_rejects_unknown_methods_and_too_few_observations():
+    company = jones_company(6)
+    with pytest.raises(ValueError, match="not supported"):
+        quality_model.get_modified_jones_accruals(
+            net_income=company["revenue"],
+            operating_cash_flow=company["revenue"],
+            method="panel",
+            **company,
+        )
+    with pytest.raises(ValueError, match="at least"):
+        quality_model.get_modified_jones_accruals(
+            net_income=company["revenue"],
+            operating_cash_flow=company["revenue"],
+            min_observations=2,
+            **company,
+        )
+
+
+def test_modified_jones_accruals_do_not_depend_on_the_currency_unit():
+    company = jones_company(8)
+    rng = np.random.default_rng(9)
+    net_income = company["total_assets"] * rng.normal(0.08, 0.03, 15)
+    operating_cash_flow = company["total_assets"] * rng.normal(0.1, 0.03, 15)
+
+    for method, min_observations in [("time_series", 10), ("cross_section", 3)]:
+        statements = company
+        income, cash_flow = net_income, operating_cash_flow
+        if method == "cross_section":
+            # Five companies, so the cross-section has enough tickers.
+            companies = [jones_company(seed) for seed in range(8, 13)]
+            statements = {
+                name: pd.concat([each[name] for each in companies])
+                for name in companies[0]
+            }
+            income = statements["total_assets"] * 0.08 + statements["revenue"] * 0.01
+            cash_flow = statements["total_assets"] * 0.1
+        base = quality_model.get_modified_jones_accruals(
+            net_income=income,
+            operating_cash_flow=cash_flow,
+            method=method,
+            min_observations=min_observations,
+            **statements,
+        )["Discretionary Accruals"]
+        assert base.notna().any().any()
+        # Total assets around 1e3 times 1e13 are around 1e16, as in rupiah or dong, where
+        # one over the beginning assets is around 1e-16.
+        for scale in (1e5, 1e13):
+            scaled = quality_model.get_modified_jones_accruals(
+                net_income=income * scale,
+                operating_cash_flow=cash_flow * scale,
+                method=method,
+                min_observations=min_observations,
+                **{name: frame * scale for name, frame in statements.items()},
+            )["Discretionary Accruals"]
+            pd.testing.assert_frame_equal(scaled, base, rtol=1e-9, atol=1e-12)
+
+
+def test_modified_jones_with_an_intercept_matches_statsmodels_with_a_constant():
+    sm = pytest.importorskip("statsmodels.api")
+    company = jones_company(3)
+    rng = np.random.default_rng(4)
+    net_income = company["total_assets"] * rng.normal(0.08, 0.03, 15)
+    operating_cash_flow = company["total_assets"] * rng.normal(0.1, 0.03, 15)
+
+    result = quality_model.get_modified_jones_accruals(
+        net_income=net_income,
+        operating_cash_flow=operating_cash_flow,
+        intercept=True,
+        **company,
+    )
+
+    beginning = company["total_assets"].shift(1, axis=1).iloc[0]
+    revenue = company["revenue"].iloc[0]
+    receivables = company["accounts_receivable"].iloc[0]
+    ppe = company["property_plant_and_equipment"].iloc[0]
+    accruals = (net_income - operating_cash_flow).iloc[0] / beginning
+    design = sm.add_constant(
+        pd.DataFrame(
+            {
+                "1/A": 1 / beginning,
+                "dREV": revenue.diff() / beginning,
+                "PPE": ppe / beginning,
+            }
+        ).iloc[1:],
+        prepend=False,
+    )
+    for position in (11, 14):
+        fit = sm.OLS(accruals.iloc[1:position], design.iloc[: position - 1]).fit()
+        event = design.iloc[position - 1].copy()
+        event["dREV"] = (revenue.diff() - receivables.diff()).iloc[position] / (
+            beginning.iloc[position]
+        )
+        expected = float(event @ fit.params)
+        assert result["Non-Discretionary Accruals"].iloc[0, position] == pytest.approx(
+            expected, abs=1e-10
+        )
+
+    # The cross-section with a constant, against statsmodels in one year.
+    companies = [jones_company(seed, years=4) for seed in range(12)]
+    statements = {
+        name: pd.concat([each[name] for each in companies]) for name in companies[0]
+    }
+    income = statements["total_assets"] * rng.normal(0.08, 0.03, (12, 4))
+    cash_flow = statements["total_assets"] * rng.normal(0.1, 0.03, (12, 4))
+    cross_section = quality_model.get_modified_jones_accruals(
+        net_income=income,
+        operating_cash_flow=cash_flow,
+        method="cross_section",
+        intercept=True,
+        **statements,
+    )
+    beginning = statements["total_assets"].iloc[:, 1]
+    cash_revenue_change = (
+        statements["revenue"].diff(axis=1)
+        - statements["accounts_receivable"].diff(axis=1)
+    ).iloc[:, 2] / statements["total_assets"].iloc[:, 1]
+    design = pd.DataFrame(
+        {
+            "1/A": 1 / beginning,
+            "dREV": cash_revenue_change,
+            "PPE": statements["property_plant_and_equipment"].iloc[:, 2] / beginning,
+            "const": 1.0,
+        }
+    )
+    accruals = (income - cash_flow).iloc[:, 2] / beginning
+    fit = sm.OLS(accruals, design).fit()
+    np.testing.assert_allclose(
+        cross_section["Non-Discretionary Accruals"].iloc[:, 2],
+        design @ fit.params,
+        rtol=0,
+        atol=1e-10,
+    )
+    # Four coefficients need at least four observations.
+    with pytest.raises(ValueError, match="4 coefficients"):
+        quality_model.get_modified_jones_accruals(
+            net_income=income,
+            operating_cash_flow=cash_flow,
+            min_observations=3,
+            intercept=True,
+            **statements,
+        )

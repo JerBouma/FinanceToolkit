@@ -5,6 +5,10 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.logger_model import get_logger
+
+logger = get_logger()
+
 # The valuation multiples of the look-through valuation, averaged as weighted harmonic means
 # (the multiple of the fund as a whole), and the yields and returns, averaged arithmetically.
 MULTIPLES = (
@@ -13,8 +17,19 @@ MULTIPLES = (
     "Price-to-Sales",
     "Price-to-Free-Cash-Flow",
 )
+# What the price of every multiple is divided by.
+MULTIPLE_BASES = {
+    "Price-to-Earnings": "earnings",
+    "Price-to-Book": "book values",
+    "Price-to-Sales": "sales",
+    "Price-to-Free-Cash-Flow": "free cash flows",
+}
 YIELDS = ("Dividend Yield", "Net Profit Margin")
 TOP_HOLDINGS = 10
+# The share of the holdings' gross earnings yield (profits and losses alike) below which their
+# net earnings yield counts as zero: profits and losses that cancel out leave a multiple that is
+# a rounding error rather than a valuation.
+CANCELLED_EARNINGS = 1e-9
 
 
 def get_concentration(weights: pd.Series) -> pd.Series:
@@ -71,12 +86,17 @@ def get_overlap(weights: dict[str, pd.Series]) -> pd.DataFrame:
     of the smaller of the two weights. Two funds with an overlap of 0.8 hold 80% of the same
     portfolio, so holding both adds little diversification.
 
+    The weights are taken as listed, not scaled to add up to one, so the overlap of a fund
+    whose list of holdings is incomplete is at most the weight that list covers (on the
+    diagonal too). One minus the overlap equals the active share (see get_active_share, which
+    does scale the weights) only for funds whose listed weights each add up to one.
+
     Args:
         weights (dict[str, pd.Series]): The weights of every fund's holdings, as decimals.
 
     Returns:
-        pd.DataFrame: The overlap of every pair of funds, as decimals (1 on the diagonal for a
-        fund whose weights add up to 1).
+        pd.DataFrame: The overlap of every pair of funds, as decimals (on the diagonal, the
+        sum of a fund's weights: 1 for a complete list of holdings).
     """
     funds = list(weights)
     overlap = pd.DataFrame(np.nan, index=funds, columns=funds)
@@ -144,10 +164,16 @@ def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.S
     multiple of the fund as a whole (its price over its share of the holdings' earnings) and does not let one holding
     with a very high multiple dominate; holdings with negative earnings count with their
     negative earnings, as in the fund's own earnings. The dividend yield and net profit margin
-    are weighted arithmetic means. The coverage is the share of the fund's
-    weight whose holdings have a usable, non-zero price-to-earnings ratio. When the holdings' earnings
-    add up to a loss, the fund's price-to-earnings ratio is negative (some data providers
-    show none in that case).
+    are weighted arithmetic means. The coverage is the share of the fund's weight whose
+    holdings have a usable, non-zero price-to-earnings ratio (or, without price-to-earnings
+    ratios, the first multiple there is). When the holdings' earnings (or book value, sales or
+    free cash flow) add up to a loss or to about zero, the fund has no meaningful multiple, so
+    it is NaN with a logged warning rather than a negative or near infinite number.
+
+    The formula is as follows:
+
+        - Multiple = 1 / SUM(Weight i / Multiple i), with the weights scaled to add up to one
+        - Yield = SUM(Weight i * Yield i), with the weights scaled to add up to one
 
     Args:
         weights (pd.Series): The weight of every holding, as decimals.
@@ -176,8 +202,20 @@ def get_look_through_valuation(weights: pd.Series, ratios: pd.DataFrame) -> pd.S
             continue
         shares = covered / covered.sum()
         if ratio in MULTIPLES:
-            inverse = float((shares / values[valid]).sum())
-            result[ratio] = 1 / inverse if inverse else np.nan
+            # The fund's earnings (or book value, ...) per unit of price: the weighted sum of
+            # the earnings yields, losses included.
+            yields = shares / values[valid]
+            inverse = float(yields.sum())
+            if inverse <= CANCELLED_EARNINGS * float(yields.abs().sum()):
+                logger.warning(
+                    "The %s of the holdings add up to a loss or to about zero, so the fund "
+                    "has no %s ratio.",
+                    MULTIPLE_BASES[ratio],
+                    ratio,
+                )
+                result[ratio] = np.nan
+            else:
+                result[ratio] = 1 / inverse
         else:
             result[ratio] = float((shares * values[valid]).sum())
     result["Coverage"] = coverage

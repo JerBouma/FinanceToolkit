@@ -401,6 +401,29 @@ def _format_oecd_period(date: str, period_code: str, buffer_periods: int = 0) ->
     return f"{period.year}-{period.month:02d}"
 
 
+def name_euro_area(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Names the euro area column of an OECD dataset "Euro Area", as every other source
+    does. Most OECD datasets (financial market statistics, consumer prices, share
+    prices, exchange rates, confidence indicators) publish the euro area in its current
+    composition under the code EA20, which CODE_TO_COUNTRY keeps apart from the fixed
+    compositions of other datasets. Those fixed compositions keep their own names
+    ("Euro Area 17", "Euro Area 19"), so a dataset that publishes EA19 next to EA20
+    returns both, with the current composition as "Euro Area". A dataset that already
+    publishes a column named "Euro Area" (the code EA) keeps it and leaves EA20 as is.
+
+    Args:
+        data (pd.DataFrame): The data, a column per country.
+
+    Returns:
+        pd.DataFrame: The data with the EA20 column named "Euro Area".
+    """
+    if "EA20" in data.columns and "Euro Area" not in data.columns:
+        return data.rename(columns={"EA20": "Euro Area"})
+
+    return data
+
+
 def collect_oecd_data(
     oecd_data_string: str,
     period_code: str,
@@ -474,6 +497,10 @@ def collect_oecd_data(
             parameters=cache_parameters,
         )
         cached_data = plan.cached_frame(cache_entity)
+
+        # Cached frames are named like fresh responses, whichever form they were stored in.
+        if cached_data is not None:
+            cached_data = name_euro_area(cached_data)
 
         if plan.fully_cached and cached_data is not None and not cached_data.empty:
             return cached_data
@@ -574,6 +601,8 @@ def collect_oecd_data(
     oecd_data.columns.name = None
 
     oecd_data.index = pd.PeriodIndex(oecd_data.index, freq=period_code)
+
+    oecd_data = name_euro_area(oecd_data)
 
     # Only remove data if all of it is NaN or it is NaT
     oecd_data = oecd_data.dropna(axis=1, how="all")
@@ -850,7 +879,8 @@ def get_long_term_interest_rate(
     Get the long term interest rate for a variety of countries over time from the OECD.
     The long term interest rate is defined as the yield on government bonds with a
     residual maturity of about 10 years, measured on the national definition, and
-    quoted as a percent per annum.
+    quoted as a percent per annum. The euro area, in its current composition, is
+    returned as "Euro Area".
 
     Args:
         period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
@@ -894,7 +924,7 @@ def get_short_term_interest_rate(
     (the rate at which banks lend to one another for three months, e.g. EURIBOR for the
     euro area), on the national definition and quoted as a percent per annum. It is not
     a government bill yield, and for most countries it tracks the central bank's policy
-    rate closely.
+    rate closely. The euro area, in its current composition, is returned as "Euro Area".
 
     Args:
         period (str): The period of the data. Can be 'monthly', 'quarterly' or 'yearly'.
@@ -1210,6 +1240,26 @@ def get_labour_productivity(start_date: str | None = None, end_date: str | None 
     labour_productivity = collect_oecd_data(oecd_data_string, "Y", start_date, end_date)
 
     return labour_productivity
+
+
+def get_unit_labour_costs(start_date: str | None = None, end_date: str | None = None):
+    """
+    Unit labour costs (employment based) for the total economy from the OECD
+    Productivity Database: the compensation of employees per employee divided by real GDP
+    per person employed, the average cost of labour per unit of output. The OECD
+    publishes them quarterly, seasonally adjusted, as an index with 2015 = 100.
+
+    Args:
+        start_date (str | None): Restrict the query to this start date (YYYY-MM-DD).
+        end_date (str | None): Restrict the query to this end date (YYYY-MM-DD).
+
+    Returns:
+       pd.DataFrame: The unit labour cost index (2015 = 100), indexed by quarter with a
+         column per country.
+    """
+    oecd_data_string = "OECD.SDD.TPS,DSD_PDB@DF_PDB_ULC_Q,1.0/.Q.ULCE._T.IX.V._Z.S.NC"
+
+    return collect_oecd_data(oecd_data_string, "Q", start_date, end_date)
 
 
 def get_output_gap(start_date: str | None = None, end_date: str | None = None):

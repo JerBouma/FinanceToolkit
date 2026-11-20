@@ -6,7 +6,7 @@ import pytest
 
 from financetoolkit.cache.cache_controller import clear_active_cache
 from financetoolkit.economics.sources import ecb_model as economics_ecb_model
-from financetoolkit.fixedincome.curves import curve_model
+from financetoolkit.fixedincome.curves import curve_model, yieldcurve_model
 from financetoolkit.fixedincome.fixedincome_controller import FixedIncome
 from financetoolkit.fixedincome.sources import fiscaldata_model, fred_model
 
@@ -106,6 +106,78 @@ def test_nelson_siegel_svensson(fixedincome):
     assert fitted["United States"]["10Y"].iloc[-1] == pytest.approx(
         zero_curve["10Y"].iloc[-1], abs=0.002
     )
+
+
+def test_carry_and_roll_down(fixedincome):
+    result = fixedincome.get_carry_and_roll_down(
+        ["United States", "Germany", "Australia"], period="monthly"
+    )
+
+    # Australia's curve starts at two years, too long to bootstrap zero-coupon rates from.
+    assert list(result.columns.get_level_values(0).unique()) == [
+        "United States",
+        "Germany",
+    ]
+    assert result.columns.names == ["Country", "Component", "Maturity"]
+    us = result["United States"]
+    assert list(us.columns.get_level_values(0).unique()) == [
+        "Carry",
+        "Roll-Down",
+        "Total",
+    ]
+    # Every maturity longer than the three-month horizon.
+    assert list(us["Total"].columns) == LABELS[2:]
+    assert us["Total"].to_numpy() == pytest.approx(
+        (us["Carry"] + us["Roll-Down"]).to_numpy()
+    )
+
+    # Each date is the model on that day's zero-coupon curve, with the coupon dates of the
+    # bootstrap, financed at the three-month zero rate.
+    curve = fixedincome.get_government_bond_yield_curve(
+        "United States", period="monthly", rounding=10
+    )["United States"]
+    zero_curve = fixedincome._zero_curve(curve.iloc[-1], "United States")
+    expected = yieldcurve_model.get_carry_and_roll_down(
+        zero_curve, [0.5, 2.0, 10.0], 0.25
+    )
+    last = us.iloc[-1]
+    for years, label in zip([0.5, 2.0, 10.0], ["6M", "2Y", "10Y"], strict=True):
+        for component in ["Carry", "Roll-Down", "Total"]:
+            assert last[(component, label)] == pytest.approx(
+                expected.loc[years, component]
+            )
+
+    # The simulated par curve rises with maturity, so every bond earns carry and rolls down
+    # it up to 20 years. Beyond 20 years the par curve flattens, and the zero-coupon rates
+    # bootstrapped from it fall slightly, so the 30-year bond rolls up the curve.
+    assert (us["Carry"].iloc[-1] > 0).all()
+    assert (us["Roll-Down"].iloc[-1].drop("30Y") > 0).all()
+    assert us["Roll-Down"]["30Y"].iloc[-1] < 0
+
+
+def test_carry_and_roll_down_horizon_and_maturities(fixedincome):
+    yearly = fixedincome.get_carry_and_roll_down(
+        horizon="1Y", maturities=[0.5, "1Y", 2, "10Y"], period="monthly"
+    )["United States"]
+    from_string = fixedincome.get_carry_and_roll_down(
+        horizon=1, maturities="6M, 1Y, 2Y, 10Y", period="monthly"
+    )["United States"]
+
+    pd.testing.assert_frame_equal(yearly, from_string)
+    assert list(yearly["Carry"].columns) == ["6M", "1Y", "2Y", "10Y"]
+    # A six-month bill is repaid before the year is out; the 1-year bill is the financing.
+    assert yearly["Total"]["6M"].isna().all()
+    assert yearly["Total"]["1Y"].to_numpy() == pytest.approx(0, abs=1e-12)
+    assert fixedincome.get_carry_and_roll_down(horizon=0).empty
+
+
+def test_carry_and_roll_down_horizon_beyond_the_curve(fixedincome, caplog):
+    # No maturity of the curve outlasts a 40-year horizon, so no bond is held over it.
+    with caplog.at_level("WARNING"):
+        result = fixedincome.get_carry_and_roll_down(horizon="40Y", period="monthly")
+
+    assert result.empty
+    assert "no maturity longer than the horizon" in caplog.text
 
 
 def test_principal_components(fixedincome):

@@ -173,3 +173,26 @@ def test_a_loss_leaves_the_return_unsplit():
     assert decomposition["Price Return"] == pytest.approx(0.2)
     assert pd.isna(decomposition["EPS Growth"])
     assert pd.isna(decomposition["P/E Change"])
+
+
+def test_daily_pvgo_applies_the_earnings_from_the_fiscal_period_end():
+    columns = pd.PeriodIndex(["2023", "2024"], freq="Y")
+    costs = pd.DataFrame([[0.1, 0.1]], ["A"], columns)
+    earnings = pd.DataFrame([[2.0, 3.0]], ["A"], columns)
+    days = pd.PeriodIndex(
+        ["2024-01-02", "2024-06-28", "2024-07-01", "2025-07-01"], freq="D"
+    )
+    prices = pd.DataFrame({"A": [50.0, 51.0, 52.0, 53.0]}, index=days)
+    # A fiscal year that ends on 30 June: the year labelled 2024 ends on 30 June 2024.
+    ends = pd.DataFrame(
+        [[pd.Timestamp("2023-06-30"), pd.Timestamp("2024-06-30")]], ["A"], columns
+    )
+
+    result = growth_model.get_present_value_of_growth_opportunities(
+        costs, earnings, prices, calculate_daily=True, period_end_dates=ends
+    )
+
+    # Until 30 June 2024 the 2023 earnings (2 / 0.1), from 1 July 2024 the 2024 ones (30).
+    pd.testing.assert_frame_equal(
+        result, pd.DataFrame({"A": [30.0, 31.0, 22.0, 23.0]}, index=days)
+    )

@@ -120,6 +120,16 @@ def test_get_percentage_price_oscillator(recorder, technical_module):
     )
 
 
+def test_get_percentage_volume_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_percentage_volume_oscillator())
+    recorder.capture(technical_module.get_percentage_volume_oscillator(growth=True))
+    recorder.capture(
+        technical_module.get_percentage_volume_oscillator(
+            short_window=5, long_window=20, signal_window=5
+        )
+    )
+
+
 def test_get_detrended_price_oscillator(recorder, technical_module):
     recorder.capture(technical_module.get_detrended_price_oscillator())
     recorder.capture(technical_module.get_detrended_price_oscillator(growth=True))
@@ -175,6 +185,26 @@ def test_get_relative_strength_index(recorder, technical_module):
     recorder.capture(technical_module.get_relative_strength_index(growth=True))
     recorder.capture(
         technical_module.get_relative_strength_index(growth=True, lag=[1, 2, 3])
+    )
+
+
+def test_get_stochastic_relative_strength_index(recorder, technical_module):
+    recorder.capture(technical_module.get_stochastic_relative_strength_index())
+    recorder.capture(
+        technical_module.get_stochastic_relative_strength_index(stochastic_window=5)
+    )
+    recorder.capture(
+        technical_module.get_stochastic_relative_strength_index(
+            growth=True, lag=[1, 2, 3]
+        )
+    )
+
+
+def test_get_true_strength_index(recorder, technical_module):
+    recorder.capture(technical_module.get_true_strength_index())
+    recorder.capture(technical_module.get_true_strength_index(period="weekly"))
+    recorder.capture(
+        technical_module.get_true_strength_index(growth=True, lag=[1, 2, 3])
     )
 
 
@@ -246,6 +276,20 @@ def test_get_bollinger_bands(recorder, technical_module):
     recorder.capture(technical_module.get_bollinger_bands(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_bollinger_percent_b_and_bandwidth(recorder, technical_module):
+    recorder.capture(technical_module.get_bollinger_percent_b_and_bandwidth())
+    recorder.capture(
+        technical_module.get_bollinger_percent_b_and_bandwidth(
+            window=10, num_std_dev=1.5
+        )
+    )
+    recorder.capture(
+        technical_module.get_bollinger_percent_b_and_bandwidth(
+            growth=True, lag=[1, 2, 3]
+        )
+    )
+
+
 def test_get_moving_average_triangular(recorder, technical_module):
     recorder.capture(technical_module.get_moving_average(method="triangular"))
     recorder.capture(
@@ -288,6 +332,12 @@ def test_get_average_true_range(recorder, technical_module):
     )
 
 
+def test_get_mass_index(recorder, technical_module):
+    recorder.capture(technical_module.get_mass_index())
+    recorder.capture(technical_module.get_mass_index(growth=True))
+    recorder.capture(technical_module.get_mass_index(ema_window=5, sum_window=10))
+
+
 def test_get_keltner_channels(recorder, technical_module):
     recorder.capture(technical_module.get_keltner_channels())
     recorder.capture(technical_module.get_keltner_channels(growth=True))
@@ -298,6 +348,12 @@ def test_get_on_balance_volume(recorder, technical_module):
     recorder.capture(technical_module.get_on_balance_volume())
     recorder.capture(technical_module.get_on_balance_volume(growth=True))
     recorder.capture(technical_module.get_on_balance_volume(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_price_volume_trend(recorder, technical_module):
+    recorder.capture(technical_module.get_price_volume_trend())
+    recorder.capture(technical_module.get_price_volume_trend(growth=True))
+    recorder.capture(technical_module.get_price_volume_trend(period="weekly"))
 
 
 def test_get_accumulation_distribution_line(recorder, technical_module):
@@ -399,6 +455,12 @@ def test_get_know_sure_thing(recorder, technical_module):
     recorder.capture(technical_module.get_know_sure_thing(growth=True, lag=[1, 2, 3]))
 
 
+def test_get_coppock_curve(recorder, technical_module):
+    recorder.capture(technical_module.get_coppock_curve())
+    recorder.capture(technical_module.get_coppock_curve(period="monthly"))
+    recorder.capture(technical_module.get_coppock_curve(growth=True, lag=[1, 2, 3]))
+
+
 def test_get_kaufman_adaptive_moving_average(recorder, technical_module):
     recorder.capture(technical_module.get_kaufman_adaptive_moving_average())
     recorder.capture(technical_module.get_kaufman_adaptive_moving_average(growth=True))
@@ -441,6 +503,12 @@ def test_get_supertrend(recorder, technical_module):
     recorder.capture(technical_module.get_supertrend())
     recorder.capture(technical_module.get_supertrend(growth=True))
     recorder.capture(technical_module.get_supertrend(growth=True, lag=[1, 2, 3]))
+
+
+def test_get_chandelier_exit(recorder, technical_module):
+    recorder.capture(technical_module.get_chandelier_exit())
+    recorder.capture(technical_module.get_chandelier_exit(growth=True))
+    recorder.capture(technical_module.get_chandelier_exit(window=10, multiplier=2.0))
 
 
 def test_period_ohlc_is_aggregated_from_the_adjusted_daily_prices(technical_module):
@@ -499,6 +567,9 @@ def test_conventional_default_windows():
         10,
         2,
     )
+    # Bollinger's own setting: a 20-period average with bands at 2 standard deviations.
+    bollinger = defaults(Technicals.get_bollinger_bands)
+    assert (bollinger["window"], bollinger["num_std_dev"]) == (20, 2)
 
 
 def test_relative_vigor_index_returns_index_and_signal_line(technical_module):
@@ -673,3 +744,270 @@ def test_signals_only_keeps_the_periods_with_a_signal(technical_module):
 
 def test_get_moving_average_rejects_an_unknown_method(technical_module):
     assert technical_module.get_moving_average(method="cubic").empty
+
+
+def _stock_with_a_cryptocurrency():
+    """The test toolkit's AAPL and Benchmark next to a ticker with a price on every
+    calendar day, filled as the Toolkit fills the dates a ticker did not trade."""
+    import numpy as np  # noqa: PLC0415
+
+    from financetoolkit.historical_model import (  # noqa: PLC0415
+        fill_non_trading_days,
+    )
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    stock = historical.loc[
+        :, historical.columns.get_level_values(1).isin(["AAPL", "Benchmark"])
+    ]
+    days = pd.period_range(stock.index[0], stock.index[-1], freq="D")
+    close = pd.Series(
+        100 * np.exp(np.cumsum(np.random.default_rng(1).normal(0, 0.03, len(days)))),
+        index=days,
+    )
+    crypto = pd.DataFrame(
+        {
+            "Open": close * 0.99,
+            "High": close * 1.02,
+            "Low": close * 0.97,
+            "Close": close,
+            "Adj Close": close,
+            "Volume": 1e6,
+            "Dividends": 0.0,
+            "Return": close.pct_change(),
+            "Cumulative Return": close / close.iloc[0],
+        }
+    )
+    crypto.columns = pd.MultiIndex.from_product([crypto.columns, ["BTC"]])
+    columns = stock.columns.get_level_values(0).unique()
+    mixed = pd.concat([stock.reindex(days), crypto], axis=1).reindex(
+        columns=pd.MultiIndex.from_product([columns, ["AAPL", "BTC", "Benchmark"]])
+    )
+
+    return stock, close, fill_non_trading_days(mixed, "Adj Close")
+
+
+def test_a_stock_keeps_its_indicators_next_to_a_cryptocurrency():
+    """A stock in a Toolkit with a cryptocurrency gets flat weekend bars without a Return.
+    Its indicators are calculated over its own trading days, so they equal those of the
+    stock alone, and are NaN on the weekends it did not trade."""
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, _, mixed = _stock_with_a_cryptocurrency()
+    alone = Technicals(["AAPL"], {"daily": stock}, rounding=None)
+    together = Technicals(["AAPL", "BTC"], {"daily": mixed}, rounding=None)
+    saturday = pd.Period("2022-12-24", freq="D")
+
+    for method in (
+        "get_average_true_range",
+        "get_average_directional_index",
+        "get_bollinger_bands",
+        "get_money_flow_index",
+        "get_ease_of_movement",
+        "get_relative_strength_index",
+        "get_stochastic_relative_strength_index",
+        "get_true_strength_index",
+        "get_coppock_curve",
+        "get_bollinger_percent_b_and_bandwidth",
+        "get_balance_of_power",
+        "get_parabolic_sar",
+        "get_supertrend",
+        "get_moving_average_convergence_divergence",
+        "get_on_balance_volume",
+        "get_mass_index",
+        "get_price_volume_trend",
+        "get_chandelier_exit",
+        "get_percentage_volume_oscillator",
+        "get_candlestick_patterns",
+        "get_signals",
+    ):
+        expected = getattr(alone, method)()
+        result = getattr(together, method)()
+        if isinstance(expected.columns, pd.MultiIndex):
+            expected = expected.xs("AAPL", level=1, axis=1)
+            result = result.xs("AAPL", level=1, axis=1)
+        else:
+            expected, result = expected[["AAPL"]], result[["AAPL"]]
+
+        pd.testing.assert_frame_equal(
+            result.reindex(expected.index), expected, check_freq=False
+        )
+        assert result.loc[saturday].isna().all(), method
+
+    # The cryptocurrency trades every day, so it has values on the weekend.
+    assert together.get_average_true_range().loc[saturday, "BTC"] > 0
+
+    cone = together.get_volatility_cone()
+    pd.testing.assert_frame_equal(
+        cone.xs("AAPL", level=1, axis=1),
+        alone.get_volatility_cone().xs("AAPL", level=1, axis=1),
+    )
+
+
+def test_a_cryptocurrency_counts_a_year_in_calendar_days():
+    """A ticker with prices on weekends annualizes with 365 days and measures a quarter of
+    its relative strength score in 91 days; a stock keeps 252 and 63."""
+    import numpy as np  # noqa: PLC0415
+
+    from financetoolkit.technicals import (  # noqa: PLC0415
+        helpers,
+        seasonality_model,
+    )
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, close, mixed = _stock_with_a_cryptocurrency()
+    assert helpers.get_observations_per_year(close) == 365
+    assert helpers.get_observations_per_year(stock[("Close", "AAPL")]) == 252
+
+    together = Technicals(["AAPL", "BTC"], {"daily": mixed}, rounding=None)
+    log_returns = np.log(close / close.shift(1))
+    cone = together.get_volatility_cone().xs("BTC", level=1, axis=1)
+    assert cone.loc[20, "Current"] == pytest.approx(
+        log_returns.iloc[-20:].std() * np.sqrt(365)
+    )
+
+    score = seasonality_model.get_relative_strength_score(close, 365)
+    assert score.iloc[-1] == pytest.approx(
+        sum(
+            weight * (close.iloc[-1] / close.iloc[-1 - days] - 1)
+            for days, weight in zip((91, 182, 274, 365), (0.4, 0.2, 0.2, 0.2))
+        )
+    )
+
+
+def test_a_stocks_weeks_leave_out_the_weekends_of_a_cryptocurrency():
+    """The weekly Open, High and Low of a stock next to a cryptocurrency come from its own
+    trading days, not from the flat bars of the dates only the cryptocurrency traded, so its
+    weekly bars and the indicators on them equal those of the stock alone. In the week of
+    20 June 2022 (Juneteenth on Monday) the week opens on Tuesday."""
+    from financetoolkit.historical_model import (  # noqa: PLC0415
+        convert_daily_to_other_period,
+    )
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, _, mixed = _stock_with_a_cryptocurrency()
+
+    def technicals(tickers, daily):
+        return Technicals(
+            tickers,
+            {
+                "daily": daily,
+                "weekly": convert_daily_to_other_period("weekly", daily),
+            },
+            rounding=None,
+        )
+
+    alone = technicals(["AAPL"], stock)
+    together = technicals(["AAPL", "BTC"], mixed)
+
+    week = pd.Period("2022-06-20", freq="W")
+    tuesday = pd.Period("2022-06-21", freq="D")
+    for close_column in ("Close", "Adj Close"):
+        weekly = together._get_historical_data("weekly", close_column)
+        daily = together._get_historical_data("daily", close_column)
+        assert weekly.loc[week, ("Open", "AAPL")] == pytest.approx(
+            daily.loc[tuesday, ("Open", "AAPL")]
+        )
+        expected = alone._get_historical_data("weekly", close_column)
+        for column in ("Open", "High", "Low", "Close"):
+            pd.testing.assert_series_equal(
+                weekly[(column, "AAPL")].reindex(expected.index),
+                expected[(column, "AAPL")],
+                check_freq=False,
+            )
+
+    for method in (
+        "get_stochastic_oscillator",
+        "get_average_directional_index",
+        "get_williams_percent_r",
+    ):
+        expected = getattr(alone, method)(period="weekly")
+        result = getattr(together, method)(period="weekly")
+        if isinstance(expected.columns, pd.MultiIndex):
+            expected = expected.xs("AAPL", level=1, axis=1)
+            result = result.xs("AAPL", level=1, axis=1)
+        else:
+            expected, result = expected[["AAPL"]], result[["AAPL"]]
+        pd.testing.assert_frame_equal(
+            result.reindex(expected.index), expected, check_freq=False
+        )
+
+
+def test_market_breadth_counts_a_stock_on_its_own_trading_days():
+    """In a Toolkit with a stock and a cryptocurrency, the stock is not counted as unchanged
+    on the weekends: only the cryptocurrency counts there, the McClellan averages skip those
+    dates, and on the stock's trading days both count."""
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, _, mixed = _stock_with_a_cryptocurrency()
+    together = Technicals(["AAPL", "BTC"], {"daily": mixed}, rounding=None)
+    saturday = pd.Period("2022-12-24", freq="D")
+    friday = pd.Period("2022-12-23", freq="D")
+
+    breadth = together.get_market_breadth()
+    counted = breadth[["Advancers", "Decliners", "Unchanged"]].sum(axis=1)
+    weekend = breadth.index.dayofweek >= 5
+    assert (counted[weekend] == 1).all()
+    assert (counted.loc[stock.index[1:]] == 2).all()
+    assert breadth["McClellan Oscillator"][weekend].isna().all()
+    assert pd.notna(breadth["McClellan Oscillator"].loc[friday])
+
+    # The TRIN and New Highs - New Lows count the stock on its trading days only as well.
+    trin = together.get_trin()
+    assert trin.loc[saturday].isna().all()
+    new_highs_new_lows = together.get_new_highs_new_lows(window=20)
+    assert new_highs_new_lows.loc[saturday, "AAPL"] in (-1, 0, 1)
+
+
+def test_market_breadth_of_stocks_ignores_filled_dates():
+    """Stocks whose data holds filled dates, as next to a cryptocurrency, have the same
+    breadth, TRIN and New Highs - New Lows as on their own calendar."""
+    from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
+        Technicals,
+    )
+
+    stock, _, mixed = _stock_with_a_cryptocurrency()
+    filled = mixed.loc[:, mixed.columns.get_level_values(1) != "BTC"]
+    alone = Technicals(["AAPL", "Benchmark"], {"daily": stock}, rounding=None)
+    with_filled_dates = Technicals(
+        ["AAPL", "Benchmark"], {"daily": filled}, rounding=None
+    )
+
+    for method, kwargs in (
+        ("get_market_breadth", {}),
+        ("get_trin", {}),
+        ("get_new_highs_new_lows", {"window": 20}),
+    ):
+        expected = getattr(alone, method)(**kwargs)
+        result = getattr(with_filled_dates, method)(**kwargs)
+        pd.testing.assert_frame_equal(
+            result.reindex(expected.index), expected, check_freq=False
+        )
+
+
+def test_collected_bollinger_bands_keep_their_own_window(technical_module):
+    """The collections pass their window of 14 to the indicators with a single window, but
+    the Bollinger Bands keep Bollinger's 20 periods."""
+    bands = technical_module.get_bollinger_bands()
+    volatility = technical_module.collect_volatility_indicators()
+
+    for line in ("Upper", "Middle", "Lower"):
+        pd.testing.assert_frame_equal(
+            volatility[f"Bollinger Band {line}"],
+            bands[f"{line} Band"],
+            check_names=False,
+        )
+
+    collected = technical_module.collect_all_indicators(rounding=4)
+    pd.testing.assert_frame_equal(
+        collected["Bollinger Band Upper"],
+        bands["Upper Band"].round(4).loc[collected.index],
+        check_names=False,
+    )

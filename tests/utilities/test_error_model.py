@@ -535,3 +535,53 @@ def test_unavailable_inflation_expectations_are_reported_as_missing_data():
     message = mock_logger.warning.call_args[0][0] % mock_logger.warning.call_args[0][1:]
 
     assert MISSING_DATA_PATTERN.match(message)
+
+
+def test_a_missing_benchmark_column_with_a_benchmark_set_is_reported_as_missing_data():
+    """With a benchmark, an error naming it is about its data, not about the setting."""
+
+    class Module:
+        def __init__(self):
+            self._tickers = ["AAPL"]
+            self._historical_data = {
+                "daily": pd.DataFrame(
+                    columns=pd.MultiIndex.from_product(
+                        [["Adj Close"], ["AAPL", "Benchmark"]]
+                    )
+                )
+            }
+
+        @error_model.handle_errors
+        def get_beta(self):
+            raise KeyError("Benchmark")
+
+    class Toolkit:
+        def __init__(self):
+            self._benchmark_ticker = "SPY"
+
+        @error_model.handle_errors
+        def get_beta(self):
+            raise ValueError("No Benchmark returns for 2020")
+
+    for instance in (Module(), Toolkit()):
+        with patch("financetoolkit.utilities.error_model.logger") as mock_logger:
+            assert instance.get_beta().empty
+
+        message = mock_logger.error.call_args[0][0]
+        assert "benchmark_ticker" not in message
+        assert "could not be calculated" in message
+
+
+def test_a_missing_key_outside_the_statements_keeps_its_traceback_at_debug_level():
+    """The message stays readable, while the traceback is there for debugging."""
+
+    @error_model.handle_errors
+    def get_metric():
+        raise KeyError("Adj Close")
+
+    with patch("financetoolkit.utilities.error_model.logger") as mock_logger:
+        get_metric()
+
+    assert "is missing from the data" in mock_logger.error.call_args[0][0]
+    assert "exc_info" not in mock_logger.error.call_args[1]
+    assert mock_logger.debug.call_args[1] == {"exc_info": True}

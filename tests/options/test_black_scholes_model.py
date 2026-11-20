@@ -162,3 +162,64 @@ def test_get_d1_without_uncertainty_is_the_limit_on_either_side_of_the_strike():
     assert isinstance(d1, pd.Series)
     assert d1.tolist() == [np.inf, -np.inf, 0.0]
     assert black_scholes_model.get_d1(100, 100, 0.05, 0.2, 0) == 0.0
+
+
+def test_greeks_without_uncertainty_are_their_limits_off_the_strike():
+    from financetoolkit.options.greeks import greeks_model
+
+    rate, dividend, volatility = 0.05, 0.02, 0.2
+
+    def greek(name, stock_price, time, vol=volatility, **kwargs):
+        return float(
+            getattr(greeks_model, name)(
+                stock_price, 100.0, time, rate, vol, dividend, **kwargs
+            )
+        )
+
+    curvature = [
+        "get_gamma",
+        "get_dual_gamma",
+        "get_vanna",
+        "get_vomma",
+        "get_vera",
+        "get_veta",
+        "get_second_order_partial_derivative",
+        "get_speed",
+        "get_zomma",
+        "get_color",
+        "get_ultima",
+    ]
+    # At expiration (in and out of the money) and without volatility the limit is the
+    # value a moment before expiration: 0 for the Greeks of the curvature.
+    for name in curvature:
+        for stock_price in (90.0, 110.0):
+            assert greek(name, stock_price, 0.0) == pytest.approx(
+                greek(name, stock_price, 1e-9), abs=1e-9
+            ), name
+        assert greek(name, 110.0, 0.5, vol=0.0) == 0.0, name
+
+    # Theta keeps the carry of the intrinsic value, Charm the dividend yield.
+    for stock_price, put_option in ((110.0, False), (90.0, True), (90.0, False)):
+        for name in ("get_theta", "get_charm"):
+            assert greek(
+                name, stock_price, 0.0, put_option=put_option
+            ) == pytest.approx(
+                greek(name, stock_price, 1e-9, put_option=put_option), abs=1e-6
+            ), name
+    assert greek("get_theta", 110.0, 0.0) == pytest.approx(
+        (-rate * 100.0 + dividend * 110.0) / 365
+    )
+    assert greek("get_charm", 90.0, 0.0, put_option=True) == pytest.approx(-dividend)
+
+    # At the strike the limits are infinite and stay so.
+    assert np.isinf(greek("get_gamma", 100.0, 0.0))
+    assert np.isnan(greek("get_second_order_partial_derivative", 100.0, 0.0))
+
+    # Arrays keep their shape.
+    gamma = greeks_model.get_gamma(
+        np.array([90.0, 110.0]), 100.0, np.array([0.0, 0.5]), rate, volatility, dividend
+    )
+    assert gamma[0] == 0.0
+    assert gamma[1] == pytest.approx(
+        float(greeks_model.get_gamma(110.0, 100.0, 0.5, rate, volatility, dividend))
+    )

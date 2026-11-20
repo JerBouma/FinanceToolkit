@@ -787,3 +787,331 @@ def test_us_consumer_prices_add_the_bls_months_after_the_bis(monkeypatch):
 
     assert economics.get_inflation_rate(measure="core", period="yearly").empty
     assert economics.get_consumer_price_index(measure="rent").empty
+
+
+def test_inflation_adjusted_retail_sales_deflate_the_level_by_the_consumer_price_index(
+    monkeypatch,
+):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import census_model
+
+    days = pd.period_range("2025-09-01", "2026-10-01", freq="M").asfreq("D", "start")
+    days.name = "Date"
+    # Nominal sales up 6.569% and the price index up 4.635% over the year to September.
+    sales = pd.Series(100_000.0, index=days)
+    sales.iloc[-2] = 106_569.0
+    sales.iloc[-1] = 107_000.0
+    months = pd.period_range("2025-09", "2026-09", freq="M")
+    prices = pd.Series(150.0, index=months)
+    prices.iloc[-1] = 150.0 * 1.04635
+    # October 2025 was not published.
+    prices[pd.Period("2025-10", "M")] = float("nan")
+
+    monkeypatch.setattr(
+        census_model,
+        "get_retail_sales",
+        lambda: pd.DataFrame({"United States": sales}),
+    )
+    monkeypatch.setattr(
+        Economics,
+        "_get_consumer_price_index",
+        lambda self, countries, period, **kwargs: pd.DataFrame(
+            {"United States": prices}
+        ),
+    )
+
+    economics = Economics(start_date="2025-09-01", end_date="2026-10-31", rounding=None)
+    real = economics.get_retail_sales(inflation_adjusted=True)
+    growth = economics.get_retail_sales(inflation_adjusted=True, growth=True, lag=12)
+
+    # In the money of the latest month of the index; no real value without an index.
+    assert real.loc[pd.Period("2026-09-01", "D"), "United States"] == pytest.approx(
+        106_569.0
+    )
+    assert real.loc[pd.Period("2025-09-01", "D"), "United States"] == pytest.approx(
+        100_000.0 * 1.04635
+    )
+    assert pd.isna(real.loc[pd.Period("2025-10-01", "D"), "United States"])
+    assert pd.isna(real.loc[pd.Period("2026-10-01", "D"), "United States"])
+    # (1 + sales growth) / (1 + price growth) - 1, rather than the nominal 6.569%.
+    assert growth.loc[pd.Period("2026-09-01", "D"), "United States"] == pytest.approx(
+        1.06569 / 1.04635 - 1, abs=1e-4
+    )
+    assert economics.get_retail_sales(growth=True, lag=12).loc[
+        pd.Period("2026-09-01", "D"), "United States"
+    ] == pytest.approx(0.06569, abs=1e-4)
+
+
+def test_us_inflation_without_its_base_month_is_named(monkeypatch, caplog):
+    from financetoolkit import Economics
+    from financetoolkit.economics.sources import bls_model
+    from financetoolkit.mcp_server.registry.diagnostics_model import missing_data_notes
+
+    # The BLS did not publish October 2025, so October 2026 has no annual rate.
+    bls_months = pd.period_range("2025-08", "2026-10", freq="M").delete(2)
+    bls_level = pd.Series(range(len(bls_months)), index=bls_months) + 320.0
+    monkeypatch.setattr(
+        bls_model,
+        "get_consumer_price_index",
+        lambda: pd.DataFrame({"all": bls_level, "goods": bls_level - 100}),
+    )
+
+    economics = Economics(start_date="2026-01-01", end_date="2026-10-31")
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        goods = economics._get_united_states_consumer_prices("inflation_rate", "goods")
+
+    assert pd.isna(goods.loc[pd.Period("2026-10", "M"), "United States"])
+    message = (
+        "No change for United States in 2026-10: its base period 2025-10 has no value."
+    )
+    assert message in caplog.text
+    # The MCP server passes it on as a note of the answer.
+    assert missing_data_notes([message]) == [message]
+
+
+def test_imf_empty_series_keeps_no_observations_of_the_next_series(monkeypatch):
+    from financetoolkit.economics.sources import imf_model
+
+    # The IMF writes a series without observations as an empty element.
+    text = '<Series COUNTRY="NLD" INDICATOR="NIIP" UNIT="EUR"/>' + _imf_series(
+        'COUNTRY="USA" INDICATOR="NIIP" UNIT="USD"', {"2025": -2.0}
+    )
+
+    assert imf_model._parse_observations(text) == [("USA", "NIIP", "2025", -2.0)]
+
+
+def _niip_responses(monkeypatch):
+    from financetoolkit.economics.sources import imf_model
+
+    structure = (
+        '<str:Codelist id="CL_COUNTRY">'
+        '<str:Code id="USA"><com:Name xml:lang="en">United States</com:Name></str:Code>'
+        '<str:Code id="NLD"><com:Name xml:lang="en">Netherlands</com:Name></str:Code>'
+        '<str:Code id="LTU"><com:Name xml:lang="en">Lithuania</com:Name></str:Code>'
+        "</str:Codelist>"
+    )
+    quarters = ["2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4"]
+    position = (
+        "".join(
+            _imf_series(
+                f'COUNTRY="{country}" INDICATOR="NIIP" UNIT="USD" FREQUENCY="Q"',
+                {"2025-Q4": value},
+            )
+            for country, value in [("USA", -21.6e12), ("NLD", 650e9), ("LTU", -2e9)]
+        )
+        + '<Series COUNTRY="NLD" INDICATOR="NIIP" UNIT="EUR" FREQUENCY="Q"/>'
+    )
+    exchange_rate = "".join(
+        _imf_series(
+            f'COUNTRY="{country}" INDICATOR="XDC_USD" FREQUENCY="Q"',
+            {"2025-Q4": value},
+        )
+        for country, value in [("USA", 1.0), ("G163", 0.8), ("LTU", 2.76)]
+    )
+    gross_domestic_product = "".join(
+        _imf_series(
+            f'COUNTRY="{country}" INDICATOR="B1GQ" FREQUENCY="Q"',
+            dict(zip(quarters, values, strict=True)),
+        )
+        for country, values in [
+            ("USA", [7e12, 7e12, 7e12, 9e12]),
+            ("NLD", [250e9, 250e9, 250e9, 250e9]),
+            ("LTU", [20e9, 20e9, 20e9, 20e9]),
+        ]
+    )
+    requested = []
+
+    def fake(url, timeout):
+        requested.append(url)
+        if "dataflow" in url:
+            return FakeResponse(text=structure)
+        if "QNEA" in url:
+            return FakeResponse(text=gross_domestic_product)
+        if "ER/" in url:
+            return FakeResponse(text=exchange_rate)
+        return FakeResponse(text=position)
+
+    monkeypatch.setattr(imf_model, "get_request", fake)
+
+    return requested
+
+
+def test_imf_net_international_investment_position_in_national_currency_over_gdp(
+    monkeypatch,
+):
+    from financetoolkit.economics.sources import imf_model
+
+    requested = _niip_responses(monkeypatch)
+
+    level = imf_model.get_net_international_investment_position(
+        "quarterly", "2025-01-01", "2025-12-31"
+    )
+    ratio = imf_model.get_net_international_investment_position(
+        "quarterly", "2025-01-01", "2025-12-31", to_gdp=True
+    )
+    last = pd.Period("2025Q4", "Q")
+
+    # Millions of US dollars, as published, and the empty euro series takes nothing.
+    assert level.loc[last, "United States"] == -21_600_000
+    assert level.loc[last, "Netherlands"] == 650_000
+    # -21.6 trillion over the 30 trillion of GDP of the four quarters.
+    assert ratio.loc[last, "United States"] == pytest.approx(-0.72)
+    # 650 billion dollars at 0.8 euro per dollar is 520 billion euro, over 1 trillion.
+    assert ratio.loc[last, "Netherlands"] == pytest.approx(0.52)
+    # A euro member takes the euro rate, not the rate of its former currency.
+    assert ratio.loc[last, "Lithuania"] == pytest.approx(-2e9 * 0.8 / 80e9)
+    # The GDP is summed over the quarters before the position as well.
+    assert list(ratio.index) == [last]
+    assert any("IIP/.NETAL_P.NIIP.USD.Q" in url for url in requested)
+    assert any("ER/.XDC_USD.EOP_RT.Q" in url for url in requested)
+    assert any("QNEA/.B1GQ.V.NSA.XDC.Q" in url for url in requested)
+
+
+def test_economics_net_international_investment_position_defaults_to_quarterly(
+    monkeypatch,
+):
+    from financetoolkit import Economics
+
+    _niip_responses(monkeypatch)
+
+    economics = Economics(
+        start_date="2025-01-01", end_date="2025-12-31", gmdb_source=False
+    )
+    level = economics.get_net_international_investment_position(
+        countries="United States"
+    )
+    ratio = economics.get_net_international_investment_position_to_gdp_ratio(
+        countries=["United States", "Netherlands"]
+    )
+
+    assert list(level.index) == [pd.Period("2025Q4", "Q")]
+    assert level.loc[pd.Period("2025Q4", "Q"), "United States"] == -21_600_000
+    assert ratio.loc[pd.Period("2025Q4", "Q"), "Netherlands"] == pytest.approx(0.52)
+    assert economics.get_net_international_investment_position(period="monthly").empty
+
+
+def test_imf_gdp_of_zero_or_less_is_missing(monkeypatch):
+    from financetoolkit.economics.sources import imf_model
+
+    structure = (
+        '<str:Codelist id="CL_COUNTRY">'
+        '<str:Code id="UZB"><com:Name xml:lang="en">Uzbekistan, Republic of</com:Name></str:Code>'
+        "</str:Codelist>"
+    )
+    quarters = ["2024-Q1", "2024-Q2", "2024-Q3", "2024-Q4", "2025-Q1"]
+    # The QNEA states Uzbekistan's 2024 quarters as 0.
+    gross_domestic_product = _imf_series(
+        'COUNTRY="UZB" INDICATOR="B1GQ" FREQUENCY="Q"',
+        dict(zip(quarters, [0, 0, 0, 0, 300e12], strict=True)),
+    )
+    position = _imf_series(
+        'COUNTRY="UZB" INDICATOR="NIIP" UNIT="USD" FREQUENCY="Q"',
+        {"2024-Q4": 10e9, "2025-Q1": 12e9},
+    )
+    exchange_rate = _imf_series(
+        'COUNTRY="UZB" INDICATOR="XDC_USD" FREQUENCY="Q"',
+        {"2024-Q4": 12900, "2025-Q1": 12950},
+    )
+    interest = _imf_series(
+        'COUNTRY="UZB" INDICATOR="G24_T_XDC" FREQUENCY="Q"',
+        dict(zip(quarters, [1e12] * 5, strict=True)),
+    )
+
+    def fake(url, timeout):
+        if "dataflow" in url:
+            return FakeResponse(text=structure)
+        if "QNEA" in url:
+            return FakeResponse(text=gross_domestic_product)
+        if "ER/" in url:
+            return FakeResponse(text=exchange_rate)
+        if "QGFS" in url:
+            return FakeResponse(text=interest)
+        return FakeResponse(text=position)
+
+    monkeypatch.setattr(imf_model, "get_request", fake)
+
+    ratio = imf_model.get_net_international_investment_position(
+        "quarterly", "2024-01-01", "2025-03-31", to_gdp=True
+    )
+    to_gdp = imf_model.get_government_interest(
+        "quarterly", "2024-01-01", "2025-03-31", denominator="gdp"
+    )
+
+    # A trailing year with a placeholder quarter is no GDP, rather than an infinite ratio.
+    assert ratio["Uzbekistan"].isna().all()
+    assert to_gdp["Uzbekistan"].isna().all()
+
+
+def test_imf_names_economies_as_the_gross_domestic_product_does(monkeypatch):
+    from financetoolkit.economics.sources import imf_model
+
+    structure = (
+        '<str:Codelist id="CL_COUNTRY">'
+        + "".join(
+            f'<str:Code id="{code}"><com:Name xml:lang="en">{name}</com:Name></str:Code>'
+            for code, name in [
+                ("NRU", "Naoero"),
+                ("KNA", "St. Kitts and Nevis"),
+                ("LCA", "St. Lucia"),
+                ("VCT", "St. Vincent and the Grenadines"),
+                ("TCA", "Turks and Caicos Islands"),
+                ("WBG", "West Bank and Gaza"),
+                ("CWX", "Curaçao and Sint Maarten"),
+            ]
+        )
+        + "</str:Codelist>"
+    )
+
+    monkeypatch.setattr(
+        imf_model, "get_request", lambda url, timeout: FakeResponse(text=structure)
+    )
+
+    assert imf_model.get_countries()["Country"].to_dict() == {
+        "NRU": "Nauru",
+        "KNA": "Saint Kitts and Nevis",
+        "LCA": "Saint Lucia",
+        "VCT": "St-Vincent",
+        "TCA": "Turks and Caicos",
+        "WBG": "Palestine",
+        # Their monetary union, not Curaçao alone.
+        "CWX": "Curaçao and Sint Maarten",
+    }
+
+
+def test_imf_marshall_islands_position_is_converted_at_one_dollar(monkeypatch):
+    from financetoolkit.economics.sources import imf_model
+
+    structure = (
+        '<str:Codelist id="CL_COUNTRY">'
+        '<str:Code id="MHL"><com:Name xml:lang="en">Marshall Islands, Republic of the</com:Name></str:Code>'
+        "</str:Codelist>"
+    )
+    position = _imf_series(
+        'COUNTRY="MHL" INDICATOR="NIIP" UNIT="USD" FREQUENCY="A"', {"2024": 367e6}
+    )
+    # The IMF publishes no exchange rate for the Marshall Islands.
+    exchange_rate = _imf_series(
+        'COUNTRY="USA" INDICATOR="XDC_USD" FREQUENCY="A"', {"2024": 1.0}
+    )
+    gross_domestic_product = _imf_series(
+        'COUNTRY="MHL" INDICATOR="B1GQ" FREQUENCY="A"', {"2024": 290e6}
+    )
+
+    def fake(url, timeout):
+        if "dataflow" in url:
+            return FakeResponse(text=structure)
+        if "ANEA" in url:
+            return FakeResponse(text=gross_domestic_product)
+        if "ER/" in url:
+            return FakeResponse(text=exchange_rate)
+        return FakeResponse(text=position)
+
+    monkeypatch.setattr(imf_model, "get_request", fake)
+
+    ratio = imf_model.get_net_international_investment_position(
+        "yearly", "2024-01-01", "2024-12-31", to_gdp=True
+    )
+
+    assert ratio.loc[pd.Period("2024", "Y"), "Marshall Islands"] == pytest.approx(
+        367 / 290
+    )

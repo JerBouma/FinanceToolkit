@@ -400,19 +400,6 @@ class ModelsBase:
             axis="columns",
         )
 
-    def _calendar(self, frame: pd.DataFrame) -> pd.DataFrame:
-        """
-        A ticker by period frame on every period from the first to the last, so that a
-        period no statement reports is a NaN column and positions and rolling windows count
-        calendar periods rather than reported ones.
-        """
-        columns = frame.columns
-        if not isinstance(columns, pd.PeriodIndex) or columns.empty:
-            return frame
-        return frame.reindex(
-            columns=pd.period_range(columns.min(), columns.max(), freq=columns.freq)
-        )
-
     def _finish_score(
         self,
         results: dict[str, pd.DataFrame],

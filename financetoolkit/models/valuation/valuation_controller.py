@@ -1196,9 +1196,9 @@ class ValuationModels:
             Cash Flow" as reported on the cash flow statement; both are after interest, so discounting
             them at the WACC and subtracting the debt counts the cost of debt twice.
             trailing (int | None, optional): The number of trailing periods to sum for the base cash flow.
-            When set, uses the sum of the last N periods instead of only the most recent period. Defaults to
-            None, which uses 4 (the trailing twelve months) with quarterly data and the most recent year with
-            yearly data.
+            When set, uses the sum of the latest N consecutive calendar periods that are all reported instead
+            of only the most recent period. Defaults to None, which uses 4 (the trailing twelve months) with
+            quarterly data and the most recent year with yearly data.
             historical (bool, optional): Whether to value every period instead of only the most recent one,
             which gives the intrinsic value per share over time. Each period is valued from the base cash
             flow ending in it and the cash, debt and shares reported at its end. Defaults to False.
@@ -1217,8 +1217,10 @@ class ValuationModels:
         - The results are highly dependent on the input. Therefore, think carefully about each input parameter to
         ensure the results are accurate (given your beliefs)
         - The growth rate, perpetual growth rate and WACC are annual rates, so the base cash flow is an annual
-        one: with quarterly data the last four quarters are summed. Setting `trailing` with yearly data sums
-        several years into one base cash flow, which logs a warning.
+        one: with quarterly data the four quarters of the latest year with all four reported are summed. A
+        company reporting half-yearly has no such year and is not valued with quarterly data (use yearly
+        data). Setting `trailing` with yearly data sums several years into one base cash flow, which logs a
+        warning.
         - The WACC must be greater than the perpetual growth rate; otherwise the terminal value is infinite
         and the valuation is not calculated. Within 2 percentage points of it the valuation is calculated
         with a warning, as a tenth of a percentage point on either rate then moves it by about 5%.
@@ -1366,14 +1368,25 @@ class ValuationModels:
             ].dropna()
             if shares_outstanding.empty:
                 continue
-            cash_flow_series = cash_flows.loc[ticker].dropna()
+            # Summed on the calendar periods before the NaNs are dropped, so that the base is the
+            # latest complete trailing window: a company reporting half-yearly has no complete
+            # four-quarter year and is not valued, rather than summing two years of cash flow.
+            cash_flow_series = (
+                helpers.trailing_sum(cash_flows.loc[[ticker]], trailing)
+                .loc[ticker]
+                .dropna()
+            )
+            if cash_flow_series.empty:
+                logger.warning(
+                    "%s has no %s periods in a row with a %s, so its intrinsic value is not calculated.",
+                    ticker,
+                    trailing,
+                    cash_flow_type,
+                )
+                continue
 
             intrinsic_values_dict[ticker] = intrinsic_model.get_intrinsic_value(
-                cash_flow=(
-                    cash_flow_series.iloc[-trailing:].sum()
-                    if trailing
-                    else cash_flow_series.iloc[-1]
-                ),
+                cash_flow=cash_flow_series.iloc[-1],
                 growth_rate=growth_rate_float,
                 perpetual_growth_rate=perpetual_growth_rate_float,
                 weighted_average_cost_of_capital=weighted_average_cost_of_capital_float,
@@ -1391,6 +1404,9 @@ class ValuationModels:
             intrinsic_values_dict[ticker] = intrinsic_values_dict[ticker].pipe(
                 apply_rounding, rounding if rounding is not None else self._rounding
             )
+
+        if not intrinsic_values_dict:
+            return pd.DataFrame()
 
         return pd.concat(intrinsic_values_dict).loc[:, self._start_date :]
 
@@ -3255,7 +3271,7 @@ class ValuationModels:
         sums that include it NaN instead of letting them span more periods.
         """
         return helpers.trailing_sum(
-            self._calendar(self._rows(statement, row)), trailing
+            helpers.calendar_periods(self._rows(statement, row)), trailing
         )
 
     def _latest_capital(self, ticker: str) -> dict[str, float]:

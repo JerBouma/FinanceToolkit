@@ -1793,7 +1793,8 @@ class DistressModels:
         net_income = self._rows(self._income_statement, "Net Income")
         quarterly_net_income = net_income if self._quarterly else net_income / 4
         net_income_to_market_total_assets = chs_model.get_winsorized_variable(
-            self._calendar(quarterly_net_income / market_total_assets), "NIMTA"
+            helpers.calendar_periods(quarterly_net_income / market_total_assets),
+            "NIMTA",
         )
         net_income_average = (
             chs_model.get_geometric_average(

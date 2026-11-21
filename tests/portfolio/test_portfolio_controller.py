@@ -1,6 +1,7 @@
 """Portfolio Controller Tests""" ""
 import warnings
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -1099,3 +1100,56 @@ def test_a_weekend_cash_flow_next_to_a_cryptocurrency_is_dated_on_its_trading_da
 
     numeric = ["Invested", "Latest Value", "Money-Weighted Return"]
     pd.testing.assert_frame_equal(saturday[numeric], monday[numeric])
+
+
+def test_the_weekly_data_converts_each_day_at_its_own_rate(monkeypatch):
+    prices = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+    # A rate that changes every day, so a week's first day and last day differ.
+    pounds_per_dollar = pd.DataFrame(
+        {"USDGBP=X": np.linspace(0.7, 0.9, len(prices))}, index=prices.index
+    )
+    monkeypatch.setattr(Portfolio, "_price_toolkit", _offline_price_toolkit)
+    monkeypatch.setattr(
+        Portfolio,
+        "_ticker_currencies",
+        lambda self, toolkit: {"AAPL": "USD", "MSFT": "GBp"},
+    )
+    monkeypatch.setattr(
+        Portfolio,
+        "_get_exchange_rates",
+        lambda self, rate_tickers, start_date: pounds_per_dollar[sorted(rate_tickers)],
+    )
+    monkeypatch.setattr(
+        Toolkit,
+        "get_historical_statistics",
+        lambda self, *args, **kwargs: pd.DataFrame(),
+    )
+
+    weighted = Portfolio(weights="AAPL:0.5, MSFT:0.5", rebalancing="yearly")
+    weighted.collect_historical_data()
+    daily = weighted._daily_historical_data
+    weekly = weighted._weekly_historical_data
+
+    weeks = pd.PeriodIndex(daily.index, freq="W")
+    for column, aggregation in (
+        ("Open", "first"),
+        ("High", "max"),
+        ("Low", "min"),
+        ("Close", "last"),
+        ("Dividends", "sum"),
+    ):
+        expected = daily[(column, "MSFT")].groupby(weeks).agg(aggregation)
+        pd.testing.assert_series_equal(
+            weekly[(column, "MSFT")],
+            expected.reindex(weekly.index),
+            check_names=False,
+            check_freq=False,
+        )
+    # The Open of a week is converted at the rate of its first day, not its last.
+    week = weekly.index[10]
+    first_day = daily.index[weeks == week][0]
+    assert float(weekly.loc[week, ("Open", "MSFT")]) == pytest.approx(
+        float(prices.loc[first_day.to_timestamp(), ("Open", "MSFT")])
+        / 100
+        / float(pounds_per_dollar.loc[first_day.to_timestamp(), "USDGBP=X"])
+    )

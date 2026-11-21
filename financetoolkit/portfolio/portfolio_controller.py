@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import get_non_trading_days
+from financetoolkit.historical_model import convert_daily_to_other_period
 from financetoolkit.portfolio import (
     definition_model,
     helpers,
@@ -1408,7 +1409,19 @@ class Portfolio:
         }
         self._daily_benchmark_data = aligned_by_currency[main_currency]
 
-        self._weekly_benchmark_data = convert(benchmark_period("weekly"), main_currency)
+        # Aggregated from the converted daily data, so each day is converted at its own rate.
+        self._weekly_benchmark_data = (
+            convert_daily_to_other_period(
+                "weekly",
+                convert(daily_benchmark_data, main_currency),
+                start=self._benchmark_toolkit._start_date,  # type: ignore[union-attr]
+                end=self._benchmark_toolkit._end_date,  # type: ignore[union-attr]
+            ).loc[
+                self._benchmark_toolkit._start_date : self._benchmark_toolkit._end_date
+            ]  # type: ignore[union-attr]
+            if main_currency in conversions
+            else benchmark_period("weekly")
+        )
 
         benchmark_closes = {}
         benchmark_dividends = {}
@@ -1778,7 +1791,20 @@ class Portfolio:
 
         self._daily_historical_data = convert(self._daily_historical_data)
 
-        self._weekly_historical_data = convert(self._ticker_historical_data("weekly"))
+        # The weekly data is aggregated from the converted daily data, so each day's Open, High,
+        # Low and Dividends is converted at that day's exchange rate rather than the week's last.
+        self._weekly_historical_data = (
+            convert_daily_to_other_period(
+                "weekly",
+                self._daily_historical_data,
+                start=self._toolkit._start_date,  # type: ignore[union-attr]
+                end=self._toolkit._end_date,  # type: ignore[union-attr]
+            ).loc[
+                self._toolkit._start_date : self._toolkit._end_date
+            ]  # type: ignore[union-attr]
+            if currency_conversions and not self._daily_historical_data.empty
+            else self._ticker_historical_data("weekly")
+        )
 
         # Positions are valued at the traded close, the basis of the transaction prices; a ticker whose exchange is closed on the last date keeps its previous close.  # noqa: E501
         self._latest_price = self._daily_historical_data["Close"].ffill().iloc[-1]

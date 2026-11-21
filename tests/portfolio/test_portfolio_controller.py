@@ -532,6 +532,32 @@ def test_a_portfolio_of_one_ticker(monkeypatch):
     assert money_weighted["Money-Weighted Return"].notna().all()
 
 
+def test_a_portfolio_of_one_ticker_reads_its_statistics_as_a_series(monkeypatch):
+    # A Toolkit of one ticker returns its historical statistics as a Series, not a table.
+    trades = pd.DataFrame(
+        {
+            "Date": ["2021-01-11", "2021-06-01"],
+            "Ticker": ["AAPL", "AAPL"],
+            "Volume": [10, 5],
+            "Costs": [0, 0],
+        }
+    )
+    single, _ = _self_benchmarked_portfolio(monkeypatch, trades)
+    monkeypatch.setattr(
+        Toolkit,
+        "get_historical_statistics",
+        lambda self, *args, **kwargs: pd.Series(
+            {"Currency": "USD", "Exchange Name": "NMS"}, name="AAPL"
+        ),
+    )
+
+    positions = single.get_positions_overview()
+
+    assert positions[("Volume", "AAPL")].iloc[-1] == pytest.approx(15.0)
+    assert single._historical_statistics.loc["Currency", "AAPL"] == "USD"
+    assert set(single._portfolio_dataset["Currency"]) == {"USD"}
+
+
 class _EmptyToolkit:
     """A Toolkit that records the tickers it is given and finds no historical data."""
 

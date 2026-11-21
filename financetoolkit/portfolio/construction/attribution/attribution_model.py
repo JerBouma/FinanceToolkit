@@ -52,7 +52,10 @@ def get_brinson_fachler_attribution(
     - Interaction = (w_p - w_b) x (r_p - r_b): the joint effect of both decisions.
 
     Here w are segment weights, r segment returns and R_b the benchmark's total return. The
-    three effects add up to the portfolio return minus the benchmark return.
+    three effects add up to the portfolio return minus the benchmark return. A segment held
+    short has a negative portfolio weight and keeps its own return; a segment the portfolio
+    does not hold gets the benchmark's segment return, so only its allocation effect
+    remains, and has no Portfolio Return in the table.
 
     Args:
         portfolio_weights (pd.Series): The portfolio weight per segment.
@@ -78,8 +81,10 @@ def get_brinson_fachler_attribution(
     wp, wb = wp / wp.sum(), wb / wb.sum()
     rb = benchmark_returns.reindex(segments)
     # A segment the portfolio does not hold has no portfolio return; using the benchmark
-    # segment return there leaves only its allocation effect, as the method intends.
-    rp = portfolio_returns.reindex(segments).where(wp > 0, rb)
+    # segment return there leaves only its allocation effect, as the method intends. A
+    # segment held short (a negative weight) keeps its own return, so the total stays
+    # the portfolio's return, Σ w_p x r_p.
+    rp = portfolio_returns.reindex(segments).where(wp != 0, rb)
 
     if rb[wb > 0].isna().any():
         missing = ", ".join(rb[(wb > 0) & rb.isna()].index)
@@ -99,7 +104,7 @@ def get_brinson_fachler_attribution(
         {
             "Portfolio Weight": wp,
             "Benchmark Weight": wb,
-            "Portfolio Return": rp.where(wp > 0),
+            "Portfolio Return": rp.where(wp != 0),
             "Benchmark Return": rb,
             "Allocation Effect": allocation,
             "Selection Effect": selection,
@@ -438,8 +443,12 @@ def get_scenario_returns(
 def get_stress_test(scenario_returns: pd.DataFrame, weights: pd.Series) -> pd.DataFrame:
     """
     The return of a buy-and-hold portfolio in each scenario. Assets without data for a
-    scenario (not yet listed) are left out and the remaining weights scaled up; the
-    Coverage column shows the share of the portfolio that had data.
+    scenario (not yet listed) are left out and the remaining weights scaled up to a net
+    weight of one; the Coverage column shows the share of the portfolio's gross exposure
+    that had data, Σ |w_i| over the assets with data / Σ |w_i|, between 0 and 1. When the
+    assets with data have a net weight of zero or less (only short positions, or a
+    hedge without the positions it hedges), they cannot be scaled to the portfolio and
+    the Portfolio Return is empty.
 
     Args:
         scenario_returns (pd.DataFrame): The return per scenario (rows) and asset (columns).
@@ -450,12 +459,13 @@ def get_stress_test(scenario_returns: pd.DataFrame, weights: pd.Series) -> pd.Da
     """
     weights = weights.reindex(scenario_returns.columns).fillna(0)
     available = scenario_returns.notna()
-    coverage = available.mul(weights, axis=1).sum(axis=1)
-    portfolio = scenario_returns.fillna(0).mul(weights, axis=1).sum(axis=1) / coverage
+    coverage = available.mul(weights.abs(), axis=1).sum(axis=1) / weights.abs().sum()
+    net_weight = available.mul(weights, axis=1).sum(axis=1)
+    portfolio = scenario_returns.fillna(0).mul(weights, axis=1).sum(
+        axis=1
+    ) / net_weight.where(net_weight > 0)
 
-    return pd.DataFrame(
-        {"Portfolio Return": portfolio.where(coverage > 0), "Coverage": coverage}
-    )
+    return pd.DataFrame({"Portfolio Return": portfolio, "Coverage": coverage})
 
 
 def get_look_through_exposure(

@@ -1012,3 +1012,34 @@ def test_black_litterman_with_the_market_risk_aversion(portfolio_module):
     assert portfolio_module.get_black_litterman_weights(
         market_weights=market, risk_aversion="equilibrium"
     ).empty
+
+
+def test_an_asset_without_weight_does_not_shorten_the_sample(test_toolkit):
+    # A third asset listed halfway through the range, as a ticker with a short history.
+    construction = _offline_construction(test_toolkit)
+    data = construction._historical_data["daily"]
+    returns = data["Return"]
+    late = returns["MSFT"].copy()
+    late.iloc[: len(late) // 2] = np.nan
+    construction._historical_data = {
+        "daily": pd.concat(
+            [data, pd.concat({"Return": late.to_frame("LATE")}, axis=1)], axis=1
+        )
+    }
+    construction._tickers = [*construction._tickers, "LATE"]
+    weights = {"AAPL": 0.5, "MSFT": 0.5}
+
+    metrics = construction.get_portfolio_risk_metrics(weights=weights, rounding=12)
+    portfolio = returns[["AAPL", "MSFT"]].dropna() @ pd.Series(weights)
+    assert metrics.loc["Annualized Volatility", "Portfolio"] == pytest.approx(
+        portfolio.std() * np.sqrt(252)
+    )
+
+    contributions = construction.get_risk_contributions(weights=weights, rounding=12)
+    assert contributions.index.tolist() == ["AAPL", "MSFT", "Total"]
+    assert contributions.loc["Total", "Risk Contribution"] == pytest.approx(
+        portfolio.std() * np.sqrt(252)
+    )
+
+    # An optimizer chooses among every loaded asset, so all of them decide the periods.
+    assert len(construction._get_returns("daily", False)) == late.notna().sum()

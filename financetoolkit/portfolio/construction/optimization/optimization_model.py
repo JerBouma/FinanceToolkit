@@ -19,7 +19,8 @@ from financetoolkit.risk.value_at_risk import cvar_model, var_model
 # pylint: disable=too-many-arguments,too-many-locals
 
 # Tolerances for the numerical optimizers: tight enough that the weights are stable to the
-# fourth decimal, which is the default rounding of the Finance Toolkit.
+# fourth decimal, which is the default rounding of the Finance Toolkit. The ftol is absolute,
+# so objectives in variances are expressed in units of the average variance of the assets.
 OPTIMIZER_OPTIONS = {"ftol": 1e-12, "maxiter": 1000}
 
 # Weights closer to zero than this are numerical noise of the optimizer.
@@ -1198,7 +1199,11 @@ def get_minimum_variance_weights(
         maximum_turnover,
     )
 
-    weights = _solve(lambda w: w @ sigma @ w, lambda w: 2 * sigma @ w, constraints)
+    # SLSQP stops on an absolute change of the objective (ftol), which variances of
+    # near-cash assets (about 1e-5 a year) reach long before the optimum. In units of the
+    # average variance the objective is of order one, with the same minimum.
+    scaled = sigma / (np.mean(np.diag(sigma)) or 1.0)
+    weights = _solve(lambda w: w @ scaled @ w, lambda w: 2 * scaled @ w, constraints)
 
     return _as_series(weights, covariance.index)
 
@@ -1380,6 +1385,11 @@ def get_mean_variance_weights(
         )
     mu = expected_returns.to_numpy()
     sigma = covariance.to_numpy()
+    # SLSQP stops on an absolute change of the objective (ftol), which variances of
+    # near-cash assets (about 1e-5 a year) reach long before the optimum. In units of the
+    # average variance the objective is of order one, with the same minimum.
+    variance_scale = np.mean(np.diag(sigma)) or 1.0
+    scaled = sigma / variance_scale
     constraints = get_weight_constraints(
         covariance.index,
         minimum_weight,
@@ -1405,15 +1415,15 @@ def get_mean_variance_weights(
                 f"constraints ({lowest:.4f} to {highest:.4f})."
             )
         weights = _solve(
-            lambda w: w @ sigma @ w,
-            lambda w: 2 * sigma @ w,
+            lambda w: w @ scaled @ w,
+            lambda w: 2 * scaled @ w,
             constraints,
             [_target_return(mu, target_return)],
         )
     elif target_volatility is not None:
         if target_volatility <= 0:
             raise ValueError("The target volatility must be positive.")
-        lowest = _solve(lambda w: w @ sigma @ w, lambda w: 2 * sigma @ w, constraints)
+        lowest = _solve(lambda w: w @ scaled @ w, lambda w: 2 * scaled @ w, constraints)
         lowest_volatility = float(np.sqrt(lowest @ sigma @ lowest))
         if target_volatility < lowest_volatility - 1e-9:
             raise ValueError(
@@ -1439,8 +1449,9 @@ def get_mean_variance_weights(
                 {
                     "type": "ineq",
                     "fun": lambda w: max(target_volatility, lowest_volatility) ** 2
-                    - w @ sigma @ w,
-                    "jac": lambda w: -2 * sigma @ w,
+                    / variance_scale
+                    - w @ scaled @ w,
+                    "jac": lambda w: -2 * scaled @ w,
                 }
             ],
             all_variables=True,
@@ -1553,12 +1564,14 @@ def get_efficient_frontier(
     _, highest, highest_weights = _return_range(mu, constraints)
     targets = np.linspace(lowest, highest, points)
 
+    # In units of the average variance, as in get_minimum_variance_weights.
+    scaled = sigma / (np.mean(np.diag(sigma)) or 1.0)
     rows = []
     for number, target in enumerate(targets, start=1):
         try:
             weights = _solve(
-                lambda w: w @ sigma @ w,
-                lambda w: 2 * sigma @ w,
+                lambda w: w @ scaled @ w,
+                lambda w: 2 * scaled @ w,
                 constraints,
                 [_target_return(mu, target)],
             )
@@ -3029,9 +3042,11 @@ def get_minimum_tracking_error_weights(
         )
 
     if objective == "tracking_error":
+        # In units of the average variance, as in get_minimum_variance_weights.
+        variance_scale = np.mean(np.diag(sigma)) or 1.0
         weights = _solve(
-            tracking_variance,
-            lambda w: 2 * sigma @ w - 2 * with_benchmark,
+            lambda w: tracking_variance(w) / variance_scale,
+            lambda w: (2 * sigma @ w - 2 * with_benchmark) / variance_scale,
             constraints,
         )
     else:

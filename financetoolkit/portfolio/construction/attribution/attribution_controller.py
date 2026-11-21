@@ -80,12 +80,19 @@ class AttributionConstruction:
 
         Returns:
             pd.DataFrame: Per scenario its Start Date and End Date, the Portfolio Return,
-            the Benchmark Return, the Coverage (the share of the portfolio with prices in
-            the scenario) and the return of every asset.
+            the Benchmark Return, the Coverage (the share of the portfolio's gross
+            exposure with prices in the scenario, from 0 to 1) and the return of every
+            asset.
 
         Notes:
         - An asset that was not listed yet at the start of a scenario has no return there;
-          the other weights are scaled up and the Coverage shows the share that had data.
+          the other weights are scaled up to a net weight of one and the Coverage shows
+          the share of the gross exposure, Σ |w_i| over the assets with prices / Σ |w_i|,
+          that had data.
+        - When the assets with prices have a net weight of zero or less (only the short
+          positions of a long-short portfolio), they cannot be scaled up to the
+          portfolio, so the Portfolio Return of that scenario is empty and a warning is
+          logged, as it is when none of the assets has prices.
 
         As an example:
 
@@ -137,6 +144,15 @@ class AttributionConstruction:
                 logger.warning(
                     "No price data is available for the %s (%s to %s): none of the "
                     "assets was listed yet, so its Portfolio Return is empty.",
+                    name,
+                    start,
+                    end,
+                )
+            elif pd.isna(stress.loc[name, "Portfolio Return"]):
+                logger.warning(
+                    "Only part of the portfolio has price data for the %s (%s to %s), with "
+                    "a net weight of zero or less (short positions without the long ones), "
+                    "so its Portfolio Return is empty.",
                     name,
                     start,
                     end,
@@ -444,8 +460,11 @@ class AttributionConstruction:
         if not self._benchmark_name or self._fund_function is None:
             raise ValueError("The attribution needs a benchmark fund, e.g. SPY.")
 
-        assets = self._get_assets()
-        resolved = self._resolve_weights(weights, assets)
+        resolved = self._resolve_weights(weights, self._get_assets())
+        # Only the assets held take part: one without weight adds no sector slice, and its
+        # missing start price is no reason to leave out others.
+        resolved = resolved[resolved != 0]
+        assets = resolved.index.tolist()
 
         # Historical data supplied to the Toolkit can reach beyond its date range.
         prices = (

@@ -234,3 +234,77 @@ def test_carino_linking_refuses_a_return_of_minus_one_hundred_percent():
         attribution_model.get_linking_coefficients(
             pd.Series([-1.0, 0.5]), pd.Series([0.1, 0.1]), linking="carino"
         )
+
+
+def test_a_sector_held_short_keeps_its_own_return():
+    # 130/30: Tech held long, Consumer held short. The short sector's own return enters
+    # the portfolio return; the benchmark's Consumer return would give 1.3 x 0.5 - 0.3 x 0.1.
+    result = attribution_model.get_brinson_fachler_attribution(
+        portfolio_weights=pd.Series({"Tech": 1.3, "Consumer": -0.3}),
+        portfolio_returns=pd.Series({"Tech": 0.5, "Consumer": 1.0}),
+        benchmark_weights=pd.Series({"Tech": 0.6, "Consumer": 0.4}),
+        benchmark_returns=pd.Series({"Tech": 0.4, "Consumer": 0.1}),
+    )
+    total = result.loc["Total"]
+
+    assert total["Portfolio Return"] == pytest.approx(1.3 * 0.5 - 0.3 * 1.0)
+    assert result.loc["Consumer", "Portfolio Return"] == pytest.approx(1.0)
+    assert total["Total Effect"] == pytest.approx(
+        total["Portfolio Return"] - total["Benchmark Return"]
+    )
+    assert result.loc["Consumer", "Selection Effect"] == pytest.approx(0.4 * 0.9)
+
+
+@pytest.mark.parametrize("linking", ["carino", "menchero"])
+def test_linked_effects_add_up_with_a_sector_held_short(linking):
+    index = ["Q1", "Q2"]
+    weights = pd.DataFrame({"Tech": [1.3, 1.4], "Consumer": [-0.3, -0.4]}, index=index)
+    returns = pd.DataFrame({"Tech": [0.1, -0.05], "Consumer": [0.2, 0.08]}, index=index)
+    benchmark_weights = pd.DataFrame(
+        {"Tech": [0.6, 0.62], "Consumer": [0.4, 0.38]}, index=index
+    )
+    benchmark_returns = pd.DataFrame(
+        {"Tech": [0.08, -0.02], "Consumer": [0.03, 0.04]}, index=index
+    )
+
+    result = attribution_model.get_linked_brinson_fachler_attribution(
+        weights, returns, benchmark_weights, benchmark_returns, linking=linking
+    )
+    total = result.loc["Total"]
+    portfolio = (1 + (weights * returns).sum(axis=1)).prod() - 1
+
+    assert total["Portfolio Return"] == pytest.approx(portfolio)
+    assert total["Total Effect"] == pytest.approx(
+        total["Portfolio Return"] - total["Benchmark Return"], abs=1e-12
+    )
+    assert result.loc["Consumer", "Portfolio Return"] == pytest.approx(1.2 * 1.08 - 1)
+
+
+def test_stress_test_coverage_is_the_share_of_the_gross_exposure():
+    returns = pd.DataFrame(
+        {"Long": [-0.5, -0.5, -0.2], "Short": [np.nan, 0.1, np.nan]},
+        index=["Long only", "Both", "None"],
+    )
+    returns.loc["None", "Long"] = np.nan
+
+    long_listed = attribution_model.get_stress_test(
+        returns, pd.Series({"Long": 1.3, "Short": -0.3})
+    )
+    # Only the long side has prices: it stands in for the portfolio, at 1.3 of 1.6.
+    assert long_listed.loc["Long only", "Coverage"] == pytest.approx(1.3 / 1.6)
+    assert long_listed.loc["Long only", "Portfolio Return"] == pytest.approx(-0.5)
+    assert long_listed.loc["Both", "Coverage"] == pytest.approx(1.0)
+    assert long_listed.loc["Both", "Portfolio Return"] == pytest.approx(
+        1.3 * -0.5 - 0.3 * 0.1
+    )
+    assert long_listed.loc["None", "Coverage"] == 0
+    assert np.isnan(long_listed.loc["None", "Portfolio Return"])
+
+    # Only the short side has prices: a negative net weight cannot be scaled up to the
+    # portfolio, so the return is empty and the Coverage still lies between 0 and 1.
+    short_listed = attribution_model.get_stress_test(
+        pd.DataFrame({"Long": [np.nan], "Short": [0.1]}, index=["Short only"]),
+        pd.Series({"Long": 1.3, "Short": -0.3}),
+    )
+    assert short_listed.loc["Short only", "Coverage"] == pytest.approx(0.3 / 1.6)
+    assert np.isnan(short_listed.loc["Short only", "Portfolio Return"])

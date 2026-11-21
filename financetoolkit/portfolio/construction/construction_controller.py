@@ -120,31 +120,56 @@ class PortfolioConstructionBase:
             assets.append(BENCHMARK_TICKER)
         return assets
 
-    def _get_returns(self, period: str, include_benchmark: bool) -> pd.DataFrame:
-        """The returns of the assets over the periods in which every asset has a return."""
+    def _get_loaded_assets(self, period: str, include_benchmark: bool) -> list[str]:
+        """The assets with returns in the historical data of the period."""
         if period not in PERIODS:
             raise ValueError(
                 "Period must be daily, weekly, monthly, quarterly, or yearly."
             )
-        # Historical data supplied to the Toolkit can reach beyond its date range.
-        returns = self._historical_data[period]["Return"].loc[
-            self._start_date : self._end_date
+        columns = self._historical_data[period]["Return"].columns
+        return [
+            asset for asset in self._get_assets(include_benchmark) if asset in columns
         ]
-        assets = [
-            asset
-            for asset in self._get_assets(include_benchmark)
-            if asset in returns.columns
-        ]
-        if len(assets) < 2:  # noqa: PLR2004
-            raise ValueError("A portfolio needs the returns of at least two assets.")
 
-        returns = returns[assets].dropna(how="any")
+    def _get_returns(
+        self, period: str, include_benchmark: bool, assets: list[str] | None = None
+    ) -> pd.DataFrame:
+        """
+        The returns of the assets over the periods in which every one of them has a return.
+        An optimizer chooses among all loaded assets, so all of them decide the periods; the
+        weights of a given portfolio pass only the assets it holds, so an asset it leaves out
+        (with a shorter history) does not shorten its sample.
+        """
+        if assets is None:
+            assets = self._get_loaded_assets(period, include_benchmark)
+            if len(assets) < 2:  # noqa: PLR2004
+                raise ValueError(
+                    "A portfolio needs the returns of at least two assets."
+                )
+        # Historical data supplied to the Toolkit can reach beyond its date range.
+        returns = (
+            self._historical_data[period]["Return"]
+            .loc[self._start_date : self._end_date, assets]
+            .dropna(how="any")
+        )
         if len(returns) < len(assets) + 1:
             raise ValueError(
                 f"There are only {len(returns)} periods in which every asset has a "
                 "return; use a longer date range or a higher frequency."
             )
         return returns
+
+    def _get_held_weights(
+        self,
+        weights: dict[str, float] | pd.Series | None,
+        period: str,
+        include_benchmark: bool,
+    ) -> pd.Series:
+        """The weights of the loaded assets the portfolio holds (a weight other than zero)."""
+        resolved = self._resolve_weights(
+            weights, self._get_loaded_assets(period, include_benchmark)
+        )
+        return resolved[resolved != 0]
 
     def _get_risk_free_rate(self, period: str, index: pd.Index) -> float:
         """The average annualized risk free rate over the periods, 0 when unknown."""
@@ -169,9 +194,13 @@ class PortfolioConstructionBase:
         covariance_span: int = 180,
         expected_returns: str = "mean",
         expected_returns_span: int = 180,
+        assets: list[str] | None = None,
     ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, float]:
-        """The returns, annualized expected returns, covariance and risk free rate."""
-        returns = self._get_returns(period, include_benchmark)
+        """
+        The returns, annualized expected returns, covariance and risk free rate of the
+        assets, by default all loaded assets (see _get_returns).
+        """
+        returns = self._get_returns(period, include_benchmark, assets)
         risk_free_rate = self._get_risk_free_rate(period, returns.index)
         expected, covariance_matrix = (
             optimization_model.get_expected_returns_and_covariance(

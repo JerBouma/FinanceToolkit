@@ -1115,3 +1115,27 @@ def test_imf_marshall_islands_position_is_converted_at_one_dollar(monkeypatch):
     assert ratio.loc[pd.Period("2024", "Y"), "Marshall Islands"] == pytest.approx(
         367 / 290
     )
+
+
+def test_shiller_pe_is_price_over_trailing_earnings_also_from_the_cache(monkeypatch):
+    from financetoolkit.economics.sources import shiller_model
+
+    # A cached copy of the file holds no P/E; it is derived on every read.
+    cached = pd.DataFrame(
+        {
+            "Price": [100.0, 120.0, 90.0],
+            "Earnings": [5.0, -2.0, float("nan")],
+            "CAPE": [20.0, 22.0, 18.0],
+        },
+        index=pd.period_range("2020-01", periods=3, freq="M"),
+    )
+    monkeypatch.setattr(
+        shiller_model, "collect_cached_data", lambda **kwargs: cached.copy()
+    )
+
+    data = shiller_model.get_stock_market_data()
+
+    assert list(data.columns) == ["Price", "Earnings", "P/E", "CAPE"]
+    assert data["P/E"].iloc[0] == pytest.approx(20.0)
+    # Negative or missing earnings give no P/E.
+    assert data["P/E"].iloc[1:].isna().all()

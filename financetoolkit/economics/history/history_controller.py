@@ -653,8 +653,9 @@ class HistoryEconomics(PricesEconomics):
         Retrieves Robert Shiller's monthly US stock market data from 1871, the data behind
         "Irrational Exuberance" and the CAPE ratio: the S&P Composite price, dividends and
         earnings, the consumer price index, the long-term interest rate, the same in real
-        (inflation-adjusted) terms, and the cyclically adjusted price-earnings ratio (CAPE),
-        the price over the average of ten years of real earnings. With more than 150 years of
+        (inflation-adjusted) terms, the trailing price-earnings ratio (P/E), the price over the
+        earnings of the last twelve months, and the cyclically adjusted price-earnings ratio
+        (CAPE), the price over the average of ten years of real earnings. With more than 150 years of
         history it is the standard source for long-run equity returns, valuations and their
         relation to subsequent returns.
 
@@ -698,22 +699,22 @@ class HistoryEconomics(PricesEconomics):
 
         economics = Economics(start_date='2026-01-01', end_date='2026-09-30')
 
-        economics.get_shiller_stock_market_data(show_columns=['Price', 'Dividend', 'Earnings', 'CAPE'])
+        economics.get_shiller_stock_market_data(show_columns=['Price', 'Earnings', 'P/E', 'CAPE'])
         ```
 
         Which returns:
 
-        |         |   Price |   Dividend |   Earnings |    CAPE |
-        |:--------|--------:|-----------:|-----------:|--------:|
-        | 2026-01 | 6929.12 |    79.8018 |    247.664 | 39.6408 |
-        | 2026-02 | 6893.81 |    80.0835 |    254.693 | 39.014  |
-        | 2026-03 | 6654.42 |    80.3653 |    261.723 | 37.0316 |
-        | 2026-04 | 6957.01 |    80.8113 |    272.945 | 38.1383 |
-        | 2026-05 | 7412.55 |    81.2572 |    284.166 | 40.1014 |
-        | 2026-06 | 7450.03 |    81.7032 |    295.388 | 40.1502 |
-        | 2026-07 | 7481.34 |   nan      |    nan     | 40.0086 |
-        | 2026-08 | 7711.32 |   nan      |    nan     | 40.9874 |
-        | 2026-09 | 7669.41 |   nan      |    nan     | 40.5809 |
+        |         |   Price |   Earnings |     P/E |    CAPE |
+        |:--------|--------:|-----------:|--------:|--------:|
+        | 2026-01 | 6929.12 |    237.839 | 29.1336 | 39.6591 |
+        | 2026-02 | 6893.81 |    239.865 | 28.7403 | 39.0501 |
+        | 2026-03 | 6654.42 |    241.891 | 27.51   | 37.0914 |
+        | 2026-04 | 6957.01 |    248.79  | 27.9633 | 38.2345 |
+        | 2026-05 | 7412.55 |    255.69  | 28.9904 | 40.246  |
+        | 2026-06 | 7450.03 |    262.589 | 28.3715 | 40.3455 |
+        | 2026-07 | 7481.34 |    273.565 | 27.3475 | 40.2609 |
+        | 2026-08 | 7711.32 |    284.542 | 27.1008 | 41.0871 |
+        | 2026-09 | 7669.41 |    295.518 | 25.9524 | 40.2683 |
         """
         stock_market_data = shiller_model.get_stock_market_data()
 

@@ -252,3 +252,29 @@ def test_the_economic_calendar_is_read_as_series(monkeypatch):
     assert "China Producer Price Index YoY - China Inflation Rate YoY" in answer
     assert "Estimate" not in answer
     assert "Run Length" in answer
+
+
+def test_a_daily_analysis_asks_statement_ratios_for_their_daily_values(
+    indicator_answers,
+):
+    call_econometrics(
+        indicator="get_level_significance",
+        series="valuation:get_price_to_earnings_ratio:NVDA",
+        period="daily",
+        start_date="2016-01-01",
+    )
+
+    # The P/E has no period; its daily values are asked for with show_daily.
+    _, method_name, _, kwargs = indicator_answers[0]
+    assert method_name == "get_price_to_earnings_ratio"
+    assert kwargs["show_daily"] is True
+
+    indicator_answers.clear()
+    call_econometrics(
+        indicator="get_level_significance",
+        series="valuation:get_price_to_earnings_ratio:NVDA",
+        period="yearly",
+        start_date="2016-01-01",
+    )
+
+    assert "show_daily" not in indicator_answers[0][3]

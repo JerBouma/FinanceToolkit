@@ -484,7 +484,10 @@ class AnalysisConstruction:
         A short weight becomes a negative number of shares, with the proceeds funding
         the long positions: weights that sum to one keep a net investment of the
         portfolio value. Short positions are rounded to a larger short, so the leftover
-        cash is never negative.
+        cash is never negative. The integer programme holds a long position at no more
+        than the whole shares that reach its target, but leaves the size of a short
+        position open: one more share short raises the cash for a long share that is
+        further below its own target, which can lower the total deviation.
 
         For more information, see the following book:
 

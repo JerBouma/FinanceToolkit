@@ -266,6 +266,18 @@ def _offline_construction(test_toolkit) -> PortfolioConstruction:
         index=days,
         columns=["AAPL", "MSFT", "SPY", "XLK", "XLV"],
     )
+    # The sector funds of the attribution cover the date range of the assets.
+    fund_days = pd.bdate_range("2019-12-31", "2022-12-30").to_period("D")
+    sector_funds = pd.DataFrame(
+        100 * np.cumprod(1 + rng.normal(0.0003, 0.012, (len(fund_days), 2)), axis=0),
+        index=fund_days,
+        columns=["XLK", "XLV"],
+    )
+
+    def price_function(tickers, start, end):
+        if set(tickers) <= set(sector_funds.columns):
+            return sector_funds.reindex(columns=tickers)
+        return prices.reindex(columns=tickers)
 
     profile = pd.DataFrame(
         {
@@ -297,7 +309,7 @@ def _offline_construction(test_toolkit) -> PortfolioConstruction:
         historical_data=original._historical_data,
         risk_free_rate_data=original._risk_free_rate_data,
         benchmark_name="SPY",
-        price_function=lambda tickers, start, end: prices.reindex(columns=tickers),
+        price_function=price_function,
         profile_function=lambda: profile,
         fund_function=funds,
     )
@@ -1043,3 +1055,49 @@ def test_an_asset_without_weight_does_not_shorten_the_sample(test_toolkit):
 
     # An optimizer chooses among every loaded asset, so all of them decide the periods.
     assert len(construction._get_returns("daily", False)) == late.notna().sum()
+
+
+def test_get_brinson_attribution_keeps_a_sector_whose_fund_starts_later(
+    test_toolkit, caplog
+):
+    construction = _offline_construction(test_toolkit)
+    prices = construction._price_function
+
+    def late_healthcare_fund(tickers, start, end):
+        funds = prices(tickers, start, end)
+        funds.loc[: pd.Period("2021-01-04", freq="D"), "XLV"] = np.nan
+        return funds
+
+    complete = construction.get_brinson_attribution(rounding=16)
+    construction._price_function = late_healthcare_fund
+    with caplog.at_level("WARNING", logger="financetoolkit"):
+        attribution = construction.get_brinson_attribution(rounding=16)
+
+    assert "Healthcare (XLV, first price on 2021-01-05)" in caplog.text
+    # Healthcare keeps its weight of 0.6 and has no return over the range, rather than the
+    # return of its fund from 2021-01-05.
+    assert attribution.loc["Healthcare", "Benchmark Weight"] == pytest.approx(0.6)
+    assert np.isnan(attribution.loc["Healthcare", "Benchmark Return"])
+    assert attribution.loc["Technology", "Benchmark Return"] == pytest.approx(
+        complete.loc["Technology", "Benchmark Return"]
+    )
+    assert attribution.loc["Total", ["Benchmark Return", "Total Effect"]].isna().all()
+    assert attribution.loc["Total", "Portfolio Return"] == pytest.approx(
+        complete.loc["Total", "Portfolio Return"]
+    )
+
+    # Linked over years, 2021 and 2022 have a Healthcare return but 2020 does not, so the
+    # compounded benchmark return and the linked effects stay unknown.
+    linked = construction.get_brinson_attribution(period="yearly", rounding=16)
+    assert linked.loc["Healthcare", "Benchmark Weight"] == pytest.approx(0.6)
+    assert np.isnan(linked.loc["Healthcare", "Benchmark Return"])
+    assert linked.loc["Total", "Allocation Effect":].isna().all()
+
+    # From the fund's first price onwards the attribution is complete.
+    construction._start_date = "2021-01-05"
+    later = construction.get_brinson_attribution(period="yearly", rounding=16)
+    assert later.notna().loc["Total"].all()
+    assert later.loc["Total", "Total Effect"] == pytest.approx(
+        later.loc["Total", "Portfolio Return"] - later.loc["Total", "Benchmark Return"],
+        abs=1e-12,
+    )

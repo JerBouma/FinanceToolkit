@@ -239,6 +239,12 @@ class PortfolioConstructionBase:
         elif self._portfolio_weights:
             latest = self._portfolio_weights.get("daily", pd.DataFrame())
             latest = latest.iloc[-1] if not latest.empty else pd.Series(dtype=float)
+            # A holding without a price leaves the value of the portfolio, and every weight, unknown.
+            if not latest.empty and latest.isna().all():
+                raise ValueError(
+                    "The latest weights of the Portfolio are unknown because one of its holdings "
+                    "has no price; pass the weights to use instead."
+                )
             resolved = latest.reindex(assets).fillna(0).astype(float)
         else:
             resolved = pd.Series(1.0, index=assets)

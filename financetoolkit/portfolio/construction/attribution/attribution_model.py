@@ -57,11 +57,19 @@ def get_brinson_fachler_attribution(
     does not hold gets the benchmark's segment return, so only its allocation effect
     remains, and has no Portfolio Return in the table.
 
+    A benchmark segment without a return (NaN), such as a sector whose fund has no prices
+    for the whole period, keeps its benchmark weight: its return is unknown, not zero, and
+    leaving it out would hand its weight to the other segments. The benchmark's total
+    return is then unknown, and with it every allocation effect, the selection and
+    interaction effect of that segment and the Total row's effects; the other segments'
+    selection and interaction effects remain.
+
     Args:
         portfolio_weights (pd.Series): The portfolio weight per segment.
         portfolio_returns (pd.Series): The portfolio's return per segment.
         benchmark_weights (pd.Series): The benchmark weight per segment.
-        benchmark_returns (pd.Series): The benchmark's return per segment.
+        benchmark_returns (pd.Series): The benchmark's return per segment, NaN where it
+            is unknown.
 
     Returns:
         pd.DataFrame: Per segment and in total the weights, returns and the Allocation,
@@ -86,13 +94,11 @@ def get_brinson_fachler_attribution(
     # the portfolio's return, Σ w_p x r_p.
     rp = portfolio_returns.reindex(segments).where(wp != 0, rb)
 
-    if rb[wb > 0].isna().any():
-        missing = ", ".join(rb[(wb > 0) & rb.isna()].index)
-        raise ValueError(f"The benchmark has no return for: {missing}.")
-    total_benchmark = float((wb * rb.fillna(0)).sum())
+    # A segment in the benchmark without a return makes the benchmark's total unknown.
+    total_benchmark = float((wb * rb)[wb != 0].sum(skipna=False))
     # A segment outside the benchmark is compared with the benchmark as a whole, so it
     # adds no allocation effect and its result shows as interaction.
-    rb = rb.fillna(total_benchmark)
+    rb = rb.where(wb != 0, rb.fillna(total_benchmark))
     rp = rp.fillna(rb)
 
     allocation = (wp - wb) * (rb - total_benchmark)
@@ -115,12 +121,12 @@ def get_brinson_fachler_attribution(
     result.loc["Total"] = [
         wp.sum(),
         wb.sum(),
-        float((wp * rp).sum()),
+        float((wp * rp)[wp != 0].sum()),
         total_benchmark,
-        allocation.sum(),
-        selection.sum(),
-        interaction.sum(),
-        total.sum(),
+        allocation.sum(skipna=False),
+        selection.sum(skipna=False),
+        interaction.sum(skipna=False),
+        total.sum(skipna=False),
     ]
 
     return result
@@ -230,7 +236,10 @@ def get_linked_brinson_fachler_attribution(
     - Linked Effect = Σ_t coefficient_t x Effect_t
 
     The linked Total Effects add up to the compounded portfolio return minus the compounded
-    benchmark return over the whole range.
+    benchmark return over the whole range. A segment without a benchmark return in a
+    sub-period (NaN) keeps its weight there, as in get_brinson_fachler_attribution: its
+    compounded benchmark return is unknown, and so are the compounded benchmark return and,
+    since every linking coefficient depends on it, all linked effects.
 
     Args:
         portfolio_weights (pd.DataFrame): The portfolio weight per sub-period (rows, at
@@ -260,8 +269,13 @@ def get_linked_brinson_fachler_attribution(
     totals = pd.DataFrame(
         {period: table.loc["Total"] for period, table in tables.items()}
     ).T
-    coefficients = get_linking_coefficients(
-        totals["Portfolio Return"], totals["Benchmark Return"], linking
+    # Every coefficient depends on the benchmark return compounded over all sub-periods.
+    coefficients = (
+        pd.Series(np.nan, index=totals.index)
+        if totals["Benchmark Return"].isna().any()
+        else get_linking_coefficients(
+            totals["Portfolio Return"], totals["Benchmark Return"], linking
+        )
     )
 
     # A segment missing from a sub-period (no weight in either) has no effect there.
@@ -276,17 +290,18 @@ def get_linked_brinson_fachler_attribution(
         "Total Effect",
     ]
     linked = sum(
-        tables[period][effects].reindex(segments).fillna(0) * coefficients[period]
+        tables[period][effects].reindex(segments, fill_value=0) * coefficients[period]
         for period in portfolio_weights.index
     )
 
-    # Returns compound over the sub-periods; a segment the portfolio never holds has none.
+    # Returns compound over the sub-periods; a segment the portfolio never holds has none,
+    # and a benchmark return unknown in one sub-period is unknown over the whole range.
     returns = {
         column: (
             pd.DataFrame({period: table[column] for period, table in tables.items()})
             .reindex(segments)
             .add(1)
-            .prod(axis=1, min_count=1)
+            .prod(axis=1, min_count=1, skipna=column == "Portfolio Return")
             .sub(1)
         )
         for column in ["Portfolio Return", "Benchmark Return"]

@@ -18,7 +18,10 @@ from financetoolkit.utilities import logger_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.sources_model import track_sources
-from financetoolkit.utilities.statistics_model import apply_rounding
+from financetoolkit.utilities.statistics_model import (
+    apply_rounding,
+    by_own_trading_days,
+)
 
 logger = logger_model.get_logger()
 
@@ -162,11 +165,20 @@ class OptionsBase:
     @cached_property
     def _volatility(self) -> pd.DataFrame:
         """The annualized volatility of the year of daily returns up to each date."""
+
         # The volatility on a date is that of the year of daily returns up to it, so a past
-        # pricing date uses only what was known on that date.
-        return self._daily_historical["Return"].rolling(
-            TRAILING_DAYS, min_periods=MINIMUM_VOLATILITY_DAYS
-        ).std() * np.sqrt(TRAILING_DAYS)
+        # pricing date uses only what was known on that date. The year is counted in each
+        # ticker's own trading days: next to a ticker that also trades on weekends, the shared
+        # dates hold rows without a Return for a stock, and 252 of those rows would be about 174
+        # of its sessions. A date a ticker did not trade on takes the volatility of its latest
+        # trading day.
+        @by_own_trading_days
+        def trailing_volatility(returns: pd.DataFrame) -> pd.DataFrame:
+            return returns.rolling(
+                TRAILING_DAYS, min_periods=MINIMUM_VOLATILITY_DAYS
+            ).std() * np.sqrt(TRAILING_DAYS)
+
+        return trailing_volatility(self._daily_historical["Return"]).ffill()
 
     @cached_property
     def _risk_free_rate(self) -> pd.Series:

@@ -1281,3 +1281,53 @@ def test_the_skew_index_uses_the_terms_of_the_model_free_volatility(option_marke
     with pytest.raises(ValueError, match=f"longest usable expiry of {ticker}"):
         module._skew_index(ticker, days=365)
     assert module.get_skew_index(days=365).empty
+
+
+def test_the_volatility_rolls_over_each_tickers_own_trading_days():
+    import numpy as np
+
+    from financetoolkit import Toolkit
+    from financetoolkit.historical_model import fill_non_trading_days
+
+    historical = pd.read_pickle("tests/datasets/historical_dataset.pickle")
+
+    def options_on(data):
+        toolkit = Toolkit(
+            tickers=sorted(set(data.columns.get_level_values(1)) - {"Benchmark"}),
+            historical=data,
+            convert_currency=False,
+            start_date="2019-12-31",
+            end_date="2023-01-01",
+            sleep_timer=False,
+        )
+        toolkit._daily_risk_free_rate = pd.read_pickle(
+            "tests/datasets/risk_free_rate.pickle"
+        )
+        toolkit._daily_treasury_data = pd.read_pickle(
+            "tests/datasets/treasury_data.pickle"
+        )
+        return toolkit.options
+
+    # A ticker trading every calendar day next to the stocks: the shared dates gain the
+    # weekends, on which the stocks have no Return.
+    calendar = pd.period_range(historical.index[0], historical.index[-1], freq="D")
+    with_crypto = historical.reindex(calendar)
+    returns = np.random.default_rng(0).normal(0, 0.03, len(calendar))
+    for column in historical.columns.get_level_values(0).unique():
+        with_crypto[(column, "CRYPTO")] = (
+            returns if column == "Return" else 100 * np.cumprod(1 + returns)
+        )
+    with_crypto = fill_non_trading_days(with_crypto.sort_index(axis=1))
+
+    alone = options_on(historical)._volatility
+    together = options_on(with_crypto)._volatility
+
+    pd.testing.assert_frame_equal(
+        together.loc[historical.index, ["AAPL", "MSFT"]],
+        alone[["AAPL", "MSFT"]],
+        check_freq=False,
+        check_names=False,
+        check_column_type=False,
+    )
+    # A weekend takes the volatility of the Friday before it.
+    assert together.loc["2022-12-25", "AAPL"] == alone.loc["2022-12-23", "AAPL"]

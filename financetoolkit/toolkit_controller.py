@@ -6822,7 +6822,9 @@ class Toolkit:
         Returns the historical data of a period for the modules, retrieved when a calculation
         first asks for that period. The daily data is downloaded once and the weekly, monthly,
         quarterly and yearly data is converted from it; the intraday data is only downloaded
-        when the Toolkit has an intraday_period.
+        when the Toolkit has an intraday_period. Every period covers the start to the end date
+        of the Toolkit, as get_historical_data returns it, also when the historical data was
+        supplied over a longer range.
 
         Args:
             period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
@@ -6844,7 +6846,17 @@ class Toolkit:
 
         self.get_historical_data(period=period)
 
-        return getattr(self, f"_{period}_historical_data")
+        historical_data = getattr(self, f"_{period}_historical_data")
+
+        # Supplied daily data is stored over its full range; the rows outside the dates would
+        # otherwise enter whole-sample measures (such as a maximum drawdown with
+        # within_period=False). Data in range is returned as the same frame.
+        if period == "daily" and not historical_data.empty:
+            within = historical_data.loc[self._start_date : self._end_date]
+            if len(within) != len(historical_data):
+                historical_data = within
+
+        return historical_data
 
     def _get_lookback_historical_data(self, period: str) -> pd.DataFrame:
         """
@@ -6856,8 +6868,9 @@ class Toolkit:
         the start date alone would differ, for months, from the same indicator on the same day
         with an earlier start date; the daily dividend yield likewise sums the dividends of the
         year before each day. The values are calculated from these earlier prices and returned
-        from the start date. Pre-supplied historical data and intraday data are used as they
-        are.
+        from the start date. Pre-supplied daily data is used from its first row to the end
+        date, so that its rows before the start date serve as these earlier prices; the other
+        periods of pre-supplied data and intraday data are used as the other modules get them.
 
         Args:
             period (str): "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly".
@@ -6869,6 +6882,9 @@ class Toolkit:
             KeyError: For any other period, as a dictionary of the periods would.
         """
         if period == "intraday" or not self._historical.empty:
+            if period == "daily" and not self._historical.empty:
+                self.get_historical_data(period="daily")
+                return self._daily_historical_data.loc[: self._end_date]
             return self._get_module_historical_data(period)
 
         if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):

@@ -1137,3 +1137,54 @@ def test_yahoo_share_counts_are_neither_translated_nor_summed(
     # Share counts of different companies do not add up to a share count of the basket.
     for item in items[1:]:
         assert statement.loc[("Total", item)].isna().all()
+
+
+def test_supplied_historical_data_is_cut_to_the_dates_for_the_modules():
+    # Supplied data over 2020-2022 with a Toolkit on the second half of 2020: the whole-sample
+    # measures equal those of the same data supplied for that half year only.
+    def toolkit_on(historical):
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            historical=historical,
+            start_date="2020-07-01",
+            end_date="2020-12-31",
+            sleep_timer=False,
+        )
+        toolkit._daily_risk_free_rate = risk_free_rate
+        toolkit._daily_treasury_data = treasury_data
+        return toolkit
+
+    full = toolkit_on(historical_dataset)
+    half_year = toolkit_on(historical_dataset.loc["2020-07-01":"2020-12-31"])
+
+    daily = full._get_module_historical_data("daily")
+    assert str(daily.index[0]) == "2020-07-01"
+    assert str(daily.index[-1]) == "2020-12-31"
+
+    for method in ("get_maximum_drawdown", "get_value_at_risk"):
+        pd.testing.assert_series_equal(
+            getattr(full.risk, method)(period="daily", within_period=False),
+            getattr(half_year.risk, method)(period="daily", within_period=False),
+        )
+
+    # The technical indicators and daily ratios keep the supplied rows before the start date
+    # as their warm-up, but no rows after the end date.
+    lookback = full._get_lookback_historical_data("daily")
+    assert lookback.index[0] == historical_dataset.index[0]
+    assert str(lookback.index[-1]) == "2020-12-31"
+
+
+def test_data_within_the_dates_is_handed_to_the_modules_as_it_is():
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        historical=historical_dataset,
+        start_date="2019-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+    toolkit._daily_risk_free_rate = risk_free_rate
+    toolkit._daily_treasury_data = treasury_data
+
+    assert (
+        toolkit._get_module_historical_data("daily") is toolkit._daily_historical_data
+    )

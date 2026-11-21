@@ -2648,3 +2648,52 @@ def test_discretionary_accruals_estimate_on_the_same_quarter_of_earlier_years():
     cross_section = models.get_discretionary_accruals(method="cross_section")
     assert cross_section.loc["A"].loc["Discretionary Accruals"].isna().all()
     assert models.get_discretionary_accruals(method="panel").empty
+
+
+def test_quarterly_intrinsic_valuation_sums_the_quarters_of_a_year():
+    import numpy as np  # noqa: PLC0415
+    import pytest  # noqa: PLC0415
+
+    g = GROWTH ** np.arange(QUARTERS)
+    settings = {
+        "growth_rate": 0.0,
+        "perpetual_growth_rate": 0.02,
+        "weighted_average_cost_of_capital": 0.09,
+        "cash_flow_type": "Free Cash Flow",
+    }
+
+    # Every quarter reported: the base is the trailing twelve months.
+    models = synthetic_models(growing_company())
+    valuation = models.get_intrinsic_valuation(**settings)
+    assert valuation.loc["A"].iloc[:, -1]["Cash Flow Projection"] == pytest.approx(
+        20 * g[-4:].sum()
+    )
+
+    # The latest quarter but one is not reported (no column at all): the base is the latest
+    # four quarters in a row, not the latest four reported columns spanning five quarters.
+    models = synthetic_models(growing_company())
+    kept = models._cash_flow_statement.columns.delete(QUARTERS - 2)
+    models._balance_sheet_statement = models._income_statement = (
+        models._cash_flow_statement
+    ) = models._cash_flow_statement.loc[:, kept]
+    valuation = models.get_intrinsic_valuation(**settings)
+    assert valuation.loc["A"].iloc[:, -1]["Cash Flow Projection"] == pytest.approx(
+        20 * g[-6:-2].sum()
+    )
+    historical = models.get_intrinsic_valuation(historical=True, **settings)
+    # The fourth quarter's year includes the missing third quarter: only the second
+    # quarter's trailing year, the latest complete one, is valued last.
+    assert str(historical.loc["A"].dropna().index[-1]) == "2023Q2"
+
+    # A company reporting half-yearly (second and fourth quarters only) has no complete year
+    # of quarters, so it is not valued instead of summing two years of cash flow.
+    models = synthetic_models(growing_company())
+    columns = models._cash_flow_statement.columns
+    half_yearly = columns[columns.quarter.isin([2, 4])]
+    models._balance_sheet_statement = models._income_statement = (
+        models._cash_flow_statement
+    ) = models._cash_flow_statement.loc[:, half_yearly]
+    assert models.get_intrinsic_valuation(**settings).empty
+    assert (
+        models.get_intrinsic_valuation(historical=True, **settings).isna().all().all()
+    )

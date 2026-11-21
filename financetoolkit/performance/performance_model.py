@@ -1403,21 +1403,18 @@ def get_sharpe_ratio(
 
     Returns:
         pd.Series | pd.DataFrame: Sharpe Ratio values. If `excess_returns` has a "within
-        period" Multi Index, one value is returned per period (with time as index);
-        otherwise a single value is returned per column (or overall, for a Series).
+        period" Multi Index, one value is returned per period (with time as index), for a
+        Series as well as a DataFrame; otherwise a single value is returned per column (or
+        one overall, for a Series).
     """
-    if isinstance(excess_returns, pd.DataFrame):
+    if isinstance(excess_returns, pd.Series | pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            # Calculate Sharpe ratio for each asset (ticker) in the DataFrame
-            sharpe_ratios = excess_returns.groupby(level=0).apply(
-                lambda x: x.mean() / x.std()
+            return remove_undefined_ratios(
+                excess_returns.groupby(level=0).apply(
+                    lambda period: period.mean() / period.std()
+                )
             )
-            return remove_undefined_ratios(sharpe_ratios)
 
-        return remove_undefined_ratios(excess_returns.mean() / excess_returns.std())
-
-    if isinstance(excess_returns, pd.Series):
-        # Calculate Sharpe ratio for a single asset (ticker)
         return remove_undefined_ratios(excess_returns.mean() / excess_returns.std())
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
@@ -1678,15 +1675,10 @@ def get_sortino_ratio(
             else (ratio if returns.count() >= MIN_SORTINO_OBSERVATIONS else np.nan)
         )
 
-    if isinstance(excess_returns, pd.DataFrame):
+    if isinstance(excess_returns, pd.Series | pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
-            # Calculate Sortino ratio for each asset (ticker) in the DataFrame
             return excess_returns.groupby(level=0).apply(_sortino)
 
-        return _sortino(excess_returns)
-
-    if isinstance(excess_returns, pd.Series):
-        # Calculate Sortino ratio for a single asset (ticker)
         return _sortino(excess_returns)
 
     raise TypeError("Expects pd.DataFrame, pd.Series inputs, no other value.")
@@ -1756,7 +1748,8 @@ def get_safety_first_ratio(
 
     Returns:
         pd.Series | pd.DataFrame | float: Safety-First Ratio values, one per period with a
-        "within period" Multi Index and otherwise one per column (or one for a Series).
+        "within period" Multi Index, for a Series as well as a DataFrame, and otherwise one
+        per column (or one for a Series).
     """
     # Subtracting a constant leaves the standard deviation as it is, so this is the
     # Sharpe ratio of the returns in excess of the threshold.
@@ -1821,22 +1814,21 @@ def get_upside_potential_ratio(
 
     Returns:
         pd.Series | pd.DataFrame | float: Upside Potential Ratio values, one per period with a
-        "within period" (period, date) Multi Index and otherwise one per column (or one for a
-        Series).
+        "within period" (period, date) Multi Index, for a Series as well as a DataFrame, and
+        otherwise one per column (or one for a Series).
     """
 
-    def _upside_potential(returns: pd.DataFrame) -> pd.Series:
-        upside_potential = returns.clip(lower=0).mean()
-        downside_deviation = np.sqrt((returns.clip(upper=0) ** 2).mean())
-
-        return remove_undefined_ratios(upside_potential / downside_deviation).where(
-            returns.count() >= MIN_SORTINO_OBSERVATIONS
+    def _upside_potential(returns: pd.Series | pd.DataFrame) -> pd.Series | float:
+        frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
+        upside_potential = frame.clip(lower=0).mean()
+        downside_deviation = np.sqrt((frame.clip(upper=0) ** 2).mean())
+        ratio = remove_undefined_ratios(upside_potential / downside_deviation).where(
+            frame.count() >= MIN_SORTINO_OBSERVATIONS
         )
 
-    if isinstance(excess_returns, pd.Series):
-        return _upside_potential(excess_returns.to_frame()).iloc[0]
+        return ratio.iloc[0] if isinstance(returns, pd.Series) else ratio
 
-    if isinstance(excess_returns, pd.DataFrame):
+    if isinstance(excess_returns, pd.Series | pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             return excess_returns.groupby(level=0).apply(_upside_potential)
 
@@ -2598,7 +2590,7 @@ def get_kappa_ratio(
         pd.Series | pd.DataFrame: A Series or DataFrame of Kappa ratios with time as index
         and assets as columns.
     """
-    if isinstance(excess_returns, pd.DataFrame):
+    if isinstance(excess_returns, pd.Series | pd.DataFrame):
         if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
             return remove_undefined_ratios(
                 excess_returns.groupby(level=0).apply(
@@ -2607,13 +2599,6 @@ def get_kappa_ratio(
                 )
             )
 
-        lower_partial_moment = (excess_returns.clip(upper=0).abs() ** order).mean()
-
-        return remove_undefined_ratios(
-            excess_returns.mean() / lower_partial_moment ** (1 / order)
-        )
-
-    if isinstance(excess_returns, pd.Series):
         lower_partial_moment = (excess_returns.clip(upper=0).abs() ** order).mean()
 
         return remove_undefined_ratios(

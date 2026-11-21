@@ -1548,6 +1548,55 @@ def test_get_covariance_matrix_is_the_sample_covariance():
         performance_model.get_covariance_matrix(returns["X"])
 
 
+def test_sharpe_ratio_series_keeps_within_period_groups():
+    periods = pd.PeriodIndex(["2026-01"] * 3 + ["2026-02"] * 3, freq="M")
+    index = pd.MultiIndex.from_arrays([periods, [0, 1, 2, 0, 1, 2]])
+    returns = pd.Series([-0.02, 0.0, 0.02, 0.02, 0.04, 0.06], index=index, name="AAPL")
+    expected = pd.Series(
+        [0.0, 2.0], index=pd.PeriodIndex(["2026-01", "2026-02"], freq="M"), name="AAPL"
+    )
+
+    actual = performance_model.get_sharpe_ratio(returns)
+    pd.testing.assert_series_equal(actual, expected)
+    frame_result = performance_model.get_sharpe_ratio(returns.to_frame())["AAPL"]
+    pd.testing.assert_series_equal(actual, frame_result)
+
+    # The Safety-First Ratio is the Sharpe ratio above the threshold: means of -0.02 and
+    # 0.02 over a standard deviation of 0.02.
+    pd.testing.assert_series_equal(
+        performance_model.get_safety_first_ratio(returns, threshold=0.02),
+        pd.Series([-1.0, 1.0], index=expected.index, name="AAPL"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("ratio", "expected"),
+    [
+        # January: a mean of 0; February: 0.01 over a downside deviation of 0.01 / sqrt(3).
+        (performance_model.get_sortino_ratio, [0.0, np.sqrt(3)]),
+        # Mean gains of 0.02 / 3 and 0.04 / 3 over downside deviations of 0.02 / sqrt(3)
+        # and 0.01 / sqrt(3).
+        (
+            performance_model.get_upside_potential_ratio,
+            [1 / np.sqrt(3), 4 / np.sqrt(3)],
+        ),
+        # Order 3: February's root of the lower partial moment is 0.01 / cbrt(3).
+        (performance_model.get_kappa_ratio, [0.0, np.cbrt(3)]),
+    ],
+)
+def test_downside_ratios_of_a_series_keep_within_period_groups(ratio, expected):
+    periods = pd.PeriodIndex(["2026-01"] * 3 + ["2026-02"] * 3, freq="M")
+    index = pd.MultiIndex.from_arrays([periods, [0, 1, 2, 0, 1, 2]])
+    returns = pd.Series([-0.02, 0.0, 0.02, -0.01, 0.01, 0.03], index=index, name="AAPL")
+    expected = pd.Series(
+        expected, index=pd.PeriodIndex(["2026-01", "2026-02"], freq="M"), name="AAPL"
+    )
+
+    actual = ratio(returns)
+    pd.testing.assert_series_equal(actual, expected)
+    pd.testing.assert_series_equal(actual, ratio(returns.to_frame())["AAPL"])
+
+
 def test_beta_implied_return_sets_the_residual_against_its_history():
     days = pd.period_range("2024-01-01", periods=400, freq="D")
     rng = np.random.default_rng(3)

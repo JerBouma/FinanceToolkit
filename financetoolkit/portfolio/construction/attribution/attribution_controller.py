@@ -411,6 +411,16 @@ class AttributionConstruction:
           the fund's own return, as the return of a fund's sectors separately is not known.
           Assets without a sector are "Unclassified" and compared with the benchmark as a
           whole.
+        - A sector whose sector fund has no price within a few trading days of the start of
+          the range (XLC starts on 2018-06-19, XLRE on 2015-10-08) has no benchmark return,
+          since the fund's return from its first price covers only part of the range. The
+          sector keeps its benchmark weight rather than handing it to the other sectors, a
+          warning names the fund and its first date, and the benchmark's total return, every
+          allocation effect, the sector's selection and interaction effects and the Total
+          row's effects are empty. With a period this holds for the sub-periods that start
+          before the fund's first price, and as the linking of the effects depends on the
+          benchmark return compounded over the whole range, all linked effects are empty. A
+          range that starts at the fund's first price can be attributed in full.
         - Cariño's linking scales each sub-period by its logarithmic excess return relative
           to the whole range; Menchero's keeps the scaling as close as possible to one
           factor for every sub-period. Both make the linked effects add up exactly to the
@@ -539,18 +549,49 @@ class AttributionConstruction:
             dates.min().strftime("%Y-%m-%d"),
             dates.max().strftime("%Y-%m-%d"),
         )
-        benchmark_returns = pd.Series(
-            {
-                sector: sector_prices[ticker].dropna().iloc[-1]
-                / sector_prices[ticker].dropna().iloc[0]
-                - 1
-                for sector, ticker in sector_tickers.items()
-                if ticker in sector_prices.columns
-                and not sector_prices[ticker].dropna().empty
-            }
+        funds = sector_prices.reindex(columns=list(sector_tickers.values())).set_axis(
+            pd.to_datetime(sector_prices.index.astype(str))
         )
+        funds.columns = list(sector_tickers)
+        funds = funds.loc[dates.min() : dates.max()]
+        # A sector fund stands in for its sector only from its first price, which may come
+        # a few trading days after the first day, as for the assets. Before that the
+        # sector's benchmark return is unknown rather than the return from the fund's
+        # first price, and the sector keeps its benchmark weight instead of handing it to
+        # the other sectors.
+        first_dates = funds.notna().idxmax().where(funds.notna().any())
+        covered = first_dates.notna() & (
+            first_dates <= dates[min(START_PRICE_TOLERANCE_DAYS, len(dates) - 1)]
+        )
+        fund_start_prices = funds.bfill().iloc[0].where(covered)
+        benchmark_returns = funds.ffill().iloc[-1] / fund_start_prices - 1
+        late_funds = [
+            f"{sector} ({sector_tickers[sector]}, "
+            + (
+                f"first price on {first_dates[sector]:%Y-%m-%d})"
+                if pd.notna(first_dates[sector])
+                else "no prices in the range)"
+            )
+            for sector in funds.columns
+            if not covered[sector] and sector in benchmark_weights.index
+        ]
+        if late_funds:
+            logger.warning(
+                "No price at the start of the range (%s) for the sector fund of %s. The "
+                "benchmark return of the sector is unknown %s, so it keeps its benchmark "
+                "weight and the benchmark's total return and the effects that depend on it "
+                "are empty. A range from the fund's first price onwards can be attributed.",
+                dates.min().strftime("%Y-%m-%d"),
+                ", ".join(late_funds),
+                (
+                    "in the sub-periods before the fund's first price"
+                    if period
+                    else "over the range"
+                ),
+            )
         # Portfolio sectors outside the sector funds (e.g. "Unclassified") are compared
-        # with the benchmark as a whole.
+        # with the benchmark as a whole, and so are the benchmark's own sectors without a
+        # sector fund, such as cash.
         benchmark_weights = benchmark_weights[
             benchmark_weights.index.isin(benchmark_returns.index)
         ]
@@ -586,20 +627,17 @@ class AttributionConstruction:
                 .T
             )
 
-            # Each sector fund from its first to its last price within the range, as in
-            # the attribution without a period.
-            funds = sector_prices.set_axis(
-                pd.to_datetime(sector_prices.index.astype(str))
-            )[[sector_tickers[sector] for sector in benchmark_returns.index]]
+            # A sector fund has a return in the sub-periods it has prices for from start
+            # to end, the first one starting at its first price within a few trading days
+            # as without a period. Its weight drifts with the fund and is held at its start
+            # value before the fund's first price, as the sector's return there is unknown.
             fund_prices = (
-                funds.reindex(funds.index.union(boundaries))
-                .ffill()
-                .bfill()
-                .loc[boundaries]
+                funds.reindex(funds.index.union(boundaries)).ffill().loc[boundaries]
             )
-            fund_prices.columns = benchmark_returns.index
+            fund_prices.iloc[0] = fund_start_prices
+            weight_prices = fund_prices.bfill().fillna(1.0)
             benchmark_values = (
-                fund_prices / fund_prices.iloc[0] * benchmark_weights
+                weight_prices / weight_prices.iloc[0] * benchmark_weights
             ).dropna(axis=1, how="all")
 
             # Every sub-period is named after its last day and starts with the values at

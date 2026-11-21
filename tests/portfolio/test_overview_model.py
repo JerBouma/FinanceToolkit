@@ -680,3 +680,160 @@ def test_the_portfolio_beta_ignores_a_position_sold_in_fractions():
 
     assert overview.loc["OLD", "Weight"] != 0
     assert overview.loc["Portfolio", "Beta"] == pytest.approx(1.2)
+
+
+def test_a_holding_without_a_price_leaves_the_value_of_the_portfolio_unknown():
+    """The cost of a holding without a price is invested, its value is unknown rather than zero."""
+    dates = pd.period_range("2024-01-02", periods=2, freq="D")
+    index = pd.MultiIndex.from_tuples(
+        [(dates[0], "A"), (dates[0], "B"), (dates[0], "C"), (dates[1], "C")],
+        names=["Date", "Identifier"],
+    )
+    overview = create_portfolio_overview(
+        portfolio_name=pd.Series(["A", "B", "C", "C"], index=index),
+        portfolio_volume=pd.Series([10.0, 5.0, 2.0, -2.0], index=index),
+        portfolio_price=pd.Series([100.0, 200.0, 50.0, 50.0], index=index),
+        portfolio_costs=pd.Series(0.0, index=index),
+        # B is held without a price; C is sold and has no price either.
+        latest_returns=pd.Series({"A": 150.0, "B": np.nan, "C": np.nan}),
+        benchmark_prices=pd.Series(100.0, index=index),
+        benchmark_latest_prices=pd.Series({"A": 110.0, "B": 110.0, "C": 110.0}),
+        volatilities=pd.Series({"A": 0.2, "B": np.nan, "C": np.nan, "Benchmark": 0.1}),
+        betas=pd.Series({"A": 1.2, "B": np.nan, "C": np.nan}),
+        include_portfolio=True,
+    )
+
+    portfolio = overview.loc["Portfolio"]
+    # The known amounts add up: 1000 in A, 1000 in B and 100 in C.
+    assert portfolio["Invested"] == pytest.approx(2100.0)
+    assert portfolio["Volume"] == pytest.approx(15.0)
+    for column in [
+        "Latest Price",
+        "Latest Value",
+        "Return",
+        "Return Value",
+        "Alpha",
+        "Volatility",
+        "Beta",
+        "Weight",
+    ]:
+        assert np.isnan(portfolio[column]), column
+    assert overview["Weight"].isna().all()
+    # The benchmark does not depend on the prices of the assets.
+    # 20 benchmark units worth 110 plus the 100 received for C, against the 2100 invested.
+    assert portfolio["Benchmark Return"] == pytest.approx(200.0 / 2100.0)
+    # A sold position is worth nothing, priced or not, so its result is known.
+    assert overview.loc["C", "Latest Value"] == 0.0
+    assert overview.loc["C", "Return"] == pytest.approx(0.0)
+    assert overview.loc["A", "Return"] == pytest.approx(0.5)
+
+
+def test_a_priced_portfolio_keeps_its_totals_when_a_sold_position_has_no_price():
+    dates = pd.period_range("2024-01-02", periods=2, freq="D")
+    index = pd.MultiIndex.from_tuples(
+        [(dates[0], "A"), (dates[0], "C"), (dates[1], "C")],
+        names=["Date", "Identifier"],
+    )
+    overview = create_portfolio_overview(
+        portfolio_name=pd.Series(["A", "C", "C"], index=index),
+        portfolio_volume=pd.Series([10.0, 2.0, -2.0], index=index),
+        portfolio_price=pd.Series([100.0, 50.0, 60.0], index=index),
+        portfolio_costs=pd.Series(0.0, index=index),
+        latest_returns=pd.Series({"A": 150.0, "C": np.nan}),
+        benchmark_prices=pd.Series(100.0, index=index),
+        benchmark_latest_prices=pd.Series({"A": 110.0, "C": 110.0}),
+        volatilities=pd.Series({"A": 0.2, "C": np.nan, "Benchmark": 0.1}),
+        betas=pd.Series({"A": 1.2, "C": np.nan}),
+        include_portfolio=True,
+    )
+
+    assert overview.loc["Portfolio", "Latest Value"] == pytest.approx(1500.0)
+    # 500 gain on A and 20 on C against the 1100 invested.
+    assert overview.loc["Portfolio", "Return"] == pytest.approx(520.0 / 1100.0)
+    assert overview.loc["Portfolio", "Weight"] == pytest.approx(1.0)
+    assert overview.loc["Portfolio", "Beta"] == pytest.approx(1.2)
+
+
+def test_the_weights_are_unknown_on_dates_a_holding_has_no_price():
+    from financetoolkit.portfolio.overview_model import (  # noqa: PLC0415
+        create_portfolio_performance,
+    )
+
+    dates = pd.period_range("2024-01-02", periods=4, freq="D")
+    prices = pd.DataFrame(
+        {"A": [10.0, 10, 10, 10], "B": [np.nan, np.nan, 20.0, 30.0]}, index=dates
+    )
+    dataset = pd.DataFrame(
+        {"Volume": [1.0, 1.0], "Price": [10.0, 20.0], "Costs": [0.0, 0.0]},
+        index=pd.MultiIndex.from_tuples(
+            [(dates[0], "A"), (dates[1], "B")], names=["Date", "Identifier"]
+        ),
+    )
+
+    positions = create_positions_overview(
+        ["A", "B"], dates, dataset, pd.concat({"Close": prices}, axis=1)
+    )
+
+    weights = positions["Current Weight"]
+    # Before B is bought A is the whole portfolio; while B is held without a price nothing is known.
+    assert weights.iloc[0].tolist() == [1.0, 0.0]
+    assert weights.iloc[1].isna().all()
+    assert weights.iloc[3].tolist() == pytest.approx([0.25, 0.75])
+
+    performance = create_portfolio_performance(positions, "Date", "Identifier", "D")
+    assert np.isnan(performance.loc[(dates[1], "A"), "Current Weight"])
+    assert performance.loc[(dates[3], "B"), "Current Weight"] == pytest.approx(0.75)
+
+
+def test_units_bought_without_a_price_have_an_unknown_value_in_the_transactions():
+    from financetoolkit.portfolio.overview_model import (  # noqa: PLC0415
+        create_transactions_overview,
+        create_transactions_performance,
+    )
+
+    dates = pd.PeriodIndex(["2023-03-01", "2023-03-01", "2023-06-01"], freq="D")
+    index = pd.MultiIndex.from_arrays(
+        [dates, ["A", "B", "B"]], names=["Date", "Identifier"]
+    )
+    volume = pd.Series([10.0, 5.0, -2.0], index=index)
+    price = pd.Series([100.0, 200.0, 210.0], index=index)
+    costs = pd.Series(0.0, index=index)
+
+    overview = create_transactions_overview(
+        volume, price, costs, pd.Series({"A": 110.0, "B": np.nan})
+    )
+
+    assert overview["% Return"].iloc[0] == pytest.approx(0.1)
+    assert overview.iloc[1][["Current Value", "% Return", "Return"]].isna().all()
+    assert overview["Invested Amount"].iloc[1] == pytest.approx(1000.0)
+    # A sale has no value or return of its own, priced or not.
+    assert overview.iloc[2][["Current Value", "% Return", "Return"]].tolist() == [
+        0.0,
+        0.0,
+        0.0,
+    ]
+
+    transactions = pd.DataFrame({"Volume": volume, "Price": price, "Costs": costs})
+    year_end = pd.DataFrame(
+        {"A": [110.0], "B": [np.nan]}, index=pd.PeriodIndex(["2023"], freq="Y")
+    )
+    performance = create_transactions_performance(
+        transactions,
+        "Identifier",
+        "Date",
+        "Volume",
+        "Price",
+        "Costs",
+        period_prices=year_end,
+        period_string="Y",
+        benchmark_specific_prices=pd.Series(100.0, index=index),
+        benchmark_period_prices=pd.Series([110.0], index=year_end.index),
+    )
+
+    # The sale of B in the same year does not turn the unknown value of its purchase into zero.
+    row = performance.loc[(pd.Period("2023", freq="Y"), "B")]
+    assert np.isnan(row["Current Value"])
+    assert np.isnan(row["Return"])
+    assert performance.loc[
+        (pd.Period("2023", freq="Y"), "A"), "Return"
+    ] == pytest.approx(0.1)

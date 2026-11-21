@@ -3875,7 +3875,9 @@ def get_discrete_allocation(
       target amounts with the leftover cash counted as a holding with a target of zero,
       min Σ |t_i - n_i p_i| + c subject to Σ n_i p_i + c = V, c ≥ 0 and n_i whole, with
       the absolute deviations written as d_i ≥ ±(t_i - n_i p_i), solved with branch and
-      bound (Cornuejols, Peña and Tütüncü, 2018, ch. 11).
+      bound (Cornuejols, Peña and Tütüncü, 2018, ch. 11). The amounts are rescaled for
+      the solver, and its allocation replaces the greedy one only when it deviates less,
+      so it is never further from the targets than "greedy".
     - "greedy": every position is first rounded down to whole shares, ⌊t_i / p_i⌋, and
       the leftover cash then buys one more share at a time of the asset furthest below
       its target amount, while one is below it and its price fits the cash. A share of
@@ -3886,7 +3888,12 @@ def get_discrete_allocation(
     A short weight is held as a negative number of shares: rounding down makes a
     short position larger, so the proceeds never fall short of the long positions they
     fund and the leftover cash is never negative. The integer programme keeps each
-    position on the side of its weight.
+    position on the side of its weight. It holds a long position at no more than
+    ⌈t_i / p_i⌉ shares, beyond which it only moves further from its target, but lets a
+    short position go beyond its target: shorting a share more raises the cash for a long
+    share that is further below its own target, which can lower the total deviation. A
+    short position is bounded only by |n_i| p_i - |t_i| ≤ D, with D the deviation of the
+    greedy allocation, which no better allocation can exceed.
 
     See Cornuejols, G., Peña, J. and Tütüncü, R. (2018), "Optimization Methods in
     Finance", 2nd edition, Cambridge University Press.
@@ -3917,51 +3924,78 @@ def get_discrete_allocation(
     price = prices.to_numpy()
     target = weights.to_numpy(dtype=float) * portfolio_value
 
-    if method == "greedy":
-        shares = np.floor(target / price)
-        cash = portfolio_value - shares @ price
-        for _ in range(len(price)):
-            shortfall = target - shares * price
-            candidates = np.flatnonzero((shortfall > 0) & (price <= cash))
-            if not len(candidates):
-                break
-            asset = candidates[np.argmax(shortfall[candidates])]
-            shares[asset] += 1
-            cash -= price[asset]
-    else:
+    # The greedy allocation, which also bounds the integer programme below.
+    shares = np.floor(target / price)
+    cash = portfolio_value - shares @ price
+    for _ in range(len(price)):
+        shortfall = target - shares * price
+        candidates = np.flatnonzero((shortfall > 0) & (price <= cash))
+        if not len(candidates):
+            break
+        asset = candidates[np.argmax(shortfall[candidates])]
+        shares[asset] += 1
+        cash -= price[asset]
+
+    if method == "integer":
         assets = len(price)
-        # The variables are the shares n_i and the absolute deviations d_i. The cash
-        # c = V - Σ n_i p_i is substituted, which leaves Σ d_i - Σ n_i p_i to minimize
-        # with Σ n_i p_i ≤ V.
-        identity = np.eye(assets)
-        deviations = LinearConstraint(
-            np.block([[np.diag(price), identity], [-np.diag(price), identity]]),
-            np.concatenate([target, -target]),
-            np.inf,
-        )
-        budget = LinearConstraint(
-            np.concatenate([price, np.zeros(assets)]), -np.inf, portfolio_value
-        )
-        # Beyond ⌈|t_i| / p_i⌉ shares a position only moves further from its target.
+        # Beyond ⌈t_i / p_i⌉ shares a long position only moves further from its target. A short position can go beyond its target, as one more share short raises the cash for a long share further below its own target, but its deviation |n_i| p_i - |t_i| alone can never exceed the total deviation D of the greedy allocation in an optimum, so |n_i| ≤ (|t_i| + D) / p_i bounds it without excluding one; an open bound leaves the branch and bound of millions of shares to the time limit.  # noqa: E501
         limit = np.ceil(np.abs(target) / price)
-        result = milp(
-            np.concatenate([-price, np.ones(assets)]),
-            constraints=[deviations, budget],
-            integrality=np.concatenate([np.ones(assets), np.zeros(assets)]),
-            bounds=Bounds(
-                np.concatenate([np.where(target < 0, -limit, 0), np.zeros(assets)]),
-                np.concatenate(
-                    [np.where(target > 0, limit, 0), np.full(assets, np.inf)]
-                ),
+        greedy_deviation = np.abs(target - shares * price).sum() + cash
+        short_limit = np.floor((np.abs(target) + greedy_deviation) / price)
+        bounds = Bounds(
+            np.concatenate(
+                [np.where(target < 0, -short_limit, 0), np.zeros(assets + 1)]
             ),
-            options={"time_limit": DISCRETE_ALLOCATION_TIME_LIMIT},
+            np.concatenate(
+                [np.where(target > 0, limit, 0), np.full(assets + 1, np.inf)]
+            ),
         )
-        if result.x is None:
-            raise ValueError(f"No allocation was found: {result.message}")
-        shares = np.round(result.x[:assets])
-        cash = portfolio_value - shares @ price
-        if cash < -FEASIBILITY_TOLERANCE * portfolio_value:
-            raise ValueError("The allocation costs more than the portfolio value.")
+        identity = np.eye(assets)
+        no_cash = np.zeros((assets, 1))
+        found, message = False, ""
+        # The variables are the shares n_i, the absolute deviations d_i and the cash c. An objective of Σ d_i + c itself, rather than one offset by the portfolio value, makes the solver's relative gap a gap in the deviation. The amounts are scaled for the solver, as amounts in the thousands next to share counts leave HiGHS with a solve error on some portfolios: first to multiples of the average price and, should that fail or not improve on the greedy allocation, to fractions of the portfolio value. The greedy allocation stays when the solver finds nothing closer, which it then is by definition.  # noqa: E501
+        for scale in (float(price.mean()), portfolio_value):
+            scaled_price, scaled_target = price / scale, target / scale
+            result = milp(
+                np.concatenate([np.zeros(assets), np.ones(assets + 1)]),
+                constraints=[
+                    LinearConstraint(
+                        np.block(
+                            [
+                                [np.diag(scaled_price), identity, no_cash],
+                                [-np.diag(scaled_price), identity, no_cash],
+                            ]
+                        ),
+                        np.concatenate([scaled_target, -scaled_target]),
+                        np.inf,
+                    ),
+                    LinearConstraint(
+                        np.concatenate([scaled_price, np.zeros(assets), [1.0]]),
+                        portfolio_value / scale,
+                        portfolio_value / scale,
+                    ),
+                ],
+                integrality=np.concatenate([np.ones(assets), np.zeros(assets + 1)]),
+                bounds=bounds,
+                options={"time_limit": DISCRETE_ALLOCATION_TIME_LIMIT},
+            )
+            message = result.message
+            if result.x is None:
+                continue
+            candidate = np.round(result.x[:assets])
+            candidate_cash = portfolio_value - candidate @ price
+            if candidate_cash < -FEASIBILITY_TOLERANCE * portfolio_value:
+                message = "the allocation costs more than the portfolio value"
+                continue
+            found = True
+            if (
+                np.abs(target - candidate * price).sum() + candidate_cash
+                <= np.abs(target - shares * price).sum() + cash
+            ):
+                shares, cash = candidate, candidate_cash
+                break
+        if not found:
+            raise ValueError(f"No allocation was found: {message}")
 
     table = pd.DataFrame(
         {

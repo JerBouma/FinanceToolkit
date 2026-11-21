@@ -2237,3 +2237,39 @@ def test_minimum_variance_of_near_cash_assets_matches_the_closed_form():
         mu, covariance, target_return=target, minimum_weight=-1, maximum_weight=2
     )
     np.testing.assert_allclose(weights, exact, atol=1e-6)
+
+
+def test_discrete_allocation_shorts_beyond_the_target_to_fund_a_long_share():
+    weights = pd.Series([1.1, -0.1], index=["MSFT", "AAPL"])
+    prices = pd.Series([239.82, 129.93], index=["MSFT", "AAPL"])
+    table = optimization_model.get_discrete_allocation(weights, prices, 22000)
+
+    # 18 shares short instead of the 17 that reach the target pay for a 101st long share.
+    assert table.loc["MSFT", "Shares"] == 101  # noqa: PLR2004
+    assert table.loc["AAPL", "Shares"] == -18  # noqa: PLR2004
+    deviation = (weights * 22000 - table["Amount"].drop("Leftover Cash")).abs().sum()
+    assert deviation + table.loc["Leftover Cash", "Amount"] == pytest.approx(277.48)
+
+    # Every allocation within the budget, with shorts up to twice their target, tried one by one.
+    best = min(
+        abs(24200 - long * 239.82)
+        + abs(-2200 + short * 129.93)
+        + 22000
+        - long * 239.82
+        + short * 129.93
+        for long in range(102)
+        for short in range(35)
+        if long * 239.82 - short * 129.93 <= 22000  # noqa: PLR2004
+    )
+    assert best == pytest.approx(277.48)
+
+
+def test_discrete_allocation_solves_a_long_short_portfolio_in_any_currency_amount():
+    weights = pd.Series([1.3, -0.3], index=["AAPL", "MSFT"])
+    prices = pd.Series([129.93, 239.82], index=["AAPL", "MSFT"])
+    for value in (19000, 19000 * 1e4, 190):
+        table = optimization_model.get_discrete_allocation(weights, prices, value)
+        assert table.loc["Leftover Cash", "Amount"] >= 0
+        assert table["Amount"].sum() == pytest.approx(value)
+    table = optimization_model.get_discrete_allocation(weights, prices, 19000)
+    assert table["Shares"].dropna().tolist() == [190, -24]

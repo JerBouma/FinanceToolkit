@@ -308,3 +308,59 @@ def test_stress_test_coverage_is_the_share_of_the_gross_exposure():
     )
     assert short_listed.loc["Short only", "Coverage"] == pytest.approx(0.3 / 1.6)
     assert np.isnan(short_listed.loc["Short only", "Portfolio Return"])
+
+
+def test_a_sector_without_a_benchmark_return_keeps_its_weight():
+    result = attribution_model.get_brinson_fachler_attribution(
+        portfolio_weights=pd.Series({"Tech": 0.6, "Health": 0.4}),
+        portfolio_returns=pd.Series({"Tech": 0.12, "Health": 0.03}),
+        benchmark_weights=pd.Series({"Tech": 0.5, "Health": 0.3, "Energy": 0.2}),
+        benchmark_returns=pd.Series({"Tech": 0.10, "Health": np.nan, "Energy": -0.02}),
+    )
+
+    # Its weight is not handed to the other sectors and its return is unknown, not zero.
+    assert result.loc["Health", "Benchmark Weight"] == pytest.approx(0.3)
+    assert result.loc["Tech", "Benchmark Weight"] == pytest.approx(0.5)
+    assert np.isnan(result.loc["Health", "Benchmark Return"])
+    assert result.loc["Health", "Portfolio Return"] == pytest.approx(0.03)
+    assert result.loc["Total", "Portfolio Return"] == pytest.approx(
+        0.6 * 0.12 + 0.4 * 0.03
+    )
+    # Without the benchmark's total return no allocation effect and no total is known.
+    for column in [
+        "Benchmark Return",
+        "Allocation Effect",
+        "Selection Effect",
+        "Total Effect",
+    ]:
+        assert np.isnan(result.loc["Total", column]), column
+    assert result["Allocation Effect"].isna().all()
+    assert result[["Selection Effect", "Interaction Effect"]].loc["Health"].isna().all()
+    # The selection within a sector with a benchmark return is still known.
+    assert result.loc["Tech", "Selection Effect"] == pytest.approx(0.5 * 0.02)
+    assert result.loc["Energy", "Selection Effect"] == 0
+
+
+def test_a_linked_sector_without_a_benchmark_return_in_one_sub_period():
+    weights, returns, benchmark_weights, benchmark_returns = _two_sub_periods()
+    benchmark_returns.iloc[0, benchmark_returns.columns.get_loc("Energy")] = np.nan
+    result = attribution_model.get_linked_brinson_fachler_attribution(
+        weights, returns, benchmark_weights, benchmark_returns
+    )
+
+    # Energy's compounded benchmark return is unknown, the others compound as before.
+    assert np.isnan(result.loc["Energy", "Benchmark Return"])
+    assert result.loc["Tech", "Benchmark Return"] == pytest.approx(1.10 * 0.98 - 1)
+    assert result.loc["Energy", "Benchmark Weight"] == pytest.approx(0.2)
+    assert np.isnan(result.loc["Total", "Benchmark Return"])
+    # Every linking coefficient depends on the compounded benchmark return.
+    assert result.loc[:, "Allocation Effect":].isna().all().all()
+
+    # The second sub-period alone has every return and is attributed in full.
+    second = attribution_model.get_linked_brinson_fachler_attribution(
+        weights.iloc[1:],
+        returns.iloc[1:],
+        benchmark_weights.iloc[1:],
+        benchmark_returns.iloc[1:],
+    )
+    assert second.loc["Total"].notna().all()

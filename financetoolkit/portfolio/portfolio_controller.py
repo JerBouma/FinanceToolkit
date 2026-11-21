@@ -872,6 +872,15 @@ class Portfolio:
 
         overview = self.get_portfolio_overview()
         weights = overview["Weight"].drop("Portfolio", errors="ignore")
+        # A holding without a price leaves the value of the portfolio, and with it every weight, unknown.
+        unpriced = overview.index[overview["Latest Value"].isna()].drop(
+            "Portfolio", errors="ignore"
+        )
+        if weights.isna().all() and len(unpriced):
+            raise ValueError(
+                "The weights of the portfolio are unknown because there is no price for "
+                f"{', '.join(map(str, unpriced))}."
+            )
         return PortfolioDefinition.from_weights(
             weights[weights > 0], name="Portfolio", rebalancing="none"
         )
@@ -2022,6 +2031,11 @@ class Portfolio:
 
         The "Portfolio" row sums or averages units of different assets for "Volume", "Price" and
         "Latest Price", so those three carry no economic meaning at the portfolio level.
+
+        Units held of an asset without a price, such as a ticker without data, are worth an unknown
+        amount rather than nothing. The value of the portfolio is then unknown, so every "Weight" and the
+        "Portfolio" row's value, return, alpha, volatility and beta are NaN; its "Invested", "Costs" and
+        "Dividends" remain.
 
         When recalculating these numbers, it is important to note that results are calculated before the
         rounding parameter is applied which can lead to some discrepancies in the results.

@@ -298,7 +298,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "macroeconomics:get_inflation_rate:United States' or "
         "'rates:get_government_bond_yield_curve:United States,Germany:10Y'. Every ticker or "
         "country becomes a series named after it, which dependent_ticker and "
-        "independent_tickers then name. Use start_date for a long enough history."
+        "independent_tickers then name. Use start_date for a long enough history. "
+        "period='daily' reads the ratios of statement items (P/E, P/B) on every trading "
+        "day, each period's figure from its fiscal period end; quarterly=true uses the "
+        "quarterly statements."
     ),
     "changes": (
         "With series: how their changes (the 'Return' column the regressions and "
@@ -1804,6 +1807,10 @@ class ToolRegistry:
                 arguments["as_series"] = True
             if deflate_with and "deflate_with" in parameters:
                 arguments["deflate_with"] = deflate_with
+            # The ratios of statement items have no period but show_daily, which maps every
+            # period's figure onto the daily prices; a daily analysis asks for those.
+            if period == "daily" and "show_daily" in parameters:
+                arguments["show_daily"] = True
             result = None
             if period and "period" in parameters:
                 result = self._provider.call_method(**arguments, period=period)

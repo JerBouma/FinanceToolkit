@@ -1927,3 +1927,28 @@ def test_futures_are_quoted_under_the_commodity_symbol(responses):
     assert fmp_model.FUTURES_SYMBOLS["KC=F"] == "KCUSX"
     fmp_model.get_quote(["TTF=F"], api_key="K")
     assert "symbol=TTF=F&" in requested[-1]
+
+
+def test_intraday_bars_of_a_single_day_are_returned(responses):
+    canned, _ = responses
+    canned["historical-chart/1hour"] = [
+        {
+            "date": f"2026-11-20 {hour:02d}:30:00",
+            "open": 100.0 + hour,
+            "high": 101.0 + hour,
+            "low": 99.0 + hour,
+            "close": 100.5 + hour,
+            "volume": 1000,
+        }
+        for hour in range(9, 16)
+    ]
+
+    # The bars are timestamps on the end date, which count as within a window of that day.
+    intraday = fmp_model.get_intraday_data(
+        "AAPL", api_key="K", start="2026-11-20", end="2026-11-20"
+    )
+
+    assert len(intraday) == 7
+    assert str(intraday.index[0]) == "2026-11-20 09:00"
+    assert str(intraday.index[-1]) == "2026-11-20 15:00"
+    assert intraday["Close"].iloc[-1] == pytest.approx(115.5)

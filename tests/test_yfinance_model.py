@@ -50,6 +50,35 @@ def test_statistics_dates_are_the_exchange_dates_on_any_machine(monkeypatch, tim
     assert statistics["Regular Market Time"] == "2023-11-14"
 
 
+class WindowsDatetime(yfinance_model.datetime):
+    """A datetime that, as on Windows, cannot convert a timestamp before 1970."""
+
+    @classmethod
+    def fromtimestamp(cls, timestamp, tz=None):
+        if timestamp < 0:
+            raise OSError(22, "Invalid argument")
+        return super().fromtimestamp(timestamp, tz=tz)
+
+
+def test_statistics_of_a_stock_first_traded_before_1970(monkeypatch):
+    # KO's first trade date as Yahoo Finance reports it: 09:30 in New York on 2 January 1962.
+    meta = {
+        "currency": "USD",
+        "firstTradeDate": -252322200,
+        "regularMarketTime": 1700010000,
+        "gmtoffset": -18000,
+    }
+    monkeypatch.setattr(
+        yfinance_model, "get_request", lambda *_, **__: FakeResponse(meta)
+    )
+    monkeypatch.setattr(yfinance_model, "datetime", WindowsDatetime)
+
+    statistics = yfinance_model.get_historical_statistics("KO")
+
+    assert statistics["First Trade Date"] == "1962-01-02"
+    assert statistics["Regular Market Time"] == "2023-11-14"
+
+
 def test_statistics_of_a_ticker_that_times_out_are_empty(monkeypatch):
     def timeout(*_, **__):
         raise requests.exceptions.ReadTimeout("Read timed out.")

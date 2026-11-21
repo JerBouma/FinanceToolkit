@@ -593,10 +593,16 @@ def get_historical_statistics(ticker: str) -> pd.Series:
             # machine's own timezone would move a day for users east or west of it.
             exchange_offset = timedelta(seconds=statistics.get("gmtoffset") or 0)
 
+            # Counted from the epoch rather than with datetime.fromtimestamp, which raises
+            # an OSError on Windows for the negative timestamps of stocks first traded
+            # before 1970 (such as KO, IBM and XOM).
+            epoch = datetime(1970, 1, 1, tzinfo=UTC)
+
             for timestamp_data in ["firstTradeDate", "regularMarketTime"]:
                 if timestamp_data in statistics and statistics[timestamp_data]:
                     timestamp = (
-                        datetime.fromtimestamp(statistics[timestamp_data], tz=UTC)
+                        epoch
+                        + timedelta(seconds=statistics[timestamp_data])
                         + exchange_offset
                     ).strftime("%Y-%m-%d")
                     statistics[timestamp_data] = timestamp

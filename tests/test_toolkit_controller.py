@@ -1219,3 +1219,93 @@ def test_toolkit_trailing_statements_count_calendar_periods():
         trailing.loc["Cash Beginning of Period", pd.Period("2023", freq="Y")]
         == statement.loc["Cash Beginning of Period", pd.Period("2022", freq="Y")]
     )
+
+
+class PeerToolkitBuilt(Exception):
+    """Stops the peer comparison once its Toolkit of peers is built."""
+
+
+@pytest.mark.parametrize("quarterly", [False, True])
+def test_peer_comparison_uses_the_settings_of_the_toolkit(monkeypatch, quarterly):
+    from financetoolkit import toolkit_controller
+
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        balance=balance_dataset,
+        income=income_dataset,
+        cash=cash_dataset,
+        convert_currency=False,
+        start_date="2019-12-31",
+        end_date="2021-12-31",
+        quarterly=quarterly,
+        point_in_time=True,
+        sleep_timer=False,
+    )
+    settings = {}
+
+    def peer_toolkit(**kwargs):
+        settings.update(kwargs)
+        raise PeerToolkitBuilt
+
+    monkeypatch.setattr(toolkit_controller, "Toolkit", peer_toolkit)
+
+    with pytest.raises(PeerToolkitBuilt):
+        toolkit.models.get_peer_comparison(
+            peers={"AAPL": ["MSFT", "GOOGL"], "MSFT": ["AAPL"]}
+        )
+
+    # The peers are compared on the latest period up to the Toolkit's end date, not today,
+    # with the settings that change the figures, so the Company column equals the Toolkit's own ratios.
+    assert settings["tickers"] == ["AAPL", "GOOGL", "MSFT"]
+    assert settings["start_date"] == "2018-12-31"
+    assert settings["end_date"] == "2021-12-31"
+    assert settings["quarterly"] is quarterly
+    assert settings["point_in_time"] is True
+    assert settings["convert_currency"] is False
+
+
+def test_intraday_data_follows_the_return_column_and_rounding(monkeypatch):
+    from financetoolkit import toolkit_controller
+
+    toolkit = Toolkit(
+        tickers=["AAPL"],
+        start_date="2026-11-16",
+        end_date="2026-11-20",
+        benchmark_ticker=None,
+        sleep_timer=False,
+    )
+    toolkit._api_key = "K"
+    requested = []
+
+    def fake_historical_data(tickers, interval, return_column, **kwargs):
+        requested.append((interval, return_column))
+        index = pd.period_range("2026-11-16 09:00", periods=4, freq="h")
+        prices = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0, 103.0, 102.0],
+                "Close": [101.0, 102.123456, 101.0, 104.0],
+            },
+            index=index,
+        )
+        prices["Return"] = prices[return_column].pct_change()
+        return pd.concat({"AAPL": prices}, axis=1).swaplevel(axis=1), []
+
+    monkeypatch.setattr(
+        toolkit_controller, "_get_historical_data", fake_historical_data
+    )
+
+    on_close = toolkit.get_intraday_data(period="1hour", return_column="Close")
+    on_open = toolkit.get_intraday_data(period="1hour", return_column="Open")
+    on_open_again = toolkit.get_intraday_data(
+        period="1hour", return_column="Open", rounding=1
+    )
+
+    # Another return column retrieves the data again; the same one with another rounding
+    # rounds the data already retrieved.
+    assert requested == [("1hour", "Close"), ("1hour", "Open")]
+    assert on_close["Return"].iloc[1] == pytest.approx(0.0112, abs=1e-4)
+    assert on_open["Return"].iloc[1] == pytest.approx(0.01)
+    assert on_open["Close"].iloc[1] == pytest.approx(102.1235)
+    assert on_open_again["Close"].iloc[1] == pytest.approx(102.1)
+    # The data the modules calculate on is unrounded.
+    assert toolkit._intraday_historical_data[("Close", "AAPL")].iloc[1] == 102.123456

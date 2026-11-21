@@ -792,9 +792,17 @@ def get_historical_data(
 
     historical_data = historical_data.sort_index()
 
+    # Compared on the calendar day of each bar: the bars are timestamps such as
+    # "2024-01-02 09:30:00", which a slice up to the date "2024-01-02" leaves out, so the
+    # bars of the end date would not count and a window of a single day would be empty.
+    bar_dates = pd.to_datetime(historical_data.index).normalize()
+
     if (
         not historical_data.empty
-        and historical_data.loc[start_date_string:end_date_string].empty
+        and not (
+            (bar_dates >= pd.Timestamp(start_date_string))
+            & (bar_dates <= pd.Timestamp(end_date_string))
+        ).any()
     ):
         logger.warning(
             "The given start and end date result in no data found for %s", ticker
@@ -1033,9 +1041,17 @@ def get_intraday_data(
 
     historical_data = historical_data.sort_index()
 
+    # Compared on the calendar day of each bar: the bars are timestamps such as
+    # "2024-01-02 09:30:00", which a slice up to the date "2024-01-02" leaves out, so the
+    # bars of the end date would not count and a window of a single day would be empty.
+    bar_dates = pd.to_datetime(historical_data.index).normalize()
+
     if (
         not historical_data.empty
-        and historical_data.loc[start_date_string:end_date_string].empty
+        and not (
+            (bar_dates >= pd.Timestamp(start_date_string))
+            & (bar_dates <= pd.Timestamp(end_date_string))
+        ).any()
     ):
         logger.warning(
             "The given start and end date result in no data found for %s", ticker

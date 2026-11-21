@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 
 from financetoolkit import currencies_model, earnings_model, finra_model
 from financetoolkit.cache import cache_controller, policy_model, ticker_model
@@ -539,6 +540,8 @@ class Toolkit:
 
         # Resolved per ticker and range on request, so an overlap is reused.
         self._intraday_historical_data: pd.DataFrame = pd.DataFrame()
+        # The period, return column and fill_nan the intraday data was retrieved with.
+        self._intraday_historical_data_params: tuple | None = None
 
         # Use provided historical data if available, otherwise start empty. Supplied data is
         # checked and sorted once here, as every calculation slices it by date.
@@ -858,22 +861,35 @@ class Toolkit:
             universe = sorted(
                 set(tickers) | {peer for group in peer_map.values() for peer in group}
             )
-            # The latest fiscal year is what is compared, so three years of data suffice.
+            # The latest period up to this Toolkit's end date is what is compared, so three
+            # years before it suffice (the Toolkit adds the lookback that growth and trailing
+            # figures need). The settings that change the figures are this Toolkit's, so the
+            # Company column equals what its own ratios show for that period.
             others = Toolkit(
                 tickers=universe,
                 api_key=self._api_key,
-                start_date=(datetime.today() - timedelta(days=365 * 3)).strftime(
-                    "%Y-%m-%d"
-                ),
+                start_date=(
+                    datetime.strptime(self._end_date, "%Y-%m-%d")
+                    - relativedelta(years=3)
+                ).strftime("%Y-%m-%d"),
+                end_date=self._end_date,
+                quarterly=self._quarterly,
+                point_in_time=self._point_in_time,
+                convert_currency=self._convert_currency,
                 use_cached_data=self._cache,
                 enforce_source=self._enforce_source,
+                sleep_timer=self._sleep_timer,
                 benchmark_ticker=None,
                 progress_bar=False,
                 # Unrounded, as the comparison is calculated (and rounded) here.
                 rounding=None,
             )
             ratios = others.ratios
-            income = others.get_income_statement(growth=True)
+            # Quarterly growth is over a year, as the growth of a quarter on the quarter before
+            # it mixes in the seasons.
+            income = others.get_income_statement(
+                growth=True, lag=4 if self._quarterly else 1
+            )
             metrics = pd.DataFrame(
                 {
                     "Price-to-Earnings": peers_model.get_latest_values(
@@ -3161,6 +3177,9 @@ class Toolkit:
         Keep in mind that this data is available for a shorter period. This means that the start date is
         ignored if the difference between the start and end date is bigger than the maximum period.
 
+        The data covers the start date to the end date of the Toolkit, both days included. It is retrieved
+        once per period, return_column and fill_nan, so calling again with other values retrieves it again.
+
         If a benchmark ticker is selected, it also calculates the benchmark ticker together with the results.
         By default this is set to "SPY" (S&P 500 Index) but can be any ticker. This is relevant for calculations
         for models such as CAPM, Alpha and Beta.
@@ -3175,7 +3194,8 @@ class Toolkit:
                 Defaults to "1hour".
             return_column (str, optional): The column to use for the return calculation. Defaults to "Close".
             fill_nan (bool, optional): Defines whether to forward fill NaN values. Defaults to True.
-            rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to None.
+            rounding (int | None, optional): Defines the number of decimal places to round the data to. Defaults to
+                None, which uses the rounding of the Toolkit (4 unless set otherwise).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3223,7 +3243,21 @@ class Toolkit:
                 "Please choose from 1min, 5min, 15min, 30min or 1hour as period."
             )
 
-        if self._intraday_period != period or self._intraday_historical_data.empty:
+        # Retrieved again when a setting that changes the data does, so a call with another
+        # return_column does not get the returns of the first call. The data is kept
+        # unrounded, as the modules calculate on it; only the returned frame is rounded.
+        intraday_params = (period, return_column, fill_nan)
+        # None means the data was not retrieved here (it is empty, or was set on the Toolkit).
+        params_changed = (
+            self._intraday_historical_data_params is not None
+            and self._intraday_historical_data_params != intraday_params
+        )
+
+        if (
+            self._intraday_historical_data.empty
+            or self._intraday_period != period
+            or params_changed
+        ):
             (
                 self._intraday_historical_data,
                 self._invalid_tickers,
@@ -3241,24 +3275,26 @@ class Toolkit:
                 return_column=return_column,
                 include_dividends=False,
                 fill_nan=fill_nan,
-                rounding=rounding if rounding is not None else self._rounding,
+                rounding=None,
                 sleep_timer=self._sleep_timer,
                 show_errors=True,
                 log_message="Obtaining intraday data",
                 user_subscription=self._fmp_plan,
                 cache=self._cache,
             )
+            self._intraday_historical_data_params = intraday_params
+
+            # Change the benchmark ticker name to Benchmark
+            if not self._intraday_historical_data.empty:
+                self._intraday_historical_data = self._intraday_historical_data.rename(
+                    columns={self._benchmark_ticker: "Benchmark"}, level=1
+                )
 
         # Save the period to prevent having to reacquire the data
         self._intraday_period = period
 
         if self._intraday_historical_data.empty:
             return pd.DataFrame()
-
-        # Change the benchmark ticker name to Benchmark
-        self._intraday_historical_data = self._intraday_historical_data.rename(
-            columns={self._benchmark_ticker: "Benchmark"}, level=1
-        )
 
         if self._remove_invalid_tickers:
             self._tickers = [
@@ -3267,9 +3303,10 @@ class Toolkit:
                 if ticker not in self._invalid_tickers
             ]
 
-        historical_data = self._intraday_historical_data.loc[
-            self._start_date : self._end_date, :
-        ]
+        historical_data = apply_rounding(
+            self._intraday_historical_data.loc[self._start_date : self._end_date, :],
+            rounding if rounding is not None else self._rounding,
+        )
 
         # The first row of the window has no preceding observation, so its Return stays NaN rather than being reported as an unchanged period.
 

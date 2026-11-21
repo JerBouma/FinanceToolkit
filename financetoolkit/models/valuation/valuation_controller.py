@@ -3864,7 +3864,11 @@ class ValuationModels:
         The metrics are the Price-to-Earnings, EV-to-EBITDA, Price-to-Book and
         Price-to-Sales ratios, the Gross, Operating and Net Profit Margin, the Return on
         Equity and on Invested Capital, Revenue Growth, the Debt-to-Equity ratio and the
-        Dividend Yield, all of the latest fiscal year.
+        Dividend Yield, all of the latest period up to the Toolkit's end date: the fiscal year,
+        or with quarterly=True the quarter, with the ratios over the trailing year and the
+        Revenue Growth over the same quarter a year earlier. The peers are retrieved with the
+        Toolkit's settings (quarterly, point_in_time and convert_currency), so the Company
+        column equals the Toolkit's own ratios of that period.
 
         The Peer Mean of the four valuation multiples is the harmonic mean of the positive
         values, the standard average of multiples: the arithmetic mean is dominated by
@@ -3922,18 +3926,18 @@ class ValuationModels:
 
         |                                        |   Company |   Peer Median |   Peer Mean |   Percentile |   Peers |
         |:---------------------------------------|----------:|--------------:|------------:|-------------:|--------:|
-        | ('MSFT', 'Price-to-Earnings')          |   29.5676 |       30.6062 |     27.9825 |          0.5 |      10 |
-        | ('MSFT', 'EV-to-EBITDA')               |   20.677  |       19.9245 |     18.115  |          0.5 |      10 |
-        | ('MSFT', 'Price-to-Book')              |    8.9393 |        7.3435 |      6.2418 |          0.6 |      10 |
-        | ('MSFT', 'Price-to-Sales')             |   11.9173 |        6.1931 |      4.3639 |          0.9 |      10 |
-        | ('MSFT', 'Gross Margin')               |    0.6794 |        0.6243 |      0.6164 |          0.6 |      10 |
-        | ('MSFT', 'Operating Margin')           |    0.4678 |        0.1999 |      0.2226 |          1   |      10 |
-        | ('MSFT', 'Net Profit Margin')          |    0.4031 |        0.1682 |      0.187  |          1   |      10 |
-        | ('MSFT', 'Return on Equity')           |    0.3404 |        0.2392 |      0.2864 |          0.6 |      10 |
-        | ('MSFT', 'Return on Invested Capital') |    0.2437 |        0.1307 |      0.166  |          0.8 |      10 |
-        | ('MSFT', 'Revenue Growth')             |    0.1779 |        0.1145 |      0.1197 |          0.9 |      10 |
-        | ('MSFT', 'Debt-to-Equity')             |    0.2912 |        0.3313 |      0.7927 |          0.5 |      10 |
-        | ('MSFT', 'Dividend Yield')             |    0.0051 |        0.0094 |      0.01   |          0.4 |      10 |
+        | ('MSFT', 'Price-to-Earnings')          |   36.4636 |       30.6062 |     29.3028 |          0.7 |      10 |
+        | ('MSFT', 'EV-to-EBITDA')               |   22.9332 |       20.9841 |     19.0334 |          0.6 |      10 |
+        | ('MSFT', 'Price-to-Book')              |   10.8105 |        7.3435 |      6.5553 |          0.7 |      10 |
+        | ('MSFT', 'Price-to-Sales')             |   13.1802 |        6.2949 |      4.5172 |          1   |      10 |
+        | ('MSFT', 'Gross Margin')               |    0.6882 |        0.6508 |      0.6211 |          0.5 |      10 |
+        | ('MSFT', 'Operating Margin')           |    0.4562 |        0.1875 |      0.2187 |          1   |      10 |
+        | ('MSFT', 'Net Profit Margin')          |    0.3615 |        0.1602 |      0.1816 |          1   |      10 |
+        | ('MSFT', 'Return on Equity')           |    0.3328 |        0.2406 |      0.3172 |          0.6 |      10 |
+        | ('MSFT', 'Return on Invested Capital') |    0.2576 |        0.1339 |      0.1691 |          0.8 |      10 |
+        | ('MSFT', 'Revenue Growth')             |    0.1493 |        0.0962 |      0.1108 |          0.8 |      10 |
+        | ('MSFT', 'Debt-to-Equity')             |    0.3266 |        0.22   |      0.9011 |          0.6 |      10 |
+        | ('MSFT', 'Dividend Yield')             |    0.0065 |        0.008  |      0.009  |          0.5 |      10 |
         """
         if self._peer_function is None:
             raise ValueError("Peer data is not available for this Toolkit.")

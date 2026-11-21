@@ -7,7 +7,9 @@ import pandas as pd
 from financetoolkit.economics.sources import bea_model
 from financetoolkit.helpers import (
     add_score_zone,
+    calendar_periods,
     get_goodwill_and_intangible_assets,
+    trailing_sum,
 )
 from financetoolkit.models import helpers
 from financetoolkit.models.distress import (
@@ -109,9 +111,10 @@ class DistressModels:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the flows are summed over; the balances
-                are those at the end of the period, the statement-date figures the score was
-                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
-                the score was estimated on yearly statements.
+                are those at the end of the period, the statement-date figures the score was estimated on.
+                The window counts calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
+                on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below the lower cut-off of
                 the chosen model, "Grey" up to the upper one and "Safe" from it (see above). Not with growth or
                 standardize. Defaults to False.
@@ -253,7 +256,7 @@ class DistressModels:
             revenue = self._income_statement.loc[:, "Revenue", :]
             altman_z_score["Sales to Total Assets"] = (
                 altman_model.get_sales_to_total_assets_ratio(
-                    sales=helpers.trailing_sum(revenue, trailing),
+                    sales=trailing_sum(revenue, trailing),
                     total_assets=total_assets,
                 )
             )
@@ -385,9 +388,10 @@ class DistressModels:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the flows are summed over; the balances
-                are those at the end of the period, the statement-date figures the score was
-                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
-                the score was estimated on yearly statements.
+                are those at the end of the period, the statement-date figures the score was estimated on.
+                The window counts calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
+                on yearly statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -456,10 +460,10 @@ class DistressModels:
         ]
         total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
         total_liabilities = self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
-        operating_cash_flow = helpers.trailing_sum(
+        operating_cash_flow = trailing_sum(
             self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
 
@@ -609,9 +613,10 @@ class DistressModels:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the flows are summed over; the balances
-                are those at the end of the period, the statement-date figures the score was
-                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
-                the score was estimated on yearly statements.
+                are those at the end of the period, the statement-date figures the score was estimated on.
+                The window counts calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
+                on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" from a score of 0, a
                 bankruptcy probability of 0.5 and up (Zmijewski's classification), "Safe" below it. Not with
                 growth or standardize. Defaults to False.
@@ -671,7 +676,7 @@ class DistressModels:
         ]
         total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
         total_liabilities = self._balance_sheet_statement.loc[:, "Total Liabilities", :]
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
 
@@ -767,9 +772,10 @@ class DistressModels:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the flows are summed over; the balances
-                are those at the end of the period, the statement-date figures the score was
-                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
-                the score was estimated on yearly statements.
+                are those at the end of the period, the statement-date figures the score was estimated on.
+                The window counts calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
+                on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below Springate's cut-off
                 of 0.862, "Safe" from it. Not with growth or standardize. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -825,12 +831,10 @@ class DistressModels:
             :, "Total Current Liabilities", :
         ]
         total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
-        income_before_tax = helpers.trailing_sum(
+        income_before_tax = trailing_sum(
             self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        revenue = helpers.trailing_sum(
-            self._income_statement.loc[:, "Revenue", :], trailing
-        )
+        revenue = trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing)
 
         working_capital = liquidity_model.get_working_capital(
             current_assets,
@@ -928,9 +932,10 @@ class DistressModels:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the flows are summed over; the balances
-                are those at the end of the period, the statement-date figures the score was
-                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
-                the score was estimated on yearly statements.
+                are those at the end of the period, the statement-date figures the score was estimated on.
+                The window counts calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
+                on yearly statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -986,7 +991,7 @@ class DistressModels:
             :, "Total Current Liabilities", :
         ]
         total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
 
@@ -1075,9 +1080,10 @@ class DistressModels:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the flows are summed over; the balances
-                are those at the end of the period, the statement-date figures the score was
-                estimated on. Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
-                the score was estimated on yearly statements.
+                are those at the end of the period, the statement-date figures the score was estimated on.
+                The window counts calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated
+                on yearly statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1149,16 +1155,14 @@ class DistressModels:
         goodwill_and_intangible_assets = get_goodwill_and_intangible_assets(
             self._balance_sheet_statement
         )
-        revenue = helpers.trailing_sum(
-            self._income_statement.loc[:, "Revenue", :], trailing
-        )
-        income_before_tax = helpers.trailing_sum(
+        revenue = trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing)
+        income_before_tax = trailing_sum(
             self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        interest_expense = helpers.trailing_sum(
+        interest_expense = trailing_sum(
             self._income_statement.loc[:, "Interest Expense", :], trailing
         )
-        operating_cash_flow = helpers.trailing_sum(
+        operating_cash_flow = trailing_sum(
             self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
 
@@ -1301,8 +1305,9 @@ class DistressModels:
                 values. Defaults to False.
             trailing (int | None, optional): The trailing period to use for the calculation: flows are
                 summed over it and balances are those at the end of the period, the statement-date
-                balances of the paper. Defaults to None, which is 4 on quarterly data (a
-                trailing twelve months), as the score was estimated on yearly statements.
+                balances of the paper. The window counts calendar periods, so a period without a
+                report makes it NaN. Defaults to None, which is 4 on quarterly data (a trailing twelve
+                months), as the score was estimated on yearly statements.
             zone (bool, optional): Whether to add a "Zone" row per ticker: "Distress" below zero (Taffler's at
                 risk profile), "Safe" from it. Not with growth or standardize. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1365,9 +1370,7 @@ class DistressModels:
 
         def income_item(item: str) -> pd.DataFrame:
             """An income statement item, summed over the trailing periods when given."""
-            return helpers.trailing_sum(
-                self._income_statement.loc[:, item, :], trailing
-            )
+            return trailing_sum(self._income_statement.loc[:, item, :], trailing)
 
         current_assets = balance_item("Total Current Assets")
         current_liabilities = balance_item("Total Current Liabilities")
@@ -1793,7 +1796,7 @@ class DistressModels:
         net_income = self._rows(self._income_statement, "Net Income")
         quarterly_net_income = net_income if self._quarterly else net_income / 4
         net_income_to_market_total_assets = chs_model.get_winsorized_variable(
-            helpers.calendar_periods(quarterly_net_income / market_total_assets),
+            calendar_periods(quarterly_net_income / market_total_assets),
             "NIMTA",
         )
         net_income_average = (

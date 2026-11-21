@@ -2363,3 +2363,63 @@ def test_dividend_yield_of_an_unfinished_period_covers_the_year_up_to_the_last_c
     assert ratios.get_dividend_yield(rounding=15).loc[
         "XYZ", quarters[-1]
     ] == pytest.approx(year.sum() / 40)
+
+
+def test_trailing_windows_of_a_half_yearly_reporter_count_calendar_quarters():
+    """
+    A company reporting half-yearly has no first and third quarter columns. Its ratios
+    equal those of the same statements with those quarters as NaN columns: a trailing
+    window or a comparison a year back counts quarters, not reported periods.
+    """
+
+    def half_yearly(keep_columns: bool):
+        ratios, _ = _quarterly_ratios()
+
+        for name in (
+            "_income_statement",
+            "_balance_sheet_statement",
+            "_cash_flow_statement",
+        ):
+            statement = getattr(ratios, name)
+            unreported = statement.columns.quarter.isin([1, 3])
+            if name == "_balance_sheet_statement":
+                statement = _add_row(
+                    statement, "Total Assets", 200 * 1.03 ** np.arange(12)
+                )
+            statement = (
+                statement.mask(np.broadcast_to(unreported, statement.shape))
+                if keep_columns
+                else statement.loc[:, ~unreported]
+            )
+            setattr(ratios, name, statement)
+
+        return ratios
+
+    reported = half_yearly(keep_columns=False)
+    calendar = half_yearly(keep_columns=True)
+    quarters = reported._balance_sheet_statement.columns
+    assert list(quarters.quarter.unique()) == [2, 4]
+
+    for method, kwargs in (
+        ("get_price_to_earnings_ratio", {}),
+        ("get_price_to_free_cash_flow_ratio", {}),
+        ("get_net_profit_margin", {"trailing": 4}),
+        ("get_return_on_assets", {}),
+        ("get_return_on_assets", {"trailing": 4}),
+        ("get_asset_turnover_ratio", {}),
+        ("get_asset_growth", {}),
+        ("get_net_share_issuance", {}),
+    ):
+        expected = getattr(calendar, method)(**kwargs)
+        result = getattr(reported, method)(**kwargs)
+        shared = result.columns.intersection(expected.columns)
+        pd.testing.assert_frame_equal(
+            result[shared], expected[shared], check_names=False, obj=method
+        )
+
+    # Four quarters back is the same half a year earlier, not two half-years back.
+    asset_growth = reported.get_asset_growth()
+    assert asset_growth.loc["XYZ", quarters[-1]] == pytest.approx(1.03**4 - 1)
+
+    # A trailing twelve months needs all four quarters, which a half-yearly reporter lacks.
+    assert reported.get_price_to_earnings_ratio().isna().all().all()

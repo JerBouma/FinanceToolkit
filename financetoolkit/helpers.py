@@ -973,6 +973,93 @@ def get_goodwill_and_intangible_assets(balance_sheet: pd.DataFrame) -> pd.DataFr
     return select("Goodwill and Intangible Assets").fillna(separate)
 
 
+def calendar_periods(frame: pd.DataFrame) -> pd.DataFrame:
+    """
+    Puts a frame with the periods as columns on every period from the first to the last.
+
+    Statements only hold the periods a company reports: a company reporting half-yearly
+    has no first and third quarter, and a missing filing leaves out a quarter or year.
+    A period that is not reported becomes a NaN column, so that rolling windows and
+    shifts count calendar periods rather than reported ones. Columns that are not
+    periods (or not unique) are left as they are.
+
+    Args:
+        frame (pd.DataFrame): The data, with the tickers (and line items) as index and the
+            periods as columns.
+
+    Returns:
+        pd.DataFrame: The data on every period from the first to the last column.
+    """
+    columns = frame.columns
+
+    if (
+        not isinstance(columns, pd.PeriodIndex)
+        or columns.empty
+        or not columns.is_unique
+        or columns.hasnans
+    ):
+        return frame
+
+    return frame.reindex(
+        columns=pd.period_range(columns.min(), columns.max(), freq=columns.freq)
+    )
+
+
+def trailing_sum(frame: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
+    """
+    Sums a flow (an income or cash flow statement item) over the trailing calendar periods,
+    e.g. the trailing twelve months with `trailing=4` on quarterly data.
+
+    Every window must be complete: a period that is not reported (such as the first and
+    third quarter of a company reporting half-yearly) leaves the sums that include it NaN,
+    rather than letting them reach back over more time than `trailing` periods.
+
+    Args:
+        frame (pd.DataFrame): The data, with the periods as columns.
+        trailing (int | None): The number of periods to sum over, or None for no sum.
+
+    Returns:
+        pd.DataFrame: The trailing sums on the columns of the data, or the data itself
+        without trailing.
+    """
+    if not trailing:
+        return frame
+
+    return (
+        calendar_periods(frame)
+        .T.rolling(trailing)
+        .sum()
+        .T.reindex(columns=frame.columns)
+    )
+
+
+def trailing_mean(frame: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
+    """
+    Averages a balance (a balance sheet item) over the trailing calendar period ends, e.g.
+    the opening and closing balance of a period with `trailing=2`.
+
+    As with `trailing_sum`, a period that is not reported leaves the averages that include
+    it NaN.
+
+    Args:
+        frame (pd.DataFrame): The data, with the periods as columns.
+        trailing (int | None): The number of period ends to average, or None for none.
+
+    Returns:
+        pd.DataFrame: The trailing averages on the columns of the data, or the data itself
+        without trailing.
+    """
+    if not trailing:
+        return frame
+
+    return (
+        calendar_periods(frame)
+        .T.rolling(trailing)
+        .mean()
+        .T.reindex(columns=frame.columns)
+    )
+
+
 def add_basket_total(
     statement: pd.DataFrame, tickers: list[str], not_summed: list[str]
 ) -> pd.DataFrame:

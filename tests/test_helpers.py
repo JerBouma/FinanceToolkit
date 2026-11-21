@@ -803,3 +803,37 @@ def test_a_may_year_end_spreads_its_quarters_over_two_year_labels():
 
     assert year.astype(str).tolist() == ["2023"]
     assert quarters.astype(str).tolist() == ["2023Q3", "2023Q4", "2024Q1", "2024Q2"]
+
+
+def test_trailing_windows_count_calendar_periods():
+    # A company reporting half-yearly: the first and third quarters are not columns.
+    quarters = pd.PeriodIndex(["2023Q2", "2023Q4", "2024Q2", "2024Q4"], freq="Q")
+    frame = pd.DataFrame([[1.0, 2.0, 3.0, 4.0]], index=["XYZ"], columns=quarters)
+
+    pd.testing.assert_index_equal(
+        helpers.calendar_periods(frame).columns,
+        pd.period_range("2023Q2", "2024Q4", freq="Q"),
+    )
+
+    # Every window of four quarters holds an unreported quarter, rather than two years.
+    assert helpers.trailing_sum(frame, 4).isna().all().all()
+    pd.testing.assert_index_equal(helpers.trailing_sum(frame, 4).columns, quarters)
+    assert helpers.trailing_mean(frame, 2).isna().all().all()
+
+    # Without gaps the windows are the usual rolling ones.
+    full = pd.DataFrame(
+        [[1.0, 2.0, 3.0, 4.0, 5.0]],
+        index=["XYZ"],
+        columns=pd.period_range("2023Q1", periods=5, freq="Q"),
+    )
+    assert helpers.trailing_sum(full, 4).iloc[0].tolist()[3:] == [10.0, 14.0]
+    assert helpers.trailing_mean(full, 2).iloc[0].tolist()[1:] == [1.5, 2.5, 3.5, 4.5]
+    assert helpers.trailing_mean(full, 4).iloc[0].tolist()[3:] == [2.5, 3.5]
+    assert helpers.trailing_sum(full, None) is full
+
+    # A missing year: 2022 is not summed with 2020.
+    years = pd.PeriodIndex(["2019", "2020", "2022", "2023"], freq="Y")
+    annual = pd.DataFrame([[1.0, 2.0, 3.0, 4.0]], index=["XYZ"], columns=years)
+    summed = helpers.trailing_sum(annual, 2).iloc[0]
+    assert summed.isna().tolist() == [True, False, True, False]
+    assert summed.iloc[[1, 3]].tolist() == [3.0, 7.0]

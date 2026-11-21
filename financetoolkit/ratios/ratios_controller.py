@@ -12,7 +12,12 @@ import pandas as pd
 from financetoolkit.cache import policy_model, ticker_model
 from financetoolkit.cache.cache_controller import get_active_cache
 from financetoolkit.fmp_model import get_analyst_estimates as _get_analyst_estimates
-from financetoolkit.helpers import get_goodwill_and_intangible_assets, handle_portfolio
+from financetoolkit.helpers import (
+    get_goodwill_and_intangible_assets,
+    handle_portfolio,
+    trailing_mean,
+    trailing_sum,
+)
 from financetoolkit.ratios import (
     efficiency_model,
     liquidity_model,
@@ -31,6 +36,7 @@ from financetoolkit.utilities.statistics_model import (
     calculate_standardization,
     drop_non_finite,
     finalize_dataset,
+    shift_periods,
 )
 
 logger = logger_model.get_logger()
@@ -416,6 +422,8 @@ class Ratios:
         Args:
             days (int | float | None): The number of days given by the caller, or None.
             trailing (int | None): The number of periods the flows are summed over, or None.
+                The window counts calendar periods, so a period without a report makes it
+                NaN.
 
         Returns:
             float: The number of days of the window the flows cover.
@@ -435,7 +443,8 @@ class Ratios:
         for the price-to-earnings ratio. An explicit `trailing` is returned unchanged.
 
         Args:
-            trailing (int | None): The trailing window given by the caller, or None.
+            trailing (int | None): The trailing window given by the caller, or None. The
+                window counts calendar periods, so a period without a report makes it NaN.
 
         Returns:
             int | None: The trailing window to use, None for annual data without trailing.
@@ -614,34 +623,6 @@ class Ratios:
 
         return cash_and_short_term_investments
 
-    @staticmethod
-    def _sum_trailing(data: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
-        """
-        Sums a flow (income or cash flow statement item) over the trailing periods.
-
-        Args:
-            data (pd.DataFrame): The period data, with the periods as columns.
-            trailing (int | None): The number of periods to sum over, or None for no sum.
-
-        Returns:
-            pd.DataFrame: The trailing sums, or the data itself without trailing.
-        """
-        return data.T.rolling(trailing).sum().T if trailing else data
-
-    @staticmethod
-    def _mean_trailing(data: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
-        """
-        Averages a balance sheet item over the trailing period ends.
-
-        Args:
-            data (pd.DataFrame): The period data, with the periods as columns.
-            trailing (int | None): The number of period ends to average, or None for none.
-
-        Returns:
-            pd.DataFrame: The trailing averages, or the data itself without trailing.
-        """
-        return data.T.rolling(trailing).mean().T if trailing else data
-
     def _get_nissim_penman_inputs(
         self, trailing: int | None
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -659,7 +640,8 @@ class Ratios:
 
         Args:
             trailing (int | None): The number of periods to sum the flows over, or None for
-                single-period flows.
+                single-period flows. The window counts calendar periods, so a period without
+                a report makes it NaN.
 
         Returns:
             tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]: The net income, the
@@ -700,19 +682,19 @@ class Ratios:
         )
 
         net_financial_expense = profitability_model.get_net_financial_expense(
-            self._sum_trailing(interest_expense, trailing),
-            self._sum_trailing(interest_income, trailing),
-            self._sum_trailing(row(income, "Income Tax Expense"), trailing),
-            self._sum_trailing(row(income, "Income Before Tax"), trailing),
+            trailing_sum(interest_expense, trailing),
+            trailing_sum(interest_income, trailing),
+            trailing_sum(row(income, "Income Tax Expense"), trailing),
+            trailing_sum(row(income, "Income Before Tax"), trailing),
         )
 
         balance_periods = trailing + 1 if trailing else 2
 
         return (
-            self._sum_trailing(row(income, "Net Income"), trailing),
+            trailing_sum(row(income, "Net Income"), trailing),
             net_financial_expense,
-            self._mean_trailing(net_financial_obligations, balance_periods),
-            self._mean_trailing(common_equity, balance_periods),
+            trailing_mean(net_financial_obligations, balance_periods),
+            trailing_mean(common_equity, balance_periods),
         )
 
     @handle_errors
@@ -752,7 +734,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -1181,7 +1164,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -1429,6 +1413,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1472,10 +1457,8 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             asset_turnover_ratio = efficiency_model.get_asset_turnover_ratio(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
-                self._mean_trailing(
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Assets", :],
                     trailing + 1,
                 ),
@@ -1483,10 +1466,9 @@ class Ratios:
         else:
             asset_turnover_ratio = efficiency_model.get_asset_turnover_ratio(
                 self._income_statement.loc[:, "Revenue", :],
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Total Assets", :].pipe(
+                    trailing_mean, 2
+                ),
             )
 
         return finalize_dataset(
@@ -1552,6 +1534,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1595,20 +1578,19 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             inventory_turnover_ratio = efficiency_model.get_inventory_turnover_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Inventory", :], trailing + 1
                 ),
             )
         else:
             inventory_turnover_ratio = efficiency_model.get_inventory_turnover_ratio(
                 self._income_statement.loc[:, "Cost of Goods Sold", :],
-                self._balance_sheet_statement.loc[:, "Inventory", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Inventory", :].pipe(
+                    trailing_mean, 2
+                ),
             )
 
         return finalize_dataset(
@@ -1670,6 +1652,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1716,11 +1699,11 @@ class Ratios:
         if trailing:
             days_of_inventory_outstanding = (
                 efficiency_model.get_days_of_inventory_outstanding(
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Inventory", :],
                         trailing + 1,
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
                     ),
                     days,
@@ -1729,10 +1712,9 @@ class Ratios:
         else:
             days_of_inventory_outstanding = (
                 efficiency_model.get_days_of_inventory_outstanding(
-                    self._balance_sheet_statement.loc[:, "Inventory", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
+                    self._balance_sheet_statement.loc[:, "Inventory", :].pipe(
+                        trailing_mean, 2
+                    ),
                     self._income_statement.loc[:, "Cost of Goods Sold", :],
                     days,
                 )
@@ -1806,6 +1788,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1851,21 +1834,18 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             days_of_sales_outstanding = efficiency_model.get_days_of_sales_outstanding(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
                     trailing + 1,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
                 days,
             )
         else:
             days_of_sales_outstanding = efficiency_model.get_days_of_sales_outstanding(
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :].pipe(
+                    trailing_mean, 2
+                ),
                 self._income_statement.loc[:, "Revenue", :],
                 days,
             )
@@ -1928,6 +1908,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1973,39 +1954,35 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Inventory", :], trailing + 1
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
                 ),
                 days,
             )
 
             days_of_sales = efficiency_model.get_days_of_sales_outstanding(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
                     trailing + 1,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
                 days,
             )
         else:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
-                self._balance_sheet_statement.loc[:, "Inventory", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Inventory", :].pipe(
+                    trailing_mean, 2
+                ),
                 self._income_statement.loc[:, "Cost of Goods Sold", :],
                 days,
             )
             days_of_sales = efficiency_model.get_days_of_sales_outstanding(
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :].pipe(
+                    trailing_mean, 2
+                ),
                 self._income_statement.loc[:, "Revenue", :],
                 days,
             )
@@ -2070,6 +2047,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2114,10 +2092,10 @@ class Ratios:
         if trailing:
             accounts_payables_turnover_ratio = (
                 efficiency_model.get_accounts_payables_turnover_ratio(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Accounts Payable", :],
                         trailing + 1,
                     ),
@@ -2127,10 +2105,9 @@ class Ratios:
             accounts_payables_turnover_ratio = (
                 efficiency_model.get_accounts_payables_turnover_ratio(
                     self._income_statement.loc[:, "Cost of Goods Sold", :],
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
+                    self._balance_sheet_statement.loc[:, "Accounts Payable", :].pipe(
+                        trailing_mean, 2
+                    ),
                 )
             )
 
@@ -2193,6 +2170,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2239,10 +2217,10 @@ class Ratios:
         if trailing:
             days_of_accounts_payable_outstanding = (
                 efficiency_model.get_days_of_accounts_payable_outstanding(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Accounts Payable", :],
                         trailing + 1,
                     ),
@@ -2253,10 +2231,9 @@ class Ratios:
             days_of_accounts_payable_outstanding = (
                 efficiency_model.get_days_of_accounts_payable_outstanding(
                     self._income_statement.loc[:, "Cost of Goods Sold", :],
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
+                    self._balance_sheet_statement.loc[:, "Accounts Payable", :].pipe(
+                        trailing_mean, 2
+                    ),
                     days,
                 )
             )
@@ -2327,6 +2304,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2370,32 +2348,30 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Inventory", :], trailing + 1
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
                 ),
                 days,
             )
 
             days_of_sales = efficiency_model.get_days_of_sales_outstanding(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
                     trailing + 1,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
                 days,
             )
 
             days_of_payables = (
                 efficiency_model.get_days_of_accounts_payable_outstanding(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Accounts Payable", :],
                         trailing + 1,
                     ),
@@ -2404,18 +2380,16 @@ class Ratios:
             )
         else:
             days_of_inventory = efficiency_model.get_days_of_inventory_outstanding(
-                self._balance_sheet_statement.loc[:, "Inventory", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Inventory", :].pipe(
+                    trailing_mean, 2
+                ),
                 self._income_statement.loc[:, "Cost of Goods Sold", :],
                 days,
             )
             days_of_sales = efficiency_model.get_days_of_sales_outstanding(
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :].pipe(
+                    trailing_mean, 2
+                ),
                 self._income_statement.loc[:, "Revenue", :],
                 days,
             )
@@ -2423,10 +2397,9 @@ class Ratios:
             days_of_payables = (
                 efficiency_model.get_days_of_accounts_payable_outstanding(
                     self._income_statement.loc[:, "Cost of Goods Sold", :],
-                    self._balance_sheet_statement.loc[:, "Accounts Payable", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
+                    self._balance_sheet_statement.loc[:, "Accounts Payable", :].pipe(
+                        trailing_mean, 2
+                    ),
                     days,
                 )
             )
@@ -2488,7 +2461,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -2531,15 +2505,13 @@ class Ratios:
         if trailing:
             cash_conversion_efficiency = (
                 efficiency_model.get_cash_conversion_efficiency(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[
                             :, "Cash Flow from Operations", :
                         ],
                         trailing,
                     ),
-                    self._sum_trailing(
-                        self._income_statement.loc[:, "Revenue", :], trailing
-                    ),
+                    trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
                 )
             )
         else:
@@ -2606,6 +2578,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2648,20 +2621,17 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             receivables_turnover = efficiency_model.get_receivables_turnover(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
                     trailing + 1,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             receivables_turnover = efficiency_model.get_receivables_turnover(
-                self._balance_sheet_statement.loc[:, "Accounts Receivable", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Accounts Receivable", :].pipe(
+                    trailing_mean, 2
+                ),
                 self._income_statement.loc[:, "Revenue", :],
             )
 
@@ -2717,7 +2687,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -2758,15 +2729,13 @@ class Ratios:
         """
         if trailing:
             sga_to_revenue_ratio = efficiency_model.get_sga_to_revenue_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[
                         :, "Selling, General and Administrative Expenses", :
                     ],
                     trailing,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             sga_to_revenue_ratio = efficiency_model.get_sga_to_revenue_ratio(
@@ -2834,6 +2803,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -2877,10 +2847,8 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             fixed_asset_turnover = efficiency_model.get_fixed_asset_turnover(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
-                self._mean_trailing(
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Property, Plant and Equipment", :
                     ],
@@ -2890,10 +2858,9 @@ class Ratios:
         else:
             fixed_asset_turnover = efficiency_model.get_fixed_asset_turnover(
                 self._income_statement.loc[:, "Revenue", :],
-                self._balance_sheet_statement.loc[:, "Property, Plant and Equipment", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[
+                    :, "Property, Plant and Equipment", :
+                ].pipe(trailing_mean, 2),
             )
 
         return finalize_dataset(
@@ -2958,6 +2925,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -3007,17 +2975,15 @@ class Ratios:
         if trailing:
             working_capital_turnover_ratio = (
                 efficiency_model.get_working_capital_turnover_ratio(
-                    self._sum_trailing(
-                        self._income_statement.loc[:, "Revenue", :], trailing
-                    ),
-                    self._mean_trailing(working_capital, trailing + 1),
+                    trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+                    trailing_mean(working_capital, trailing + 1),
                 )
             )
         else:
             working_capital_turnover_ratio = (
                 efficiency_model.get_working_capital_turnover_ratio(
                     self._income_statement.loc[:, "Revenue", :],
-                    working_capital.T.rolling(2).mean().T,
+                    trailing_mean(working_capital, 2),
                 )
             )
 
@@ -3081,7 +3047,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -3122,15 +3089,13 @@ class Ratios:
         """
         if trailing:
             operating_ratio = efficiency_model.get_operating_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Operating Expenses", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             operating_ratio = efficiency_model.get_operating_ratio(
@@ -3198,7 +3163,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -3239,15 +3205,13 @@ class Ratios:
         """
         if trailing:
             rd_ratio = efficiency_model.get_research_and_development_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[
                         :, "Research and Development Expenses", :
                     ],
                     trailing,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             rd_ratio = efficiency_model.get_research_and_development_ratio(
@@ -3307,7 +3271,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -3352,13 +3317,11 @@ class Ratios:
         """
         if trailing:
             sm_ratio = efficiency_model.get_selling_and_marketing_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Selling and Marketing Expenses", :],
                     trailing,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             sm_ratio = efficiency_model.get_selling_and_marketing_ratio(
@@ -3418,7 +3381,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -3464,15 +3428,13 @@ class Ratios:
         """
         if trailing:
             ga_ratio = efficiency_model.get_general_and_administrative_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[
                         :, "General and Administrative Expenses", :
                     ],
                     trailing,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             ga_ratio = efficiency_model.get_general_and_administrative_ratio(
@@ -3532,7 +3494,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -3573,13 +3536,11 @@ class Ratios:
         """
         if trailing:
             sbc_ratio = efficiency_model.get_stock_based_compensation_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Stock Based Compensation", :],
                     trailing,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             sbc_ratio = efficiency_model.get_stock_based_compensation_ratio(
@@ -3643,7 +3604,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -3686,13 +3648,11 @@ class Ratios:
         """
         if trailing:
             deferred_revenue_ratio = efficiency_model.get_deferred_revenue_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Deferred Revenue", :],
                     trailing,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             deferred_revenue_ratio = efficiency_model.get_deferred_revenue_ratio(
@@ -3757,7 +3717,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                months (TTM) and 3 with annual data a three-year cumulative figure. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -3797,10 +3758,10 @@ class Ratios:
         | TSM  | 0.5351 | 0.4813 | 0.442  | 0.3303 | 0.3367 |
         """
         capex_intensity = efficiency_model.get_capex_intensity(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
             ),
-            self._sum_trailing(self._income_statement.loc[:, "Revenue", :], trailing),
+            trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
         )
 
         return finalize_dataset(
@@ -3862,8 +3823,9 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (cash flow statement
                 items) over. E.g. 4 with quarterly data gives the trailing twelve months (TTM)
-                and 3 with annual data a three-year cumulative figure. Defaults to None, which
-                uses single-period flows.
+                and 3 with annual data a three-year cumulative figure. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None,
+                which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -3905,10 +3867,10 @@ class Ratios:
         | TSM  | 2.011  | 2.492  | 1.7952 | 1.4424 | 1.8639 |
         """
         capex_to_depreciation = efficiency_model.get_capex_to_depreciation_ratio(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 trailing,
             ),
@@ -3972,8 +3934,9 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (cash flow statement
                 items) over. E.g. 4 with quarterly data gives the trailing twelve months (TTM)
-                and 3 with annual data a three-year cumulative figure. Defaults to None, which
-                uses single-period flows.
+                and 3 with annual data a three-year cumulative figure. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None,
+                which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4018,10 +3981,10 @@ class Ratios:
         | Total | 5.8355e+10 | 7.1905e+10 | 5.4705e+10 | 1.11376e+11 | 2.17847e+11 |
         """
         net_capital_expenditure = efficiency_model.get_net_capital_expenditure(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 trailing,
             ),
@@ -4085,9 +4048,10 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods the total assets are compared
-                over. E.g. 3 with annual data gives the growth over three years. Defaults to
-                None, which uses a year: 4 quarters with quarterly data and 1 year with annual
-                data.
+                over. E.g. 3 with annual data gives the growth over three years. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults
+                to None, which uses a year: 4 quarters with quarterly data and 1 year with
+                annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4136,7 +4100,7 @@ class Ratios:
         total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
 
         asset_growth = efficiency_model.get_asset_growth(
-            total_assets, total_assets.shift(window, axis=1)
+            total_assets, shift_periods(total_assets, window)
         )
 
         return finalize_dataset(
@@ -4255,7 +4219,7 @@ class Ratios:
             balance("Short Term Debt"),
             balance("Long Term Debt"),
             balance("Total Equity"),
-            balance("Total Assets").shift(1, axis=1),
+            shift_periods(balance("Total Assets"), 1),
         )
 
         return finalize_dataset(
@@ -4297,7 +4261,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -4480,7 +4445,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -4521,11 +4487,11 @@ class Ratios:
         """
         if trailing:
             current_ratio = liquidity_model.get_current_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Current Assets", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
                     ],
@@ -4594,7 +4560,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -4635,21 +4602,21 @@ class Ratios:
         """
         if trailing:
             quick_ratio = liquidity_model.get_quick_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Cash and Cash Equivalents", :
                     ],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Short Term Investments", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
                     ],
@@ -4716,7 +4683,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -4757,17 +4725,17 @@ class Ratios:
         """
         if trailing:
             cash_ratio = liquidity_model.get_cash_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Cash and Cash Equivalents", :
                     ],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Short Term Investments", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
                     ],
@@ -4832,7 +4800,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -4873,11 +4842,11 @@ class Ratios:
         """
         if trailing:
             working_capital = liquidity_model.get_working_capital(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Current Assets", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
                     ],
@@ -4943,10 +4912,10 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the flows over; the total current liabilities
-                stays that at the end of the last period. E.g. 4 with quarterly data gives the
-                trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
-                Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
-                data and single years with annual data.
+                stays that at the end of the last period. E.g. 4 with quarterly data gives the trailing twelve
+                months (TTM) and 3 with annual data a three-year cumulative figure. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -4990,7 +4959,7 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         operating_cash_flow_ratio = liquidity_model.get_operating_cash_flow_ratio(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                 trailing,
             ),
@@ -5048,7 +5017,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -5090,15 +5060,13 @@ class Ratios:
         if trailing:
             operating_cash_flow_sales_ratio = (
                 liquidity_model.get_operating_cash_flow_sales_ratio(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[
                             :, "Cash Flow from Operations", :
                         ],
                         trailing,
                     ),
-                    self._sum_trailing(
-                        self._income_statement.loc[:, "Revenue", :], trailing
-                    ),
+                    trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
                 )
             )
         else:
@@ -5163,6 +5131,7 @@ class Ratios:
             trailing (int, optional): The number of periods to sum the flows over; the short term debt
                 stays that at the end of the last period. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
                 data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -5202,7 +5171,7 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         short_term_coverage_ratio = liquidity_model.get_short_term_coverage_ratio(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                 trailing,
             ),
@@ -5278,7 +5247,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -5322,13 +5292,13 @@ class Ratios:
         # Daily expenditures count all cash costs: the cost of goods sold plus the operating
         # expenses, minus the non-cash depreciation and amortization charged to either of them.
         if trailing:
-            operating_expenses = self._sum_trailing(
+            operating_expenses = trailing_sum(
                 self._income_statement.loc[:, "Operating Expenses", :], trailing
             )
-            cost_of_goods_sold = self._sum_trailing(
+            cost_of_goods_sold = trailing_sum(
                 self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
             )
-            depreciation_and_amortization = self._sum_trailing(
+            depreciation_and_amortization = trailing_sum(
                 self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 trailing,
             )
@@ -5337,17 +5307,17 @@ class Ratios:
             ) / days
 
             defensive_interval_ratio = liquidity_model.get_defensive_interval_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Cash and Cash Equivalents", :
                     ],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Short Term Investments", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Accounts Receivable", :],
                     trailing,
                 ),
@@ -5409,7 +5379,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -5686,7 +5657,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -5728,11 +5700,9 @@ class Ratios:
         cost_of_goods_sold = self._income_statement.loc[:, "Cost of Goods Sold", :]
 
         if trailing:
-            cost_of_goods_sold = self._sum_trailing(cost_of_goods_sold, trailing)
+            cost_of_goods_sold = trailing_sum(cost_of_goods_sold, trailing)
             gross_margin = profitability_model.get_gross_margin(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
                 cost_of_goods_sold,
             )
         else:
@@ -5812,7 +5782,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -5853,12 +5824,10 @@ class Ratios:
         """
         if trailing:
             operating_margin = profitability_model.get_operating_margin(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Operating Income", :], trailing
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             operating_margin = profitability_model.get_operating_margin(
@@ -5917,7 +5886,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -5958,12 +5928,8 @@ class Ratios:
         """
         if trailing:
             net_profit_margin = profitability_model.get_net_profit_margin(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             net_profit_margin = profitability_model.get_net_profit_margin(
@@ -6026,7 +5992,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -6066,18 +6033,16 @@ class Ratios:
         """
         if trailing:
             ebitda_margin = profitability_model.get_ebitda_margin(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Operating Income", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[
                         :, "Depreciation and Amortization", :
                     ],
                     trailing,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             ebitda_margin = profitability_model.get_ebitda_margin(
@@ -6148,7 +6113,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -6189,10 +6155,10 @@ class Ratios:
         """
         if trailing:
             interest_burden_ratio = profitability_model.get_interest_burden_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Income Before Tax", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Operating Income", :], trailing
                 ),
             )
@@ -6252,7 +6218,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -6294,12 +6261,10 @@ class Ratios:
         if trailing:
             income_before_tax_profit_margin = (
                 profitability_model.get_income_before_tax_profit_margin(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Income Before Tax", :], trailing
                     ),
-                    self._sum_trailing(
-                        self._income_statement.loc[:, "Revenue", :], trailing
-                    ),
+                    trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
                 )
             )
         else:
@@ -6369,7 +6334,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -6410,12 +6376,12 @@ class Ratios:
         """
         # A tax rate is only meaningful on a pre-tax profit: with a loss the ratio flips sign, so
         # periods with zero or negative income before tax are NaN.
-        income_before_tax = self._sum_trailing(
+        income_before_tax = trailing_sum(
             self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
 
         effective_tax_rate = profitability_model.get_effective_tax_rate(
-            self._sum_trailing(
+            trailing_sum(
                 self._income_statement.loc[:, "Income Tax Expense", :], trailing
             ),
             income_before_tax.where(income_before_tax > 0),
@@ -6481,6 +6447,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -6525,10 +6492,8 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             return_on_assets = profitability_model.get_return_on_assets(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                ),
-                self._mean_trailing(
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Assets", :],
                     trailing + 1,
                 ),
@@ -6536,10 +6501,9 @@ class Ratios:
         else:
             return_on_assets = profitability_model.get_return_on_assets(
                 self._income_statement.loc[:, "Net Income", :],
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Total Assets", :].pipe(
+                    trailing_mean, 2
+                ),
             )
 
         return finalize_dataset(
@@ -6599,6 +6563,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -6641,11 +6606,11 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             cash_return_on_assets = profitability_model.get_cash_return_on_assets(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Assets", :],
                     trailing + 1,
                 ),
@@ -6653,10 +6618,9 @@ class Ratios:
         else:
             cash_return_on_assets = profitability_model.get_cash_return_on_assets(
                 self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Total Assets", :].pipe(
+                    trailing_mean, 2
+                ),
             )
 
         return finalize_dataset(
@@ -6729,6 +6693,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -6770,10 +6735,8 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             return_on_equity = profitability_model.get_return_on_equity(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                ),
-                self._mean_trailing(
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
                     trailing + 1,
                 ),
@@ -6782,10 +6745,9 @@ class Ratios:
         else:
             return_on_equity = profitability_model.get_return_on_equity(
                 self._income_statement.loc[:, "Net Income", :],
-                self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :]
-                .T.rolling(window=2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[
+                    :, "Total Shareholder Equity", :
+                ].pipe(trailing_mean, 2),
             )
 
         return finalize_dataset(
@@ -6851,6 +6813,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -6893,20 +6856,20 @@ class Ratios:
         if trailing:
             return_on_invested_capital = (
                 profitability_model.get_return_on_invested_capital(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Operating Income", :], trailing
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Income Tax Expense", :], trailing
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Income Before Tax", :], trailing
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Total Equity", :],
                         trailing + 1,
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Total Debt", :],
                         trailing + 1,
                     ),
@@ -6918,14 +6881,12 @@ class Ratios:
                     self._income_statement.loc[:, "Operating Income", :],
                     self._income_statement.loc[:, "Income Tax Expense", :],
                     self._income_statement.loc[:, "Income Before Tax", :],
-                    self._balance_sheet_statement.loc[:, "Total Equity", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
-                    self._balance_sheet_statement.loc[:, "Total Debt", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
+                    self._balance_sheet_statement.loc[:, "Total Equity", :].pipe(
+                        trailing_mean, 2
+                    ),
+                    self._balance_sheet_statement.loc[:, "Total Debt", :].pipe(
+                        trailing_mean, 2
+                    ),
                 )
             )
 
@@ -7013,6 +6974,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -7153,6 +7115,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -7290,6 +7253,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -7397,7 +7361,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -7436,13 +7401,11 @@ class Ratios:
         """
         if trailing:
             income_quality_ratio = profitability_model.get_income_quality_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                     trailing,
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
             )
         else:
             income_quality_ratio = profitability_model.get_income_quality_ratio(
@@ -7508,6 +7471,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -7550,14 +7514,14 @@ class Ratios:
         if trailing:
             return_on_tangible_assets = (
                 profitability_model.get_return_on_tangible_assets(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Net Income", :], trailing
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Total Assets", :],
                         trailing + 1,
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         get_goodwill_and_intangible_assets(
                             self._balance_sheet_statement
                         ),
@@ -7569,14 +7533,12 @@ class Ratios:
             return_on_tangible_assets = (
                 profitability_model.get_return_on_tangible_assets(
                     self._income_statement.loc[:, "Net Income", :],
-                    self._balance_sheet_statement.loc[:, "Total Assets", :]
-                    .T.rolling(2)
-                    .mean()
-                    .T,
-                    get_goodwill_and_intangible_assets(self._balance_sheet_statement)
-                    .T.rolling(2)
-                    .mean()
-                    .T,
+                    self._balance_sheet_statement.loc[:, "Total Assets", :].pipe(
+                        trailing_mean, 2
+                    ),
+                    get_goodwill_and_intangible_assets(
+                        self._balance_sheet_statement
+                    ).pipe(trailing_mean, 2),
                 )
             )
 
@@ -7641,7 +7603,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -7682,14 +7645,14 @@ class Ratios:
         if trailing:
             return_on_capital_employed = (
                 profitability_model.get_return_on_capital_employed(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Operating Income", :], trailing
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Total Assets", :],
                         trailing,
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[
                             :, "Total Current Liabilities", :
                         ],
@@ -7764,7 +7727,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -7805,10 +7769,8 @@ class Ratios:
         """
         if trailing:
             net_income_per_ebt = profitability_model.get_net_income_per_ebt(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                ),
-                self._sum_trailing(
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+                trailing_sum(
                     self._income_statement.loc[:, "Income Tax Expense", :], trailing
                 ),
             )
@@ -7870,7 +7832,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -7911,10 +7874,10 @@ class Ratios:
         if trailing:
             free_cash_flow_operating_cash_flow_ratio = (
                 profitability_model.get_free_cash_flow_operating_cash_flow_ratio(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[
                             :, "Cash Flow from Operations", :
                         ],
@@ -7982,7 +7945,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -8023,12 +7987,10 @@ class Ratios:
         """
         if trailing:
             free_cash_flow_margin = profitability_model.get_free_cash_flow_margin(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             free_cash_flow_margin = profitability_model.get_free_cash_flow_margin(
@@ -8091,7 +8053,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -8130,10 +8093,8 @@ class Ratios:
         """
         if trailing:
             tax_burden_ratio = profitability_model.get_tax_burden_ratio(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                ),
-                self._sum_trailing(
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+                trailing_sum(
                     self._income_statement.loc[:, "Income Before Tax", :], trailing
                 ),
             )
@@ -8196,7 +8157,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -8235,19 +8197,15 @@ class Ratios:
         """
         if trailing:
             EBT_to_EBIT = profitability_model.get_EBT_to_EBIT(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                )
-                + self._sum_trailing(
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing)
+                + trailing_sum(
                     self._income_statement.loc[:, "Income Tax Expense", :], trailing
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                )
-                + self._sum_trailing(
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing)
+                + trailing_sum(
                     self._income_statement.loc[:, "Income Tax Expense", :], trailing
                 )
-                + self._sum_trailing(
+                + trailing_sum(
                     self._income_statement.loc[:, "Interest Expense", :], trailing
                 ),
             )
@@ -8319,7 +8277,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -8358,18 +8317,14 @@ class Ratios:
         """
         if trailing:
             EBIT_to_revenue = profitability_model.get_EBIT_to_revenue(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                )
-                + self._sum_trailing(
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing)
+                + trailing_sum(
                     self._income_statement.loc[:, "Income Tax Expense", :], trailing
                 )
-                + self._sum_trailing(
+                + trailing_sum(
                     self._income_statement.loc[:, "Interest Expense", :], trailing
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             )
         else:
             EBIT_to_revenue = profitability_model.get_EBIT_to_revenue(
@@ -8436,7 +8391,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -8477,12 +8433,12 @@ class Ratios:
         """
         # A tax rate is only meaningful on a pre-tax profit: with a loss the ratio flips sign, so
         # periods with zero or negative income before tax are NaN.
-        income_before_tax = self._sum_trailing(
+        income_before_tax = trailing_sum(
             self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
 
         cash_tax_rate = profitability_model.get_cash_tax_rate(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Income Taxes Paid", :], trailing
             ),
             income_before_tax.where(income_before_tax > 0),
@@ -8548,7 +8504,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -8650,7 +8607,8 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the revenue and cost of goods
-                sold over; the total assets stay those at the end of the last period. Defaults to
+                sold over; the total assets stay those at the end of the last period. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses the trailing twelve months (4 quarters) with quarterly data and
                 single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -8696,8 +8654,8 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         gross_profitability = profitability_model.get_gross_profitability(
-            self._sum_trailing(self._income_statement.loc[:, "Revenue", :], trailing),
-            self._sum_trailing(
+            trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+            trailing_sum(
                 self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
             ),
             self._balance_sheet_statement.loc[:, "Total Assets", :],
@@ -8766,7 +8724,8 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the income statement items
-                over; the book equity stays that at the end of the last period. Defaults to None,
+                over; the book equity stays that at the end of the last period. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None,
                 which uses the trailing twelve months (4 quarters) with quarterly data and single
                 years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -8813,7 +8772,7 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         def flow(row: str) -> pd.DataFrame:
-            return self._sum_trailing(self._income_statement.loc[:, row, :], trailing)
+            return trailing_sum(self._income_statement.loc[:, row, :], trailing)
 
         operating_profitability = profitability_model.get_operating_profitability(
             flow("Revenue"),
@@ -8894,11 +8853,11 @@ class Ratios:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int, optional): The number of periods to sum the income statement items
-                over, which is also the number of periods the balance changes span and the
-                number of periods the total assets are taken before. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+            trailing (int, optional): The number of periods to sum the income statement items over,
+                which is also the number of periods the balance changes span and the number of
+                periods the total assets are taken before. The window counts calendar periods, so a
+                period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -8948,13 +8907,13 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         def flow(row: str) -> pd.DataFrame:
-            return self._sum_trailing(self._income_statement.loc[:, row, :], trailing)
+            return trailing_sum(self._income_statement.loc[:, row, :], trailing)
 
         # The balances change over the same window as the flows: a year on annual data and,
         # with the default trailing twelve months, the four quarters before on quarterly data.
         # The total assets are those at the start of that window, as in Ball et al. (2016).
         def change(balance: pd.DataFrame) -> pd.DataFrame:
-            return balance.diff(trailing or 1, axis=1)
+            return balance - shift_periods(balance, trailing or 1)
 
         def balance(row: str) -> pd.DataFrame:
             return self._balance_sheet_statement.loc[:, row, :]
@@ -8973,7 +8932,7 @@ class Ratios:
                 ),
                 change(balance("Accounts Payable")),
                 change(balance("Accrued Expenses")),
-                balance("Total Assets").shift(trailing or 1, axis=1),
+                shift_periods(balance("Total Assets"), trailing or 1),
             )
         )
 
@@ -9035,7 +8994,8 @@ class Ratios:
                 period ends that open and close those periods, as for the return on invested
                 capital, so trailing=1 equals the default average of the opening and closing
                 balance. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data) against
                 the average of the opening and closing invested capital.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -9083,13 +9043,13 @@ class Ratios:
 
         cash_return_on_invested_capital = (
             profitability_model.get_cash_return_on_invested_capital(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Equity", :], window
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Debt", :], window
                 ),
             )
@@ -9153,7 +9113,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                months (TTM) and 3 with annual data a three-year cumulative figure. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -9193,12 +9154,10 @@ class Ratios:
         | NFLX | -0.0258 |   0.3603 | 1.2807 | 0.7945 | 0.8616 |
         """
         free_cash_flow_conversion = profitability_model.get_free_cash_flow_conversion(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
             ),
-            self._sum_trailing(
-                self._income_statement.loc[:, "Net Income", :], trailing
-            ),
+            trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
         )
 
         return finalize_dataset(
@@ -9257,7 +9216,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                months (TTM) and 3 with annual data a three-year cumulative figure. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -9298,13 +9258,13 @@ class Ratios:
         """
         free_cash_flow_to_ebitda = (
             profitability_model.get_free_cash_flow_to_ebitda_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Operating Income", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[
                         :, "Depreciation and Amortization", :
                     ],
@@ -9372,8 +9332,10 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the net income and cash
-                flow from operations over. Defaults to None, which uses the trailing twelve
-                months (4 quarters) with quarterly data and single years with annual data.
+                flow from operations over. The window counts calendar periods, so a period
+                without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual
+                data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -9418,10 +9380,8 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         percent_accruals = profitability_model.get_percent_accruals(
-            self._sum_trailing(
-                self._income_statement.loc[:, "Net Income", :], trailing
-            ),
-            self._sum_trailing(
+            trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
             ),
         )
@@ -9467,7 +9427,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -9704,7 +9665,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -9743,10 +9705,10 @@ class Ratios:
         """
         if trailing:
             debt_to_assets_ratio = solvency_model.get_debt_to_assets_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
                 ),
             )
@@ -9811,7 +9773,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -9854,20 +9817,20 @@ class Ratios:
 
         if trailing:
             asset_coverage_ratio = solvency_model.get_asset_coverage_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
                 ),
-                self._mean_trailing(intangible_assets, trailing),
-                self._mean_trailing(
+                trailing_mean(intangible_assets, trailing),
+                trailing_mean(
                     self._balance_sheet_statement.loc[
                         :, "Total Current Liabilities", :
                     ],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Short Term Debt", :], trailing
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
                 ),
             )
@@ -9942,7 +9905,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -9981,10 +9945,10 @@ class Ratios:
         """
         if trailing:
             debt_to_equity_ratio = solvency_model.get_debt_to_equity_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Equity", :], trailing
                 ),
             )
@@ -10054,7 +10018,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -10093,10 +10058,10 @@ class Ratios:
         """
         if trailing:
             interest_coverage_ratio = solvency_model.get_interest_coverage_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Operating Income", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Interest Expense", :], trailing
                 ),
             )
@@ -10167,6 +10132,7 @@ class Ratios:
                 period ends that open and close those periods, so trailing=1 equals the default
                 average of the opening and closing balance. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses single-period flows (per quarter and not annualized
                 with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -10208,25 +10174,23 @@ class Ratios:
         # periods, as the default averages the opening and closing balance of one period.
         if trailing:
             equity_multiplier = solvency_model.get_equity_multiplier(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Assets", :],
                     trailing + 1,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Equity", :],
                     trailing + 1,
                 ),
             )
         else:
             equity_multiplier = solvency_model.get_equity_multiplier(
-                self._balance_sheet_statement.loc[:, "Total Assets", :]
-                .T.rolling(2)
-                .mean()
-                .T,
-                self._balance_sheet_statement.loc[:, "Total Equity", :]
-                .T.rolling(2)
-                .mean()
-                .T,
+                self._balance_sheet_statement.loc[:, "Total Assets", :].pipe(
+                    trailing_mean, 2
+                ),
+                self._balance_sheet_statement.loc[:, "Total Equity", :].pipe(
+                    trailing_mean, 2
+                ),
             )
 
         return finalize_dataset(
@@ -10290,7 +10254,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -10334,19 +10299,19 @@ class Ratios:
         if trailing:
             debt_service_coverage_ratio = (
                 solvency_model.get_debt_service_coverage_ratio(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Operating Income", :], trailing
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[
                             :, "Depreciation and Amortization", :
                         ],
                         trailing,
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Interest Expense", :], trailing
                     ),
-                    self._mean_trailing(
+                    trailing_mean(
                         self._balance_sheet_statement.loc[:, "Short Term Debt", :],
                         trailing,
                     ),
@@ -10431,9 +10396,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -10480,7 +10445,7 @@ class Ratios:
         )
 
         # The free cash flow is summed over the trailing periods before it is spread over the days.
-        free_cash_flow = self._sum_trailing(
+        free_cash_flow = trailing_sum(
             self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
         )
 
@@ -10575,6 +10540,7 @@ class Ratios:
             trailing (int, optional): The number of periods to sum the flows over; the net debt
                 stays that at the end of the last period. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
                 data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -10617,10 +10583,10 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         net_debt_to_ebitda_ratio = solvency_model.get_net_debt_to_ebitda_ratio(
-            self._sum_trailing(
+            trailing_sum(
                 self._income_statement.loc[:, "Operating Income", :], trailing
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 trailing,
             ),
@@ -10684,7 +10650,8 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of period ends to average the net debt and the
-                equity over. E.g. 4 with quarterly data averages the last four quarter ends. Defaults
+                equity over. E.g. 4 with quarterly data averages the last four quarter ends. The
+                window counts calendar periods, so a period without a report makes it NaN. Defaults
                 to None, which uses the balances at the end of each period.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -10722,10 +10689,10 @@ class Ratios:
         | VZ   | 2.1035 | 1.8789 | 1.8431 | 1.6322 | 1.5377 |
         """
         net_debt_to_equity_ratio = solvency_model.get_net_debt_to_equity_ratio(
-            self._mean_trailing(
+            trailing_mean(
                 self._balance_sheet_statement.loc[:, "Net Debt", :], trailing
             ),
-            self._mean_trailing(
+            trailing_mean(
                 self._balance_sheet_statement.loc[:, "Total Equity", :], trailing
             ),
         )
@@ -10788,6 +10755,7 @@ class Ratios:
             trailing (int, optional): The number of periods to sum the flows over; the total debt
                 stays that at the end of the last period. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
                 data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -10831,10 +10799,10 @@ class Ratios:
 
         gross_debt_to_ebitda_ratio = solvency_model.get_gross_debt_to_ebitda_ratio(
             self._balance_sheet_statement.loc[:, "Total Debt", :],
-            self._sum_trailing(
+            trailing_sum(
                 self._income_statement.loc[:, "Operating Income", :], trailing
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 trailing,
             ),
@@ -10892,6 +10860,7 @@ class Ratios:
             trailing (int, optional): The number of periods to sum the flows over; the total debt
                 stays that at the end of the last period. E.g. 4 with quarterly data gives the
                 trailing twelve months (TTM) and 3 with annual data a three-year cumulative figure.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which uses the trailing twelve months (4 quarters) with quarterly
                 data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -10934,7 +10903,7 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         cash_flow_coverage_ratio = solvency_model.get_cash_flow_coverage_ratio(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                 trailing,
             ),
@@ -10994,7 +10963,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -11033,11 +11003,11 @@ class Ratios:
         """
         if trailing:
             capex_coverage_ratio = solvency_model.get_capex_coverage_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                     trailing,
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
                 ),
             )
@@ -11102,7 +11072,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -11142,17 +11113,17 @@ class Ratios:
         if trailing:
             dividend_capex_coverage_ratio = (
                 solvency_model.get_dividend_capex_coverage_ratio(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[
                             :, "Cash Flow from Operations", :
                         ],
                         trailing,
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[:, "Capital Expenditure", :],
                         trailing,
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
                     ),
                 )
@@ -11219,7 +11190,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -11258,10 +11230,10 @@ class Ratios:
         """
         if trailing:
             debt_to_capital_ratio = solvency_model.get_debt_to_capital_ratio(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Equity", :], trailing
                 ),
             )
@@ -11319,7 +11291,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -11362,10 +11335,10 @@ class Ratios:
         if trailing:
             preferred_dividend_coverage_ratio = (
                 solvency_model.get_preferred_dividend_coverage_ratio(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Net Income", :], trailing
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :],
                         trailing,
                     ),
@@ -11439,7 +11412,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -11479,10 +11453,10 @@ class Ratios:
         if trailing:
             interest_paid_to_expense_ratio = (
                 solvency_model.get_interest_paid_to_expense_ratio(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[:, "Interest Paid", :], trailing
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._income_statement.loc[:, "Interest Expense", :], trailing
                     ),
                 )
@@ -11552,7 +11526,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                months (TTM) and 3 with annual data a three-year cumulative figure. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -11592,14 +11567,14 @@ class Ratios:
         | UNP |  9.9793 |  9.5696 |  8.5075 |  9.5437 | 9.3995 |
         """
         ebitda_interest_coverage = solvency_model.get_ebitda_interest_coverage_ratio(
-            self._sum_trailing(
+            trailing_sum(
                 self._income_statement.loc[:, "Operating Income", :], trailing
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
                 trailing,
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._income_statement.loc[:, "Interest Expense", :], trailing
             ),
         )
@@ -11659,7 +11634,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                months (TTM) and 3 with annual data a three-year cumulative figure. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -11700,20 +11676,20 @@ class Ratios:
         """
         ebitda_minus_capex_interest_coverage = (
             solvency_model.get_ebitda_minus_capex_interest_coverage_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Operating Income", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[
                         :, "Depreciation and Amortization", :
                     ],
                     trailing,
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Capital Expenditure", :],
                     trailing,
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Interest Expense", :], trailing
                 ),
             )
@@ -11775,7 +11751,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM) and 3 with annual data a three-year cumulative figure. Defaults to
+                months (TTM) and 3 with annual data a three-year cumulative figure. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -11815,14 +11792,14 @@ class Ratios:
         | UNP | 10.8344 | 10.8806 |  8.78   |  9.481  |   8.5004 |
         """
         cash_interest_coverage = solvency_model.get_cash_interest_coverage_ratio(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                 trailing,
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Interest Paid", :], trailing
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Income Taxes Paid", :], trailing
             ),
         )
@@ -11891,9 +11868,9 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the flows over; the total debt
-                stays that at the end of the last period. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                stays that at the end of the last period. The window counts calendar periods, so
+                a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -11938,23 +11915,23 @@ class Ratios:
 
         funds_from_operations_to_debt = (
             solvency_model.get_funds_from_operations_to_debt_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Operating Income", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[
                         :, "Depreciation and Amortization", :
                     ],
                     trailing,
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Stock Based Compensation", :],
                     trailing,
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Interest Paid", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Income Taxes Paid", :],
                     trailing,
                 ),
@@ -12022,9 +11999,9 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the flows over; the total debt
-                stays that at the end of the last period. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                stays that at the end of the last period. The window counts calendar periods, so
+                a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12069,18 +12046,18 @@ class Ratios:
 
         discretionary_cash_flow_to_debt = (
             solvency_model.get_discretionary_cash_flow_to_debt_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Cash Flow from Operations", :],
                     trailing,
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Capital Expenditure", :],
                     trailing,
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
                 ),
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Common Stock Purchased", :],
                     trailing,
                 ),
@@ -12147,7 +12124,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the flows over before their
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
-                with those a year earlier. Defaults to None, which uses single-period flows.
+                with those a year earlier. The window counts calendar periods, so a period
+                without a report makes it NaN. Defaults to None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12186,10 +12164,10 @@ class Ratios:
         | F    | 29.0263 | 1.7165 | -1.4021 | -1.0535 | -40.905  |
         """
         degree_of_operating_leverage = solvency_model.get_degree_of_leverage(
-            self._sum_trailing(
+            trailing_sum(
                 self._income_statement.loc[:, "Operating Income", :], trailing
             ),
-            self._sum_trailing(self._income_statement.loc[:, "Revenue", :], trailing),
+            trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             lag=4 if self._quarterly else 1,
         )
 
@@ -12253,7 +12231,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the flows over before their
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
-                with those a year earlier. Defaults to None, which uses single-period flows.
+                with those a year earlier. The window counts calendar periods, so a period
+                without a report makes it NaN. Defaults to None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12292,10 +12271,8 @@ class Ratios:
         | F    | 7.1557 | -4.0617 | -19.857  | -6.6974 |   4.7545 |
         """
         degree_of_financial_leverage = solvency_model.get_degree_of_leverage(
-            self._sum_trailing(
-                self._income_statement.loc[:, "Net Income", :], trailing
-            ),
-            self._sum_trailing(
+            trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+            trailing_sum(
                 self._income_statement.loc[:, "Operating Income", :], trailing
             ),
             lag=4 if self._quarterly else 1,
@@ -12358,7 +12335,8 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the flows over before their
                 changes are compared, e.g. 4 with quarterly data compares trailing twelve months
-                with those a year earlier. Defaults to None, which uses single-period flows.
+                with those a year earlier. The window counts calendar periods, so a period
+                without a report makes it NaN. Defaults to None, which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -12397,10 +12375,8 @@ class Ratios:
         | F    | 207.703  | -6.9718 | 27.8421 |  7.0554 | -194.484  |
         """
         degree_of_total_leverage = solvency_model.get_degree_of_leverage(
-            self._sum_trailing(
-                self._income_statement.loc[:, "Net Income", :], trailing
-            ),
-            self._sum_trailing(self._income_statement.loc[:, "Revenue", :], trailing),
+            trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+            trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
             lag=4 if self._quarterly else 1,
         )
 
@@ -12448,7 +12424,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -12721,6 +12698,8 @@ class Ratios:
             include_dividends (bool): Whether to deduct preferred dividends from net income.
             diluted (bool): Whether to use the diluted weighted average shares.
             trailing (int | None): The number of periods to sum the earnings over, or None.
+                The window counts calendar periods, so a period without a report makes it
+                NaN.
 
         Returns:
             pd.DataFrame: The earnings per share with the tickers as index and the periods as
@@ -12735,7 +12714,7 @@ class Ratios:
         if trailing:
             # Preferred Dividends Paid is reported as a negative cash outflow, so the magnitude is taken before it is subtracted from Net Income.  # noqa: E501
             dividends = (
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Preferred Dividends Paid", :],
                     trailing,
                 ).abs()
@@ -12744,9 +12723,7 @@ class Ratios:
             )
 
             earnings_per_share = valuation_model.get_earnings_per_share(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
                 dividends,
                 average_shares,
             )
@@ -12815,7 +12792,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -12909,7 +12887,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -12956,9 +12935,7 @@ class Ratios:
 
         if trailing:
             revenue_per_share = valuation_model.get_revenue_per_share(
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Revenue", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
                 average_shares,
             )
         else:
@@ -13035,9 +13012,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -13422,11 +13399,8 @@ class Ratios:
         trailing_metric = 4 if self._quarterly else 1
 
         if use_ebitda_growth_rate:
-            growth_rate = (
-                self._income_statement.loc[:, "EBITDA", :]
-                .T.rolling(trailing_metric)
-                .sum()
-                .T
+            growth_rate = self._income_statement.loc[:, "EBITDA", :].pipe(
+                trailing_sum, trailing_metric
             )
 
             growth_rate = calculate_growth(
@@ -13946,7 +13920,7 @@ class Ratios:
         reported_eps = self._income_statement.loc[:, "EPS Diluted", :]
 
         trailing_reported_eps = (
-            reported_eps.T.rolling(4, min_periods=4).sum().T.where(reported_eps.notna())
+            trailing_sum(reported_eps, 4).where(reported_eps.notna())
             if self._quarterly
             else reported_eps
         )
@@ -14042,7 +14016,8 @@ class Ratios:
 
         Args:
             diluted (bool): Whether to use the diluted weighted average shares.
-            trailing (int | None): The number of period ends to average over, or None.
+            trailing (int | None): The number of period ends to average over, or None. The
+                window counts calendar periods, so a period without a report makes it NaN.
 
         Returns:
             pd.DataFrame: The book value per share with the tickers as index and the periods as
@@ -14056,14 +14031,14 @@ class Ratios:
 
         if trailing:
             book_value_per_share = valuation_model.get_book_value_per_share(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Preferred Stock", :], trailing
                 ),
-                self._mean_trailing(average_shares, trailing),
+                trailing_mean(average_shares, trailing),
             )
         else:
             book_value_per_share = valuation_model.get_book_value_per_share(
@@ -14114,7 +14089,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -14335,7 +14311,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -14382,13 +14359,13 @@ class Ratios:
 
         if trailing:
             interest_debt_per_share = valuation_model.get_interest_debt_per_share(
-                self._sum_trailing(
+                trailing_sum(
                     self._income_statement.loc[:, "Interest Expense", :], trailing
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
                 ),
-                self._mean_trailing(average_shares, trailing),
+                trailing_mean(average_shares, trailing),
             )
         else:
             interest_debt_per_share = valuation_model.get_interest_debt_per_share(
@@ -14456,7 +14433,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -14504,7 +14482,7 @@ class Ratios:
 
         if trailing:
             capex_per_share = valuation_model.get_capex_per_share(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
                 ),
                 average_shares,
@@ -14583,9 +14561,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -14812,9 +14790,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -14864,7 +14842,7 @@ class Ratios:
 
         # Dividends Paid is reported as a negative cash outflow, so the magnitude is used. It is
         # summed over the trailing periods before it is spread over the days.
-        dividends_paid = self._sum_trailing(
+        dividends_paid = trailing_sum(
             abs(self._cash_flow_statement.loc[:, "Dividends Paid", :]), trailing
         )
 
@@ -14954,9 +14932,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15002,7 +14980,7 @@ class Ratios:
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
-        cash_flow_from_operations = self._sum_trailing(
+        cash_flow_from_operations = trailing_sum(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :], trailing
         )
 
@@ -15076,9 +15054,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15124,7 +15102,7 @@ class Ratios:
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
-        free_cash_flow = self._sum_trailing(
+        free_cash_flow = trailing_sum(
             self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
         )
 
@@ -15205,9 +15183,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15253,9 +15231,7 @@ class Ratios:
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
-        revenue = self._sum_trailing(
-            self._income_statement.loc[:, "Revenue", :], trailing
-        )
+        revenue = trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing)
 
         if show_daily:
             revenue = map_period_data_to_daily_data(
@@ -15742,9 +15718,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15786,9 +15762,7 @@ class Ratios:
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
-        revenue = self._sum_trailing(
-            self._income_statement.loc[:, "Revenue", :], trailing
-        )
+        revenue = trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing)
 
         if show_daily:
             revenue = map_period_data_to_daily_data(
@@ -15869,9 +15843,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -15913,10 +15887,10 @@ class Ratios:
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
-        operating_income = self._sum_trailing(
+        operating_income = trailing_sum(
             self._income_statement.loc[:, "Operating Income", :], trailing
         )
-        depreciation_and_amortization = self._sum_trailing(
+        depreciation_and_amortization = trailing_sum(
             self._cash_flow_statement.loc[:, "Depreciation and Amortization", :],
             trailing,
         )
@@ -15998,9 +15972,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16042,7 +16016,7 @@ class Ratios:
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
-        cash_flow_from_operations = self._sum_trailing(
+        cash_flow_from_operations = trailing_sum(
             self._cash_flow_statement.loc[:, "Cash Flow from Operations", :], trailing
         )
 
@@ -16124,9 +16098,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16242,7 +16216,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -16277,12 +16252,10 @@ class Ratios:
         """
         if trailing:
             payout_ratio = valuation_model.get_dividend_payout_ratio(
-                self._sum_trailing(
+                trailing_sum(
                     self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
                 ),
-                self._sum_trailing(
-                    self._income_statement.loc[:, "Net Income", :], trailing
-                ),
+                trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
             )
         else:
             payout_ratio = valuation_model.get_dividend_payout_ratio(
@@ -16343,7 +16316,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -16436,7 +16410,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -16472,13 +16447,13 @@ class Ratios:
         # Goodwill and the other intangible assets are both deducted, so only the assets with a
         # physical or financial substance remain.
         tangible_asset_value = valuation_model.get_tangible_asset_value(
-            self._mean_trailing(
+            trailing_mean(
                 self._balance_sheet_statement.loc[:, "Total Assets", :], trailing
             ),
-            self._mean_trailing(
+            trailing_mean(
                 self._balance_sheet_statement.loc[:, "Total Liabilities", :], trailing
             ),
-            self._mean_trailing(
+            trailing_mean(
                 get_goodwill_and_intangible_assets(self._balance_sheet_statement),
                 trailing,
             ),
@@ -16537,7 +16512,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -16572,11 +16548,11 @@ class Ratios:
         """
         if trailing:
             net_current_asset_value = valuation_model.get_net_current_asset_value(
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Current Assets", :],
                     trailing,
                 ),
-                self._mean_trailing(
+                trailing_mean(
                     self._balance_sheet_statement.loc[:, "Total Liabilities", :],
                     trailing,
                 ),
@@ -16646,9 +16622,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16690,7 +16666,7 @@ class Ratios:
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
-        ebit = self._sum_trailing(
+        ebit = trailing_sum(
             self._income_statement.loc[:, "Operating Income", :], trailing
         )
 
@@ -16764,9 +16740,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16807,7 +16783,7 @@ class Ratios:
 
         # The flows are summed over the trailing periods first and only then spread over the
         # days, so a trailing window always covers periods and never days.
-        free_cash_flow = self._sum_trailing(
+        free_cash_flow = trailing_sum(
             self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
         )
 
@@ -16886,9 +16862,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -16933,10 +16909,10 @@ class Ratios:
         market_cap = self.get_market_cap(diluted=diluted)
 
         buyback_yield = valuation_model.get_buyback_yield(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Common Stock Purchased", :], trailing
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Common Stock Issued", :], trailing
             ),
             market_cap,
@@ -16997,9 +16973,9 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses the
-                trailing twelve months (4 quarters) with quarterly data and single years with
-                annual data.
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses the trailing
+                twelve months (4 quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17113,7 +17089,8 @@ class Ratios:
             trailing (int, optional): The number of periods to sum flows (income and cash flow
                 statement items) over, with balance sheet items averaged over the same number of
                 period ends. E.g. 4 with quarterly data gives the trailing twelve months (TTM) and 3
-                with annual data a three-year cumulative figure. Defaults to None, which uses
+                with annual data a three-year cumulative figure. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses
                 single-period flows (per quarter and not annualized with quarterly data).
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -17155,10 +17132,10 @@ class Ratios:
         if trailing:
             sbc_adjusted_free_cash_flow = (
                 valuation_model.get_sbc_adjusted_free_cash_flow(
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
                     ),
-                    self._sum_trailing(
+                    trailing_sum(
                         self._cash_flow_statement.loc[:, "Stock Based Compensation", :],
                         trailing,
                     ),
@@ -17227,8 +17204,9 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum flows (cash flow statement
                 items) over. E.g. 4 with quarterly data gives the trailing twelve months (TTM)
-                and 3 with annual data a three-year cumulative figure. Defaults to None, which
-                uses single-period flows.
+                and 3 with annual data a three-year cumulative figure. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None,
+                which uses single-period flows.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17267,10 +17245,10 @@ class Ratios:
         | VZ  | 0.5425 | 1.0388 | 0.5893 | 0.5945 | 0.5835 |
         """
         free_cash_flow_payout_ratio = valuation_model.get_free_cash_flow_payout_ratio(
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
             ),
-            self._sum_trailing(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Free Cash Flow", :], trailing
             ),
         )
@@ -17598,8 +17576,10 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods the shares are compared over.
-                E.g. 5 with annual data gives the five-year issuance. Defaults to None, which
-                uses a year: 4 quarters with quarterly data and 1 year with annual data.
+                E.g. 5 with annual data gives the five-year issuance. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which uses a year: 4 quarters with quarterly data and 1 year with
+                annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17650,7 +17630,7 @@ class Ratios:
         )
 
         net_share_issuance = valuation_model.get_net_share_issuance(
-            shares, shares.shift(window, axis=1)
+            shares, shift_periods(shares, window)
         )
 
         return finalize_dataset(
@@ -17718,8 +17698,9 @@ class Ratios:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int, optional): The number of periods of the window. E.g. 1 with annual
-                data gives the issuance over a year. Defaults to None, which uses five years:
-                20 quarters with quarterly data and 5 years with annual data.
+                data gives the issuance over a year. The window counts calendar periods, so a
+                period without a report makes it NaN. Defaults to None, which uses five
+                years: 20 quarters with quarterly data and 5 years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17784,9 +17765,9 @@ class Ratios:
 
         composite_equity_issuance = valuation_model.get_composite_equity_issuance(
             market_cap,
-            market_cap.shift(window, axis=1),
+            shift_periods(market_cap, window),
             total_return_price,
-            total_return_price.shift(window, axis=1),
+            shift_periods(total_return_price, window),
         )
 
         return finalize_dataset(
@@ -17854,8 +17835,9 @@ class Ratios:
                 values. Defaults to False.
             trailing (int, optional): The number of periods to sum the cash flow statement
                 items over, with the total assets averaged over the start and the end of that
-                window. Defaults to None, which uses the trailing twelve months (4 quarters)
-                with quarterly data and single years with annual data.
+                window. The window counts calendar periods, so a period without a report
+                makes it NaN. Defaults to None, which uses the trailing twelve months (4
+                quarters) with quarterly data and single years with annual data.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -17900,9 +17882,7 @@ class Ratios:
         trailing = self._get_valuation_trailing(trailing)
 
         def flow(row: str) -> pd.DataFrame:
-            return self._sum_trailing(
-                self._cash_flow_statement.loc[:, row, :], trailing
-            )
+            return trailing_sum(self._cash_flow_statement.loc[:, row, :], trailing)
 
         # The issuance and repurchases of common and preferred stock and of long and short
         # term debt are taken line by line: the aggregate net issuance lines of the data
@@ -17915,7 +17895,7 @@ class Ratios:
             + flow("Net Preferred Stock Issued"),
             flow("Dividends Paid"),
             flow("Long Term Debt Issued") + flow("Short Term Debt Issued"),
-            (total_assets + total_assets.shift(trailing or 1, axis=1)) / 2,
+            (total_assets + shift_periods(total_assets, trailing or 1)) / 2,
         )
 
         return finalize_dataset(

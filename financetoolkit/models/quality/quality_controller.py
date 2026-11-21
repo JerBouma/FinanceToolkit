@@ -5,7 +5,7 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
-from financetoolkit.models import helpers
+from financetoolkit.helpers import trailing_sum
 from financetoolkit.models.quality import beneish_model, piotroski_model, quality_model
 from financetoolkit.performance.performance_model import get_beta
 from financetoolkit.utilities.dataframe_model import concat_frames, filter_shown_columns
@@ -104,9 +104,10 @@ class QualityModels:
         Also known as: Piotroski F-score, financial strength, quality score.
 
         Args:
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
-                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
-                yearly statements.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to None, which
+                is 4 on quarterly data (a trailing twelve months), as the score was estimated on yearly
+                statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -150,19 +151,17 @@ class QualityModels:
         # Every change-based criterion compares with the same period a year earlier: the previous column on yearly data and four quarters back on quarterly data, so seasonality does not drive the signal.  # noqa: E501
         comparison_lag = 4 if self._quarterly else 1
 
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
-        operating_cashflow = helpers.trailing_sum(
+        operating_cashflow = trailing_sum(
             self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
-        revenue = helpers.trailing_sum(
-            self._income_statement.loc[:, "Revenue", :], trailing
-        )
-        cost_of_goods_sold = helpers.trailing_sum(
+        revenue = trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing)
+        cost_of_goods_sold = trailing_sum(
             self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
         )
-        common_stock_issued = helpers.trailing_sum(
+        common_stock_issued = trailing_sum(
             self._cash_flow_statement.loc[:, "Common Stock Issued", :], trailing
         )
         # Piotroski (2000) takes the balance sheet items at the fiscal period end, so they stay point in time while the flows above cover the trailing window.  # noqa: E501
@@ -373,9 +372,10 @@ class QualityModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to
-                None, which is 4 on quarterly data (a trailing twelve months), as the score was estimated on
-                yearly statements.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to None, which
+                is 4 on quarterly data (a trailing twelve months), as the score was estimated on yearly
+                statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -436,10 +436,8 @@ class QualityModels:
 
         # Beneish (1999) takes the balance sheet items at the fiscal period end, so they stay point in time while the flows cover the trailing window.  # noqa: E501
         net_receivables = self._balance_sheet_statement.loc[:, "Net Receivables", :]
-        revenue = helpers.trailing_sum(
-            self._income_statement.loc[:, "Revenue", :], trailing
-        )
-        cost_of_goods_sold = helpers.trailing_sum(
+        revenue = trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing)
+        cost_of_goods_sold = trailing_sum(
             self._income_statement.loc[:, "Cost of Goods Sold", :], trailing
         )
         total_current_assets = self._balance_sheet_statement.loc[
@@ -449,10 +447,10 @@ class QualityModels:
             :, "Property, Plant and Equipment", :
         ]
         total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
-        depreciation_and_amortization = helpers.trailing_sum(
+        depreciation_and_amortization = trailing_sum(
             self._income_statement.loc[:, "Depreciation and Amortization", :], trailing
         )
-        selling_general_and_administrative_expenses = helpers.trailing_sum(
+        selling_general_and_administrative_expenses = trailing_sum(
             self._income_statement.loc[
                 :, "Selling, General and Administrative Expenses", :
             ],
@@ -462,10 +460,10 @@ class QualityModels:
             :, "Total Current Liabilities", :
         ]
         long_term_debt = self._balance_sheet_statement.loc[:, "Long Term Debt", :]
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
-        cash_flow_from_operations = helpers.trailing_sum(
+        cash_flow_from_operations = trailing_sum(
             self._cash_flow_statement.loc[:, "Operating Cash Flow", :], trailing
         )
 
@@ -557,7 +555,7 @@ class QualityModels:
         """
 
         def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
-            return helpers.trailing_sum(self._rows(statement, row), trailing)
+            return trailing_sum(self._rows(statement, row), trailing)
 
         balance_rows = [
             "Total Assets",
@@ -634,9 +632,10 @@ class QualityModels:
         Args:
             diluted (bool, optional): Whether to use the diluted share count for the market
                 capitalization. Defaults to True.
-            trailing (int | None, optional): Sum the operating income over this many
-                periods (e.g. 4 quarters, a trailing twelve months). The enterprise value and
-                the capital are taken at the period end. Defaults to None, which is 4 for
+            trailing (int | None, optional): Sum the operating income over this many periods
+                (e.g. 4 quarters, a trailing twelve months). The enterprise value and the
+                capital are taken at the period end. The window counts calendar periods, so a
+                period without a report makes it NaN. Defaults to None, which is 4 for
                 quarterly data (a year of operating income) and 1 otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
@@ -764,9 +763,10 @@ class QualityModels:
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
                 quarters, a trailing twelve months) and compare with the values `trailing`
                 periods back, so that with quarterly data every change is year over year.
-                Balance sheet items are taken at the period end. Defaults to None, which is
-                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
-                compare quarter over quarter.
+                Balance sheet items are taken at the period end. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                is 4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data
+                to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -889,9 +889,10 @@ class QualityModels:
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
                 quarters, a trailing twelve months) and compare with the values `trailing`
                 periods back, so that with quarterly data every change is year over year.
-                Balance sheet items are taken at the period end. Defaults to None, which is
-                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
-                compare quarter over quarter.
+                Balance sheet items are taken at the period end. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                is 4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data
+                to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1010,9 +1011,10 @@ class QualityModels:
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
                 quarters, a trailing twelve months) and compare with the values `trailing`
                 periods back, so that with quarterly data every change is year over year.
-                Balance sheet items are taken at the period end. Defaults to None, which is
-                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
-                compare quarter over quarter.
+                Balance sheet items are taken at the period end. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                is 4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data
+                to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1129,7 +1131,8 @@ class QualityModels:
         Args:
             growth_years (int, optional): The number of years over which the growth and the
                 earnings volatility are measured. Defaults to 5, as in the paper.
-            trailing (int | None, optional): Sum the flows over this many periods. Defaults to
+            trailing (int | None, optional): Sum the flows over this many periods. The window
+                counts calendar periods, so a period without a report makes it NaN. Defaults to
                 None, which is 4 for quarterly data (a trailing twelve months) and 1 otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
@@ -1266,10 +1269,8 @@ class QualityModels:
             return np.log(frame.where(frame > 0) / previous.where(previous > 0))
 
         cash_flow = self._cash_flow_statement
-        dividends = helpers.trailing_sum(
-            self._rows(cash_flow, "Dividends Paid"), trailing
-        )
-        buybacks = helpers.trailing_sum(
+        dividends = trailing_sum(self._rows(cash_flow, "Dividends Paid"), trailing)
+        buybacks = trailing_sum(
             self._rows(cash_flow, "Common Stock Purchased"), trailing
         )
         net_payout = (
@@ -1350,9 +1351,10 @@ class QualityModels:
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
                 quarters, a trailing twelve months) and compare with the values `trailing`
                 periods back, so that with quarterly data every change is year over year.
-                Balance sheet items are taken at the period end. Defaults to None, which is
-                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
-                compare quarter over quarter.
+                Balance sheet items are taken at the period end. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                is 4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data
+                to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -1480,9 +1482,10 @@ class QualityModels:
             trailing (int | None, optional): Sum the flows over this many periods (e.g. 4
                 quarters, a trailing twelve months) and compare with the values `trailing`
                 periods back, so that with quarterly data every change is year over year.
-                Balance sheet items are taken at the period end. Defaults to None, which is
-                4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data to
-                compare quarter over quarter.
+                Balance sheet items are taken at the period end. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                is 4 for quarterly data (a year) and 1 otherwise; pass 1 for quarterly data
+                to compare quarter over quarter.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched

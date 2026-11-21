@@ -10,6 +10,8 @@ import pytest
 FRED_BACKED_TESTS = [
     "nonfarm_payrolls",
     "initial_jobless_claims",
+    "continuing_jobless_claims",
+    "insured_unemployment_rate",
     "retail_sales",
     "industrial_production_index",
     "housing_starts",

@@ -489,3 +489,41 @@ def test_get_var_evt_within_period_warns_once(caplog):
     # A quarter of daily returns has about 4 losses above the 95th percentile.
     assert result["A"].isna().all()
     assert sum("Extreme Value Theory" in m for m in caplog.messages) == 1
+
+
+def test_get_liquidity_cost_constant_spread_is_half_the_spread():
+    # With a constant spread its standard deviation is 0, so either scaling gives S / 2.
+    spreads = pd.Series(0.004, index=pd.period_range("2024-01", periods=12, freq="M"))
+
+    assert var_model.get_liquidity_cost(spreads, 0.05) == pytest.approx(0.002)
+    assert var_model.get_liquidity_cost(spreads, 0.05, 2.33) == pytest.approx(0.002)
+
+
+def test_get_liquidity_cost_matches_the_formula():
+    spreads = pd.Series(np.random.default_rng(3).gamma(2, 0.002, 60))
+
+    assert var_model.get_liquidity_cost(spreads, 0.05) == pytest.approx(
+        0.5 * np.percentile(spreads, 95)
+    )
+    assert var_model.get_liquidity_cost(spreads, 0.01, 1.5) == pytest.approx(
+        0.5 * (spreads.mean() + 1.5 * spreads.std(ddof=1))
+    )
+    assert np.isnan(var_model.get_liquidity_cost(spreads.iloc[:1], 0.05))
+
+
+def test_get_liquidity_adjusted_value_at_risk_per_asset():
+    rng = np.random.default_rng(5)
+    returns = pd.DataFrame(rng.normal(0, 0.02, (500, 2)), columns=["A", "B"])
+    spreads = pd.DataFrame({"A": rng.gamma(2, 0.001, 60), "B": rng.gamma(2, 0.01, 60)})
+    value_at_risk = var_model.get_var_historic(returns, 0.05)
+
+    result = var_model.get_liquidity_adjusted_value_at_risk(
+        value_at_risk, spreads, 0.05
+    )
+
+    for column in ["A", "B"]:
+        assert result[column] == pytest.approx(
+            value_at_risk[column] - 0.5 * np.percentile(spreads[column], 95)
+        )
+    # The less liquid asset carries the larger adjustment.
+    assert (value_at_risk - result)["B"] > (value_at_risk - result)["A"]

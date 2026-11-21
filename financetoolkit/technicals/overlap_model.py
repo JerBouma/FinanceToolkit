@@ -28,6 +28,8 @@ def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     J., & LeBaron, B. (1992). "Simple Technical Trading Rules and the Stochastic Properties of
     Stock Returns." Journal of Finance, 47(5), 1731-1764.
 
+    TA-Lib: SMA, the reference implementation (https://ta-lib.org/functions/sma.html).
+
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods to consider for the moving average.
@@ -61,6 +63,8 @@ def get_exponential_moving_average(
     R.G. (1956). "Exponential Smoothing for Predicting Demand." Arthur D. Little Inc.; the
     standard technical-analysis treatment is Murphy, J.J. (1999). "Technical Analysis of the
     Financial Markets." New York Institute of Finance.
+
+    TA-Lib: EMA, the reference implementation (https://ta-lib.org/functions/ema.html).
 
     Notes:
         - The recursion is seeded with the Simple Moving Average of the first `window`
@@ -118,6 +122,8 @@ def get_double_exponential_moving_average(prices: pd.Series, window: int) -> pd.
     Reference: Mulloy, P.G. (1994). "Smoothing Data with Faster Moving Averages." Technical
     Analysis of Stocks & Commodities, 12(1).
 
+    TA-Lib: DEMA, the reference implementation (https://ta-lib.org/functions/dema.html).
+
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods to consider for DEMA calculation.
@@ -155,6 +161,8 @@ def get_trix(prices_close: pd.Series, window: int) -> pd.Series:
 
     Reference: Hutson, J. (1983). "TRIX — Triple Exponential Smoothing Oscillator."
     Technical Analysis of Stocks & Commodities, 1(5).
+
+    TA-Lib: TRIX, the reference implementation (https://ta-lib.org/functions/trix.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -194,6 +202,8 @@ def get_triangular_moving_average(prices: pd.Series, window: int) -> pd.Series:
     Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
     Technical Market Indicators." 2nd ed. McGraw-Hill.
 
+    TA-Lib: TRIMA, the reference implementation (https://ta-lib.org/functions/trima.html).
+
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods to consider for TRIMA calculation.
@@ -232,6 +242,8 @@ def get_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
     Reference: The standard textbook treatment is Colby, R.W. (2003). "The Encyclopedia of
     Technical Market Indicators." 2nd ed. McGraw-Hill.
+
+    TA-Lib: WMA, the reference implementation (https://ta-lib.org/functions/wma.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -306,6 +318,8 @@ def get_kaufman_adaptive_moving_average(
     Also known as: KAMA, Kaufman's Adaptive Moving Average.
 
     Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
+
+    TA-Lib: KAMA, the reference implementation (https://ta-lib.org/functions/kama.html).
 
     Notes:
         - The recursion is seeded with the closing price of the period before the first
@@ -404,6 +418,8 @@ def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
 
     Reference: Hull, A. (2005). "Hull Moving Average."
 
+    TA-Lib: HMA, the reference implementation (https://ta-lib.org/functions/hma.html).
+
     Args:
         prices (pd.Series): Series of prices.
         window (int): Number of periods to consider for the HMA calculation.
@@ -445,6 +461,9 @@ def get_volume_weighted_average_price(
     Reference: Berkowitz, S.A., Logue, D.E., & Noser, E.A. Jr. (1988). "The Total Cost of
     Transactions on the NYSE." Journal of Finance, 43(1), 97-112 — the paper that introduced
     the volume-weighted average price as a transaction-cost benchmark.
+
+    TA-Lib: VWAP, the reference implementation (https://ta-lib.org/functions/vwap.html), which
+    accumulates from the first period instead of over a rolling window.
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -495,6 +514,8 @@ def get_parabolic_sar(
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
+
+    TA-Lib: SAR, the reference implementation (https://ta-lib.org/functions/sar.html).
 
     Notes:
         - The start follows TA-Lib's `ta_SAR.c`: the first bar only sets the direction

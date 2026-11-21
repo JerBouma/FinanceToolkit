@@ -134,6 +134,9 @@ def get_on_balance_volume(
     Reference: Granville, J.E. (1963). "Granville's New Key to Stock Market Profits."
     Prentice-Hall.
 
+    TA-Lib: OBV, the reference implementation (https://ta-lib.org/functions/obv.html), whose
+    running total starts at the first volume instead of 0.
+
     Args:
         prices_close (pd.Series | pd.DataFrame): Closing prices, one column per ticker when
             a DataFrame is given.
@@ -182,6 +185,8 @@ def get_price_volume_trend(prices_close: pd.Series, volumes: pd.Series) -> pd.Se
     published origin; it refines Granville's On-Balance Volume (Granville, J.E. (1963).
     "Granville's New Key to Stock Market Profits." Prentice-Hall) by weighting volume with
     the percentage change in price.
+
+    TA-Lib: PVT, the reference implementation (https://ta-lib.org/functions/pvt.html).
 
     Notes:
         - The running total starts at 0 on the first observation with both a close and a
@@ -264,6 +269,8 @@ def get_accumulation_distribution_line(
     Reference: Chaikin, M. (1980s). There is no formal journal citation; the standard
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
+
+    TA-Lib: AD, the reference implementation (https://ta-lib.org/functions/ad.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -391,6 +398,8 @@ def get_chaikin_oscillator(
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
 
+    TA-Lib: ADOSC, the reference implementation (https://ta-lib.org/functions/adosc.html).
+
     Notes:
         - Both EMAs are seeded with the Simple Moving Average of their first values (see
           `overlap_model.get_exponential_moving_average`), as StockCharts calculates them, so
@@ -445,6 +454,8 @@ def get_chaikin_money_flow(
     Reference: Chaikin, M. (1980s). There is no formal journal citation; the standard
     textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial Markets."
     New York Institute of Finance.
+
+    TA-Lib: CMF, the reference implementation (https://ta-lib.org/functions/cmf.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -510,6 +521,8 @@ def get_ease_of_movement(
 
     Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the Volume
     Analysis of Stock and Bond Markets." Business One Irwin.
+
+    TA-Lib: EMV, the reference implementation (https://ta-lib.org/functions/emv.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -604,6 +617,8 @@ def get_negative_volume_index(
     Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
     Profits on Wall Street." The Institute for Econometric Research.
 
+    TA-Lib: NVI, the reference implementation (https://ta-lib.org/functions/nvi.html).
+
     Args:
         prices_close (pd.Series): Series of closing prices.
         volumes (pd.Series): Series of trading volumes.
@@ -643,6 +658,8 @@ def get_positive_volume_index(
 
     Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
     Profits on Wall Street." The Institute for Econometric Research.
+
+    TA-Lib: PVI, the reference implementation (https://ta-lib.org/functions/pvi.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.

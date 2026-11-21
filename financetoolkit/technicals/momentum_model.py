@@ -53,6 +53,8 @@ def get_money_flow_index(
     Reference: Quong, G. & Soudack, A. (1989). "Volume-Weighted RSI: Money Flow."
     Technical Analysis of Stocks & Commodities, 7(3), 76-77.
 
+    TA-Lib: MFI, the reference implementation (https://ta-lib.org/functions/mfi.html).
+
     Notes:
         - The first period has no prior typical price and therefore no money flow, so the
           first MFI value is on period `window` and covers the flows of periods 1 to
@@ -114,6 +116,8 @@ def get_williams_percent_r(
     Reference: Williams, L.R. (1973). "How I Made One Million Dollars... Last Year Trading
     Commodities." Windsor Books.
 
+    TA-Lib: WILLR, the reference implementation (https://ta-lib.org/functions/willr.html).
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -154,6 +158,8 @@ def get_aroon_indicator(
     Also known as: Aroon Up, Aroon Down.
 
     Reference: Chande, T.S. (1995). "The New Technical Trader." Wiley.
+
+    TA-Lib: AROON, the reference implementation (https://ta-lib.org/functions/aroon.html).
 
     Notes:
         - The lookback spans `window + 1` bars — the current period plus the previous
@@ -222,6 +228,8 @@ def get_commodity_channel_index(
 
     Reference: Lambert, D.R. (1980). "Commodity Channel Index: Tool for Trading Cyclic
     Trends." Technical Analysis of Stocks & Commodities, 1(5).
+
+    TA-Lib: CCI, the reference implementation (https://ta-lib.org/functions/cci.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -353,6 +361,8 @@ def get_force_index(
 
     Reference: Elder, A. (1993). "Trading for a Living." Wiley.
 
+    TA-Lib: EFI, the reference implementation (https://ta-lib.org/functions/efi.html).
+
     Args:
         prices_close (pd.Series): Series of closing prices.
         volumes (pd.Series): Series of trading volumes.
@@ -396,6 +406,8 @@ def get_ultimate_oscillator(
 
     Reference: Williams, L.R. (1985). "The Ultimate Oscillator." Technical Analysis of Stocks
     & Commodities, 3(4).
+
+    TA-Lib: ULTOSC, the reference implementation (https://ta-lib.org/functions/ultosc.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -467,6 +479,8 @@ def get_percentage_price_oscillator(
     (Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert
     Corp.).
 
+    TA-Lib: PPO, the reference implementation (https://ta-lib.org/functions/ppo.html).
+
     Args:
         prices_close (pd.Series): Series of closing prices.
         short_window (int): Number of periods for the short-term EMA.
@@ -508,6 +522,8 @@ def get_percentage_volume_oscillator(
     volume counterpart of the Percentage Price Oscillator, a normalized variant of Appel's
     Moving Average Convergence Divergence (Appel, G. (1979). "The Moving Average
     Convergence-Divergence Trading Method." Signalert Corp.).
+
+    TA-Lib: PVO, the reference implementation (https://ta-lib.org/functions/pvo.html).
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values (see
@@ -568,6 +584,8 @@ def get_detrended_price_oscillator(
     the Financial Markets." New York Institute of Finance; there is no single canonical
     academic paper behind DPO.
 
+    TA-Lib: DPO, the reference implementation (https://ta-lib.org/functions/dpo.html).
+
     Args:
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for DPO calculation.
@@ -624,6 +642,8 @@ def get_average_directional_index(
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
+
+    TA-Lib: ADX, the reference implementation (https://ta-lib.org/functions/adx.html).
 
     Notes:
         - The True Range and both directional movements start on the second period, the
@@ -696,6 +716,9 @@ def get_chande_momentum_oscillator(prices_close: pd.Series, window: int) -> pd.S
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
 
+    TA-Lib: CMO, the reference implementation (https://ta-lib.org/functions/cmo.html), which
+    smooths the gains and losses with Wilder's method instead of summing them.
+
     Args:
         prices_close (pd.Series): Series of closing prices.
         window (int): Number of periods for CMO calculation.
@@ -746,6 +769,9 @@ def get_ichimoku_cloud(
     Reference: Hosoda, G. (1969). "Ichimoku Kinko Hyo." Published under the pen name Ichimoku
     Sanjin; the standard English treatment is Elliott, N. (2007). "Ichimoku Charts."
     Harriman House.
+
+    TA-Lib: ICHIMOKU, the reference implementation (https://ta-lib.org/functions/ichimoku.html),
+    which places the leading spans on the period they are calculated on.
 
     Notes:
         - Both leading spans are projected forward by `base_window` (26 by default) periods,
@@ -827,6 +853,8 @@ def get_stochastic_oscillator(
     Reference: Lane, G.C. Developed in the late 1950s; see Lane, G.C. (1984). "Lane's
     Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
 
+    TA-Lib: STOCHF, the reference implementation (https://ta-lib.org/functions/stochf.html).
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -867,6 +895,8 @@ def get_moving_average_convergence_divergence(
 
     Reference: Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method."
     Signalert Corp.
+
+    TA-Lib: MACD, the reference implementation (https://ta-lib.org/functions/macd.html).
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values (see
@@ -918,6 +948,8 @@ def get_relative_strength_index(prices: pd.Series, window: int) -> pd.Series:
 
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
+
+    TA-Lib: RSI, the reference implementation (https://ta-lib.org/functions/rsi.html).
 
     Args:
         prices (pd.Series): Series of prices.
@@ -975,6 +1007,8 @@ def get_stochastic_relative_strength_index(
     Also known as: StochRSI, Stoch RSI.
 
     Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+
+    TA-Lib: STOCHRSI, the reference implementation (https://ta-lib.org/functions/stochrsi.html).
 
     Notes:
         - The RSI is that of `get_relative_strength_index`, seeded with a simple average of
@@ -1035,6 +1069,8 @@ def get_true_strength_index(
     Reference: Blau, W. (1995). "Momentum, Direction, and Divergence." Wiley; first published
     in Blau, W. (1991). "True Strength Index." Technical Analysis of Stocks & Commodities,
     9(11).
+
+    TA-Lib: TSI, the reference implementation (https://ta-lib.org/functions/tsi.html).
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values with an
@@ -1101,6 +1137,8 @@ def get_balance_of_power(
 
     Reference: Created by Igor Livshin; featured in Kaufman, P.J. (2005). "New Trading
     Systems and Methods." 4th ed. Wiley.
+
+    TA-Lib: BOP, the reference implementation (https://ta-lib.org/functions/bop.html).
 
     Notes:
         - A period whose high equals its low has no range to divide by and is set to 0, as
@@ -1201,6 +1239,8 @@ def get_vortex_indicator(
     Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis of
     Stocks & Commodities, 28(1), 20-25.
 
+    TA-Lib: VORTEX, the reference implementation (https://ta-lib.org/functions/vortex.html).
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -1255,6 +1295,8 @@ def get_elder_ray_index(
 
     Reference: Elder, A. (1993). "Trading for a Living." Wiley.
 
+    TA-Lib: ERI, the reference implementation (https://ta-lib.org/functions/eri.html).
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -1299,6 +1341,8 @@ def get_rate_of_change(
     Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New York
     Institute of Finance.
 
+    TA-Lib: ROCP, the reference implementation (https://ta-lib.org/functions/rocp.html).
+
     Args:
         prices_close (pd.Series | pd.DataFrame): Series (or DataFrame with one column per
             ticker) of closing prices.
@@ -1342,6 +1386,8 @@ def get_choppiness_index(
     Reference: Dreiss, E.W. (1990s). Developed by Australian commodities trader Bill Dreiss;
     there is no formal journal citation. The standard textbook treatment is Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
+
+    TA-Lib: CHOP, the reference implementation (https://ta-lib.org/functions/chop.html).
 
     Args:
         prices_high (pd.Series): Series of high prices.
@@ -1413,6 +1459,8 @@ def get_know_sure_thing(
 
     Reference: Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of Stocks
     & Commodities, 10(6).
+
+    TA-Lib: KST, the reference implementation (https://ta-lib.org/functions/kst.html).
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -1490,6 +1538,8 @@ def get_coppock_curve(
 
     Reference: Coppock, E.S.C. (1962). "Practical Relative Strength Charting." Trendex
     Research Group; first presented in Barron's, October 15, 1962.
+
+    TA-Lib: COPPOCK, the reference implementation (https://ta-lib.org/functions/coppock.html).
 
     Notes:
         - The Rates of Change are decimals, as in `get_rate_of_change`, so the curve is a

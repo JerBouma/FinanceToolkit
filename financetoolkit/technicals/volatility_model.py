@@ -35,6 +35,8 @@ def get_true_range(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
+    TA-Lib: TRANGE, the reference implementation (https://ta-lib.org/functions/trange.html).
+
     Args:
         prices_high (pd.Series): Series of high prices.
         prices_low (pd.Series): Series of low prices.
@@ -160,6 +162,8 @@ def get_average_true_range(
     Reference: Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend
     Research.
 
+    TA-Lib: ATR, the reference implementation (https://ta-lib.org/functions/atr.html).
+
     Notes:
         - This follows the StockCharts convention: the first period, which has no previous
           close, has a True Range of High - Low, and the first ATR is the average of the
@@ -210,6 +214,8 @@ def get_mass_index(
 
     Reference: Dorsey, D. (1992). "The Mass Index." Technical Analysis of Stocks &
     Commodities, 10(6). The calculation follows StockCharts ChartSchool, "Mass Index".
+
+    TA-Lib: MASSI, the reference implementation (https://ta-lib.org/functions/massi.html).
 
     Notes:
         - Both EMAs are seeded with the Simple Moving Average of their first values (see
@@ -492,6 +498,9 @@ def get_keltner_channels(
     Statistical Service. The commonly used modern variant (EMA midline with an ATR-based
     envelope, as implemented here) was popularized by Linda Bradford Raschke in the 1980s.
 
+    TA-Lib: KC, the reference implementation (https://ta-lib.org/functions/kc.html), which
+    centres the channel on an EMA of the typical price instead of the close.
+
     Notes:
         - The conventional parameters, as on StockCharts, are a 20-period EMA, a 10-period
           ATR and a multiplier of 2.
@@ -548,6 +557,9 @@ def get_donchian_channels(
     Reference: Donchian, R.D. (1960s). Popularized through his "5- and 20-Day Moving Average
     Trading Rule" commodity trading system; the channel itself is described in Kaufman, P.J.
     (2013). "Trading Systems and Methods." 5th ed. Wiley.
+
+    TA-Lib: DONCHIAN, the reference implementation (https://ta-lib.org/functions/donchian.html),
+    which includes the current period.
 
     Notes:
         - The current period is deliberately excluded from the lookback. StockCharts states
@@ -674,6 +686,8 @@ def get_bollinger_bands(
 
     Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill.
 
+    TA-Lib: BBANDS, the reference implementation (https://ta-lib.org/functions/bbands.html).
+
     Notes:
         - The rolling standard deviation uses the *population* convention (dividing by n,
           i.e. `ddof=0`), not pandas' default sample convention (dividing by n-1). This is
@@ -729,6 +743,9 @@ def get_bollinger_percent_b_and_bandwidth(
 
     Reference: Bollinger, J. (2001). "Bollinger on Bollinger Bands." McGraw-Hill, chapters
     7 (%b) and 8 (BandWidth).
+
+    TA-Lib: PERCENTB and BBW, the reference implementations
+    (https://ta-lib.org/functions/percentb.html, https://ta-lib.org/functions/bbw.html).
 
     Notes:
         - The bands are those of `get_bollinger_bands`: a Simple Moving Average with the

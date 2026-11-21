@@ -168,6 +168,8 @@ def get_candlestick_patterns(
     of Finance; Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley. The
     thresholds are TA-Lib's (github.com/TA-Lib/ta-lib, src/ta_func/ta_CDL*.c).
 
+    TA-Lib: the CDL functions, the reference implementation (https://ta-lib.org/functions/).
+
     Notes:
         - A pattern is empty (NaN) until TA-Lib's lookback has passed: the candles its
           averages and the pattern itself need (10 to 13 candles), so a ticker is evaluated

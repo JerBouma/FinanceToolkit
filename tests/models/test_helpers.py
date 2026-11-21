@@ -223,20 +223,3 @@ def test_least_squares_coefficients_scale_columns_of_very_different_magnitudes()
     # A regressor that is zero in every observation has no coefficient.
     regressors[:, 1] = 0
     assert np.isnan(helpers.least_squares_coefficients(dependent, regressors, 10)).all()
-
-
-def test_trailing_sum_and_mean_count_calendar_periods():
-    # The second and fourth quarters only, as a company reporting half-yearly: no four
-    # quarters in a row are reported, so every trailing sum and mean is NaN.
-    columns = pd.PeriodIndex(["2024Q2", "2024Q4", "2025Q2", "2025Q4"], freq="Q")
-    frame = pd.DataFrame([[1.0, 2.0, 3.0, 4.0]], index=["A"], columns=columns)
-    assert helpers.trailing_sum(frame, 4).isna().all().all()
-    assert helpers.trailing_mean(frame, 4).isna().all().all()
-    assert helpers.trailing_sum(frame, 4).columns.equals(columns)
-
-    # Every quarter reported: the usual rolling sum, on the columns given.
-    columns = pd.period_range("2024Q1", "2025Q1", freq="Q")
-    frame = pd.DataFrame([[1.0, 2.0, 3.0, 4.0, 5.0]], index=["A"], columns=columns)
-    assert helpers.trailing_sum(frame, 4).loc["A"].tolist()[3:] == [10.0, 14.0]
-    assert helpers.trailing_mean(frame, 4).loc["A"].tolist()[3:] == [2.5, 3.5]
-    assert helpers.trailing_sum(frame, None) is frame

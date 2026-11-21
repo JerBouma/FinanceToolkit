@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 
 from financetoolkit.economics.sources import bis_model
+from financetoolkit.helpers import trailing_sum
 from financetoolkit.models import helpers
 from financetoolkit.models.constraints import constraints_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -51,7 +52,7 @@ class ConstraintsModels:
             self._income_statement, "Net Income from Continuing Operations"
         ).combine_first(self._rows(self._income_statement, "Net Income"))
 
-        return helpers.trailing_sum(income, trailing)
+        return trailing_sum(income, trailing)
 
     def _depreciation_and_amortization(self, trailing: int | None) -> pd.DataFrame:
         """
@@ -59,7 +60,7 @@ class ConstraintsModels:
         which reports it more consistently than the income statement, summed over
         `trailing` periods.
         """
-        return helpers.trailing_sum(
+        return trailing_sum(
             self._rows(self._cash_flow_statement, "Depreciation and Amortization"),
             trailing,
         )
@@ -200,9 +201,10 @@ class ConstraintsModels:
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the cash flow and the
                 dividends are summed over, with the capital they are divided by taken that many
-                periods earlier; the other balances are those at the end of the period. Defaults
-                to None, which is 4 on quarterly data (a trailing twelve months), as the index
-                was estimated on yearly statements.
+                periods earlier; the other balances are those at the end of the period. The
+                window counts calendar periods, so a period without a report makes it NaN.
+                Defaults to None, which is 4 on quarterly data (a trailing twelve months), as
+                the index was estimated on yearly statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -276,7 +278,7 @@ class ConstraintsModels:
         market_value_of_equity = self._period_prices() * self._rows(
             self._income_statement, "Weighted Average Shares"
         )
-        dividends = helpers.trailing_sum(
+        dividends = trailing_sum(
             self._rows(self._cash_flow_statement, "Dividends Paid"), trailing
         )
 
@@ -396,6 +398,7 @@ class ConstraintsModels:
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the cash flow, the dividends
                 and the revenue are summed over; the balances are those at the end of the period.
+                The window counts calendar periods, so a period without a report makes it NaN.
                 Defaults to None, which is a single period: the quarter on quarterly data, as the
                 index was estimated on quarterly statements.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -455,12 +458,10 @@ class ConstraintsModels:
         """
         balance = self._balance_sheet_statement
         total_assets = self._rows(balance, "Total Assets")
-        dividends = helpers.trailing_sum(
+        dividends = trailing_sum(
             self._rows(self._cash_flow_statement, "Dividends Paid"), trailing
         )
-        revenue = helpers.trailing_sum(
-            self._rows(self._income_statement, "Revenue"), trailing
-        )
+        revenue = trailing_sum(self._rows(self._income_statement, "Revenue"), trailing)
 
         # Year over year: the quarter a year earlier on quarterly data, so the seasons of a
         # company's sales do not show up as growth.

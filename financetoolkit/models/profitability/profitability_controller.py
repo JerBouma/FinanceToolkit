@@ -4,7 +4,7 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.models import helpers
+from financetoolkit.helpers import trailing_mean, trailing_sum
 from financetoolkit.models.profitability import dupont_model, growth_model
 from financetoolkit.ratios import profitability_model, valuation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -72,7 +72,8 @@ class ProfitabilityModels:
                 over, with the Total Assets and Total Shareholder Equity averaged over the trailing + 1
                 period ends that open and close those periods, so trailing=1 equals the default average
                 of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM). Defaults to None.
+                months (TTM). The window counts calendar periods, so a period without a report makes it
+                NaN. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -122,14 +123,12 @@ class ProfitabilityModels:
         # that the components multiply to the Return on Equity that module reports.
         period_ends = (trailing or 1) + 1
         dupont_analysis = dupont_model.get_dupont_analysis(
-            helpers.trailing_sum(
-                self._income_statement.loc[:, "Net Income", :], trailing
-            ),
-            helpers.trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
-            helpers.trailing_mean(
+            trailing_sum(self._income_statement.loc[:, "Net Income", :], trailing),
+            trailing_sum(self._income_statement.loc[:, "Revenue", :], trailing),
+            trailing_mean(
                 self._balance_sheet_statement.loc[:, "Total Assets", :], period_ends
             ),
-            helpers.trailing_mean(
+            trailing_mean(
                 self._balance_sheet_statement.loc[:, "Total Shareholder Equity", :],
                 period_ends,
             ),
@@ -202,7 +201,8 @@ class ProfitabilityModels:
                 over, with the Total Assets and Total Shareholder Equity averaged over the trailing + 1
                 period ends that open and close those periods, so trailing=1 equals the default average
                 of the opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM). Defaults to None.
+                months (TTM). The window counts calendar periods, so a period without a report makes it
+                NaN. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -264,18 +264,18 @@ class ProfitabilityModels:
         income = self._income_statement
         balance = self._balance_sheet_statement
         extended_dupont_analysis = dupont_model.get_extended_dupont_analysis(
-            operating_income=helpers.trailing_sum(
+            operating_income=trailing_sum(
                 income.loc[:, "Operating Income", :], trailing
             ),
-            income_before_tax=helpers.trailing_sum(
+            income_before_tax=trailing_sum(
                 income.loc[:, "Income Before Tax", :], trailing
             ),
-            net_income=helpers.trailing_sum(income.loc[:, "Net Income", :], trailing),
-            total_revenue=helpers.trailing_sum(income.loc[:, "Revenue", :], trailing),
-            average_total_assets=helpers.trailing_mean(
+            net_income=trailing_sum(income.loc[:, "Net Income", :], trailing),
+            total_revenue=trailing_sum(income.loc[:, "Revenue", :], trailing),
+            average_total_assets=trailing_mean(
                 balance.loc[:, "Total Assets", :], period_ends
             ),
-            average_total_equity=helpers.trailing_mean(
+            average_total_equity=trailing_mean(
                 balance.loc[:, "Total Shareholder Equity", :], period_ends
             ),
         )
@@ -373,7 +373,8 @@ class ProfitabilityModels:
             trailing (int | None, optional): The number of periods to sum the income statement items
                 over, with the balance sheet items averaged over the trailing + 1 period ends that
                 open and close those periods, as in the Ratios module. E.g. 4 with quarterly data
-                gives the trailing twelve months (TTM). Defaults to None, which uses single-period
+                gives the trailing twelve months (TTM). The window counts calendar periods, so a
+                period without a report makes it NaN. Defaults to None, which uses single-period
                 flows over the average of the opening and closing balance.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
@@ -469,10 +470,10 @@ class ProfitabilityModels:
         )
 
         net_financial_expense = profitability_model.get_net_financial_expense(
-            helpers.trailing_sum(interest_expense, trailing),
-            helpers.trailing_sum(interest_income, trailing),
-            helpers.trailing_sum(self._rows(income, "Income Tax Expense"), trailing),
-            helpers.trailing_sum(self._rows(income, "Income Before Tax"), trailing),
+            trailing_sum(interest_expense, trailing),
+            trailing_sum(interest_income, trailing),
+            trailing_sum(self._rows(income, "Income Tax Expense"), trailing),
+            trailing_sum(self._rows(income, "Income Before Tax"), trailing),
         )
 
         # The balances are averaged over the period ends that open and close the (trailing)
@@ -480,16 +481,12 @@ class ProfitabilityModels:
         balance_periods = trailing + 1 if trailing else 2
         nissim_penman_decomposition = drop_non_finite(
             dupont_model.get_nissim_penman_decomposition(
-                net_income=helpers.trailing_sum(
-                    self._rows(income, "Net Income"), trailing
-                ),
+                net_income=trailing_sum(self._rows(income, "Net Income"), trailing),
                 net_financial_expense=net_financial_expense,
-                average_net_financial_obligations=helpers.trailing_mean(
+                average_net_financial_obligations=trailing_mean(
                     net_financial_obligations, balance_periods
                 ),
-                average_common_equity=helpers.trailing_mean(
-                    common_equity, balance_periods
-                ),
+                average_common_equity=trailing_mean(common_equity, balance_periods),
             )
         )
 
@@ -565,7 +562,8 @@ class ProfitabilityModels:
             diluted (bool, optional): Whether to use the diluted Earnings per Share. Defaults to
                 True.
             trailing (int | None, optional): The number of periods to sum the Net Income over
-                (and average the shares over). Defaults to None, which uses the trailing twelve
+                (and average the shares over). The window counts calendar periods, so a period
+                without a report makes it NaN. Defaults to None, which uses the trailing twelve
                 months (4 quarters) with quarterly data and single years with annual data, as
                 the P/E ratio does.
             logarithmic (bool, optional): Whether to return log returns, which add up, instead of
@@ -635,7 +633,7 @@ class ProfitabilityModels:
                 "The lag is the number of periods of the window: 1 or more."
             )
 
-        shares = helpers.trailing_mean(
+        shares = trailing_mean(
             self._rows(
                 self._income_statement,
                 (
@@ -646,7 +644,7 @@ class ProfitabilityModels:
             ),
             trailing,
         )
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._rows(self._income_statement, "Net Income"), trailing
         )
 
@@ -727,7 +725,8 @@ class ProfitabilityModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -824,7 +823,8 @@ class ProfitabilityModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -867,12 +867,12 @@ class ProfitabilityModels:
         | ADSK | 0.0613 | 0.0955 | 0.1006 | 0.1144 | nan      |
         | INTU | 0.1004 | 0.0489 | 0.0569 | 0.0639 |   0.0782 |
         """
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
         # The ROA * b / (1 - ROA * b) form of the Internal Growth Rate measures ROA on the ending assets.
         ending_total_assets = self._balance_sheet_statement.loc[:, "Total Assets", :]
-        dividends = helpers.trailing_sum(
+        dividends = trailing_sum(
             self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
         )
 

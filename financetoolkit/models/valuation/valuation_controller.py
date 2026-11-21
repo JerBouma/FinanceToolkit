@@ -6,6 +6,7 @@ from functools import cache
 
 import pandas as pd
 
+from financetoolkit.helpers import calendar_periods, trailing_mean, trailing_sum
 from financetoolkit.models import helpers
 from financetoolkit.models.profitability import growth_model
 from financetoolkit.models.valuation import (
@@ -356,7 +357,8 @@ class ValuationModels:
             benchmark_returns (pd.Series): The benchmark's return per period.
             market_risk_premium (float | None): An annual premium to use instead.
             trailing (int | None, optional): The number of periods the flows are summed
-                over. Defaults to None, which is a single period.
+                over. The window counts calendar periods, so a period without a report makes
+                it NaN. Defaults to None, which is a single period.
 
         Returns:
             tuple[pd.Series, pd.Series | pd.DataFrame]: The risk-free rate and the expected
@@ -414,7 +416,8 @@ class ValuationModels:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares. Defaults to True.
-            trailing (int | None, optional): The trailing period. Defaults to None.
+            trailing (int | None, optional): The trailing period. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium.
                 Defaults to None, see get_weighted_average_cost_of_capital.
 
@@ -451,17 +454,17 @@ class ValuationModels:
             # The capital weights are market values at the end of the period, so the shares
             # and the debt are those of the period, not averages over the trailing periods.
             total_shares_outstanding=average_shares,
-            interest_expense=helpers.trailing_sum(
+            interest_expense=trailing_sum(
                 self._income_statement.loc[:, "Interest Expense", :], trailing
             ),
             total_debt=self._balance_sheet_statement.loc[:, "Total Debt", :],
             risk_free_rate=risk_free_rate,
             beta=beta,
             benchmark_returns=benchmark_returns,
-            income_tax_expense=helpers.trailing_sum(
+            income_tax_expense=trailing_sum(
                 self._income_statement.loc[:, "Income Tax Expense", :], trailing
             ),
-            income_before_tax=helpers.trailing_sum(
+            income_before_tax=trailing_sum(
                 self._income_statement.loc[:, "Income Before Tax", :], trailing
             ),
         )
@@ -539,7 +542,8 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -886,7 +890,8 @@ class ValuationModels:
                 over, with the Total Equity and Total Debt averaged over the trailing + 1 period ends
                 that open and close those periods, so trailing=1 equals the default average of the
                 opening and closing balance. E.g. 4 with quarterly data gives the trailing twelve
-                months (TTM). Defaults to None.
+                months (TTM). The window counts calendar periods, so a period without a report makes
+                it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -943,19 +948,19 @@ class ValuationModels:
         """
         eva = {}
 
-        income_tax_expense = helpers.trailing_sum(
+        income_tax_expense = trailing_sum(
             self._income_statement.loc[:, "Income Tax Expense", :], trailing
         )
-        income_before_tax = helpers.trailing_sum(
+        income_before_tax = trailing_sum(
             self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
         # The invested capital of the return on invested capital of the Ratios module: averaged
         # over the period ends that open and close the (trailing) periods the NOPAT covers.
         period_ends = (trailing or 1) + 1
-        total_equity = helpers.trailing_mean(
+        total_equity = trailing_mean(
             self._balance_sheet_statement.loc[:, "Total Equity", :], period_ends
         )
-        total_debt = helpers.trailing_mean(
+        total_debt = trailing_mean(
             self._balance_sheet_statement.loc[:, "Total Debt", :], period_ends
         )
 
@@ -1029,7 +1034,8 @@ class ValuationModels:
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
             trailing (int | None, optional): The number of periods the Invested Capital is averaged
-                over. Defaults to None, which uses the closing balances.
+                over. The window counts calendar periods, so a period without a report makes it
+                NaN. Defaults to None, which uses the closing balances.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1093,10 +1099,10 @@ class ValuationModels:
         # The invested capital on the balance sheet of the day the market value is taken on (an
         # average over the trailing periods only with `trailing` set), so both sides of the MVA
         # have the same date.
-        total_equity = helpers.trailing_mean(
+        total_equity = trailing_mean(
             self._balance_sheet_statement.loc[:, "Total Equity", :], trailing
         )
-        total_debt = helpers.trailing_mean(
+        total_debt = trailing_mean(
             self._balance_sheet_statement.loc[:, "Total Debt", :], trailing
         )
 
@@ -1196,6 +1202,7 @@ class ValuationModels:
             Cash Flow" as reported on the cash flow statement; both are after interest, so discounting
             them at the WACC and subtracting the debt counts the cost of debt twice.
             trailing (int | None, optional): The number of trailing periods to sum for the base cash flow.
+                The window counts calendar periods, so a period without a report makes it NaN.
             When set, uses the sum of the latest N consecutive calendar periods that are all reported instead
             of only the most recent period. Defaults to None, which uses 4 (the trailing twelve months) with
             quarterly data and the most recent year with yearly data.
@@ -1372,9 +1379,7 @@ class ValuationModels:
             # latest complete trailing window: a company reporting half-yearly has no complete
             # four-quarter year and is not valued, rather than summing two years of cash flow.
             cash_flow_series = (
-                helpers.trailing_sum(cash_flows.loc[[ticker]], trailing)
-                .loc[ticker]
-                .dropna()
+                trailing_sum(cash_flows.loc[[ticker]], trailing).loc[ticker].dropna()
             )
             if cash_flow_series.empty:
                 logger.warning(
@@ -1426,7 +1431,7 @@ class ValuationModels:
         period (ticker by period frames), so that no period uses figures reported after it.
         """
         cash_flows = cash_flows.reindex(self._tickers)
-        base_cash_flows = helpers.trailing_sum(cash_flows, trailing)
+        base_cash_flows = trailing_sum(cash_flows, trailing)
         cash = self._rows(self._balance_sheet_statement, "Cash and Cash Equivalents")
         debt = self._rows(self._balance_sheet_statement, "Total Debt")
         # Added back with the cash, and the minority interest and preferred stock deducted
@@ -1532,7 +1537,8 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1579,22 +1585,22 @@ class ValuationModels:
         """
         fcff = {}
 
-        income_tax_expense = helpers.trailing_sum(
+        income_tax_expense = trailing_sum(
             self._income_statement.loc[:, "Income Tax Expense", :], trailing
         )
-        income_before_tax = helpers.trailing_sum(
+        income_before_tax = trailing_sum(
             self._income_statement.loc[:, "Income Before Tax", :], trailing
         )
-        depreciation_and_amortization = helpers.trailing_sum(
+        depreciation_and_amortization = trailing_sum(
             self._income_statement.loc[:, "Depreciation and Amortization", :], trailing
         )
         capital_expenditure = -1 * (
-            helpers.trailing_sum(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
             )
         )
         change_in_net_working_capital = -1 * (
-            helpers.trailing_sum(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Change in Working Capital", :],
                 trailing,
             )
@@ -1657,7 +1663,8 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1702,24 +1709,24 @@ class ValuationModels:
         """
         fcfe = {}
 
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
-        depreciation_and_amortization = helpers.trailing_sum(
+        depreciation_and_amortization = trailing_sum(
             self._income_statement.loc[:, "Depreciation and Amortization", :], trailing
         )
         capital_expenditure = -1 * (
-            helpers.trailing_sum(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Capital Expenditure", :], trailing
             )
         )
         change_in_net_working_capital = -1 * (
-            helpers.trailing_sum(
+            trailing_sum(
                 self._cash_flow_statement.loc[:, "Change in Working Capital", :],
                 trailing,
             )
         )
-        net_borrowing = helpers.trailing_sum(
+        net_borrowing = trailing_sum(
             self._cash_flow_statement.loc[:, "Net Debt Issued", :], trailing
         )
 
@@ -2329,8 +2336,10 @@ class ValuationModels:
             diluted (bool, optional): Whether to use the diluted share count for the actual
                 multiples. Defaults to True.
             trailing (int | None, optional): Sum the flows over this many periods and measure
-                the Return on Equity on the equity that many periods back. Defaults to None,
-                which is 4 for quarterly data (a trailing twelve months) and 1 otherwise.
+                the Return on Equity on the equity that many periods back. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is 4 for quarterly data (a trailing twelve months) and 1
+                otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the rounding of the Toolkit (4 unless set
                 otherwise).
@@ -2417,7 +2426,7 @@ class ValuationModels:
             )
 
         net_income = self._rows(self._income_statement, "Net Income")
-        net_income = helpers.trailing_sum(net_income, trailing)
+        net_income = trailing_sum(net_income, trailing)
         shares = self._rows(
             self._income_statement,
             "Weighted Average Shares Diluted" if diluted else "Weighted Average Shares",
@@ -2476,7 +2485,8 @@ class ValuationModels:
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -2536,7 +2546,7 @@ class ValuationModels:
         """
         residual_income = {}
 
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
         # The capital charge applies to the book value the shareholders had invested at the start of the period (Ohlson, 1995): the closing balance of the previous period, or of `trailing` periods back for a trailing sum of Net Income.  # noqa: E501
@@ -2615,7 +2625,8 @@ class ValuationModels:
             include_dividends (bool, optional): Whether to deduct Preferred Dividends Paid from Net
             Income when calculating the Earnings per Share, so that the earnings figure reflects what is
             attributable to common shareholders only. Defaults to False.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None.
             market_risk_premium (float | None, optional): The annual equity risk premium the Cost of Equity
                 uses. Defaults to None, which takes the equity risk premium of each company's country
                 (Damodaran's Total Equity Risk Premium, see get_market_risk_premium) and, where that is
@@ -2681,7 +2692,7 @@ class ValuationModels:
         ]
 
         # Preferred Dividends Paid is reported on the cash flow statement using the cash-flow-impact convention (an outflow is negative), while the Earnings per Share formula subtracts a positive-magnitude figure — without the absolute value the preferred dividends would be added back to Net Income instead of deducted from it  # noqa: E501
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
 
@@ -2689,10 +2700,10 @@ class ValuationModels:
             dividends = self._cash_flow_statement.loc[
                 :, "Preferred Dividends Paid", :
             ].abs()
-            preferred_dividends = helpers.trailing_sum(dividends, trailing)
+            preferred_dividends = trailing_sum(dividends, trailing)
         else:
             preferred_dividends = 0
-        avg_shares = helpers.trailing_mean(average_shares, trailing)
+        avg_shares = trailing_mean(average_shares, trailing)
 
         earnings_per_share = valuation_model.get_earnings_per_share(
             net_income=net_income,
@@ -2780,9 +2791,10 @@ class ValuationModels:
 
         Args:
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None,
-                which uses 4 (the trailing twelve months of earnings) with quarterly data and a single period
-                with yearly data.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None, which uses 4
+                (the trailing twelve months of earnings) with quarterly data and a single period with yearly
+                data.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
@@ -2925,9 +2937,10 @@ class ValuationModels:
                 which uses Moody's seasoned Aaa corporate bond yield (FRED series DAAA) on the
                 last day up to the end of each fiscal period, which needs a FRED API key.
             diluted (bool, optional): Whether to use diluted shares in the calculation. Defaults to True.
-            trailing (int | None, optional): The trailing period to use for the calculation. Defaults to None,
-                which uses 4 (the trailing twelve months of earnings) with quarterly data and a single period
-                with yearly data.
+            trailing (int | None, optional): The trailing period to use for the calculation. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to None, which uses 4
+                (the trailing twelve months of earnings) with quarterly data and a single period with yearly
+                data.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
@@ -3036,11 +3049,11 @@ class ValuationModels:
         ]
 
         return valuation_model.get_earnings_per_share(
-            net_income=helpers.trailing_sum(
+            net_income=trailing_sum(
                 self._income_statement.loc[:, "Net Income", :], trailing
             ),
             preferred_dividends=0,
-            average_outstanding_shares=helpers.trailing_mean(average_shares, trailing),
+            average_outstanding_shares=trailing_mean(average_shares, trailing),
         )
 
     def _earnings_per_share_growth(
@@ -3270,9 +3283,7 @@ class ValuationModels:
         Without min_periods every window must be complete, so a missing period leaves the
         sums that include it NaN instead of letting them span more periods.
         """
-        return helpers.trailing_sum(
-            helpers.calendar_periods(self._rows(statement, row)), trailing
-        )
+        return trailing_sum(calendar_periods(self._rows(statement, row)), trailing)
 
     def _latest_capital(self, ticker: str) -> dict[str, float]:
         """
@@ -3402,9 +3413,10 @@ class ValuationModels:
                 to equity), so that discounting them at the WACC and subtracting the debt
                 counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
-                4 quarters) instead of taking the latest one. Defaults to None, which sums
-                the last 4 quarters (a trailing twelve months) for quarterly data and takes
-                the latest year otherwise, as the projection periods are years.
+                4 quarters) instead of taking the latest one. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                sums the last 4 quarters (a trailing twelve months) for quarterly data and
+                takes the latest year otherwise, as the projection periods are years.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -3554,7 +3566,8 @@ class ValuationModels:
                 the average. Defaults to 5.
             trailing (int | None, optional): Sum the revenue, operating income, taxes and
                 income before tax over this many periods (e.g. 4 quarters), so that the
-                margin is applied to a year of revenue. Defaults to None, which uses 4 (a
+                margin is applied to a year of revenue. The window counts calendar periods,
+                so a period without a report makes it NaN. Defaults to None, which uses 4 (a
                 trailing twelve months) for quarterly data and the yearly figures otherwise.
             rounding (int | None, optional): The number of decimals to round the results to.
                 Defaults to None, which uses the Toolkit's rounding.
@@ -3730,9 +3743,10 @@ class ValuationModels:
                 to equity), so that discounting them at the WACC and subtracting the debt
                 counts the cost of debt twice. Defaults to "Free Cash Flow to Firm".
             trailing (int | None, optional): Sum the cash flow over this many periods (e.g.
-                4 quarters) instead of taking the latest one. Defaults to None, which sums
-                the last 4 quarters (a trailing twelve months) for quarterly data and takes
-                the latest year otherwise, as the projection periods are years.
+                4 quarters) instead of taking the latest one. The window counts calendar
+                periods, so a period without a report makes it NaN. Defaults to None, which
+                sums the last 4 quarters (a trailing twelve months) for quarterly data and
+                takes the latest year otherwise, as the projection periods are years.
             seed (int | None, optional): The seed of the random numbers, so that results
                 can be reproduced. Defaults to 0; None gives different draws every time.
             rounding (int | None, optional): The number of decimals to round the results to.

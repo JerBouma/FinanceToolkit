@@ -55,53 +55,6 @@ def determine_within_historical_data(
     return period_data
 
 
-def calendar_periods(frame: pd.DataFrame) -> pd.DataFrame:
-    """
-    A ticker (rows) by period (columns) frame on every period from the first to the last, so
-    that a period no statement reports is a NaN column and positions and rolling windows count
-    calendar periods rather than reported ones.
-    """
-    columns = frame.columns
-    if not isinstance(columns, pd.PeriodIndex) or columns.empty:
-        return frame
-    return frame.reindex(
-        columns=pd.period_range(columns.min(), columns.max(), freq=columns.freq)
-    )
-
-
-def trailing_sum(frame: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
-    """
-    A ticker (rows) by period (columns) flow summed over `trailing` calendar periods, as is
-    without. Every window must be complete: a period that is not reported (such as the first
-    and third quarter of a company reporting half-yearly) leaves the sums that include it NaN,
-    rather than letting them reach back over more periods than `trailing`.
-    """
-    if not trailing:
-        return frame
-    return (
-        calendar_periods(frame)
-        .T.rolling(trailing)
-        .sum()
-        .T.reindex(columns=frame.columns)
-    )
-
-
-def trailing_mean(frame: pd.DataFrame, trailing: int | None) -> pd.DataFrame:
-    """
-    A ticker (rows) by period (columns) balance averaged over `trailing` calendar periods, as
-    is without. As with `trailing_sum`, a period that is not reported leaves the averages that
-    include it NaN.
-    """
-    if not trailing:
-        return frame
-    return (
-        calendar_periods(frame)
-        .T.rolling(trailing)
-        .mean()
-        .T.reindex(columns=frame.columns)
-    )
-
-
 def rates_per_ticker(
     value: float | list | dict[str, float] | None,
     tickers: list[str],

@@ -59,6 +59,7 @@ from financetoolkit.helpers import (
     determine_availability_dates,
     determine_period_end_dates,
     prepare_supplied_historical_data,
+    trailing_sum,
 )
 from financetoolkit.historical_model import (
     calculate_period_average as _calculate_period_average,
@@ -77,6 +78,7 @@ from financetoolkit.utilities.statistics_model import (
     apply_rounding,
     calculate_growth,
     normalize_country_name,
+    shift_periods,
 )
 
 if TYPE_CHECKING:
@@ -6169,8 +6171,8 @@ class Toolkit:
             growth (bool): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int]): Defines the number of periods to lag the growth data by. Defaults to 1.
             trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
-            window.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated. The window counts calendar periods, so a
+            period without a report makes it NaN. Defaults to None, which uses no trailing window.
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
@@ -6321,7 +6323,7 @@ class Toolkit:
             ]
 
             # The rolling window is calculated for the rest of the income statement.
-            income_statement = self._income_statement.T.rolling(trailing).sum().T
+            income_statement = trailing_sum(self._income_statement, trailing)
 
             income_statement.loc[not_summed.index] = not_summed
 
@@ -6393,8 +6395,8 @@ class Toolkit:
             growth (bool): Defines whether to return the growth of the data. Defaults to False.
             lag (int | list[int]): Defines the number of periods to lag the growth data by. Defaults to 1.
             trailing (int): Defines whether to select a trailing period.
-            E.g. when selecting 4 with quarterly data, the TTM is calculated. Defaults to None, which uses no trailing
-            window.
+            E.g. when selecting 4 with quarterly data, the TTM is calculated. The window counts calendar periods, so a
+            period without a report makes it NaN. Defaults to None, which uses no trailing window.
             compound (bool): Defines whether the growth is the compound annual growth rate over the lag
             (e.g. lag=5, or lag=20 with quarterly data, for the five-year CAGR) instead of the total change.
             Defaults to False.
@@ -6541,7 +6543,7 @@ class Toolkit:
         cash_flow_statement = self._cash_flow_statement
 
         if trailing:
-            cash_flow_statement = self._cash_flow_statement.T.rolling(trailing).sum().T
+            cash_flow_statement = trailing_sum(self._cash_flow_statement, trailing)
 
             # Cash held is a balance, not a flow: the window starts with the cash at the
             # beginning of its first period and ends with the cash at the end of its last one.
@@ -6551,11 +6553,9 @@ class Toolkit:
             cash_flow_statement.loc[cash_end] = self._cash_flow_statement.loc[
                 cash_end
             ].where(cash_flow_statement.loc[cash_end].notna())
-            cash_flow_statement.loc[cash_beginning] = (
-                self._cash_flow_statement.loc[cash_beginning]
-                .shift(trailing - 1, axis=1)
-                .where(cash_flow_statement.loc[cash_beginning].notna())
-            )
+            cash_flow_statement.loc[cash_beginning] = shift_periods(
+                self._cash_flow_statement.loc[cash_beginning], trailing - 1
+            ).where(cash_flow_statement.loc[cash_beginning].notna())
 
         if growth:
             self._cash_flow_statement_growth = calculate_growth(

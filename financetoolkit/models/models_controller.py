@@ -7,7 +7,7 @@ from functools import cached_property
 
 import pandas as pd
 
-from financetoolkit.helpers import LazyDict
+from financetoolkit.helpers import LazyDict, trailing_sum
 from financetoolkit.models import helpers
 from financetoolkit.models.constraints.constraints_controller import ConstraintsModels
 from financetoolkit.models.distress.distress_controller import DistressModels
@@ -244,15 +244,16 @@ class ModelsBase:
         Operating Income, consistent with the EBIT based ratios of the Ratios module.
 
         Args:
-            trailing (int | None, optional): The number of periods to sum. Defaults to None,
-                which is a single period.
+            trailing (int | None, optional): The number of periods to sum. The window counts
+                calendar periods, so a period without a report makes it NaN. Defaults to
+                None, which is a single period.
 
         Returns:
             pd.DataFrame: The EBIT per ticker (rows) and period (columns).
         """
         operating_income = self._income_statement.loc[:, "Operating Income", :]
 
-        return helpers.trailing_sum(operating_income, trailing)
+        return trailing_sum(operating_income, trailing)
 
     def _return_on_equity_and_payout(
         self, trailing: int | None
@@ -263,7 +264,7 @@ class ModelsBase:
         dividend payout ratio, per ticker and period, as the sustainable growth rate and the
         justified multiples use them.
         """
-        net_income = helpers.trailing_sum(
+        net_income = trailing_sum(
             self._income_statement.loc[:, "Net Income", :], trailing
         )
         # Higgins measures the Return on Equity on the equity at the beginning of the period.
@@ -272,7 +273,7 @@ class ModelsBase:
         beginning_total_equity = self._balance_sheet_statement.loc[
             :, "Total Shareholder Equity", :
         ].shift(trailing or 1, axis=1)
-        dividends = helpers.trailing_sum(
+        dividends = trailing_sum(
             self._cash_flow_statement.loc[:, "Dividends Paid", :], trailing
         )
 

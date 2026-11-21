@@ -447,3 +447,19 @@ def test_get_dividend_adjusted_price_to_earnings_growth_ratio():
     assert pegy.iloc[0] == pytest.approx(
         valuation_model.get_price_to_earnings_growth_ratio(30.0, 0.2 * 100)
     )
+
+
+def test_cyclically_adjusted_price_to_earnings_ratio_counts_calendar_years():
+    # 2021 is not reported, so the two-year window of 2022 lacks a year.
+    years = pd.PeriodIndex(["2019", "2020", "2022", "2023"], freq="Y")
+    eps = pd.DataFrame([[1.0, 2.0, 3.0, 4.0]], index=["XYZ"], columns=years)
+    price = pd.DataFrame([[10.0] * 4], index=["XYZ"], columns=years)
+
+    cape = valuation_model.get_cyclically_adjusted_price_to_earnings_ratio(
+        price, eps, years=2
+    )
+
+    # 2020 averages 2019 and 2020, 2022 has no 2021 and 2023 averages 2022 and 2023.
+    assert cape.loc["XYZ", years[1]] == pytest.approx(10 / 1.5)
+    assert pd.isna(cape.loc["XYZ", years[2]])
+    assert cape.loc["XYZ", years[3]] == pytest.approx(10 / 3.5)

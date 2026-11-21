@@ -1188,3 +1188,34 @@ def test_data_within_the_dates_is_handed_to_the_modules_as_it_is():
     assert (
         toolkit._get_module_historical_data("daily") is toolkit._daily_historical_data
     )
+
+
+def test_toolkit_trailing_statements_count_calendar_periods():
+    """A year that is not reported leaves the windows that hold it empty."""
+    toolkit = Toolkit(
+        tickers=["AAPL", "MSFT"],
+        cash=cash_dataset.drop(columns=pd.Period("2021", freq="Y")),
+        convert_currency=False,
+        start_date="2017-12-31",
+        end_date="2023-01-01",
+        sleep_timer=False,
+    )
+
+    statement = toolkit.get_cash_flow_statement(rounding=None).loc["AAPL"]
+    trailing = toolkit.get_cash_flow_statement(trailing=2, rounding=None).loc["AAPL"]
+
+    assert pd.Period("2021", freq="Y") not in statement.columns
+
+    # 2022 would otherwise be summed with 2020, two years earlier.
+    for item in ("Net Change in Cash", "Cash Beginning of Period"):
+        assert pd.isna(trailing.loc[item, pd.Period("2022", freq="Y")])
+
+    assert trailing.loc["Net Change in Cash", pd.Period("2023", freq="Y")] == (
+        statement.loc[
+            "Net Change in Cash", pd.period_range("2022", "2023", freq="Y")
+        ].sum()
+    )
+    assert (
+        trailing.loc["Cash Beginning of Period", pd.Period("2023", freq="Y")]
+        == statement.loc["Cash Beginning of Period", pd.Period("2022", freq="Y")]
+    )

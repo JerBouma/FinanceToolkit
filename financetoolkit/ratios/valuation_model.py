@@ -6,6 +6,8 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.utilities.statistics_model import shift_periods
+
 
 def get_earnings_per_share(
     net_income: pd.Series | pd.DataFrame,
@@ -84,7 +86,8 @@ def get_cyclically_adjusted_price_to_earnings_ratio(
     Args:
         stock_price (pd.DataFrame): The share price of each ticker (index) and period (columns).
         earnings_per_share (pd.DataFrame): The annual (or trailing twelve month) earnings per
-            share, with the same tickers and consecutive periods as columns.
+            share, with the same tickers and the periods as columns. A period that is not a
+            column counts as missing.
         consumer_price_index (pd.DataFrame | None, optional): The consumer price index at the
             end of each ticker's periods, in the same shape as the earnings per share. Defaults
             to None, which leaves the earnings unadjusted for inflation.
@@ -96,15 +99,16 @@ def get_cyclically_adjusted_price_to_earnings_ratio(
         pd.DataFrame: The cyclically adjusted price earnings ratio.
     """
     # Average of EPS (s) / CPI (s) times CPI (t) equals the average of EPS (s) x CPI (t) / CPI (s),
-    # as CPI (t) is the same for every year of the window. Adding the shifted frames keeps NaN when
-    # any year is missing, so the full window is required.
+    # as CPI (t) is the same for every year of the window. The shifts count calendar periods, so a
+    # year the statements leave out is missing rather than replaced by an older one, and adding the
+    # shifted frames keeps NaN when any year is missing, so the full window is required.
     price_level = consumer_price_index if consumer_price_index is not None else 1
     deflated_earnings = earnings_per_share / price_level
 
     total_deflated_earnings = deflated_earnings * 0
     for year in range(years):
-        total_deflated_earnings = total_deflated_earnings + deflated_earnings.shift(
-            year * periods_per_year, axis=1
+        total_deflated_earnings = total_deflated_earnings + shift_periods(
+            deflated_earnings, year * periods_per_year
         )
 
     average_real_earnings = total_deflated_earnings / years * price_level

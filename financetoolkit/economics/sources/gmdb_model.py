@@ -14,6 +14,7 @@ from financetoolkit.cache.cache_controller import Cache
 from financetoolkit.utilities.dataframe_model import to_dataframe
 from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.requests_model import get_request
+from financetoolkit.utilities.sources_model import collect_sources, record_source
 
 logger = get_logger()
 
@@ -33,6 +34,15 @@ GMD_LOCATION = "https://github.com/KMueller-Lab/Global-Macro-Database/blob/main/
 # than observations.
 IDENTIFIERS = ["countryname", "ISO3", "id", "year", "income_group"]
 FORECAST_PREFIX = "forecast_"
+
+# The countries the Global Macro Database names differently from the OECD, the BIS and
+# the other sources, renamed so that a country has one name throughout the Finance Toolkit
+# and a GMDB series lines up with an OECD one column by column.
+COUNTRY_NAMES = {
+    "Russian Federation": "Russia",
+    "Eswatini": "Swaziland",
+    "Congo DR": "Democratic Republic of the Congo",
+}
 
 
 def get_latest_version() -> str:
@@ -90,6 +100,7 @@ def _parse_dataset(content: bytes, include_forecasts: bool) -> pd.DataFrame:
         errors="ignore",
     )
     gmd_dataset["year"] = pd.PeriodIndex(gmd_dataset["year"].astype(int), freq="Y")
+    gmd_dataset["countryname"] = gmd_dataset["countryname"].replace(COUNTRY_NAMES)
     gmd_dataset = gmd_dataset.set_index(["year", "countryname"])
     gmd_dataset.index.names = [None] * gmd_dataset.index.nlevels
     gmd_dataset = to_dataframe(gmd_dataset.unstack(level=1))
@@ -100,9 +111,11 @@ def _parse_dataset(content: bytes, include_forecasts: bool) -> pd.DataFrame:
 # One copy of the dataset per process, shared by every Economics instance: it is over
 # 100 MB in memory and takes seconds to read, so a server that meets many date ranges
 # (one instance each) would otherwise hold and read it once per range. Kept for an hour,
-# after which the next request reads the (cached or newly released) file again.
+# after which the next request reads the (cached or newly released) file again. The
+# sources it was read from are kept with it, so an answer served from this copy names
+# them as well.
 SHARED_DATASET_SECONDS = 3600
-_SHARED_DATASETS: dict[bool, tuple[float, pd.DataFrame]] = {}
+_SHARED_DATASETS: dict[bool, tuple[float, pd.DataFrame, frozenset[str]]] = {}
 _SHARED_DATASETS_LOCK = threading.Lock()
 
 
@@ -124,13 +137,25 @@ def get_shared_dataset(
     with _SHARED_DATASETS_LOCK:
         stored = _SHARED_DATASETS.get(include_forecasts)
         if stored is not None and time.monotonic() - stored[0] < SHARED_DATASET_SECONDS:
+            for source in stored[2]:
+                record_source(source)
             return stored[1]
 
-        dataset = collect_global_macro_database_dataset(
-            cache=cache, include_forecasts=include_forecasts
-        )
+        with collect_sources() as sources:
+            dataset = collect_global_macro_database_dataset(
+                cache=cache, include_forecasts=include_forecasts
+            )
+
+        # Collected apart to keep them with the copy, and passed on to the caller's answer.
+        for source in sources:
+            record_source(source)
+
         if not dataset.empty:
-            _SHARED_DATASETS[include_forecasts] = (time.monotonic(), dataset)
+            _SHARED_DATASETS[include_forecasts] = (
+                time.monotonic(),
+                dataset,
+                frozenset(sources),
+            )
 
         return dataset
 

@@ -8,7 +8,6 @@ import pandas as pd
 
 from financetoolkit import fmp_model, helpers
 from financetoolkit.cache import policy_model
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     validate_period,
@@ -25,12 +24,8 @@ from financetoolkit.economics.sources import (
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -39,7 +34,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class StabilityEconomics(EconomicsBase):
+class StabilityEconomics:
     """
     Financial stability and risk: sovereign debt, currency and banking crises, credit to GDP and its gap, the debt service ratio, stress test scenarios, implied volatility indices and the market risk premium.
     """
@@ -74,7 +69,8 @@ class StabilityEconomics(EconomicsBase):
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -158,7 +154,8 @@ class StabilityEconomics(EconomicsBase):
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -240,7 +237,8 @@ class StabilityEconomics(EconomicsBase):
             countries (list[str] | str | None, optional): A list of countries or a single country to include in the results. Defaults to None.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -355,7 +353,8 @@ class StabilityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -461,7 +460,8 @@ class StabilityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -579,7 +579,8 @@ class StabilityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -706,7 +707,8 @@ class StabilityEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -894,7 +896,8 @@ class StabilityEconomics(EconomicsBase):
                 include. Defaults to None, which includes all of them.
             year (int | None, optional): The year of the Federal Reserve's stress test, from
                 2025. Defaults to None, which takes the latest.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

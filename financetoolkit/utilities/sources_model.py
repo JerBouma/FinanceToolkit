@@ -60,6 +60,7 @@ SOURCE_NAMES = {
     policy_model.EUROPEAN_SYSTEMIC_RISK_BOARD: "European Systemic Risk Board",
     policy_model.DAMODARAN: "Aswath Damodaran (NYU Stern)",
     policy_model.FINRA: "FINRA",
+    policy_model.FEDERAL_HOUSING_FINANCE_AGENCY: "Federal Housing Finance Agency (FHFA)",
 }
 
 # The publisher behind each host the Finance Toolkit requests data from, matched on the end
@@ -115,6 +116,7 @@ HOST_SOURCES = {
     "esrb.europa.eu": policy_model.EUROPEAN_SYSTEMIC_RISK_BOARD,
     "stern.nyu.edu": policy_model.DAMODARAN,
     "finra.org": policy_model.FINRA,
+    "fhfa.gov": policy_model.FEDERAL_HOUSING_FINANCE_AGENCY,
 }
 
 TrackedClass = TypeVar("TrackedClass", bound=type)
@@ -271,6 +273,26 @@ def _referenced_names(function: Callable) -> frozenset[str]:
     return frozenset(names)
 
 
+def _state_of(value: Any) -> tuple[int, ...]:
+    """
+    Identifies what an attribute holds, to tell whether a method assigned it.
+
+    A dictionary is identified by the values it holds as well, as a method can store data
+    in one it keeps for later calls (such as one dataset per setting) without assigning
+    the attribute itself.
+
+    Args:
+        value (Any): The attribute's value.
+
+    Returns:
+        tuple[int, ...]: The identity of the value, and of a dictionary's values.
+    """
+    if isinstance(value, dict):
+        return (id(value), *(id(item) for item in list(value.values())))
+
+    return (id(value),)
+
+
 def _traced(function: Callable) -> Callable:
     """
     Wraps a method so that, inside collect_sources, the sources of the data it uses are
@@ -305,7 +327,7 @@ def _traced(function: Callable) -> Callable:
             sources |= provenance.get(name, frozenset())
 
         # Copied rather than iterated, as worker threads can assign attributes meanwhile.
-        before = {name: id(value) for name, value in state.copy().items()}
+        before = {name: _state_of(value) for name, value in state.copy().items()}
         token = _SOURCES.set(sources)
 
         try:
@@ -318,7 +340,7 @@ def _traced(function: Callable) -> Callable:
                 for name, value in state.copy().items():
                     if (
                         name != PROVENANCE_ATTRIBUTE
-                        and before.get(name) != id(value)
+                        and before.get(name) != _state_of(value)
                         and not isinstance(value, SETTING_TYPES)
                     ):
                         provenance[name] = provenance.get(name, frozenset()) | sources

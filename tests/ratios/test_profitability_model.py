@@ -268,3 +268,43 @@ def test_percent_accruals_scales_by_the_absolute_net_income():
     # With a loss, accruals that make the loss smaller than the cash flow are positive.
     assert result.iloc[1] == pytest.approx(0.6)
     assert pd.isna(result.iloc[2])
+
+
+def test_nissim_penman_components():
+    debt = pd.Series([100.0, 50.0])
+    preferred = pd.Series([10.0, 0.0])
+    cash = pd.Series([30.0, 80.0])
+    investments = pd.Series([20.0, 40.0])
+
+    # Net financial assets give negative obligations.
+    pd.testing.assert_series_equal(
+        profitability_model.get_net_financial_obligations(
+            debt, preferred, cash, investments
+        ),
+        pd.Series([60.0, -70.0]),
+    )
+
+    # The net interest is taxed at the bounded effective rate, untaxed for a pre-tax loss.
+    pd.testing.assert_series_equal(
+        profitability_model.get_net_financial_expense(
+            interest_expense=pd.Series([10.0, 10.0, 10.0]),
+            interest_income=pd.Series([2.0, 2.0, 12.0]),
+            income_tax_expense=pd.Series([25.0, 5.0, 30.0]),
+            income_before_tax=pd.Series([100.0, -50.0, 100.0]),
+        ),
+        pd.Series([6.0, 8.0, -1.4]),
+    )
+
+    rnoa = profitability_model.get_return_on_net_operating_assets(
+        net_income=pd.Series([20.0]),
+        net_financial_expense=pd.Series([4.0]),
+        average_net_financial_obligations=pd.Series([80.0]),
+        average_common_equity=pd.Series([120.0]),
+    )
+    assert rnoa.iloc[0] == pytest.approx(24 / 200)
+    assert profitability_model.get_net_borrowing_cost(
+        pd.Series([4.0]), pd.Series([80.0])
+    ).iloc[0] == pytest.approx(0.05)
+    assert profitability_model.get_financial_leverage(
+        pd.Series([80.0]), pd.Series([120.0])
+    ).iloc[0] == pytest.approx(80 / 120)

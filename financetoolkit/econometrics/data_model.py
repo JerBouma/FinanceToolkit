@@ -233,8 +233,8 @@ def build_historical_data(
 
     Args:
         data (pd.DataFrame | pd.Series | dict): The data, see to_series_frame.
-        changes (str | None, optional): How the changes are calculated, see get_changes.
-            Defaults to "percentage".
+        changes (str | None, optional): How the changes are calculated, see get_changes;
+            "none" is the same as None. Defaults to "percentage".
         start_date (str | None, optional): The first date to keep. Defaults to None.
         end_date (str | None, optional): The last date to keep. Defaults to None.
 
@@ -242,6 +242,10 @@ def build_historical_data(
         tuple[dict[str, pd.DataFrame], list[str]]: The historical data per period
         (including an empty "intraday" period) and the names of the series.
     """
+    # "none" as text (as an MCP client or a configuration file passes it) means None.
+    changes = (
+        None if isinstance(changes, str) and changes.lower() == "none" else changes
+    )
     if changes not in CHANGES:
         raise ValueError(
             f"The changes must be one of 'percentage', 'log', 'difference' or None, not {changes!r}."

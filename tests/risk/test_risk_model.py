@@ -5,6 +5,14 @@ import pandas as pd
 import pytest
 
 from financetoolkit.risk import risk_model
+from financetoolkit.risk.helpers import (
+    compound_into_shared_dates,
+    compound_risk_free_rate,
+    get_observations_per_year,
+    get_risk_free_rate_per_date,
+    get_risk_free_rate_per_observation,
+    get_risk_free_rate_per_ticker,
+)
 
 
 def test_get_max_drawdown(recorder):
@@ -710,7 +718,10 @@ def test_get_quantile_per_type():
 
     index = pd.MultiIndex.from_tuples([("2020", 1), ("2020", 2), ("2021", 1)])
     stacked = pd.DataFrame({"A": [1.0, 3.0, 5.0]}, index=index)
-    assert risk_model.get_quantile(stacked, 0.5)["A"].tolist() == [2.0, 5.0]
+    # A period with a single return has no distribution to take a quantile of.
+    assert risk_model.get_quantile(stacked, 0.5)["A"].tolist() == pytest.approx(
+        [2.0, np.nan], nan_ok=True
+    )
 
     with pytest.raises(TypeError):
         risk_model.get_quantile([1.0, 2.0], 0.5)
@@ -798,3 +809,334 @@ def test_skewness_and_kurtosis_of_returns_without_variation_are_nan():
     assert rolling_kurtosis.iloc[:10].isna().all()
     assert rolling_skewness.iloc[10:].notna().all()
     assert rolling_kurtosis.iloc[10:].notna().all()
+
+
+def test_the_var_multiple_is_nan_when_the_trailing_quantile_is_no_loss():
+    dates = pd.period_range("2024-01-01", periods=7, freq="D")
+    returns = pd.Series([0.01, 0.02, 0.015, 0.03, 0.012, 0.025, -0.01], index=dates)
+
+    significance = risk_model.get_move_significance(returns, window=5)
+
+    # Every trailing 5% quantile is a gain: no loss to scale the move by, so no multiple
+    # (rather than a fall measured against a gain).
+    assert significance["VaR Multiple"].isna().all()
+    assert significance.loc["2024-01-07", "Volatility Multiple"] < 0
+
+
+def test_the_move_percentile_counts_equal_moves_as_half():
+    dates = pd.period_range("2024-01-01", periods=6, freq="D")
+    returns = pd.Series([0.0, 0.0, 0.0, 0.0, 0.01, 0.0], index=dates)
+
+    significance = risk_model.get_move_significance(returns, window=3)
+
+    # An unchanged day among three unchanged days sits in the middle of its ties.
+    assert significance.loc["2024-01-04", "Percentile"] == pytest.approx(0.5)
+    # The 1% move is larger than all four earlier ones.
+    assert significance.loc["2024-01-05", "Percentile"] == pytest.approx(1.0)
+    # An unchanged day: smaller than one earlier move, tied with four.
+    assert significance.loc["2024-01-06", "Percentile"] == pytest.approx(0.4)
+    # A flat day has no direction and the largest rise has no earlier date: both NaN,
+    # the same missing marker as the rows of a gap.
+    largest_since = significance["Largest Since"]
+    assert largest_since.isna().all()
+    assert all(value is not None for value in largest_since)
+
+
+def _late_listing_returns():
+    rng = np.random.default_rng(3)
+    index = pd.period_range("2020-01-01", periods=500, freq="D")
+    later = rng.normal(0.0, 0.03, 500)
+    later[:300] = np.nan
+
+    return pd.DataFrame(
+        {"Early": rng.normal(0.0005, 0.02, 500), "Later": later}, index=index
+    )
+
+
+def test_drawdown_measures_skip_the_rows_before_a_later_listing():
+    returns = _late_listing_returns()
+    alone = returns[["Later"]].dropna()
+
+    # The rows before the listing are no drawdowns of 0 that dilute the tail or the mean.
+    assert risk_model.get_conditional_drawdown_at_risk(returns, 0.05)[
+        "Later"
+    ] == pytest.approx(
+        risk_model.get_conditional_drawdown_at_risk(alone, 0.05)["Later"]
+    )
+    for rolling in (None, 14):
+        assert risk_model.get_ui(returns, rolling)["Later"] == pytest.approx(
+            risk_model.get_ui(alone, rolling)["Later"]
+        )
+
+    within = returns.set_axis(
+        pd.MultiIndex.from_arrays([returns.index.asfreq("Y"), returns.index])
+    )
+    first_year = returns.loc[returns.index.year == 2020, ["Later"]].dropna()
+
+    assert risk_model.get_conditional_drawdown_at_risk(within, 0.05).iloc[0][
+        "Later"
+    ] == pytest.approx(
+        risk_model.get_conditional_drawdown_at_risk(first_year, 0.05)["Later"]
+    )
+    assert risk_model.get_ui(within, 14).iloc[0]["Later"] == pytest.approx(
+        risk_model.get_ui(first_year, 14)["Later"]
+    )
+
+
+def _stock_and_crypto_returns():
+    rng = np.random.default_rng(7)
+    index = pd.period_range("2022-01-01", "2023-12-31", freq="D")
+    stock = np.where(index.dayofweek < 5, rng.normal(0, 0.02, len(index)), np.nan)
+
+    return pd.DataFrame(
+        {"Crypto": rng.normal(0, 0.03, len(index)), "Stock": stock}, index=index
+    )
+
+
+def test_volatility_of_a_ticker_trading_on_weekends_scales_with_365_days():
+    returns = _stock_and_crypto_returns()
+    in_2022 = returns.index.year == 2022  # noqa: PLR2004
+
+    volatility = risk_model.get_volatility(returns, "yearly")
+    variance = risk_model.get_variance(returns, "weekly")
+
+    assert volatility.iloc[0]["Crypto"] == pytest.approx(
+        returns["Crypto"][in_2022].std() * np.sqrt(365)
+    )
+    assert volatility.iloc[0]["Stock"] == pytest.approx(
+        returns["Stock"][in_2022].std() * np.sqrt(252)
+    )
+    week = returns.index.asfreq("W") == returns.index.asfreq("W")[10]
+    assert variance.loc[returns.index.asfreq("W")[10], "Crypto"] == pytest.approx(
+        returns["Crypto"][week].var() * 365 / 52
+    )
+    # A Series keeps the scaling of its own calendar.
+    assert risk_model.get_volatility(returns["Stock"], "yearly").iloc[
+        0
+    ] == pytest.approx(volatility.iloc[0]["Stock"])
+
+
+def test_quantile_of_a_period_with_a_single_return_is_nan():
+    index = pd.period_range("2021-12-31", periods=6, freq="D")
+    returns = pd.DataFrame({"A": [-0.02, 0.01, -0.03, 0.02, 0.0, -0.01]}, index=index)
+    within = returns.set_axis(pd.MultiIndex.from_arrays([index.asfreq("Y"), index]))
+
+    quantile = risk_model.get_quantile(within, 0.05)
+
+    assert np.isnan(quantile.loc[pd.Period("2021", "Y"), "A"])
+    assert quantile.loc[pd.Period("2022", "Y"), "A"] == pytest.approx(
+        returns["A"].iloc[1:].quantile(0.05)
+    )
+
+
+def test_compound_into_shared_dates_compounds_the_weekend_into_monday():
+    index = pd.period_range("2024-01-04", periods=8, freq="D")
+    returns = pd.DataFrame(
+        {
+            "Stock": [np.nan, 0.01, np.nan, np.nan, 0.02, 0.03, np.nan, np.nan],
+            "Crypto": [0.1, 0.04, 0.01, 0.01, 0.01, 0.05, 0.5, np.nan],
+        },
+        index=index,
+    )
+
+    shared = compound_into_shared_dates(returns)
+
+    # The Thursday before the first shared date and the dates after the last are left out,
+    # and each shared date keeps its own returns, in the order of the dates.
+    assert list(shared.index.astype(str)) == ["2024-01-05", "2024-01-08", "2024-01-09"]
+    assert shared["Stock"].to_numpy() == pytest.approx([0.01, 0.02, 0.03])
+    # Monday 8 January holds the Crypto returns of Saturday, Sunday and Monday.
+    assert shared["Crypto"].to_numpy() == pytest.approx([0.04, 1.01**3 - 1, 0.05])
+
+
+def test_observations_per_year_and_risk_free_rate_follow_each_calendar():
+    returns = _stock_and_crypto_returns()
+    annualized_rate = pd.Series(0.05, index=returns.index)
+
+    assert get_observations_per_year(returns).to_dict() == {
+        "Crypto": 365.0,
+        "Stock": 252.0,
+    }
+
+    per_observation = get_risk_free_rate_per_observation(annualized_rate, returns)
+    stock_dates = returns["Stock"].dropna().index
+
+    # A weekday-only ticker earns a trading day of the rate with every return.
+    assert np.allclose(per_observation.loc[stock_dates, "Stock"], 1.05 ** (1 / 252) - 1)
+    assert per_observation["Stock"].isna().sum() == returns["Stock"].isna().sum()
+    # A ticker trading every day earns the annualized rate over a year of returns.
+    in_2023 = returns.index.year == 2023  # noqa: PLR2004
+    assert (1 + per_observation.loc[in_2023, "Crypto"]).prod() == pytest.approx(1.05)
+
+    # The rate of a period the data covers in part is that of the calendar days it covers,
+    # from the date before its first return (Sunday 2 January) to its last return.
+    stock_only = returns[["Stock"]].loc[:"2022-03-31"]
+    yearly = compound_risk_free_rate(annualized_rate, stock_only, "yearly")
+    assert yearly.iloc[0] == pytest.approx(1.05 ** (88 / 365) - 1)
+
+    # A trading day of the rate per date of stock-only data, as for the daily returns.
+    per_date = get_risk_free_rate_per_date(annualized_rate, stock_only)
+    assert np.allclose(per_date, 1.05 ** (1 / 252) - 1)
+
+
+def test_only_a_ticker_trading_on_every_weekend_counts_365_days_a_year():
+    returns = _stock_and_crypto_returns()
+    index = returns.index
+    # An exchange open from Sunday to Thursday and a stock with a one-off Saturday session.
+    returns["Sunday to Thursday"] = np.where(
+        (index.dayofweek < 4) | (index.dayofweek == 6), 0.001, np.nan  # noqa: PLR2004
+    )
+    returns["One Saturday"] = returns["Stock"]
+    returns.loc["2022-01-08", "One Saturday"] = 0.002
+
+    assert get_observations_per_year(returns).to_dict() == {
+        "Crypto": 365.0,
+        "Stock": 252.0,
+        "Sunday to Thursday": 252.0,
+        "One Saturday": 252.0,
+    }
+
+
+def test_the_period_risk_free_rate_does_not_depend_on_the_tickers():
+    returns = _stock_and_crypto_returns()
+    annualized_rate = pd.Series(0.05, index=returns.index)
+
+    mixed = compound_risk_free_rate(annualized_rate, returns, "monthly")
+    stock = compound_risk_free_rate(annualized_rate, returns[["Stock"]], "monthly")
+    days_in_month = returns.index.asfreq("M").value_counts().sort_index()
+
+    # Every calendar day earns 1 / 365 of the year: a full year earns the annualized rate
+    # and a month its days, whether the dates are the trading days of the stock or every
+    # calendar day of the cryptocurrency. Only a weekend at the turn of a month moves to
+    # the month of the next trading day.
+    yearly = compound_risk_free_rate(annualized_rate, returns, "yearly")
+    assert yearly[pd.Period("2023", "Y")] == pytest.approx(0.05, rel=1e-12)
+    assert mixed.to_numpy() == pytest.approx(
+        (1.05 ** (days_in_month / 365) - 1).to_numpy(), rel=1e-12
+    )
+    weekday_turns = [
+        month
+        for month in stock.index[1:]
+        if month.end_time.dayofweek < 5  # noqa: PLR2004
+        and (month - 1).end_time.dayofweek < 5  # noqa: PLR2004
+    ]
+    assert len(weekday_turns) > 3  # noqa: PLR2004
+    assert stock[weekday_turns].to_numpy() == pytest.approx(
+        mixed[weekday_turns].to_numpy(), rel=1e-12
+    )
+
+
+def test_the_risk_free_rate_per_ticker_is_in_date_order_with_a_later_listing_first():
+    days = pd.period_range("2021-01-01", "2022-12-30", freq="B")
+    rng = np.random.default_rng(4)
+    returns = pd.DataFrame(
+        {
+            "Listed Later": np.where(
+                days >= pd.Period("2022-01-03", "B"),
+                rng.normal(0, 0.01, len(days)),
+                np.nan,
+            ),
+            "Listed Earlier": rng.normal(0, 0.01, len(days)),
+        },
+        index=days.asfreq("D"),
+    )
+    historical_data = {
+        "daily": pd.concat(
+            {"Return": returns, "Adj Close": (1 + returns).cumprod()}, axis=1
+        )
+    }
+    annualized_rate = {"daily": pd.Series(0.04, index=returns.index)}
+
+    monthly = get_risk_free_rate_per_ticker(annualized_rate, historical_data, "monthly")
+    swapped = get_risk_free_rate_per_ticker(
+        annualized_rate,
+        {"daily": historical_data["daily"].iloc[:, [1, 0, 3, 2]]},
+        "monthly",
+    )
+
+    # The periods of 2021 only the second ticker has come first, not after those of 2022,
+    # so rolling windows over the rows cover consecutive periods.
+    assert monthly.index.is_monotonic_increasing
+    assert len(monthly) == 24  # noqa: PLR2004
+    pd.testing.assert_frame_equal(monthly, swapped[monthly.columns])
+
+
+def test_the_pain_index_averages_the_drawdowns_over_every_day():
+    # Wealth 0.9, 0.99, 1.0395, 0.93555: drawdowns of 10%, 1%, 0 (a new high) and 10%.
+    returns = pd.Series([-0.1, 0.1, 0.05, -0.1])
+
+    assert risk_model.get_pain_index(returns) == pytest.approx(
+        (0.1 + 0.01 + 0 + 0.1) / 4
+    )
+
+
+def test_the_pain_index_restarts_every_period_and_skips_a_later_listing():
+    index = pd.MultiIndex.from_tuples(
+        [("2021", 1), ("2021", 2), ("2022", 3), ("2022", 4)]
+    )
+    returns = pd.DataFrame(
+        {"A": [-0.1, 0.1, -0.2, 0.0], "B": [np.nan, -0.1, -0.2, 0.0]}, index=index
+    )
+
+    result = risk_model.get_pain_index(returns)
+
+    assert result.loc["2021", "A"] == pytest.approx((0.1 + 0.01) / 2)
+    # The row before B's first return is no observation of it.
+    assert result.loc["2021", "B"] == pytest.approx(0.1)
+    assert result.loc["2022", "A"] == pytest.approx(0.2)
+
+
+def test_the_pain_index_matches_the_bacon_definition():
+    # PerformanceAnalytics' PainIndex (Bacon, 2013): sum(|D_i|) / n with D_i the drawdown
+    # from the highest wealth so far, written out with plain loops. The first return is a
+    # loss from the starting wealth of 1.
+    rng = np.random.default_rng(3)
+    returns = pd.DataFrame(
+        rng.normal(0.0003, 0.015, (300, 2)),
+        columns=["A", "B"],
+        index=pd.period_range("2022-01-03", periods=300, freq="D"),
+    )
+
+    expected = {}
+    for column in returns:
+        wealth, peak, total = 1.0, 1.0, 0.0
+        for value in returns[column]:
+            wealth *= 1 + value
+            peak = max(peak, wealth)
+            total += abs(wealth / peak - 1)
+        expected[column] = total / len(returns)
+
+    result = risk_model.get_pain_index(returns)
+
+    assert result.to_dict() == pytest.approx(expected)
+    # The Pain Index is never above the Ulcer Index on the same running peak.
+    assert (result <= risk_model.get_ui(returns, None)).all()
+
+
+def test_the_pain_index_of_a_stock_next_to_a_seven_day_ticker_is_the_stock_alone():
+    returns = _stock_and_crypto_returns()
+    within = returns.set_axis(
+        pd.MultiIndex.from_arrays([returns.index.asfreq("Y"), returns.index])
+    )
+    stock = returns[["Stock"]].dropna()
+    stock_within = stock.set_axis(
+        pd.MultiIndex.from_arrays([stock.index.asfreq("Y"), stock.index])
+    )
+
+    assert risk_model.get_pain_index(returns)["Stock"] == pytest.approx(
+        risk_model.get_pain_index(stock)["Stock"]
+    )
+    pd.testing.assert_series_equal(
+        risk_model.get_pain_index(within)["Stock"],
+        risk_model.get_pain_index(stock_within)["Stock"],
+    )
+
+
+def test_the_pain_index_skips_the_rows_before_a_later_listing():
+    returns = _late_listing_returns()
+    alone = returns[["Later"]].dropna()
+
+    assert risk_model.get_pain_index(returns)["Later"] == pytest.approx(
+        risk_model.get_pain_index(alone)["Later"]
+    )
+    assert np.isnan(risk_model.get_pain_index(pd.Series([np.nan, np.nan])))

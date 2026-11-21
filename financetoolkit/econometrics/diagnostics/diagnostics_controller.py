@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.econometrics.base.base_controller import EconometricsBase
 from financetoolkit.econometrics.diagnostics import diagnostics_model
 from financetoolkit.helpers import handle_portfolio
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
@@ -17,7 +16,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 
 @filter_shown_columns
 @track_sources
-class DiagnosticsEconometrics(EconometricsBase):
+class DiagnosticsEconometrics:
     """
     Diagnostic tests of a series: ARCH-LM, Jarque-Bera, Ljung-Box, the variance ratio and CUSUM.
     """

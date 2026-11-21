@@ -864,7 +864,10 @@ def convert_daily_to_other_period(
 
     Open is taken from the first day of the period, High is the highest and Low the
     lowest value within it, Close is the last day of the period and Volume and Dividends
-    are summed over it. It also calculates the following:
+    are summed over it. The flat bars of the dates a ticker did not trade while another
+    ticker did (see `fill_non_trading_days`) are left out of the Open, High and Low, so a
+    stock's week is the same with or without a cryptocurrency in the data. It also
+    calculates the following:
         - Return: The return for the given period.
         - Cumulative Return: The cumulative return for the given period.
 
@@ -912,7 +915,34 @@ def convert_daily_to_other_period(
         )
         columns_per_aggregation.setdefault(aggregation, []).append(column)
 
-    grouped = daily_historical_data.groupby(dates)
+    # The flat bars of the dates a ticker did not trade while another did (see `fill_non_trading_days`) sit at the last close and would become a period's Open, High or Low, such as a stock's week that opens on a holiday Monday at the previous Friday's close. They are left out of those three, and a period without any trading day of the ticker keeps its flat bar.  # noqa: E501
+    open_high_low = [
+        column
+        for column in ("Open", "High", "Low")
+        if column in daily_historical_data.columns.get_level_values(0)
+    ]
+    trading_data = daily_historical_data
+    if (
+        open_high_low
+        and isinstance(daily_historical_data.columns, pd.MultiIndex)
+        and "Close" in daily_historical_data.columns.get_level_values(0)
+    ):
+        non_trading_days = helpers.get_non_trading_days(daily_historical_data, "Close")
+        if non_trading_days.to_numpy().any():
+            trading_data = daily_historical_data.copy()
+            for column in open_high_low:
+                trading_data[column] = (
+                    daily_historical_data[column]
+                    .mask(
+                        non_trading_days.reindex(
+                            columns=daily_historical_data[column].columns,
+                            fill_value=False,
+                        )
+                    )
+                    .to_numpy()
+                )
+
+    grouped = trading_data.groupby(dates)
     period_historical_data = pd.concat(
         [
             grouped[columns].agg(aggregation)
@@ -925,6 +955,13 @@ def convert_daily_to_other_period(
     period_historical_data.columns = pd.Index(
         list(period_historical_data.columns)
     ).set_names(daily_historical_data.columns.names)
+
+    if trading_data is not daily_historical_data:
+        flat_bars = daily_historical_data[open_high_low].groupby(dates).last()
+        for column in open_high_low:
+            period_historical_data[column] = period_historical_data[column].fillna(
+                flat_bars[column]
+            )
 
     if "Return" in period_historical_data:
         period_historical_data["Return"] = drop_non_finite(

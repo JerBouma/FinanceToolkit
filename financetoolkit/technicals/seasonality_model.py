@@ -93,8 +93,8 @@ def get_seasonality(
 
 
 def get_relative_strength(
-    prices: pd.DataFrame, benchmark_prices: pd.Series, window: int = 252
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+    prices: pd.Series | pd.DataFrame, benchmark_prices: pd.Series, window: int = 252
+) -> tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]:
     """
     Calculate the relative strength of prices against a benchmark: the price relative (the
     price divided by the benchmark's, set to 1 on the first date), which rises when the
@@ -108,30 +108,63 @@ def get_relative_strength(
       Markets." McGraw-Hill.
 
     Args:
-        prices (pd.DataFrame): The prices, a column each.
+        prices (pd.Series | pd.DataFrame): The prices, a column each.
         benchmark_prices (pd.Series): The benchmark's prices.
         window (int, optional): The moving average window of the Mansfield relative strength,
             in periods of the prices. Defaults to 252 (a year of daily prices).
 
     Returns:
-        tuple[pd.DataFrame, pd.DataFrame]: The price relative and the Mansfield relative
-        strength.
+        tuple[pd.Series | pd.DataFrame, pd.Series | pd.DataFrame]: The price relative and the
+        Mansfield relative strength, in the shape of the prices.
     """
     relative = prices.div(benchmark_prices, axis=0)
-    relative = relative / relative.apply(
-        lambda column: column.dropna().iloc[0] if column.notna().any() else np.nan
-    )
+    # The first value of each column, as the backfilled first row holds it.
+    relative = relative / relative.bfill().iloc[0]
     mansfield = relative / relative.rolling(window).mean() - 1
     return relative, mansfield
 
 
-def get_relative_strength_rating(prices: pd.DataFrame) -> pd.DataFrame:
+def get_relative_strength_score(
+    prices: pd.Series | pd.DataFrame, observations_per_year: float = 252
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the relative strength score of every asset: its performance over the last
+    year, the latest quarter weighing most, which `get_relative_strength_rating` ranks.
+
+    The formula is as follows:
+
+    - Score = 0.4 * Return over 3 Months + 0.2 * Return over 6 Months + 0.2 * Return over
+      9 Months + 0.2 * Return over 12 Months
+
+    Where a quarter is 63 observations of an asset that trades on an exchange's trading
+    days (`observations_per_year` of 252), and 91 of one that trades every calendar day
+    (365), so it covers three months in both cases.
+
+    For more information, see the following book:
+
+    - O'Neil, W.J. (1988). "How to Make Money in Stocks." McGraw-Hill.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): The daily prices, a column each.
+        observations_per_year (float, optional): The daily observations in a year of the
+            prices. Defaults to 252.
+
+    Returns:
+        pd.Series | pd.DataFrame: The score per date, in the shape of the prices.
+    """
+    return sum(
+        weight * (prices / prices.shift(round(days * observations_per_year / 252)) - 1)
+        for days, weight in RATING_QUARTERS.items()
+    )
+
+
+def get_relative_strength_rating(scores: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate the relative strength rating of every asset: its performance over the last
     year, the latest quarter weighing most (the 3, 6, 9 and 12-month returns weighted
-    0.4, 0.2, 0.2 and 0.2), ranked against the other assets from 1 (weakest) to 99
-    (strongest). The rating is only meaningful across many assets, such as the constituents
-    of an index.
+    0.4, 0.2, 0.2 and 0.2, see `get_relative_strength_score`), ranked against the other
+    assets from 1 (weakest) to 99 (strongest). The rating is only meaningful across many
+    assets, such as the constituents of an index.
 
     The rating follows the one Investor's Business Daily publishes, whose exact formula is
     proprietary; the 0.4, 0.2, 0.2 and 0.2 weighting is its common public approximation.
@@ -143,17 +176,13 @@ def get_relative_strength_rating(prices: pd.DataFrame) -> pd.DataFrame:
     - O'Neil, W.J. (1988). "How to Make Money in Stocks." McGraw-Hill.
 
     Args:
-        prices (pd.DataFrame): The daily prices, a column each.
+        scores (pd.DataFrame): The relative strength scores per date, a column each.
 
     Returns:
         pd.DataFrame: The rating per date and asset.
     """
-    score = sum(
-        weight * (prices / prices.shift(days) - 1)
-        for days, weight in RATING_QUARTERS.items()
-    )
-    ranks = score.rank(axis=1, method="max")
-    count = score.notna().sum(axis=1)
+    ranks = scores.rank(axis=1, method="max")
+    count = scores.notna().sum(axis=1)
     # The weakest asset of a date rates 1 and the strongest 99.
     rating = 1 + (ranks - 1).div((count - 1).replace(0, np.nan), axis=0) * 98
-    return rating.round().where(score.notna())
+    return rating.round().where(scores.notna())

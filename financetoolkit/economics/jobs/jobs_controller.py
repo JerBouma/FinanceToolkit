@@ -4,12 +4,14 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
+    aggregate_weekly_series,
+    average_monthly_index,
     buffered_start_date,
     check_period_type,
     extend_with_recent,
-    to_gmdb_country_names,
+    normalize_requested_countries,
+    validate_period,
 )
 from financetoolkit.economics.sources import (
     bls_model,
@@ -28,9 +30,7 @@ from financetoolkit.utilities.sources_model import (
     collect_sources,
     track_sources,
 )
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -39,9 +39,9 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class JobsEconomics(EconomicsBase):
+class JobsEconomics:
     """
-    Labour and society: unemployment, nonfarm payrolls, jobless claims, the misery index, labour productivity, income inequality, poverty, population, life tables and household savings and debt.
+    Labour and society: unemployment, job vacancies, nonfarm payrolls, jobless claims, the misery index, labour productivity, unit labour costs, income inequality, poverty, population, life tables and household savings and debt.
     """
 
     def _get_oecd_unemployment_rate_with_bls(self) -> pd.DataFrame:
@@ -108,7 +108,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -211,7 +212,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -336,7 +338,9 @@ class JobsEconomics(EconomicsBase):
             countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
             period (str | None, optional): Whether to return the monthly, quarterly or the annual data.
                 Defaults to None, which is quarterly when the Economics class was initialized with
-                quarterly=True and monthly otherwise.
+                quarterly=True and monthly otherwise. Countries the OECD publishes quarterly only,
+                such as New Zealand, are not in the monthly data; a warning names them when they
+                are requested.
             gmdb_source (bool | None, optional): Whether to get the data from the Global Macro Database (GMDB).
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
@@ -345,7 +349,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -419,6 +424,7 @@ class JobsEconomics(EconomicsBase):
                 ],
                 countries,
             )
+            self._log_quarterly_unemployment_rates(unemployment_rate, countries)
         elif gmdb_source:
 
             unemployment_rate = gmdb_model.get_unemployment_rate(
@@ -446,6 +452,249 @@ class JobsEconomics(EconomicsBase):
             row_slice=True,
             # Rows empty for every selected country, e.g. a month only another source has.
             dropna=monthly,
+        )
+
+    def _log_quarterly_unemployment_rates(
+        self, monthly_rate: pd.DataFrame, countries: list[str] | str | None
+    ) -> None:
+        """
+        Names the requested countries the monthly sources lack that the OECD publishes
+        quarterly, such as New Zealand, so their absence from the monthly
+        data points to period="quarterly" rather than reading as no data at all. Only
+        checked when countries are requested, as the full table has no such gap to explain.
+
+        Args:
+            monthly_rate (pd.DataFrame): The monthly unemployment rate, a column per country.
+            countries (list[str] | str | None): The requested countries.
+        """
+        requested = normalize_requested_countries(countries, monthly_rate.columns)
+        missing = [
+            country
+            for country in requested or []
+            if country not in monthly_rate.columns or monthly_rate[country].isna().all()
+        ]
+
+        if not missing:
+            return
+
+        # Held back: the quarterly data only explains the gap, it is not in the answer.
+        with collect_sources():
+            quarterly_rate = oecd_model.get_unemployment_rate(
+                period="quarterly", start_date=self._start_date, end_date=self._end_date
+            )
+
+        quarterly_only = [
+            country
+            for country in normalize_requested_countries(
+                missing, quarterly_rate.columns
+            )
+            or []
+            if country in quarterly_rate.columns
+            and quarterly_rate[country].notna().any()
+        ]
+
+        if quarterly_only:
+            logger.warning(
+                "The unemployment rate of %s is published quarterly, not monthly: use "
+                "period='quarterly' for it.",
+                ", ".join(quarterly_only),
+            )
+
+    @handle_errors
+    def get_job_vacancy_rate(
+        self,
+        countries: list[str] | str | None = None,
+        period: str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        The job vacancy rate is the share of all posts, occupied or not, that employers are
+        actively trying to fill from outside the company. It measures unmet labour demand,
+        the counterpart of the unemployment rate: plotted against each other, the two trace
+        the Beveridge curve, where a movement along the curve reflects the business cycle
+        and a shift of the curve a change in how well job seekers and vacancies are matched.
+        A high vacancy rate next to low unemployment points to a tight labour market and,
+        in time, wage pressure.
+
+        Each country comes from its official publisher, seasonally adjusted:
+
+        - Eurostat for the euro area, the European Union and around 30 European countries:
+          the job vacancy statistics (Regulation (EC) No 453/2008) of industry,
+          construction and services (NACE Rev. 2.1 B-T), quarterly from 2006 for the euro
+          area and starting between 2008 and 2017 for most countries (Denmark from 2026Q1).
+        - The Bureau of Labor Statistics for the United States: the job openings rate of
+          total nonfarm from the Job Openings and Labor Turnover Survey (JOLTS), monthly
+          from December 2000. The BLS API returns about the last three years; with a FRED
+          API key the full history comes from FRED (series JTSJOR), which republishes it.
+
+        Both define the rate the same way, as the vacancies (job openings) on a reference
+        day over the occupied posts (employment) plus the vacancies, and return it as a
+        decimal (0.045 for 4.5%). The quarterly US value is the average of its three
+        months, for complete quarters only.
+
+        The formula is as follows:
+
+        - Job Vacancy Rate = Job Vacancies / (Occupied Posts + Job Vacancies)
+
+        The rate is the publishers' own figure, published in percent and divided by 100 here.
+
+        See definitions: https://ec.europa.eu/eurostat/cache/metadata/en/jvs_esms.htm and
+        https://www.bls.gov/jlt/
+
+        Also known as: vacancy rate, job openings rate, JOLTS, labour demand.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            period (str | None, optional): Whether to return the monthly or the quarterly data.
+                Defaults to None, which is monthly when only the United States, the one country
+                published monthly, is requested and quarterly otherwise (and quarterly when the
+                Economics class was initialized with quarterly=True). With period='monthly'
+                the other countries are left out with a warning.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Job Vacancy Rate per country.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2024-01-01', end_date='2026-09-30')
+
+        economics.get_job_vacancy_rate(
+            countries=['United States', 'Euro Area', 'Germany', 'France']
+        )
+        ```
+
+        Which returns:
+
+        |        |   United States |   Euro Area |   Germany |   France |
+        |:-------|----------------:|------------:|----------:|---------:|
+        | 2024Q1 |          0.0507 |       0.028 |     0.036 |    0.028 |
+        | 2024Q2 |          0.046  |       0.026 |     0.033 |    0.027 |
+        | 2024Q3 |          0.0443 |       0.025 |     0.031 |    0.026 |
+        | 2024Q4 |          0.045  |       0.026 |     0.033 |    0.024 |
+        | 2025Q1 |          0.0437 |       0.023 |     0.027 |    0.025 |
+        | 2025Q2 |          0.0433 |       0.022 |     0.026 |    0.024 |
+        | 2025Q3 |          0.0427 |       0.022 |     0.026 |    0.024 |
+        | 2025Q4 |          0.0413 |       0.023 |     0.027 |    0.024 |
+        | 2026Q1 |          0.0427 |       0.022 |     0.026 |    0.024 |
+        | 2026Q2 |          0.0447 |       0.021 |     0.025 |    0.023 |
+        | 2026Q3 |          0.044  |     nan     |   nan     |  nan     |
+        """
+        check_period_type(period)
+
+        # Only the United States is published monthly, so a request for other countries
+        # defaults to the quarters they are published in.
+        requested = normalize_requested_countries(countries, ["United States"])
+        period = validate_period(
+            self._default_period(
+                period,
+                "monthly" if requested == ["United States"] else "quarterly",
+            ),
+            ["monthly", "quarterly"],
+            "job vacancy rate",
+        )
+
+        # FRED republishes the JOLTS series in full, so it is used when a key is set; the
+        # keyless BLS API returns about the last three years.
+        united_states = (
+            (
+                lambda: fred_model.get_job_openings_rate(
+                    buffered_start_date(self._start_date, "monthly"),
+                    self._end_date,
+                    self._fred_api_key,
+                )
+            )
+            if self._fred_api_key
+            else bls_model.get_job_openings_rate
+        )
+
+        if period == "monthly":
+            job_vacancy_rate = united_states()
+
+            # Every country was requested, so the quarterly ones are left out as well.
+            if requested is None:
+                logger.warning(
+                    "The job vacancy rate is published monthly for the United States alone, the "
+                    "other countries quarterly: use period='quarterly' for them."
+                )
+            elif other := [
+                country for country in requested if country != "United States"
+            ]:
+                logger.warning(
+                    "The job vacancy rate of %s is published quarterly, not monthly: use "
+                    "period='quarterly' for it.",
+                    ", ".join(other),
+                )
+        else:
+            job_vacancy_rate = self._combine_sources_for(
+                [
+                    (
+                        lambda: eurostat_model.get_job_vacancy_rate(
+                            buffered_start_date(self._start_date, "quarterly"),
+                            self._end_date,
+                        ),
+                        None,
+                    ),
+                    (
+                        lambda: average_monthly_index(united_states(), "quarterly"),
+                        "United States",
+                    ),
+                ],
+                countries,
+            )
+
+        if (
+            not self._fred_api_key
+            and "United States" in job_vacancy_rate.columns
+            and job_vacancy_rate["United States"].first_valid_index() is not None
+            and job_vacancy_rate["United States"].first_valid_index().to_timestamp()
+            > pd.Timestamp(self._start_date)
+        ):
+            logger.warning(
+                "Without a FRED API key, the US job vacancy rate starts in %s: the keyless "
+                "BLS API only returns about the last three years. Set a FRED API key for the "
+                "history from December 2000.",
+                job_vacancy_rate["United States"].first_valid_index(),
+            )
+
+        return finalize_dataset(
+            dataset=job_vacancy_rate,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Job Vacancy Rate",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Rows empty for every selected country, e.g. a quarter only one source has.
+            dropna=True,
         )
 
     @handle_errors
@@ -489,8 +738,6 @@ class JobsEconomics(EconomicsBase):
             gmdb_source (bool | None, optional): Whether to get the unemployment rate from the
                 Global Macro Database (GMDB) instead of the OECD. Defaults to None, which falls
                 back to the gmdb_source set on the Economics class (True by default).
-                Either way the countries carry the GMDB names, such as "Russian Federation",
-                "Eswatini" and "Congo DR", as the inflation rate comes from the GMDB.
             rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
@@ -498,7 +745,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -542,9 +790,6 @@ class JobsEconomics(EconomicsBase):
             unemployment_rate = oecd_model.get_unemployment_rate(
                 period="yearly", start_date=self._start_date, end_date=self._end_date
             )
-
-            # The inflation leg comes from the GMDB, which names a few countries differently.
-            unemployment_rate = to_gmdb_country_names(unemployment_rate)
 
         inflation_rate = gmdb_model.get_inflation_rate(
             gmd_dataset=self._get_gmdb_dataset(gmdb_forecasts=gmdb_forecasts)
@@ -619,7 +864,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -675,6 +921,111 @@ class JobsEconomics(EconomicsBase):
         )
 
     @handle_errors
+    def get_unit_labour_costs(
+        self,
+        countries: list[str] | str | None = None,
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Unit labour costs are the average cost of labour per unit of output: what an
+        economy pays its employees for producing one unit of real GDP. They link wages to
+        productivity (see get_labour_productivity): pay rising faster than output per
+        worker raises unit labour costs, which firms either pass on in prices or absorb in
+        their margins. That makes them a measure of domestic cost pressure and, compared
+        between countries, of cost competitiveness; the European Union's macroeconomic
+        imbalance procedure, for example, watches their growth over three years.
+
+        The OECD compiles them for the total economy, employment based, from the national
+        accounts: the compensation of employees per employee divided by real GDP per
+        person employed (OECD Compendium of Productivity Indicators). They are published
+        quarterly, seasonally adjusted, as an index with 2015 = 100 in national currency,
+        so compare their growth rather than their level between countries; growth=True
+        with lag=4 gives the change on the same quarter a year earlier as a decimal.
+
+        The index is the OECD's own figure (the source's calculation).
+
+        The formula is as follows:
+
+        - Unit Labour Costs = (Compensation of Employees / Employees) / (Real GDP / Total Employment)
+
+        See definition: https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_PDB%40DF_PDB_ULC_Q&df[ag]=OECD.SDD.TPS
+
+        Also known as: unit labor costs, ULC, labour cost per unit of output.
+
+        Args:
+            countries (list[str] | str | None, optional): The countries to include in the data. Defaults to None.
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over trailing periods (e.g. a trailing-4-quarter sum). Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the Unit Labour Costs (index, 2015 = 100).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(start_date='2024-01-01', end_date='2026-09-30')
+
+        economics.get_unit_labour_costs(
+            countries=['United States', 'Germany', 'Japan', 'United Kingdom']
+        )
+        ```
+
+        Which returns:
+
+        |        |   United States |   Germany |   Japan |   United Kingdom |
+        |:-------|----------------:|----------:|--------:|-----------------:|
+        | 2024Q1 |         123.636 |   130.876 | 110.592 |          129.865 |
+        | 2024Q2 |         124.092 |   132.198 | 112.014 |          130.988 |
+        | 2024Q3 |         124.5   |   133.416 | 112.228 |          133.209 |
+        | 2024Q4 |         125.343 |   134.974 | 112.874 |          136.223 |
+        | 2025Q1 |         127.233 |   136.405 | 112.925 |          137.779 |
+        | 2025Q2 |         126.863 |   137.912 | 113.68  |          138.804 |
+        | 2025Q3 |         127.209 |   139.548 | 115.082 |          141.405 |
+        | 2025Q4 |         127.89  |   140.455 | 115.908 |          142.565 |
+        | 2026Q1 |         128.219 |   140.494 | 116.313 |          145.51  |
+        | 2026Q2 |         128.821 |   141.639 | 118.368 |          nan     |
+        """
+        unit_labour_costs = oecd_model.get_unit_labour_costs(
+            start_date=self._start_date, end_date=self._end_date
+        )
+
+        return finalize_dataset(
+            dataset=unit_labour_costs,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            indicator_name="Unit Labour Costs",
+            countries=countries,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
+    @handle_errors
     def get_income_inequality(
         self,
         countries: list[str] | str | None = None,
@@ -715,7 +1066,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -827,7 +1179,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             gmdb_forecasts (bool, optional): Whether to include the years the Global Macro
                 Database projects, from the IMF's World Economic Outlook, up to five years
                 ahead. Only applies to data from the Global Macro Database. Defaults to
@@ -937,7 +1290,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1038,7 +1392,8 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1110,9 +1465,77 @@ class JobsEconomics(EconomicsBase):
             row_slice=True,
         )
 
+    def _get_weekly_claims(
+        self,
+        fred_source,
+        dol_source,
+        description: str,
+        period: str | None,
+        aggregation: str,
+        rolling: int | None,
+        trailing: int | None,
+        growth: bool,
+        lag: int,
+        standardize: bool,
+        rounding: int | None,
+    ) -> pd.DataFrame:
+        """
+        Retrieves a weekly series of the Department of Labor's claims report, from FRED
+        when a FRED API key is set and from the report otherwise, as weeks or combined
+        into months, quarters or years (see aggregate_weekly_series), and applies the
+        rolling, trailing, growth and standardize options to that series.
+
+        Args:
+            fred_source (Callable): The FRED function of the series, taking the start date,
+                end date and API key.
+            dol_source (Callable): The Department of Labor function of the series.
+            description (str): The name of the series, used in the error messages.
+            period (str | None): "weekly", "monthly", "quarterly" or "yearly"; None is
+                weekly, or quarterly when the class was initialized with quarterly=True.
+            aggregation (str): "mean", "max", "min" or "last".
+            rolling, trailing, growth, lag, standardize, rounding: see finalize_dataset.
+
+        Returns:
+            pd.DataFrame: A single "United States" column.
+        """
+        period = validate_period(
+            self._default_period(period, "weekly"),
+            ["weekly", "monthly", "quarterly", "yearly"],
+            description,
+        )
+
+        # FRED republishes these figures, so it is used when a key is set and the
+        # publisher otherwise. FRED is asked for the full history, as the report gives,
+        # so the first period and the growth and rolling windows of the first rows shown
+        # are the same with or without a key.
+        weekly = (
+            fred_source(
+                f"{dol_model.FIRST_YEAR}-01-01", self._end_date, self._fred_api_key
+            )
+            if self._fred_api_key
+            else dol_source()
+        )
+
+        return finalize_dataset(
+            dataset=aggregate_weekly_series(weekly, period, aggregation),
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
     @handle_errors
     def get_initial_jobless_claims(
         self,
+        period: str | None = None,
+        aggregation: str = "mean",
         rolling: int | None = None,
         trailing: int | None = None,
         growth: bool = False,
@@ -1130,7 +1553,26 @@ class JobsEconomics(EconomicsBase):
         reported weekly (versus Nonfarm Payrolls' monthly cadence, see
         `get_nonfarm_payrolls`) and captures layoffs essentially in real time, it is
         one of the most timely leading indicators of labor-market deterioration and a
-        core component of the Conference Board's Leading Economic Index.
+        core component of the Conference Board's Leading Economic Index. The
+        continued claims of the same report are in `get_continuing_jobless_claims`.
+
+        Each week is dated by the Saturday it ends, the week the claims were filed. With
+        period="monthly", "quarterly" or "yearly" the weeks are combined into that period:
+        by default their average, as FRED converts its weekly series, or the
+        highest, lowest or last week of the period with aggregation="max", "min" or "last".
+
+        The formula is as follows:
+
+        - Monthly Claims (mean) = Sum of the weekly claims of the weeks ending in the month /
+          Number of those weeks
+        - Monthly Claims (max) = the highest weekly claims of the weeks ending in the month
+
+        A week belongs to the month, quarter or year its Saturday falls in, as FRED aggregates
+        the weekly series, so a month has four or five weeks. A period is only returned once
+        all of its weeks are published, so the month that is still running is left out rather
+        than shown as the average of its first weeks. The rolling, trailing, growth and lag
+        options work on the combined series, e.g. growth=True with lag=12 on monthly data
+        gives the change on the same month a year earlier.
 
         Without a FRED API key the data comes from the Department of Labor's weekly claims
         report directly, which gives the same figures, although FRED adds the latest weeks
@@ -1139,9 +1581,17 @@ class JobsEconomics(EconomicsBase):
 
         See definition: https://fred.stlouisfed.org/series/ICSA
 
-        Also known as: initial claims, new unemployment claims.
+        Also known as: initial claims, new unemployment claims, jobless claims, monthly
+        average of initial claims.
 
         Args:
+            period (str | None, optional): Whether to return the weekly, monthly, quarterly or
+                yearly data. Defaults to None, which is weekly, or quarterly when the Economics
+                class was initialized with quarterly=True.
+            aggregation (str, optional): How the weeks are combined into a month, quarter or
+                year: "mean" (the average of its weeks), "max" (the highest week), "min" (the
+                lowest week) or "last" (the last week). Not used with weekly data. Defaults to
+                "mean".
             rolling (int, optional): The rolling window size to use for smoothing the data (simple
             moving average). Defaults to None.
             trailing (int, optional): The trailing window size to use for summing the data over
@@ -1151,15 +1601,17 @@ class JobsEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.DataFrame: A single-column ("United States") DataFrame of weekly initial
-            jobless claims, seasonally adjusted.
+            pd.DataFrame: A single-column ("United States") DataFrame of initial jobless
+            claims, seasonally adjusted: weekly, indexed by the Saturday each week ends, or
+            per month, quarter or year.
 
         As an example:
 
@@ -1184,29 +1636,251 @@ class JobsEconomics(EconomicsBase):
         | 2025-12-20 |          215000 |
         | 2025-12-27 |          203000 |
         """
-        # FRED republishes these figures, so it is used when a key is set and the
-        # publisher otherwise.
-        initial_jobless_claims = (
-            fred_model.get_initial_jobless_claims(
-                self._start_date, self._end_date, self._fred_api_key
-            )
-            if self._fred_api_key
-            else dol_model.get_initial_jobless_claims()
-        )
-
-        return finalize_dataset(
-            dataset=initial_jobless_claims,
-            start_date=self._start_date,
-            end_date=self._end_date,
-            default_rounding=self._rounding,
+        return self._get_weekly_claims(
+            fred_model.get_initial_jobless_claims,
+            dol_model.get_initial_jobless_claims,
+            "initial jobless claims",
+            period=period,
+            aggregation=aggregation,
             rolling=rolling,
             trailing=trailing,
             growth=growth,
             lag=lag,
-            rounding=rounding,
             standardize=standardize,
-            axis="rows",
-            row_slice=True,
+            rounding=rounding,
+        )
+
+    @handle_errors
+    def get_continuing_jobless_claims(
+        self,
+        period: str | None = None,
+        aggregation: str = "mean",
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get weekly Continued Claims (Insured Unemployment) for the United States from the
+        Department of Labor.
+
+        Continued claims count the people who already receive unemployment insurance and
+        claim it for another week: the stock of insured unemployed, where initial claims
+        (see `get_initial_jobless_claims`) are the inflow. Rising continued claims with
+        steady initial claims mean that people who lose their job take longer to find a
+        new one, which is why both are read together.
+
+        Each week is dated by the Saturday ending the week of unemployment the claims count,
+        as FRED dates CCSA and the Department of Labor's weekly claims report does. That week
+        lies a week before the week the claims are filed, so the weekly news release
+        reports the continued claims a week behind the initial claims: a release with the
+        initial claims of the week ending November 14 gives the continued claims of the
+        week ending November 7. With period="monthly", "quarterly" or "yearly" the weeks are
+        combined into that period as in `get_initial_jobless_claims`: by default their
+        average, or the highest, lowest or last week with aggregation="max", "min" or "last".
+
+        The formula is as follows:
+
+        - Monthly Claims (mean) = Sum of the weekly continued claims of the weeks ending in
+          the month / Number of those weeks
+        - Monthly Claims (max) = the highest weekly continued claims of the weeks ending in
+          the month
+
+        A week belongs to the month, quarter or year its Saturday falls in, and a period is
+        only returned once all of its weeks are published. The rolling, trailing, growth and
+        lag options work on the combined series.
+
+        Without a FRED API key the data comes from the Department of Labor's weekly claims
+        report directly, which gives the same figures, although FRED adds the latest weeks
+        before the report includes them. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+
+        See definition: https://fred.stlouisfed.org/series/CCSA
+
+        Also known as: continuing claims, continued claims, insured unemployment, ongoing
+        jobless claims.
+
+        Args:
+            period (str | None, optional): Whether to return the weekly, monthly, quarterly or
+                yearly data. Defaults to None, which is weekly, or quarterly when the Economics
+                class was initialized with quarterly=True.
+            aggregation (str, optional): How the weeks are combined into a month, quarter or
+                year: "mean" (the average of its weeks), "max" (the highest week), "min" (the
+                lowest week) or "last" (the last week). Not used with weekly data. Defaults to
+                "mean".
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of continued jobless
+            claims, seasonally adjusted: weekly, indexed by the Saturday ending the week of
+            unemployment, or per month, quarter or year.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(
+            start_date='2020-01-01',
+            end_date="2025-12-31",
+        )
+
+        economics.get_continuing_jobless_claims(period="monthly")
+        ```
+
+        Which returns:
+
+        | Date    |   United States |
+        |:--------|----------------:|
+        | 2025-08 |         1941000 |
+        | 2025-09 |         1922750 |
+        | 2025-10 |         1947500 |
+        | 2025-11 |         1932800 |
+        | 2025-12 |         1889250 |
+        """
+        return self._get_weekly_claims(
+            fred_model.get_continuing_jobless_claims,
+            dol_model.get_continuing_jobless_claims,
+            "continuing jobless claims",
+            period=period,
+            aggregation=aggregation,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            rounding=rounding,
+        )
+
+    @handle_errors
+    def get_insured_unemployment_rate(
+        self,
+        period: str | None = None,
+        aggregation: str = "mean",
+        rolling: int | None = None,
+        trailing: int | None = None,
+        growth: bool = False,
+        lag: int = 1,
+        standardize: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Get the weekly Insured Unemployment Rate for the United States from the Department
+        of Labor.
+
+        The insured unemployment rate is the continued claims (see
+        `get_continuing_jobless_claims`) as a share of the employment covered by
+        unemployment insurance. It is narrower than the unemployment rate (see
+        `get_unemployment_rate`), as it only counts the unemployed who receive state
+        unemployment insurance, but it is published weekly. It is the trigger of the
+        Extended Benefits program, which starts paying in a state once the state's insured
+        unemployment rate is high enough.
+
+        Each week is dated like the continued claims, by the Saturday ending the week of
+        unemployment, as FRED dates IURSA. With period="monthly", "quarterly" or "yearly"
+        the weeks are combined into that period as in `get_initial_jobless_claims`: by
+        default their average, or the highest, lowest or last week with
+        aggregation="max", "min" or "last".
+
+        The formula is as follows:
+
+        - Insured Unemployment Rate = Continued Claims / Covered Employment
+
+        The Department of Labor publishes the rate in percent with one decimal, from 1971;
+        it is returned as a decimal (0.012 for 1.2%), so it moves in steps of 0.001. Covered
+        employment is updated once a quarter.
+
+        Without a FRED API key the data comes from the Department of Labor's weekly claims
+        report directly, which gives the same figures, although FRED adds the latest weeks
+        before the report includes them. When a FRED API key is set (see the
+        `fred_api_key` parameter of the `Economics` class), it comes from FRED.
+
+        See definition: https://fred.stlouisfed.org/series/IURSA
+
+        Also known as: IUR, insured unemployment rate, covered unemployment rate.
+
+        Args:
+            period (str | None, optional): Whether to return the weekly, monthly, quarterly or
+                yearly data. Defaults to None, which is weekly, or quarterly when the Economics
+                class was initialized with quarterly=True.
+            aggregation (str, optional): How the weeks are combined into a month, quarter or
+                year: "mean" (the average of its weeks), "max" (the highest week), "min" (the
+                lowest week) or "last" (the last week). Not used with weekly data. Defaults to
+                "mean".
+            rolling (int, optional): The rolling window size to use for smoothing the data (simple
+            moving average). Defaults to None.
+            trailing (int, optional): The trailing window size to use for summing the data over
+            trailing periods. Defaults to None.
+            growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
+            lag (int, optional): The number of periods to lag the data by. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: A single-column ("United States") DataFrame of the insured
+            unemployment rate as a decimal, seasonally adjusted: weekly, indexed by the
+            Saturday ending the week of unemployment, or per month, quarter or year.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Economics
+
+        economics = Economics(
+            start_date='2020-01-01',
+            end_date="2025-12-31",
+        )
+
+        economics.get_insured_unemployment_rate()
+        ```
+
+        Which returns:
+
+        | Date       |   United States |
+        |:-----------|----------------:|
+        | 2025-11-29 |           0.012 |
+        | 2025-12-06 |           0.012 |
+        | 2025-12-13 |           0.012 |
+        | 2025-12-20 |           0.012 |
+        | 2025-12-27 |           0.012 |
+        """
+        return self._get_weekly_claims(
+            fred_model.get_insured_unemployment_rate,
+            dol_model.get_insured_unemployment_rate,
+            "insured unemployment rate",
+            period=period,
+            aggregation=aggregation,
+            rolling=rolling,
+            trailing=trailing,
+            growth=growth,
+            lag=lag,
+            standardize=standardize,
+            rounding=rounding,
         )
 
     @handle_errors
@@ -1248,7 +1922,8 @@ class JobsEconomics(EconomicsBase):
             measure (str, optional): The life table measure, see above. Defaults to
                 "death_probability".
             sex (str, optional): "total", "male" or "female". Defaults to "total".
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             growth (bool, optional): Whether to return the growth data or the actual data. Defaults to False.
             lag (int, optional): The number of periods to lag the growth data by. Defaults to 1.
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When

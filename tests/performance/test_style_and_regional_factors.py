@@ -283,3 +283,25 @@ def test_style_analysis_retrieves_styles_outside_the_toolkit(performance_module)
     # @handle_errors returns an empty result).
     module._returns_function = None
     assert module.get_style_analysis(period="weekly").empty
+
+
+def test_style_returns_on_dates_the_toolkit_lacks_stay_in_date_order(
+    performance_module,
+):
+    module = copy.copy(performance_module)
+    daily = module._historical_data["daily"]["Return"]
+    # A Saturday inside the range that only the style indices have, as a holiday of the funds' exchange would give.  # noqa: E501
+    extra_day = pd.Period("2021-06-12", freq="D")
+    assert extra_day not in daily.index
+
+    def returns_function(tickers, period):  # noqa: ARG001
+        styles = pd.DataFrame(dict.fromkeys(tickers, daily["Benchmark"]))
+        return pd.concat(
+            [styles, pd.DataFrame(0.0, index=[extra_day], columns=tickers)]
+        )
+
+    module._returns_function = returns_function
+    rolling = module.get_style_analysis(period="daily", window=252)
+
+    assert rolling.index.is_monotonic_increasing
+    assert extra_day in rolling.index

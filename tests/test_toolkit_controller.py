@@ -1068,3 +1068,72 @@ def test_basket_statements_hold_the_sum_of_the_tickers(test_toolkit, basket_tool
     # Per-share figures and share counts do not add up across companies.
     assert basket.loc[("Total", "EPS")].isna().all()
     assert basket.loc[("Total", "Weighted Average Shares Diluted")].isna().all()
+
+
+def test_yahoo_share_counts_are_neither_translated_nor_summed(
+    monkeypatch, known_fmp_plan
+):
+    from financetoolkit import toolkit_controller
+
+    periods = pd.PeriodIndex(["2021", "2022"], freq="Y")
+    items = [
+        "Total Assets",
+        "Share Issued",
+        "Ordinary Shares Number",
+        "Treasury Shares Number",
+    ]
+    balance = pd.DataFrame(
+        [[1000.0, 1100.0], [55.0, 55.0], [50.0, 50.0], [5.0, 5.0]] * 2,
+        index=pd.MultiIndex.from_product([["A", "B"], items]),
+        columns=periods,
+    )
+    statistics = pd.DataFrame(
+        [["EUR", "EUR"], ["2021-12-31", "2022-12-31"]] * 2,
+        index=pd.MultiIndex.from_product(
+            [["A", "B"], ["Reported Currency", "Period End Date"]]
+        ),
+        columns=periods,
+    )
+    monkeypatch.setattr(
+        toolkit_controller,
+        "collect_financial_statements",
+        lambda *args, **kwargs: (balance.copy(), statistics, [], {}),
+    )
+
+    toolkit = Toolkit(
+        tickers=["A", "B"],
+        api_key="KEY",
+        start_date="2021-01-01",
+        end_date="2022-12-31",
+        convert_currency=True,
+        sleep_timer=False,
+        basket=True,
+    )
+    days = pd.period_range("2020-01-01", "2022-12-31", freq="D")
+
+    def exchange_rates(*args, **kwargs):
+        toolkit._statement_currencies = pd.Series({"A": "EURUSD=X", "B": "EURUSD=X"})
+        toolkit._daily_exchange_rate_data = pd.DataFrame(
+            {("Adj Close", "EURUSD=X"): pd.Series(1.1, index=days)}
+        )
+
+    monkeypatch.setattr(toolkit, "get_exchange_rates", exchange_rates)
+    monkeypatch.setattr(
+        toolkit,
+        "_get_listing_currencies",
+        lambda: pd.Series({"A": "USD", "B": "USD"}),
+    )
+
+    statement = toolkit.get_balance_sheet_statement(rounding=None)
+
+    # The amounts are translated at the closing rate, the numbers of shares are not.
+    assert statement.loc[("A", "Total Assets")].tolist() == pytest.approx(
+        [1100.0, 1210.0]
+    )
+    assert statement.loc[("A", "Share Issued")].tolist() == [55.0, 55.0]
+    assert statement.loc[("Total", "Total Assets")].tolist() == pytest.approx(
+        [2200.0, 2420.0]
+    )
+    # Share counts of different companies do not add up to a share count of the basket.
+    for item in items[1:]:
+        assert statement.loc[("Total", item)].isna().all()

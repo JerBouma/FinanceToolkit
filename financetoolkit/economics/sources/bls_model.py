@@ -32,6 +32,9 @@ SERIES = {
     # 2000 = 100 (International Price Program).
     "export_price_index": "EIUIQ",
     "import_price_index": "EIUIR",
+    # The job openings rate of total nonfarm, seasonally adjusted (Job Openings and Labor
+    # Turnover Survey), the source of FRED's JTSJOR series.
+    "job_openings_rate": "JTS000000000000000JOR",
 }
 
 # The Consumer Price Index for All Urban Consumers (CPI-U), U.S. city average, not
@@ -103,7 +106,8 @@ def collect_recent_bls_series(
         # A refused request, such as one over the daily limit, is answered with status 200.
         if response.get("status") != "REQUEST_SUCCEEDED":
             raise BLSRequestRefusedError(
-                f"The BLS did not process the request: {' '.join(response.get('message', []))}"
+                "The BLS refused the request, which the keyless API does after 25 requests a "
+                f"day per IP address: {' '.join(response.get('message', []))}"
             )
 
         series_values = {}
@@ -181,11 +185,38 @@ def get_nonfarm_payrolls() -> pd.DataFrame:
         SERIES["nonfarm_payrolls"], "nonfarm payrolls"
     ).copy()
 
+    # A refused request (e.g. over the daily limit of the keyless API) or an unreachable
+    # BLS has already been logged with the BLS message, and leaves an empty frame without
+    # a monthly index to redate.
+    if payrolls.empty:
+        return payrolls
+
     # Dated on the first day of each month, as FRED dates the series.
     payrolls.index = payrolls.index.asfreq("D", how="start")
     payrolls.index.name = "Date"
 
     return payrolls
+
+
+def get_job_openings_rate() -> pd.DataFrame:
+    """
+    Retrieves the latest months of the US job openings rate of total nonfarm, seasonally
+    adjusted (series JTS000000000000000JOR), from the Job Openings and Labor Turnover
+    Survey (JOLTS): the job openings on the last business day of the month as a share of
+    employment plus job openings.
+
+    The BLS API returns about the last three years, so the full history, from December
+    2000, requires a FRED API key.
+
+    Returns:
+        pd.DataFrame: The job openings rate as a decimal (0.045 for 4.5%), a single
+        "United States" column indexed by month.
+    """
+    # The BLS publishes the rate in percent.
+    return (
+        collect_recent_bls_series(SERIES["job_openings_rate"], "US job openings rate")
+        / 100
+    )
 
 
 def get_price_index(measure: str) -> pd.DataFrame:

@@ -437,3 +437,26 @@ def test_search_news_without_symbols():
         mock_fn.return_value = _news_mock_data()
         discovery.search_forex_news(limit=2)
         assert "EURUSD" in mock_fn.call_args.kwargs["symbols"]
+
+
+@pytest.mark.parametrize(
+    "method, name",
+    [
+        ("get_sector_performance", "sector"),
+        ("get_industry_performance", "industry"),
+        ("get_sector_pe", "sector"),
+        ("get_industry_pe", "industry"),
+    ],
+)
+def test_the_sector_and_industry_histories_check_their_dates(method, name):
+    discovery = discovery_controller.Discovery(api_key="test_key")
+
+    with patch(f"financetoolkit.discovery.discovery_model.{method}") as mock_fn:
+        with pytest.raises(ValueError, match="start_date"):
+            getattr(discovery, method)(**{name: "Energy", "start_date": "2024-13-01"})
+        with pytest.raises(ValueError, match="must be on or before"):
+            getattr(discovery, method)(
+                **{name: "Energy", "start_date": "2025-01-01", "end_date": "2024-01-01"}
+            )
+
+    mock_fn.assert_not_called()

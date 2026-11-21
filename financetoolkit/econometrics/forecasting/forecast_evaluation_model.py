@@ -41,11 +41,18 @@ def get_diebold_mariano_test(
     Where `L` is a loss function (squared or absolute error). If both forecasts are
     equally accurate, `d_t` should average out to zero; if `forecast_a` is
     systematically more accurate, `d_t` should be negative on average (and vice
-    versa). The test statistic standardizes the mean loss differential by a
-    Newey-West long-run variance estimate (which accounts for the serial correlation
-    that `d_t` typically has for multi-step-ahead, `horizon > 1`, forecasts):
+    versa). The test statistic standardizes the mean loss differential by its long-run
+    variance, which accounts for the serial correlation that `d_t` has for
+    multi-step-ahead (`horizon > 1`) forecasts, up to lag `horizon - 1`:
 
-    - DM = mean(d_t) / SQRT(NeweyWest_LRV(d_t) / n)
+    - LRV(d_t) = gamma_0 + 2 * SUM_{k=1}^{horizon - 1} gamma_k
+    - DM = mean(d_t) / SQRT(LRV(d_t) / n)
+
+    Where gamma_k is the k-th sample autocovariance of `d_t` (divided by n). These are
+    the equal (rectangular) weights of Diebold & Mariano (1995), for which Harvey,
+    Leybourne & Newbold (1997) derive their correction. When this estimate is zero or
+    negative, which can happen in a small sample, the Newey-West (Bartlett) weights
+    1 - k / horizon of the same lags are used instead, as they are never negative.
 
     Which is asymptotically standard normal under the null of equal forecast
     accuracy, allowing for a two-sided p-value. When `small_sample_correction=True`
@@ -76,9 +83,9 @@ def get_diebold_mariano_test(
         (competing) forecast, aligned to the same index as `actual`.
         loss (str, optional): The loss function to compare forecast errors with, one
         of "squared" or "absolute". Defaults to "squared".
-        horizon (int, optional): The forecast horizon (in periods), used to set the
-        Newey-West truncation lag (`horizon - 1`) since an `h`-step-ahead forecast
-        error is expected to be autocorrelated up to lag `h - 1`. Defaults to 1
+        horizon (int, optional): The forecast horizon (in periods), which sets the number
+        of autocovariances in the long-run variance (`horizon - 1`) since an
+        `h`-step-ahead forecast error is autocorrelated up to lag `h - 1`. Defaults to 1
         (one-step-ahead forecasts, no autocorrelation correction needed).
         small_sample_correction (bool, optional): Whether to apply the Harvey,
         Leybourne & Newbold (1997) finite-sample correction. Defaults to True.
@@ -136,8 +143,19 @@ def get_diebold_mariano_test(
         d = (loss_a - loss_b).to_numpy()
         d_bar = d.mean()
 
+        # Diebold & Mariano (1995) weigh the first h - 1 autocovariances fully (a rectangular
+        # window): an h-step forecast error is MA(h - 1), so these are exactly the nonzero
+        # ones, and Harvey, Leybourne & Newbold (1997) derive their correction for this
+        # estimator. It can be negative in a small sample; the Bartlett (Newey-West) weights
+        # of the same lags are positive semi-definite and take over then.
         lags = max(horizon - 1, 0)
-        long_run_variance = newey_west_long_run_variance(d - d_bar, lags)
+        demeaned = d - d_bar
+        long_run_variance = float(np.sum(demeaned**2) / n) + 2 * sum(
+            float(np.sum(demeaned[lag:] * demeaned[:-lag]) / n)
+            for lag in range(1, lags + 1)
+        )
+        if long_run_variance <= 0:
+            long_run_variance = newey_west_long_run_variance(demeaned, lags)
 
         if long_run_variance <= 0:
             return pd.Series(

@@ -1,10 +1,13 @@
 """Tests for the note on a last row whose session has not closed yet."""
 
+import asyncio
 from datetime import date, timedelta
 
 import pandas as pd
 
 from financetoolkit.cache import policy_model
+from financetoolkit.mcp_server import mcp_controller
+from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
 from financetoolkit.mcp_server.registry.registry_controller import (
     _unclosed_session_note,
 )
@@ -52,3 +55,27 @@ def test_a_scheduled_date_after_today_is_not_noted(monkeypatch):
     )
 
     assert _unclosed_session_note(calendar) is None
+
+
+def test_a_forecast_starting_today_is_not_noted(monkeypatch):
+    today = date.today()
+    monkeypatch.setattr(
+        policy_model, "get_last_closed_session", lambda now=None: today - timedelta(1)
+    )
+
+    def forecast(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        # A one-step forecast after the last closed session falls on today.
+        return pd.DataFrame(
+            {"AAPL": [0.0004]}, index=pd.period_range(today, periods=1, freq="D")
+        )
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", forecast)
+
+    text = asyncio.run(
+        mcp_controller.mcp.call_tool(
+            "risk",
+            {"indicator": "get_garch_forecast", "tickers": "AAPL", "time_steps": 1},
+        )
+    )[0][0].text
+
+    assert "has not closed yet" not in text

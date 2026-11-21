@@ -6,7 +6,10 @@ from scipy import stats
 
 from financetoolkit.risk import risk_model
 from financetoolkit.risk.helpers import as_float
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.statistics_model import by_own_trading_days
+
+logger = get_logger()
 
 ALPHA_CONSTRAINT = 0.5
 
@@ -18,6 +21,10 @@ MINIMUM_STUDENT_T_OBSERVATIONS = 3
 
 # Floating point slack when comparing alpha with the GPD exceedance probability.
 ALPHA_TOLERANCE = 1e-12
+
+# The losses above the threshold a GPD fit needs: its shape and scale are unstable on a
+# handful of points, so with fewer the EVT VaR and CVaR are NaN rather than a random value.
+MINIMUM_NUMBER_OF_EXCEEDANCES = 10
 
 
 def get_var_historic(
@@ -127,12 +134,12 @@ def fit_gpd_tail(
     Returns:
         tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: The fitted shape (xi), scale
         (sigma), threshold (u) and exceedance probability, one value per column of `returns`,
-        in the same order as `returns.columns`. A minimum number of exceedances is required
-        for the GPD fit to be meaningful; if there are too few (e.g. a short sub-period), NaN
-        is returned for the shape, scale and exceedance probability of that column.
+        in the same order as `returns.columns`. The GPD fit needs at least 10 losses above
+        the threshold (MINIMUM_NUMBER_OF_EXCEEDANCES), so about 200 returns at the default
+        threshold_percentile of 0.95; with fewer (e.g. a short sub-period) NaN is returned
+        for the shape, scale and exceedance probability of that column, see
+        `warn_too_few_exceedances`.
     """
-    minimum_number_of_exceedances = 2
-
     shape, scale, threshold, exceedance_probability = [], [], [], []
     for column in returns.columns:
         losses = -returns[column].dropna()
@@ -148,7 +155,7 @@ def fit_gpd_tail(
         column_threshold = np.percentile(losses, threshold_percentile * 100)
         exceedances = losses[losses > column_threshold] - column_threshold
 
-        if len(exceedances) < minimum_number_of_exceedances:
+        if len(exceedances) < MINIMUM_NUMBER_OF_EXCEEDANCES:
             shape.append(np.nan)
             scale.append(np.nan)
             threshold.append(column_threshold)
@@ -168,6 +175,67 @@ def fit_gpd_tail(
         np.array(threshold),
         np.array(exceedance_probability),
     )
+
+
+def get_number_of_exceedances(
+    returns: pd.DataFrame, threshold_percentile: float
+) -> pd.Series:
+    """
+    The number of losses above the `threshold_percentile` percentile of the losses per
+    column, the observations `fit_gpd_tail` fits the GPD to.
+
+    Args:
+        returns (pd.DataFrame): A Dataframe of returns, one column per asset.
+        threshold_percentile (float): The percentile of losses above which the GPD is fitted.
+
+    Returns:
+        pd.Series: The number of exceedances per column, NaN for a column without returns.
+    """
+    losses = -returns
+
+    return (
+        (losses > losses.quantile(threshold_percentile)).sum().where(losses.count() > 0)
+    )
+
+
+def warn_too_few_exceedances(
+    returns: pd.Series | pd.DataFrame, threshold_percentile: float
+) -> None:
+    """
+    Log, once for all columns and periods, where the EVT VaR or CVaR is NaN because fewer
+    than MINIMUM_NUMBER_OF_EXCEEDANCES losses lie above the threshold (see `fit_gpd_tail`).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns, optionally with a (period, date)
+            index.
+        threshold_percentile (float): The percentile of losses above which the GPD is fitted.
+    """
+    returns = pd.DataFrame(returns)
+
+    if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        counts = returns.groupby(level=0, sort=False).apply(
+            lambda period_returns: get_number_of_exceedances(
+                period_returns, threshold_percentile
+            )
+        )
+    else:
+        counts = get_number_of_exceedances(returns, threshold_percentile).to_frame().T
+
+    too_few = (counts < MINIMUM_NUMBER_OF_EXCEEDANCES).sum()
+    too_few = too_few[too_few > 0]
+
+    if not too_few.empty:
+        logger.warning(
+            "The Extreme Value Theory VaR and CVaR fit the Generalized Pareto Distribution to at least %s losses "  # noqa: E501
+            "above the %s percentile, which %s do not have in up to %s of %s periods, so those are NaN. Use more returns "  # noqa: E501
+            "per period (a longer period, within_period=False or daily data), about %s for this threshold.",  # noqa: E501
+            MINIMUM_NUMBER_OF_EXCEEDANCES,
+            threshold_percentile,
+            ", ".join(map(str, too_few.index)),
+            int(too_few.max()),
+            len(counts),
+            int(np.ceil(MINIMUM_NUMBER_OF_EXCEEDANCES / (1 - threshold_percentile))),
+        )
 
 
 def validate_evt_alpha(alpha: float, threshold_percentile: float) -> None:
@@ -197,6 +265,7 @@ def get_var_evt(
     returns: pd.Series | pd.DataFrame,
     alpha: float,
     threshold_percentile: float = 0.95,
+    warn: bool = True,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Value at Risk (VaR) of returns based on Extreme Value Theory (EVT), using a
@@ -224,6 +293,8 @@ def get_var_evt(
         to be at most 1 - `threshold_percentile`.
         threshold_percentile (float, optional): The percentile of losses above which the GPD is
         fitted (e.g. 0.95 fits the GPD on the worst 5% of losses). Defaults to 0.95.
+        warn (bool, optional): Whether to log the columns and periods with fewer than 10 losses
+        above the threshold, for which the VaR is NaN (see `fit_gpd_tail`). Defaults to True.
 
     Returns:
         pd.Series | pd.DataFrame: VaR values as float if returns is a pd.Series,
@@ -235,6 +306,9 @@ def get_var_evt(
     """
     validate_evt_alpha(alpha, threshold_percentile)
 
+    if warn:
+        warn_too_few_exceedances(returns, threshold_percentile)
+
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -244,7 +318,7 @@ def get_var_evt(
 
         for sub_period in periods:
             period_data = get_var_evt(
-                returns.loc[sub_period], alpha, threshold_percentile
+                returns.loc[sub_period], alpha, threshold_percentile, warn=False
             )
             period_data.name = sub_period
 

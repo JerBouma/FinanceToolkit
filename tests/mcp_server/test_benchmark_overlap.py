@@ -58,3 +58,44 @@ def test_a_benchmark_based_metric_keeps_the_benchmark_and_says_so(toolkit_calls)
 
     assert toolkit_calls == ["SPY"]
     assert "SPY is the benchmark, so it is left out as a ticker" in answer["_notes"][0]
+
+
+@pytest.mark.parametrize(
+    ("tool", "indicator"),
+    [
+        ("etf", "get_holdings"),
+        ("econometrics", "get_johansen_cointegration"),
+        ("portfolio", "get_minimum_variance_weights"),
+        ("performance", "get_beta"),
+    ],
+)
+def test_the_default_benchmark_asked_as_a_ticker_stays_a_ticker(
+    toolkit_calls, tool, indicator
+):
+    answer = call(tool, {"indicator": indicator, "tickers": "SPY,VT"})
+
+    # SPY is analysed as one of the tickers, with QQQ as the benchmark.
+    assert toolkit_calls == ["QQQ"]
+    assert '"SPY"' in answer
+    assert "No data is available for SPY" not in answer
+    assert "left out as a ticker" not in answer
+
+
+def test_the_default_benchmark_swap_is_named_with_a_benchmark(monkeypatch):
+    def beta(self, module_name, method_name, category, **kwargs):  # noqa: ARG001
+        return pd.DataFrame({"SPY": [1.0], "VT": [1.1], "Benchmark": [1.0]})
+
+    monkeypatch.setattr(ToolkitProvider, "call_method", beta)
+
+    answer = call("performance", {"indicator": "get_beta", "tickers": "SPY,VT"})
+
+    assert "SPY is one of the tickers, so QQQ is the benchmark" in answer
+
+
+def test_a_chosen_benchmark_asked_as_a_ticker_is_kept(toolkit_calls):
+    call(
+        "etf",
+        {"indicator": "get_holdings", "tickers": "SPY,VT", "benchmark_ticker": "SPY"},
+    )
+
+    assert toolkit_calls == ["SPY"]

@@ -580,8 +580,7 @@ def get_clayton_copula_density(
 
     The formula is as follows:
 
-    - c(u, v; theta) = (1 + theta) * (u * v)^(-1 - theta) * (u^-theta + v^-theta
-    - 1)^(-1 / theta - 2)
+    - c(u, v; theta) = (1 + theta) * (u * v)^(-1 - theta) * (u^-theta + v^-theta - 1)^(-1 / theta - 2)
 
     Where theta > 0 controls the strength of dependence (theta -> 0 is
     independence, theta -> infinity is perfect dependence). The Clayton copula

@@ -239,6 +239,20 @@ FRED_SOURCES = {
         lambda: economics_fred_model.get_retail_sales(START, END, FRED_API_KEY),
         "monthly",
     ),
+    # Continued claims are a week behind the initial claims, so both are held to the age
+    # of monthly data.
+    "FRED initial jobless claims": (
+        lambda: economics_fred_model.get_initial_jobless_claims(
+            START, END, FRED_API_KEY
+        ),
+        "monthly",
+    ),
+    "FRED continuing jobless claims": (
+        lambda: economics_fred_model.get_continuing_jobless_claims(
+            START, END, FRED_API_KEY
+        ),
+        "monthly",
+    ),
     "FRED 30-year mortgage rate": (
         lambda: economics_fred_model.get_mortgage_rate_30_year(
             START, END, FRED_API_KEY

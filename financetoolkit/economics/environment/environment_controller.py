@@ -4,7 +4,6 @@ __docformat__ = "google"
 
 import pandas as pd
 
-from financetoolkit.economics.base.base_controller import EconomicsBase
 from financetoolkit.economics.helpers import (
     buffered_start_date,
     resample_to_period,
@@ -14,12 +13,8 @@ from financetoolkit.economics.sources import eex_model, ngfs_model, oecd_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
-from financetoolkit.utilities.sources_model import (
-    track_sources,
-)
-from financetoolkit.utilities.statistics_model import (
-    finalize_dataset,
-)
+from financetoolkit.utilities.sources_model import track_sources
+from financetoolkit.utilities.statistics_model import finalize_dataset
 
 # ruff: noqa: E501
 
@@ -28,7 +23,7 @@ logger = get_logger()
 
 @filter_shown_columns
 @track_sources
-class EnvironmentEconomics(EconomicsBase):
+class EnvironmentEconomics:
     """
     Environment and climate: renewable energy, the carbon footprint, the EU carbon price and the NGFS climate scenarios.
     """
@@ -75,7 +70,8 @@ class EnvironmentEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -172,7 +168,8 @@ class EnvironmentEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -267,7 +264,8 @@ class EnvironmentEconomics(EconomicsBase):
             standardize (bool, optional): Whether to standardize (Z-Score) the result. When
                 combined with growth=True, standardizes the growth values instead of the raw
                 values. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -395,7 +393,8 @@ class EnvironmentEconomics(EconomicsBase):
                 physical risk only, which is also its combined risk. Defaults to "combined".
             deviation (bool, optional): Whether to return the deviation from the baseline
                 instead of the level. Defaults to False.
-            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the rounding of the Economics class.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none

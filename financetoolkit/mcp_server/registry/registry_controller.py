@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+import functools
 import importlib
 import inspect
 import json
@@ -28,9 +29,11 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import (
     BeforeValidator,
+    ConfigDict,
     Field as PydanticField,
 )
 
+from financetoolkit import currencies_model
 from financetoolkit.cache import policy_model
 from financetoolkit.fmp_model import parse_fiscal_period
 from financetoolkit.helpers import rank_across_tickers
@@ -64,11 +67,15 @@ from financetoolkit.mcp_server.registry.formatting_model import (
     has_period_columns,
     is_time_index_of,
     is_yearly,
+    observed_period,
     select_rows,
     signal_rows,
     skipped_periods_note,
 )
-from financetoolkit.mcp_server.registry.provider_model import ToolkitProvider
+from financetoolkit.mcp_server.registry.provider_model import (
+    FALLBACK_BENCHMARKS,
+    ToolkitProvider,
+)
 from financetoolkit.utilities import validation_model
 from financetoolkit.utilities.dataframe_model import filter_columns as _filter_columns
 from financetoolkit.utilities.logger_model import get_logger, redact
@@ -122,7 +129,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "own window)."
     ),
     "quarterly": "Return quarterly data instead of annual when True.",
-    "benchmark_ticker": "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'; 'None' for no benchmark.",
+    "benchmark_ticker": (
+        "Ticker used as the market benchmark, e.g. 'SPY' or '^GSPC'; 'None' for no benchmark. "
+        "Left empty, SPY, or QQQ when SPY is one of the tickers."
+    ),
     "risk_free_rate": (
         "The US Treasury yield used as the risk-free rate: '13w' (the 13-week bill), '5y', '10y' "
         "(default) or '30y'."
@@ -288,7 +298,10 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "macroeconomics:get_inflation_rate:United States' or "
         "'rates:get_government_bond_yield_curve:United States,Germany:10Y'. Every ticker or "
         "country becomes a series named after it, which dependent_ticker and "
-        "independent_tickers then name. Use start_date for a long enough history."
+        "independent_tickers then name. Use start_date for a long enough history. "
+        "period='daily' reads the ratios of statement items (P/E, P/B) on every trading "
+        "day, each period's figure from its fiscal period end; quarterly=true uses the "
+        "quarterly statements."
     ),
     "changes": (
         "With series: how their changes (the 'Return' column the regressions and "
@@ -453,6 +466,13 @@ PERIODS = ("daily", "weekly", "monthly", "quarterly", "yearly", "annual")
 INTRADAY_PERIODS = ("1min", "5min", "15min", "30min", "1hour")
 
 
+def _normalise_period(period: Any) -> str:
+    """The period in lower case, with "annual" read as "yearly"."""
+    period = str(period).strip().lower()
+
+    return "yearly" if period == "annual" else period
+
+
 # The most distinct docstring descriptions of one parameter that are listed per indicator.
 MAXIMUM_DESCRIPTION_VERSIONS = 3
 
@@ -503,6 +523,96 @@ def _docstring_arguments(docstring: str) -> dict[str, str]:
             cleaned[argument] = text if text.endswith((".", "?", "...")) else f"{text}."
 
     return cleaned
+
+
+def keep_unknown_arguments(mcp: Any, tool_name: str) -> None:
+    """Pass the arguments that are no parameter of a tool on to the tool.
+
+    The MCP SDK validates the arguments with a model of the tool's parameters that drops
+    any other argument, so a misspelt parameter (`perid`) would be ignored without a word
+    and the answer would read as one for the given value. Kept, the tool names them in
+    its notes. The input schema the clients read is built when the tool is added and
+    does not change.
+
+    Args:
+        mcp (Any): The FastMCP server.
+        tool_name (str): The tool whose argument model to extend.
+    """
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tool = tool_manager.get_tool(tool_name) if tool_manager is not None else None
+    metadata = getattr(tool, "fn_metadata", None)
+    if metadata is None:
+        return
+
+    arguments = metadata.arg_model
+
+    class ArgumentsWithUnknown(arguments):  # type: ignore[valid-type, misc]
+        # The title keeps the name a validation error starts with ("riskArguments").
+        model_config = ConfigDict(
+            **{**arguments.model_config, "extra": "allow", "title": arguments.__name__}
+        )
+
+        def model_dump_one_level(self) -> dict[str, Any]:
+            return {**super().model_dump_one_level(), **(self.model_extra or {})}
+
+    metadata.arg_model = ArgumentsWithUnknown
+
+
+def unknown_parameter_notes(
+    tool_name: str, unknown: list[str], parameters: list[str]
+) -> list[str]:
+    """Name the arguments that are no parameter of a tool, with the parameter meant.
+
+    Args:
+        tool_name (str): The tool that was called.
+        unknown (list[str]): The arguments that are no parameter of the tool.
+        parameters (list[str]): The parameters of the tool.
+
+    Returns:
+        list[str]: A note per unknown argument, with the closest parameter when one is
+            near enough to be what was meant (`perid` for `period`).
+    """
+    notes = []
+    for pname in unknown:
+        near = difflib.get_close_matches(pname, parameters, n=1, cutoff=0.8)
+        notes.append(
+            f"`{pname}` is not a parameter of `{tool_name}` and was ignored"
+            + (f"; did you mean `{near[0]}`?" if near else ".")
+        )
+
+    return notes
+
+
+def name_unknown_arguments(method: Any, tool_name: str) -> Any:
+    """Let a tool that answers in text take arguments it has no parameter for.
+
+    With `keep_unknown_arguments` the MCP SDK passes such an argument on, which a method
+    without `**kwargs` would reject. The method is called with its own parameters only, and
+    the answer names the others, as the indicator tools do in their notes.
+
+    Args:
+        method (Any): The tool's method, which returns text.
+        tool_name (str): The name the tool is registered under.
+
+    Returns:
+        Any: The tool, with the method's signature.
+    """
+    parameters = list(inspect.signature(method).parameters)
+
+    @functools.wraps(method)
+    def tool(**kwargs: Any) -> str:
+        notes = unknown_parameter_notes(
+            tool_name,
+            [pname for pname in kwargs if pname not in parameters],
+            parameters,
+        )
+        answer = method(
+            **{pname: value for pname, value in kwargs.items() if pname in parameters}
+        )
+
+        return answer + "".join(f"\n\nNote: {note}" for note in notes)
+
+    return tool
 
 
 def _strip_schema_titles(mcp: Any, tool_name: str) -> None:
@@ -663,6 +773,60 @@ def _rank_result(result: object, is_country: bool) -> pd.DataFrame | None:
     result.columns.name = "Country" if is_country else "Ticker"
 
     return rank_across_tickers(result)
+
+
+# Words in an indicator's name that make its value a ratio, rate or count rather than an
+# amount of money (get_price_to_earnings_ratio, get_gross_margin, get_beta, get_days_...).
+DIMENSIONLESS_NAME_PARTS = (
+    "ratio",
+    "margin",
+    "return",
+    "yield",
+    "growth",
+    "_to_",
+    "rate",
+    "beta",
+    "alpha",
+    "score",
+    "volatility",
+    "percent",
+    "multiple",
+    "coverage",
+    "turnover",
+    "days",
+    "drawdown",
+    "correlation",
+    "sharpe",
+    "sortino",
+    "variance",
+    "skew",
+    "kurtosis",
+    "value_at_risk",
+    "share_of",
+    "weight",
+)
+
+
+def _ranks_amounts(method_name: str, ranking: pd.DataFrame) -> bool:
+    """
+    Whether a ranking compares amounts of money (a market cap, earnings per share, a price)
+    rather than ratios, rates or counts, which have no currency.
+
+    The indicator's name tells most apart; otherwise values that all lie between -1 and 1
+    are taken for decimals (a rate or a return), as amounts rarely do.
+
+    Args:
+        method_name (str): The indicator that was ranked.
+        ranking (pd.DataFrame): The ranking, with the ranked values in "Value".
+
+    Returns:
+        bool: Whether the ranked values are amounts of money.
+    """
+    if any(part in method_name.lower() for part in DIMENSIONLESS_NAME_PARTS):
+        return False
+    values = pd.to_numeric(ranking.get("Value"), errors="coerce").dropna()
+
+    return not values.empty and bool((values.abs() > 1).any())
 
 
 def _unmatched_columns(
@@ -956,15 +1120,16 @@ def _simplify_annotation(ann: Any) -> Any:
         scalars.append(a)
 
     if not scalars:
-        # A matrix (a list of lists of numbers, such as a Wald restriction matrix) has no
-        # text form, so it stays an array of arrays.
+        # A matrix (a list of lists of numbers, such as a Wald restriction matrix) or a list
+        # of objects (option strategy legs) has no text form, so it stays an array of arrays
+        # or of objects.
         matrix = next(
             (
                 a
                 for a in args
                 if typing.get_origin(a) is list
                 and typing.get_args(a)
-                and typing.get_origin(typing.get_args(a)[0]) is list
+                and typing.get_origin(typing.get_args(a)[0]) in (list, dict)
             ),
             None,
         )
@@ -990,9 +1155,18 @@ def _simplify_annotation(ann: Any) -> Any:
 
     scalar = scalars[0]
 
-    # A number that may also be a list of numbers (coupon rates or maturities for a bond
-    # sensitivity table, lags for growth) accepts both, as the indicator does.
-    if scalar in (int, float) and any(
+    if scalar not in (int, float):
+        return scalar | None if has_none else scalar
+
+    # A number accepts every other form the indicator takes, so none of them is refused
+    # before the indicator sees it: a keyword or label (the Black-Litterman
+    # risk_aversion='market', a maturity of '10Y'), a list (coupon rates or maturities for
+    # a bond sensitivity table, lags for growth) and a value per ticker (the weight bounds of
+    # the portfolio optimizers, the discount rates {'AAPL': 0.08} of a valuation model).
+    # Built at runtime for the tool schema; ty cannot follow a type held in a variable.
+    combined = scalar
+    takes_text = str in scalars
+    if any(
         a is list
         or (
             typing.get_origin(a) is list
@@ -1000,27 +1174,21 @@ def _simplify_annotation(ann: Any) -> Any:
         )
         for a in args
     ):
-        # Built at runtime for the tool schema; ty cannot follow a type held in a variable.
-        combined = scalar | list[scalar]  # ty: ignore[invalid-type-form]
-        return combined | None if has_none else combined
-
-    # A number that may also be given per ticker (the weight bounds of the portfolio
-    # optimizers) accepts both, as the indicator does.
-    if scalar in (int, float) and any(
+        # A list of labels next to the numbers ('2Y,10Y') keeps them as text.
+        item = scalar | str if takes_text else scalar
+        combined = combined | list[item]  # ty: ignore[invalid-type-form]
+        # A list is also written as text ('1,2'), which coerce_value splits.
+        takes_text = True
+    if any(
         typing.get_origin(a) is dict
         and all(arg in (str, int, float) for arg in typing.get_args(a))
         for a in args
     ):
-        combined = scalar | dict[str, scalar]  # ty: ignore[invalid-type-form]
-        return combined | None if has_none else combined
+        combined = combined | dict[str, scalar]  # ty: ignore[invalid-type-form]
+    if takes_text:
+        combined = combined | str
 
-    # A number that may also be a keyword (the Black-Litterman risk_aversion='market')
-    # accepts both, so the keyword is not refused as an unparsable number.
-    if scalar in (int, float) and str in scalars:
-        combined = scalar | str
-        return combined | None if has_none else combined
-
-    return scalar | None if has_none else scalar
+    return combined | None if has_none else combined
 
 
 class RouterGroupSpec(NamedTuple):
@@ -1102,6 +1270,35 @@ def _ticker(value: object, name: str) -> str:
     if not TICKER_PATTERN.match(ticker):
         raise ValueError(f"{name} has an invalid ticker: {value!r}.")
     return ticker
+
+
+def _is_currency_or_crypto(ticker: str) -> bool:
+    """
+    Whether a ticker is a currency pair (EURUSD, EURUSD=X) or a cryptocurrency quoted in a
+    currency (BTCUSD, BTC-USD, ETH-BTC), which have prices but no financial statements. A
+    share (AAPL, ASML.AS, BRK-B) is neither: a crypto pair is at least six characters
+    without an exchange suffix, longer than a US share ticker.
+
+    Args:
+        ticker (str): The ticker as the caller wrote it.
+
+    Returns:
+        bool: Whether the ticker is a currency or crypto pair.
+    """
+    symbol = currencies_model.to_financial_modeling_prep_symbol(ticker).upper()
+    if currencies_model.is_currency_pair(symbol):
+        return True
+    return (
+        len(symbol) >= 2 * currencies_model.CURRENCY_CODE_LENGTH
+        and symbol.isalnum()
+        and any(
+            symbol.endswith(quote) and len(symbol) > len(quote) + 1
+            for quote in (
+                currencies_model.CURRENCY_CODES
+                | currencies_model.CRYPTO_QUOTE_CURRENCIES
+            )
+        )
+    )
 
 
 def _parse_json_text(value: object) -> object:
@@ -1610,6 +1807,10 @@ class ToolRegistry:
                 arguments["as_series"] = True
             if deflate_with and "deflate_with" in parameters:
                 arguments["deflate_with"] = deflate_with
+            # The ratios of statement items have no period but show_daily, which maps every
+            # period's figure onto the daily prices; a daily analysis asks for those.
+            if period == "daily" and "show_daily" in parameters:
+                arguments["show_daily"] = True
             result = None
             if period and "period" in parameters:
                 result = self._provider.call_method(**arguments, period=period)
@@ -1729,6 +1930,16 @@ class ToolRegistry:
             required inputs (tickers, period), routes the call through the provider,
             and returns a formatted Markdown string suitable for LLM consumption.
             """
+            # Arguments that are no parameter of the tool (a misspelt one, or one of another
+            # tool, such as benchmark_ticker on a country tool) are taken off before any is
+            # read, so none of them is applied, and named in the answer.
+            tool_parameters = list(wrapper.__signature__.parameters)
+            unknown_arguments = [
+                pname for pname in kwargs if pname not in tool_parameters
+            ]
+            for pname in unknown_arguments:
+                kwargs.pop(pname)
+
             raw_indicator = kwargs.pop("indicator", None)
             if not raw_indicator:
                 return (
@@ -1911,14 +2122,16 @@ class ToolRegistry:
                 kwargs.pop("end_date", inspector.end_date) or inspector.end_date,
                 default_date=datetime.now().strftime("%Y-%m-%d"),
             )
-            benchmark_ticker = kwargs.pop(
-                "benchmark_ticker", inspector.benchmark_ticker
-            )
+            benchmark_ticker = kwargs.pop("benchmark_ticker", None)
+            # Left empty, the server's default benchmark applies (see below for a default
+            # that is one of the tickers).
+            benchmark_given = benchmark_ticker not in (None, "")
+            if not benchmark_given:
+                benchmark_ticker = inspector.benchmark_ticker
             # Clients write "no benchmark" as text; a ticker named NONE has no data.
-            if isinstance(
+            elif isinstance(
                 benchmark_ticker, str
             ) and benchmark_ticker.strip().lower() in (
-                "",
                 "none",
                 "null",
             ):
@@ -1931,6 +2144,36 @@ class ToolRegistry:
                     f"{str(benchmark_ticker)[:40]!r}. Please use a ticker such as 'SPY' or "
                     "'^GSPC', or 'None' for no benchmark."
                 )
+            # The default benchmark asked for as a ticker stays a ticker in every tool: the
+            # Toolkit would report it as 'Benchmark' only, which a test, an optimizer or an
+            # ETF's holdings leave out (and then miss it among the tickers), so the next
+            # benchmark that is not one of the tickers takes its place. A benchmark the
+            # caller chose is kept (see resolve_benchmark_ticker).
+            benchmark_swap_note = None
+            if (
+                not benchmark_given
+                and benchmark_ticker
+                and tickers
+                and benchmark_ticker.upper() in tickers
+            ):
+                fallback = next(
+                    (
+                        candidate
+                        for candidate in FALLBACK_BENCHMARKS
+                        if candidate.upper() not in tickers
+                    ),
+                    None,
+                )
+                benchmark_swap_note = (
+                    f"{benchmark_ticker} is one of the tickers, so "
+                    + (
+                        f"{fallback} is the benchmark: 'Benchmark' refers to {fallback}."
+                        if fallback
+                        else "the results are calculated without a benchmark."
+                    )
+                    + " Set benchmark_ticker to choose another."
+                )
+                benchmark_ticker = fallback
 
             # The Toolkit's own setting, taken off before the method's arguments and passed under
             # its own name, so it never meets a method's own risk_free_rate (options takes the
@@ -1988,10 +2231,7 @@ class ToolRegistry:
             # the length of a list) receives it instead, when it supports the value.
             raw_limit = kwargs.pop("limit", None)
             try:
-                # 0 asks for no selection, the same as leaving limit out.
-                rows_limit = (
-                    int(raw_limit) or None if raw_limit not in (None, "") else None
-                )
+                rows_limit = int(raw_limit) if raw_limit not in (None, "") else None
             except (TypeError, ValueError):
                 return (
                     f"Invalid input for `{tool_name}` (`{method_name}`): limit must be a "
@@ -1999,6 +2239,11 @@ class ToolRegistry:
                     f"five, not {raw_limit!r}."
                 )
             row_selection = None
+            # 0 asks for every row: no selection, and no MCP default limit either (the 25
+            # largest holdings of an ETF), so the indicator's own default of all rows holds.
+            every_row = rows_limit == 0
+            if every_row:
+                rows_limit = None
 
             method_kwargs = {}
             if rows_limit is not None:
@@ -2071,9 +2316,29 @@ class ToolRegistry:
                     today
                     + timedelta(days=int(method_defaults.get("lookahead_days", 0)))
                 ).strftime("%Y-%m-%d")
+            # A default limit for an indicator without a limit of its own selects rows as
+            # limit= does: the latest value of a weekly loan series, the last 20 levels of a
+            # daily one, rather than an answer cut at the size limit. A range given with
+            # start_date/end_date is answered in full. Named in the answer.
+            default_limit_note = None
+            if (
+                "limit" in method_defaults
+                and "limit" not in accepted_params
+                and rows_limit is None
+                and not every_row
+                and not given_dates
+            ):
+                row_selection = int(method_defaults["limit"])
+                default_limit_note = (
+                    f"limit={row_selection} applies by default "
+                    f"({'the last' if row_selection < 0 else 'the first'} "
+                    f"{abs(row_selection)} {'row' if abs(row_selection) == 1 else 'rows'}); "
+                    "limit=0 gives every row, start_date/end_date another range."
+                )
             for pname, value in method_defaults.items():
                 if (
                     pname not in ("lookback_days", "lookahead_days")
+                    and not (pname == "limit" and every_row)
                     and pname in accepted_params
                     and method_kwargs.get(pname) in (None, "")
                 ):
@@ -2141,13 +2406,9 @@ class ToolRegistry:
                             f"Invalid input for `{tool_name}` (`{method_name}`): {exc}"
                         )
 
-            if kwargs:
-                logger.warning(
-                    "Unknown parameter(s) passed to %s (%s) and ignored: %s",
-                    tool_name,
-                    method_name,
-                    ", ".join(kwargs.keys()),
-                )
+            unknown_notes = unknown_parameter_notes(
+                tool_name, unknown_arguments, tool_parameters
+            )
 
             # A period the toolkit does not know would surface as a confusing missing-item
             # error from deep inside the calculation.
@@ -2161,6 +2422,10 @@ class ToolRegistry:
                         f"'{method_kwargs['period']}'. Please use one of: "
                         f"{', '.join(known_periods)}."
                     )
+                # The methods compare the period in lower case and know "yearly" rather than "annual", so the period they receive is the normalised one, not only the one checked.  # noqa: E501
+                method_kwargs["period"] = _normalise_period(method_kwargs["period"])
+            if requested_period is not None:
+                requested_period = _normalise_period(requested_period)
 
             # Validate that the requested period (if any) is not blocked for this tool
             # A rolling window reads the regular data of the period, which every period
@@ -2302,23 +2567,6 @@ class ToolRegistry:
                 unmatched_columns: list[str] = []
                 # Read before show_columns can leave out the Volume and Return they need.
                 filled_days = filled_day_notes(result)
-                if show_columns is not None:
-                    # Matched in any casing ("close" for Close), as the names are shown
-                    # in a response and typed back by hand.
-                    _, available_columns = _unmatched_columns(result, show_columns)
-                    by_lowercase = {name.lower(): name for name in available_columns}
-                    show_columns = [
-                        (
-                            name
-                            if name in available_columns
-                            else by_lowercase.get(name.lower(), name)
-                        )
-                        for name in show_columns
-                    ]
-                    unmatched_columns, available_columns = _unmatched_columns(
-                        result, show_columns
-                    )
-                    result = _filter_columns(result, show_columns)
                 notes: list[str] = []
                 if dispatch_category in ("ticker", "toolkit") and tickers:
                     notes = provider.get_transformation_notes(
@@ -2335,6 +2583,10 @@ class ToolRegistry:
                 # Tickers left out of an otherwise answered call are named, e.g. a symbol
                 # the source does not know.
                 notes = list(notes) + filled_days + missing_data_notes(call_messages)
+                if benchmark_swap_note:
+                    notes.append(benchmark_swap_note)
+                if default_limit_note:
+                    notes.append(default_limit_note)
                 # A ticker the sources do not know is dropped from the answer; when the
                 # others are there, say which one is missing rather than leave it out quietly.
                 if (
@@ -2367,12 +2619,45 @@ class ToolRegistry:
                         if ticker not in labels
                         and not any(ticker in note for note in notes)
                     ]
-                    if absent and len(absent) < len(tickers):
+                    # A currency or cryptocurrency has prices but no financial statements,
+                    # so a tool that reads them has nothing for it, whatever its symbol.
+                    pairs = (
+                        [ticker for ticker in absent if _is_currency_or_crypto(ticker)]
+                        if spec.basket
+                        else []
+                    )
+                    others = [ticker for ticker in absent if ticker not in pairs]
+                    if pairs and len(absent) < len(tickers):
                         notes.append(
-                            f"No data is available for {', '.join(absent)}, so "
-                            f"{'it is' if len(absent) == 1 else 'they are'} left out. "
+                            f"{', '.join(pairs)} {'is' if len(pairs) == 1 else 'are'} left "
+                            "out: currencies and cryptocurrencies have no financial "
+                            f"statements, which `{method_name}` is calculated from."
+                        )
+                    if others and len(absent) < len(tickers):
+                        notes.append(
+                            f"No data is available for {', '.join(others)}, so "
+                            f"{'it is' if len(others) == 1 else 'they are'} left out. "
                             "Please check the symbol (e.g. ASML.AS for Amsterdam)."
                         )
+                # After the check for missing tickers, which would otherwise count a ticker
+                # that show_columns leaves out as one without data.
+                if show_columns is not None:
+                    # Matched in any casing ("close" for Close), as the names are shown
+                    # in a response and typed back by hand.
+                    _, available_columns = _unmatched_columns(result, show_columns)
+                    by_lowercase = {name.lower(): name for name in available_columns}
+                    show_columns = [
+                        (
+                            name
+                            if name in available_columns
+                            else by_lowercase.get(name.lower(), name)
+                        )
+                        for name in show_columns
+                    ]
+                    unmatched_columns, available_columns = _unmatched_columns(
+                        result, show_columns
+                    )
+                    result = _filter_columns(result, show_columns)
                 # A signal is rare, so with signals_only each ticker keeps only its own
                 # periods with a signal, and a limit gives every ticker its last ones.
                 if (
@@ -2412,7 +2697,9 @@ class ToolRegistry:
                     )
                 if row_selection and isinstance(result, pd.DataFrame | pd.Series):
                     # One row per ticker (a figure over the whole period) has no first or
-                    # last rows to speak of; cutting it would only drop tickers.
+                    # last rows to speak of; cutting it would only drop tickers. The rows of
+                    # the benchmark and of a portfolio of the tickers (component VaR) count
+                    # as tickers.
                     row_labels = {
                         str(label)
                         for label in result.index.get_level_values(0).unique()
@@ -2428,7 +2715,8 @@ class ToolRegistry:
                     per_ticker_columns = (
                         bool(tickers)
                         and bool(column_labels)
-                        and column_labels <= {*(tickers or []), "Benchmark"}
+                        and column_labels
+                        <= {*(tickers or []), "Benchmark", "Portfolio"}
                         and not is_time_index_of(result)
                         # Named rows (an ETF's Sector) are a list a limit can shorten.
                         and result.index.name is None
@@ -2441,7 +2729,7 @@ class ToolRegistry:
                         )
                     elif (
                         tickers
-                        and row_labels <= {*tickers, "Benchmark"}
+                        and row_labels <= {*tickers, "Benchmark", "Portfolio"}
                         and len(result.index) == len(row_labels)
                         and not (
                             isinstance(result, pd.DataFrame)
@@ -2473,6 +2761,47 @@ class ToolRegistry:
                                 f"{'is' if len(skipped) == 1 else 'are'} left out: most rows "
                                 "have no value for it yet. Use start_date/end_date to see it."
                             )
+                        # A column per country or ticker over dated rows: the last rows are those of the series published latest, so a series that lags behind (a month not published yet) is empty in them, while it has a value just before.  # noqa: E501
+                        if (
+                            row_selection < 0
+                            and isinstance(selected, pd.DataFrame)
+                            and len(selected.columns) > 1
+                            and is_time_index_of(selected)
+                            and not isinstance(selected.index, pd.MultiIndex)
+                        ):
+                            lagging = [
+                                (column, result[column].last_valid_index())
+                                for column in selected.columns
+                                if selected[column].isna().all()
+                                and result[column].notna().any()
+                            ]
+                            if lagging:
+                                names = [
+                                    (
+                                        " ".join(map(str, column))
+                                        if isinstance(column, tuple)
+                                        else str(column)
+                                    )
+                                    + " (latest "
+                                    + (
+                                        latest.strftime("%Y-%m-%d")
+                                        if isinstance(latest, pd.Timestamp)
+                                        else str(latest)
+                                    )
+                                    + ")"
+                                    for column, latest in lagging
+                                ]
+                                notes.append(
+                                    (
+                                        f"{', '.join(names)} "
+                                        f"{'has' if len(names) == 1 else 'have'} no "
+                                        if len(names) <= MAXIMUM_NAMED_ROWS
+                                        else f"{len(names):,} columns have no "
+                                    )
+                                    + "value for the selected periods (e.g. not published "
+                                    "yet); a larger limit or start_date/end_date shows the "
+                                    "latest value."
+                                )
                         result = selected
                         # The latest period may not be reported yet for every ticker; a row
                         # without any value at all is not worth a mention.
@@ -2516,16 +2845,62 @@ class ToolRegistry:
                         )
                     else:
                         result = ranking
-                # Most economic series are yearly only, whatever quarterly asks for.
-                if (
-                    quarterly
-                    and isinstance(result, pd.DataFrame | pd.Series)
-                    and is_yearly(result.index)
-                ):
-                    notes.append(
-                        f"Quarterly data is not available for `{method_name}`, so the yearly "
-                        "figures are shown."
+                        # Amounts in different currencies (a market cap in US dollars and
+                        # one in euros) are ranked as the numbers they are, which says so.
+                        ranked_tickers = [
+                            str(label)
+                            for label in ranking.index.get_level_values(-1).unique()
+                        ]
+                        if (
+                            tickers
+                            and not countries
+                            and dispatch_category in ("ticker", "toolkit")
+                            and _ranks_amounts(method_name, ranking)
+                        ):
+                            currencies = {
+                                ticker: currency
+                                for ticker, currency in provider.get_value_currencies(
+                                    tickers=tickers,
+                                    start_date=start_date,
+                                    end_date=end_date,
+                                    quarterly=quarterly,
+                                    benchmark_ticker=benchmark_ticker,
+                                    api_key=provider._api_key,
+                                    fred_api_key=provider._fred_api_key,
+                                    toolkit_risk_free_rate=toolkit_risk_free_rate,
+                                    toolkit_basket=toolkit_basket,
+                                ).items()
+                                if ticker in ranked_tickers
+                            }
+                            if len(set(currencies.values())) > 1:
+                                notes.append(
+                                    "The values are in each ticker's own currency ("
+                                    + ", ".join(
+                                        f"{ticker}: {currency}"
+                                        for ticker, currency in currencies.items()
+                                    )
+                                    + "), so the ranking compares unlike units; "
+                                    "convert them to one currency before comparing."
+                                )
+                # Most economic series are yearly only, whatever quarterly asks for, and a
+                # series published monthly (inflation) is not made quarterly either: without
+                # a period, quarterly=true gives quarterly figures only where they are published.  # noqa: E501
+                if quarterly and isinstance(result, pd.DataFrame | pd.Series):
+                    shown_period = (
+                        "yearly"
+                        if is_yearly(result.index)
+                        else (
+                            observed_period(result.index)
+                            if "countries" in accepted_params
+                            and "period" not in given_params
+                            else None
+                        )
                     )
+                    if shown_period in ("yearly", "monthly", "weekly", "daily"):
+                        notes.append(
+                            f"Quarterly data is not available for `{method_name}`, so the "
+                            f"{shown_period} figures are shown."
+                        )
                 if indicator_note:
                     notes.insert(0, indicator_note)
                 if period_note:
@@ -2544,6 +2919,7 @@ class ToolRegistry:
                         f"`{method_name}` and {'was' if len(ignored_params) == 1 else 'were'} "
                         "ignored."
                     )
+                notes.extend(unknown_notes)
                 if unmatched_columns:
                     notes.append(
                         "show_columns: "
@@ -2552,7 +2928,11 @@ class ToolRegistry:
                         + ", ".join(available_columns[:40])
                         + "."
                     )
-                if dispatch_category in ("ticker", "toolkit"):
+                # A forecast's rows are steps ahead, not sessions, even when the first step is today.  # noqa: E501
+                if (
+                    dispatch_category in ("ticker", "toolkit")
+                    and "forecast" not in method_name
+                ):
                     session_note = _unclosed_session_note(result)
                     if session_note:
                         notes.append(session_note)
@@ -2902,6 +3282,7 @@ class ToolRegistry:
                 {"tool": spec.tool_name, "description": index_description}
             )
             _strip_schema_titles(self._mcp, spec.tool_name)
+            keep_unknown_arguments(self._mcp, spec.tool_name)
             if compact:
                 _strip_schema_descriptions(self._mcp, spec.tool_name)
             return True

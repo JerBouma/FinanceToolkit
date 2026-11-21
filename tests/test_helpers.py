@@ -626,6 +626,58 @@ def test_goodwill_and_intangible_assets_fall_back_on_the_separate_rows():
     assert result.loc["B", "2024"] == 0
 
 
+def test_goodwill_and_intangible_assets_without_some_of_the_rows():
+    """
+    A supplied balance sheet can hold the combined row without the separate ones, or the
+    separate ones without the combined row: what is there is used.
+    """
+    periods = ["2022", "2023"]
+    combined_only = pd.DataFrame(
+        [[100.0, 110.0], [50.0, np.nan], [1000.0, 1100.0]],
+        index=pd.MultiIndex.from_tuples(
+            [
+                ("A", "Goodwill and Intangible Assets"),
+                ("B", "Goodwill and Intangible Assets"),
+                ("A", "Total Assets"),
+            ]
+        ),
+        columns=periods,
+    )
+
+    result = helpers.get_goodwill_and_intangible_assets(combined_only)
+
+    assert result.loc["A"].tolist() == [100.0, 110.0]
+    assert result.loc["B", "2022"] == 50.0
+    assert np.isnan(result.loc["B", "2023"])
+
+    separate_only = pd.DataFrame(
+        [[60.0, 70.0], [40.0, np.nan]],
+        index=pd.MultiIndex.from_tuples(
+            [("A", "Goodwill"), ("A", "Intangible Assets")]
+        ),
+        columns=periods,
+    )
+
+    assert helpers.get_goodwill_and_intangible_assets(separate_only).loc[
+        "A"
+    ].tolist() == [100.0, 70.0]
+
+
+def test_add_basket_total_is_empty_for_a_ticker_without_statements():
+    """A ticker with no statement at all leaves the Total empty, as a missing value does."""
+    statement = pd.DataFrame(
+        {"2023": [10.0, 30.0], "2024": [12.0, 33.0]},
+        index=pd.MultiIndex.from_product([["AAPL", "MSFT"], ["Revenue"]]),
+    )
+
+    result = helpers.add_basket_total(
+        statement, ["AAPL", "MSFT", "NVDA"], not_summed=[]
+    )
+
+    assert result.loc[("Total", "Revenue")].isna().all()
+    assert result.loc[("AAPL", "Revenue"), "2024"] == 12.0
+
+
 def test_add_basket_total_sums_the_tickers_per_item():
     statement = pd.DataFrame(
         {
@@ -731,3 +783,23 @@ def test_rank_across_tickers_compares_with_the_neighbour_toward_the_middle():
     november = ranking.loc["2026-11"]
     assert "^HSI" not in november.index
     assert november.loc[["^KS11", "GC=F"], "Rank"].tolist() == [3, 3]
+
+
+def test_round_half_up_returns_an_infinity_unchanged():
+    assert helpers.round_half_up(float("inf"), 2) == float("inf")
+    assert helpers.round_half_up("-inf", 2) == float("-inf")
+
+
+def test_a_may_year_end_spreads_its_quarters_over_two_year_labels():
+    from financetoolkit import helpers
+
+    # Oracle's fiscal 2024 runs from June 2023 to May 2024.
+    quarters = helpers.convert_period_end_dates_to_calendar_periods(
+        pd.to_datetime(["2023-08-31", "2023-11-30", "2024-02-29", "2024-05-31"]), True
+    )
+    year = helpers.convert_period_end_dates_to_calendar_periods(
+        pd.to_datetime(["2024-05-31"]), False
+    )
+
+    assert year.astype(str).tolist() == ["2023"]
+    assert quarters.astype(str).tolist() == ["2023Q3", "2023Q4", "2024Q1", "2024Q2"]

@@ -272,6 +272,16 @@ def test_get_labour_productivity(recorder, economics_module):
     recorder.capture(economics_module.get_labour_productivity(growth=True))
 
 
+def test_get_unit_labour_costs(recorder, economics_module):
+    recorder.capture(economics_module.get_unit_labour_costs())
+    recorder.capture(economics_module.get_unit_labour_costs(growth=True, lag=4))
+
+
+def test_get_job_vacancy_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_job_vacancy_rate())
+    recorder.capture(economics_module.get_job_vacancy_rate(countries="United States"))
+
+
 def test_get_income_inequality(recorder, economics_module):
     recorder.capture(economics_module.get_income_inequality())
     recorder.capture(economics_module.get_income_inequality(growth=True))
@@ -405,6 +415,18 @@ def test_get_nonfarm_payrolls(recorder, economics_module):
 def test_get_initial_jobless_claims(recorder, economics_module):
     recorder.capture(economics_module.get_initial_jobless_claims())
     recorder.capture(economics_module.get_initial_jobless_claims(growth=True))
+    recorder.capture(
+        economics_module.get_initial_jobless_claims(period="monthly", aggregation="max")
+    )
+
+
+def test_get_continuing_jobless_claims(recorder, economics_module):
+    recorder.capture(economics_module.get_continuing_jobless_claims())
+    recorder.capture(economics_module.get_continuing_jobless_claims(period="monthly"))
+
+
+def test_get_insured_unemployment_rate(recorder, economics_module):
+    recorder.capture(economics_module.get_insured_unemployment_rate())
 
 
 def test_get_retail_sales(recorder, economics_module):
@@ -415,6 +437,18 @@ def test_get_retail_sales(recorder, economics_module):
 def test_get_industrial_production_index(recorder, economics_module):
     recorder.capture(economics_module.get_industrial_production_index())
     recorder.capture(economics_module.get_industrial_production_index(growth=True))
+
+
+def test_get_capacity_utilization(recorder, economics_module):
+    recorder.capture(economics_module.get_capacity_utilization())
+    recorder.capture(
+        economics_module.get_capacity_utilization(countries="United States")
+    )
+
+
+def test_get_foreign_exchange_reserves(recorder, economics_module):
+    recorder.capture(economics_module.get_foreign_exchange_reserves())
+    recorder.capture(economics_module.get_reserves_import_cover())
 
 
 def test_get_housing_starts(recorder, economics_module):
@@ -572,3 +606,8 @@ def test_get_government_expenditure_by_function_refuses_unknown_functions():
     assert economics.get_government_expenditure_by_function(
         functions="Space Exploration"
     ).empty
+
+
+def test_get_outstanding_mortgage_rates(recorder, economics_module):
+    recorder.capture(economics_module.get_outstanding_mortgage_rates())
+    recorder.capture(economics_module.get_outstanding_mortgage_rates(cumulative=True))

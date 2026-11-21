@@ -222,3 +222,31 @@ def test_degree_of_leverage_keeps_the_sign_from_a_negative_base():
 
     # A loss narrowing by half is a change of +50%, on a revenue change of +10%.
     assert result.iloc[0, 1] == pytest.approx(5)
+
+
+def test_debt_to_ebitda_of_non_positive_ebitda_is_nan():
+    arguments = {
+        "operating_income": pd.Series([100.0, -50.0, -20.0]),
+        "depreciation_and_amortization": pd.Series([20.0, 30.0, 20.0]),
+    }
+    net_debt_to_ebitda = solvency_model.get_net_debt_to_ebitda_ratio(
+        net_debt=pd.Series([600.0, 600.0, 600.0]), **arguments
+    )
+    gross_debt_to_ebitda = solvency_model.get_gross_debt_to_ebitda_ratio(
+        total_debt=pd.Series([600.0, 600.0, 600.0]), **arguments
+    )
+
+    for ratio in [net_debt_to_ebitda, gross_debt_to_ebitda]:
+        assert ratio.iloc[0] == pytest.approx(5.0)
+        assert ratio.iloc[1:].isna().all()
+
+
+def test_get_net_debt_to_equity_ratio():
+    ratio = solvency_model.get_net_debt_to_equity_ratio(
+        net_debt=pd.Series([500.0, -200.0, 500.0, 500.0]),
+        total_equity=pd.Series([1000.0, 1000.0, 0.0, -100.0]),
+    )
+
+    assert ratio.iloc[:2].tolist() == [0.5, -0.2]
+    # Without positive equity the ratio does not measure leverage.
+    assert ratio.iloc[2:].isna().all()

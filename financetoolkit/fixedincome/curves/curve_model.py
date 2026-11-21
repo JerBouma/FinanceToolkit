@@ -87,9 +87,9 @@ def nelson_siegel_svensson_yield(
     """
     The yield of the Nelson-Siegel-Svensson model at the given maturities:
 
-        y(m) = β0 + β1 (1 - e^(-m/τ1)) / (m/τ1)
-               + β2 [(1 - e^(-m/τ1)) / (m/τ1) - e^(-m/τ1)]
-               + β3 [(1 - e^(-m/τ2)) / (m/τ2) - e^(-m/τ2)]
+        y(m) = β0 + β1 (1 - e^(-m/τ1)) / (m/τ1) +
+               β2 [(1 - e^(-m/τ1)) / (m/τ1) - e^(-m/τ1)] +
+               β3 [(1 - e^(-m/τ2)) / (m/τ2) - e^(-m/τ2)]
 
     Args:
         maturities (np.ndarray | float): The maturities in years.
@@ -432,7 +432,8 @@ def bootstrap_zero_rates(
     par_yields: np.ndarray,
     frequency: int = 2,
     bill_convention: str | None = None,
-) -> np.ndarray:
+    return_grid: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """
     Bootstrap zero-coupon rates from par yields, quoted with `frequency` compounding periods a
     year (bond-equivalent yields). Maturities up to one year are treated as zero-coupon
@@ -443,6 +444,13 @@ def bootstrap_zero_rates(
 
         P(t_n) = (1 - c/f Σ_{i<n} P(t_i)) / (1 + c/f)
 
+    The zero rates between two quoted maturities follow from the interpolated par yields, so
+    they are not a straight line between the zero rates of those maturities. A bond priced on
+    a curve interpolated between the quoted maturities alone is therefore off par by a few
+    hundredths at long maturities (a 20-year par bond at 99.95 on a typical curve);
+    `return_grid` returns the zero rate of every coupon date, on which each par bond prices
+    at 100.
+
     Args:
         maturities (np.ndarray): The maturities in years, ascending.
         par_yields (np.ndarray): The par yields, as decimals.
@@ -451,9 +459,14 @@ def bootstrap_zero_rates(
             quoted: "bond-equivalent" (the US Treasury), "act/365" (Canada), "act/360"
             (Sweden) or None for yields compounded `frequency` times a year, see
             bill_yields_to_annual. Defaults to None.
+        return_grid (bool, optional): Whether to return the zero rates of every coupon date
+            and of the maturities up to a year, as a tuple of those maturities (ascending) and
+            their rates, instead of the zero rates of the given maturities. Defaults to False.
 
     Returns:
-        np.ndarray: The zero rates (annually compounded) at the given maturities.
+        np.ndarray | tuple[np.ndarray, np.ndarray]: The zero rates (annually compounded) at the
+        given maturities, or the maturities and zero rates of the grid when `return_grid` is
+        True.
     """
     maturities = np.asarray(maturities, dtype=float)
     par_yields = np.asarray(par_yields, dtype=float)
@@ -478,11 +491,27 @@ def bootstrap_zero_rates(
             discount[n] = (1 - coupon * step * discount[:n].sum()) / (1 + coupon * step)
 
     zero_grid = discount ** (-1 / grid) - 1
+    bills = maturities <= 1 + 1e-9
+
+    if return_grid:
+        # The bills keep their own zero rates; the coupon dates beyond the longest bill
+        # carry the bootstrapped rates, on which every par bond reprices at par.
+        longest_bill = maturities[bills].max() if bills.any() else 0.0
+        later = grid > longest_bill + 1e-9
+        return np.concatenate([maturities[bills], grid[later]]), np.concatenate(
+            [
+                bill_yields_to_annual(
+                    maturities[bills], par_yields[bills], frequency, bill_convention
+                ),
+                zero_grid[later],
+            ]
+        )
+
     zero_rates = np.interp(maturities, grid, zero_grid)
     # Bills (and maturities before the first coupon date) are zero-coupon already, so their
     # yield only changes compounding.
     zero_rates = np.where(
-        maturities <= 1 + 1e-9,
+        bills,
         bill_yields_to_annual(maturities, par_yields, frequency, bill_convention),
         zero_rates,
     )

@@ -2,11 +2,13 @@
 
 __docformat__ = "google"
 
+import functools
+
+import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import handle_portfolio
-from financetoolkit.risk.base.base_controller import RiskBase
-from financetoolkit.risk.helpers import as_float
+from financetoolkit.risk.helpers import as_float, compound_into_shared_dates
 from financetoolkit.risk.value_at_risk import (
     backtesting_model,
     cvar_model,
@@ -15,13 +17,17 @@ from financetoolkit.risk.value_at_risk import (
 )
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
+from financetoolkit.utilities.logger_model import get_logger
 from financetoolkit.utilities.sources_model import track_sources
 from financetoolkit.utilities.statistics_model import (
+    PERIODS_PER_YEAR,
     apply_rounding,
     finalize_dataset,
 )
 
 # ruff: noqa: E501
+
+logger = get_logger()
 
 
 def _get_out_of_sample_estimates(
@@ -60,6 +66,28 @@ def _get_out_of_sample_estimates(
         ("cvar", "evt"): cvar_model.get_cvar_evt,
     }
 
+    if distribution == "evt":
+        # The fit needs MINIMUM_NUMBER_OF_EXCEEDANCES losses above the 95th percentile in a window, see var_model.fit_gpd_tail. A shorter window gives NaN everywhere, so that is reported once instead of fitting every window.  # noqa: E501
+        exceedances_per_window = var_model.get_number_of_exceedances(
+            pd.DataFrame(np.arange(window_size, dtype=float)), 0.95
+        ).iloc[0]
+
+        if exceedances_per_window < var_model.MINIMUM_NUMBER_OF_EXCEEDANCES:
+            logger.warning(
+                "A window of %s returns holds %s losses above the 95th percentile, fewer than the %s the "
+                "Extreme Value Theory fit needs, so the estimates are NaN. Use a window_size of at least %s.",
+                window_size,
+                int(exceedances_per_window),
+                var_model.MINIMUM_NUMBER_OF_EXCEEDANCES,
+                int(np.ceil(var_model.MINIMUM_NUMBER_OF_EXCEEDANCES / 0.05)),
+            )
+
+            return pd.DataFrame(np.nan, index=returns.index, columns=returns.columns)
+
+        parametric_estimators[(measure, distribution)] = functools.partial(
+            parametric_estimators[(measure, distribution)], warn=False
+        )
+
     estimates = {}
 
     for column in returns.columns:
@@ -96,7 +124,7 @@ def _get_out_of_sample_estimates(
 
 @filter_shown_columns
 @track_sources
-class ValueAtRiskRisk(RiskBase):
+class ValueAtRiskRisk:
     """
     Value at Risk and its relatives: conditional and entropic VaR, marginal and component VaR, and the VaR and expected shortfall backtests.
     """
@@ -187,7 +215,8 @@ class ValueAtRiskRisk(RiskBase):
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
             1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
-            Defaults to 0.95.
+            The fit needs at least 10 losses above the threshold (about 200 returns at 0.95); a period
+            with fewer is NaN, with a logged warning. Defaults to 0.95.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -220,11 +249,11 @@ class ValueAtRiskRisk(RiskBase):
 
         |      |   BTCUSD |   ETHUSD |   ^GSPC |   Benchmark |
         |:-----|---------:|---------:|--------:|------------:|
-        | 2021 |  -0.0626 |  -0.0838 | -0.0087 |     -0.0089 |
-        | 2022 |  -0.0574 |  -0.0742 | -0.02   |     -0.0203 |
-        | 2023 |  -0.0313 |  -0.0374 | -0.0116 |     -0.0117 |
-        | 2024 |  -0.0407 |  -0.0533 | -0.0094 |     -0.0096 |
-        | 2025 |  -0.0358 |  -0.0569 | -0.0113 |     -0.0113 |
+        | 2021 |  -0.0626 |  -0.0838 | -0.013  |     -0.0126 |
+        | 2022 |  -0.0574 |  -0.0742 | -0.0264 |     -0.0263 |
+        | 2023 |  -0.0312 |  -0.0374 | -0.0138 |     -0.0138 |
+        | 2024 |  -0.0407 |  -0.0533 | -0.0134 |     -0.0132 |
+        | 2025 |  -0.0358 |  -0.0569 | -0.0161 |     -0.0165 |
         """
         period = period if period else "daily"
 
@@ -377,7 +406,8 @@ class ValueAtRiskRisk(RiskBase):
             threshold_percentile (float, optional): Only used when `distribution` is "evt". The percentile
             of losses above which the Generalized Pareto Distribution is fitted; `alpha` can be at most
             1 - `threshold_percentile`, and a larger `alpha` gives an empty result (with a logged error).
-            Defaults to 0.95.
+            The fit needs at least 10 losses above the threshold (about 200 returns at 0.95); a period
+            with fewer is NaN, with a logged warning. Defaults to 0.95.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -662,6 +692,20 @@ class ValueAtRiskRisk(RiskBase):
 
         return weights_series
 
+    @staticmethod
+    def _get_shared_returns(returns: pd.DataFrame, column: str) -> pd.DataFrame:
+        """
+        The returns of the portfolio constituents on the dates all of them have one. The returns of a
+        date only some of them traded on (a holiday on one exchange, a weekend for a cryptocurrency) are
+        compounded into the next shared date (see `helpers.compound_into_shared_dates`), so the portfolio
+        return of a Monday combines each constituent's return since the Friday. A column other than a
+        return (a price) only keeps the shared dates.
+        """
+        if column.endswith("Return"):
+            return compound_into_shared_dates(returns)
+
+        return returns.dropna()
+
     @handle_errors
     def get_marginal_value_at_risk(
         self,
@@ -690,7 +734,8 @@ class ValueAtRiskRisk(RiskBase):
         - Marginal VaR_i = Beta_i * Portfolio VaR
 
         Where the weights are normalized to sum to 1, the covariance and variance are sample estimates
-        (ddof=1) on the dates all assets have a return, and Portfolio VaR is the VaR of the portfolio return
+        (ddof=1) on the dates all assets have a return (the returns of a date only some of them traded on are
+        compounded into the next date all of them traded on), and Portfolio VaR is the VaR of the portfolio return
         under `distribution` (see `get_value_at_risk`). The beta-based sensitivity is exact for a zero-mean
         elliptical distribution and an approximation otherwise; distribution="gaussian" uses the exact
         derivative instead, with z_alpha the standard normal quantile at alpha:
@@ -766,9 +811,8 @@ class ValueAtRiskRisk(RiskBase):
         returns = self._get_price_column(period, column)
         weights_series = self._get_portfolio_weights(returns, weights)
 
-        # The portfolio return needs every constituent on the same dates, so only here are the rows with any missing return dropped.  # noqa: E501
         marginal_var = var_model.get_marginal_var(
-            returns[weights_series.index].dropna(),
+            self._get_shared_returns(returns[weights_series.index], column),
             weights_series,
             alpha,
             distribution,
@@ -890,9 +934,8 @@ class ValueAtRiskRisk(RiskBase):
         returns = self._get_price_column(period, column)
         weights_series = self._get_portfolio_weights(returns, weights)
 
-        # The portfolio return needs every constituent on the same dates, so only here are the rows with any missing return dropped.  # noqa: E501
         component_var = var_model.get_component_var(
-            returns[weights_series.index].dropna(),
+            self._get_shared_returns(returns[weights_series.index], column),
             weights_series,
             alpha,
             distribution,
@@ -911,7 +954,7 @@ class ValueAtRiskRisk(RiskBase):
         period: str | None = None,
         distribution: str = "historic",
         alpha: float = 0.05,
-        window_size: int = 252,
+        window_size: int | None = None,
         test: str = "both",
         rounding: int | None = None,
         show_columns: str | list[str] | None = None,
@@ -934,7 +977,7 @@ class ValueAtRiskRisk(RiskBase):
         Christoffersen's test detects, are the usual failure of historical VaR when
         volatility rises.
 
-        The formula is as follows (with the default distribution="historic", alpha=0.05 and window_size=252):
+        The formula is as follows (with the default distribution="historic", alpha=0.05 and daily returns, for which the window is 252):
 
         - VaR_t = Quantile(Return_(t-252), ..., Return_(t-1); alpha)
         - Breach_t = 1 if Return_t < VaR_t, else 0
@@ -957,8 +1000,7 @@ class ValueAtRiskRisk(RiskBase):
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
-            Defaults to "daily", since `window_size` is expressed in return observations of this frequency
-            (252 only means "about one year" when `period` is daily).
+            Defaults to "daily".
             distribution (str, optional): The distribution to use for the rolling VaR estimates, one of
             "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
             "studentt" and "evt" fit their distribution to every window, which takes minutes for
@@ -967,8 +1009,9 @@ class ValueAtRiskRisk(RiskBase):
             confidence level). Defaults to 0.05. With "evt" it can be at most 0.05, since the Generalized
             Pareto Distribution is fitted above the 95th percentile of losses; a larger `alpha` gives an
             empty result (with a logged error).
-            window_size (int, optional): The rolling window size (in number of return observations) used to
-            estimate each VaR value. Defaults to 252 (approximately one trading year of daily returns).
+            window_size (int | None, optional): The rolling window size (in number of return observations of
+            `period`) used to estimate each VaR value. Defaults to None, which uses a year of observations
+            with a minimum of 20 (252 daily, 52 weekly and 20 monthly, quarterly or yearly returns).
             test (str, optional): Which test(s) to run, one of "kupiec", "christoffersen" or "both". Defaults
             to "both".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None.
@@ -1021,6 +1064,8 @@ class ValueAtRiskRisk(RiskBase):
         if test not in ["kupiec", "christoffersen", "both"]:
             raise ValueError("Test must be kupiec, christoffersen, or both.")
 
+        # A year of observations with a minimum of 20, as get_move_significance uses: 252 is a year of daily returns but more than the history holds of quarterly or yearly ones.  # noqa: E501
+        window_size = window_size if window_size else max(PERIODS_PER_YEAR[period], 20)
         returns = self._historical_data[period]["Return"].dropna(how="all")
         rolling_var = _get_out_of_sample_estimates(
             returns, "var", distribution, alpha, window_size
@@ -1049,7 +1094,7 @@ class ValueAtRiskRisk(RiskBase):
         period: str | None = None,
         distribution: str = "historic",
         alpha: float = 0.05,
-        window_size: int = 252,
+        window_size: int | None = None,
         n_bootstrap: int = 1000,
         random_state: int = 42,
         rounding: int | None = None,
@@ -1067,12 +1112,12 @@ class ValueAtRiskRisk(RiskBase):
         (and VaR) path and compares the actual loss on each breach day to the CVaR
         that was supposed to describe the average loss on such days.
 
-        The formula is as follows (with the default distribution="historic", alpha=0.05 and window_size=252):
+        The formula is as follows (with the default distribution="historic", alpha=0.05 and daily returns, for which the window is 252):
 
         - Z2 = Σ (Return_t * Breach_t / CVaR_t) / (n * alpha) - 1
         - P-Value = 1 - Φ(Z2 / Standard Error)
 
-        Where VaR_t and CVaR_t are estimated from the 252 returns before t (see `get_var_backtest`), Breach_t is
+        Where VaR_t and CVaR_t are estimated from the window_size returns before t (see `get_var_backtest`), Breach_t is
         1 if Return_t < VaR_t and 0 otherwise, n is the number of estimates and the Standard Error is the sample
         standard deviation (ddof=1) of Z2 over `n_bootstrap` paired bootstrap resamples. Returns and CVaR are
         both negative, so Z2 is about 0 for a well-calibrated model and positive when the realized tail losses
@@ -1087,7 +1132,7 @@ class ValueAtRiskRisk(RiskBase):
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly or yearly).
-            Defaults to "daily", since `window_size` is expressed in return observations of this frequency.
+            Defaults to "daily".
             distribution (str, optional): The distribution to use for the rolling VaR/CVaR estimates,
             one of "historic", "gaussian", "studentt" or "evt". Defaults to "historic".
             "studentt" and "evt" fit their distribution to every window, which takes minutes for
@@ -1096,8 +1141,9 @@ class ValueAtRiskRisk(RiskBase):
             confidence level). Defaults to 0.05. With "evt" it can be at most 0.05, since the Generalized
             Pareto Distribution is fitted above the 95th percentile of losses; a larger `alpha` gives an
             empty result (with a logged error).
-            window_size (int, optional): The rolling window size (in number of return observations) used
-            to estimate each VaR/CVaR value. Defaults to 252 (approximately one trading year of daily
+            window_size (int | None, optional): The rolling window size (in number of return observations
+            of `period`) used to estimate each VaR/CVaR value. Defaults to None, which uses a year of
+            observations with a minimum of 20 (252 daily, 52 weekly and 20 monthly, quarterly or yearly
             returns).
             n_bootstrap (int, optional): The number of bootstrap resamples used to estimate the Standard
             Error of Z2. Defaults to 1000.
@@ -1156,6 +1202,8 @@ class ValueAtRiskRisk(RiskBase):
                 "Distribution must be historic, gaussian, studentt, or evt."
             )
 
+        # A year of observations with a minimum of 20, as get_move_significance uses: 252 is a year of daily returns but more than the history holds of quarterly or yearly ones.  # noqa: E501
+        window_size = window_size if window_size else max(PERIODS_PER_YEAR[period], 20)
         returns = self._historical_data[period]["Return"].dropna(how="all")
         rolling_var = _get_out_of_sample_estimates(
             returns, "var", distribution, alpha, window_size

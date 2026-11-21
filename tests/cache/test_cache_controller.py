@@ -611,3 +611,168 @@ def test_a_bar_of_an_unclosed_session_is_requested_again(cache, monkeypatch):
 
     # Only today is asked for again; the closed sessions before it stay cached.
     assert plan.missing == {"AAPL": [(today, today)]}
+
+
+def test_a_closed_range_before_the_revision_window_stays_fresh(cache, monkeypatch):
+    """Test that a stale range ending before the revision window is not asked for again."""
+    monkeypatch.setitem(
+        policy_model.POLICIES,
+        f"{policy_model.FINANCIAL_MODELING_PREP}.historical",
+        policy_model.CachePolicy(ttl_seconds=0, revision_days=7),
+    )
+
+    cache.store(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entity="AAPL",
+        data=create_frame("2020-01-01", "2020-12-31"),
+        start="2020-01-01",
+        end="2020-12-31",
+    )
+
+    def missing(reference):
+        return cache.plan(
+            source="FinancialModelingPrep",
+            dataset="historical",
+            entities=["AAPL"],
+            start="2020-01-01",
+            end="2020-12-31",
+            reference_date=reference,
+        ).missing
+
+    # Years later, the last week of 2020 is no longer revised.
+    assert missing(date(2026, 11, 17)) == {}
+    # Three days later, the days within a week of the reference are.
+    assert missing(date(2021, 1, 3)) == {
+        "AAPL": [(date(2020, 12, 27), date(2020, 12, 31))]
+    }
+
+
+def test_compaction_keeps_the_range_just_fetched_fresh(cache, monkeypatch):
+    """Test that merging the coverage rows does not date a fresh fetch back to a stale one."""
+    monkeypatch.setitem(
+        policy_model.POLICIES,
+        f"{policy_model.FINANCIAL_MODELING_PREP}.historical",
+        policy_model.CachePolicy(ttl_seconds=86400, revision_days=7),
+    )
+
+    def store(year):
+        cache.store(
+            source="FinancialModelingPrep",
+            dataset="historical",
+            entity="AAPL",
+            data=create_frame(f"{year}-01-01", f"{year}-12-31"),
+            start=f"{year}-01-01",
+            end=f"{year}-12-31",
+        )
+
+    for year in range(2000, 2000 + cache_controller.COVERAGE_COMPACTION_THRESHOLD - 1):
+        store(year)
+
+    with sqlite3.connect(cache.location) as connection:
+        connection.execute(
+            "UPDATE coverage SET fetched_at = ?", (datetime.now().timestamp() - 864000,)
+        )
+
+    store(2000 + cache_controller.COVERAGE_COMPACTION_THRESHOLD - 1)
+    last = 2000 + cache_controller.COVERAGE_COMPACTION_THRESHOLD - 1
+
+    with sqlite3.connect(cache.location) as connection:
+        rows = connection.execute(
+            "SELECT start_date, end_date FROM coverage ORDER BY start_date"
+        ).fetchall()
+
+    assert rows == [
+        ("2000-01-01", f"{last - 1}-12-31"),
+        (f"{last}-01-01", f"{last}-12-31"),
+    ]
+    plan = cache.plan(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entities=["AAPL"],
+        start=f"{last}-01-01",
+        end=f"{last}-12-31",
+        reference_date=date(last + 1, 1, 3),
+    )
+    assert plan.missing == {}
+
+
+def test_a_store_drops_the_cached_dates_the_source_no_longer_has(cache):
+    """Test that a removed bar does not stay in the cache beside the refetched range."""
+    cache.store(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entity="AAPL",
+        data=create_frame("2024-01-01", "2024-01-10"),
+        start="2024-01-01",
+        end="2024-01-10",
+    )
+    refetched = create_frame("2024-01-05", "2024-01-09", value=2.0).drop(
+        pd.Period("2024-01-06", freq="D")
+    )
+    cache.store(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entity="AAPL",
+        data=refetched,
+        start="2024-01-05",
+        end="2024-01-09",
+    )
+
+    cached = cache.plan(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entities=["AAPL"],
+        start="2024-01-01",
+        end="2024-01-10",
+    ).cached["AAPL"]
+
+    assert pd.Period("2024-01-06", freq="D") not in cached.index
+    assert len(cached) == 9
+    assert cached["Close"].tolist() == [1.0] * 4 + [2.0] * 4 + [1.0]
+
+
+def test_a_store_replaces_a_payload_that_can_not_be_merged(cache):
+    """Test that a broken payload is replaced by the incoming frame, not left in place."""
+    import zlib  # noqa: PLC0415
+
+    cache.store(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entity="AAPL",
+        data=create_frame("2024-01-01", "2024-01-01"),
+        start="2024-01-01",
+        end="2024-01-01",
+    )
+    with sqlite3.connect(cache.location) as connection:
+        connection.execute(
+            "UPDATE series SET payload = ?",
+            (zlib.compress(b'FTJSON1\n{"$":"frame"}'),),
+        )
+
+    cache.store(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entity="AAPL",
+        data=create_frame("2024-01-02", "2024-01-02", value=2.0),
+        start="2024-01-02",
+        end="2024-01-02",
+    )
+
+    cached = cache.plan(
+        source="FinancialModelingPrep",
+        dataset="historical",
+        entities=["AAPL"],
+        start="2024-01-01",
+        end="2024-01-02",
+    ).cached["AAPL"]
+
+    assert cached["Close"].tolist() == [2.0]
+
+
+def test_yahoo_finance_company_information_is_kept_as_long_as_a_profile():
+    """Test that the statement currency and fiscal year end are not refetched daily."""
+    assert (
+        policy_model.get_policy("YahooFinance", "company_information").ttl_seconds
+        == policy_model.get_policy("FinancialModelingPrep", "profile").ttl_seconds
+    )

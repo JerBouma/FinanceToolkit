@@ -5,9 +5,9 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.risk.helpers import get_days_per_period
 from financetoolkit.utilities.statistics_model import (
     PERIOD_TRANSLATION,
-    VOLATILITY_WINDOW_TRANSLATION,
     by_own_trading_days,
     to_period_index,
     validate_period,
@@ -30,8 +30,9 @@ def _group_and_scale(
     Groups a daily estimator "term" (e.g. a squared log high/low ratio) by the given
     period and returns, per period, the daily Variance it implies: the mean of the
     term, or the Variance of a daily return series. It does not scale anything; the
-    callers multiply the result by the number of trading days in the period (e.g.
-    252 / 52 for weekly) and take the square root, in the same way as
+    callers multiply the result by the number of daily observations in the period (e.g.
+    252 / 52 for weekly, 365 / 52 for a ticker that trades on weekends, see
+    `helpers.get_days_per_period`) and take the square root, in the same way as
     `risk_model.get_volatility` scales the daily Variance of close-to-close returns.
 
     Args:
@@ -89,8 +90,9 @@ def get_parkinson_volatility(
     - Parkinson Variance = (1 / (4 * N * ln(2))) * SUM[ln(High_t / Low_t)^2]
 
     Where `N` is the number of trading days within the period. The daily Variance is
-    scaled to the given period by multiplying it with the number of trading days within
-    that period (e.g. 252 / 52 for weekly), exactly as `risk_model.get_volatility` scales
+    scaled to the given period by multiplying it with the number of daily observations
+    within that period (252 / 52 for weekly, or 365 / 52 for a ticker that trades on
+    weekends such as a cryptocurrency), exactly as `risk_model.get_volatility` scales
     the close-to-close Variance, and the square root is taken to obtain Volatility.
 
     Also known as: Parkinson's range-based Volatility, high-low Volatility.
@@ -126,7 +128,7 @@ def get_parkinson_volatility(
     ):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+    days_per_period = get_days_per_period(high_prices, period, groups)
 
     # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
     # logarithm: that day is left out instead of turning the period's mean into inf.
@@ -140,7 +142,7 @@ def get_parkinson_volatility(
         4 * LN_2
     )
 
-    return np.sqrt(variance) * np.sqrt(volatility_window)
+    return np.sqrt(variance) * np.sqrt(days_per_period)
 
 
 @by_own_trading_days
@@ -163,8 +165,8 @@ def get_garman_klass_volatility(
 
     The formula is as follows:
 
-    - Garman-Klass Variance = (1 / N) * SUM[0.5 * ln(High_t / Low_t)^2
-    - (2 * ln(2) - 1) * ln(Close_t / Open_t)^2]
+    - Garman-Klass Variance = (1 / N) * SUM[0.5 * ln(High_t / Low_t)^2 -
+      (2 * ln(2) - 1) * ln(Close_t / Open_t)^2]
 
     Where `N` is the number of trading days within the period. The daily Variance is
     scaled to the given period in the same way as `risk_model.get_volatility` and the
@@ -206,7 +208,7 @@ def get_garman_klass_volatility(
     ):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+    days_per_period = get_days_per_period(close_prices, period, groups)
 
     # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
     # logarithm: that day is left out instead of turning the period's mean into inf or NaN.
@@ -222,7 +224,7 @@ def get_garman_klass_volatility(
 
     variance = _group_and_scale(daily_term, period, groups=groups)
 
-    return np.sqrt(variance) * np.sqrt(volatility_window)
+    return np.sqrt(variance) * np.sqrt(days_per_period)
 
 
 @by_own_trading_days
@@ -244,8 +246,8 @@ def get_rogers_satchell_volatility(
 
     The formula is as follows:
 
-    - Rogers-Satchell Variance = (1 / N) * SUM[ln(High_t / Close_t) * ln(High_t / Open_t)
-    - + ln(Low_t / Close_t) * ln(Low_t / Open_t)]
+    - Rogers-Satchell Variance = (1 / N) * SUM[ln(High_t / Close_t) * ln(High_t / Open_t) +
+      ln(Low_t / Close_t) * ln(Low_t / Open_t)]
 
     Where `N` is the number of trading days within the period. The daily Variance is
     scaled to the given period in the same way as `risk_model.get_volatility` and the
@@ -287,7 +289,7 @@ def get_rogers_satchell_volatility(
     ):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+    days_per_period = get_days_per_period(close_prices, period, groups)
 
     # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
     # logarithm: that day is left out instead of turning the period's mean into inf or NaN.
@@ -302,7 +304,7 @@ def get_rogers_satchell_volatility(
 
     variance = _group_and_scale(daily_term, period, groups=groups)
 
-    return np.sqrt(variance) * np.sqrt(volatility_window)
+    return np.sqrt(variance) * np.sqrt(days_per_period)
 
 
 @by_own_trading_days
@@ -328,8 +330,8 @@ def get_yang_zhang_volatility(
 
     The formula is as follows:
 
-    - Yang-Zhang Variance = Overnight Variance + k * Open-to-Close Variance
-    - + (1 - k) * Rogers-Satchell Variance
+    - Yang-Zhang Variance = Overnight Variance + k * Open-to-Close Variance +
+      (1 - k) * Rogers-Satchell Variance
 
     Where:
 
@@ -378,7 +380,7 @@ def get_yang_zhang_volatility(
     ):
         raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
-    volatility_window = VOLATILITY_WINDOW_TRANSLATION[period]
+    days_per_period = get_days_per_period(close_prices, period, groups)
 
     # A bad bar (a price of 0 or below, as some feeds report for illiquid days) has no
     # logarithm: that day is left out instead of turning the period's mean into inf or NaN.
@@ -423,7 +425,7 @@ def get_yang_zhang_volatility(
         + (1 - k) * rogers_satchell_variance
     )
 
-    return np.sqrt(variance) * np.sqrt(volatility_window)
+    return np.sqrt(variance) * np.sqrt(days_per_period)
 
 
 @by_own_trading_days

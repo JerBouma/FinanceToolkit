@@ -332,7 +332,12 @@ def get_ols(
           standard errors -- valid under both heteroskedastic AND
           serially-correlated errors, the standard choice for time-series
           regressions in finance (HC-robust alone corrects for heteroskedasticity
-          but assumes no autocorrelation). Uses `maxlags`.
+          but assumes no autocorrelation). Uses `maxlags`, with Bartlett weights and
+          without a small-sample degrees-of-freedom correction (statsmodels' default).
+
+        The p-values come from the Student-T(n - k) distribution for "nonrobust" and
+        from the standard normal distribution for every robust estimator, which are
+        asymptotic results (the t-statistics are then z-statistics).
 
         clusters (pd.Series | np.ndarray | None, optional): The cluster label for each
         observation, required (and only used) when `cov_type="cluster"`. Defaults to
@@ -431,7 +436,8 @@ def get_wls(
         add_constant (bool, optional): Whether to prepend an intercept column of ones
         to `x`. Defaults to True.
         cov_type (str, optional): Which covariance estimator to use -- see `get_ols`'s
-        `cov_type` for the full list of options. Defaults to "nonrobust".
+        `cov_type` for the full list of options, the p-value distribution of each and
+        the HAC estimator without a small-sample correction. Defaults to "nonrobust".
         clusters (pd.Series | np.ndarray | None, optional): The cluster label for each
         observation, required when `cov_type="cluster"`. Defaults to None.
         maxlags (int | None, optional): The maximum lag to include when estimating the

@@ -6,12 +6,15 @@ __docformat__ = "google"
 import numpy as np
 import pandas as pd
 
+from financetoolkit.ratios.helpers import map_period_data_to_daily_data
+
 
 def get_present_value_of_growth_opportunities(
     cost_of_equity: pd.DataFrame,
     earnings_per_share: pd.Series | pd.DataFrame,
     close_prices: pd.DataFrame,
     calculate_daily: bool = False,
+    period_end_dates: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     The Present Value of Growth Opportunities (PVGO) is the net present value of all future investments a company is
@@ -29,9 +32,16 @@ def get_present_value_of_growth_opportunities(
     Args:
         cost_of_equity (pd.DataFrame): The cost of equity, the return shareholders require.
         earnings_per_share (pd.Series | pd.DataFrame): The earnings per share.
-        close_prices (pd.DataFrame): The close prices.
+        close_prices (pd.DataFrame): The close prices, per period (rows) and ticker (columns): the
+            close at the end of every statement period, or the daily closes with calculate_daily.
         calculate_daily (bool): Whether to calculate the PVGO on a daily basis. If False, the PVGO is calculated
         based on the provided close_prices DataFrame.
+        period_end_dates (pd.DataFrame | None, optional): With calculate_daily and yearly or
+            quarterly periods (a PeriodIndex) as columns, the last day of the fiscal period behind
+            each column, with the tickers as index and the periods as columns: each period's
+            no-growth value applies from that day on (see
+            financetoolkit.ratios.helpers.map_period_data_to_daily_data). Defaults to None, which
+            applies each value from the last day of its column's period.
 
     Returns:
         pd.DataFrame: The PVGO.
@@ -41,9 +51,20 @@ def get_present_value_of_growth_opportunities(
     no-growth value EPS / r is discounted at r = the cost of equity (the "market capitalization rate"
     for the stock), since both the share Price and EPS are equity-only, per-share quantities.
     """
-    no_growth_value = (earnings_per_share / cost_of_equity).T
+    no_growth_value = earnings_per_share / cost_of_equity
 
-    if calculate_daily:
+    if calculate_daily and period_end_dates is not None:
+        # A period's earnings are only known after its fiscal period ends, so each no-growth
+        # value applies from the period's last day on (the next trading day when it falls on a
+        # weekend), as the daily ratios do.
+        no_growth_value = map_period_data_to_daily_data(
+            period_data=no_growth_value,
+            daily_dates=close_prices.index,
+            quarterly=no_growth_value.columns.freqstr.startswith("Q"),
+            period_end_dates=period_end_dates,
+        )
+    elif calculate_daily:
+        no_growth_value = no_growth_value.T
         no_growth_value.index = pd.PeriodIndex(no_growth_value.index, freq="D")
         # Fill on the union so observations on non-trading dates are not discarded.
         no_growth_value = (
@@ -53,6 +74,8 @@ def get_present_value_of_growth_opportunities(
             .ffill()
             .reindex(close_prices.index)
         )
+    else:
+        no_growth_value = no_growth_value.T
 
     return close_prices - no_growth_value
 

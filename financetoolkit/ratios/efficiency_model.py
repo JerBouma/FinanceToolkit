@@ -479,7 +479,7 @@ def get_capex_to_depreciation_ratio(
     Capital expenditure is reported as a negative cash outflow, so its magnitude is
     used. Depreciation and amortization of zero or less gives NaN.
 
-    Also known as: capex to D&A, reinvestment ratio, capex to depreciation.
+    Also known as: capex to D&A, capex to depreciation.
 
     Args:
         capital_expenditure (float or pd.Series): Capital expenditure of the company,

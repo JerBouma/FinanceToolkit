@@ -136,6 +136,36 @@ def get_tickers_from_arguments(args: tuple) -> str:
     return ""
 
 
+def has_benchmark(args: tuple) -> bool:
+    """
+    Whether the instance a failing metric belongs to has a benchmark, so that an error
+    naming the Benchmark is about its data rather than about a missing benchmark_ticker.
+
+    Args:
+        args (tuple): the positional arguments the decorated function was called with,
+            the first being the controller instance.
+
+    Returns:
+        bool: True when the instance has a benchmark ticker or its historical data, as far
+        as it is retrieved, holds a Benchmark column.
+    """
+    # Read from the instance itself, as get_tickers_from_arguments does: reporting an error
+    # must not retrieve data, so only the historical data already retrieved is looked at.
+    attributes = vars(args[0]) if args and hasattr(args[0], "__dict__") else {}
+
+    if attributes.get("_benchmark_ticker"):
+        return True
+
+    historical_data = attributes.get("_historical_data")
+    datasets = dict.values(historical_data) if isinstance(historical_data, dict) else []
+
+    return any(
+        isinstance(dataset, pd.DataFrame)
+        and "Benchmark" in dataset.columns.get_level_values(-1)
+        for dataset in datasets
+    )
+
+
 def handle_errors(func):
     """
     Decorator that reports failures inside a metric calculation instead of letting them
@@ -181,9 +211,15 @@ def handle_errors(func):
         except (KeyError, ValueError) as error:
             # Metrics relative to a benchmark fail on its absence (a KeyError on the
             # Benchmark column or a ValueError naming it), which is a setting rather than
-            # missing data or a defect, so the fix is reported instead. An AttributeError
-            # is a defect even when it mentions the benchmark, so it is raised below.
-            if "Benchmark" not in str(error) or use_strict_errors():
+            # missing data or a defect, so the fix is reported instead. With a benchmark
+            # set, the same error means its data is missing (e.g. a period without
+            # benchmark prices) and is reported as such. An AttributeError is a defect
+            # even when it mentions the benchmark, so it is raised below.
+            if (
+                "Benchmark" not in str(error)
+                or use_strict_errors()
+                or has_benchmark(args)
+            ):
                 return _report_failure(func, args, error)
 
             logger.error(
@@ -253,6 +289,10 @@ def _report_failure(func, args: tuple, error: Exception) -> pd.Series:
             tickers,
             error,
         )
+        # Outside the statements a missing key can also be a column or level the code
+        # looks up under the wrong name, so the traceback is kept for debugging without
+        # repeating it for every ticker that lacks data.
+        logger.debug("Traceback of the %s failure.", func.__name__, exc_info=True)
     elif isinstance(error, IndexError):
         logger.error(
             "%s could not be calculated%s due to missing data. %s: %s",

@@ -302,3 +302,20 @@ def test_unit_root_tests_need_enough_observations():
 
     assert np.isnan(unitroot_model.get_augmented_dickey_fuller(series)["P-Value"])
     assert np.isnan(unitroot_model.get_kpss_test(series)["P-Value"])
+
+
+def test_get_phillips_perron_test_rejects_from_the_p_value():
+    # A short AR(1) whose statistic lies between the asymptotic and the finite-sample
+    # 5% critical value: the p-value is below 0.05, the critical value for 29
+    # observations is not reached, and the flag follows the p-value as in the ADF test.
+    rng = np.random.default_rng(17)
+    shocks = rng.normal(size=30)
+    values = np.zeros(30)
+    for position in range(1, 30):
+        values[position] = 0.6 * values[position - 1] + shocks[position]
+
+    result = unitroot_model.get_phillips_perron_test(pd.Series(values))
+
+    assert result["P-Value"] < 0.05  # noqa: PLR2004
+    assert result["Phillips-Perron Statistic"] > result["Critical Value 5%"]
+    assert result["Reject Unit Root (5%)"]

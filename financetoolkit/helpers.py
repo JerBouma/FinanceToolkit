@@ -194,9 +194,14 @@ def convert_period_end_dates_to_calendar_periods(
           September and December) this is the quarter it already sat in, so only
           companies reporting on an off-calendar quarter cycle are relabelled.
 
-    Both rules are the same rule at two frequencies, which keeps the yearly and
-    quarterly outputs of the same company consistent with one another: NVIDIA's fiscal
-    2024 is labelled 2023 and its four quarters are labelled 2023Q1 through 2023Q4.
+    Both rules are the same rule at two frequencies: NVIDIA's fiscal 2024 is labelled 2023
+    and its four quarters are labelled 2023Q1 through 2023Q4. A year ending in November,
+    December or January keeps its four quarters within the label of its year. Any other
+    year end splits them over two calendar years: Oracle's fiscal 2024 (June 2023 - May
+    2024) is labelled 2023 with quarters 2023Q3 through 2024Q2, and Apple's fiscal 2024
+    (October 2023 - September 2024) is labelled 2024 with quarters 2023Q4 through 2024Q3.
+    A yearly figure is therefore not the sum of the four quarters with the same year label
+    for such a company.
 
     A period ending in the first five days of a month is treated as ending in the month
     before (see determine_period_end_months). Companies with a 52/53-week fiscal year end
@@ -727,7 +732,8 @@ def round_half_up(value: float | str | Decimal, decimals: int) -> float:
     even and works on the binary float, so 0.125 and 2.675 would not round up.
 
     Args:
-        value (float | str | Decimal): The number, a missing value is returned as is.
+        value (float | str | Decimal): The number, a missing value is returned as is and
+            an infinity as a float.
         decimals (int): The number of decimals to round to.
 
     Returns:
@@ -738,6 +744,10 @@ def round_half_up(value: float | str | Decimal, decimals: int) -> float:
 
     # str gives the shortest decimal that is the float, so 2.675 rounds as 2.675.
     number = value if isinstance(value, Decimal) else Decimal(str(value))
+
+    # An infinity (or NaN given as text) has no decimals to round, and quantize raises on it.
+    if not number.is_finite():
+        return float(number)
 
     return float(number.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP))
 
@@ -947,11 +957,20 @@ def get_goodwill_and_intangible_assets(balance_sheet: pd.DataFrame) -> pd.DataFr
     Returns:
         pd.DataFrame: The goodwill and intangible assets, one row per ticker.
     """
-    separate = balance_sheet.loc[:, "Goodwill", :].add(
-        balance_sheet.loc[:, "Intangible Assets", :], fill_value=0
-    )
+    tickers = balance_sheet.index.unique(level=0)
+    items = balance_sheet.index.get_level_values(1)
 
-    return balance_sheet.loc[:, "Goodwill and Intangible Assets", :].fillna(separate)
+    # A supplied balance sheet can hold the combined row without the separate ones (or the
+    # reverse), so a row that isn't there counts as not reported for every ticker.
+    def select(item: str) -> pd.DataFrame:
+        if item not in items:
+            return pd.DataFrame(np.nan, index=tickers, columns=balance_sheet.columns)
+
+        return balance_sheet.loc[:, item, :].reindex(tickers)
+
+    separate = select("Goodwill").add(select("Intangible Assets"), fill_value=0)
+
+    return select("Goodwill and Intangible Assets").fillna(separate)
 
 
 def add_basket_total(
@@ -962,8 +981,8 @@ def add_basket_total(
     basket) can be analysed as if it were one: its financial statements are the sums of
     theirs, and every ratio calculated from them is the ratio of those sums.
 
-    A figure of the Total is missing for a period when a ticker has no value for it, as the
-    sum of the others would understate the basket. Figures that do not add up across
+    A figure of the Total is missing for a period when a ticker has no value for it, or no
+    statement at all, as the sum of the others would understate the basket. Figures that do not add up across
     companies (per-share amounts and share counts) are left empty.
 
     Notes: All the figures must be in the same currency.
@@ -977,7 +996,7 @@ def add_basket_total(
     Returns:
         pd.DataFrame: The financial statement with the Total added after the tickers.
     """
-    figures = statement.loc[tickers]
+    figures = statement.loc[statement.index.get_level_values(0).isin(tickers)]
     total = figures.groupby(level=1, sort=False).sum(min_count=len(tickers))
     total.loc[total.index.isin(not_summed)] = np.nan
     total.index = pd.MultiIndex.from_product(
@@ -1139,3 +1158,34 @@ def rank_across_tickers(data: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(
         rankings, names=[data.index.name or "Date", data.columns.name or "Ticker"]
     )
+
+
+def get_non_trading_days(historical_data: pd.DataFrame, column: str) -> pd.DataFrame:
+    """
+    The dates on which a ticker did not trade while another ticker or the Benchmark did.
+
+    A Toolkit with tickers on different calendars, such as a stock and a cryptocurrency or
+    stocks of two exchanges, holds the dates of all of them. On a date only another ticker
+    traded, a ticker's last price is carried forward as a flat bar (Open, High, Low and
+    Close at the last close, a Volume of 0) without a Return (see
+    `historical_model.fill_non_trading_days`). Those dates are recognised by the missing
+    Return after the ticker's first price, up to its last Return. A ticker's first price has
+    no Return by construction and is a trading day.
+
+    Args:
+        historical_data (pd.DataFrame): The historical data of one period with (column,
+            ticker) columns, including "Return" and `column`.
+        column (str): The price column whose tickers are checked, e.g. "Close".
+
+    Returns:
+        pd.DataFrame: True on the dates a ticker did not trade, a column per ticker.
+    """
+    prices = historical_data[column]
+    if "Return" not in historical_data.columns.get_level_values(0):
+        return pd.DataFrame(False, index=prices.index, columns=prices.columns)
+
+    has_return = historical_data["Return"].reindex(columns=prices.columns).notna()
+    after_first_price = prices.notna().cumsum() > 1
+    up_to_last_return = has_return[::-1].cummax()[::-1]
+
+    return ~has_return & after_first_price & up_to_last_return

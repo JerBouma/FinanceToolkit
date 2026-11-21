@@ -8,7 +8,6 @@ from financetoolkit.economics.sources import (
     fred_model as economics_fred_model,
     freddie_mac_model,
 )
-from financetoolkit.fixedincome.base.base_controller import FixedIncomeBase
 from financetoolkit.fixedincome.loans import loan_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
@@ -20,7 +19,7 @@ from financetoolkit.utilities.statistics_model import apply_rounding
 
 @filter_shown_columns
 @track_sources
-class LoansFixedIncome(FixedIncomeBase):
+class LoansFixedIncome:
     """
     Loans: the loan payment, the affordable loan and the amortization schedule.
     """

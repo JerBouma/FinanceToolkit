@@ -6,9 +6,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from financetoolkit import (
-    helpers,
-)
+from financetoolkit import helpers
 from financetoolkit.economics.helpers import (
     average_monthly_index,
     buffered_start_date,
@@ -19,7 +17,6 @@ from financetoolkit.economics.sources import (
     ecb_model as economics_ecb_model,
     frb_model,
 )
-from financetoolkit.fixedincome.base.base_controller import FixedIncomeBase
 from financetoolkit.fixedincome.short_rates import short_rate_model
 from financetoolkit.fixedincome.sources import (
     bundesbank_model,
@@ -41,7 +38,7 @@ logger = logger_model.get_logger()
 
 @filter_shown_columns
 @track_sources
-class CreditFixedIncome(FixedIncomeBase):
+class CreditFixedIncome:
     """
     Credit: ICE BofA corporate bond indices, HQM and Moody's corporate yields, corporate bond yields by country, rating transitions, default rates, implied default probabilities, the excess bond premium, corporate borrowing costs and the financial stress index.
     """
@@ -62,7 +59,8 @@ class CreditFixedIncome(FixedIncomeBase):
         The Option-Adjusted Spread (OAS) is the spread relative to a risk-free interest rate, usually quoted in
         basis points, that equates the theoretical present value of a series of uncertain cash flows to the
         market price of a fixed-income investment. The spread is added to the risk-free rate to compensate for the
-        uncertainty of the cash flows.
+        uncertainty of the cash flows. ICE adds it to the semi-annually compounded forward rates of the Treasury
+        curve (ICE Bond Index Methodologies), so it is a semi-annually compounded spread.
 
         See definitions:
 
@@ -156,8 +154,10 @@ class CreditFixedIncome(FixedIncomeBase):
 
         The effective yield of an ICE BofA index is the yield of the index as a whole, aggregated from the
         yields of its constituent bonds and weighted by their market capitalisation. It is an index-level yield of the corporate bond market segment,
-        not a statistic derived from any single bond's coupon — for the single-bond coupon-reinvestment
-        calculation, see the "Effective Yield" row of `collect_bond_statistics` instead.
+        not a statistic derived from any single bond's coupon; for the yield of a single bond, see the
+        "Yield to Maturity" of `collect_bond_statistics` instead. ICE states each bond's yield in conventional
+        terms, compounded at the bond's coupon frequency (ICE Bond Index Methodologies): twice a year for the US
+        indices, so their effective yields compound semi-annually like Treasury yields.
 
         The FRED series are published in percent and are converted to decimals here, so a 5.40% BBB
         index yield is returned as 0.054.
@@ -346,7 +346,8 @@ class CreditFixedIncome(FixedIncomeBase):
 
         Yield to worst is the lowest potential yield that a bond can generate without the issuer defaulting. The standard US
         convention for this series is to use semi-annual coupon payments, whereas the standard in the foreign markets is
-        to use coupon payments with frequencies of annual, semi-annual, quarterly, and monthly.
+        to use coupon payments with frequencies of annual, semi-annual, quarterly, and monthly. These series state
+        every index in semi-annual terms, so the yields are compounded twice a year whatever the coupon frequency.
 
         See definitions:
 

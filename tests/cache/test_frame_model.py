@@ -176,3 +176,45 @@ def test_slice_frame_keeps_a_period_that_overlaps_the_start():
         result, data.truncate(before="2014-12-31", after="2016-12-31", axis=1)
     )
     assert list(result.columns) == list(data.columns)
+
+
+def test_merge_frames_drops_the_existing_dates_the_replaced_range_no_longer_holds():
+    """Test that a bar the source removed or moved does not linger beside the new data."""
+    existing = pd.DataFrame(
+        {"Close": [1.0, 2.0, 3.0, 4.0]},
+        index=pd.period_range("2024-01-01", periods=4, freq="D"),
+    )
+    incoming = pd.DataFrame(
+        {"Close": [20.0, 40.0]},
+        index=pd.PeriodIndex(["2024-01-02", "2024-01-04"], freq="D"),
+    )
+
+    merged = frame_model.merge_frames(
+        existing, incoming, replaced=(date(2024, 1, 2), date(2024, 1, 4))
+    )
+    kept = frame_model.merge_frames(existing, incoming)
+
+    assert [str(day) for day in merged.index] == [
+        "2024-01-01",
+        "2024-01-02",
+        "2024-01-04",
+    ]
+    assert merged["Close"].tolist() == [1.0, 20.0, 40.0]
+    # Without a replaced range every existing date is kept.
+    assert len(kept) == 4
+
+
+def test_merge_frames_keeps_labels_that_are_no_dates_in_the_replaced_range():
+    """Test that a statement row or column that is not a period is never dropped."""
+    existing = pd.DataFrame(
+        {"2020": [1.0], "2021": [2.0], "Notes": [3.0]}, index=["Revenue"]
+    )
+    incoming = pd.DataFrame({"2021": [5.0]}, index=["Revenue"])
+
+    merged = frame_model.merge_frames(
+        existing, incoming, date_axis=1, replaced=(date(2021, 1, 1), date(2021, 12, 31))
+    )
+
+    assert merged.loc["Revenue", "2021"] == 5.0
+    assert merged.loc["Revenue", "2020"] == 1.0
+    assert "Notes" in merged.columns

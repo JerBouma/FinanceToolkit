@@ -37,10 +37,15 @@ def get_cvar_historic(
             value_at_risk = value_at_risk.reindex(
                 returns.index.get_level_values(0)
             ).set_axis(returns.index)
+            # A period with a single return has no tail to average, see risk_model.get_quantile.
             result = (
                 returns.where(returns <= value_at_risk)
                 .groupby(level=0, sort=False)
                 .mean()
+                .where(
+                    returns.groupby(level=0, sort=False).count()
+                    >= risk_model.MINIMUM_QUANTILE_OBSERVATIONS
+                )
             )
             result.index.name = None
 
@@ -391,6 +396,7 @@ def get_cvar_evt(
     returns: pd.Series | pd.DataFrame,
     alpha: float,
     threshold_percentile: float = 0.95,
+    warn: bool = True,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Conditional Value at Risk (CVaR) of returns based on Extreme Value Theory
@@ -420,6 +426,9 @@ def get_cvar_evt(
         to be at most 1 - `threshold_percentile`.
         threshold_percentile (float, optional): The percentile of losses above which the GPD is
         fitted (e.g. 0.95 fits the GPD on the worst 5% of losses). Defaults to 0.95.
+        warn (bool, optional): Whether to log the columns and periods with fewer than 10 losses
+        above the threshold, for which the CVaR is NaN (see `var_model.fit_gpd_tail`).
+        Defaults to True.
 
     Returns:
         pd.Series | pd.DataFrame: CVaR values as float if returns is a pd.Series,
@@ -431,6 +440,9 @@ def get_cvar_evt(
     """
     var_model.validate_evt_alpha(alpha, threshold_percentile)
 
+    if warn:
+        var_model.warn_too_few_exceedances(returns, threshold_percentile)
+
     if (
         isinstance(returns, pd.DataFrame)
         and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
@@ -440,7 +452,7 @@ def get_cvar_evt(
 
         for sub_period in periods:
             period_data = get_cvar_evt(
-                returns.loc[sub_period], alpha, threshold_percentile
+                returns.loc[sub_period], alpha, threshold_percentile, warn=False
             )
             period_data.name = sub_period
 

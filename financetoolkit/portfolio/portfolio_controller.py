@@ -1693,8 +1693,11 @@ class Portfolio:
         # Tickers traded in another currency than their data is quoted in.
         mismatched_tickers: set[str] = set()
         if self._currency_column:
-            self._historical_statistics = self._toolkit.get_historical_statistics()
-            self._historical_statistics = self._historical_statistics.rename(
+            statistics = self._toolkit.get_historical_statistics()
+            # A Toolkit of a single ticker returns its statistics as one Series.
+            if isinstance(statistics, pd.Series):
+                statistics = statistics.to_frame(self._toolkit._tickers[0])
+            self._historical_statistics = statistics.rename(
                 columns=self._ticker_combinations, level=0
             )
 

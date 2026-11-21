@@ -881,6 +881,10 @@ class Technicals:
         accumulation ahead of a breakout, a falling OBV as distribution. A single day of very high volume, such
         as an index rebalance or an earnings day, can move the line for a long time.
 
+        For more information, see the following sources:
+
+        - TA-Lib: OBV, the reference implementation (https://ta-lib.org/functions/obv.html).
+
         Also known as: OBV, volume momentum.
 
         Args:
@@ -908,6 +912,8 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates On-Balance Volume
           for each asset in the Toolkit instance.
+        - TA-Lib's OBV starts its running total at the first period's volume instead of 0, so it is
+          the On-Balance Volume here plus that volume; every change is equal.
         - If `growth` is set to True, the method calculates the growth of the OBV using the specified `lag`.
 
         As an example:
@@ -1005,6 +1011,10 @@ class Technicals:
         by volume, and a PVT that fails to follow price to a new high warns that the move lacks
         participation. The line is in shares, so it cannot be compared across stocks.
 
+        For more information, see the following sources:
+
+        - TA-Lib: PVT, the reference implementation (https://ta-lib.org/functions/pvt.html).
+
         Also known as: PVT, Price and Volume Trend, Volume Price Trend.
 
         See `breadth_model.get_price_volume_trend` for the references.
@@ -1033,7 +1043,7 @@ class Technicals:
 
         Notes:
         - The running total starts at 0 on each ticker's first date with a close and a volume on or
-          after the start date of the Toolkit.
+          after the start date of the Toolkit, as in TA-Lib's PVT, which it equals.
         - If `growth` is set to True, the method calculates the growth of the PVT using the specified `lag`.
 
         As an example:
@@ -1126,6 +1136,10 @@ class Technicals:
         - Money Flow Volume = Money Flow Multiplier * Volume
         - ADL = Previous ADL + Money Flow Volume
 
+        For more information, see the following sources:
+
+        - TA-Lib: AD, the reference implementation (https://ta-lib.org/functions/ad.html).
+
         Also known as: ADL, Chaikin ADL, volume-price trend.
 
         Args:
@@ -1154,6 +1168,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Accumulation/Distribution Line for each asset in the Toolkit instance.
+        - The Accumulation/Distribution Line equals TA-Lib's AD.
         - If `growth` is set to True, the method calculates the growth of the Accumulation/Distribution Line
           using the specified `lag`.
 
@@ -1248,6 +1263,10 @@ class Technicals:
 
         - Chaikin Oscillator = EMA(short-window ADL) — EMA(long-window ADL)
 
+        For more information, see the following sources:
+
+        - TA-Lib: ADOSC, the reference implementation (https://ta-lib.org/functions/adosc.html).
+
         Also known as: Chaikin oscillator, volume accumulation.
 
         Args:
@@ -1280,6 +1299,10 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Chaikin Oscillator for each asset in the Toolkit instance.
+        - Both EMAs are seeded with the simple average of their first values, as on StockCharts,
+          while TA-Lib's ADOSC starts them from the first Accumulation/Distribution value, so the
+          first values differ from TA-Lib's until the two converge (within 0.01% after about 65
+          periods with the default windows).
         - If `growth` is set to True, the method calculates the growth of the Chaikin Oscillator
           using the specified `lag`.
 
@@ -1378,6 +1401,10 @@ class Technicals:
         - Money Flow Volume = Money Flow Multiplier * Volume
         - CMF = Sum(Money Flow Volume, window) / Sum(Volume, window)
 
+        For more information, see the following sources:
+
+        - TA-Lib: CMF, the reference implementation (https://ta-lib.org/functions/cmf.html).
+
         Also known as: CMF, Chaikin Money Flow.
 
         Args:
@@ -1411,6 +1438,7 @@ class Technicals:
         - There is no formal journal citation for the Chaikin Money Flow; the standard
           textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial
           Markets." New York Institute of Finance.
+        - The Chaikin Money Flow equals TA-Lib's CMF.
         - If `growth` is set to True, the method calculates the growth of the Chaikin Money
           Flow using the specified `lag`.
 
@@ -1544,6 +1572,9 @@ class Technicals:
           the Ease of Movement for each asset in the Toolkit instance.
         - Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the
           Volume Analysis of Stock and Bond Markets." Business One Irwin.
+        - TA-Lib: EMV, the reference implementation (https://ta-lib.org/functions/emv.html).
+        - The Ease of Movement equals TA-Lib's EMV with its `volumedivisor` set to `volume_divisor`
+          (TA-Lib's default is 10,000).
         - If `growth` is set to True, the method calculates the growth of the Ease of
           Movement using the specified `lag`.
 
@@ -1672,6 +1703,8 @@ class Technicals:
           the Negative Volume Index for each asset in the Toolkit instance.
         - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
           Profits on Wall Street." The Institute for Econometric Research.
+        - TA-Lib: NVI, the reference implementation (https://ta-lib.org/functions/nvi.html).
+        - With the default `start_value` of 1,000, the Negative Volume Index equals TA-Lib's NVI.
         - If `growth` is set to True, the method calculates the growth of the Negative Volume
           Index using the specified `lag`.
 
@@ -1801,6 +1834,8 @@ class Technicals:
           the Positive Volume Index for each asset in the Toolkit instance.
         - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
           Profits on Wall Street." The Institute for Econometric Research.
+        - TA-Lib: PVI, the reference implementation (https://ta-lib.org/functions/pvi.html).
+        - With the default `start_value` of 1,000, the Positive Volume Index equals TA-Lib's PVI.
         - If `growth` is set to True, the method calculates the growth of the Positive Volume
           Index using the specified `lag`.
 
@@ -2193,6 +2228,10 @@ class Technicals:
 
         - MFI = 100 — (100 / (1 + (positive_money_flow / negative_money_flow)))
 
+        For more information, see the following sources:
+
+        - TA-Lib: MFI, the reference implementation (https://ta-lib.org/functions/mfi.html).
+
         Also known as: MFI, volume-weighted RSI.
 
         Args:
@@ -2223,6 +2262,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the MFI values for each asset in the Toolkit instance.
+        - The MFI equals TA-Lib's MFI.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -2314,6 +2354,10 @@ class Technicals:
 
         - Williams %R = (Highest High — Close) / (Highest High — Lowest Low) * —100
 
+        For more information, see the following sources:
+
+        - TA-Lib: WILLR, the reference implementation (https://ta-lib.org/functions/willr.html).
+
         Also known as: Williams percent R, overbought oversold oscillator.
 
         Args:
@@ -2344,6 +2388,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Williams %R values for each asset in the Toolkit instance.
+        - Williams %R equals TA-Lib's WILLR.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -2435,6 +2480,10 @@ class Technicals:
 
         - Aroon Up = ((Number of periods) — (Number of periods since highest high)) / (Number of periods) * 100
 
+        For more information, see the following sources:
+
+        - TA-Lib: AROON, the reference implementation (https://ta-lib.org/functions/aroon.html).
+
         Also known as: Aroon Up, Aroon Down, trend strength.
 
         Args:
@@ -2465,6 +2514,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Aroon Indicator values for each asset in the Toolkit instance.
+        - Aroon Up and Aroon Down equal TA-Lib's AROON.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -2554,6 +2604,10 @@ class Technicals:
 
         - CCI = (Typical Price — SMA(Typical Price)) / (constant * Mean Deviation)
 
+        For more information, see the following sources:
+
+        - TA-Lib: CCI, the reference implementation (https://ta-lib.org/functions/cci.html).
+
         Also known as: CCI, cyclical trend indicator.
 
         Args:
@@ -2586,6 +2640,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the CCI values for each asset in the Toolkit instance.
+        - With the default `constant` of 0.015, the CCI equals TA-Lib's CCI.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -2808,6 +2863,10 @@ class Technicals:
         - Raw Force Index = (Close — Close(1)) * Volume
         - Force Index = EMA(Raw Force Index, window)
 
+        For more information, see the following sources:
+
+        - TA-Lib: EFI, the reference implementation (https://ta-lib.org/functions/efi.html).
+
         Also known as: FI, Elder's Force Index.
 
         Args:
@@ -2838,6 +2897,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Force Index values for each asset in the Toolkit instance.
+        - The Force Index equals TA-Lib's EFI.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -2932,6 +2992,10 @@ class Technicals:
         - Average(i) = Sum(Buying Pressure, window_i) / Sum(True Range, window_i)
         - Ultimate Oscillator = 100 * [(4 * Average_1) + (2 * Average_2) + Average_3] / 7
 
+        For more information, see the following sources:
+
+        - TA-Lib: ULTOSC, the reference implementation (https://ta-lib.org/functions/ultosc.html).
+
         Also known as: UO, ultimate momentum oscillator. See
         `momentum_model.get_ultimate_oscillator` for the Buying Pressure and True Range
         definitions.
@@ -2968,6 +3032,9 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Ultimate Oscillator values for each asset in the Toolkit instance.
+        - The Ultimate Oscillator equals TA-Lib's ULTOSC. The first period counts with its High —
+          Low range and its close minus its low, so the oscillator starts on period `window_3`, one
+          period before TA-Lib's.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -3066,6 +3133,10 @@ class Technicals:
         9-period EMA of the PPO; it is not returned here and can be calculated from the result,
         for example with `get_exponential_moving_average` of the `overlap_model`.
 
+        For more information, see the following sources:
+
+        - TA-Lib: PPO, the reference implementation (https://ta-lib.org/functions/ppo.html).
+
         Also known as: PPO, price oscillator.
 
         Args:
@@ -3098,6 +3169,8 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the PPO values for each asset in the Toolkit instance.
+        - The PPO is a decimal and equals TA-Lib's PPO with the EMA (`matype=1`) divided by 100,
+          since TA-Lib's PPO is in percent.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -3201,6 +3274,10 @@ class Technicals:
         stocks whatever the number of shares they trade. It says nothing about the direction of
         price.
 
+        For more information, see the following sources:
+
+        - TA-Lib: PVO, the reference implementation (https://ta-lib.org/functions/pvo.html).
+
         Also known as: PVO, volume oscillator. See `momentum_model.get_percentage_volume_oscillator`
         for the references.
 
@@ -3237,6 +3314,9 @@ class Technicals:
           values, so the PVO starts on the `long_window`-th period and the signal line and histogram
           `signal_window` - 1 periods later.
         - A ticker without volume, such as an index or a currency pair, has no PVO.
+        - The PVO is a decimal, like the Percentage Price Oscillator, and NaN for a ticker without
+          volume. It equals TA-Lib's PVO (with its default EMA) divided by 100: TA-Lib's PVO is in
+          percent, returns 0 without volume and has no signal line or histogram.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -3329,6 +3409,10 @@ class Technicals:
         - Displacement = floor(Number of Periods / 2) + 1
         - DPO = Close(t — Displacement) — SMA(Close, Number of Periods)(t)
 
+        For more information, see the following sources:
+
+        - TA-Lib: DPO, the reference implementation (https://ta-lib.org/functions/dpo.html).
+
         Also known as: DPO, detrended price oscillator. Note the moving average itself is not
         shifted — only the close price used for the comparison is looked up further back in
         time; see `momentum_model.get_detrended_price_oscillator` for the full explanation.
@@ -3360,6 +3444,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the DPO values for each asset in the Toolkit instance.
+        - The DPO equals TA-Lib's DPO.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -3457,6 +3542,10 @@ class Technicals:
         itself, to know the direction. With Wilder's smoothing it reacts slowly and needs a few times the
         window of history before its values settle.
 
+        For more information, see the following sources:
+
+        - TA-Lib: ADX, the reference implementation (https://ta-lib.org/functions/adx.html).
+
         Also known as: ADX, trend strength indicator. See `momentum_model.get_average_directional_index`
         for the full formula, which uses Wilder's smoothing (not a plain SMA) throughout.
 
@@ -3488,6 +3577,10 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the ADX values for each asset in the Toolkit instance.
+        - Wilder's smoothing is seeded with the average of the first `window` values, while TA-Lib's
+          ADX seeds its running sums with `window` - 1 values, so the first values differ from
+          TA-Lib's until the two converge (within 0.01% after about 120 periods with the default
+          window).
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -3579,6 +3672,10 @@ class Technicals:
         - CMO = 100 * ((Sum of Upward Change) — (Sum of Downward Change)) / ((Sum of Upward Change) +
           (Sum of Downward Change)), bounded between -100 and 100.
 
+        For more information, see the following sources:
+
+        - TA-Lib: CMO, the reference implementation (https://ta-lib.org/functions/cmo.html).
+
         Also known as: CMO, Chande momentum.
 
         Args:
@@ -3608,6 +3705,9 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Chande Momentum Oscillator values for each asset in the Toolkit instance.
+        - The gains and losses are summed over the window, as Chande defines the CMO and as on
+          StockCharts. TA-Lib's CMO smooths them with Wilder's method instead, as in its RSI, so the
+          two differ throughout (by up to about 55 points on daily data).
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -3713,6 +3813,10 @@ class Technicals:
         Conversion and Base Lines and the two Leading Spans but not the Lagging Span (the close shifted
         back), which would report a future close on each date.
 
+        For more information, see the following sources:
+
+        - TA-Lib: ICHIMOKU, the reference implementation (https://ta-lib.org/functions/ichimoku.html).
+
         Also known as: Ichimoku Kinko Hyo, cloud indicator. The default windows (9, 26, 52)
         are Goichi Hosoda's original values, both leading spans are conventionally displaced
         forward by the base (Kijun-sen) period.
@@ -3750,6 +3854,10 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Ichimoku Cloud values for each asset in the Toolkit instance.
+        - The Conversion Line and Base Line equal TA-Lib's ICHIMOKU, and so do the leading spans
+          `base_window` periods earlier: TA-Lib places them on the period they are calculated on
+          instead of displacing them forward, and starts every line on the `lead_span_b_window`-th
+          period.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
         - The leading spans are shifted forward by exactly `base_window` periods, as StockCharts
@@ -3849,6 +3957,10 @@ class Technicals:
         - %K = 100 * ((Close — Lowest Low) / (Highest High — Lowest Low))
         - %D = SMA(%K, smooth_window)
 
+        For more information, see the following sources:
+
+        - TA-Lib: STOCHF, the reference implementation (https://ta-lib.org/functions/stochf.html).
+
         Also known as: stochastic oscillator, percent K, percent D.
 
         Args:
@@ -3884,6 +3996,9 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Stochastic Oscillator values for each asset in the Toolkit instance.
+        - %K and %D equal TA-Lib's STOCHF (the fast stochastic) with `fastd_period` set to
+          `smooth_window` and a simple moving average (`fastd_matype=0`), which TA-Lib's STOCH gives
+          with a `slowk_period` of 1. TA-Lib starts %K on the first %D.
         - If `growth` is set to True, the method calculates the growth of the %K and %D values
           using the specified `lag`.
 
@@ -3986,6 +4101,10 @@ class Technicals:
         divides by the long average for that. Both lines lag price, so crossovers come late in fast
         reversals.
 
+        For more information, see the following sources:
+
+        - TA-Lib: MACD, the reference implementation (https://ta-lib.org/functions/macd.html).
+
         Also known as: MACD, momentum indicator.
 
         Args:
@@ -4020,6 +4139,9 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the MACD and signal line values for each asset in the Toolkit instance.
+        - TA-Lib's MACD starts the short EMA on the same period as the long EMA and shows the MACD
+          line from the first signal value, so the first values differ from TA-Lib's until the two
+          converge (within 0.01% after about 85 periods with the default windows).
         - If `growth` is set to True, the method calculates the growth of the MACD and signal values
           using the specified `lag`.
 
@@ -4120,6 +4242,10 @@ class Technicals:
         the 50 line as a trend filter. The value depends on the window: a shorter window swings more and
         reaches the extremes more often.
 
+        For more information, see the following sources:
+
+        - TA-Lib: RSI, the reference implementation (https://ta-lib.org/functions/rsi.html).
+
         Also known as: RSI, momentum oscillator, overbought, oversold.
 
         Args:
@@ -4149,6 +4275,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           RSI for each asset in the Toolkit instance.
+        - The RSI equals TA-Lib's RSI.
         - If `growth` is set to True, the method calculates the growth of the RSI
           using the specified `lag`.
 
@@ -4255,6 +4382,10 @@ class Technicals:
         RSI is at its highest of the window, not that the price is overbought, so the readings
         above 80 and below 20 come and go quickly and are mostly read together with the trend.
 
+        For more information, see the following sources:
+
+        - TA-Lib: STOCHRSI, the reference implementation (https://ta-lib.org/functions/stochrsi.html).
+
         Also known as: StochRSI, Stoch RSI.
 
         Args:
@@ -4293,6 +4424,8 @@ class Technicals:
           with the same values from there.
         - An RSI that did not move over the stochastic window has no range, which leaves %K
           missing (TA-Lib sets it to 0).
+        - With `fastk_period` set to `stochastic_window`, `fastd_period` to `smooth_window` and a
+          simple moving average (`fastd_matype=0`), %K and %D equal TA-Lib's STOCHRSI.
         - If `growth` is set to True, the method calculates the growth of the %K and %D values
           using the specified `lag`.
 
@@ -4398,6 +4531,10 @@ class Technicals:
         line is the faster trigger, and readings beyond about +25 or -25 are read as overbought
         or oversold. Like the RSI it is on a scale of -100 to 100 rather than a decimal.
 
+        For more information, see the following sources:
+
+        - TA-Lib: TSI, the reference implementation (https://ta-lib.org/functions/tsi.html).
+
         Also known as: TSI, double smoothed momentum.
 
         Args:
@@ -4436,6 +4573,7 @@ class Technicals:
           `short_window` - 1 periods after the first price and the signal line
           `signal_window` - 1 periods later.
         - A stretch without any price change leaves the TSI missing.
+        - The TSI equals TA-Lib's TSI, which has no signal line.
         - If `growth` is set to True, the method calculates the growth of the TSI and signal
           line using the specified `lag`.
 
@@ -4528,6 +4666,10 @@ class Technicals:
 
         - BOP = (Close — Open) / (High — Low)
 
+        For more information, see the following sources:
+
+        - TA-Lib: BOP, the reference implementation (https://ta-lib.org/functions/bop.html).
+
         Also known as: BOP, bull bear power.
 
         Args:
@@ -4557,6 +4699,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           BOP for each asset in the Toolkit instance.
+        - The BOP equals TA-Lib's BOP.
         - If `growth` is set to True, the method calculates the growth of the BOP
           using the specified `lag`.
 
@@ -4651,6 +4794,10 @@ class Technicals:
         - Median Price = (High + Low) / 2
         - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
 
+        For more information, see the following sources:
+
+        - TA-Lib: AO, the reference implementation (https://ta-lib.org/functions/ao.html).
+
         Also known as: AO, Bill Williams Awesome Oscillator.
 
         Args:
@@ -4688,6 +4835,7 @@ class Technicals:
           "Trading Chaos: Applying Expert Techniques to Maximize Your Profit." Wiley.
         - A cross of the AO above zero occurs exactly when the short-window SMA of the median
           price crosses above the long-window SMA, and vice versa for a cross below zero.
+        - The AO equals TA-Lib's AO.
         - If `growth` is set to True, the method calculates the growth of the AO
           using the specified `lag`.
 
@@ -4818,6 +4966,8 @@ class Technicals:
           the Vortex Indicator values for each asset in the Toolkit instance.
         - Reference: Botes, E., & Siepman, D. (2010). "The Vortex Indicator." Technical Analysis
           of Stocks & Commodities, 28(1), 20-25.
+        - TA-Lib: VORTEX, the reference implementation (https://ta-lib.org/functions/vortex.html).
+        - VI+ and VI- equal TA-Lib's VORTEX.
         - If `growth` is set to True, the method calculates the growth of the VI+ and VI-
           using the specified `lag`.
 
@@ -4947,6 +5097,8 @@ class Technicals:
           Power moves toward zero from below; when the close is below the EMA (downtrend), both
           tend to be negative.
         - Reference: Elder, A. (1993). "Trading for a Living." Wiley.
+        - TA-Lib: ERI, the reference implementation (https://ta-lib.org/functions/eri.html).
+        - Bull Power and Bear Power equal TA-Lib's ERI.
         - If `growth` is set to True, the method calculates the growth of the Bull and Bear Power
           using the specified `lag`.
 
@@ -5072,6 +5224,9 @@ class Technicals:
           the Rate of Change for each asset in the Toolkit instance.
         - Reference: Murphy, J.J. (1999). "Technical Analysis of the Financial Markets." New
           York Institute of Finance.
+        - TA-Lib: ROCP, the reference implementation (https://ta-lib.org/functions/rocp.html).
+        - The Rate of Change is a decimal and equals TA-Lib's ROCP; TA-Lib's ROC is the same in
+          percent.
         - If `growth` is set to True, the method calculates the growth of the Rate of Change
           using the specified `lag`.
 
@@ -5166,6 +5321,10 @@ class Technicals:
 
         - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) — Min(Low, window)) ) / log10(window)
 
+        For more information, see the following sources:
+
+        - TA-Lib: CHOP, the reference implementation (https://ta-lib.org/functions/chop.html).
+
         Also known as: CHOP, Choppiness Index.
 
         Args:
@@ -5201,6 +5360,8 @@ class Technicals:
         - Developed by Australian commodities trader Bill Dreiss; there is no formal journal
           citation. The standard textbook treatment is Kaufman, P.J. (2013). "Trading Systems
           and Methods." 5th ed. Wiley.
+        - The Choppiness Index equals TA-Lib's CHOP. The first period counts with its High — Low
+          range, so the index starts on period `window`, one period before TA-Lib's.
         - If `growth` is set to True, the method calculates the growth of the Choppiness
           Index using the specified `lag`.
 
@@ -5342,6 +5503,9 @@ class Technicals:
           the Know Sure Thing values for each asset in the Toolkit instance.
         - Reference: Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of
           Stocks & Commodities, 10(6).
+        - TA-Lib: KST, the reference implementation (https://ta-lib.org/functions/kst.html).
+        - The KST and Signal Line are decimals and equal TA-Lib's KST divided by 100, since TA-Lib's
+          KST is in percent. TA-Lib starts the KST on the first signal value.
         - If `growth` is set to True, the method calculates the growth of the KST and Signal
           Line using the specified `lag`.
 
@@ -5449,6 +5613,10 @@ class Technicals:
         Coppock did not use it for sell signals. The Rates of Change are decimals, so the curve
         is a weighted sum of decimal returns (0.30 where charting platforms show 30).
 
+        For more information, see the following sources:
+
+        - TA-Lib: COPPOCK, the reference implementation (https://ta-lib.org/functions/coppock.html).
+
         Also known as: Coppock Indicator, Coppock Guide.
 
         Args:
@@ -5486,6 +5654,8 @@ class Technicals:
         - The curve starts max(`long_roc_window`, `short_roc_window`) + `wma_window` - 1
           periods after the first price: 23 months with the defaults on monthly data, so start
           about two years before the first value you need.
+        - The Coppock Curve is a decimal and equals TA-Lib's COPPOCK divided by 100, since TA-Lib's
+          is in percent.
         - If `growth` is set to True, the method calculates the growth of the Coppock Curve
           using the specified `lag`.
 
@@ -5815,6 +5985,11 @@ class Technicals:
         Adaptive Moving Average, which adapts its smoothing to the efficiency of the price
         move, is `get_kaufman_adaptive_moving_average`.
 
+        For more information, see the following sources:
+
+        - TA-Lib: SMA, EMA, DEMA, TRIMA, WMA and HMA, the reference implementations
+          (https://ta-lib.org/functions/).
+
         Also known as: MA, SMA, simple moving average, EMA, exponential moving average, DEMA, double exponential moving average, TMA, TRIMA, triangular moving average, WMA, linearly weighted moving average, HMA, Hull moving average.
 
         Args:
@@ -5847,6 +6022,8 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           MA for each asset in the Toolkit instance.
+        - The simple, exponential, double exponential, triangular, weighted and Hull moving averages
+          equal TA-Lib's SMA, EMA, DEMA, TRIMA, WMA and HMA.
         - If `growth` is set to True, the method calculates the growth of the MA
           using the specified `lag`.
 
@@ -5956,6 +6133,8 @@ class Technicals:
         Reference: Hutson, J. (1983). "TRIX — Triple Exponential Smoothing Oscillator."
         Technical Analysis of Stocks & Commodities, 1(5).
 
+        TA-Lib: TRIX, the reference implementation (https://ta-lib.org/functions/trix.html).
+
         Args:
             period (str, optional): The time period to consider for historical data.
                 Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
@@ -5984,6 +6163,8 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Trix for each asset in the Toolkit instance.
+        - TRIX is a decimal and equals TA-Lib's TRIX divided by 100, since TA-Lib's TRIX is in
+          percent.
         - If `growth` is set to True, the method calculates the growth of the Trix
           using the specified `lag`.
         - Daily TRIX values are small (a few hundredths of a percent), so four decimals keep
@@ -6089,6 +6270,10 @@ class Technicals:
         Bollinger's own setting, a 20-period average with 2 standard deviations, as on most
         charting platforms.
 
+        For more information, see the following sources:
+
+        - TA-Lib: BBANDS, the reference implementation (https://ta-lib.org/functions/bbands.html).
+
         Also known as: Bollinger Bands, BB, volatility bands, price channels.
 
         Args:
@@ -6121,6 +6306,7 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Bollinger Bands for each asset in the Toolkit instance.
+        - The bands equal TA-Lib's BBANDS with a simple moving average (`matype=0`).
         - If `growth` is set to True, the method calculates the growth of the Bollinger Bands
           using the specified `lag`.
 
@@ -6228,6 +6414,11 @@ class Technicals:
         Squeeze, which often precedes a larger move without saying in which direction; %B above
         1 or below 0 shows a close outside the bands, which in a trend can last for weeks.
 
+        For more information, see the following sources:
+
+        - TA-Lib: PERCENTB and BBW, the reference implementations (https://ta-lib.org/functions/percentb.html,
+          https://ta-lib.org/functions/bbw.html).
+
         Also known as: Percent B, %b, Bollinger Band Width, BBW, Bollinger Squeeze.
 
         Args:
@@ -6261,6 +6452,8 @@ class Technicals:
           %B and BandWidth for each asset in the Toolkit instance.
         - A window of identical prices gives bands without width, which leaves %B missing and
           BandWidth at 0.
+        - With a simple moving average (`matype=0`), %B equals TA-Lib's PERCENTB and BandWidth
+          equals TA-Lib's BBW divided by 100, since TA-Lib's BBW is in percent.
         - If `growth` is set to True, the method calculates the growth of %B and BandWidth
           using the specified `lag`.
 
@@ -6402,6 +6595,9 @@ class Technicals:
         - The method retrieves historical data based on the specified `period` and calculates
           the KAMA for each asset in the Toolkit instance.
         - Reference: Kaufman, P.J. (1998). "Trading Systems and Methods." 3rd ed. Wiley.
+        - TA-Lib: KAMA, the reference implementation (https://ta-lib.org/functions/kama.html).
+        - With the default `fast_window` of 2 and `slow_window` of 30, which TA-Lib fixes, the KAMA
+          equals TA-Lib's KAMA.
         - If `growth` is set to True, the method calculates the growth of the KAMA using the
           specified `lag`.
 
@@ -6502,6 +6698,10 @@ class Technicals:
         volume-weighted moving average, not as the intraday benchmark against which fills are
         measured.
 
+        For more information, see the following sources:
+
+        - TA-Lib: VWAP, the reference implementation (https://ta-lib.org/functions/vwap.html).
+
         Also known as: VWAP.
 
         Args:
@@ -6533,6 +6733,9 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           VWAP for each asset in the Toolkit instance.
+        - The VWAP is taken over a rolling `window`. TA-Lib's VWAP accumulates the typical price
+          times volume from the first period on, which is the VWAP over a window that grows with the
+          data.
         - If `growth` is set to True, the method calculates the growth of the VWAP
           using the specified `lag`.
 
@@ -6629,6 +6832,10 @@ class Technicals:
         - Uptrend SAR = Prior SAR + AF * (Extreme Point — Prior SAR)
         - Downtrend SAR = Prior SAR — AF * (Prior SAR — Extreme Point)
 
+        For more information, see the following sources:
+
+        - TA-Lib: SAR, the reference implementation (https://ta-lib.org/functions/sar.html).
+
         Also known as: Parabolic SAR, stop and reverse, PSAR.
 
         Args:
@@ -6662,6 +6869,8 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Parabolic SAR for each asset in the Toolkit instance.
+        - The Parabolic SAR equals TA-Lib's SAR, which takes `af_increment` equal to `af_start`, and
+          its SAREXT for any `af_increment`.
         - If `growth` is set to True, the method calculates the growth of the Parabolic SAR
           using the specified `lag`.
 
@@ -7399,6 +7608,10 @@ class Technicals:
 
         - TR = max(high — low, abs(high — previous_close), abs(low — previous_close))
 
+        For more information, see the following sources:
+
+        - TA-Lib: TRANGE, the reference implementation (https://ta-lib.org/functions/trange.html).
+
         Also known as: TR, true range.
 
         Args:
@@ -7427,6 +7640,8 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           True Range for each asset in the Toolkit instance.
+        - The True Range equals TA-Lib's TRANGE from the second period on. The first period, which
+          has no previous close, is High — Low here and empty in TA-Lib.
         - If `growth` is set to True, the method calculates the growth of the True Range
           using the specified `lag`.
 
@@ -7525,6 +7740,10 @@ class Technicals:
         divide it by the price for a percentage volatility. It measures how far price moves, not in
         which direction.
 
+        For more information, see the following sources:
+
+        - TA-Lib: ATR, the reference implementation (https://ta-lib.org/functions/atr.html).
+
         Also known as: ATR, volatility indicator. See `volatility_model.get_average_true_range`
         for the full formula; Wilder's smoothing constant (1/window) is slower than a
         standard EMA's (2/(window+1)) of the same window.
@@ -7563,6 +7782,9 @@ class Technicals:
         Notes:
         - ATR values are typically used to assess the volatility and potential price movement of an asset.
         - A higher ATR value indicates higher volatility, while a lower ATR value suggests lower volatility.
+        - Because the True Range starts on the first period, the ATR starts one period before
+          TA-Lib's ATR and differs from it until the two converge (within 0.01% after about 80
+          periods with the default window).
 
         As an example:
 
@@ -7662,6 +7884,10 @@ class Technicals:
         direction, so it is read together with a trend indicator such as a moving average. The ratio
         has no unit, so the level can be compared across stocks.
 
+        For more information, see the following sources:
+
+        - TA-Lib: MASSI, the reference implementation (https://ta-lib.org/functions/massi.html).
+
         Also known as: Mass Index, MI. See `volatility_model.get_mass_index` for the references.
 
         Args:
@@ -7694,7 +7920,7 @@ class Technicals:
         Notes:
         - Both EMAs are seeded with the simple average of their first values, as in TA-Lib and on
           StockCharts, so the first Mass Index is on period 2 × (`ema_window` — 1) + `sum_window`,
-          the 41st with the default windows.
+          the 41st with the default windows. The Mass Index equals TA-Lib's MASSI.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -7802,6 +8028,10 @@ class Technicals:
           at which point the trend flips to a downtrend and Supertrend = Final Upper Band
           (and vice versa)
 
+        For more information, see the following sources:
+
+        - TA-Lib: SUPERTREND, the reference implementation (https://ta-lib.org/functions/supertrend.html).
+
         Also known as: Supertrend, SuperTrend.
 
         Args:
@@ -7841,6 +8071,10 @@ class Technicals:
           a published financial paper.
         - The trend is initialized as an uptrend on the first available period, since there
           is no prior period to determine the starting direction from.
+        - The ATR starts one period before TA-Lib's (see `get_average_true_range`), so the
+          Supertrend starts one period before TA-Lib's SUPERTREND and differs from it until the two
+          converge (within 0.01% after about 40 periods with the defaults). The Trend Direction
+          equals TA-Lib's `trend` from TA-Lib's first value.
         - If `growth` is set to True, the method calculates the growth of the Supertrend and
           Trend Direction values using the specified `lag`.
 
@@ -7979,6 +8213,9 @@ class Technicals:
           Range, with the first True Range High — Low and the first ATR the average of the first
           `window` True Ranges (the StockCharts convention), so the exits start on the `window`-th
           period. The highest high and the lowest low include the current period.
+        - Because the ATR is seeded as on StockCharts, the first exits differ from those built on
+          TA-Lib's ATR, which starts the True Range on the second period, until the two converge
+          (within 0.01% after about 80 periods with the defaults).
         - If `growth` is set to True, the method calculates the growth of the Long Exit and Short Exit
           using the specified `lag`.
 
@@ -8076,6 +8313,10 @@ class Technicals:
         - Upper Line = Middle Line + atr_multiplier * ATR(atr_window)
         - Lower Line = Middle Line — atr_multiplier * ATR(atr_window), where the ATR uses Wilder's smoothing.
 
+        For more information, see the following sources:
+
+        - TA-Lib: KC, the reference implementation (https://ta-lib.org/functions/kc.html).
+
         Also known as: ATR-based bands, volatility channels.
 
         Args:
@@ -8110,6 +8351,9 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates Keltner Channels
           for each asset in the Toolkit instance.
+        - The middle line is the EMA of the close, as on StockCharts. TA-Lib's KC takes the EMA of
+          the typical price ((High + Low + Close) / 3) and starts its ATR one period later, so the
+          channels differ throughout (by about 0.3% on daily data).
         - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
 
         As an example:
@@ -8209,6 +8453,10 @@ class Technicals:
         original breakout rule and StockCharts' Price Channels definition — including it
         would make a channel break impossible by construction.
 
+        For more information, see the following sources:
+
+        - TA-Lib: DONCHIAN, the reference implementation (https://ta-lib.org/functions/donchian.html).
+
         Also known as: Donchian Channels, price channel breakout.
 
         Args:
@@ -8238,6 +8486,8 @@ class Technicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates Donchian Channels
           for each asset in the Toolkit instance.
+        - TA-Lib's DONCHIAN includes the current period, so each channel here equals TA-Lib's of the
+          previous period.
         - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
 
         As an example:
@@ -9393,11 +9643,12 @@ class Technicals:
         high-low range, a long shadow is longer than the candle's own real body, and "near" is
         within 20% and "far" at least 60% of the average high-low range of the 5 previous candles.
 
-        For more information, see the following books:
+        For more information, see the following sources:
 
         - Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute of
           Finance.
         - Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley.
+        - TA-Lib: the CDL functions, the reference implementation (https://ta-lib.org/functions/).
 
         Also known as: candlestick patterns, candle patterns, CDL, Japanese candlesticks.
 

@@ -41,19 +41,19 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Recognise 26 classic candlestick patterns in every ticker's candles, with the definitions
+        Recognise 41 classic candlestick patterns in every ticker's candles, with the definitions
         of TA-Lib's CDL functions. Candlestick charting reads the open, high, low and close of a
         period as one candle: the real body between the open and the close and the shadows up to
         the high and down to the low. Certain shapes and sequences are read as a sign that a move
         is ending or continuing.
 
         Each pattern is 1 on the candle that completes it as a bullish pattern, -1 as a bearish
-        pattern and 0 otherwise (TA-Lib's +100 and -100 divided by 100). The weaker engulfing and
-        harami, where one end of the two real bodies is equal, are 0.8 and -0.8 (TA-Lib's 80). The
-        dojis (doji, dragonfly, gravestone and long-legged doji, rickshaw man and takuri) are
-        indecision rather than a direction and are 1 when present; a marubozu, a spinning top, a
-        belt-hold, a closing marubozu, a high-wave, long line and short line candle and an inside
-        bar take the colour of the candle (1 white, -1 black).
+        pattern and 0 otherwise (TA-Lib's +100 and -100 divided by 100). The weaker engulfing,
+        harami and harami cross, where one end of the two real bodies is equal, are 0.8 and -0.8
+        (TA-Lib's 80). The dojis (doji, dragonfly, gravestone and long-legged doji, rickshaw man
+        and takuri) are indecision rather than a direction and are 1 when present; a marubozu, a
+        spinning top, a belt-hold, a closing marubozu, a high-wave, long line and short line candle
+        and an inside bar take the colour of the candle (1 white, -1 black).
 
         The patterns:
 
@@ -89,14 +89,35 @@ class PatternTechnicals:
         - Long Line Candle and Short Line Candle: a long (short) real body with short shadows.
         - Inside Bar: a candle whose high is below and low is above the previous candle's, a
           price-action pattern (pandas-ta-classic's cdl_inside) and the start of a hikkake.
+        - Counterattack: two long real bodies of opposite colour that close at the same price, in
+          the direction of the second.
+        - Doji Star: a long real body followed by a doji that gaps away from it, opposite to the
+          colour of the first candle; Harami Cross: a doji inside the previous long real body,
+          opposite to its colour.
+        - Homing Pigeon (bullish): a short black real body inside the previous long black one.
+        - In-Neck, On-Neck and Thrusting (bearish): a long black candle followed by a white
+          candle that opens below its low and closes at its close (in-neck), at its low (on-neck)
+          or above its close but not above the middle of its real body (thrusting).
+        - Kicking: a marubozu followed by a marubozu of the opposite colour that gaps away from it,
+          in the direction of the second; Kicking by Length: in the direction of the longer one.
+        - Matching Low (bullish): two black candles that close at the same price.
+        - Separating Lines: two candles of opposite colour that open at the same price, the second
+          a long real body without (or with a very short) shadow on the side of the open, in its
+          direction.
+        - Three Inside and Three Outside (Up or Down): a harami or an engulfing pattern confirmed
+          by a third candle that closes beyond the first candle's open (inside) or the second
+          candle's close (outside).
+        - Morning Doji Star (bullish) and Evening Doji Star (bearish): the morning and evening star
+          with a doji as the middle candle.
 
         Sizes are relative to the ticker's own recent candles, as in TA-Lib: a real body is long
         (short) when it is longer (shorter) than the average real body of the 10 previous candles,
         a doji's body is at most 10% and a very short shadow less than 10% of their average
         high-low range, a short shadow is shorter than their average shadow (half the average sum
         of both shadows), a long shadow is longer than the candle's own real body and a very long
-        shadow longer than twice that body, and "near" is within 20% and "far" at least 60% of the
-        average high-low range of the 5 previous candles.
+        shadow longer than twice that body, "near" is within 20% and "far" at least 60% of the
+        average high-low range of the 5 previous candles, and two prices are the same ("equal")
+        when they are within 5% of that range.
 
         For more information, see the following sources:
 
@@ -108,7 +129,10 @@ class PatternTechnicals:
 
         Also known as: candlestick patterns, candle patterns, CDL, Japanese candlesticks, belt
         hold, dragonfly doji, gravestone doji, long-legged doji, rickshaw man, takuri, high wave,
-        inside bar.
+        inside bar, counterattack lines, meeting lines, doji star, harami cross, homing pigeon,
+        in neck, on neck, thrusting line, kicker, matching low, separating lines, three inside up,
+        three inside down, three outside up, three outside down, morning doji star, evening doji
+        star.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -119,7 +143,7 @@ class PatternTechnicals:
                 uses the candles as traded (split-adjusted).
             patterns (str | list[str] | None, optional): The patterns to return, e.g. ["Hammer",
                 "Engulfing"] or "hammer, engulfing" (in any casing). Defaults to None, which returns
-                all 26.
+                all 41.
             signals_only (bool, optional): Whether to return only the periods in which at least one
                 of the returned patterns occurs for at least one ticker. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -129,13 +153,14 @@ class PatternTechnicals:
 
         Returns:
             pd.DataFrame: The patterns per date, with a column per pattern and ticker: 1 (bullish),
-            -1 (bearish), 0.8 / -0.8 (the weaker engulfing and harami) or 0.
+            -1 (bearish), 0.8 / -0.8 (the weaker engulfing, harami and harami cross) or 0.
 
         Notes:
         - The patterns match TA-Lib (github.com/TA-Lib/ta-lib, src/ta_func/ta_CDL*.c) candle for
-          candle, including its default candle settings and penetrations (30% for the stars, 50%
-          for the dark cloud cover); the inside bar matches pandas-ta-classic's cdl_inside.
-        - A pattern is empty until TA-Lib's lookback has passed: the 10 to 13 candles its
+          candle, including its default candle settings and penetrations (30% for the stars and
+          doji stars, 50% for the dark cloud cover); the inside bar matches pandas-ta-classic's
+          cdl_inside.
+        - A pattern is empty until TA-Lib's lookback has passed: the 3 to 13 candles its
           averages and the pattern itself need (1 for the inside bar, which pandas-ta-classic
           sets to 0 on the first candle), counted from the ticker's own first candle.
         - TA-Lib marks the gravestone doji, which candlestick analysis reads as bearish after a
@@ -143,7 +168,10 @@ class PatternTechnicals:
         - A pattern only describes the candles. The trend before it, which candlestick analysis
           requires for a reversal (a hammer after a decline, a hanging man after a rise), is not
           checked, as in TA-Lib; combine a pattern with a trend measure such as
-          `get_moving_average` or `get_signals`.
+          `get_moving_average` or `get_signals`. The direction is TA-Lib's: separating lines, a
+          continuation pattern in candlestick analysis, follow the second candle, and the in-neck,
+          on-neck and thrusting, bearish continuation patterns after a decline, are -1 whatever
+          the trend.
 
         As an example:
 

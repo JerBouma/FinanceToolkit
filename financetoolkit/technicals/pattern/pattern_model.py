@@ -54,10 +54,25 @@ PATTERN_LOOKBACK = {
     "Short Line Candle": 10,
     "Takuri": 10,
     "Inside Bar": 1,
+    "Counterattack": 11,
+    "Doji Star": 11,
+    "Harami Cross": 11,
+    "Homing Pigeon": 11,
+    "In-Neck": 11,
+    "On-Neck": 11,
+    "Thrusting": 11,
+    "Kicking": 11,
+    "Kicking by Length": 11,
+    "Matching Low": 6,
+    "Separating Lines": 11,
+    "Three Inside": 12,
+    "Three Outside": 3,
+    "Morning Doji Star": 12,
+    "Evening Doji Star": 12,
 }
 
-# How far the third candle of a star, and the second candle of a dark cloud cover, must reach into the first
-# candle's real body: TA-Lib's default optInPenetration.
+# How far the third candle of a (doji) star, and the second candle of a dark cloud cover, must reach into the
+# first candle's real body: TA-Lib's default optInPenetration.
 STAR_PENETRATION = 0.3
 DARK_CLOUD_PENETRATION = 0.5
 
@@ -140,15 +155,16 @@ def get_candlestick_patterns(
     patterns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Recognise 26 candlestick patterns, following the definitions of TA-Lib's CDL functions.
+    Recognise 41 candlestick patterns, following the definitions of TA-Lib's CDL functions.
 
     Each pattern is 1 on a candle that completes it as a bullish pattern, -1 as a bearish
     pattern and 0 otherwise, which is TA-Lib's +100 / -100 divided by 100. TA-Lib's weaker
-    form of the engulfing and harami patterns, where one end of the two real bodies is equal,
-    is 0.8 (TA-Lib's 80). The dojis (doji, dragonfly, gravestone and long-legged doji, rickshaw
-    man and takuri) are indecision rather than a direction and are 1 when present, as in
-    TA-Lib; a marubozu, a spinning top, a belt-hold, a closing marubozu, a high-wave, long line
-    and short line candle and an inside bar take the colour of the candle (1 white, -1 black).
+    form of the engulfing, harami and harami cross patterns, where one end of the two real
+    bodies is equal, is 0.8 (TA-Lib's 80). The dojis (doji, dragonfly, gravestone and
+    long-legged doji, rickshaw man and takuri) are indecision rather than a direction and are 1
+    when present, as in TA-Lib; a marubozu, a spinning top, a belt-hold, a closing marubozu, a
+    high-wave, long line and short line candle and an inside bar take the colour of the candle
+    (1 white, -1 black).
 
     Sizes are relative, as in TA-Lib (ta_global.c): a real body is long when it is longer than
     the average real body of the 10 previous candles and short when it is shorter; it is a
@@ -157,7 +173,8 @@ def get_candlestick_patterns(
     is shorter than half the average sum of both shadows of the 10 previous candles (the
     average shadow), long when it is longer than the candle's own real body and very long
     when it is longer than twice that body; "near" is within 20% and "far" at least 60% of the
-    average high-low range of the 5 previous candles.
+    average high-low range of the 5 previous candles, and two prices are "equal" when they are
+    within 5% of that range.
 
     The patterns and what they need:
 
@@ -200,6 +217,35 @@ def get_candlestick_patterns(
     - Takuri: a doji with a very short upper shadow and a very long lower shadow.
     - Inside Bar: a high below and a low above the previous candle's, the price-action
       pattern of pandas-ta-classic's cdl_inside (not part of TA-Lib's CDL functions).
+    - Counterattack: two long real bodies of opposite colour with equal closes, in the
+      direction of the second candle.
+    - Doji Star: a long real body followed by a doji that gaps away from it (up after a white
+      body, down after a black one), opposite to the colour of the first candle.
+    - Harami Cross: a doji inside the previous long real body, opposite to the colour of that
+      body.
+    - Homing Pigeon (bullish): a long black candle followed by a short black candle whose real
+      body lies inside it (a lower open and a higher close).
+    - In-Neck (bearish): a long black candle followed by a white candle that opens below its
+      low and closes at or just above its close (within "equal").
+    - On-Neck (bearish): the same two candles with the white close equal to the previous low.
+    - Thrusting (bearish): the same two candles with the white close above the previous close
+      by more than "equal" but not above the middle of the previous real body.
+    - Kicking: a marubozu (a long real body with very short shadows) followed by a marubozu
+      of the opposite colour that gaps away from it (above the high of a black one, below the
+      low of a white one), in the direction of the second candle.
+    - Kicking by Length: the kicking pattern in the direction of the longer of the two
+      marubozus (the first when both are equally long, as in TA-Lib).
+    - Matching Low (bullish): two black candles with equal closes.
+    - Separating Lines: two candles of opposite colour with equal opens, the second a long
+      real body with a very short shadow on the side of the open (a belt-hold), in the
+      direction of the second candle.
+    - Three Inside (Up or Down): a harami (a short real body strictly inside the previous long
+      real body) followed by a candle of the opposite colour to the first that closes beyond
+      the first candle's open, opposite to the colour of the first candle.
+    - Three Outside (Up or Down): an engulfing pattern followed by a candle that closes beyond
+      the close of the engulfing candle, in the direction of the engulfing candle.
+    - Morning Doji Star (bullish) and Evening Doji Star (bearish): the morning and evening
+      star with a doji as the middle candle.
 
     Reference: Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute
     of Finance; Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley. The
@@ -211,14 +257,19 @@ def get_candlestick_patterns(
 
     Notes:
         - A pattern is empty (NaN) until TA-Lib's lookback has passed: the candles its
-          averages and the pattern itself need (10 to 13 candles, 1 for the inside bar), so a
+          averages and the pattern itself need (3 to 13 candles, 1 for the inside bar), so a
           ticker is evaluated from the same candle on as TA-Lib. pandas-ta-classic's inside
           bar is 0 instead of empty on the first candle.
         - TA-Lib marks the gravestone doji, which Nison reads as bearish after a rise, as 1
           like every doji; so does this function.
         - A pattern only describes the candles; the trend before it, which Nison requires for
           e.g. a hammer (after a decline) and a hanging man (after a rise), is not checked, as
-          in TA-Lib.
+          in TA-Lib. The direction is therefore TA-Lib's: a counterattack, a kicking and
+          separating lines follow the second candle, while Nison reads separating lines as a
+          continuation of the trend, and the in-neck, on-neck and thrusting are bearish
+          continuation patterns (Nison, Bulkowski) that TA-Lib marks -1 whatever the trend.
+        - The doji stars use the same 30% penetration as the stars (STAR_PENETRATION, TA-Lib's
+          default optInPenetration); Nison only asks for a close well into the first body.
 
     Args:
         prices_open (pd.Series): The open prices.
@@ -226,11 +277,11 @@ def get_candlestick_patterns(
         prices_low (pd.Series): The low prices.
         prices_close (pd.Series): The close prices.
         patterns (list[str] | None, optional): The patterns to return, names of
-            `PATTERN_LOOKBACK` in the order given. Defaults to None, which returns all 26.
+            `PATTERN_LOOKBACK` in the order given. Defaults to None, which returns all 41.
 
     Returns:
         pd.DataFrame: The patterns as columns, with 1 (bullish), -1 (bearish), 0.8 / -0.8 (the
-        weaker engulfing and harami) or 0 per candle.
+        weaker engulfing, harami and harami cross) or 0 per candle.
     """
     unknown = set(patterns or []) - set(PATTERN_LOOKBACK)
     if unknown:
@@ -252,6 +303,7 @@ def get_candlestick_patterns(
     far = get_candle_average(candles, "Far")
     shadow_very_long = get_candle_average(candles, "ShadowVeryLong")
     shadow_short = get_candle_average(candles, "ShadowShort")
+    equal = get_candle_average(candles, "Equal")
 
     def previous(series: pd.Series, candles_back: int = 1) -> pd.Series:
         return series.shift(candles_back)
@@ -297,6 +349,31 @@ def get_candlestick_patterns(
         (body2 > previous(body_long, 2))
         & (body1 <= previous(body_short))
         & (body > body_short)
+    )
+    doji_star_sizes = (
+        (body2 > previous(body_long, 2))
+        & (body1 <= previous(body_doji))
+        & (body > body_short)
+    )
+    gap_up1 = (o1 > o2) & (o1 > c2) & (c1 > o2) & (c1 > c2)
+    gap_down1 = (o1 < o2) & (o1 < c2) & (c1 < o2) & (c1 < c2)
+
+    # Two candles of opposite colour, and a black candle followed by a white one that opens below its low:
+    # the start of the counterattack, kicking and separating lines, and of the in-neck, on-neck and thrusting.
+    opposite = white != previous(white)
+    long_black1 = black1 & (body1 > previous(body_long))
+    white_below_low1 = long_black1 & white & (o < l1)
+    equal1 = previous(equal)
+
+    # A marubozu as the kicking patterns need it: a long real body with very short shadows on both sides.
+    marubozu = (
+        (body > body_long) & (upper < shadow_very_short) & (lower < shadow_very_short)
+    )
+    kicking = (
+        opposite
+        & ((black1 & (low > h1)) | (white1 & (h < l1)))
+        & previous(marubozu).eq(True)
+        & marubozu
     )
 
     recognised = {
@@ -419,6 +496,79 @@ def get_candlestick_patterns(
             doji & (upper < shadow_very_short) & (lower > shadow_very_long)
         ).astype(float),
         "Inside Bar": color * ((h < h1) & (low > l1)),
+        "Counterattack": color
+        * (
+            opposite
+            & (body1 > previous(body_long))
+            & (body > body_long)
+            & (c <= c1 + equal1)
+            & (c >= c1 - equal1)
+        ),
+        "Doji Star": -previous(color)
+        * (
+            (body1 > previous(body_long))
+            & doji
+            & ((white1 & gap_up) | (black1 & gap_down))
+        ),
+        "Harami Cross": -previous(color)
+        * harami_strength
+        * ((body1 > previous(body_long)) & doji),
+        "Homing Pigeon": (
+            long_black1 & ~white & (c > c1) & (o < o1) & (body <= body_short)
+        ).astype(float),
+        "In-Neck": -(white_below_low1 & (c <= c1 + equal1) & (c >= c1)).astype(float),
+        "On-Neck": -(white_below_low1 & (c <= l1 + equal1) & (c >= l1 - equal1)).astype(
+            float
+        ),
+        "Thrusting": -(
+            white_below_low1 & (c > c1 + equal1) & (c <= c1 + body1 * 0.5)
+        ).astype(float),
+        "Kicking": color * kicking,
+        # The longer of the two marubozus decides the direction.
+        "Kicking by Length": pd.Series(
+            np.where(body > body1, color, previous(color)), index=candles.index
+        )
+        * kicking,
+        "Matching Low": (
+            black1 & ~white & (c <= c1 + equal1) & (c >= c1 - equal1)
+        ).astype(float),
+        "Separating Lines": color
+        * (
+            opposite
+            & (o <= o1 + equal1)
+            & (o >= o1 - equal1)
+            & (body > body_long)
+            & (lower.where(white, upper) < shadow_very_short)
+        ),
+        "Three Inside": -previous(color, 2)
+        * (
+            ((c1 < c2) | (c1 < o2))
+            & ((o1 < c2) | (o1 < o2))
+            & ((c1 > c2) | (c1 > o2))
+            & ((o1 > c2) | (o1 > o2))
+            & ((white2 & ~white & (c < o2)) | (black2 & white & (c > o2)))
+            & (body2 > previous(body_long, 2))
+            & (body1 <= previous(body_short))
+        ),
+        "Three Outside": previous(color)
+        * (
+            (white1 & black2 & (c1 > o2) & (o1 < c2) & (c > c1))
+            | (black1 & white2 & (o1 > c2) & (c1 < o2) & (c < c1))
+        ),
+        "Morning Doji Star": (
+            black2
+            & white
+            & gap_down1
+            & (c > c2 + body2 * STAR_PENETRATION)
+            & doji_star_sizes
+        ).astype(float),
+        "Evening Doji Star": -(
+            white2
+            & ~white
+            & gap_up1
+            & (c < c2 - body2 * STAR_PENETRATION)
+            & doji_star_sizes
+        ).astype(float),
     }
 
     position = pd.Series(np.arange(len(candles)), index=candles.index)

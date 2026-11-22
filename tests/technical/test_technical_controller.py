@@ -1700,6 +1700,11 @@ def test_get_candlestick_patterns(recorder, technical_module):
             patterns="belt-hold, Inside Bar", signals_only=True
         )
     )
+    recorder.capture(
+        technical_module.get_candlestick_patterns(
+            patterns="Three Outside, kicking by length, harami cross", signals_only=True
+        )
+    )
 
 
 def test_get_heikin_ashi(recorder, technical_module):

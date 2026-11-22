@@ -1362,3 +1362,155 @@ def test_get_pain_ratio_divides_the_excess_return_by_the_mean_drawdown(
     assert result.loc["2021", "AAPL"] == pytest.approx(
         excess_return / drawdowns.abs().mean(), abs=1e-9
     )
+
+
+def test_get_sharpe_ratio_smart(recorder, performance_module):
+    smart = partial(performance_module.get_sharpe_ratio, method="smart")
+
+    recorder.capture(smart())
+    recorder.capture(smart(annualize=True))
+    recorder.capture(smart(period="monthly", rolling=12))
+
+    # The penalty is at least 1, so the smart ratio is never larger in size.
+    standard = performance_module.get_sharpe_ratio(rounding=10)
+    assert (smart(rounding=10).abs() <= standard.abs() + 1e-9).all().all()
+
+
+def test_probabilistic_and_deflated_sharpe_ratios_can_be_annualized(performance_module):
+    # A probability does not depend on the time scale of the Sharpe ratios.
+    for method in ("probabilistic", "deflated"):
+        annualized = performance_module.get_sharpe_ratio(method=method, annualize=True)
+        assert not annualized.empty
+        pd.testing.assert_frame_equal(
+            annualized, performance_module.get_sharpe_ratio(method=method)
+        )
+
+    # An annualized benchmark is compared with the annualized Sharpe ratio.
+    observations_per_year = 252
+    pd.testing.assert_frame_equal(
+        performance_module.get_sharpe_ratio(
+            method="probabilistic", annualize=True, benchmark_sharpe_ratio=1.0
+        ),
+        performance_module.get_sharpe_ratio(
+            method="probabilistic",
+            benchmark_sharpe_ratio=1.0 / np.sqrt(observations_per_year),
+        ),
+    )
+
+
+def test_get_sortino_ratio_variants(recorder, performance_module):
+    sortino_ratio = performance_module.get_sortino_ratio
+
+    recorder.capture(sortino_ratio(method="smart"))
+    recorder.capture(sortino_ratio(method="adjusted", annualize=True))
+    recorder.capture(sortino_ratio(method="probabilistic"))
+    recorder.capture(sortino_ratio(method="probabilistic_adjusted"))
+    recorder.capture(sortino_ratio(method="smart", period="monthly", rolling=12))
+
+    pd.testing.assert_frame_equal(
+        sortino_ratio(method="adjusted", rounding=10),
+        (sortino_ratio(rounding=12) / np.sqrt(2)).round(10),
+    )
+    assert sortino_ratio(method="other").empty
+
+
+def test_get_calmar_and_sterling_ratio_annualized(recorder, performance_module):
+    calmar_ratio = performance_module.get_calmar_ratio(method="annualized")
+    recorder.capture(calmar_ratio)
+    recorder.capture(
+        performance_module.get_sterling_ratio(method="annualized", adjustment=0.05)
+    )
+
+    # The default per-period ratios are unchanged by the method parameter.
+    pd.testing.assert_frame_equal(
+        performance_module.get_calmar_ratio(),
+        performance_module.get_calmar_ratio(method="standard"),
+    )
+
+    returns = performance_module._historical_data["daily"]["Return"]["AAPL"]
+    wealth = (1 + returns).cumprod()
+    maximum_drawdown = (wealth / wealth.cummax() - 1).min()
+    annualized_return = np.prod(1 + returns) ** (252 / len(returns)) - 1
+    assert calmar_ratio["AAPL"] == pytest.approx(
+        annualized_return / abs(maximum_drawdown), abs=1e-4
+    )
+
+
+def test_get_alpha_annualized(recorder, performance_module):
+    recorder.capture(performance_module.get_alpha(method="annualized"))
+    recorder.capture(
+        performance_module.get_alpha(method="annualized", show_full_results=True)
+    )
+
+
+def test_get_burke_ratio_modified(recorder, performance_module):
+    recorder.capture(performance_module.get_burke_ratio(modified=True))
+    recorder.capture(
+        performance_module.get_burke_ratio(modified=True, within_period=False)
+    )
+
+
+def test_get_treynor_ratio_modified(recorder, performance_module):
+    recorder.capture(performance_module.get_treynor_ratio(modified=True))
+    recorder.capture(
+        performance_module.get_treynor_ratio(modified=True, period="monthly", rolling=6)
+    )
+
+
+def test_get_appraisal_ratio_methods(recorder, performance_module):
+    recorder.capture(performance_module.get_appraisal_ratio(method="modified"))
+    recorder.capture(performance_module.get_appraisal_ratio(method="alternative"))
+    recorder.capture(
+        performance_module.get_appraisal_ratio(
+            method="alternative", period="monthly", rolling=6
+        )
+    )
+
+
+def test_get_m2_ratio_sortino_and_excess(recorder, performance_module):
+    recorder.capture(performance_module.get_m2_ratio(method="sortino"))
+    recorder.capture(performance_module.get_m2_ratio(excess="geometric"))
+    recorder.capture(
+        performance_module.get_m2_ratio(method="sortino", excess="arithmetic")
+    )
+    # The M2 for Sortino has no rolling form.
+    assert performance_module.get_m2_ratio(method="sortino", rolling=6).empty
+
+
+def test_get_gain_to_pain_ratio_omega_sharpe(recorder, performance_module):
+    omega_sharpe_ratio = performance_module.get_gain_to_pain_ratio(
+        minimum_acceptable_return=0.001, rounding=10
+    )
+    recorder.capture(omega_sharpe_ratio)
+
+    # The Omega-Sharpe ratio is the Omega ratio minus 1.
+    omega_ratio = performance_module.get_omega_ratio(
+        minimum_acceptable_return=0.001, rounding=10
+    )
+    np.testing.assert_allclose(
+        omega_sharpe_ratio.to_numpy(), omega_ratio.to_numpy() - 1, atol=1e-9
+    )
+
+
+def test_get_d_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_d_ratio())
+    recorder.capture(performance_module.get_d_ratio(period="quarterly"))
+    recorder.capture(performance_module.get_d_ratio(within_period=False))
+
+
+def test_get_prospect_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_prospect_ratio())
+    recorder.capture(performance_module.get_prospect_ratio(period="quarterly"))
+    recorder.capture(
+        performance_module.get_prospect_ratio(
+            minimum_acceptable_return=0.001, loss_aversion=2
+        )
+    )
+
+
+def test_get_omega_excess_return(recorder, performance_module):
+    recorder.capture(performance_module.get_omega_excess_return())
+    recorder.capture(performance_module.get_omega_excess_return(period="quarterly"))
+    recorder.capture(
+        performance_module.get_omega_excess_return(minimum_acceptable_return=0.001)
+    )

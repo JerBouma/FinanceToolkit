@@ -1312,6 +1312,7 @@ def get_treynor_ratio(
     asset_returns: pd.Series | pd.DataFrame | float,
     risk_free_rate: pd.Series | pd.DataFrame | float,
     beta: pd.Series | pd.DataFrame | float,
+    benchmark_standard_deviation: pd.Series | float | None = None,
 ) -> pd.Series | pd.DataFrame | float:
     """
     Calculate the Treynor ratio of returns, i.e. the excess return earned per unit of
@@ -1331,6 +1332,17 @@ def get_treynor_ratio(
     - Treynor, J.L. (1965). "How to Rate Management of Investment Funds." Harvard
     Business Review, 43(1), 63-75.
 
+    With `benchmark_standard_deviation` the denominator is the systematic risk, Beta times the
+    standard deviation of the benchmark, which gives the modified Treynor ratio of Bacon
+    (2008). It is expressed per unit of return volatility rather than per unit of Beta:
+
+        - Modified Treynor Ratio = (Asset Return - Risk-Free Rate) / (Beta * Benchmark Standard Deviation)
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, p. 77.
+    - PerformanceAnalytics: TreynorRatio(modified = TRUE)
+    (https://github.com/braverock/PerformanceAnalytics).
+
     A beta of 0 (or of rounding noise) leaves the ratio undefined: NaN, not infinite.
 
     Args:
@@ -1339,10 +1351,21 @@ def get_treynor_ratio(
         or a DataFrame with the rate of each asset over the periods of its own calendar.
         beta (pd.Series | pd.DataFrame | float): The asset's or portfolio's Beta
         (systematic risk), see `get_beta`.
+        benchmark_standard_deviation (pd.Series | float | None, optional): The standard deviation
+        of the benchmark over the same periods as `asset_returns` (one value per period for a
+        DataFrame). When given, the modified Treynor ratio is returned. Defaults to None.
 
     Returns:
         pd.Series: A Series of Treynor ratios with time as index and assets as columns.
     """
+    if benchmark_standard_deviation is not None:
+        # The systematic risk, Beta times the benchmark volatility, replaces Beta.
+        beta = (
+            beta.mul(benchmark_standard_deviation, axis=0)
+            if isinstance(beta, pd.DataFrame)
+            else beta * benchmark_standard_deviation
+        )
+
     if isinstance(beta, pd.DataFrame) and isinstance(asset_returns, pd.DataFrame):
         treynor_ratio = pd.DataFrame(
             index=beta.index, columns=beta.columns, dtype=np.float64
@@ -1481,10 +1504,22 @@ def get_probabilistic_sharpe_ratio(
     kurtosis value. Getting this convention backwards silently shifts every PSR value
     (via the ((γ₄ − 1) / 4) term), so double check which convention is being fed in.
 
-    For more information about the method, see the following paper:
+    The probability does not depend on the time scale of the ratio: annualizing SR̂, SR* and
+    the standard error of SR̂ by the same SQRT(q) leaves the z-score unchanged, so SR̂ and SR*
+    only need to be on the same (here: per-observation) scale.
+
+    The same formula serves as the generic probabilistic ratio: quantstats applies it to the
+    Sortino ratio and to the adjusted Sortino ratio (Sortino / SQRT(2)) as well, by passing
+    that ratio as `sharpe_ratio`. The standard error was derived for the Sharpe ratio only,
+    so for other ratios it is an approximation without a formal derivation.
+
+    For more information about the method, see the following sources:
 
     - Bailey, D.H., & López de Prado, M. (2012). "The Sharpe Ratio Efficient Frontier."
     Journal of Risk, 15(2), 3-44.
+    - quantstats: stats.probabilistic_ratio, stats.probabilistic_sharpe_ratio,
+    stats.probabilistic_sortino_ratio and stats.probabilistic_adjusted_sortino_ratio
+    (https://github.com/ranaroussi/quantstats).
 
     Args:
         sharpe_ratio (pd.Series | pd.DataFrame | float): The observed (realized) Sharpe
@@ -1714,6 +1749,137 @@ def get_rolling_sortino_ratio(
     )
 
     return remove_undefined_ratios(rolling_mean / rolling_downside_deviation)
+
+
+def get_autocorrelation_penalty(
+    returns: np.ndarray | pd.Series | pd.DataFrame,
+) -> float | pd.Series | pd.DataFrame:
+    """
+    Calculate the autocorrelation penalty of returns, the factor by which the "smart" Sharpe
+    and Sortino ratios divide the plain ratio to account for serially correlated returns.
+
+    Positively autocorrelated returns (smoothed prices of illiquid assets, momentum) make the
+    standard deviation of one return understate the risk of holding the asset over several
+    periods, which flatters the Sharpe and Sortino ratios. The penalty scales the risk
+    measure up by the variance inflation of a sum of n returns whose autocorrelation at lag k
+    is ρ^k, with ρ the absolute first order autocorrelation:
+
+        - Penalty = SQRT( 1 + 2 · Σ_{k=1}^{n−1} ((n − k) / n) · |ρ|^k )
+        - Smart Ratio = Ratio / Penalty
+
+    Where n is the number of returns and ρ the Pearson correlation between each return and
+    the next. Returns without autocorrelation give a penalty of 1. Taking the absolute value
+    of ρ penalizes negative autocorrelation as well, which would in fact lower the variance of
+    a sum of returns; this follows the reference implementation. Lo (2002), on which the
+    weights are based, uses the sample autocorrelation at every lag instead of powers of the
+    first one (see `get_lo_sharpe_ratio`).
+
+    For more information, see the following sources:
+
+    - Lo, A.W. (2002). "The Statistics of Sharpe Ratios." Financial Analysts Journal, 58(4),
+    36-52.
+    - quantstats: stats.autocorr_penalty, stats.smart_sharpe and stats.smart_sortino, the
+    reference implementation (https://github.com/ranaroussi/quantstats).
+
+    Fewer than two returns, or returns without variation, have no autocorrelation and give
+    NaN (quantstats returns a penalty of 1 for them).
+
+    Args:
+        returns (np.ndarray | pd.Series | pd.DataFrame): The (excess) returns. A "within
+        period" (period, date) Multi Index gives one penalty per period and column.
+
+    Returns:
+        float | pd.Series | pd.DataFrame: The penalty, a float for a Series or array, one per
+        column for a DataFrame and one per period and column for a "within period" index.
+    """
+    if (
+        isinstance(returns, pd.Series | pd.DataFrame)
+        and returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+    ):
+        return returns.groupby(level=0).agg(
+            lambda values: get_autocorrelation_penalty(values.to_numpy())
+        )
+
+    if isinstance(returns, pd.DataFrame):
+        return returns.apply(get_autocorrelation_penalty).astype(float)
+
+    values = np.asarray(returns, dtype=float)
+    values = values[~np.isnan(values)]
+    n_observations = len(values)
+
+    if n_observations < 2 or values.max() == values.min():  # noqa: PLR2004
+        return np.nan
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        autocorrelation = abs(np.corrcoef(values[:-1], values[1:])[0, 1])
+
+    if np.isnan(autocorrelation):
+        return np.nan
+
+    lags = np.arange(1, n_observations)
+
+    return float(
+        np.sqrt(
+            1
+            + 2
+            * np.sum((n_observations - lags) / n_observations * autocorrelation**lags)
+        )
+    )
+
+
+@by_own_trading_days
+def get_rolling_autocorrelation_penalty(
+    returns: pd.Series | pd.DataFrame, window_size: int
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the autocorrelation penalty of returns over a rolling window, see
+    `get_autocorrelation_penalty`.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The (excess) returns.
+        window_size (int): The number of returns in each window.
+
+    Returns:
+        pd.Series | pd.DataFrame: The penalty at the end of every full window.
+    """
+    return returns.rolling(window_size, min_periods=window_size).apply(
+        get_autocorrelation_penalty, raw=True
+    )
+
+
+def get_annualized_return(
+    returns: pd.Series | pd.DataFrame,
+    observations_per_year: float | pd.Series,
+) -> float | pd.Series:
+    """
+    Calculate the annualized (geometric) return of a series of returns, the constant yearly
+    return that compounds into the same growth over the number of years the returns span.
+
+    The formula is as follows:
+
+        - Annualized Return = PRODUCT(1 + Return) ^ (Observations per Year / N) − 1
+
+    Where N is the number of returns of each column. The years are counted in observations
+    (N / Observations per Year), as PerformanceAnalytics (Return.annualized) and empyrical
+    (annual_return) do, rather than in calendar days as `get_compound_annual_growth_rate`
+    does; both agree for a full history of trading days.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns per observation, each column on its
+        own history (missing returns are left out).
+        observations_per_year (float | pd.Series): The number of returns in a year, such as
+        252 for daily returns of a stock and 365 for those of a cryptocurrency, or one value
+        per column.
+
+    Returns:
+        float | pd.Series: The annualized return, a float for a Series and one per column for
+        a DataFrame. A column without returns gives NaN.
+    """
+    growth = (1 + returns).prod(min_count=1)
+
+    # A column without returns has a growth of NaN, whatever the exponent.
+    with np.errstate(divide="ignore"):
+        return growth ** (observations_per_year / returns.count()) - 1
 
 
 def get_safety_first_ratio(
@@ -2017,6 +2183,53 @@ def get_rolling_m2_ratio(
     )
 
 
+def get_m2_excess_return(
+    m2_ratio: pd.Series | pd.DataFrame,
+    benchmark_returns: pd.Series | float,
+    method: str = "arithmetic",
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the M2 excess return, the M2 measure (see `get_m2_ratio`) above the return of the
+    benchmark: the return the risk-matched portfolio earned beyond the benchmark.
+
+    The formula is as follows:
+
+        - Arithmetic M2 Excess Return = M2 − Benchmark Return
+        - Geometric M2 Excess Return = (1 + M2) / (1 + Benchmark Return) − 1
+
+    For more information, see the following sources:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, p. 68.
+    - PerformanceAnalytics: MSquaredExcess (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        m2_ratio (pd.Series | pd.DataFrame): The M2 measure per period (columns per asset).
+        benchmark_returns (pd.Series | float): The benchmark return over the same periods.
+        method (str, optional): "arithmetic" or "geometric". Defaults to "arithmetic".
+
+    Returns:
+        pd.Series | pd.DataFrame: The M2 excess return.
+
+    Raises:
+        ValueError: If `method` is not "arithmetic" or "geometric".
+    """
+    if method == "arithmetic":
+        return (
+            m2_ratio.sub(benchmark_returns, axis=0)
+            if isinstance(m2_ratio, pd.DataFrame)
+            else m2_ratio - benchmark_returns
+        )
+    if method == "geometric":
+        return (
+            (1 + m2_ratio).div(1 + benchmark_returns, axis=0)
+            if isinstance(m2_ratio, pd.DataFrame)
+            else (1 + m2_ratio) / (1 + benchmark_returns)
+        ) - 1
+
+    raise ValueError("method must be 'arithmetic' or 'geometric'.")
+
+
 @by_own_trading_days(compound=True)
 def get_tracking_error(
     asset_returns: pd.Series | pd.DataFrame, benchmark_returns: pd.Series
@@ -2179,6 +2392,15 @@ def get_calmar_ratio(
     For more information about the method, see the following source:
 
     - Young, T.W. (1991). "Calmar Ratio: A Smoother Tool." Futures, 20(1), 40.
+    - PerformanceAnalytics: CalmarRatio (https://github.com/braverock/PerformanceAnalytics).
+    - empyrical: calmar_ratio (https://github.com/stefan-jansen/empyrical-reloaded).
+    - quantstats: stats.calmar (https://github.com/ranaroussi/quantstats).
+    - ffn: calc_calmar_ratio (https://github.com/pmorissette/ffn).
+
+    The reference libraries divide the annualized return over the whole sample (see
+    `get_annualized_return`) by the Maximum Drawdown over the whole sample; pass those to get
+    their ratio. ffn counts the years in calendar days rather than in observations, which
+    gives a slightly different annualized return.
 
     Without a drawdown the ratio is undefined (NaN).
 
@@ -2256,9 +2478,25 @@ def get_sterling_ratio(
     """
     Calculate the Sterling Ratio of returns.
 
+    The formula is as follows:
+
+        - Sterling Ratio = Return / (|Drawdown| + Adjustment)
+
+    Bacon (2008) uses the Average Drawdown as the drawdown, PerformanceAnalytics
+    (SterlingRatio, after Kestner, 1996) the Maximum Drawdown over the whole sample with
+    the annualized return over that sample; the formula serves both.
+
+    For more information, see the following sources:
+
+    - Kestner, L.N. (1996). "Getting a Handle on True Performance." Futures, 25(1), 44-46.
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, p. 89.
+    - PerformanceAnalytics: SterlingRatio (https://github.com/braverock/PerformanceAnalytics).
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or DataFrame of period returns.
-        average_drawdown (pd.Series | pd.DataFrame): The corresponding Average Drawdown values.
+        average_drawdown (pd.Series | pd.DataFrame): The corresponding Average Drawdown values,
+        or the Maximum Drawdown for the PerformanceAnalytics definition.
         adjustment (float, optional): The fixed adjustment added to the average drawdown,
         conventionally 0.1 (10%). Defaults to 0.1.
 
@@ -2335,9 +2573,27 @@ def get_burke_drawdown_measure(
 def get_burke_ratio(
     excess_returns: pd.Series | pd.DataFrame,
     burke_drawdown_measure: pd.Series | pd.DataFrame,
+    n_observations: pd.Series | pd.DataFrame | float | None = None,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Burke Ratio of returns.
+
+    The formula is as follows:
+
+        - Burke Ratio = Excess Return / SQRT(SUM(Drawdown^2))
+        - Modified Burke Ratio = Excess Return / SQRT(SUM(Drawdown^2) / N) = Burke Ratio * SQRT(N)
+
+    Where N is the number of observations the drawdowns are measured over. The modified
+    ratio divides by the root mean square drawdown instead of the root of the sum, so it no
+    longer shrinks as the history gets longer.
+
+    For more information, see the following sources:
+
+    - Burke, G. (1994). "A Sharper Sharpe Ratio." Futures, 23(3), 56.
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, pp. 90-91.
+    - PerformanceAnalytics: BurkeRatio(modified = TRUE)
+    (https://github.com/braverock/PerformanceAnalytics).
 
     Without a drawdown the ratio is undefined (NaN).
 
@@ -2346,11 +2602,18 @@ def get_burke_ratio(
         risk-free rate subtracted.
         burke_drawdown_measure (pd.Series | pd.DataFrame): The corresponding Burke Drawdown
         Measure values.
+        n_observations (pd.Series | pd.DataFrame | float | None, optional): The number of
+        observations the drawdowns were measured over. When given, the modified Burke ratio is
+        returned. Defaults to None.
 
     Returns:
         pd.Series | pd.DataFrame: A Series or DataFrame of Burke ratios with time as index
         and assets as columns.
     """
+    if n_observations is not None:
+        # The root mean square drawdown instead of the root of the sum of squares.
+        burke_drawdown_measure = burke_drawdown_measure / np.sqrt(n_observations)
+
     return remove_undefined_ratios(excess_returns / burke_drawdown_measure).dropna(
         how="all"
     )
@@ -2718,6 +2981,7 @@ def get_rolling_omega_ratio(
 
 def get_gain_to_pain_ratio(
     returns: pd.Series | pd.DataFrame,
+    minimum_acceptable_return: float = 0.0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Gain-to-Pain Ratio of returns, i.e. the sum of all returns divided by the
@@ -2727,19 +2991,33 @@ def get_gain_to_pain_ratio(
 
         - Gain-to-Pain Ratio = sum(Return) / sum(|Return| where Return < 0)
 
-    A value of 1 means gains exactly offset losses; a value below (above) 1 means losses
+    A value of 0 means gains exactly offset losses; a value below (above) 0 means losses
     outweigh (are outweighed by) gains in aggregate.
+
+    Measured against a minimum acceptable return (MAR) other than 0, the ratio is the
+    Omega-Sharpe ratio of Kazemi, Schneeweis and Gupta (2004), the Omega ratio minus 1:
+
+        - Omega-Sharpe Ratio = sum(Return - MAR) / sum(max(MAR - Return, 0)) = Omega Ratio - 1
+
+    which equals the mean return above the MAR divided by the downside potential (the mean
+    shortfall below the MAR), as PerformanceAnalytics defines it.
 
     For more information about the method, see the following source:
 
     - Schwager, J.D. (2012). "Hedge Fund Market Wizards: How Winning Traders Win." John
     Wiley & Sons. (Popularized this simple ratio as a robustness-focused alternative to
     the Sharpe ratio for evaluating trading strategies.)
+    - Kazemi, H., Schneeweis, T., & Gupta, R. (2004). "Omega as a Performance Measure."
+    Journal of Performance Measurement, 8(3), 16-25.
+    - PerformanceAnalytics: OmegaSharpeRatio (https://github.com/braverock/PerformanceAnalytics).
+    - quantstats: stats.gain_to_pain_ratio (https://github.com/ranaroussi/quantstats).
 
     Without a loss the ratio is undefined (NaN).
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
+        minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) per
+        observation that gains and losses are measured from. Defaults to 0.0.
 
     Returns:
         pd.Series | pd.DataFrame: Gain-to-Pain Ratio values as float if returns is a
@@ -2751,7 +3029,10 @@ def get_gain_to_pain_ratio(
             period_data_list = []
 
             for sub_period in periods:
-                period_data = returns.loc[sub_period].aggregate(get_gain_to_pain_ratio)
+                period_data = returns.loc[sub_period].aggregate(
+                    get_gain_to_pain_ratio,
+                    minimum_acceptable_return=minimum_acceptable_return,
+                )
                 period_data.name = sub_period
 
                 if not period_data.empty:
@@ -2761,16 +3042,186 @@ def get_gain_to_pain_ratio(
 
             return gain_to_pain_ratio.T
 
-        return returns.aggregate(get_gain_to_pain_ratio)
+        return returns.aggregate(
+            get_gain_to_pain_ratio, minimum_acceptable_return=minimum_acceptable_return
+        )
 
     if isinstance(returns, pd.Series):
-        losses = returns[returns < 0].abs().sum()
+        excess_returns = returns - minimum_acceptable_return
+        losses = excess_returns[excess_returns < 0].abs().sum()
 
         # A period without losses (or without returns) divides by zero: no ratio.
         with np.errstate(divide="ignore", invalid="ignore"):
-            return remove_undefined_ratios(returns.sum() / losses)
+            return remove_undefined_ratios(excess_returns.sum() / losses)
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
+def get_d_ratio(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the d ratio of returns, the losses relative to the gains, each weighted by how
+    often they occur.
+
+    The formula is as follows:
+
+        - d Ratio = (n_d * SUM(|Return| where Return < 0)) / (n_u * SUM(Return where Return > 0))
+
+    Where n_d is the number of negative returns and n_u the number of positive returns. It is
+    the inverse of the Bernardo-Ledoit (gain-loss) ratio weighted by the frequencies of the
+    losses and gains. Lower is better: 0 means there were no losses at all.
+
+    For more information, see the following sources:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, p. 95.
+    - PerformanceAnalytics: DRatio (https://github.com/braverock/PerformanceAnalytics).
+
+    Without a positive return the ratio is undefined: NaN where PerformanceAnalytics reports
+    infinity.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns. A "within period"
+        (period, date) Multi Index gives one ratio per period and column.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The d ratio, a float for a Series, one per column for
+        a DataFrame and one per period and column for a "within period" index.
+    """
+    if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        return returns.groupby(level=0).agg(
+            lambda values: get_d_ratio(values.droplevel(0))
+        )
+
+    if isinstance(returns, pd.DataFrame):
+        return returns.apply(get_d_ratio).astype(float)
+
+    losses = returns[returns < 0]
+    gains = returns[returns > 0]
+
+    if gains.empty:
+        return np.nan
+
+    return float(len(losses) * -losses.sum() / (len(gains) * gains.sum()))
+
+
+def get_prospect_ratio(
+    returns: pd.Series | pd.DataFrame,
+    minimum_acceptable_return: float = 0.0,
+    loss_aversion: float = 2.25,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Prospect ratio of returns, a Sortino-type ratio in which losses weigh more
+    heavily than gains, following the loss aversion of prospect theory.
+
+    The formula is as follows:
+
+        - Prospect Ratio = ((1 / N) * SUM(MAX(Return, 0) + λ * MIN(Return, 0)) − MAR) / Downside Deviation
+        - Downside Deviation = SQRT( (1 / N) * SUM( MIN(Return − MAR, 0)^2 ) )
+
+    Where N is the number of returns, MAR the minimum acceptable return per observation and
+    λ the loss aversion, 2.25 as estimated by Tversky and Kahneman (1992).
+
+    For more information, see the following sources:
+
+    - Watanabe, Y. (2006). "Is Sharpe Ratio Still Effective?" Journal of Performance
+    Measurement, 11(1), 55-66.
+    - Tversky, A., & Kahneman, D. (1992). "Advances in Prospect Theory: Cumulative
+    Representation of Uncertainty." Journal of Risk and Uncertainty, 5(4), 297-323.
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, p. 100.
+    - PerformanceAnalytics: ProspectRatio (https://github.com/braverock/PerformanceAnalytics).
+
+    This is the formula of Bacon (2008) and the PerformanceAnalytics documentation. The
+    PerformanceAnalytics code subtracts MAR / N instead of the MAR from the average, so both
+    only agree for a MAR of 0, the default here.
+
+    Without a return below the MAR the downside deviation is 0 and the ratio undefined (NaN).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns. A "within period"
+        (period, date) Multi Index gives one ratio per period and column.
+        minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) per
+        observation. Defaults to 0.0.
+        loss_aversion (float, optional): The weight λ of the losses relative to the gains.
+        Defaults to 2.25.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The Prospect ratio, a float for a Series, one per
+        column for a DataFrame and one per period and column for a "within period" index.
+    """
+    if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+        return returns.groupby(level=0).agg(
+            lambda values: get_prospect_ratio(
+                values.droplevel(0), minimum_acceptable_return, loss_aversion
+            )
+        )
+
+    if isinstance(returns, pd.DataFrame):
+        return returns.apply(
+            get_prospect_ratio,
+            minimum_acceptable_return=minimum_acceptable_return,
+            loss_aversion=loss_aversion,
+        ).astype(float)
+
+    returns = returns.dropna()
+
+    if returns.empty:
+        return np.nan
+
+    weighted_return = (
+        returns.clip(lower=0) + loss_aversion * returns.clip(upper=0)
+    ).mean()
+    downside_deviation = np.sqrt(
+        ((returns - minimum_acceptable_return).clip(upper=0) ** 2).mean()
+    )
+
+    return remove_undefined_ratios(
+        float((weighted_return - minimum_acceptable_return) / downside_deviation)
+        if downside_deviation > 0
+        else np.nan
+    )
+
+
+def get_omega_excess_return(
+    returns: pd.Series | pd.DataFrame,
+    downside_deviation: pd.Series | pd.DataFrame,
+    benchmark_downside_deviation: pd.Series | float,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the Omega excess return, the return minus a charge for downside risk that is
+    priced at the downside risk of the benchmark.
+
+    The formula is as follows:
+
+        - Omega Excess Return = Return − 3 * β_S * σ_DB^2 = Return − 3 * σ_D * σ_DB
+        - β_S = σ_D / σ_DB
+
+    Where σ_D and σ_DB are the downside deviations of the asset and the benchmark below the
+    minimum acceptable return, over the same horizon as the return, and β_S the style beta.
+
+    For more information, see the following sources:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, p. 103.
+    - PerformanceAnalytics: OmegaExcessReturn (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The return of each period (columns per asset).
+        downside_deviation (pd.Series | pd.DataFrame): The downside deviation of the asset in
+        each period, scaled to the period.
+        benchmark_downside_deviation (pd.Series | float): The downside deviation of the
+        benchmark in each period, scaled to the period.
+
+    Returns:
+        pd.Series | pd.DataFrame: The Omega excess return per period and asset.
+    """
+    downside_risk_charge = (
+        downside_deviation.mul(benchmark_downside_deviation, axis=0)
+        if isinstance(downside_deviation, pd.DataFrame)
+        else downside_deviation * benchmark_downside_deviation
+    )
+
+    return (returns - 3 * downside_risk_charge).dropna(how="all")
 
 
 def get_return_statistics(returns: pd.Series) -> pd.Series:
@@ -3403,6 +3854,54 @@ def get_appraisal_ratio(
         residual_standard_deviation = capm_residuals.std()
 
     return remove_undefined_ratios(jensens_alpha / residual_standard_deviation)
+
+
+def get_modified_jensens_alpha(
+    jensens_alpha: pd.Series | pd.DataFrame,
+    beta: pd.Series | pd.DataFrame,
+    benchmark_standard_deviation: pd.Series | float | None = None,
+) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the modified Jensen's alpha, Jensen's Alpha per unit of Beta, or the
+    alternative Jensen's alpha, Jensen's Alpha per unit of systematic risk.
+
+    The formula is as follows:
+
+        - Modified Jensen's Alpha = Jensen's Alpha / Beta
+        - Alternative Jensen's Alpha = Jensen's Alpha / (Beta * Benchmark Standard Deviation)
+
+    Next to the Appraisal Ratio (Jensen's Alpha per unit of specific risk, see
+    `get_appraisal_ratio`) these are the two other ways Bacon (2008) scales Jensen's Alpha
+    by risk.
+
+    For more information, see the following sources:
+
+    - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution."
+    2nd edition, John Wiley & Sons, p. 77.
+    - PerformanceAnalytics: AppraisalRatio(method = "modified") and
+    AppraisalRatio(method = "alternative") (https://github.com/braverock/PerformanceAnalytics).
+
+    A Beta of 0 (or of rounding noise) leaves the ratio undefined (NaN).
+
+    Args:
+        jensens_alpha (pd.Series | pd.DataFrame): Jensen's Alpha, see `get_jensens_alpha`.
+        beta (pd.Series | pd.DataFrame): The Beta that Jensen's Alpha was calculated with.
+        benchmark_standard_deviation (pd.Series | float | None, optional): The standard deviation
+        of the benchmark over the same periods (one value per period for a DataFrame). When
+        given, the alternative Jensen's alpha is returned. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame: The modified (or alternative) Jensen's alpha.
+    """
+    risk = beta
+    if benchmark_standard_deviation is not None:
+        risk = (
+            beta.mul(benchmark_standard_deviation, axis=0)
+            if isinstance(beta, pd.DataFrame)
+            else beta * benchmark_standard_deviation
+        )
+
+    return remove_undefined_ratios(jensens_alpha / risk)
 
 
 @by_own_trading_days(compound=True)

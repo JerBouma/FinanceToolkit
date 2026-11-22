@@ -1912,3 +1912,261 @@ def test_the_pain_ratio_without_a_drawdown_is_nan():
     assert performance_model.get_pain_ratio(
         pd.Series([0.05, 0.02]), pd.Series([0.0, 0.01])
     ).to_list() == [pytest.approx(2.0)]
+
+
+# A fixed series of daily returns, with the quantstats 0.0.86 values on it as the reference.
+QUANTSTATS_RETURNS = pd.Series(
+    [0.012, -0.004, 0.009, 0.015, -0.011, 0.003, 0.007, -0.002, 0.011, -0.008]
+    + [0.006, 0.004, -0.013, 0.010, 0.005, -0.001, 0.008, 0.002, -0.006, 0.013]
+)
+
+# PerformanceAnalytics' portfolio_bacon data (Bacon, 2008): 24 monthly returns of a portfolio
+# and its benchmark. The expected values are the outputs in PerformanceAnalytics 2.0.4's
+# tests/Examples/PerformanceAnalytics-Ex.Rout.save.
+BACON_PORTFOLIO = pd.Series(
+    [
+        0.003,
+        0.026,
+        0.011,
+        -0.010,
+        0.015,
+        0.025,
+        0.016,
+        0.067,
+        -0.014,
+        0.040,
+        -0.005,
+        0.081,
+    ]
+    + [
+        0.040,
+        -0.037,
+        -0.061,
+        0.017,
+        -0.049,
+        -0.022,
+        0.070,
+        0.058,
+        -0.065,
+        0.024,
+        -0.005,
+        -0.009,
+    ]
+)
+BACON_BENCHMARK = pd.Series(
+    [
+        0.002,
+        0.025,
+        0.018,
+        -0.011,
+        0.014,
+        0.018,
+        0.014,
+        0.065,
+        -0.015,
+        0.042,
+        -0.006,
+        0.083,
+    ]
+    + [
+        0.039,
+        -0.038,
+        -0.062,
+        0.015,
+        -0.048,
+        0.021,
+        0.060,
+        0.056,
+        -0.067,
+        0.019,
+        -0.003,
+        0.000,
+    ]
+)
+
+
+def _bacon_beta():
+    return np.cov(BACON_PORTFOLIO, BACON_BENCHMARK)[0, 1] / BACON_BENCHMARK.var()
+
+
+def test_smart_sharpe_and_sortino_ratios_match_quantstats():
+    returns = QUANTSTATS_RETURNS
+    penalty = performance_model.get_autocorrelation_penalty(returns)
+
+    assert penalty == pytest.approx(1.7127888057741563, abs=1e-12)
+    assert performance_model.get_sharpe_ratio(returns) / penalty == pytest.approx(
+        0.21389937978423693, abs=1e-12
+    )
+    sortino_ratio = performance_model.get_sortino_ratio(returns)
+    assert sortino_ratio / penalty == pytest.approx(0.38637723096820564, abs=1e-12)
+    assert sortino_ratio / np.sqrt(2) == pytest.approx(0.4679509613087476, abs=1e-12)
+
+
+def test_probabilistic_sortino_ratios_match_quantstats():
+    returns = QUANTSTATS_RETURNS
+    sortino_ratio = performance_model.get_sortino_ratio(returns)
+
+    def probabilistic(ratio):
+        return performance_model.get_probabilistic_sharpe_ratio(
+            ratio, 0.0, returns.skew(), returns.kurtosis() + 3, len(returns)
+        )
+
+    assert probabilistic(sortino_ratio) == pytest.approx(0.9913569550407476, abs=1e-12)
+    assert probabilistic(sortino_ratio / np.sqrt(2)) == pytest.approx(
+        0.963053346398112, abs=1e-12
+    )
+
+
+def test_autocorrelation_penalty_per_period_and_rolling():
+    index = pd.MultiIndex.from_product([["2024", "2025"], range(20)])
+    within = pd.DataFrame(
+        {"A": np.tile(QUANTSTATS_RETURNS, 2), "B": np.tile(-QUANTSTATS_RETURNS, 2)},
+        index=index,
+    )
+    penalty = performance_model.get_autocorrelation_penalty(within)
+
+    # The absolute autocorrelation is the same for the series and its mirror image.
+    np.testing.assert_allclose(penalty.to_numpy(), 1.7127888057741563, atol=1e-12)
+
+    rolling = performance_model.get_rolling_autocorrelation_penalty(
+        QUANTSTATS_RETURNS.to_frame("A"), 20
+    )
+    assert rolling["A"].iloc[-1] == pytest.approx(1.7127888057741563, abs=1e-12)
+    assert rolling["A"].iloc[:-1].isna().all()
+
+    # Without variation there is no autocorrelation to penalize.
+    assert np.isnan(
+        performance_model.get_autocorrelation_penalty(pd.Series([0.01] * 5))
+    )
+
+
+def test_annualized_return_matches_performance_analytics():
+    # Return.annualized(portfolio_bacon[, 1]) with 12 observations a year.
+    expected = np.prod(1 + BACON_PORTFOLIO) ** (12 / 24) - 1
+    assert performance_model.get_annualized_return(
+        BACON_PORTFOLIO, 12
+    ) == pytest.approx(expected, abs=1e-15)
+    assert np.isnan(
+        performance_model.get_annualized_return(pd.Series([np.nan, np.nan]), 12)
+    )
+
+
+def test_modified_and_alternative_jensens_alpha_match_performance_analytics():
+    beta = _bacon_beta()
+    annualized_portfolio = performance_model.get_annualized_return(BACON_PORTFOLIO, 12)
+    annualized_benchmark = performance_model.get_annualized_return(BACON_BENCHMARK, 12)
+    jensens_alpha = pd.Series([annualized_portfolio - beta * annualized_benchmark])
+    benchmark_volatility = BACON_BENCHMARK.std() * np.sqrt(12)
+
+    # AppraisalRatio(method = "modified") and (method = "alternative").
+    assert performance_model.get_modified_jensens_alpha(
+        jensens_alpha, pd.Series([beta])
+    )[0] == pytest.approx(-0.01418576, abs=1e-8)
+    assert performance_model.get_modified_jensens_alpha(
+        jensens_alpha, pd.Series([beta]), benchmark_volatility
+    )[0] == pytest.approx(-0.1066928, abs=1e-7)
+
+    # TreynorRatio(modified = TRUE).
+    assert performance_model.get_treynor_ratio(
+        pd.Series([annualized_portfolio]), 0.0, pd.Series([beta]), benchmark_volatility
+    )[0] == pytest.approx(0.7806747, abs=1e-7)
+
+
+def test_m2_excess_return_matches_performance_analytics():
+    # MSquared uses population standard deviations.
+    m2_ratio = performance_model.get_m2_ratio(
+        pd.Series([performance_model.get_annualized_return(BACON_PORTFOLIO, 12)]),
+        0.0,
+        pd.Series([BACON_PORTFOLIO.std(ddof=0) * np.sqrt(12)]),
+        BACON_BENCHMARK.std(ddof=0) * np.sqrt(12),
+    )
+    annualized_benchmark = performance_model.get_annualized_return(BACON_BENCHMARK, 12)
+
+    assert m2_ratio[0] == pytest.approx(0.10062, abs=1e-6)
+    assert performance_model.get_m2_excess_return(
+        m2_ratio, annualized_benchmark, "geometric"
+    )[0] == pytest.approx(-0.01553103, abs=1e-8)
+    assert performance_model.get_m2_excess_return(
+        m2_ratio, annualized_benchmark, "arithmetic"
+    )[0] == pytest.approx(-0.01736344, abs=1e-8)
+
+    with pytest.raises(ValueError, match="arithmetic"):
+        performance_model.get_m2_excess_return(m2_ratio, 0.0, "other")
+
+
+def test_omega_excess_return_matches_performance_analytics():
+    minimum_acceptable_return = 0.005
+
+    def downside_deviation(returns):
+        shortfall = (returns - minimum_acceptable_return).clip(upper=0)
+        return np.sqrt((shortfall**2).mean()) * np.sqrt(12)
+
+    assert performance_model.get_omega_excess_return(
+        pd.Series([performance_model.get_annualized_return(BACON_PORTFOLIO, 12)]),
+        pd.Series([downside_deviation(BACON_PORTFOLIO)]),
+        downside_deviation(BACON_BENCHMARK),
+    )[0] == pytest.approx(0.08053795, abs=1e-8)
+
+
+def test_omega_sharpe_ratio_and_gain_to_pain_ratio_match_the_references():
+    # OmegaSharpeRatio(portfolio_bacon[, 1], MAR = 0.005) and quantstats' gain_to_pain_ratio.
+    assert performance_model.get_gain_to_pain_ratio(
+        BACON_PORTFOLIO, 0.005
+    ) == pytest.approx(0.2917933, abs=1e-7)
+    assert performance_model.get_gain_to_pain_ratio(
+        QUANTSTATS_RETURNS
+    ) == pytest.approx(1.3333333333333335, abs=1e-12)
+
+    # The Omega-Sharpe ratio is the Omega ratio minus 1.
+    assert performance_model.get_gain_to_pain_ratio(
+        BACON_PORTFOLIO, 0.005
+    ) == pytest.approx(performance_model.get_omega_ratio(BACON_PORTFOLIO, 0.005) - 1)
+
+
+def test_d_ratio_matches_performance_analytics():
+    assert performance_model.get_d_ratio(BACON_PORTFOLIO) == pytest.approx(
+        0.4013329, abs=1e-7
+    )
+    # No losses gives 0, no gains leaves the ratio undefined.
+    assert performance_model.get_d_ratio(pd.Series([0.01, 0.02])) == 0
+    assert np.isnan(performance_model.get_d_ratio(pd.Series([-0.01, -0.02])))
+
+    within = pd.DataFrame(
+        {"A": np.tile(BACON_PORTFOLIO, 2)},
+        index=pd.MultiIndex.from_product([["2024", "2025"], range(24)]),
+    )
+    np.testing.assert_allclose(
+        performance_model.get_d_ratio(within)["A"].to_numpy(), 0.4013329, atol=1e-7
+    )
+
+
+def test_prospect_ratio_matches_performance_analytics():
+    gains = BACON_PORTFOLIO.clip(lower=0).sum()
+    losses = BACON_PORTFOLIO.clip(upper=0).sum()
+    downside_deviation = np.sqrt((BACON_PORTFOLIO.clip(upper=0) ** 2).mean())
+
+    # ProspectRatio(portfolio_bacon[, 1], MAR = 0), as its R code calculates it.
+    assert performance_model.get_prospect_ratio(BACON_PORTFOLIO) == pytest.approx(
+        (gains + 2.25 * losses) / (downside_deviation * 24), abs=1e-12
+    )
+
+    # With a MAR the documented formula subtracts the MAR from the average.
+    shortfall = (BACON_PORTFOLIO - 0.05).clip(upper=0)
+    assert performance_model.get_prospect_ratio(BACON_PORTFOLIO, 0.05) == pytest.approx(
+        ((gains + 2.25 * losses) / 24 - 0.05) / np.sqrt((shortfall**2).mean()),
+        abs=1e-12,
+    )
+    assert np.isnan(performance_model.get_prospect_ratio(pd.Series([0.01, 0.02])))
+
+
+def test_modified_burke_ratio_divides_by_the_root_mean_square_drawdown():
+    excess_returns = pd.Series([0.1, -0.05])
+    burke_drawdown_measure = pd.Series([0.2, 0.4])
+
+    np.testing.assert_allclose(
+        performance_model.get_burke_ratio(
+            excess_returns, burke_drawdown_measure, n_observations=24
+        ),
+        performance_model.get_burke_ratio(excess_returns, burke_drawdown_measure)
+        * np.sqrt(24),
+    )

@@ -99,13 +99,16 @@ def test_an_annualized_sharpe_ratio(unrounded_toolkit, monkeypatch):
 
     pd.testing.assert_frame_equal(annualized, sharpe * np.sqrt(252))
 
-    # A probability is not annualized.
+    # A probability has no annualized form: annualizing returns the same probability.
     monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
 
-    with pytest.raises(ValueError, match="annualized"):
+    probability = unrounded_toolkit.performance.get_sharpe_ratio(method="probabilistic")
+    pd.testing.assert_frame_equal(
         unrounded_toolkit.performance.get_sharpe_ratio(
             method="probabilistic", annualize=True
-        )
+        ),
+        probability,
+    )
 
 
 def test_the_largest_holdings_of_a_fund(unrounded_toolkit):

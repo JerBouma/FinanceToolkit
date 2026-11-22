@@ -1,6 +1,7 @@
 """Performance Model"""
 
 import io
+import itertools
 import time
 import warnings
 import zipfile
@@ -16,13 +17,20 @@ from financetoolkit.performance.helpers import (
     get_newey_west_lags,
     remove_undefined_ratios,
 )
+from financetoolkit.risk.distribution import dispersion_model
+from financetoolkit.risk.drawdown import drawdown_model
 from financetoolkit.risk.risk_model import (
     apply_to_stacked_windows,
+    get_autocorrelation,
+    get_conditional_drawdown_at_risk,
+    get_mean_absolute_deviation,
     get_move_significance,
+    get_partial_moment,
     get_tail_ratio,
+    get_ui,
     get_wealth_and_peak,
 )
-from financetoolkit.risk.value_at_risk import cvar_model
+from financetoolkit.risk.value_at_risk import cvar_model, evar_model, var_model
 from financetoolkit.utilities.requests_model import TOOLKIT_HEADERS, get_request
 from financetoolkit.utilities.sources_model import record_url
 from financetoolkit.utilities.statistics_model import (
@@ -6181,3 +6189,1075 @@ def get_regression_epsilon(
     alpha = pairs[0].mean() - beta * pairs[1].mean()
 
     return float(period_excess_return - alpha - beta * benchmark_period_excess_return)
+
+
+def get_log_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+    """
+    Convert simple returns into log (continuously compounded) returns.
+
+    The formula is as follows:
+
+        - Log Return = ln(1 + Return) = ln(Price_t / Price_t-1)
+
+    Log returns add up over time where simple returns compound: the sum of the log returns of
+    the days in a year is the log return of the year.
+
+    For more information, see the following sources:
+
+    - Campbell, J.Y., Lo, A.W., & MacKinlay, A.C. (1997). "The Econometrics of Financial
+    Markets." Princeton University Press, chapter 1.4.
+    - ffn: to_log_returns and PerformanceStats.log_returns (https://github.com/pmorissette/ffn).
+    - pandas-ta-classic: log_return (https://github.com/xgboosted/pandas-ta-classic).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The simple returns.
+
+    Returns:
+        pd.Series | pd.DataFrame: The log returns, NaN where the return is missing.
+    """
+    return np.log1p(returns)
+
+
+def get_geltner_returns(returns: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+    """
+    Unsmooth returns with Geltner's (1991, 1993) first order autocorrelation filter.
+
+    Appraisal-based and illiquid assets (real estate, private equity, many hedge funds)
+    report returns that are smoothed: each return carries part of the earlier ones, which
+    shows up as positive autocorrelation and understates the volatility. Geltner reverses a
+    first order smoothing:
+
+        - Unsmoothed Return_t = (Return_t - ρ1 x Return_t-1) / (1 - ρ1)
+
+    Where ρ1 is the first order autocorrelation of each column's own returns (the sample
+    autocorrelation of `financetoolkit.risk.risk_model.get_autocorrelation`, deviations from
+    the mean divided by the sum of squared deviations). The first return has no predecessor
+    and is NaN.
+
+    For more information, see the following sources:
+
+    - Geltner, D. (1991). "Smoothing in Appraisal-Based Returns." Journal of Real Estate
+    Finance and Economics, 4(3), 327-345.
+    - Geltner, D. (1993). "Estimating Market Values from Appraised Values without Assuming an
+    Efficient Market." Journal of Real Estate Research, 8(3), 325-345.
+    - PerformanceAnalytics: Return.Geltner (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns, each column on its own history
+            (missing returns are left out).
+
+    Returns:
+        pd.Series | pd.DataFrame: The unsmoothed returns on the same index.
+    """
+    if isinstance(returns, pd.DataFrame):
+        return returns.apply(get_geltner_returns)
+
+    observed = returns.dropna()
+
+    if len(observed) < 3:  # noqa: PLR2004
+        return returns * np.nan
+
+    autocorrelation = get_autocorrelation(observed, lags=1).iloc[0]
+    unsmoothed = (observed - autocorrelation * observed.shift(1)) / (
+        1 - autocorrelation
+    )
+
+    return unsmoothed.reindex(returns.index)
+
+
+def get_smoothing_index(returns: pd.Series, order: int = 2) -> pd.Series:
+    """
+    Calculate the smoothing coefficients and the Smoothing Index of Getmansky, Lo and
+    Makarov (2004) from returns.
+
+    Getmansky, Lo and Makarov model an observed return as a weighted average of the true
+    returns of the current and the `order` previous periods, which is what reported returns of
+    illiquid assets look like:
+
+        - Observed Return_t = θ0 x True Return_t + θ1 x True Return_t-1 + ... + θk x True Return_t-k
+        - θ0 + θ1 + ... + θk = 1
+        - Smoothing Index ξ = θ0² + θ1² + ... + θk²
+
+    The weights are those of a moving average model of order k fitted by exact maximum
+    likelihood (a Gaussian MA(k) without a mean, invertible), divided by 1 + MA1 + ... + MAk
+    so they add up to 1. A Smoothing Index of 1 means no smoothing (θ0 = 1); the lower it
+    is, the more the returns are smoothed, down to 1 / (k + 1) when every period has the same
+    weight.
+
+    For more information, see the following sources:
+
+    - Getmansky, M., Lo, A.W., & Makarov, I. (2004). "An Econometric Model of Serial
+    Correlation and Illiquidity in Hedge Fund Returns." Journal of Financial Economics, 74(3),
+    529-609.
+    - PerformanceAnalytics: SmoothingIndex (https://github.com/braverock/PerformanceAnalytics).
+
+    The likelihood is that of the returns as given: Getmansky, Lo and Makarov fit the model to
+    de-meaned returns, so subtract the mean first to follow them. Negative moving average
+    coefficients are set to 0 before the weights are normalized, as PerformanceAnalytics does
+    by default, since a negative weight on a past return is no smoothing.
+
+    Args:
+        returns (pd.Series): The returns, usually monthly (missing returns are left out).
+        order (int, optional): The number of lagged periods k. Defaults to 2.
+
+    Returns:
+        pd.Series: The weights θ0 to θk ("Theta 0", "Theta 1", ...) and the "Smoothing
+        Index". Fewer than 2(k + 1) returns, or returns without variation, give NaN.
+    """
+    if order < 1 or int(order) != order:
+        raise ValueError("The order must be a positive integer.")
+
+    labels = [f"Theta {lag}" for lag in range(order + 1)] + ["Smoothing Index"]
+    values = returns.dropna().to_numpy(dtype=float)
+    observations = len(values)
+
+    if observations < 2 * (order + 1) or not np.ptp(values) > 0:
+        return pd.Series(np.nan, index=labels)
+
+    def negative_log_likelihood(coefficients: np.ndarray) -> float:
+        # The autocovariances of an MA(k) process with unit innovation variance, as the
+        # banded (upper) form of its covariance matrix.
+        weights = np.concatenate([[1.0], coefficients])
+        bands = np.zeros((order + 1, observations))
+
+        for lag in range(order + 1):
+            bands[order - lag, lag:] = weights[: order + 1 - lag] @ weights[lag:]
+
+        try:
+            cholesky = linalg.cholesky_banded(bands)
+        except linalg.LinAlgError:
+            return np.inf
+
+        quadratic_form = values @ linalg.cho_solve_banded((cholesky, False), values)
+        log_determinant = 2 * np.log(cholesky[-1]).sum()
+
+        # The innovation variance is concentrated out: its estimate is the quadratic form / n.
+        return 0.5 * (
+            observations * np.log(quadratic_form / observations) + log_determinant
+        )
+
+    fit = optimize.minimize(
+        negative_log_likelihood,
+        np.zeros(order),
+        method="Nelder-Mead",
+        options={"xatol": 1e-10, "fatol": 1e-12, "maxiter": 4000 * order},
+    )
+
+    # The likelihood is the same for a non-invertible MA polynomial and the invertible one
+    # with its roots inside the unit circle mirrored outside, which is the one reported.
+    roots = np.roots(np.concatenate([[1.0], fit.x])[::-1])
+    roots = np.where(np.abs(roots) < 1, 1 / roots, roots)
+    polynomial = np.real(np.poly(roots))
+    coefficients = (polynomial / polynomial[-1])[::-1][1:]
+
+    weights = np.concatenate([[1.0], np.clip(coefficients, 0, None)])
+    weights = weights / weights.sum()
+
+    return pd.Series(np.append(weights, (weights**2).sum()), index=labels)
+
+
+def get_serenity_index(
+    excess_returns: pd.Series | pd.DataFrame,
+    ulcer_index: pd.Series | pd.DataFrame,
+    conditional_drawdown_at_risk: pd.Series | pd.DataFrame,
+    volatility: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Serenity Index (Serenity Ratio) of KeyQuant, the excess return per unit of
+    Ulcer Index, penalized further when the drawdowns have a fat tail compared to the
+    volatility of the returns.
+
+    The formula is as follows:
+
+        - Pitfall Indicator = |Conditional Drawdown at Risk| / Volatility
+        - Serenity Index = Excess Return / (Ulcer Index x Pitfall Indicator)
+
+    The Ulcer Index measures the depth and duration of the drawdowns, the Conditional Drawdown
+    at Risk the average of the worst drawdowns and the Volatility the standard deviation of
+    the returns over the same horizon as the Excess Return, so the Pitfall Indicator is the
+    number of standard deviations the worst drawdowns reach. It equals the Ulcer Performance
+    Index divided by the Pitfall Indicator.
+
+    For more information, see the following sources:
+
+    - KeyQuant (2017). "Assessing Performance Through Risk: Part 1." KeyQuant white paper
+    (the Serenity Ratio and the Pitfall Indicator).
+    - Martin, P.G., & McCann, B.B. (1989). "The Investor's Guide to Fidelity Funds." John
+    Wiley & Sons (the Ulcer Index).
+    - quantstats: stats.serenity_index (https://github.com/ranaroussi/quantstats).
+
+    A period without a drawdown leaves the index undefined (NaN).
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The excess returns, one per period.
+        ulcer_index (pd.Series | pd.DataFrame): The Ulcer Index of the same periods (see
+            `financetoolkit.risk.risk_model.get_ui`).
+        conditional_drawdown_at_risk (pd.Series | pd.DataFrame): The Conditional Drawdown at
+            Risk of the same periods (see
+            `financetoolkit.risk.risk_model.get_conditional_drawdown_at_risk`).
+        volatility (pd.Series | pd.DataFrame): The volatility of the returns of the same
+            periods, on the horizon of the excess returns.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The Serenity Index values.
+    """
+    pitfall_indicator = abs(conditional_drawdown_at_risk) / volatility
+    serenity_index = remove_undefined_ratios(
+        excess_returns / (ulcer_index * pitfall_indicator)
+    )
+
+    if isinstance(serenity_index, pd.Series | pd.DataFrame):
+        return serenity_index.dropna(how="all")
+
+    return serenity_index
+
+
+# The risk measures of get_risk_measure, each a loss or dispersion of the returns.
+RISK_MEASURES = [
+    "var",
+    "cvar",
+    "evar",
+    "erm",
+    "worst",
+    "mad",
+    "lpm",
+    "gmd",
+    "max_drawdown",
+    "average_drawdown",
+    "dar",
+    "cdar",
+    "edar",
+    "ulcer",
+]
+
+
+def get_risk_measure(
+    returns: pd.Series | pd.DataFrame, risk_measure: str = "cvar", alpha: float = 0.05
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate one of the risk measures of the Toolkit's risk module as a positive number, the
+    denominator of `get_risk_measure_ratio`:
+
+    - "var": the historical Value at Risk, the alpha quantile of the returns.
+    - "cvar": the historical Conditional Value at Risk, the mean of the returns at or below it.
+    - "evar": the historical Entropic Value at Risk.
+    - "erm": the Entropic Risk Measure with a risk aversion of 1.
+    - "worst": the Worst Realization, the lowest return.
+    - "mad": the Mean Absolute Deviation from the mean.
+    - "lpm": the first Lower Partial Moment below the mean, mean(max(Mean - Return, 0)).
+    - "gmd": the Gini Mean Difference.
+    - "max_drawdown": the Maximum Drawdown.
+    - "average_drawdown": the Average Drawdown over every observation.
+    - "dar": the Drawdown at Risk, the alpha quantile of the drawdowns.
+    - "cdar": the Conditional Drawdown at Risk.
+    - "edar": the Entropic Drawdown at Risk.
+    - "ulcer": the Ulcer Index, the root mean square drawdown.
+
+    The drawdowns compound the returns and start from a wealth of 1 before the first return.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The returns, optionally with a (period, date)
+            index for one value per period.
+        risk_measure (str, optional): The risk measure, one of the above. Defaults to "cvar".
+        alpha (float, optional): The tail probability of the VaR, CVaR, EVaR, ERM, DaR,
+            CDaR and EDaR. Defaults to 0.05.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The risk measure as a positive number, one per
+        column, or per period and column for a (period, date) index.
+    """
+    if risk_measure not in RISK_MEASURES:
+        raise ValueError(f"The risk measure must be one of {', '.join(RISK_MEASURES)}.")
+
+    if risk_measure == "mad":
+        groups = (
+            returns.index.get_level_values(0)
+            if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+            else np.zeros(len(returns))
+        )
+        result = get_mean_absolute_deviation(returns, "yearly", groups=groups)
+
+        return (
+            result
+            if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+            else result.iloc[0]
+        )
+
+    measures = {
+        "var": lambda: var_model.get_var_historic(returns, alpha),
+        "cvar": lambda: cvar_model.get_cvar_historic(returns, alpha),
+        "evar": lambda: evar_model.get_evar_historic(returns, alpha),
+        "erm": lambda: evar_model.get_entropic_risk_measure(returns, 1.0, alpha),
+        "worst": lambda: dispersion_model.get_worst_realization(returns),
+        "lpm": lambda: get_partial_moment(returns, 1, "mean"),
+        "gmd": lambda: dispersion_model.get_gini_mean_difference(returns),
+        "max_drawdown": lambda: drawdown_model.get_maximum_drawdown(returns),
+        "average_drawdown": lambda: drawdown_model.get_average_drawdown(
+            returns, "observation"
+        ),
+        "dar": lambda: drawdown_model.get_drawdown_at_risk(returns, alpha),
+        "cdar": lambda: get_conditional_drawdown_at_risk(returns, alpha),
+        "edar": lambda: drawdown_model.get_entropic_drawdown_at_risk(returns, alpha),
+        "ulcer": lambda: get_ui(returns, rolling=None),
+    }
+
+    return abs(measures[risk_measure]())
+
+
+def get_risk_measure_ratio(
+    excess_returns: pd.Series | pd.DataFrame,
+    returns: pd.Series | pd.DataFrame,
+    risk_measure: str = "cvar",
+    alpha: float = 0.05,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the mean excess return per unit of a risk measure, the Sharpe ratio with any
+    risk measure of `get_risk_measure` in place of the standard deviation.
+
+    The formula is as follows:
+
+        - Risk Measure Ratio = Mean(Return - Risk Free Rate) / Risk Measure(Return)
+
+    With the standard deviation this is the Sharpe ratio, with the Conditional Value at Risk
+    the Conditional Sharpe (STARR) ratio and with the Maximum Drawdown a Calmar ratio. Both
+    the mean and the risk measure are per observation (e.g. per day), not annualized.
+
+    For more information, see the following sources:
+
+    - Cajas, D. (2021). "Riskfolio-Lib: Portfolio Optimization in Python", the risk-adjusted
+    return ratios (https://riskfolio-lib.readthedocs.io).
+    - Gregoriou, G.N., & Gueyie, J.P. (2003). "Risk-Adjusted Performance of Funds of Hedge Funds
+    Using a Modified Sharpe Ratio." Journal of Wealth Management, 6(3), 77-83.
+    - skfolio: RatioMeasure (https://skfolio.org/generated/skfolio.measures.RatioMeasure.html).
+    - riskfolio-lib: RiskFunctions.Sharpe (https://github.com/dcajasn/Riskfolio-Lib).
+    - PerformanceAnalytics: SharpeRatio with FUN="VaR" or "ES"
+    (https://github.com/braverock/PerformanceAnalytics).
+
+    A risk measure of 0 leaves the ratio undefined (NaN).
+
+    Args:
+        excess_returns (pd.Series | pd.DataFrame): The returns minus the risk free rate, on the
+            same index as `returns`.
+        returns (pd.Series | pd.DataFrame): The returns the risk measure is taken of, optionally
+            with a (period, date) index for one ratio per period.
+        risk_measure (str, optional): The risk measure, see `get_risk_measure`. Defaults to
+            "cvar".
+        alpha (float, optional): The tail probability of the tail and drawdown measures.
+            Defaults to 0.05.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The ratio, one per column, or per period and column
+        for a (period, date) index.
+    """
+    mean_excess_return = (
+        excess_returns.groupby(level=0, sort=False).mean()
+        if excess_returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS
+        else excess_returns.mean()
+    )
+
+    if isinstance(mean_excess_return, pd.DataFrame):
+        mean_excess_return.index.name = None
+
+    return remove_undefined_ratios(
+        mean_excess_return / get_risk_measure(returns, risk_measure, alpha)
+    )
+
+
+# The trailing windows of get_trailing_returns in months, None for the periods to date.
+TRAILING_WINDOWS = {
+    "Month to Date": None,
+    "3 Months": 3,
+    "6 Months": 6,
+    "Year to Date": None,
+    "1 Year": 12,
+    "3 Years (Annualized)": 36,
+    "5 Years (Annualized)": 60,
+    "10 Years (Annualized)": 120,
+}
+
+# Windows of at least this many months are annualized.
+ANNUALIZED_WINDOW_MONTHS = 36
+
+
+def get_trailing_returns(prices: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+    """
+    Calculate the trailing returns of prices up to their last close: month to date, the last
+    3 and 6 months, year to date, the last year, the last 3, 5 and 10 years (annualized) and
+    the whole history (annualized).
+
+    The formula is as follows:
+
+        - Trailing Return = Last Close / Close at the Start of the Window - 1
+        - Annualized Trailing Return = (1 + Trailing Return) ^ (365.25 / Calendar Days) - 1
+
+    The close at the start of a window is the last close on or before the date that lies the
+    window before the last close (e.g. 3 months before). When the last close falls on the last
+    business day of its month, the windows run from month end to month end instead (a history
+    up to 30 June has its 3 month return from the close of 31 March), as ffn does. Month to
+    date and year to date start from the last close of the previous month and year. The
+    returns of 3 years and longer are annualized over the calendar days of the window, and the
+    return since inception is the Compound Annual Growth Rate of the whole history (see
+    `get_compound_annual_growth_rate`).
+
+    For more information, see the following sources:
+
+    - ffn: calc_mtd, calc_ytd, calc_cagr and PerformanceStats (mtd, three_month, six_month,
+    ytd, one_year, three_year, five_year, ten_year, incep) (https://github.com/pmorissette/ffn).
+    - PerformanceAnalytics: table.TrailingPeriods (https://github.com/braverock/PerformanceAnalytics).
+
+    A history that does not reach back to the start of a window gives NaN for it.
+
+    Args:
+        prices (pd.Series | pd.DataFrame): The prices (or total return index) with a
+            DatetimeIndex or PeriodIndex, each column on its own history.
+
+    Returns:
+        pd.Series | pd.DataFrame: The trailing returns as the index, one column per column of
+        `prices` (a Series for a Series).
+    """
+    if isinstance(prices, pd.DataFrame):
+        return pd.DataFrame(
+            {column: get_trailing_returns(prices[column]) for column in prices.columns}
+        )
+
+    observed = prices.dropna()
+    labels = [*TRAILING_WINDOWS, "Since Inception (Annualized)"]
+
+    if len(observed) < 2:  # noqa: PLR2004
+        return pd.Series(np.nan, index=labels, name=prices.name)
+
+    if isinstance(observed.index, pd.PeriodIndex):
+        observed.index = observed.index.to_timestamp()
+
+    end = observed.index[-1]
+    last_close = observed.iloc[-1]
+    at_month_end = (
+        end.normalize()
+        >= pd.offsets.BMonthEnd().rollback(end + pd.offsets.MonthEnd(0)).normalize()
+    )
+    month_start = end.to_period("M").to_timestamp()
+
+    trailing_returns = {}
+
+    for label, months in TRAILING_WINDOWS.items():
+        if months is None:
+            cutoff = (
+                month_start
+                if label == "Month to Date"
+                else pd.Timestamp(end.year, 1, 1)
+            ) - pd.Timedelta(days=1)
+        elif at_month_end:
+            cutoff = (
+                month_start - pd.DateOffset(months=months - 1) - pd.Timedelta(days=1)
+            )
+        else:
+            cutoff = end - pd.DateOffset(months=months)
+
+        start = observed.loc[:cutoff]
+
+        if start.empty:
+            trailing_returns[label] = np.nan
+            continue
+
+        trailing_return = last_close / start.iloc[-1] - 1
+
+        if months is not None and months >= ANNUALIZED_WINDOW_MONTHS:
+            years = (end - start.index[-1]).days / DAYS_PER_YEAR
+            trailing_return = (1 + trailing_return) ** (1 / years) - 1
+
+        trailing_returns[label] = trailing_return
+
+    trailing_returns["Since Inception (Annualized)"] = get_compound_annual_growth_rate(
+        observed
+    )
+
+    return pd.Series(trailing_returns, name=prices.name)
+
+
+# The month names of the columns of get_calendar_returns.
+MONTH_NAMES = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
+
+
+def get_calendar_returns(returns: pd.Series | pd.DataFrame) -> pd.DataFrame:
+    """
+    Arrange returns into a calendar table: the compounded return of every month, with the
+    years as the rows and the months as the columns, and the compounded return of the year.
+
+    The formula is as follows:
+
+        - Month Return = ((1 + Return 1) x (1 + Return 2) x ... x (1 + Return N)) - 1
+        - Year Return = ((1 + Month Return 1) x ... x (1 + Month Return 12)) - 1
+
+    A month without any return (before a listing or after the end of the data) is NaN, and
+    the year compounds the months it has.
+
+    For more information, see the following sources:
+
+    - quantstats: stats.monthly_returns (https://github.com/ranaroussi/quantstats).
+    - ffn: PerformanceStats.return_table (https://github.com/pmorissette/ffn).
+    - PerformanceAnalytics: table.CalendarReturns (https://github.com/braverock/PerformanceAnalytics).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): The daily (or any higher frequency than monthly)
+            returns with a DatetimeIndex or PeriodIndex.
+
+    Returns:
+        pd.DataFrame: The years as the index and the months and "Year" as the columns, with
+        the column of `returns` as the first column level for a DataFrame.
+    """
+    if isinstance(returns, pd.DataFrame):
+        return pd.concat(
+            {
+                column: get_calendar_returns(returns[column])
+                for column in returns.columns
+            },
+            axis=1,
+        )
+
+    if isinstance(returns.index, pd.DatetimeIndex):
+        returns = returns.set_axis(returns.index.to_period("D"))
+
+    monthly_returns = get_returns(returns, "monthly")
+    months = to_period_index(monthly_returns.index)
+
+    calendar = pd.DataFrame(
+        {
+            "Year": months.year,
+            "Month": pd.Categorical(
+                [MONTH_NAMES[month - 1] for month in months.month],
+                categories=MONTH_NAMES,
+            ),
+            "Return": monthly_returns.to_numpy(),
+        }
+    ).pivot_table(
+        index="Year", columns="Month", values="Return", aggfunc="first", observed=False
+    )
+    calendar = calendar.reindex(columns=MONTH_NAMES)
+    calendar.columns = pd.Index(MONTH_NAMES)
+    calendar["Year"] = (1 + calendar[MONTH_NAMES]).prod(axis=1, min_count=1) - 1
+    calendar.index = pd.PeriodIndex(calendar.index, freq="Y")
+    calendar.index.name = None
+
+    return calendar.dropna(how="all")
+
+
+# The ways get_bootstrap_samples draws the returns of a simulation.
+BOOTSTRAP_METHODS = ["resample", "shuffle"]
+
+
+def get_bootstrap_samples(
+    observations: int,
+    simulations: int = 1000,
+    method: str = "resample",
+    length: int | None = None,
+    seed: int | None = 0,
+) -> np.ndarray:
+    """
+    Draw the positions of the returns of every simulation of a bootstrap.
+
+    - "resample" draws `length` positions with replacement (Efron's bootstrap), so a return
+    can appear several times or not at all and every statistic varies across simulations.
+    - "shuffle" puts the positions in a random order without replacement (a permutation), so
+    every simulation holds the same returns: the cumulative return, the volatility and the
+    Sharpe ratio are those of the history, and only the statistics that depend on the order,
+    such as the drawdowns, vary.
+
+    Args:
+        observations (int): The number of returns to draw from.
+        simulations (int, optional): The number of simulations. Defaults to 1000.
+        method (str, optional): "resample" or "shuffle". Defaults to "resample".
+        length (int | None, optional): The number of returns of each simulation, only for
+            "resample". Defaults to None, the number of observations.
+        seed (int | None, optional): The seed of the random numbers, for reproducible results.
+            Defaults to 0.
+
+    Returns:
+        np.ndarray: The positions, one simulation per row.
+    """
+    if method not in BOOTSTRAP_METHODS:
+        raise ValueError("The method must be resample or shuffle.")
+    if simulations < 1:
+        raise ValueError("The number of simulations must be at least 1.")
+
+    rng = np.random.default_rng(seed)
+
+    if method == "shuffle":
+        return rng.permuted(np.tile(np.arange(observations), (simulations, 1)), axis=1)
+
+    return rng.integers(0, observations, size=(simulations, length or observations))
+
+
+# The percentiles of the bootstrap distributions in get_bootstrap_statistics.
+BOOTSTRAP_PERCENTILES = [5, 25, 75, 95]
+
+
+def get_bootstrap_statistics(
+    returns: pd.Series,
+    excess_returns: pd.Series,
+    observations_per_year: float,
+    simulations: int = 1000,
+    method: str = "resample",
+    seed: int | None = 0,
+) -> pd.DataFrame:
+    """
+    Calculate the distribution of performance statistics over bootstrapped histories of the
+    returns, how much the statistics of one history could have differed by chance.
+
+    Every simulation draws a history of the same length from the returns (see
+    `get_bootstrap_samples`, with the excess return of the same date drawn with each return)
+    and calculates:
+
+        - Cumulative Return = PRODUCT(1 + Return) - 1
+        - Annualized Return = (1 + Cumulative Return) ^ (P / N) - 1
+        - Annualized Volatility = STDEV(Return) x SQRT(P)
+        - Sharpe Ratio = MEAN(Excess Return) / STDEV(Excess Return) x SQRT(P)
+        - Maximum Drawdown = MIN(Wealth / Running Peak of Wealth - 1), the wealth starting at 1
+
+    Where N is the number of returns and P the returns in a year. Each statistic is summarized
+    by the mean, the median, the standard deviation (ddof=1) and the 5th, 25th, 75th and 95th
+    percentiles over the simulations.
+
+    For more information, see the following sources:
+
+    - Efron, B. (1979). "Bootstrap Methods: Another Look at the Jackknife." The Annals of
+    Statistics, 7(1), 1-26.
+    - pyfolio: timeseries.perf_stats_bootstrap, calc_bootstrap and calc_distribution_stats
+    (https://github.com/quantopian/pyfolio), which resample with replacement.
+    - quantstats: stats.montecarlo, montecarlo_cagr, montecarlo_drawdown and montecarlo_sharpe
+    (https://github.com/ranaroussi/quantstats), which shuffle the returns.
+    - ffn: resample_returns (https://github.com/pmorissette/ffn).
+
+    Args:
+        returns (pd.Series): The returns (missing returns are left out).
+        excess_returns (pd.Series): The excess returns on the same index.
+        observations_per_year (float): The number of returns in a year, such as 252.
+        simulations (int, optional): The number of simulations. Defaults to 1000.
+        method (str, optional): "resample" or "shuffle", see `get_bootstrap_samples`.
+            Defaults to "resample".
+        seed (int | None, optional): The seed of the random numbers. Defaults to 0.
+
+    Returns:
+        pd.DataFrame: The statistics as the index and the summaries (Mean, Median, Std, 5%,
+        25%, 75%, 95%) as the columns. Fewer than two returns give NaN.
+    """
+    statistics = [
+        "Cumulative Return",
+        "Annualized Return",
+        "Annualized Volatility",
+        "Sharpe Ratio",
+        "Maximum Drawdown",
+    ]
+    summaries = ["Mean", "Median", "Std"] + [f"{p}%" for p in BOOTSTRAP_PERCENTILES]
+
+    pairs = pd.concat([returns, excess_returns], axis=1).dropna()
+
+    if len(pairs) < 2:  # noqa: PLR2004
+        return pd.DataFrame(np.nan, index=statistics, columns=summaries)
+
+    positions = get_bootstrap_samples(len(pairs), simulations, method, seed=seed)
+    samples = pairs.iloc[:, 0].to_numpy()[positions]
+    excess_samples = pairs.iloc[:, 1].to_numpy()[positions]
+
+    wealth = np.cumprod(1 + samples, axis=1)
+    cumulative_return = wealth[:, -1] - 1
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        simulated = {
+            "Cumulative Return": cumulative_return,
+            "Annualized Return": (1 + cumulative_return)
+            ** (observations_per_year / samples.shape[1])
+            - 1,
+            "Annualized Volatility": samples.std(axis=1, ddof=1)
+            * np.sqrt(observations_per_year),
+            "Sharpe Ratio": excess_samples.mean(axis=1)
+            / excess_samples.std(axis=1, ddof=1)
+            * np.sqrt(observations_per_year),
+            "Maximum Drawdown": (
+                wealth / np.maximum(np.maximum.accumulate(wealth, axis=1), 1) - 1
+            ).min(axis=1),
+        }
+
+    summary = {}
+
+    for statistic, simulated_values in simulated.items():
+        values = (
+            remove_undefined_ratios(pd.Series(simulated_values)).dropna().to_numpy()
+        )
+        summary[statistic] = (
+            [
+                values.mean(),
+                np.median(values),
+                values.std(ddof=1) if len(values) > 1 else np.nan,
+                *np.percentile(values, BOOTSTRAP_PERCENTILES),
+            ]
+            if len(values)
+            else [np.nan] * len(summaries)
+        )
+
+    return pd.DataFrame(summary, index=summaries).T
+
+
+def get_forecast_cone(
+    returns: pd.Series,
+    horizon: int = 252,
+    standard_deviations: list[float] | None = None,
+    simulations: int = 1000,
+    seed: int | None = 0,
+) -> pd.DataFrame:
+    """
+    Calculate a forecast cone of the growth of 1 over the next `horizon` periods from
+    bootstrapped paths of the returns: the mean path and the bounds a number of standard
+    deviations above and below it.
+
+    Every simulation draws `horizon` returns with replacement from the history (see
+    `get_bootstrap_samples`) and compounds them into a path of wealth starting at 1:
+
+        - Wealth_t = PRODUCT(1 + Simulated Return_1 ... Simulated Return_t)
+        - Bound_t = MEAN(Wealth_t) ± k x STDEV(Wealth_t)
+
+    The cone does not assume normally distributed returns, but it does assume that the coming
+    returns are drawn from the same distribution as the past ones, independently.
+
+    For more information, see the following sources:
+
+    - pyfolio: timeseries.forecast_cone_bootstrap, simulate_paths and summarize_paths
+    (https://github.com/quantopian/pyfolio).
+    - Efron, B. (1979). "Bootstrap Methods: Another Look at the Jackknife." The Annals of
+    Statistics, 7(1), 1-26.
+
+    Args:
+        returns (pd.Series): The returns to draw from (missing returns are left out).
+        horizon (int, optional): The number of periods to forecast. Defaults to 252.
+        standard_deviations (list[float] | None, optional): The numbers of standard deviations
+            k of the bounds. Defaults to None, which uses 1, 1.5 and 2 as pyfolio does.
+        simulations (int, optional): The number of simulated paths. Defaults to 1000.
+        seed (int | None, optional): The seed of the random numbers. Defaults to 0.
+
+    Returns:
+        pd.DataFrame: The periods ahead (1 to horizon) as the index and the bounds ("Lower 2.0",
+        ..., "Mean", ..., "Upper 2.0") as the columns. Fewer than two returns give NaN.
+    """
+    standard_deviations = sorted(standard_deviations or [1.0, 1.5, 2.0])
+    labels = (
+        [f"Lower {k:g}" for k in reversed(standard_deviations)]
+        + ["Mean"]
+        + [f"Upper {k:g}" for k in standard_deviations]
+    )
+    values = returns.dropna().to_numpy(dtype=float)
+
+    if horizon < 1:
+        raise ValueError("The horizon must be at least 1.")
+    if len(values) < 2:  # noqa: PLR2004
+        return pd.DataFrame(np.nan, index=range(1, horizon + 1), columns=labels)
+
+    positions = get_bootstrap_samples(
+        len(values), simulations, "resample", length=horizon, seed=seed
+    )
+    wealth = np.cumprod(1 + values[positions], axis=1)
+    mean = wealth.mean(axis=0)
+    deviation = wealth.std(axis=0, ddof=1) if simulations > 1 else np.zeros(horizon)
+
+    cone = (
+        [mean - k * deviation for k in reversed(standard_deviations)]
+        + [mean]
+        + [mean + k * deviation for k in standard_deviations]
+    )
+
+    return pd.DataFrame(
+        np.column_stack(cone), index=range(1, horizon + 1), columns=labels
+    )
+
+
+def get_probability_of_backtest_overfitting(
+    returns: pd.DataFrame, blocks: int = 16
+) -> pd.Series:
+    """
+    Calculate the Probability of Backtest Overfitting (PBO) of picking the best of several
+    strategies (or assets) on their past Sharpe ratio, with the Combinatorially Symmetric
+    Cross-Validation (CSCV) of Bailey, Borwein, López de Prado and Zhu (2017).
+
+    The history is split into S blocks of equal length. For every way to choose S / 2 blocks
+    as the in-sample period, with the other half as the out-of-sample period:
+
+        - The strategy with the highest in-sample Sharpe ratio (mean / standard deviation of the
+          returns) is selected.
+        - ω = Rank of its out-of-sample Sharpe ratio among the N strategies / (N + 1)
+        - λ = ln(ω / (1 - ω))
+        - PBO = Share of the combinations with λ <= 0
+
+    The PBO is the probability that the strategy that looked best in-sample performs at or
+    below the median out of sample. Close to 0, the selection carries over out of sample; at
+    0.5 or higher, picking the in-sample best adds nothing. Ties in the out-of-sample Sharpe
+    ratios share their average rank, a tie in-sample selects the first strategy.
+
+    The table also reports:
+
+        - Average Out-of-Sample Rank = Mean of ω (0.5 when the selection adds nothing)
+        - Probability of Loss = Share of the combinations in which the selected strategy has an
+          out-of-sample Sharpe ratio below 0
+        - Performance Degradation = The slope of the regression of the selected strategy's
+          out-of-sample Sharpe ratio on its in-sample Sharpe ratio (negative when a high
+          in-sample Sharpe ratio is followed by a low one)
+        - Combinations = The number of in-sample and out-of-sample splits, C(S, S / 2)
+
+    For more information, see the following sources:
+
+    - Bailey, D.H., Borwein, J.M., López de Prado, M., & Zhu, Q.J. (2017). "The Probability of
+    Backtest Overfitting." Journal of Computational Finance, 20(4), 39-69.
+    - ffn: calc_prob_backtest_overfitting (https://github.com/pmorissette/ffn).
+
+    The returns beyond a multiple of S rows are left out from the end, as in ffn. The Sharpe
+    ratios skip missing returns. A combination in which a strategy has no Sharpe ratio (too
+    few returns, or returns without variation) leaves the statistics undefined (NaN).
+
+    Args:
+        returns (pd.DataFrame): The returns of the strategies, one column each, in
+            chronological order.
+        blocks (int, optional): The number of blocks S, even and at least 2. Defaults to 16.
+
+    Returns:
+        pd.Series: The Probability of Backtest Overfitting, Average Out-of-Sample Rank,
+        Probability of Loss, Performance Degradation and Combinations.
+    """
+    if blocks < 2 or blocks % 2 or int(blocks) != blocks:  # noqa: PLR2004
+        raise ValueError("The number of blocks must be an even integer of 2 or more.")
+
+    rows = (len(returns) // blocks) * blocks
+
+    if rows < blocks or returns.shape[1] < 2:  # noqa: PLR2004
+        raise ValueError(
+            "The probability of backtest overfitting needs at least two strategies and a "
+            "return per block."
+        )
+
+    values = returns.iloc[:rows].to_numpy(dtype=float)
+    observed = ~np.isnan(values)
+
+    # The count, sum and sum of squared deviations from the strategy's overall mean per block,
+    # from which the Sharpe ratio of any union of blocks follows without revisiting the rows.
+    center = np.nanmean(values, axis=0)
+    deviations = np.where(observed, values - center, 0.0)
+    counts = np.add.reduceat(observed.astype(float), np.arange(0, rows, rows // blocks))
+    sums = np.add.reduceat(deviations, np.arange(0, rows, rows // blocks))
+    squares = np.add.reduceat(deviations**2, np.arange(0, rows, rows // blocks))
+
+    combinations = np.array(
+        list(itertools.combinations(range(blocks), blocks // 2)), dtype=int
+    )
+    in_sample = np.zeros((len(combinations), blocks))
+    in_sample[np.arange(len(combinations))[:, np.newaxis], combinations] = 1
+
+    def sharpe_ratios(selection: np.ndarray) -> np.ndarray:
+        count = selection @ counts
+        mean = (selection @ sums) / count
+        variance = (selection @ squares - count * mean**2) / (count - 1)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sharpe_ratio = (mean + center) / np.sqrt(variance)
+
+        return np.where((count > 1) & (variance > 0), sharpe_ratio, np.nan)
+
+    in_sample_sharpe = sharpe_ratios(in_sample)
+    out_of_sample_sharpe = sharpe_ratios(1 - in_sample)
+
+    if np.isnan(in_sample_sharpe).any() or np.isnan(out_of_sample_sharpe).any():
+        return pd.Series(
+            {
+                "Probability of Backtest Overfitting": np.nan,
+                "Average Out-of-Sample Rank": np.nan,
+                "Probability of Loss": np.nan,
+                "Performance Degradation": np.nan,
+                "Combinations": float(len(combinations)),
+            }
+        )
+
+    selected = in_sample_sharpe.argmax(axis=1)
+    rows_index = np.arange(len(combinations))
+    selected_out_of_sample = out_of_sample_sharpe[rows_index, selected]
+
+    # The average rank of the selected strategy among ties, as scipy's rankdata "average".
+    lower = (out_of_sample_sharpe < selected_out_of_sample[:, np.newaxis]).sum(axis=1)
+    equal = (out_of_sample_sharpe == selected_out_of_sample[:, np.newaxis]).sum(axis=1)
+    relative_rank = (lower + (equal + 1) / 2) / (returns.shape[1] + 1)
+    logits = np.log(relative_rank / (1 - relative_rank))
+
+    degradation = linregress(
+        in_sample_sharpe[rows_index, selected], selected_out_of_sample
+    ).slope
+
+    return pd.Series(
+        {
+            "Probability of Backtest Overfitting": float((logits <= 0).mean()),
+            "Average Out-of-Sample Rank": float(relative_rank.mean()),
+            "Probability of Loss": float((selected_out_of_sample < 0).mean()),
+            "Performance Degradation": float(degradation),
+            "Combinations": float(len(combinations)),
+        }
+    )
+
+
+def get_probabilistic_momentum(
+    information_ratio: pd.Series | pd.DataFrame | float,
+    observations: pd.Series | pd.DataFrame | float,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Probabilistic Momentum of Varadi (2014), the confidence that one asset
+    outperforms another: the probability of Student's t distribution that the mean of the
+    differences between their returns is above 0.
+
+    The formula is as follows:
+
+        - t = Information Ratio x SQRT(N)
+        - Probabilistic Momentum = T(t, N - 1)
+
+    Where the Information Ratio is the mean of the return differences over their standard
+    deviation, N the number of return differences and T the cumulative Student's t
+    distribution with N - 1 degrees of freedom. A value above 0.5 means the asset has done
+    better; Varadi switches between two assets only when the confidence passes a threshold
+    such as 0.6, rather than on the sign of the difference alone.
+
+    For more information, see the following sources:
+
+    - Varadi, D. (2014). "Are Simple Momentum Strategies Too Dumb? Introducing Probabilistic
+    Momentum." CSS Analytics, 28 January 2014.
+    - ffn: calc_prob_mom (https://github.com/pmorissette/ffn).
+
+    Args:
+        information_ratio (pd.Series | pd.DataFrame | float): The information ratio of the
+            return differences, per observation.
+        observations (pd.Series | pd.DataFrame | float): The number of return differences it
+            was calculated from.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The probability, between 0 and 1. Fewer than two
+        observations give NaN.
+    """
+    t_statistic = information_ratio * np.sqrt(observations)
+    degrees_of_freedom = np.where(
+        np.asarray(observations, dtype=float) > 1,
+        np.asarray(observations, dtype=float) - 1,
+        np.nan,
+    )
+    probability = stats.t.cdf(np.asarray(t_statistic, dtype=float), degrees_of_freedom)
+
+    if isinstance(t_statistic, pd.DataFrame):
+        return pd.DataFrame(
+            probability, index=t_statistic.index, columns=t_statistic.columns
+        )
+    if isinstance(t_statistic, pd.Series):
+        return pd.Series(probability, index=t_statistic.index, name=t_statistic.name)
+
+    return float(probability)
+
+
+def get_rolling_factor_regression(
+    excess_returns: pd.Series, factor_dataset: pd.DataFrame, window_size: int
+) -> pd.DataFrame:
+    """
+    Fit the factor regression of excess returns over every rolling window of observations.
+
+    The formula is as follows:
+
+        - Excess Return = Intercept + Slope1 x Factor1 + ... + SlopeK x FactorK + Residual
+
+    fitted by ordinary least squares on the last `window_size` observations at every date, so
+    the slopes show how the factor exposures move over time. Observations where the excess
+    return or a factor is missing are left out (listwise deletion), and the windows run over
+    the observations that remain.
+
+    For more information, see the following sources:
+
+    - Fama, E.F., & French, K.R. (2015). "A Five-Factor Asset Pricing Model." Journal of
+    Financial Economics, 116(1), 1-22.
+    - pyfolio: timeseries.rolling_regression (https://github.com/quantopian/pyfolio).
+
+    Args:
+        excess_returns (pd.Series): The excess returns.
+        factor_dataset (pd.DataFrame): The factors, one per column, on the same index.
+        window_size (int): The number of observations in each window, more than the number
+            of factors plus 1.
+
+    Returns:
+        pd.DataFrame: The Intercept, the Slope of every factor ("<factor> Slope"), the Mean
+        Squared Error (MSE) and the R Squared of each window, indexed by its last date.
+    """
+    factors = list(factor_dataset.columns)
+    columns = (
+        ["Intercept"]
+        + [f"{factor} Slope" for factor in factors]
+        + ["Mean Squared Error (MSE)", "R Squared"]
+    )
+
+    if window_size <= len(factors) + 1:
+        raise ValueError(
+            "The rolling window needs more observations than the factors plus one."
+        )
+
+    data = pd.concat(
+        [
+            excess_returns.rename("__response__"),
+            factor_dataset.reindex(excess_returns.index),
+        ],
+        axis=1,
+    ).dropna()
+
+    if len(data) < window_size:
+        return pd.DataFrame(columns=columns, dtype=float)
+
+    response = np.lib.stride_tricks.sliding_window_view(
+        data.iloc[:, 0].to_numpy(dtype=float), window_size
+    )
+    regressors = np.lib.stride_tricks.sliding_window_view(
+        data.iloc[:, 1:].to_numpy(dtype=float), window_size, axis=0
+    ).transpose(0, 2, 1)
+
+    response_mean = response.mean(axis=1)
+    regressor_mean = regressors.mean(axis=1)
+    centered_response = response - response_mean[:, np.newaxis]
+    centered_regressors = regressors - regressor_mean[:, np.newaxis, :]
+
+    # The normal equations of every window at once; the pseudo-inverse gives the minimum norm
+    # solution where a factor does not vary within a window, as the least squares solver would.
+    slopes = np.einsum(
+        "wkl,wl->wk",
+        np.linalg.pinv(
+            np.einsum("wik,wil->wkl", centered_regressors, centered_regressors)
+        ),
+        np.einsum("wik,wi->wk", centered_regressors, centered_response),
+    )
+    residuals = centered_response - np.einsum("wik,wk->wi", centered_regressors, slopes)
+    residual_sum_of_squares = (residuals**2).sum(axis=1)
+    total_sum_of_squares = (centered_response**2).sum(axis=1)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r_squared = np.where(
+            total_sum_of_squares > 0,
+            1 - residual_sum_of_squares / total_sum_of_squares,
+            np.where(residual_sum_of_squares == 0, 1.0, 0.0),
+        )
+
+    return pd.DataFrame(
+        np.column_stack(
+            [
+                response_mean - np.einsum("wk,wk->w", regressor_mean, slopes),
+                slopes,
+                residual_sum_of_squares / window_size,
+                r_squared,
+            ]
+        ),
+        index=data.index[window_size - 1 :],
+        columns=columns,
+    )

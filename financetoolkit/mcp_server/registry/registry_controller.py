@@ -105,6 +105,7 @@ PERIOD_BLOCK_EXEMPT = frozenset(
         "get_beta_implied_return",
         "get_return_statistics",
         "get_outperformance_probability",
+        "get_returns",
     }
 )
 # The indicators whose own limit also takes a negative number, for the last rows.

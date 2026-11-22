@@ -100,6 +100,9 @@ def calendars():
         ("performance", "get_sharpe_ratio", {}),
         ("performance", "get_sortino_ratio", {}),
         ("performance", "get_sterling_ratio", {}),
+        ("performance", "get_serenity_index", {}),
+        ("performance", "get_risk_measure_ratio", {"risk_measure": "cdar"}),
+        ("performance", "get_trailing_returns", {}),
     ],
 )
 def test_a_tickers_own_measures_do_not_depend_on_the_benchmarks_days(
@@ -128,6 +131,7 @@ def test_a_tickers_own_measures_do_not_depend_on_the_benchmarks_days(
         "get_upside_capture_ratio",
         "get_r_squared",
         "get_beta_fragility",
+        "get_probabilistic_momentum",
     ],
 )
 def test_measures_against_the_benchmark_use_the_days_both_traded(calendars, method):

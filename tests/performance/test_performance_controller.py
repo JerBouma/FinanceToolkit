@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from scipy import stats
 
+from financetoolkit.performance import performance_model
 from financetoolkit.performance.performance_controller import Performance
 
 
@@ -1620,3 +1621,169 @@ def test_get_risk_decomposition(recorder, performance_module):
 def test_get_capital_market_line(recorder, performance_module):
     recorder.capture(performance_module.get_capital_market_line())
     recorder.capture(performance_module.get_capital_market_line(period="quarterly"))
+
+
+def test_get_returns_log_and_unsmoothed(recorder, performance_module):
+    recorder.capture(performance_module.get_returns(log=True))
+    recorder.capture(performance_module.get_returns(period="daily", log=True).iloc[:20])
+    recorder.capture(performance_module.get_returns(period="monthly", unsmoothed=True))
+
+    # The cumulative log return is the sum of the log returns.
+    log_returns = performance_module.get_returns(
+        period="monthly", log=True, rounding=12
+    )
+    cumulative = performance_module.get_returns(
+        period="monthly", log=True, cumulative=True, rounding=12
+    )
+    pd.testing.assert_frame_equal(
+        log_returns.cumsum().round(8), cumulative.round(8), check_freq=False
+    )
+
+
+def test_get_serenity_index(recorder, performance_module):
+    recorder.capture(performance_module.get_serenity_index())
+    recorder.capture(performance_module.get_serenity_index(period="quarterly"))
+    recorder.capture(performance_module.get_serenity_index(alpha=0.1))
+
+
+def test_get_risk_measure_ratio(recorder, performance_module):
+    recorder.capture(performance_module.get_risk_measure_ratio())
+    recorder.capture(performance_module.get_risk_measure_ratio(risk_measure="cdar"))
+    recorder.capture(
+        performance_module.get_risk_measure_ratio(
+            period="monthly", risk_measure="mad", within_period=False
+        )
+    )
+
+    for risk_measure in performance_model.RISK_MEASURES:
+        assert not performance_module.get_risk_measure_ratio(
+            risk_measure=risk_measure
+        ).empty
+
+    # An unknown risk measure gives an empty result through handle_errors.
+    assert performance_module.get_risk_measure_ratio(risk_measure="other").empty
+
+
+def test_get_probabilistic_momentum(recorder, performance_module):
+    recorder.capture(performance_module.get_probabilistic_momentum())
+    recorder.capture(performance_module.get_probabilistic_momentum(period="quarterly"))
+    recorder.capture(
+        performance_module.get_probabilistic_momentum(period="daily", rolling=60).iloc[
+            -20:
+        ]
+    )
+
+
+def test_get_trailing_returns(recorder, performance_module):
+    trailing_returns = performance_module.get_trailing_returns()
+    recorder.capture(trailing_returns)
+
+    # The year to date return runs from the last close of the previous year.
+    prices = performance_module._historical_data["daily"]["Adj Close"]["AAPL"]
+    assert trailing_returns.loc["Year to Date", "AAPL"] == pytest.approx(
+        prices.loc[:"2022-12-31"].iloc[-1] / prices.loc[:"2021-12-31"].iloc[-1] - 1,
+        abs=1e-4,
+    )
+
+
+def test_get_calendar_returns(recorder, performance_module):
+    calendar_returns = performance_module.get_calendar_returns(rounding=10)
+    recorder.capture(performance_module.get_calendar_returns())
+
+    # The months and the year equal the monthly and yearly returns.
+    monthly = performance_module.get_returns(period="monthly", rounding=10)
+    yearly = performance_module.get_returns(period="yearly", rounding=10)
+    assert calendar_returns.loc["2021", ("MSFT", "Mar")] == pytest.approx(
+        monthly.loc["2021-03", "MSFT"], abs=1e-9
+    )
+    assert calendar_returns.loc["2022", ("AAPL", "Year")] == pytest.approx(
+        yearly.loc["2022", "AAPL"], abs=1e-9
+    )
+
+
+def test_get_bootstrap_statistics(recorder, performance_module):
+    recorder.capture(performance_module.get_bootstrap_statistics(simulations=200))
+    shuffled = performance_module.get_bootstrap_statistics(
+        simulations=200, method="shuffle"
+    )
+    recorder.capture(shuffled)
+
+    # Shuffling keeps the returns, so only the drawdown varies across the simulations.
+    assert shuffled.loc["Cumulative Return", ("AAPL", "Std")] == 0
+    assert shuffled.loc["Maximum Drawdown", ("AAPL", "Std")] > 0
+
+    # The same seed gives the same result, another seed another one.
+    pd.testing.assert_frame_equal(
+        performance_module.get_bootstrap_statistics(simulations=50, seed=1),
+        performance_module.get_bootstrap_statistics(simulations=50, seed=1),
+    )
+    assert not performance_module.get_bootstrap_statistics(
+        simulations=50, seed=1
+    ).equals(performance_module.get_bootstrap_statistics(simulations=50, seed=2))
+
+
+def test_get_forecast_cone(recorder, performance_module):
+    recorder.capture(performance_module.get_forecast_cone(horizon=10, simulations=200))
+    recorder.capture(
+        performance_module.get_forecast_cone(
+            horizon=5, standard_deviations=[1.0], simulations=200
+        )
+    )
+
+
+def test_get_probability_of_backtest_overfitting(recorder, performance_module):
+    recorder.capture(performance_module.get_probability_of_backtest_overfitting())
+    recorder.capture(
+        performance_module.get_probability_of_backtest_overfitting(blocks=8)
+    )
+
+    # An odd number of blocks gives an empty result through handle_errors.
+    assert performance_module.get_probability_of_backtest_overfitting(blocks=7).empty
+
+
+def test_get_smoothing_index(recorder, performance_module):
+    recorder.capture(performance_module.get_smoothing_index())
+    recorder.capture(performance_module.get_smoothing_index(period="weekly", order=1))
+
+
+def test_rolling_factor_models(recorder, performance_module, monkeypatch):
+    # Synthetic daily factors on the Toolkit's dates, so the rolling regressions run offline.
+    dates = performance_module._historical_data["daily"].index
+    rng = np.random.default_rng(0)
+    factors = pd.DataFrame(
+        rng.normal(0, 0.01, (len(dates), 6)),
+        index=dates,
+        columns=["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"],
+    )
+    factors["RF"] = 0.0001
+
+    performance = copy.copy(performance_module)
+    performance._fama_and_french_datasets = {"United States": factors}
+    monkeypatch.setattr(
+        performance_model,
+        "obtain_fama_and_french_three_factor_dataset",
+        lambda region: factors[["Mkt-RF", "SMB", "HML", "RF"]],
+    )
+    monkeypatch.setattr(
+        performance_model,
+        "obtain_carhart_momentum_dataset",
+        lambda region: factors[["RMW"]].rename(columns={"RMW": "Mom"}),
+    )
+
+    fama_and_french = performance.get_fama_and_french_model(rolling=126)
+    recorder.capture(fama_and_french.iloc[-10:])
+    recorder.capture(performance.get_carhart_four_factor_model(rolling=126).iloc[-10:])
+
+    # The last window equals a regression on the last 126 days.
+    returns = performance._historical_data["daily"]["Return"]["AAPL"].iloc[-126:]
+    regressors = np.column_stack(
+        [np.ones(126), factors[["Mkt-RF", "SMB", "HML", "RMW", "CMA"]].iloc[-126:]]
+    )
+    coefficients = np.linalg.lstsq(regressors, returns - 0.0001, rcond=None)[0]
+    np.testing.assert_allclose(
+        fama_and_french["AAPL"].iloc[-1][["Intercept", "Mkt-RF Slope"]].to_numpy(),
+        coefficients[:2],
+        atol=1e-4,
+    )
+
+    assert performance.get_fama_and_french_model(rolling=126, method="simple").empty

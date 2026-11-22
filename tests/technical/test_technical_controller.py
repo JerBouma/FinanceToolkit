@@ -55,6 +55,14 @@ def test_collect_statistics_indicators(recorder, technical_module):
     )
 
 
+def test_collect_cycle_indicators(recorder, technical_module):
+    recorder.capture(technical_module.collect_cycle_indicators())
+    recorder.capture(technical_module.collect_cycle_indicators(growth=True))
+    recorder.capture(
+        technical_module.collect_cycle_indicators(growth=True, lag=[1, 2, 3])
+    )
+
+
 def test_get_mcclellan_oscillator(recorder, technical_module):
     recorder.capture(technical_module.get_mcclellan_oscillator())
     recorder.capture(technical_module.get_mcclellan_oscillator(growth=True))
@@ -1873,3 +1881,48 @@ def test_volatility_default_windows():
         parameters = inspect.signature(method).parameters
         for name, default in defaults.items():
             assert parameters[name].default == default
+
+
+def test_get_hilbert_dominant_cycle_period(recorder, technical_module):
+    recorder.capture(technical_module.get_hilbert_dominant_cycle_period())
+    recorder.capture(technical_module.get_hilbert_dominant_cycle_period(growth=True))
+    recorder.capture(
+        technical_module.get_hilbert_dominant_cycle_period(period="weekly")
+    )
+
+
+def test_get_hilbert_dominant_cycle_phase(recorder, technical_module):
+    recorder.capture(technical_module.get_hilbert_dominant_cycle_phase())
+    recorder.capture(
+        technical_module.get_hilbert_dominant_cycle_phase(close_column="Close")
+    )
+
+
+def test_get_hilbert_phasor_components(recorder, technical_module):
+    recorder.capture(technical_module.get_hilbert_phasor_components())
+    recorder.capture(technical_module.get_hilbert_phasor_components(growth=True))
+
+
+def test_get_hilbert_sine_wave(recorder, technical_module):
+    recorder.capture(technical_module.get_hilbert_sine_wave())
+    recorder.capture(technical_module.get_hilbert_sine_wave(period="weekly"))
+
+
+def test_get_hilbert_trend_mode(recorder, technical_module):
+    recorder.capture(technical_module.get_hilbert_trend_mode())
+    recorder.capture(technical_module.get_hilbert_trend_mode(close_column="Close"))
+
+
+def test_get_hilbert_instantaneous_trendline(recorder, technical_module):
+    recorder.capture(technical_module.get_hilbert_instantaneous_trendline())
+    recorder.capture(technical_module.get_hilbert_instantaneous_trendline(growth=True))
+
+
+def test_get_mesa_adaptive_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_mesa_adaptive_moving_average())
+    recorder.capture(
+        technical_module.get_mesa_adaptive_moving_average(
+            fast_limit=0.3, slow_limit=0.02
+        )
+    )
+    recorder.capture(technical_module.get_mesa_adaptive_moving_average(growth=True))

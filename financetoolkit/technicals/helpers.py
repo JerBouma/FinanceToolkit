@@ -23,8 +23,10 @@ PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 # index and its running total, ease of movement, Klinger volume oscillator, market facilitation index, price-volume),
 # whose level reflects how many shares trade, the running totals in price units (Williams' accumulation/distribution),
 # the price volume rank (four categories), the volume profile (not per date), the pivot points, Fibonacci levels,
-# price transforms and Zig Zag, which only restate the latest high, low and close or swing, and Wilder's swing
-# index, which is scaled by a limit move in price units and accumulates from the first date of the data.
+# price transforms and Zig Zag, which only restate the latest high, low and close or swing, Wilder's swing
+# index, which is scaled by a limit move in price units and accumulates from the first date of the data, the
+# Hilbert dominant cycle phase (an angle that wraps from 315 to -45 degrees every cycle, so its rank says
+# nothing) and the Hilbert trend mode (1 or 0, no ranking).
 FACTOR_COLLECTIONS = {
     "momentum": [
         "get_money_flow_index",
@@ -128,6 +130,13 @@ FACTOR_COLLECTIONS = {
         "get_volume_zone_oscillator",
         "get_buying_selling_pressure",
     ],
+    "cycle": [
+        "get_hilbert_dominant_cycle_period",
+        "get_hilbert_phasor_components",
+        "get_hilbert_sine_wave",
+        "get_hilbert_instantaneous_trendline",
+        "get_mesa_adaptive_moving_average",
+    ],
 }
 FACTOR_COLLECTIONS["all"] = [
     metric for metrics in FACTOR_COLLECTIONS.values() for metric in metrics
@@ -170,6 +179,8 @@ FACTOR_PRICE_LINES = (
     "get_fibonacci_retracement_levels",
     "get_rolling_median",
     "get_rolling_percentile",
+    "get_hilbert_instantaneous_trendline",
+    "get_mesa_adaptive_moving_average",
 )
 FACTOR_PRICE_DIFFERENCES = (
     "get_true_range",
@@ -190,6 +201,7 @@ FACTOR_PRICE_DIFFERENCES = (
     "get_slope",
     "get_rolling_mean_absolute_deviation",
     "get_rolling_standard_error",
+    "get_hilbert_phasor_components",
 )
 
 

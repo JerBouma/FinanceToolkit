@@ -25,7 +25,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class MomentumTechnicals:
     """
-    Momentum indicators: oscillators such as the RSI, MACD, stochastic, Williams %R, Aroon, ADX, CCI, money flow index, Ichimoku Cloud, rate of change, Know Sure Thing and the Coppock curve.
+    Momentum indicators: oscillators such as the RSI, MACD, stochastic, Williams %R, Aroon, ADX and the directional movement system, CCI, money flow index, Ichimoku Cloud, rate of change, momentum, Know Sure Thing and the Coppock curve.
     """
 
     @handle_errors
@@ -88,18 +88,18 @@ class MomentumTechnicals:
 
         Which returns:
 
-        | Date       |   Money Flow Index |   Williams %R |   Aroon Indicator Up |   Aroon Indicator Down |   Commodity Channel Index |   Relative Vigor Index |   Relative Vigor Index Signal Line |       Force Index |   Ultimate Oscillator |   Percentage Price Oscillator |   Detrended Price Oscillator |   Average Directional Index |   Chande Momentum Oscillator |   Ichimoku Conversion Line |   Ichimoku Base Line |   Ichimoku Leading Span A |   Ichimoku Leading Span B |   Stochastic %K |   Stochastic %D |   MACD Line |   MACD Signal Line |   Relative Strength Index |   Stochastic RSI %K |   Stochastic RSI %D |   True Strength Index |   True Strength Index Signal Line |   Balance of Power |   Awesome Oscillator |   Vortex Indicator VI+ |   Vortex Indicator VI- |   Elder Ray Bull Power |   Elder Ray Bear Power |   Rate of Change |   Choppiness Index |   Know Sure Thing |   Know Sure Thing Signal Line |   Coppock Curve |
-        |:-----------|-------------------:|--------------:|---------------------:|-----------------------:|--------------------------:|-----------------------:|-----------------------------------:|------------------:|----------------------:|------------------------------:|-----------------------------:|----------------------------:|-----------------------------:|---------------------------:|---------------------:|--------------------------:|--------------------------:|----------------:|----------------:|------------:|-------------------:|--------------------------:|--------------------:|--------------------:|----------------------:|----------------------------------:|-------------------:|---------------------:|-----------------------:|-----------------------:|-----------------------:|-----------------------:|-----------------:|-------------------:|------------------:|------------------------------:|----------------:|
-        | 2025-12-17 |            39.7393 |      -98.8222 |              28.5714 |               100      |                 -139.905  |                -0.2262 |                            -0.0758 |      -3.27416e+07 |               44.5331 |                        0.0063 |                       0.0306 |                     24.6712 |                     -20.621  |                    275.43  |              276.008 |                   265.041 |                   250.519 |          1.1778 |          8.6605 |      1.7262 |             3.1596 |                   45.1866 |              0      |              1.2037 |               12.3226 |                           19.7487 |            -0.7013 |               1.2653 |                 0.9211 |                 1.0533 |                -0.1328 |                -4.6371 |          -0.0206 |            49.8427 |            0.3638 |                        0.5107 |          0.0029 |
-        | 2025-12-18 |            34.4002 |      -75.8192 |              21.4286 |               100      |                 -162.428  |                -0.2832 |                            -0.1659 |      -2.59752e+07 |               50.9808 |                        0.0047 |                      -0.3822 |                     24.4323 |                     -24.9065 |                    272.6   |              276.008 |                   265.041 |                   250.519 |         24.1808 |         14.0381 |      1.2731 |             2.7823 |                   45.9182 |              2.4336 |              2.0149 |                9.3441 |                           17.1476 |            -0.2126 |               0.0099 |                 0.865  |                 1.0802 |                -2.0699 |                -8.7267 |          -0.0239 |            42.7375 |            0.311  |                        0.4834 |         -0.014  |
-        | 2025-12-19 |            43.3299 |      -68.989  |              14.2857 |                92.8571 |                 -103.239  |                -0.2694 |                            -0.2349 |       5.93141e+06 |               51.5414 |                        0.0037 |                      -0.4186 |                     23.9077 |                     -39.3403 |                    272.6   |              276.008 |                   265.041 |                   250.519 |         31.011  |         18.7898 |      1.0212 |             2.4301 |                   49.0174 |             12.7428 |              5.0588 |                7.6467 |                           14.7724 |             0.3234 |              -1.1188 |                 0.903  |                 1.137  |                -0.8132 |                -5.4969 |          -0.0333 |            41.2482 |            0.2645 |                        0.4504 |         -0.0269 |
-        | 2025-12-22 |            36.4312 |      -81.4489 |               7.1429 |                85.7143 |                 -104.734  |                -0.2367 |                            -0.2614 |      -7.97981e+06 |               45.7604 |                        0.0022 |                       2.2593 |                     23.4206 |                     -64.5457 |                    272.6   |              276.008 |                   264.954 |                   250.519 |         18.5511 |         24.581  |      0.5976 |             2.0636 |                   44.0573 |              0      |              5.0588 |                4.6682 |                           12.2463 |            -0.5608 |              -2.0902 |                 0.8075 |                 1.2147 |                -0.8978 |                -4.2561 |          -0.0532 |            40.4149 |            0.2055 |                        0.4111 |         -0.0418 |
-        | 2025-12-23 |            37.2984 |      -69.5725 |               0      |                78.5714 |                  -97.9342 |                -0.205  |                            -0.2501 |      -1.44131e+06 |               49.1967 |                        0.0014 |                       2.3511 |                     23.1943 |                     -51.4169 |                    272.6   |              276.008 |                   265.083 |                   250.519 |         30.4275 |         26.6632 |      0.3694 |             1.7248 |                   47.029  |             15.5285 |              9.4238 |                3.0048 |                            9.9359 |             0.517  |              -2.6623 |                 0.7732 |                 1.2661 |                -1.9284 |                -4.8582 |          -0.0415 |            46.4518 |            0.1522 |                        0.3663 |         -0.0501 |
-        | 2025-12-24 |            41.6581 |      -51.6561 |               0      |                71.4286 |                  -34.6704 |                -0.1841 |                            -0.2228 |       2.20159e+06 |               54.4448 |                        0.0011 |                       3.0907 |                     22.0179 |                     -32.919  |                    272.6   |              276.008 |                   265.063 |                   250.519 |         48.3439 |         32.4408 |      0.3017 |             1.4402 |                   50.0121 |             38.5457 |             18.0248 |                2.4525 |                            8.0651 |             0.4551 |              -2.8188 |                 0.8892 |                 1.1613 |                 1.0804 |                -2.1383 |          -0.0245 |            53.1324 |            0.1033 |                        0.3168 |         -0.0518 |
-        | 2025-12-26 |            46.9441 |      -51.1363 |               0      |                64.2857 |                  -25.6932 |                -0.1697 |                            -0.1974 |  735536           |               51.2159 |                        0.0008 |                      -0.6819 |                     20.9256 |                     -27.7033 |                    272.6   |              276.098 |                   264.961 |                   250.519 |         48.8637 |         42.545  |      0.2126 |             1.1946 |                   49.1689 |             34.622  |             29.5654 |                1.7619 |                            6.4893 |            -0.3028 |              -2.1658 |                 0.9091 |                 1.1011 |                 1.1553 |                -1.346  |          -0.0193 |            55.49   |            0.0564 |                        0.2631 |         -0.0522 |
-        | 2025-12-29 |            48.1203 |      -48.4089 |              35.7143 |                57.1429 |                  -30.567  |                -0.1563 |                            -0.1782 |       1.77189e+06 |               57.3149 |                        0.0006 |                       0.1103 |                     20.0592 |                     -21.8633 |                    270.612 |              276.183 |                   265.068 |                   250.519 |         51.5911 |         49.5995 |      0.169  |             0.9895 |                   49.9666 |             40.0248 |             37.7308 |                1.4002 |                            5.217  |             0.5323 |              -2.0654 |                 0.9316 |                 1.0955 |                 0.2129 |                -1.7901 |          -0.0149 |            54.4742 |            0.0118 |                        0.2104 |         -0.0496 |
-        | 2025-12-30 |            43.4593 |      -53.5607 |              28.5714 |                50      |                  -35.5283 |                -0.1288 |                            -0.1608 | -464819           |               54.1042 |                        0.0003 |                      -2.3582 |                     19.276  |                     -21.7389 |                    270.612 |              276.183 |                   265.068 |                   250.519 |         46.4393 |         48.9647 |      0.0788 |             0.8074 |                   48.4209 |             29.5554 |             34.7341 |                0.6843 |                            4.0838 |             0.15   |              -1.9448 |                 0.9145 |                 1.1096 |                 0.0857 |                -1.708  |          -0.0148 |            53.5704 |           -0.0182 |                        0.1612 |         -0.0465 |
-        | 2025-12-31 |            38.2003 |      -62.8029 |              21.4286 |                42.8571 |                  -56.9135 |                -0.0887 |                            -0.1381 |      -4.82706e+06 |               46.4079 |                       -0.0003 |                      -1.5169 |                     18.7175 |                     -37.4456 |                    270.248 |              276.821 |                   265.6   |                   250.867 |         37.1971 |         45.0758 |     -0.0897 |             0.628  |                   45.6902 |             12.0098 |             27.1967 |               -0.6702 |                            2.8953 |            -0.6218 |              -1.6049 |                 0.9113 |                 1.1148 |                -0.0091 |                -1.9324 |          -0.0248 |            52.5944 |           -0.0452 |                        0.1157 |         -0.0431 |
+        | Date       |   Money Flow Index |   Williams %R |   Aroon Indicator Up |   Aroon Indicator Down |   Aroon Oscillator |   Commodity Channel Index |   Relative Vigor Index |   Relative Vigor Index Signal Line |       Force Index |   Ultimate Oscillator |   Percentage Price Oscillator |   Percentage Price Oscillator Signal Line |   Percentage Price Oscillator Histogram |   Absolute Price Oscillator |   Percentage Volume Oscillator |   Percentage Volume Oscillator Signal Line |   Percentage Volume Oscillator Histogram |   Detrended Price Oscillator |   Average Directional Index |   Plus Directional Movement |   Minus Directional Movement |   Plus Directional Indicator |   Minus Directional Indicator |   Directional Movement Index |   Average Directional Index Rating |   Chande Momentum Oscillator |   Intraday Momentum Index |   Ichimoku Conversion Line |   Ichimoku Base Line |   Ichimoku Leading Span A |   Ichimoku Leading Span B |   Stochastic %K |   Stochastic %D |   MACD Line |   MACD Signal Line |   MACD Histogram |   Relative Strength Index |   Stochastic RSI %K |   Stochastic RSI %D |   True Strength Index |   True Strength Index Signal Line |   Balance of Power |   Internal Bar Strength |   Qstick |   Awesome Oscillator |   Accelerator Oscillator |   Vortex Indicator VI+ |   Vortex Indicator VI- |   Elder Ray Bull Power |   Elder Ray Bear Power |   Rate of Change |   Momentum |   Choppiness Index |   Efficiency Ratio |   Vertical Horizontal Filter |   Know Sure Thing |   Know Sure Thing Signal Line |   Coppock Curve |
+        |:-----------|-------------------:|--------------:|---------------------:|-----------------------:|-------------------:|--------------------------:|-----------------------:|-----------------------------------:|------------------:|----------------------:|------------------------------:|------------------------------------------:|----------------------------------------:|----------------------------:|-------------------------------:|-------------------------------------------:|-----------------------------------------:|-----------------------------:|----------------------------:|----------------------------:|-----------------------------:|-----------------------------:|------------------------------:|-----------------------------:|-----------------------------------:|-----------------------------:|--------------------------:|---------------------------:|---------------------:|--------------------------:|--------------------------:|----------------:|----------------:|------------:|-------------------:|-----------------:|--------------------------:|--------------------:|--------------------:|----------------------:|----------------------------------:|-------------------:|------------------------:|---------:|---------------------:|-------------------------:|-----------------------:|-----------------------:|-----------------------:|-----------------------:|-----------------:|-----------:|-------------------:|-------------------:|-----------------------------:|------------------:|------------------------------:|----------------:|
+        | 2025-12-17 |            39.7393 |      -98.8223 |              28.5714 |               100      |           -71.4286 |                 -139.905  |                -0.2262 |                            -0.0758 |      -3.27419e+07 |               44.5331 |                        0.0063 |                                    0.0116 |                                 -0.0053 |                      1.7262 |                        -0.0329 |                                    -0.0509 |                                   0.018  |                       0.0306 |                     24.6712 |                     12.185  |                      13.7577 |                      17.868  |                       20.1742 |                       6.0621 |                            27.6361 |                     -20.6213 |                   41.1264 |                    275.43  |              276.008 |                   265.041 |                   250.519 |          1.1777 |          8.6605 |      1.7262 |             3.1596 |          -1.4334 |                   45.1865 |              0      |              1.2037 |               12.3226 |                           19.7487 |            -0.7013 |                  0.0442 |  -0.4015 |               1.2653 |                  -1.836  |                 0.9211 |                 1.0533 |                -0.1329 |                -4.6372 |          -0.0206 |    -5.6902 |            49.8426 |             0.2062 |                       0.5182 |            0.3638 |                        0.5107 |          0.0029 |
+        | 2025-12-18 |            34.4002 |      -75.8191 |              21.4286 |               100      |           -78.5714 |                 -162.427  |                -0.2832 |                            -0.1659 |      -2.59748e+07 |               50.9808 |                        0.0047 |                                    0.0102 |                                 -0.0055 |                      1.2731 |                        -0.0132 |                                    -0.0434 |                                   0.0302 |                      -0.3822 |                     24.4323 |                     11.3147 |                      17.4487 |                      16.1683 |                       24.9337 |                      21.3258 |                            28.0927 |                     -24.9063 |                   36.3175 |                    272.6   |              276.008 |                   265.041 |                   250.519 |         24.1809 |         14.0381 |      1.2731 |             2.7823 |          -1.5092 |                   45.9183 |              2.4342 |              2.0152 |                9.3442 |                           17.1476 |            -0.2126 |                  0.7844 |  -0.6157 |               0.01   |                  -2.1487 |                 0.865  |                 1.0802 |                -2.0699 |                -8.7267 |          -0.0239 |    -6.6368 |            42.7376 |             0.2491 |                       0.5366 |            0.311  |                        0.4834 |         -0.014  |
+        | 2025-12-19 |            43.3299 |      -68.9894 |              14.2857 |                92.8571 |           -78.5714 |                 -103.24   |                -0.2694 |                            -0.2349 |       5.92997e+06 |               51.5414 |                        0.0037 |                                    0.0089 |                                 -0.0052 |                      1.0212 |                         0.1453 |                                    -0.0056 |                                   0.1509 |                      -0.4186 |                     23.9077 |                     11.4731 |                      16.2023 |                      16.4688 |                       23.2574 |                      17.0883 |                            28.6043 |                     -39.3406 |                   28.2097 |                    272.6   |              276.008 |                   265.041 |                   250.519 |         31.0106 |         18.7897 |      1.0212 |             2.4301 |          -1.4089 |                   49.0174 |             12.7427 |              5.059  |                7.6468 |                           14.7724 |             0.3234 |                  0.8021 |  -0.8698 |              -1.1188 |                  -2.2693 |                 0.903  |                 1.137  |                -0.8133 |                -5.497  |          -0.0333 |    -9.3972 |            41.2483 |             0.3934 |                       0.5987 |            0.2645 |                        0.4504 |         -0.0269 |
+        | 2025-12-22 |            36.4312 |      -81.4491 |               7.1429 |                85.7143 |           -78.5714 |                 -104.734  |                -0.2367 |                            -0.2614 |      -7.98092e+06 |               45.7604 |                        0.0022 |                                    0.0076 |                                 -0.0054 |                      0.5976 |                         0.1018 |                                     0.0158 |                                   0.0859 |                       2.2593 |                     23.4206 |                     10.6536 |                      15.045  |                      15.6561 |                       22.1096 |                      17.0883 |                            29.1455 |                     -64.5458 |                   17.6515 |                    272.6   |              276.008 |                   264.954 |                   250.519 |         18.5509 |         24.5808 |      0.5976 |             2.0636 |          -1.466  |                   44.0573 |              0      |              5.059  |                4.6682 |                           12.2463 |            -0.5608 |                  0.1365 |  -1.2314 |              -2.0902 |                  -2.1525 |                 0.8075 |                 1.2147 |                -0.8978 |                -4.2561 |          -0.0532 |   -15.1671 |            40.4149 |             0.6455 |                       0.5589 |            0.2055 |                        0.4111 |         -0.0418 |
+        | 2025-12-23 |            37.2984 |      -69.5727 |               0      |                78.5714 |           -78.5714 |                  -97.9344 |                -0.205  |                            -0.2501 |      -1.44226e+06 |               49.1967 |                        0.0014 |                                    0.0063 |                                 -0.005  |                      0.3694 |                         0.0548 |                                     0.0236 |                                   0.0311 |                       2.3511 |                     23.1943 |                      9.8926 |                      14.9171 |                      14.9623 |                       22.5617 |                      20.2521 |                            28.9735 |                     -51.4171 |                   23.8077 |                    272.6   |              276.008 |                   265.083 |                   250.519 |         30.4273 |         26.6629 |      0.3694 |             1.7248 |          -1.3553 |                   47.029  |             15.5286 |              9.4238 |                3.0048 |                            9.9359 |             0.517  |                  0.9524 |  -0.9773 |              -2.6623 |                  -1.7431 |                 0.7732 |                 1.2661 |                -1.9284 |                -4.8582 |          -0.0415 |   -11.7491 |            46.452  |             0.5142 |                       0.4243 |            0.1522 |                        0.3663 |         -0.0501 |
+        | 2025-12-24 |            41.6581 |      -51.6564 |               0      |                71.4286 |           -71.4286 |                  -34.6711 |                -0.1841 |                            -0.2228 |       2.20069e+06 |               54.4448 |                        0.0011 |                                    0.0053 |                                 -0.0042 |                      0.3017 |                        -0.0045 |                                     0.018  |                                  -0.0225 |                       3.0907 |                     22.0179 |                     12.1058 |                      13.8516 |                      18.7358 |                       21.4378 |                       6.7257 |                            28.2486 |                     -32.9192 |                   31.7545 |                    272.6   |              276.008 |                   265.063 |                   250.519 |         48.3436 |         32.4406 |      0.3017 |             1.4402 |          -1.1385 |                   50.0121 |             38.5455 |             18.0247 |                2.4525 |                            8.0651 |             0.4551 |                  0.4985 |  -0.6307 |              -2.8188 |                  -1.0828 |                 0.8892 |                 1.1613 |                 1.0804 |                -2.1384 |          -0.0245 |    -6.8661 |            53.1327 |             0.3292 |                       0.3731 |            0.1033 |                        0.3168 |         -0.0518 |
+        | 2025-12-26 |            46.9441 |      -51.1363 |               0      |                64.2857 |           -64.2857 |                  -25.6923 |                -0.1697 |                            -0.1974 |  734929           |               51.2159 |                        0.0008 |                                    0.0044 |                                 -0.0036 |                      0.2126 |                        -0.0488 |                                     0.0046 |                                  -0.0534 |                      -0.6819 |                     20.9256 |                     11.2411 |                      12.8622 |                      17.986  |                       20.5798 |                       6.7257 |                            27.2888 |                     -27.7032 |                   33.1185 |                    272.6   |              276.098 |                   264.961 |                   250.519 |         48.8637 |         42.5448 |      0.2126 |             1.1946 |          -0.982  |                   49.169  |             34.6225 |             29.5655 |                1.7619 |                            6.4893 |            -0.3028 |                  0.2151 |  -0.5595 |              -2.1658 |                   0.0054 |                 0.9091 |                 1.1011 |                 1.1553 |                -1.346  |          -0.0193 |    -5.3613 |            55.4901 |             0.277  |                       0.4022 |            0.0564 |                        0.2631 |         -0.0522 |
+        | 2025-12-29 |            48.1203 |      -48.4089 |              35.7143 |                57.1429 |           -21.4286 |                  -30.5662 |                -0.1563 |                            -0.1782 |       1.77136e+06 |               57.3149 |                        0.0006 |                                    0.0036 |                                 -0.003  |                      0.169  |                        -0.0817 |                                    -0.0126 |                                  -0.0691 |                       0.1103 |                     20.0593 |                     10.4382 |                      12.4517 |                      17.3859 |                       20.7397 |                       8.7966 |                            26.5056 |                     -21.8632 |                   36.4164 |                    270.612 |              276.183 |                   265.068 |                   250.519 |         51.5911 |         49.5994 |      0.169  |             0.9895 |          -0.8205 |                   49.9666 |             40.0254 |             37.7311 |                1.4003 |                            5.217  |             0.5323 |                  0.7015 |  -0.4662 |              -2.0654 |                   0.2951 |                 0.9316 |                 1.0955 |                 0.213  |                -1.79   |          -0.0149 |    -4.1156 |            54.4744 |             0.2186 |                       0.4134 |            0.0118 |                        0.2104 |         -0.0496 |
+        | 2025-12-30 |            43.4593 |      -53.5605 |              28.5714 |                50      |           -21.4286 |                  -35.5265 |                -0.1288 |                            -0.1608 | -465185           |               54.1042 |                        0.0003 |                                    0.003  |                                 -0.0027 |                      0.0788 |                        -0.1122 |                                    -0.0325 |                                  -0.0797 |                      -2.3582 |                     19.2761 |                      9.6926 |                      11.632  |                      16.844  |                       20.2144 |                       9.0949 |                            25.7119 |                     -21.7388 |                   38.6752 |                    270.612 |              276.183 |                   265.068 |                   250.519 |         46.4395 |         48.9647 |      0.0788 |             0.8074 |          -0.7285 |                   48.421  |             29.5564 |             34.7348 |                0.6843 |                            4.0839 |             0.15   |                  0.4444 |  -0.3773 |              -1.9448 |                   0.3866 |                 0.9145 |                 1.1096 |                 0.0857 |                -1.708  |          -0.0148 |    -4.0857 |            53.5706 |             0.2174 |                       0.4141 |           -0.0182 |                        0.1612 |         -0.0465 |
+        | 2025-12-31 |            38.2003 |      -62.8032 |              21.4286 |                42.8571 |           -21.4286 |                  -56.914  |                -0.0887 |                            -0.1381 |      -4.8276e+06  |               46.4079 |                       -0.0003 |                                    0.0023 |                                 -0.0026 |                     -0.0897 |                        -0.1258 |                                    -0.0512 |                                  -0.0746 |                      -1.5168 |                     18.7176 |                      9.0002 |                      11.3293 |                      16.2588 |                       20.4662 |                      11.4567 |                            24.6539 |                     -37.4457 |                   34.0262 |                    270.248 |              276.821 |                   265.6   |                   250.867 |         37.1968 |         45.0758 |     -0.0897 |             0.628  |          -0.7176 |                   45.6902 |             12.0097 |             27.1971 |               -0.6702 |                            2.8954 |            -0.6218 |                  0.057  |  -0.536  |              -1.6049 |                   0.5151 |                 0.9113 |                 1.1148 |                -0.0091 |                -1.9324 |          -0.0248 |    -6.896  |            52.5946 |             0.3745 |                       0.3956 |           -0.0452 |                        0.1157 |         -0.0431 |
         """
         if period not in [
             "intraday",
@@ -131,6 +131,7 @@ class MomentumTechnicals:
 
         momentum_indicators["Aroon Indicator Up"] = aroon_indicator["Aroon Up"]
         momentum_indicators["Aroon Indicator Down"] = aroon_indicator["Aroon Down"]
+        momentum_indicators["Aroon Oscillator"] = aroon_indicator["Aroon Oscillator"]
 
         momentum_indicators["Commodity Channel Index"] = (
             self.get_commodity_channel_index(
@@ -155,10 +156,21 @@ class MomentumTechnicals:
         momentum_indicators["Ultimate Oscillator"] = self.get_ultimate_oscillator(
             period=period, close_column=close_column
         )
+        percentage_price_oscillator = self.get_percentage_price_oscillator(
+            period=period, close_column=close_column
+        )
+
         momentum_indicators["Percentage Price Oscillator"] = (
-            self.get_percentage_price_oscillator(
-                period=period, close_column=close_column
-            )
+            percentage_price_oscillator["Percentage Price Oscillator"]
+        )
+        momentum_indicators["Percentage Price Oscillator Signal Line"] = (
+            percentage_price_oscillator["Signal Line"]
+        )
+        momentum_indicators["Percentage Price Oscillator Histogram"] = (
+            percentage_price_oscillator["Histogram"]
+        )
+        momentum_indicators["Absolute Price Oscillator"] = (
+            self.get_absolute_price_oscillator(period=period, close_column=close_column)
         )
 
         percentage_volume_oscillator = self.get_percentage_volume_oscillator(
@@ -185,8 +197,38 @@ class MomentumTechnicals:
                 period=period, close_column=close_column, window=window
             )
         )
+
+        directional_movement_index = self.get_directional_movement_index(
+            period=period, close_column=close_column, window=window
+        )
+
+        momentum_indicators["Plus Directional Movement"] = directional_movement_index[
+            "+DM"
+        ]
+        momentum_indicators["Minus Directional Movement"] = directional_movement_index[
+            "-DM"
+        ]
+        momentum_indicators["Plus Directional Indicator"] = directional_movement_index[
+            "+DI"
+        ]
+        momentum_indicators["Minus Directional Indicator"] = directional_movement_index[
+            "-DI"
+        ]
+        momentum_indicators["Directional Movement Index"] = directional_movement_index[
+            "DX"
+        ]
+        momentum_indicators["Average Directional Index Rating"] = (
+            self.get_average_directional_index_rating(
+                period=period, close_column=close_column, window=window
+            )
+        )
         momentum_indicators["Chande Momentum Oscillator"] = (
             self.get_chande_momentum_oscillator(
+                period=period, close_column=close_column, window=window
+            )
+        )
+        momentum_indicators["Intraday Momentum Index"] = (
+            self.get_intraday_momentum_index(
                 period=period, close_column=close_column, window=window
             )
         )
@@ -217,6 +259,7 @@ class MomentumTechnicals:
 
         momentum_indicators["MACD Line"] = macd["MACD Line"]
         momentum_indicators["MACD Signal Line"] = macd["Signal Line"]
+        momentum_indicators["MACD Histogram"] = macd["Histogram"]
 
         momentum_indicators["Relative Strength Index"] = (
             self.get_relative_strength_index(
@@ -244,8 +287,17 @@ class MomentumTechnicals:
         momentum_indicators["Balance of Power"] = self.get_balance_of_power(
             period=period, close_column=close_column
         )
+        momentum_indicators["Internal Bar Strength"] = self.get_internal_bar_strength(
+            period=period, close_column=close_column
+        )
+        momentum_indicators["Qstick"] = self.get_qstick(
+            period=period, close_column=close_column, window=window
+        )
 
         momentum_indicators["Awesome Oscillator"] = self.get_awesome_oscillator(
+            period=period, close_column=close_column
+        )
+        momentum_indicators["Accelerator Oscillator"] = self.get_accelerator_oscillator(
             period=period, close_column=close_column
         )
 
@@ -266,9 +318,20 @@ class MomentumTechnicals:
         momentum_indicators["Rate of Change"] = self.get_rate_of_change(
             period=period, close_column=close_column, window=window
         )
+        momentum_indicators["Momentum"] = self.get_momentum(
+            period=period, close_column=close_column, window=window
+        )
 
         momentum_indicators["Choppiness Index"] = self.get_choppiness_index(
             period=period, close_column=close_column, window=window
+        )
+        momentum_indicators["Efficiency Ratio"] = self.get_efficiency_ratio(
+            period=period, close_column=close_column, window=window
+        )
+        momentum_indicators["Vertical Horizontal Filter"] = (
+            self.get_vertical_horizontal_filter(
+                period=period, close_column=close_column, window=window
+            )
         )
 
         know_sure_thing = self.get_know_sure_thing(
@@ -602,12 +665,19 @@ class MomentumTechnicals:
         The formula is as follows:
 
         - Aroon Up = ((Number of periods) — (Number of periods since highest high)) / (Number of periods) * 100
+        - Aroon Down = ((Number of periods) — (Number of periods since lowest low)) / (Number of periods) * 100
+        - Aroon Oscillator = Aroon Up — Aroon Down
+
+        The Aroon Oscillator runs from -100 to 100: above zero the latest high is more recent than
+        the latest low, which reads as an uptrend, and a reading near 100 or -100 as a strong trend.
 
         For more information, see the following sources:
 
+        - Chande, T.S. (1995). "A Time Price Oscillator." Technical Analysis of Stocks & Commodities, 13(9).
         - TA-Lib: AROON, the reference implementation (https://ta-lib.org/functions/aroon.html).
+        - TA-Lib: AROONOSC, the reference implementation (https://ta-lib.org/functions/aroonosc.html).
 
-        Also known as: Aroon Up, Aroon Down, trend strength.
+        Also known as: Aroon Up, Aroon Down, Aroon Oscillator, AROONOSC, trend strength.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -632,12 +702,12 @@ class MomentumTechnicals:
 
         Returns:
             pd.Series or pd.DataFrame:
-            Aroon Indicator values for the upward and downward trends.
+            Aroon Indicator values for the upward and downward trends and the Aroon Oscillator.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Aroon Indicator values for each asset in the Toolkit instance.
-        - Aroon Up and Aroon Down equal TA-Lib's AROON.
+        - Aroon Up and Aroon Down equal TA-Lib's AROON, and the Aroon Oscillator TA-Lib's AROONOSC.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -658,13 +728,13 @@ class MomentumTechnicals:
 
         Which returns:
 
-        | Date       |   Aroon Down |   Aroon Up |
-        |:-----------|-------------:|-----------:|
-        | 2025-12-26 |       0      |   100      |
-        | 2025-12-28 |       0      |    92.8571 |
-        | 2025-12-29 |       0      |    85.7143 |
-        | 2025-12-30 |      14.2857 |    78.5714 |
-        | 2025-12-31 |     100      |    71.4286 |
+        | Date       |   Aroon Down |   Aroon Oscillator |   Aroon Up |
+        |:-----------|-------------:|-------------------:|-----------:|
+        | 2025-12-26 |       0      |           100      |   100      |
+        | 2025-12-28 |       0      |            92.8571 |    92.8571 |
+        | 2025-12-29 |       0      |            85.7143 |    85.7143 |
+        | 2025-12-30 |      14.2857 |            64.2857 |    78.5714 |
+        | 2025-12-31 |     100      |           -28.5714 |    71.4286 |
         """
         if period not in [
             "intraday",
@@ -1235,6 +1305,8 @@ class MomentumTechnicals:
         close_column: str = "Adj Close",
         short_window: int = 12,
         long_window: int = 26,
+        signal_window: int = 9,
+        moving_average: str = "exponential",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1250,17 +1322,24 @@ class MomentumTechnicals:
         The formula is as follows:
 
         - PPO = (Short-term EMA — Long-term EMA) / Long-term EMA
+        - Signal Line = EMA(PPO, signal_window)
+        - Histogram = PPO — Signal Line
 
         The PPO is the MACD line as a percentage of the long EMA, so unlike the MACD its level
-        can be compared across stocks and over long periods. The usual signal line is the
-        9-period EMA of the PPO; it is not returned here and can be calculated from the result,
-        for example with `get_exponential_moving_average` of the `overlap_model`.
+        can be compared across stocks and over long periods. As for the MACD, the PPO crossing its
+        signal line is the usual trigger and the histogram shows the distance between the two.
+        `moving_average` replaces the EMAs of the PPO itself with another moving average, as
+        TA-Lib's `matype` does; the signal line stays an EMA.
 
         For more information, see the following sources:
 
+        - Appel, G. (2005). "Technical Analysis: Power Tools for Active Investors." FT Press.
         - TA-Lib: PPO, the reference implementation (https://ta-lib.org/functions/ppo.html).
+        - pandas-ta-classic: ppo, with `mamode="ema"` (https://github.com/xgboosted/pandas-ta-classic).
+        - ta: PercentagePriceOscillator (https://github.com/bukosabino/ta).
+        - finta: PPO (https://github.com/peerchemist/finta).
 
-        Also known as: PPO, price oscillator.
+        Also known as: PPO, price oscillator, PPO signal line, PPO histogram.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1271,6 +1350,11 @@ class MomentumTechnicals:
                 Defaults to 12, as for MACD.
             long_window (int, optional): The number of periods for the long-term moving average.
                 Defaults to 26, as for MACD.
+            signal_window (int, optional): The number of periods for the signal line EMA.
+                Defaults to 9, as for MACD.
+            moving_average (str, optional): The moving average of the short and long term:
+                "simple", "exponential", "double_exponential", "triangular", "weighted", "hull" or
+                "kaufman_adaptive". Defaults to "exponential".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -1286,14 +1370,19 @@ class MomentumTechnicals:
                 exist the result is returned in full. Defaults to None, which keeps every column.
 
         Returns:
-            pd.Series or pd.DataFrame: Percentage Price Oscillator (PPO) values as a decimal
-            (0.02 is 2%).
+            pd.Series or pd.DataFrame: The Percentage Price Oscillator, Signal Line and Histogram
+            as decimals (0.02 is 2%).
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the PPO values for each asset in the Toolkit instance.
-        - The PPO is a decimal and equals TA-Lib's PPO with the EMA (`matype=1`) divided by 100,
-          since TA-Lib's PPO is in percent.
+        - The PPO is a decimal and equals TA-Lib's PPO with the same moving average (`matype`) divided
+          by 100, since TA-Lib's PPO is in percent. TA-Lib has no signal line or histogram; with the
+          default EMAs all three equal pandas-ta-classic's ppo with `mamode="ema"` divided by 100. ta and
+          finta seed their EMAs with the first price instead of a simple average, so their first values
+          differ until the two converge.
+        - Every EMA is seeded with the simple average of its first values, so the PPO starts on the
+          `long_window`-th period and the signal line and histogram `signal_window` - 1 periods later.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -1309,18 +1398,18 @@ class MomentumTechnicals:
             end_date="2025-12-31",
         )
 
-        toolkit.technicals.get_percentage_price_oscillator().tail(5)
+        toolkit.technicals.get_percentage_price_oscillator().xs("^GSPC", level=1, axis="columns").tail(5)
         ```
 
         Which returns:
 
-        | Date       |   ^STOXX50E |   ^GSPC |   Benchmark |
-        |:-----------|------------:|--------:|------------:|
-        | 2025-12-24 |    nan      |  0.0045 |      0.0048 |
-        | 2025-12-26 |    nan      |  0.0051 |      0.0054 |
-        | 2025-12-29 |      0.0048 |  0.0052 |      0.0055 |
-        | 2025-12-30 |      0.0054 |  0.0051 |      0.0055 |
-        | 2025-12-31 |    nan      |  0.0044 |      0.0048 |
+        | Date       |   Histogram |   Percentage Price Oscillator |   Signal Line |
+        |:-----------|------------:|------------------------------:|--------------:|
+        | 2025-12-24 |      0.001  |                        0.0045 |        0.0035 |
+        | 2025-12-26 |      0.0013 |                        0.0051 |        0.0038 |
+        | 2025-12-29 |      0.0011 |                        0.0052 |        0.0041 |
+        | 2025-12-30 |      0.0009 |                        0.0051 |        0.0043 |
+        | 2025-12-31 |      0.0001 |                        0.0044 |        0.0043 |
         """
         if period not in [
             "intraday",
@@ -1348,10 +1437,155 @@ class MomentumTechnicals:
             momentum_model.get_percentage_price_oscillator,
             short_window,
             long_window,
+            signal_window,
+            moving_average,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=percentage_price_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_absolute_price_oscillator(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        short_window: int = 12,
+        long_window: int = 26,
+        moving_average: str = "exponential",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Absolute Price Oscillator (APO) for a given price series.
+
+        The Absolute Price Oscillator is the difference between a short-term and a long-term moving
+        average of the price, in price units. With exponential moving averages it is the MACD line; the
+        APO lets the moving average be chosen, such as simple moving averages for a slower oscillator.
+
+        The formula is as follows:
+
+        - APO = MA(Close, short_window) — MA(Close, long_window)
+
+        Above zero the short average is above the long one, which reads as upward momentum, and a cross
+        of zero is a crossover of the two averages. As a price difference its level scales with the share
+        price; the Percentage Price Oscillator divides it by the long average to compare stocks.
+
+        For more information, see the following sources:
+
+        - Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert Corp.
+        - Achelis, S.B. (2000). "Technical Analysis from A to Z." 2nd ed. McGraw-Hill.
+        - TA-Lib: APO, the reference implementation (https://ta-lib.org/functions/apo.html).
+
+        Also known as: APO, absolute price oscillator, price oscillator.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            short_window (int, optional): The number of periods for the short-term moving average.
+                Defaults to 12.
+            long_window (int, optional): The number of periods for the long-term moving average.
+                Defaults to 26.
+            moving_average (str, optional): The moving average: "simple", "exponential",
+                "double_exponential", "triangular", "weighted", "hull" or "kaufman_adaptive". Defaults to
+                "exponential".
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Absolute Price Oscillator (APO) values, in price units.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the APO for each asset in the Toolkit instance.
+        - The APO equals TA-Lib's APO with the same moving average (`matype`: SMA 0, EMA 1, WMA 2,
+          DEMA 3, TRIMA 5, KAMA 6) from the first value, and with the default EMAs the MACD line of
+          `get_moving_average_convergence_divergence`.
+        - If `growth` is set to True, the method calculates the growth of the APO
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_absolute_price_oscillator(moving_average="simple").tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2025-12-24 | -1.1002 | -0.4991 |      4.8402 |
+        | 2025-12-26 | -1.6425 | -0.6586 |      4.3798 |
+        | 2025-12-29 | -2.2587 |  0.0133 |      3.5335 |
+        | 2025-12-30 | -2.9316 | -0.0005 |      2.1336 |
+        | 2025-12-31 | -3.4789 | -0.0185 |      1.3652 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        absolute_price_oscillator = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_absolute_price_oscillator,
+            short_window,
+            long_window,
+            moving_average,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=absolute_price_oscillator,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -1661,7 +1895,7 @@ class MomentumTechnicals:
 
         The ADX measures trend strength, not direction: a reading above about 25 is usually taken as a
         trending market and below 20 as a range, whether prices are rising or falling. Traders combine it
-        with the +DI and -DI lines it is built from, which this method does not return, or with the price
+        with the +DI and -DI lines it is built from (`get_directional_movement_index`), or with the price
         itself, to know the direction. With Wilder's smoothing it reacts slowly and needs a few times the
         window of history before its values settle.
 
@@ -1773,11 +2007,303 @@ class MomentumTechnicals:
 
     @handle_portfolio
     @handle_errors
+    def get_directional_movement_index(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate Wilder's Directional Movement System: the smoothed Plus and Minus Directional
+        Movement (+DM, -DM), the Directional Indicators (+DI, -DI) and the Directional Movement
+        Index (DX).
+
+        The Directional Movement is the part of a period's range outside the previous period's range:
+        upward when the high rises above the previous high by more than the low falls below the previous
+        low, downward the other way around. Wilder sums each over the window with his smoothing and
+        divides it by the smoothed True Range, which gives the Directional Indicators: the share of the
+        recent range that moved up (+DI) and down (-DI). The DX is their difference as a share of their
+        sum, high in a trend in either direction and low in a range; its Wilder average is the ADX.
+
+        The formula is as follows:
+
+        - +DM(1) = High — Previous High, where positive and larger than Previous Low — Low, else 0
+        - -DM(1) = Previous Low — Low, where positive and larger than High — Previous High, else 0
+        - +DM = Wilder's sum of +DM(1) over window, Sum(t) = Sum(t-1) — Sum(t-1) / window + +DM(1)(t),
+          and -DM analogously
+        - +DI = 100 * +DM / Wilder's sum of the True Range, -DI = 100 * -DM / Wilder's sum of the True Range
+        - DX = 100 * |+DI — -DI| / (+DI + -DI)
+
+        +DI crossing above -DI is Wilder's buy signal and crossing below it his sell signal, which he only
+        took when the ADX showed a trend. The DX itself is jumpy; the ADX (`get_average_directional_index`)
+        and the ADXR (`get_average_directional_index_rating`) smooth it.
+
+        For more information, see the following sources:
+
+        - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
+        - TA-Lib: PLUS_DM, the reference implementation (https://ta-lib.org/functions/plus_dm.html).
+        - TA-Lib: MINUS_DM, the reference implementation (https://ta-lib.org/functions/minus_dm.html).
+        - TA-Lib: PLUS_DI, the reference implementation (https://ta-lib.org/functions/plus_di.html).
+        - TA-Lib: MINUS_DI, the reference implementation (https://ta-lib.org/functions/minus_di.html).
+        - TA-Lib: DX, the reference implementation (https://ta-lib.org/functions/dx.html).
+
+        Also known as: DMI, Directional Movement System, +DM, -DM, +DI, -DI, DX, PLUS_DM, MINUS_DM,
+        PLUS_DI, MINUS_DI, directional indicators.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
+            window (int, optional): The number of periods of Wilder's smoothing. Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: +DM and -DM (Wilder's smoothed sums, in price units), +DI and -DI and the DX
+            (between 0 and 100).
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Directional Movement Index for each asset in the Toolkit instance.
+        - The columns are the inputs of `get_average_directional_index`, whose ADX is Wilder's
+          average of this DX, so the two are consistent. Wilder's smoothing is seeded with the sum of
+          the first `window` values (from the second period, the first with a previous one), so every
+          column starts `window` periods after the first price and the ADX 2 * `window` — 1 periods
+          after it.
+        - TA-Lib seeds its running sums with `window` - 1 values and starts PLUS_DM and MINUS_DM one
+          period earlier, so the first values differ from TA-Lib's PLUS_DM, MINUS_DM, PLUS_DI, MINUS_DI
+          and DX and converge as the seed decays by a factor 1 — 1 / `window` per period: with the default
+          window within 0.01% after about 100 periods for the +DM, -DM, +DI and -DI and 150 for the DX,
+          and to 1e-8 after about 260.
+        - A window without any directional movement (+DI and -DI both 0) has no DX.
+        - If `growth` is set to True, the method calculates the growth of the Directional Movement Index
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_directional_movement_index().xs("AAPL", level=1, axis="columns").tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |     +DI |     +DM |     -DI |     -DM |      DX |
+        |:-----------|--------:|--------:|--------:|--------:|--------:|
+        | 2025-12-24 | 18.7359 | 12.1058 | 21.4378 | 13.8516 |  6.7255 |
+        | 2025-12-26 | 17.9861 | 11.2411 | 20.5798 | 12.8622 |  6.7255 |
+        | 2025-12-29 | 17.386  | 10.4382 | 20.7397 | 12.4517 |  8.7965 |
+        | 2025-12-30 | 16.844  |  9.6926 | 20.2144 | 11.6321 |  9.0948 |
+        | 2025-12-31 | 16.2588 |  9.0003 | 20.4662 | 11.3294 | 11.4565 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        directional_movement_index = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_directional_movement_index,
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=directional_movement_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_average_directional_index_rating(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Average Directional Movement Index Rating (ADXR).
+
+        The ADXR is Wilder's smoothed ADX: the average of today's ADX and the ADX of window — 1 periods
+        ago. Wilder rated markets with it on how strongly they trend, to choose the ones to trade with
+        his trend-following systems; it moves more slowly than the ADX and lags it.
+
+        The formula is as follows:
+
+        - ADXR = (ADX(t) + ADX(t — (window — 1))) / 2
+
+        with the ADX of `get_average_directional_index`. As for the ADX, a reading above about 25 is
+        taken as a trending market and below 20 as a range, whatever the direction.
+
+        For more information, see the following sources:
+
+        - Wilder, J.W. Jr. (1978). "New Concepts in Technical Trading Systems." Trend Research.
+        - TA-Lib: ADXR, the reference implementation (https://ta-lib.org/functions/adxr.html).
+
+        Also known as: ADXR, Average Directional Movement Rating.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
+            window (int, optional): The number of periods of the ADX and of the lag of the rating. Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Average Directional Movement Index Rating (ADXR) values, between 0 and
+            100.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the ADXR for each asset in the Toolkit instance.
+        - The ADXR starts 3 * `window` — 2 periods after the first price, as in TA-Lib. It is built on the ADX of
+          `get_average_directional_index`, whose Wilder smoothing is seeded with `window` values where
+          TA-Lib seeds with `window` - 1, so the first values differ from TA-Lib's ADXR until the two
+          converge (within 0.01% after about 100 to 125 periods with the default window).
+        - If `growth` is set to True, the method calculates the growth of the ADXR
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_average_directional_index_rating().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2025-12-24 | 28.2487 | 23.3351 |     15.1933 |
+        | 2025-12-26 | 27.2889 | 22.1898 |     15.5265 |
+        | 2025-12-29 | 26.5057 | 21.2637 |     15.4615 |
+        | 2025-12-30 | 25.712  | 20.8605 |     15.6433 |
+        | 2025-12-31 | 24.654  | 20.5502 |     15.3675 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        average_directional_index_rating = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_average_directional_index_rating,
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=average_directional_index_rating,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_chande_momentum_oscillator(
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
+        smoothed: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1794,12 +2320,21 @@ class MomentumTechnicals:
 
         - CMO = 100 * ((Sum of Upward Change) — (Sum of Downward Change)) / ((Sum of Upward Change) +
           (Sum of Downward Change)), bounded between -100 and 100.
+        - Smoothed CMO = 100 * (Wilder's MA(Upward Change) — Wilder's MA(Downward Change)) /
+          (Wilder's MA(Upward Change) + Wilder's MA(Downward Change))
+
+        Chande sums the changes over the window, so every change in the window counts equally and the
+        CMO jumps when a large change leaves the window. With `smoothed=True` the changes are averaged
+        with Wilder's smoothing, as in the RSI, which gives TA-Lib's CMO: a smoother line that equals
+        2 * RSI — 100.
 
         For more information, see the following sources:
 
+        - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+        - TA-Lib: CMOU, the reference implementation (https://ta-lib.org/functions/cmou.html).
         - TA-Lib: CMO, the reference implementation (https://ta-lib.org/functions/cmo.html).
 
-        Also known as: CMO, Chande momentum.
+        Also known as: CMO, CMOU, Chande momentum.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -1808,6 +2343,8 @@ class MomentumTechnicals:
                 the closing prices. Defaults to "Adj Close".
             window (int, optional): The number of periods to consider for the CMO calculation.
                 Defaults to 14.
+            smoothed (bool, optional): Whether to smooth the gains and losses with Wilder's method
+                (TA-Lib's CMO) instead of summing them (Chande's CMO, TA-Lib's CMOU). Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the indicator values.
@@ -1828,9 +2365,10 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Chande Momentum Oscillator values for each asset in the Toolkit instance.
-        - The gains and losses are summed over the window, as Chande defines the CMO and as on
-          StockCharts. TA-Lib's CMO smooths them with Wilder's method instead, as in its RSI, so the
-          two differ throughout (by up to about 55 points on daily data).
+        - By default the gains and losses are summed over the window, as Chande defines the CMO and as
+          on StockCharts, which equals TA-Lib's CMOU. TA-Lib's CMO smooths them with Wilder's method
+          instead, as in its RSI, so the two differ throughout (by up to about 55 points on daily data);
+          `smoothed=True` gives TA-Lib's CMO, from the same period on.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -1884,10 +2422,144 @@ class MomentumTechnicals:
             [close_column],
             momentum_model.get_chande_momentum_oscillator,
             window,
+            smoothed,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
             dataset=chande_momentum_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_intraday_momentum_index(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 14,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Intraday Momentum Index (IMI) for a given price series.
+
+        The Intraday Momentum Index is a Relative Strength Index of the moves within each period: it
+        compares the bodies of the periods that closed above their open with all bodies over the window.
+        Tushar Chande designed it for traders who care about the move from open to close rather than
+        from close to close.
+
+        The formula is as follows:
+
+        - Gain = Close — Open where Close > Open, else 0
+        - Loss = Open — Close where Close < Open, else 0
+        - IMI = 100 * Sum(Gain, window) / (Sum(Gain, window) + Sum(Loss, window))
+
+        As for the RSI, values above 70 are read as overbought and below 30 as oversold.
+
+        For more information, see the following sources:
+
+        - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+        - TA-Lib: IMI, the reference implementation (https://ta-lib.org/functions/imi.html).
+
+        Also known as: IMI, intraday momentum.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
+            window (int, optional): The number of periods to sum the gains and losses over. Defaults to 14.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Intraday Momentum Index (IMI) values, between 0 and 100.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the IMI for each asset in the Toolkit instance.
+        - The IMI equals TA-Lib's IMI, except on a window in which every period closed at its open,
+          which has no IMI (NaN) where TA-Lib returns 50.
+        - If `growth` is set to True, the method calculates the growth of the IMI
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_intraday_momentum_index().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2025-12-24 | 31.7545 | 66.7169 |     45.7711 |
+        | 2025-12-26 | 33.1186 | 66.9727 |     45.1725 |
+        | 2025-12-29 | 36.4164 | 63.9814 |     48.7126 |
+        | 2025-12-30 | 38.6752 | 62.7946 |     48.3366 |
+        | 2025-12-31 | 34.0263 | 64.7409 |     36.4712 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        intraday_momentum_index = calculate_per_ticker(
+            historical_data,
+            ["Open", close_column],
+            momentum_model.get_intraday_momentum_index,
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=intraday_momentum_index,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -2062,6 +2734,7 @@ class MomentumTechnicals:
         close_column: str = "Adj Close",
         window: int = 14,
         smooth_window: int = 3,
+        slow: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2079,12 +2752,19 @@ class MomentumTechnicals:
 
         - %K = 100 * ((Close — Lowest Low) / (Highest High — Lowest Low))
         - %D = SMA(%K, smooth_window)
+        - Slow %K = SMA(%K, smooth_window), Slow %D = SMA(Slow %K, smooth_window)
+
+        The fast stochastic (the default) reacts to every close and gives many crossovers. The slow
+        stochastic (`slow=True`) smooths %K once more, so its %K is the fast %D; it is the stochastic
+        George Lane charted and the one most platforms show by default (14, 3, 3).
 
         For more information, see the following sources:
 
+        - Lane, G.C. (1984). "Lane's Stochastics." Technical Analysis of Stocks & Commodities, 2(3).
         - TA-Lib: STOCHF, the reference implementation (https://ta-lib.org/functions/stochf.html).
+        - TA-Lib: STOCH, the reference implementation (https://ta-lib.org/functions/stoch.html).
 
-        Also known as: stochastic oscillator, percent K, percent D.
+        Also known as: stochastic oscillator, percent K, percent D, fast stochastic, slow stochastic.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2095,7 +2775,9 @@ class MomentumTechnicals:
             window (int, optional): The number of periods to consider for the %K line calculation.
                 Defaults to 14.
             smooth_window (int, optional): The number of periods used to smooth the %K line
-                into the %D signal line. Defaults to 3.
+                into the %D signal line, and with `slow` the raw %K into the slow %K. Defaults to 3.
+            slow (bool, optional): Whether to return the slow stochastic instead of the fast one.
+                Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the %K and %D values.
@@ -2122,6 +2804,9 @@ class MomentumTechnicals:
         - %K and %D equal TA-Lib's STOCHF (the fast stochastic) with `fastd_period` set to
           `smooth_window` and a simple moving average (`fastd_matype=0`), which TA-Lib's STOCH gives
           with a `slowk_period` of 1. TA-Lib starts %K on the first %D.
+        - With `slow=True`, %K and %D equal TA-Lib's STOCH with `slowk_period` and `slowd_period` set to
+          `smooth_window` and simple moving averages (`slowk_matype=0`, `slowd_matype=0`), and
+          pandas-ta-classic's stoch. TA-Lib starts %K on the first %D.
         - If `growth` is set to True, the method calculates the growth of the %K and %D values
           using the specified `lag`.
 
@@ -2176,6 +2861,7 @@ class MomentumTechnicals:
             momentum_model.get_stochastic_oscillator,
             window,
             smooth_window,
+            slow,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -2200,6 +2886,9 @@ class MomentumTechnicals:
         short_window: int = 12,
         long_window: int = 26,
         signal_window: int = 9,
+        moving_average: str = "exponential",
+        signal_moving_average: str = "exponential",
+        fixed: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2217,18 +2906,29 @@ class MomentumTechnicals:
 
         - MACD Line = EMA(Close, short_window) — EMA(Close, long_window)
         - Signal Line = EMA(MACD Line, signal_window)
+        - Histogram = MACD Line — Signal Line
 
         The MACD line crossing its signal line is the usual trigger, and the MACD crossing zero means
-        the short average has crossed the long one. Because the MACD is a price difference, its level
-        scales with the share price and cannot be compared across stocks; the Percentage Price Oscillator
-        divides by the long average for that. Both lines lag price, so crossovers come late in fast
-        reversals.
+        the short average has crossed the long one. The histogram is the distance between the two lines:
+        it crosses zero with every crossover and shrinks before one, which is why it is read as an early
+        warning. Because the MACD is a price difference, its level scales with the share price and cannot
+        be compared across stocks; the Percentage Price Oscillator divides by the long average for that.
+        Both lines lag price, so crossovers come late in fast reversals.
+
+        `moving_average` and `signal_moving_average` replace the EMAs of the MACD line and of the signal
+        line with another moving average (TA-Lib's MACDEXT), and `fixed=True` smooths the 12- and
+        26-period EMAs with the fixed constants 0.15 and 0.075 instead of 2 / (window + 1) (TA-Lib's
+        MACDFIX).
 
         For more information, see the following sources:
 
+        - Appel, G. (1979). "The Moving Average Convergence-Divergence Trading Method." Signalert Corp.
+        - Aspray, T. (1986). "Fine-tuning the MACD." Technical Analysis of Stocks & Commodities, 4(4).
         - TA-Lib: MACD, the reference implementation (https://ta-lib.org/functions/macd.html).
+        - TA-Lib: MACDEXT, the reference implementation (https://ta-lib.org/functions/macdext.html).
+        - TA-Lib: MACDFIX, the reference implementation (https://ta-lib.org/functions/macdfix.html).
 
-        Also known as: MACD, momentum indicator.
+        Also known as: MACD, MACD histogram, MACDEXT, MACDFIX, momentum indicator.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -2241,6 +2941,14 @@ class MomentumTechnicals:
                 Defaults to 26.
             signal_window (int, optional): The number of periods for the signal line.
                 Defaults to 9.
+            moving_average (str, optional): The moving average of the short and long term: "simple",
+                "exponential", "double_exponential", "triangular", "weighted", "hull" or
+                "kaufman_adaptive". Defaults to "exponential".
+            signal_moving_average (str, optional): The moving average of the signal line, one of the
+                same. Defaults to "exponential".
+            fixed (bool, optional): Whether to smooth the 12- and 26-period EMAs with the fixed
+                constants 0.15 and 0.075 (TA-Lib's MACDFIX). Needs the exponential moving average and
+                the default windows. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the MACD and signal values.
@@ -2257,14 +2965,20 @@ class MomentumTechnicals:
 
         Returns:
             pd.Series or pd.DataFrame:
-            MACD line and signal line values.
+            MACD line, signal line and histogram values.
 
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the MACD and signal line values for each asset in the Toolkit instance.
         - TA-Lib's MACD starts the short EMA on the same period as the long EMA and shows the MACD
           line from the first signal value, so the first values differ from TA-Lib's until the two
-          converge (within 0.01% after about 85 periods with the default windows).
+          converge (within 0.01% after about 85 periods with the default windows). The histogram
+          equals TA-Lib's `macdhist` and ta's `macd_diff` from then on.
+        - TA-Lib's MACDEXT and MACDFIX start their averages in the same way. With simple, weighted or
+          triangular moving averages, which have no recursion, the lines equal MACDEXT from the
+          first value; with exponential ones (also MACDFIX) they converge within 0.01% after about 90
+          periods, with double exponential ones after about 130 and with Kaufman adaptive ones, whose
+          smoothing can be very slow, after about 210.
         - If `growth` is set to True, the method calculates the growth of the MACD and signal values
           using the specified `lag`.
 
@@ -2285,13 +2999,13 @@ class MomentumTechnicals:
 
         Which returns:
 
-        | Date       |   MACD Line |   Signal Line |
-        |:-----------|------------:|--------------:|
-        | 2025-12-24 |     -3.02   |       -4.8167 |
-        | 2025-12-26 |     -2.5054 |       -4.3544 |
-        | 2025-12-29 |     -2.122  |       -3.908  |
-        | 2025-12-30 |     -1.7673 |       -3.4798 |
-        | 2025-12-31 |     -1.7752 |       -3.1389 |
+        | Date       |   Histogram |   MACD Line |   Signal Line |
+        |:-----------|------------:|------------:|--------------:|
+        | 2025-12-24 |      1.7933 |     -3.0142 |       -4.8074 |
+        | 2025-12-26 |      1.8455 |     -2.5005 |       -4.3461 |
+        | 2025-12-29 |      1.7825 |     -2.1179 |       -3.9004 |
+        | 2025-12-30 |      1.7092 |     -1.7639 |       -3.4731 |
+        | 2025-12-31 |      1.361  |     -1.7718 |       -3.1329 |
         """
         if period not in [
             "intraday",
@@ -2320,6 +3034,9 @@ class MomentumTechnicals:
             short_window,
             long_window,
             signal_window,
+            moving_average,
+            signal_moving_average,
+            fixed,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(
@@ -2892,6 +3609,260 @@ class MomentumTechnicals:
 
     @handle_portfolio
     @handle_errors
+    def get_internal_bar_strength(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Internal Bar Strength (IBS) for a given price series.
+
+        The Internal Bar Strength is where the close sits within the period's own range: 0 for a close
+        on the low, 1 for a close on the high. It is a mean-reversion measure: in equity indices and ETFs
+        a close near the low of the day (an IBS below about 0.2) has tended to be followed by higher
+        returns the next day, and a close near the high (above about 0.8) by lower returns.
+
+        The formula is as follows:
+
+        - IBS = (Close — Low) / (High — Low)
+
+        For more information, see the following sources:
+
+        - Pagonidis, A.S. (2013). "The IBS Effect: Mean Reversion in Equity ETFs." NAAIM Wagner Award paper.
+        - TA-Lib: IBS, the reference implementation (https://ta-lib.org/functions/ibs.html).
+
+        Also known as: IBS, internal bar strength.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Internal Bar Strength (IBS) values as a decimal between 0 and 1.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the IBS for each asset in the Toolkit instance.
+        - The IBS equals TA-Lib's IBS, except on a period without a range (High equal to Low), which
+          has no IBS (NaN) where TA-Lib returns 0.5.
+        - If `growth` is set to True, the method calculates the growth of the IBS
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["SPY", "QQQ"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_internal_bar_strength().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    QQQ |   Benchmark |
+        |:-----------|-------:|------------:|
+        | 2025-12-24 | 0.8633 |      0.8515 |
+        | 2025-12-26 | 0.3151 |      0.4351 |
+        | 2025-12-29 | 0.5284 |      0.5687 |
+        | 2025-12-30 | 0.0709 |      0.2172 |
+        | 2025-12-31 | 0.044  |      0.0372 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        internal_bar_strength = calculate_per_ticker(
+            historical_data,
+            ["High", "Low", close_column],
+            momentum_model.get_internal_bar_strength,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=internal_bar_strength,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_qstick(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 10,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Qstick indicator for a given price series.
+
+        Qstick is the moving average of the candlestick bodies, Close — Open, over the window. It turns
+        the colour of the recent candles into a number: above zero the periods closed above their open on
+        average (white candles, buying pressure), below zero below their open (black candles, selling
+        pressure). A cross of zero is read as a change of the pressure.
+
+        The formula is as follows:
+
+        - Qstick = SMA(Close — Open, window)
+
+        For more information, see the following sources:
+
+        - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+        - TA-Lib: QSTICK, the reference implementation (https://ta-lib.org/functions/qstick.html).
+
+        Also known as: Qstick, QSTICK, Q-stick.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
+            window (int, optional): The number of periods of the moving average. Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Qstick values, in price units.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Qstick for each asset in the Toolkit instance.
+        - Qstick equals TA-Lib's QSTICK and pandas-ta-classic's qstick.
+        - If `growth` is set to True, the method calculates the growth of the Qstick
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_qstick().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |   MSFT |   Benchmark |
+        |:-----------|--------:|-------:|------------:|
+        | 2025-12-24 | -0.6886 | 1.1227 |     -0.5913 |
+        | 2025-12-26 | -0.6577 | 0.5435 |     -1.0227 |
+        | 2025-12-29 | -0.5889 | 0.8936 |     -0.3578 |
+        | 2025-12-30 |  0.0399 | 1.571  |      0.0942 |
+        | 2025-12-31 | -0.2581 | 0.7081 |     -0.3881 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        qstick = calculate_per_ticker(
+            historical_data,
+            ["Open", close_column],
+            momentum_model.get_qstick,
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=qstick,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_awesome_oscillator(
         self,
         period: str = "daily",
@@ -3016,6 +3987,150 @@ class MomentumTechnicals:
         ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=awesome_oscillator,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_accelerator_oscillator(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        short_window: int = 5,
+        long_window: int = 34,
+        signal_window: int = 5,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Accelerator/Decelerator Oscillator (AC) for a given price series.
+
+        The Accelerator Oscillator is the Awesome Oscillator minus its own 5-period Simple Moving Average.
+        Where the Awesome Oscillator measures the momentum of the median price, the Accelerator Oscillator
+        measures how that momentum changes, on Bill Williams' premise that momentum changes direction
+        before price does.
+
+        The formula is as follows:
+
+        - Median Price = (High + Low) / 2
+        - AO = SMA(Median Price, short_window) — SMA(Median Price, long_window)
+        - AC = AO — SMA(AO, signal_window)
+
+        Williams reads the AC by the colour of its bars: two rising bars in a row above zero (three below
+        zero) are a buy signal, two falling bars below zero (three above zero) a sell signal.
+
+        For more information, see the following sources:
+
+        - Williams, B. (1998). "New Trading Dimensions: How to Profit from Chaos in Stocks, Bonds, and
+          Commodities." Wiley.
+        - TA-Lib: AC, the reference implementation (https://ta-lib.org/functions/ac.html).
+
+        Also known as: AC, Acceleration/Deceleration Oscillator, AC oscillator.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way.
+            short_window (int, optional): The number of periods for the short-term SMA of the
+                median price. Defaults to 5.
+            long_window (int, optional): The number of periods for the long-term SMA of the
+                median price. Defaults to 34.
+            signal_window (int, optional): The number of periods for the SMA of the Awesome
+                Oscillator. Defaults to 5.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Accelerator Oscillator (AC) values, in price units.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the AC for each asset in the Toolkit instance.
+        - The AC equals TA-Lib's AC and starts `long_window` + `signal_window` — 2 periods after the
+          first price.
+        - If `growth` is set to True, the method calculates the growth of the AC
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_accelerator_oscillator().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |   MSFT |   Benchmark |
+        |:-----------|--------:|-------:|------------:|
+        | 2025-12-24 | -1.0828 | 5.4289 |      3.1912 |
+        | 2025-12-26 |  0.0054 | 4.1326 |      4.2287 |
+        | 2025-12-29 |  0.2951 | 2.6361 |      3.6645 |
+        | 2025-12-30 |  0.3866 | 1.8419 |      2.5872 |
+        | 2025-12-31 |  0.5151 | 1.2335 |      0.8882 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        accelerator_oscillator = calculate_per_ticker(
+            historical_data,
+            ["High", "Low"],
+            momentum_model.get_accelerator_oscillator,
+            short_window,
+            long_window,
+            signal_window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=accelerator_oscillator,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -3417,11 +4532,141 @@ class MomentumTechnicals:
 
     @handle_portfolio
     @handle_errors
+    def get_momentum(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 10,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Momentum (MOM) for a given price series.
+
+        Momentum is the change in price over a fixed number of periods, in price units: the simplest
+        measure of the speed of a move. Above zero the price is higher than window periods ago, below
+        zero lower; momentum that falls while the price still rises says the move slows down.
+
+        The formula is as follows:
+
+        - Momentum = Close(t) — Close(t — window)
+
+        The Rate of Change (`get_rate_of_change`) is the same change as a share of the earlier price,
+        which can be compared across stocks; the momentum is in the currency of the price.
+
+        For more information, see the following sources:
+
+        - Pring, M.J. (1991). "Technical Analysis Explained." 3rd ed. McGraw-Hill.
+        - TA-Lib: MOM, the reference implementation (https://ta-lib.org/functions/mom.html).
+
+        Also known as: MOM, price momentum, momentum oscillator.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods to look back. Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Momentum values, the change in price in price units.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Momentum for each asset in the Toolkit instance.
+        - The Momentum equals TA-Lib's MOM, pandas-ta-classic's mom and finta's MOM.
+        - If `growth` is set to True, the method calculates the growth of the Momentum
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_momentum().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |    AAPL |    MSFT |   Benchmark |
+        |:-----------|--------:|--------:|------------:|
+        | 2025-12-24 | -4.9527 |  9.3822 |      4.7986 |
+        | 2025-12-26 | -4.6139 |  4.2051 |      3.1462 |
+        | 2025-12-29 | -4.5043 |  8.4996 |      8.0362 |
+        | 2025-12-30 | -1.0264 | 12.5559 |      8.2217 |
+        | 2025-12-31 | -2.7405 |  7.1706 |      5.0113 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        momentum = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_momentum,
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=momentum,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
     def get_choppiness_index(
         self,
         period: str = "daily",
         close_column: str = "Adj Close",
         window: int = 14,
+        range_method: str = "high_low",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3444,11 +4689,17 @@ class MomentumTechnicals:
 
         - CHOP = 100 * log10( Sum(True Range, window) / (Max(High, window) — Min(Low, window)) ) / log10(window)
 
+        With `range_method="true_range"` the net range is that of the true highs and lows,
+        Max(High, Previous Close) and Min(Low, Previous Close), the range the summed True Ranges span,
+        so a gap between periods counts in both the path and the net range (TA-Lib's CHOPTR).
+
         For more information, see the following sources:
 
+        - Kaufman, P.J. (2013). "Trading Systems and Methods." 5th ed. Wiley.
         - TA-Lib: CHOP, the reference implementation (https://ta-lib.org/functions/chop.html).
+        - TA-Lib: CHOPTR, the reference implementation (https://ta-lib.org/functions/choptr.html).
 
-        Also known as: CHOP, Choppiness Index.
+        Also known as: CHOP, CHOPTR, Choppiness Index.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -3458,6 +4709,9 @@ class MomentumTechnicals:
                 for dividends in the same way.
             window (int, optional): Number of periods to consider for the Choppiness Index
                 calculation. Defaults to 14.
+            range_method (str, optional): The net range the summed True Range is divided by:
+                "high_low", the highest high minus the lowest low, or "true_range", the highest true
+                high minus the lowest true low (TA-Lib's CHOPTR). Defaults to "high_low".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Choppiness Index.
@@ -3483,8 +4737,9 @@ class MomentumTechnicals:
         - Developed by Australian commodities trader Bill Dreiss; there is no formal journal
           citation. The standard textbook treatment is Kaufman, P.J. (2013). "Trading Systems
           and Methods." 5th ed. Wiley.
-        - The Choppiness Index equals TA-Lib's CHOP. The first period counts with its High — Low
-          range, so the index starts on period `window`, one period before TA-Lib's.
+        - The Choppiness Index equals TA-Lib's CHOP, and with `range_method="true_range"` TA-Lib's
+          CHOPTR. The first period counts with its High — Low range, so the index starts on period
+          `window`, one period before TA-Lib's.
         - If `growth` is set to True, the method calculates the growth of the Choppiness
           Index using the specified `lag`.
 
@@ -3538,9 +4793,271 @@ class MomentumTechnicals:
             ["High", "Low", close_column],
             momentum_model.get_choppiness_index,
             window,
+            range_method,
         ).loc[self._start_date : self._end_date]
         return finalize_dataset(
             dataset=choppiness_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_efficiency_ratio(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 10,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate Kaufman's Efficiency Ratio (ER) for a given price series.
+
+        The Efficiency Ratio compares the net change in price over the window with the path the price
+        travelled to get there, the sum of the absolute changes of each period. A price that moves in a
+        straight line has a ratio of 1; a price that ends where it started, however much it moved in
+        between, has a ratio of 0. Perry Kaufman uses it to adapt the speed of his Adaptive Moving
+        Average (`get_kaufman_adaptive_moving_average`) to the noise in the market.
+
+        The formula is as follows:
+
+        - Change = |Close(t) — Close(t — window)|
+        - Volatility = Sum(|Close(i) — Close(i — 1)|, window)
+        - Efficiency Ratio = Change / Volatility
+
+        For more information, see the following sources:
+
+        - Kaufman, P.J. (1995). "Smarter Trading: Improving Performance in Changing Markets." McGraw-Hill.
+        - TA-Lib: ER, the reference implementation (https://ta-lib.org/functions/er.html).
+
+        Also known as: ER, Kaufman Efficiency Ratio, fractal efficiency.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods of the change and the path. Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Efficiency Ratio values as a decimal between 0 and 1.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the Efficiency Ratio for each asset in the Toolkit instance.
+        - The Efficiency Ratio equals TA-Lib's ER, pandas-ta-classic's er and finta's ER, except on a
+          window without any change (flat prices), which has no ratio (NaN) where TA-Lib returns 1.
+        - If `growth` is set to True, the method calculates the growth of the Efficiency Ratio
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_efficiency_ratio().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-24 | 0.3144 | 0.3229 |      0.1201 |
+        | 2025-12-26 | 0.2993 | 0.1717 |      0.0818 |
+        | 2025-12-29 | 0.2901 | 0.4207 |      0.2395 |
+        | 2025-12-30 | 0.0852 | 0.743  |      0.2464 |
+        | 2025-12-31 | 0.2147 | 0.374  |      0.137  |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        efficiency_ratio = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_efficiency_ratio,
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=efficiency_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_vertical_horizontal_filter(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 28,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Vertical Horizontal Filter (VHF) for a given price series.
+
+        The Vertical Horizontal Filter tells a trending market from a congested one by dividing the range
+        of the closes over the window (the vertical move) by the sum of the absolute changes from period
+        to period (the path, horizontal in a range). A high or rising VHF says the price moves in one
+        direction, which suits trend-following indicators; a low or falling VHF says it moves back and
+        forth, which suits oscillators.
+
+        The formula is as follows:
+
+        - VHF = (Max(Close, window) — Min(Close, window)) / Sum(|Close(i) — Close(i — 1)|, window)
+
+        For more information, see the following sources:
+
+        - White, A. (1991). "Trending or Trading? The Vertical Horizontal Filter." Futures Magazine.
+        - TA-Lib: VHF, the reference implementation (https://ta-lib.org/functions/vhf.html).
+
+        Also known as: VHF, vertical horizontal filter.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int, optional): The number of periods of the range and the path. Defaults to 28.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the indicator values.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame: Vertical Horizontal Filter (VHF) values, a ratio between 0 and 1.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates
+          the VHF for each asset in the Toolkit instance.
+        - The VHF equals TA-Lib's VHF and pandas-ta-classic's vhf and starts `window` periods after the
+          first price, except on a window without any change (flat prices), which has no VHF (NaN) where TA-Lib
+          returns 0.
+        - If `growth` is set to True, the method calculates the growth of the VHF
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_vertical_horizontal_filter().tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-12-24 | 0.3606 | 0.2618 |      0.3575 |
+        | 2025-12-26 | 0.3614 | 0.2547 |      0.3576 |
+        | 2025-12-29 | 0.3942 | 0.1559 |      0.3702 |
+        | 2025-12-30 | 0.3891 | 0.1661 |      0.3873 |
+        | 2025-12-31 | 0.3884 | 0.1701 |      0.3779 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period]
+
+        vertical_horizontal_filter = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            momentum_model.get_vertical_horizontal_filter,
+            window,
+        ).loc[self._start_date : self._end_date]
+
+        return finalize_dataset(
+            dataset=vertical_horizontal_filter,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,
@@ -3562,6 +5079,8 @@ class MomentumTechnicals:
         sma_windows: list[int] | None = None,
         weights: list[int] | None = None,
         signal_window: int = 9,
+        moving_average: str = "simple",
+        signal_moving_average: str = "simple",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -3586,7 +5105,17 @@ class MomentumTechnicals:
         - KST = Sum(RCMA(i) * weights[i]) for i = 1..4
         - Signal Line = SMA(KST, signal_window)
 
-        Also known as: KST, Pring's Know Sure Thing, Summed Rate of Change.
+        Pring smooths with Simple Moving Averages; `moving_average` and `signal_moving_average` smooth
+        the Rates of Change and the signal line with another moving average instead, as TA-Lib's KSTEXT
+        does.
+
+        For more information, see the following sources:
+
+        - Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of Stocks & Commodities, 10(6).
+        - TA-Lib: KST, the reference implementation (https://ta-lib.org/functions/kst.html).
+        - TA-Lib: KSTEXT, the reference implementation (https://ta-lib.org/functions/kstext.html).
+
+        Also known as: KST, KSTEXT, Pring's Know Sure Thing, Summed Rate of Change.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -3603,6 +5132,11 @@ class MomentumTechnicals:
                 Rate of Change series before summing. Defaults to the standard [1, 2, 3, 4].
             signal_window (int, optional): Number of periods for the Simple Moving Average of
                 the KST used as the signal line. Defaults to 9.
+            moving_average (str, optional): The moving average that smooths each Rate of Change:
+                "simple", "exponential", "double_exponential", "triangular", "weighted", "hull" or
+                "kaufman_adaptive". Defaults to "simple".
+            signal_moving_average (str, optional): The moving average of the signal line, one of the
+                same. Defaults to "simple".
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the KST and Signal Line.
@@ -3624,11 +5158,12 @@ class MomentumTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates
           the Know Sure Thing values for each asset in the Toolkit instance.
-        - Reference: Pring, M.J. (1992). "The Know Sure Thing (KST)." Technical Analysis of
-          Stocks & Commodities, 10(6).
-        - TA-Lib: KST, the reference implementation (https://ta-lib.org/functions/kst.html).
         - The KST and Signal Line are decimals and equal TA-Lib's KST divided by 100, since TA-Lib's
           KST is in percent. TA-Lib starts the KST on the first signal value.
+        - With other moving averages they equal TA-Lib's KSTEXT with the same `rocmatype` and
+          `signalmatype` divided by 100: from the first value for the simple, weighted and triangular
+          averages, and after the warm-up for the recursive ones, since TA-Lib starts their recursion
+          later (within 0.01% after about 85 periods for exponential averages).
         - If `growth` is set to True, the method calculates the growth of the KST and Signal
           Line using the specified `lag`.
 
@@ -3685,6 +5220,8 @@ class MomentumTechnicals:
             sma_windows,
             weights,
             signal_window,
+            moving_average,
+            signal_moving_average,
         ).loc[self._start_date : self._end_date]
 
         return finalize_dataset(

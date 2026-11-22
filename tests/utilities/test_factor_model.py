@@ -223,3 +223,22 @@ def test_monthly_forward_returns_count_calendar_months():
     assert np.isnan(forward_returns["B"].iloc[0])
     assert forward_returns["B"].iloc[2] == pytest.approx(0.1)
     assert forward_returns["A"].iloc[0] == pytest.approx(0.1)
+
+
+def test_an_oscillator_defaults_to_its_main_line():
+    dates = pd.date_range("2024-01-01", periods=3)
+    columns = pd.MultiIndex.from_product(
+        [["Histogram", "MACD Line", "Signal Line"], ["AAPL"]]
+    )
+    values = pd.DataFrame(
+        [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]],
+        index=dates,
+        columns=columns,
+    )
+
+    factor = factor_model.to_daily_factor(values, ["AAPL"])
+
+    assert (factor["AAPL"] == 2.0).all()
+    assert (
+        factor_model.to_daily_factor(values, ["AAPL"], "Histogram")["AAPL"] == 1.0
+    ).all()

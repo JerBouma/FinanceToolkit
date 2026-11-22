@@ -44,6 +44,10 @@ DETAILS = (
 # The price columns some indicators return next to their own values, never a factor.
 PRICE_COLUMNS = ("Open", "High", "Low", "Close", "Adj Close", "Volume")
 
+# The lines an oscillator derives from its main line (the MACD, PPO and PVO), which sort
+# before it but are not the indicator itself, so the default is the main line.
+DERIVED_LINES = ("Histogram", "Signal Line")
+
 # Pandas period frequencies of the evaluation periods.
 PERIOD_FREQUENCIES = {
     "daily": "D",
@@ -524,8 +528,8 @@ def to_daily_factor(
 
     A metric with several outputs gives one: column names it, e.g. "Lower Band" of the
     Bollinger Bands or "Altman Z-Score" of the Altman Z-Score model. Without it, an indicator
-    gives its first output other than a price (e.g. "MACD Line") and a model its last row,
-    which is its score.
+    gives its first output other than a price, a histogram or a signal line (e.g. "MACD
+    Line") and a model its last row, which is its score.
 
     Args:
         values (pd.DataFrame | pd.Series): The output of the metric.
@@ -547,8 +551,10 @@ def to_daily_factor(
 
     if values.columns.nlevels > 1:
         outputs = list(dict.fromkeys(values.columns.get_level_values(0)))
+        candidates = [output for output in outputs if output not in PRICE_COLUMNS]
         choice = column or next(
-            (output for output in outputs if output not in PRICE_COLUMNS), outputs[0]
+            (output for output in candidates if output not in DERIVED_LINES),
+            candidates[0] if candidates else outputs[0],
         )
         if choice not in outputs:
             raise ValueError(f"column must be one of {', '.join(map(str, outputs))}.")

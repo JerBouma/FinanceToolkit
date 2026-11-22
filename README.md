@@ -354,7 +354,7 @@ And below the yield curve at the end of each year is plotted. It went from almos
 
 ## Economic Relations
 
-Rates rose and the shares fell, but a 10-year Treasury yield is made of two parts: the real yield, the return investors demand on top of inflation, and the inflation they expect over those ten years. The [econometrics](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics) module tells such drivers apart with regressions, tests and forecasts built on `statsmodels` and `linearmodels` (`pip install financetoolkit[econometrics]`). Through the Toolkit it analyzes the returns of its tickers, and on its own, through `Econometrics(data=...)`, any data at all, here the monthly returns of the three next to the monthly change in the US 10-year real yield and in 10-year inflation expectations:
+Rates rose and the shares fell, but a 10-year Treasury yield is made of two parts: the real yield, the return investors demand on top of inflation, and the inflation they expect over those ten years. The [econometrics](https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics) module tells such drivers apart with regressions, tests and forecasts; the methods built on `statsmodels` or `linearmodels` need `pip install financetoolkit[econometrics]`. Through the Toolkit it analyzes the returns of its tickers, and on its own, through `Econometrics(data=...)`, any data at all, here the monthly returns of the three next to the monthly change in the US 10-year real yield and in 10-year inflation expectations:
 
 ```python
 import pandas as pd

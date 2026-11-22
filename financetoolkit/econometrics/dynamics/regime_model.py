@@ -6,7 +6,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
+
+from financetoolkit.econometrics.helpers import import_optional
 
 # Returns are scaled up before the Markov model is fitted, as the optimizer handles a
 # daily variance of 1e-4 poorly, and scaled back afterwards.
@@ -52,7 +53,11 @@ def get_markov_regime_switching(
             f"At least {30 * regimes} observations are needed for {regimes} regimes."
         )
 
-    model = MarkovRegression(
+    markov_regression = import_optional(
+        "statsmodels.tsa.regime_switching.markov_regression",
+        "The Markov regime switching model",
+    )
+    model = markov_regression.MarkovRegression(
         values.to_numpy(dtype=float) * SCALE,
         k_regimes=regimes,
         trend="c",

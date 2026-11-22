@@ -4,11 +4,10 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-from linearmodels.panel import PanelOLS, RandomEffects
-from linearmodels.panel.utility import AbsorbingEffectError
 from scipy import sparse, stats
 from scipy.sparse.linalg import lsmr
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.utilities.statistics_model import to_multi_index
 
 # (entity, time) levels are simultaneously meaningful, unlike the nested case.
@@ -427,11 +426,16 @@ def get_fixed_effects(
             f"({', '.join(absorbed_columns)}): {ABSORBED_REGRESSOR_EXPLANATION}"
         )
 
+    panel = import_optional("linearmodels.panel", "The Fixed Effects regression")
+    absorbing_effect_error = import_optional(
+        "linearmodels.panel.utility", "The Fixed Effects regression"
+    ).AbsorbingEffectError
+
     try:
-        sm_result = PanelOLS(
+        sm_result = panel.PanelOLS(
             y_panel, x_panel, entity_effects=entity_effects, time_effects=time_effects
         ).fit()
-    except AbsorbingEffectError as error:
+    except absorbing_effect_error as error:
         # A regressor that is identical for every entity at each date (a common factor
         # such as a market benchmark) is fully explained by the time effects, and one
         # that is constant per entity by the entity effects, so its slope is not identified.  # noqa: E501
@@ -571,8 +575,10 @@ def get_random_effects(
     x_with_constant = x_panel.copy()
     x_with_constant.insert(0, "Intercept", 1.0)
 
+    panel = import_optional("linearmodels.panel", "The Random Effects regression")
+
     try:
-        sm_result = RandomEffects(y_panel, x_with_constant).fit()
+        sm_result = panel.RandomEffects(y_panel, x_with_constant).fit()
     except (ValueError, ZeroDivisionError, np.linalg.LinAlgError) as error:
         raise ValueError(
             "Could not fit the Random Effects model -- check that there are enough "

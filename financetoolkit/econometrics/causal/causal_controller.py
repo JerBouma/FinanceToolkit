@@ -91,6 +91,9 @@ class CausalEconometrics:
             why these standard errors differ from (and correct) what a naive two-OLS-calls
             approach would report.
 
+        Notes:
+        - Requires linearmodels (`pip install financetoolkit[econometrics]`).
+
         As an example:
 
         ```python
@@ -519,6 +522,9 @@ class CausalEconometrics:
         Returns:
             pd.Series: The ATT estimate, its standard error/t-statistic/p-value, and the
             number of matched pairs/treated/control observations.
+
+        Notes:
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 

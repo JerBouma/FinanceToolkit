@@ -6,9 +6,8 @@ import math
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.vector_ar.vecm import VECM
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.regression import regression_model
 from financetoolkit.econometrics.stationarity import cointegration_model
 
@@ -184,11 +183,13 @@ def get_arima_forecast(
         # A trend polynomial of order d is statsmodels' drift on the differenced series.
         trend = [0] * d + [1]
 
+    arima = import_optional("statsmodels.tsa.arima.model", "The ARIMA forecast")
+
     try:
         # Passed 2D: statsmodels reshapes a 1D endog in place, deprecated in NumPy 2.5.
-        sm_result = ARIMA(clean_series.to_frame(), order=(p, d, q), trend=trend).fit(
-            method_kwargs={"maxiter": max_iterations}
-        )
+        sm_result = arima.ARIMA(
+            clean_series.to_frame(), order=(p, d, q), trend=trend
+        ).fit(method_kwargs={"maxiter": max_iterations})
     except (ValueError, np.linalg.LinAlgError) as error:
         raise ValueError(
             f"Could not fit an ARIMA({p}, {d}, {q}) model on {len(clean_series)} "
@@ -975,8 +976,10 @@ def get_vecm_forecast(
             "data instead."
         )
 
+    vecm = import_optional("statsmodels.tsa.vector_ar.vecm", "The VECM forecast")
+
     try:
-        sm_result = VECM(
+        sm_result = vecm.VECM(
             aligned, k_ar_diff=k_ar_diff, coint_rank=rank, deterministic="co"
         ).fit()
     except (ValueError, np.linalg.LinAlgError) as error:

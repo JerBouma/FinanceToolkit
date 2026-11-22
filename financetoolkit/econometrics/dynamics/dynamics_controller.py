@@ -101,6 +101,9 @@ class DynamicsEconometrics:
             Duration and Share of every regime, and the Current Regime with its probability;
             or, with probabilities=True, the probability of every regime per date.
 
+        Notes:
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
+
         As an example:
 
         ```python
@@ -342,6 +345,9 @@ class DynamicsEconometrics:
         Returns:
             pd.DataFrame: Per date and asset the Alpha, the Beta and the standard error of
             the beta, NaN on the first date(s) where they are not yet identified.
+
+        Notes:
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -607,6 +613,9 @@ class DynamicsEconometrics:
             Cointegration P-Value, the latest Z-Score and Signal (1 long, -1 short, 0 flat)
             and the Number of Trades (positions opened, a reversal counting as a new one);
             or, with time_series=True, the Spread, Z-Score and Signal per date.
+
+        Notes:
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 

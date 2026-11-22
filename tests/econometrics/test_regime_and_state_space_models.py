@@ -92,7 +92,7 @@ def test_time_varying_beta_stays_flat_for_a_constant_beta():
     # The constant beta is the nested model with both coefficient variances at zero: the
     # maximum likelihood cannot be below it. Fitted on the raw daily scale, the optimizer
     # stops at its starting beta variance (1e-3), 19 below it, and the beta wanders.
-    model = state_space_model._TimeVaryingRegression(stock, market)
+    model = state_space_model._time_varying_regression(stock, market)
     residuals = stock - np.polyval(np.polyfit(market, stock, 1), market)
     constant = model.loglike(np.array([residuals.var(ddof=2), 0.0, 0.0]))
     estimated = model.loglike(np.array(list(variances.values())))

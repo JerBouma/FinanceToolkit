@@ -6,9 +6,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.stattools import coint
-from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.stationarity.unitroot_model import (
     MINIMUM_TEST_OBSERVATIONS,
     default_max_lag,
@@ -69,12 +68,15 @@ def get_engle_granger_cointegration(
     aligned = pd.concat([series_a, series_b], axis=1, join="inner").dropna()
     dependent = aligned.iloc[:, 0].to_numpy()
     independent = aligned.iloc[:, 1].to_numpy()
+    stattools = import_optional(
+        "statsmodels.tsa.stattools", "The Engle-Granger cointegration test"
+    )
 
     try:
         if len(dependent) < MINIMUM_TEST_OBSERVATIONS:
             raise ValueError("Too few observations for the test.")
 
-        eg_statistic, p_value, critical_values = coint(
+        eg_statistic, p_value, critical_values = stattools.coint(
             dependent,
             independent,
             trend="c",
@@ -208,6 +210,9 @@ def get_johansen_cointegration(
     minimum_observations = (
         number_of_series * (k_ar_diff + 1) + number_of_series + MINIMUM_JOHANSEN_FREEDOM
     )
+    vecm = import_optional(
+        "statsmodels.tsa.vector_ar.vecm", "The Johansen cointegration test"
+    )
 
     try:
         if len(aligned) < minimum_observations:
@@ -215,7 +220,7 @@ def get_johansen_cointegration(
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            result = coint_johansen(aligned.to_numpy(), det_order, k_ar_diff)
+            result = vecm.coint_johansen(aligned.to_numpy(), det_order, k_ar_diff)
     except (ValueError, np.linalg.LinAlgError):
         return pd.DataFrame([nan_row] * number_of_series, index=index)
 

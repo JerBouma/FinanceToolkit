@@ -549,6 +549,7 @@ class RegressionEconometrics:
         - The dependent variable is derived as `1` if the dependent ticker's return in the given
         period is positive, `0` otherwise -- this method predicts the *direction*, not the
         magnitude, of the dependent asset's return.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -665,6 +666,7 @@ class RegressionEconometrics:
         - The dependent variable is derived as `1` if the dependent ticker's return in the given
         period is positive, `0` otherwise -- this method predicts the *direction*, not the
         magnitude, of the dependent asset's return.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -787,6 +789,9 @@ class RegressionEconometrics:
 
         Returns:
             pd.DataFrame: A coefficient table (Coefficient, Std. Error), indexed by regressor name.
+
+        Notes:
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -1227,6 +1232,9 @@ class RegressionEconometrics:
             common factor of `independent_tickers` is identical for every entity at
             each date, so it cannot be combined with `time_effects=True`.
 
+        Notes:
+        - Requires linearmodels (`pip install financetoolkit[econometrics]`).
+
         As an example:
 
         ```python
@@ -1358,6 +1366,9 @@ class RegressionEconometrics:
             get_random_effects`) if there are not enough entities or observations
             to estimate the model.
 
+        Notes:
+        - Requires linearmodels (`pip install financetoolkit[econometrics]`).
+
         As an example:
 
         ```python
@@ -1476,6 +1487,9 @@ class RegressionEconometrics:
             get_hausman_test`) if there are not enough observations or entities to
             fit either model, or the two estimators share no common regressors to
             compare.
+
+        Notes:
+        - Requires linearmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 

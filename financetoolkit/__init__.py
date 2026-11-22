@@ -52,16 +52,7 @@ def __getattr__(name: str) -> Any:
         AttributeError: When the Finance Toolkit has no such class or function.
     """
     if name in _CLASSES:
-        try:
-            module = importlib.import_module(_CLASSES[name])
-        except ModuleNotFoundError as error:
-            if name != "Econometrics":
-                raise
-            raise ImportError(
-                "The Econometrics module requires the optional 'econometrics' extra "
-                f"({error.name} is missing). Install it with: pip install "
-                "financetoolkit[econometrics]"
-            ) from error
+        module = importlib.import_module(_CLASSES[name])
         value = getattr(module, name)
         globals()[name] = value
         return value

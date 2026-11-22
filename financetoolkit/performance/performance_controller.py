@@ -20,6 +20,7 @@ from financetoolkit.risk.helpers import (
     get_risk_free_rate_per_ticker,
 )
 from financetoolkit.risk.risk_model import (
+    get_conditional_drawdown_at_risk,
     get_downside_deviation,
     get_kurtosis,
     get_max_drawdown,
@@ -43,6 +44,7 @@ from financetoolkit.utilities.statistics_model import (
     finalize_dataset,
     to_multi_index,
     to_period_index,
+    validate_period,
 )
 
 # The examples' output tables are wider than the line length.
@@ -1308,6 +1310,61 @@ class Performance:
             )
         return self._fama_and_french_datasets[region]
 
+    def _get_rolling_factor_model(
+        self,
+        factor_dataset: pd.DataFrame,
+        factors: list[str],
+        rolling: int,
+        rounding: int | None,
+        growth: bool,
+        lag: int | list[int],
+        standardize: bool,
+    ) -> pd.DataFrame:
+        """
+        The rolling factor regression of every ticker's daily excess returns (its return minus
+        the factor dataset's RF) on the factors, see `performance_model.get_rolling_factor_regression`.
+
+        Args:
+            factor_dataset (pd.DataFrame): The daily factors and RF.
+            factors (list[str]): The factors to regress on.
+            rolling (int): The number of daily observations in each window.
+            rounding (int | None): The number of decimals to round the results to.
+            growth (bool): Whether to calculate the growth of the values.
+            lag (int | list[int]): The lag of the growth calculation.
+            standardize (bool): Whether to standardize the result.
+
+        Returns:
+            pd.DataFrame: The regression of each window with the dates as the index and (ticker,
+            parameter) as the columns.
+        """
+        returns = self._get_column("daily", "Return", within_period=False)
+        factor_dataset = factor_dataset.reindex(returns.index)
+
+        rolling_model = pd.concat(
+            {
+                ticker: performance_model.get_rolling_factor_regression(
+                    returns[ticker] - factor_dataset["RF"],
+                    factor_dataset[factors],
+                    rolling,
+                )
+                for ticker in self._tickers_without_portfolio
+            },
+            axis=1,
+        )
+
+        return finalize_dataset(
+            dataset=rolling_model,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+        )
+
     @handle_errors
     def get_factor_asset_correlations(
         self,
@@ -1602,6 +1659,7 @@ class Performance:
         factors_to_calculate: list[str] | None = None,
         include_daily_residuals: bool = False,
         region: str = "United States",
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -1678,6 +1736,10 @@ class Performance:
                 so a ticker quoted in another currency is best analysed with its U.S. dollar returns;
                 otherwise the exchange rate's moves end up in the factor loadings, mostly the market
                 beta. Defaults to "United States".
+            rolling (int | None, optional): The number of trading days of a rolling regression: the multi
+                linear regression is fitted on the last `rolling` daily observations at every date instead of
+                once per period, so the factor loadings show how the exposures move over time (e.g. 126 for
+                the six months pyfolio uses). Only with method="multi". Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
@@ -1700,6 +1762,9 @@ class Performance:
         - Daily Fama and French results is not an option as it would attempt to do a linear regression on a
         single data point which will not give any meaningful results.
         - The method retrieves historical data and calculates regression parameters and residuals for each asset.
+        - With `rolling` the result has a row per date, the last date of each window, and leaves out the residuals.
+        It equals pyfolio's timeseries.rolling_regression of the excess returns on the factors with a
+        rolling_window one shorter (pyfolio's windows hold rolling_window + 1 days).
         - The risk-free rate is typically represented by the return of a risk-free investment, such as a Treasury bond.
         In this case, the Risk Free Rate from the Fama and French dataset is used.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
@@ -1748,6 +1813,20 @@ class Performance:
                 raise ValueError(
                     f"Factor {factor} is not a valid factor. Please select from: Mkt-RF, SMB, HML, RMW, CMA."
                 )
+
+        if rolling:
+            if method != "multi":
+                raise ValueError("A rolling regression requires method='multi'.")
+
+            return self._get_rolling_factor_model(
+                self._get_fama_and_french_dataset(region),
+                factors_to_calculate,
+                rolling,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            )
 
         period = period if period else "quarterly" if self._quarterly else "yearly"
         returns = self._get_column(period, "Return", within_period=True)
@@ -1958,6 +2037,7 @@ class Performance:
         self,
         period: str | None = None,
         region: str = "United States",
+        rolling: int | None = None,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -2002,6 +2082,10 @@ class Performance:
                 so a ticker quoted in another currency is best analysed with its U.S. dollar returns;
                 otherwise the exchange rate's moves end up in the factor loadings, mostly the market
                 beta. Defaults to "United States".
+            rolling (int | None, optional): The number of trading days of a rolling regression: the regression
+                is fitted on the last `rolling` daily observations at every date instead of once per period, so
+                the factor loadings show how the exposures move over time (e.g. 126 for the six months pyfolio
+                uses). Defaults to None.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the ratio values. Defaults to False.
@@ -2028,6 +2112,9 @@ class Performance:
         model and therefore requires the three factor SMB.
         - The risk-free rate is the Risk Free Rate reported in the Fama and French dataset (used here, rather
         than the Toolkit's own risk-free rate, to stay consistent with the momentum factor's construction).
+        - With `rolling` the result has a row per date, the last date of each window. It equals pyfolio's
+        timeseries.rolling_regression of the excess returns on the factors with a rolling_window one shorter
+        (pyfolio's windows hold rolling_window + 1 days).
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
 
         As an example:
@@ -2056,9 +2143,6 @@ class Performance:
         | 2025Q3 |      0.0003 |         0.3232 |     -0.1805 |      0.6496 |     -0.2369 |      0.2179 |
         | 2025Q4 |      0.0005 |         0.4852 |     -0.2193 |      0.6778 |     -0.0933 |      0.1938 |
         """
-        period = period if period else "quarterly" if self._quarterly else "yearly"
-        returns = self._get_column(period, "Return", within_period=True)
-
         # Carhart (1997) extends the *three* factor model. The three and five factor files share Mkt-RF, HML and RF but their SMB series differ, so the three factor file is the correct source here.  # noqa: E501
         three_factor_dataset = (
             performance_model.obtain_fama_and_french_three_factor_dataset(region=region)
@@ -2072,13 +2156,27 @@ class Performance:
         )
         carhart_dataset = carhart_dataset.rename(columns={"Mom": "MOM"})
 
+        factors_to_calculate = ["Mkt-RF", "SMB", "HML", "MOM"]
+
+        if rolling:
+            return self._get_rolling_factor_model(
+                carhart_dataset,
+                factors_to_calculate,
+                rolling,
+                rounding=rounding,
+                growth=growth,
+                lag=lag,
+                standardize=standardize,
+            )
+
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+        returns = self._get_column(period, "Return", within_period=True)
+
         carhart_period = determine_within_dataset(
             carhart_dataset, period, correlation=False
         )
 
         merged_df = carhart_period.merge(returns, left_index=True, right_index=True)
-
-        factors_to_calculate = ["Mkt-RF", "SMB", "HML", "MOM"]
         factor_scores: dict = {}
 
         # The first index level repeats once per row, so it has to be de-duplicated before iterating or every period is regressed once per day it contains.  # noqa: E501
@@ -7821,6 +7919,8 @@ class Performance:
         self,
         period: str | None = None,
         cumulative: bool = False,
+        log: bool = False,
+        unsmoothed: bool = False,
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -7853,13 +7953,44 @@ class Performance:
         history) is NaN rather than 0, and the cumulative return carries the previous value
         past such a period.
 
-        Also known as: periodic return.
+        With log=True the returns are log (continuously compounded) returns, which add up over
+        time where simple returns compound:
+
+        - Log Return = ln(1 + Period Return)
+        - Cumulative Log Return = ln(Cumulative Return), the sum of the log returns
+
+        With unsmoothed=True the period returns are unsmoothed with Geltner's filter first, for
+        assets whose reported returns are smoothed (appraisal-based real estate, private equity,
+        illiquid funds), which shows up as positive autocorrelation and understates the volatility:
+
+        - Unsmoothed Return_t = (Period Return_t - ρ1 x Period Return_t-1) / (1 - ρ1)
+
+        Where ρ1 is the first order autocorrelation of each ticker's period returns over the date
+        range; the first period has no predecessor and is NaN. See `get_smoothing_index` to measure
+        the smoothing.
+
+        For more information, see the following sources:
+
+        - Geltner, D. (1991). "Smoothing in Appraisal-Based Returns." Journal of Real Estate Finance
+        and Economics, 4(3), 327-345.
+        - Geltner, D. (1993). "Estimating Market Values from Appraised Values without Assuming an
+        Efficient Market." Journal of Real Estate Research, 8(3), 325-345.
+        - ffn: to_log_returns and PerformanceStats.log_returns (https://github.com/pmorissette/ffn).
+        - pandas-ta-classic: log_return (https://github.com/xgboosted/pandas-ta-classic).
+        - PerformanceAnalytics: Return.Geltner (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: periodic return, log return, continuously compounded return, unsmoothed
+        return, Geltner return, de-smoothed return.
 
         Args:
-            period (str, optional): The data frequency for returns (weekly, monthly, quarterly, or yearly). Defaults
-                to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "quarterly" if the Toolkit is initialised with quarterly=True, otherwise "yearly".
             cumulative (bool, optional): Whether to return the cumulative return over time
             instead of the discrete return per period. Defaults to False.
+            log (bool, optional): Whether to return log returns, ln(1 + return), or with
+            cumulative=True the cumulative log return. Defaults to False.
+            unsmoothed (bool, optional): Whether to unsmooth the period returns with Geltner's
+            first order autocorrelation filter. Defaults to False.
             rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
                 the rounding of the Toolkit (4 unless set otherwise).
             growth (bool, optional): Whether to calculate the growth of the Return values over time. Defaults to False.
@@ -7878,6 +8009,8 @@ class Performance:
         Notes:
         - The method retrieves the daily historical return data and calculates the Return for
         the specified `period` for each asset in the Toolkit instance.
+        - The daily log returns equal pandas-ta-classic's log_return and ffn's to_log_returns of the adjusted
+        close, the unsmoothed returns PerformanceAnalytics' Return.Geltner of the same returns.
         - If `growth` is set to True, the method calculates the growth of Return values using the specified `lag`.
 
         As an example:
@@ -7907,19 +8040,33 @@ class Performance:
         """
         period = period if period else "quarterly" if self._quarterly else "yearly"
 
-        if period not in ["weekly", "monthly", "quarterly", "yearly"]:
-            raise ValueError("Period must be weekly, monthly, quarterly, or yearly.")
+        if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
 
         returns = self._historical_data["daily"]["Return"]
 
         # Compounded only after slicing to the date range, so the cumulative return
         # starts at 1 before the first period and that period keeps its own return.
-        period_returns = performance_model.get_returns(returns, period).loc[
-            self._start_date : self._end_date
-        ]
+        period_returns = (
+            returns
+            if period == "daily"
+            else performance_model.get_returns(returns, period)
+        ).loc[self._start_date : self._end_date]
+
+        if unsmoothed:
+            period_returns = performance_model.get_geltner_returns(period_returns)
 
         if cumulative:
             period_returns = (1 + period_returns).cumprod()
+
+        if log:
+            period_returns = (
+                np.log(period_returns)
+                if cumulative
+                else performance_model.get_log_returns(period_returns)
+            )
 
         return finalize_dataset(
             dataset=period_returns,
@@ -9740,4 +9887,1037 @@ class Performance:
             axis="rows",
             row_slice=True,
             dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_serenity_index(
+        self,
+        period: str | None = None,
+        alpha: float = 0.05,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Serenity Index (Serenity Ratio) of an investment portfolio or asset, KeyQuant's
+        excess return per unit of drawdown risk: the Ulcer Performance Index, penalized further when the
+        worst drawdowns are deep compared to the volatility of the returns.
+
+        The formula is as follows:
+
+        - Ulcer Index = SQRT(MEAN(Drawdown^2)), with each day's drawdown measured from the highest value since
+          the start of the period
+        - Pitfall Indicator = |Conditional Drawdown at Risk(alpha)| / Volatility
+        - Serenity Index = (Period Return - Risk-Free Rate) / (Ulcer Index x Pitfall Indicator)
+
+        The Conditional Drawdown at Risk is the average of the worst `alpha` share of the daily drawdowns
+        within the period and the Volatility the standard deviation of the daily returns within the period
+        scaled to the period (times the square root of the trading days in it), so the Pitfall Indicator
+        counts how many standard deviations the worst drawdowns reach. Two assets with the same Ulcer
+        Performance Index get a lower Serenity Index when one of them has the deeper tail of drawdowns.
+
+        For more information, see the following sources:
+
+        - KeyQuant (2017). "Assessing Performance Through Risk: Part 1." KeyQuant white paper (the Serenity
+        Ratio and the Pitfall Indicator).
+        - Martin, P.G., & McCann, B.B. (1989). "The Investor's Guide to Fidelity Funds." John Wiley & Sons (the
+        Ulcer Index).
+        - quantstats: stats.serenity_index (https://github.com/ranaroussi/quantstats).
+
+        Also known as: Serenity Ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            alpha (float, optional): The share of the worst drawdowns the Conditional Drawdown at Risk averages.
+                Defaults to 0.05.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Serenity Index values.
+
+        Notes:
+        - quantstats' serenity_index divides the sum of the daily returns (not the compounded excess return)
+        by its Ulcer Index (the root of the summed squared drawdowns over n - 1 observations) times a Pitfall
+        Indicator built from the gaussian expected shortfall of the drawdown series and the daily (not period)
+        standard deviation, over the whole history. The Toolkit follows KeyQuant's definition with its own
+        Ulcer Index, historical Conditional Drawdown at Risk and volatility per period, so the values differ
+        from quantstats; with quantstats' components the formula gives its value (to 1e-12).
+        - A period without a drawdown leaves the index undefined (NaN).
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_serenity_index()
+        ```
+
+        Which returns:
+
+        | Date   |    AAPL |    MSFT |      KO |
+        |:-------|--------:|--------:|--------:|
+        | 2022   | -2.3292 | -1.5965 |  1.6427 |
+        | 2023   | 12.9384 | 21.254  | -1.0582 |
+        | 2024   |  6.842  |  1.8838 |  0.7925 |
+        | 2025   |  0.5514 |  2.0173 |  4.7907 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._get_column(period, "Return", within_period=True)
+        period_returns = self._get_column(period, "Return", within_period=False)
+        excess_return = performance_model.get_excess_return(
+            period_returns, self._risk_free_rate_data[period][period_returns.columns]
+        )
+
+        serenity_index = performance_model.get_serenity_index(
+            excess_return,
+            get_ui(returns, rolling=None),
+            get_conditional_drawdown_at_risk(returns, alpha),
+            get_volatility(
+                self._get_column("daily", "Return", within_period=False), period
+            ),
+        )
+
+        return finalize_dataset(
+            dataset=serenity_index,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_risk_measure_ratio(
+        self,
+        period: str | None = None,
+        risk_measure: str = "cvar",
+        within_period: bool = True,
+        alpha: float = 0.05,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the mean excess return per unit of any risk measure of the risk module: the Sharpe ratio
+        with a tail, deviation or drawdown measure in place of the standard deviation.
+
+        The formula is as follows:
+
+        - Risk Measure Ratio = Mean(Daily Return - Daily Risk Free Rate) / Risk Measure(Daily Returns)
+
+        The risk measures (`risk_measure`) are those of `toolkit.risk`, as a positive number:
+
+        - "var": the historical Value at Risk, the `alpha` quantile of the returns.
+        - "cvar": the historical Conditional Value at Risk (Expected Shortfall), the mean of the returns at or
+          below it (the Conditional Sharpe or STARR ratio).
+        - "evar": the historical Entropic Value at Risk.
+        - "erm": the Entropic Risk Measure with a risk aversion of 1.
+        - "worst": the Worst Realization, the lowest return.
+        - "mad": the Mean Absolute Deviation from the mean.
+        - "lpm": the first Lower Partial Moment below the mean, MEAN(MAX(Mean - Return, 0)).
+        - "gmd": the Gini Mean Difference.
+        - "max_drawdown": the Maximum Drawdown (a Calmar ratio).
+        - "average_drawdown": the Average Drawdown over every day.
+        - "dar", "cdar" and "edar": the Drawdown at Risk, Conditional Drawdown at Risk and Entropic Drawdown
+          at Risk at `alpha`.
+        - "ulcer": the Ulcer Index, the root mean square drawdown.
+
+        The ratio is computed from the daily returns within each period (e.g. each year), with the mean and
+        the risk measure per day and not annualized, as skfolio's ratio measures are. With within_period=False
+        the returns of `period` over the whole history give one ratio per ticker. The drawdowns compound the
+        returns and start from a wealth of 1 at the start of each period.
+
+        For more information, see the following sources:
+
+        - Cajas, D. (2021). "Riskfolio-Lib: Portfolio Optimization in Python", the risk-adjusted return ratios
+        (https://riskfolio-lib.readthedocs.io).
+        - Gregoriou, G.N., & Gueyie, J.P. (2003). "Risk-Adjusted Performance of Funds of Hedge Funds Using a
+        Modified Sharpe Ratio." Journal of Wealth Management, 6(3), 77-83.
+        - skfolio: RatioMeasure (https://skfolio.org/generated/skfolio.measures.RatioMeasure.html).
+        - riskfolio-lib: RiskFunctions.Sharpe (https://github.com/dcajasn/Riskfolio-Lib).
+        - PerformanceAnalytics: SharpeRatio with FUN="VaR" or "ES" (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: return over risk, risk-adjusted return ratio, generalized Sharpe ratio, conditional Sharpe
+        ratio, VaR ratio, CVaR ratio, EVaR ratio, CDaR ratio, MAD ratio, Gini mean difference ratio.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            risk_measure (str, optional): The risk measure, one of "var", "cvar", "evar", "erm", "worst", "mad",
+                "lpm", "gmd", "max_drawdown", "average_drawdown", "dar", "cdar", "edar" or "ulcer". Defaults to
+                "cvar".
+            within_period (bool, optional): Whether to calculate the ratio from the daily returns within each
+                period, or from the returns of `period` over the whole history (one value per ticker).
+                Defaults to True.
+            alpha (float, optional): The tail probability of the VaR, CVaR, EVaR, ERM, DaR, CDaR and EDaR.
+                Defaults to 0.05.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame | pd.Series: The ratio per period and ticker, or per ticker with within_period=False.
+
+        Notes:
+        - The ratio equals skfolio's ratio measures where the risk measures are estimated alike: with the mean
+        absolute deviation, the first lower partial moment, the worst realization, the Gini mean difference,
+        the Entropic Value at Risk, the Entropic Risk Measure and, on the drawdowns, the maximum and average
+        drawdown, the Ulcer Index and the Entropic Drawdown at Risk. skfolio measures the drawdowns without
+        compounding by default (compounded=False), the Toolkit compounds them. The historical Value at Risk,
+        Conditional Value at Risk and their drawdown versions use the interpolated quantile of the risk module,
+        where skfolio takes the order statistic and the exact (Rockafellar-Uryasev) Conditional Value at Risk,
+        so these differ slightly from skfolio on short samples.
+        - `get_starr_ratio` divides the period excess return by the CVaR scaled to the period, `get_calmar_ratio`
+        and `get_ulcer_performance_index` the period excess return by the drawdown measure; this ratio keeps the
+        mean and the risk measure per day, so every risk measure is on the same scale.
+        - A risk measure of 0 (e.g. no drawdown) leaves the ratio undefined (NaN).
+        - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_risk_measure_ratio(risk_measure="cdar")
+        ```
+
+        Which returns:
+
+        |      |    AAPL |    MSFT |      KO |
+        |:-----|--------:|--------:|--------:|
+        | 2021 |  0.0085 |  0.025  |  0.0072 |
+        | 2022 | -0.0039 | -0.0036 |  0.0024 |
+        | 2023 |  0.0119 |  0.0153 | -0.0019 |
+        | 2024 |  0.0073 |  0.003  |  0.0015 |
+        | 2025 |  0.0017 |  0.0031 |  0.0052 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        if within_period:
+            returns = self._get_column(period, "Return", within_period=True)
+            excess_returns = self._get_column(
+                period, "Excess Return", within_period=True
+            )
+        else:
+            returns = self._get_column(period, "Return", within_period=False)
+            excess_returns = performance_model.get_excess_return(
+                returns, self._risk_free_rate_data[period][returns.columns]
+            )
+
+        risk_measure_ratio = performance_model.get_risk_measure_ratio(
+            excess_returns, returns, risk_measure, alpha
+        )
+
+        return finalize_dataset(
+            dataset=risk_measure_ratio,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            # Over the whole period the ratio is one number per ticker, with no dates to slice.
+            apply_slice=within_period,
+            dropna=True,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_probabilistic_momentum(
+        self,
+        period: str | None = None,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Probabilistic Momentum of Varadi (2014): the confidence that an asset outperforms the
+        benchmark, the probability under Student's t distribution that the mean of the differences between
+        their returns is above 0.
+
+        The formula is as follows:
+
+        - Information Ratio = Mean(Asset Return - Benchmark Return) / Standard Deviation(Asset Return - Benchmark Return)
+        - Probabilistic Momentum = T(Information Ratio x SQRT(N), N - 1)
+
+        Where N is the number of return differences and T the cumulative Student's t distribution with N - 1
+        degrees of freedom. It is computed from the daily returns within each period, or with `rolling` from
+        the returns of `period` over every rolling window of that many periods (e.g. period="daily" and
+        rolling=60 for Varadi's 60-day lookback). A value above 0.5 means the asset did better than the
+        benchmark, and the more returns and the steadier the difference, the closer it gets to 1. Varadi
+        switches between two assets only when the confidence passes a threshold such as 0.6, rather than on
+        the sign of the return difference alone, which cuts the number of trades a momentum strategy makes on
+        noise.
+
+        For more information, see the following sources:
+
+        - Varadi, D. (2014). "Are Simple Momentum Strategies Too Dumb? Introducing Probabilistic Momentum." CSS
+        Analytics, 28 January 2014.
+        - ffn: calc_prob_mom (https://github.com/pmorissette/ffn).
+
+        Also known as: probabilistic momentum, momentum confidence.
+
+        Args:
+            period (str, optional): The period to use for the calculation. Defaults to "quarterly" if the Toolkit is
+                initialised with quarterly=True, otherwise "yearly".
+            rolling (int | None, optional): The number of periods in each rolling window. Defaults to None, which
+                uses the daily returns within each period.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the ratios. Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The probability, between 0 and 1, per period (or date) and ticker.
+
+        Notes:
+        - It equals ffn's calc_prob_mom of the ticker against the benchmark over the same returns.
+        - The returns are compared on the dates both the ticker and the benchmark have a return, as in
+        `get_information_ratio`.
+        - If `growth` is set to True, the method calculates the growth of the values using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_probabilistic_momentum()
+        ```
+
+        Which returns:
+
+        | Date   |   AAPL |   MSFT |     KO |
+        |:-------|-------:|-------:|-------:|
+        | 2021   | 0.6635 | 0.9006 | 0.2077 |
+        | 2022   | 0.3459 | 0.2999 | 0.927  |
+        | 2023   | 0.8956 | 0.8939 | 0.0311 |
+        | 2024   | 0.6292 | 0.255  | 0.217  |
+        | 2025   | 0.4214 | 0.4813 | 0.4662 |
+        """
+        period = period if period else "quarterly" if self._quarterly else "yearly"
+
+        returns = self._get_column(period, "Return", within_period=not rolling)
+        benchmark_returns = self._get_column(
+            period, "Return", within_period=not rolling, benchmark=True
+        )
+
+        if rolling:
+            information_ratio = performance_model.get_rolling_information_ratio(
+                returns, benchmark_returns, rolling
+            )
+            observations = information_ratio.notna() * float(rolling)
+        else:
+            information_ratio = performance_model.get_information_ratio(
+                returns, benchmark_returns
+            )
+            observations = (
+                returns.sub(benchmark_returns, axis=0).groupby(level=0).count()
+            )
+
+        probabilistic_momentum = performance_model.get_probabilistic_momentum(
+            information_ratio, observations.reindex_like(information_ratio)
+        )
+
+        return finalize_dataset(
+            dataset=probabilistic_momentum,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            row_slice=True,
+            dropna=True,
+        )
+
+    @handle_errors
+    def get_trailing_returns(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ):
+        """
+        Calculate the trailing returns of every ticker up to its last close: month to date, the last 3 and 6
+        months, year to date, the last year, the last 3, 5 and 10 years (annualized) and since the start of
+        the data (annualized), the table of returns fund factsheets show.
+
+        The formula is as follows:
+
+        - Trailing Return = Last Close / Close at the Start of the Window - 1
+        - Annualized Trailing Return = (1 + Trailing Return) ^ (365.25 / Calendar Days in the Window) - 1
+
+        The close at the start of a window is the last close on or before the date the window lies before the
+        last close (e.g. 3 months earlier). When the last close falls on the last business day of its month,
+        the windows run from month end to month end (a history up to 30 June has its 3 month return from the
+        close of 31 March). Month to date and year to date start from the last close of the previous month
+        and year. The returns of 3 years and longer are annualized over the calendar days of the window, and
+        the return since inception is the Compound Annual Growth Rate over the date range (see
+        `get_compound_growth_rate`). The returns use the dividend-adjusted close, so they are total returns.
+
+        For more information, see the following sources:
+
+        - ffn: calc_mtd, calc_ytd, calc_cagr and PerformanceStats (mtd, three_month, six_month, ytd, one_year,
+        three_year, five_year, ten_year, incep) (https://github.com/pmorissette/ffn).
+        - PerformanceAnalytics: table.TrailingPeriods (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: trailing performance, period returns, MTD, YTD, 1Y, 3Y, 5Y, 10Y returns.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The trailing returns as the index and the tickers (and the Benchmark) as the columns.
+
+        Notes:
+        - A window that starts before the first close in the date range is NaN, so set start_date at least
+        ten years back for the 10 year return.
+        - The month to date, 3 and 6 month, year to date and 1 year returns equal ffn's mtd, three_month,
+        six_month, ytd and one_year. ffn starts its 3, 5 and 10 year returns from the first close on or after
+        the start of the window and does not use the month end rule for them; the Toolkit starts every window
+        the same way, so these can differ by a day of returns.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2015-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_trailing_returns()
+        ```
+
+        Which returns:
+
+        |                              |    AAPL |    MSFT |      KO |   Benchmark |
+        |:-----------------------------|--------:|--------:|--------:|------------:|
+        | Month to Date                | -0.0251 | -0.0171 | -0.0372 |      0.0008 |
+        | 3 Months                     |  0.0687 | -0.0645 |  0.0615 |      0.0267 |
+        | 6 Months                     |  0.3278 | -0.0243 |  0.0027 |      0.11   |
+        | Year to Date                 |  0.0905 |  0.1558 |  0.156  |      0.1772 |
+        | 1 Year                       |  0.0905 |  0.1558 |  0.156  |      0.1772 |
+        | 3 Years (Annualized)         |  0.2851 |  0.273  |  0.0634 |      0.2284 |
+        | 5 Years (Annualized)         |  0.1605 |  0.1778 |  0.0818 |      0.1434 |
+        | 10 Years (Annualized)        |  0.2761 |  0.2583 |  0.0834 |      0.1471 |
+        | Since Inception (Annualized) |  0.2459 |  0.2548 |  0.0807 |      0.1343 |
+        """
+        prices = (
+            self._historical_data["daily"]
+            .loc[:, "Adj Close"]
+            .loc[self._start_date : self._end_date]
+        )
+
+        trailing_returns = performance_model.get_trailing_returns(prices)
+
+        return apply_rounding(
+            trailing_returns, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_calendar_returns(
+        self, rounding: int | None = None, show_columns: str | list[str] | None = None
+    ):
+        """
+        Calculate the calendar returns of every ticker: the return of every month with the years as the rows
+        and the months as the columns, and the return of the whole year, the monthly returns table of fund
+        factsheets.
+
+        The formula is as follows:
+
+        - Month Return = ((1 + Daily Return 1) x (1 + Daily Return 2) x ... x (1 + Daily Return N)) - 1
+        - Year Return = ((1 + Month Return 1) x ... x (1 + Month Return 12)) - 1
+
+        A month without any return (before the start date or a listing, or after the end date) is NaN, and the
+        Year compounds the months it has, so a partial first or last year is the return over the months
+        covered. The returns use the dividend-adjusted close, so they are total returns.
+
+        For more information, see the following sources:
+
+        - quantstats: stats.monthly_returns (https://github.com/ranaroussi/quantstats).
+        - ffn: PerformanceStats.return_table (https://github.com/pmorissette/ffn).
+        - PerformanceAnalytics: table.CalendarReturns (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: monthly returns table, return table, calendar year returns.
+
+        Args:
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The years as the index and (ticker, month) as the columns, the months Jan to Dec
+            followed by Year.
+
+        Notes:
+        - quantstats fills a month without returns with 0 and ffn's return table does too; the Toolkit leaves
+        it NaN. The months and years otherwise equal quantstats' monthly_returns (compounded) and the Year
+        column equals its EOY, and `get_returns` with period="monthly" and "yearly".
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_calendar_returns()["AAPL"].T
+        ```
+
+        Which returns:
+
+        |      |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:-----|--------:|--------:|--------:|--------:|--------:|
+        | Jan  |  0.0197 | -0.0157 |  0.1105 | -0.0422 | -0.0576 |
+        | Feb  | -0.0797 | -0.0541 |  0.0232 | -0.0185 |  0.0259 |
+        | Mar  |  0.0073 |  0.0575 |  0.1186 | -0.0513 | -0.0815 |
+        | Apr  |  0.0762 | -0.0971 |  0.029  | -0.0067 | -0.0434 |
+        | May  | -0.0505 | -0.0545 |  0.0461 |  0.1302 | -0.0536 |
+        | Jun  |  0.0991 | -0.0814 |  0.0943 |  0.0956 |  0.0215 |
+        | Jul  |  0.065  |  0.1886 |  0.0128 |  0.0544 |  0.0117 |
+        | Aug  |  0.0425 | -0.0312 | -0.0424 |  0.0324 |  0.1196 |
+        | Sep  | -0.068  | -0.121  | -0.0887 |  0.0175 |  0.0969 |
+        | Oct  |  0.0587 |  0.1096 | -0.0026 | -0.0304 |  0.0618 |
+        | Nov  |  0.1051 | -0.033  |  0.1138 |  0.0517 |  0.0324 |
+        | Dec  |  0.0742 | -0.1223 |  0.0136 |  0.0552 | -0.0251 |
+        | Year |  0.3806 | -0.264  |  0.4901 |  0.3071 |  0.0905 |
+        """
+        returns = (
+            self._historical_data["daily"]
+            .loc[:, "Return"]
+            .loc[self._start_date : self._end_date]
+        )
+
+        calendar_returns = performance_model.get_calendar_returns(returns)
+
+        return apply_rounding(
+            calendar_returns, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_bootstrap_statistics(
+        self,
+        simulations: int = 1000,
+        method: str = "resample",
+        seed: int | None = 0,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate how much the performance statistics of the history could have differed by chance: the
+        distribution of the cumulative and annualized return, the volatility, the Sharpe ratio and the
+        maximum drawdown over simulated histories drawn from the daily returns (a bootstrap).
+
+        Every simulation draws a history of as many daily returns as the date range holds:
+
+        - method="resample" draws the returns with replacement (Efron's bootstrap), so a day can appear
+          several times or not at all and every statistic varies across simulations, as pyfolio does.
+        - method="shuffle" puts the same returns in a random order (a permutation), as quantstats' Monte Carlo
+          does: the cumulative return, the volatility and the Sharpe ratio stay those of the history and only
+          the path, so the maximum drawdown, varies. It shows how much of a drawdown was the order of the
+          returns rather than their size.
+
+        For every simulation:
+
+        - Cumulative Return = PRODUCT(1 + Return) - 1
+        - Annualized Return = (1 + Cumulative Return) ^ (P / N) - 1
+        - Annualized Volatility = STDEV(Return) x SQRT(P)
+        - Sharpe Ratio = MEAN(Excess Return) / STDEV(Excess Return) x SQRT(P)
+        - Maximum Drawdown = MIN(Wealth / Running Peak - 1), the wealth starting at 1
+
+        Where N is the number of daily returns and P the daily returns in a year (252, or 365 for a ticker that
+        trades on weekends such as a cryptocurrency). The excess return of each day (the return minus the
+        daily risk-free rate) is drawn together with the return. Each statistic is summarized by the mean, the
+        median, the standard deviation and the 5th, 25th, 75th and 95th percentiles over the simulations; the
+        5th to 95th percentile is a 90% bootstrap interval.
+
+        For more information, see the following sources:
+
+        - Efron, B. (1979). "Bootstrap Methods: Another Look at the Jackknife." The Annals of Statistics, 7(1),
+        1-26.
+        - pyfolio: timeseries.perf_stats_bootstrap, calc_bootstrap and calc_distribution_stats
+        (https://github.com/quantopian/pyfolio).
+        - quantstats: stats.montecarlo, montecarlo_cagr, montecarlo_drawdown and montecarlo_sharpe
+        (https://github.com/ranaroussi/quantstats).
+        - ffn: resample_returns (https://github.com/pmorissette/ffn).
+
+        Also known as: Monte Carlo simulation, bootstrapped performance statistics, resampled returns.
+
+        Args:
+            simulations (int, optional): The number of simulated histories. Defaults to 1000.
+            method (str, optional): "resample" (with replacement) or "shuffle" (without replacement). Defaults
+                to "resample".
+            seed (int | None, optional): The seed of the random numbers, so that results can be reproduced;
+                None draws new ones every time. Defaults to 0.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The statistics as the index and (ticker, summary) as the columns, the summaries being
+            Mean, Median, Std, 5%, 25%, 75% and 95%.
+
+        Notes:
+        - Every ticker draws from its own daily returns with the same seed, so a ticker's result does not
+        depend on the other tickers in the Toolkit.
+        - The simple bootstrap treats the returns as independent: it keeps their distribution but not their
+        autocorrelation or volatility clustering.
+        - pyfolio reports the mean, median and 5th and 95th percentiles of the same statistics (its standard
+        deviation with ddof=0). quantstats keeps the history itself as one of the paths, counts 252 returns to
+        a year and computes the Sharpe ratio of its paths from their percentage changes, which leaves out the
+        first return; on the same paths the statistics otherwise agree.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_bootstrap_statistics()["AAPL"]
+        ```
+
+        Which returns:
+
+        |                       |    Mean |   Median |    Std |      5% |     25% |     75% |     95% |
+        |:----------------------|--------:|---------:|-------:|--------:|--------:|--------:|--------:|
+        | Cumulative Return     |  1.5276 |   1.1649 | 1.5579 | -0.1818 |  0.4564 |  2.1464 |  4.4302 |
+        | Annualized Return     |  0.1738 |   0.1679 | 0.135  | -0.0395 |  0.0785 |  0.259  |  0.405  |
+        | Annualized Volatility |  0.278  |   0.2777 | 0.0113 |  0.2603 |  0.2703 |  0.2857 |  0.2961 |
+        | Sharpe Ratio          |  0.571  |   0.5736 | 0.4096 | -0.1303 |  0.2915 |  0.8507 |  1.2197 |
+        | Maximum Drawdown      | -0.3857 |  -0.373  | 0.1035 | -0.5737 | -0.4507 | -0.3084 | -0.2412 |
+        """
+        returns = self._get_column("daily", "Return", within_period=False).loc[
+            self._start_date : self._end_date
+        ]
+        excess_returns = returns - self._risk_free_rate_data["daily"][
+            returns.columns
+        ].reindex(returns.index)
+        # A Series, as the returns are a DataFrame.
+        observations_per_year = pd.Series(get_observations_per_year(returns))
+
+        bootstrap_statistics = pd.concat(
+            {
+                ticker: performance_model.get_bootstrap_statistics(
+                    returns[ticker],
+                    excess_returns[ticker],
+                    float(observations_per_year[ticker]),
+                    simulations=simulations,
+                    method=method,
+                    seed=seed,
+                )
+                for ticker in returns.columns
+            },
+            axis=1,
+        )
+
+        return apply_rounding(
+            bootstrap_statistics, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_forecast_cone(
+        self,
+        horizon: int = 252,
+        standard_deviations: list[float] | None = None,
+        simulations: int = 1000,
+        seed: int | None = 0,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate a forecast cone of the growth of 1 over the coming trading days, bootstrapped from the daily
+        returns: the mean path and the bounds a number of standard deviations above and below it, against
+        which the performance after the date range can be judged.
+
+        Every simulation draws `horizon` daily returns with replacement from the returns in the date range
+        and compounds them into a path of wealth that starts at 1:
+
+        - Wealth_t = PRODUCT(1 + Simulated Return_1 ... Simulated Return_t)
+        - Mean_t = MEAN(Wealth_t) over the simulations
+        - Upper (Lower) k_t = Mean_t + (-) k x STDEV(Wealth_t)
+
+        A strategy whose live performance leaves the cone (e.g. below the lower 2 standard deviation bound)
+        behaves differently from its history. The cone does not assume normally distributed returns, but it
+        does assume that the coming returns are drawn independently from the same distribution as the past
+        ones.
+
+        For more information, see the following sources:
+
+        - pyfolio: timeseries.forecast_cone_bootstrap, simulate_paths and summarize_paths
+        (https://github.com/quantopian/pyfolio).
+        - Efron, B. (1979). "Bootstrap Methods: Another Look at the Jackknife." The Annals of Statistics, 7(1),
+        1-26.
+
+        Also known as: bootstrap cone, probability cone, Bayesian cone (pyfolio's tear sheet).
+
+        Args:
+            horizon (int, optional): The number of trading days to forecast. Defaults to 252.
+            standard_deviations (list[float] | None, optional): The numbers of standard deviations of the
+                bounds. Defaults to None, which uses 1, 1.5 and 2.
+            simulations (int, optional): The number of simulated paths. Defaults to 1000.
+            seed (int | None, optional): The seed of the random numbers, so that results can be reproduced;
+                None draws new ones every time. Defaults to 0.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The trading days ahead (1 to horizon) as the index and (ticker, bound) as the columns,
+            the bounds being Lower 2, Lower 1.5, Lower 1, Mean, Upper 1, Upper 1.5 and Upper 2 by default.
+
+        Notes:
+        - It equals pyfolio's forecast_cone_bootstrap on the same simulated paths, apart from the standard
+        deviation over the simulations, which pyfolio takes with ddof=0 and the Toolkit with ddof=1.
+        - Every ticker draws from its own daily returns with the same seed, so a ticker's result does not
+        depend on the other tickers in the Toolkit.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_forecast_cone()["AAPL"].iloc[[0, 20, 62, 125, 251]]
+        ```
+
+        Which returns:
+
+        |     |   Lower 2 |   Lower 1.5 |   Lower 1 |   Mean |   Upper 1 |   Upper 1.5 |   Upper 2 |
+        |----:|----------:|------------:|----------:|-------:|----------:|------------:|----------:|
+        |   1 |    0.9675 |      0.9757 |    0.9839 | 1.0003 |    1.0168 |      1.025  |    1.0332 |
+        |  21 |    0.8545 |      0.8947 |    0.9349 | 1.0152 |    1.0955 |      1.1357 |    1.1759 |
+        |  63 |    0.7578 |      0.8304 |    0.903  | 1.0483 |    1.1935 |      1.2661 |    1.3387 |
+        | 126 |    0.6692 |      0.7766 |    0.8839 | 1.0986 |    1.3132 |      1.4206 |    1.5279 |
+        | 252 |    0.5356 |      0.7019 |    0.8683 | 1.201  |    1.5336 |      1.7    |    1.8663 |
+        """
+        returns = self._get_column("daily", "Return", within_period=False).loc[
+            self._start_date : self._end_date
+        ]
+
+        forecast_cone = pd.concat(
+            {
+                ticker: performance_model.get_forecast_cone(
+                    returns[ticker],
+                    horizon=horizon,
+                    standard_deviations=standard_deviations,
+                    simulations=simulations,
+                    seed=seed,
+                )
+                for ticker in returns.columns
+            },
+            axis=1,
+        )
+
+        return apply_rounding(
+            forecast_cone, rounding if rounding is not None else self._rounding
+        )
+
+    @handle_errors
+    def get_probability_of_backtest_overfitting(
+        self,
+        blocks: int = 16,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Probability of Backtest Overfitting (PBO) of picking the ticker with the best Sharpe
+        ratio: how often the ticker that looks best on one half of the history ends up in the bottom half of
+        the tickers on the other half, with the Combinatorially Symmetric Cross-Validation (CSCV) of Bailey,
+        Borwein, López de Prado and Zhu (2017).
+
+        The tickers are the candidate strategies, for instance funds to choose from or the variants of a
+        strategy (such as the Portfolio of every weighting). The daily returns in the date range are split
+        into `blocks` blocks of equal length and for every way to pick half of the blocks as the in-sample
+        history, with the other half out of sample:
+
+        - The ticker with the highest in-sample Sharpe ratio (mean / standard deviation of the daily returns)
+          is selected.
+        - ω = Rank of its out-of-sample Sharpe ratio among the N tickers / (N + 1)
+        - λ = ln(ω / (1 - ω))
+        - PBO = Share of the combinations with λ <= 0
+
+        A PBO close to 0 means the ticker that looked best kept doing well out of sample; around 0.5 or above,
+        selecting on the past Sharpe ratio adds nothing and the best backtest is likely overfit. The table also
+        gives the Average Out-of-Sample Rank (the mean ω, 0.5 for a random choice), the Probability of Loss (the
+        share of combinations in which the selected ticker has a negative out-of-sample Sharpe ratio), the
+        Performance Degradation (the slope of the regression of the selected ticker's out-of-sample Sharpe ratio
+        on its in-sample Sharpe ratio, negative when a high in-sample Sharpe ratio is followed by a low one) and
+        the number of Combinations, C(blocks, blocks / 2).
+
+        For more information, see the following sources:
+
+        - Bailey, D.H., Borwein, J.M., López de Prado, M., & Zhu, Q.J. (2017). "The Probability of Backtest
+        Overfitting." Journal of Computational Finance, 20(4), 39-69.
+        - ffn: calc_prob_backtest_overfitting (https://github.com/pmorissette/ffn).
+
+        Also known as: PBO, CSCV, combinatorially symmetric cross-validation.
+
+        Args:
+            blocks (int, optional): The number of blocks the history is split into, even and at least 2. 16 gives
+                12,870 combinations, as in the paper. Defaults to 16.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series: The Probability of Backtest Overfitting, Average Out-of-Sample Rank, Probability of Loss,
+            Performance Degradation and Combinations.
+
+        Notes:
+        - It needs at least two tickers; the Benchmark is not one of the candidates. The more tickers, the more
+        informative the PBO: with two, the selected one is either the best or the worst out of sample.
+        - The Probability of Backtest Overfitting and the Average Out-of-Sample Rank equal ffn's
+        calc_prob_backtest_overfitting with the same number of blocks. The daily returns beyond a multiple of
+        `blocks` are left out from the end, as in ffn.
+        - The Sharpe ratios skip missing returns, so a ticker that trades on other days than the rest (such as
+        a cryptocurrency next to stocks) is measured on its own days within each block.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "KO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_probability_of_backtest_overfitting()
+        ```
+
+        Which returns:
+
+        |                                     |      Value |
+        |:------------------------------------|-----------:|
+        | Probability of Backtest Overfitting |     0.2035 |
+        | Average Out-of-Sample Rank          |     0.7193 |
+        | Probability of Loss                 |     0.0037 |
+        | Performance Degradation             |    -0.5346 |
+        | Combinations                        | 12870      |
+        """
+        returns = self._get_column("daily", "Return", within_period=False).loc[
+            self._start_date : self._end_date
+        ]
+        # The first date of the range has no return; dates no ticker traded hold no return either.
+        returns = returns.dropna(how="all")
+
+        probability_of_backtest_overfitting = (
+            performance_model.get_probability_of_backtest_overfitting(returns, blocks)
+        )
+
+        rounding = rounding if rounding is not None else self._rounding
+
+        return (
+            probability_of_backtest_overfitting.round(rounding)
+            if rounding is not None
+            else probability_of_backtest_overfitting
+        )
+
+    @handle_errors
+    def get_smoothing_index(
+        self,
+        period: str = "monthly",
+        order: int = 2,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Smoothing Index of Getmansky, Lo and Makarov (2004), how much the returns look smoothed:
+        the reported return of an illiquid asset (a hedge fund, private equity, real estate or a stale-priced
+        bond fund) carries part of the returns of earlier periods, as if it were a weighted average of the
+        true returns.
+
+        The formula is as follows:
+
+        - Observed Return_t = θ0 x True Return_t + θ1 x True Return_t-1 + θ2 x True Return_t-2
+        - θ0 + θ1 + θ2 = 1
+        - Smoothing Index ξ = θ0² + θ1² + θ2²
+
+        The weights θ are those of a moving average model (MA(2) by default) fitted by exact maximum likelihood
+        to the de-meaned returns of `period` over the date range, normalized to add up to 1. A Smoothing Index
+        of 1 (θ0 = 1) means the returns show no smoothing; the lower it is, the more of each return is carried
+        over from earlier periods, down to 1 / 3 when the three periods weigh the same. Smoothed returns
+        understate the volatility and the correlation with the market and so overstate the Sharpe ratio.
+
+        For more information, see the following sources:
+
+        - Getmansky, M., Lo, A.W., & Makarov, I. (2004). "An Econometric Model of Serial Correlation and
+        Illiquidity in Hedge Fund Returns." Journal of Financial Economics, 74(3), 529-609.
+        - PerformanceAnalytics: SmoothingIndex (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: Getmansky-Lo-Makarov smoothing index, return smoothing, serial correlation of returns.
+
+        Args:
+            period (str, optional): The period of the returns, weekly, monthly, quarterly or yearly. The paper
+                uses monthly returns. Defaults to "monthly".
+            order (int, optional): The number of earlier periods a return carries, k in MA(k). Defaults to 2.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The weights Theta 0 to Theta k and the Smoothing Index as the index, the tickers as the
+            columns.
+
+        Notes:
+        - Negative moving average coefficients are set to 0 before the weights are normalized, as
+        PerformanceAnalytics does by default, since a negative weight on a past return is no smoothing.
+        - PerformanceAnalytics fits the model without a mean to the returns as given, where Getmansky, Lo and
+        Makarov de-mean them first, as the Toolkit does. On the same (raw) returns the Toolkit's maximum
+        likelihood estimate equals that of statsmodels' ARIMA to 3e-8 and PerformanceAnalytics' recorded
+        examples to 6e-5, the tolerance of R's optimizer.
+        - Liquid stocks have a Smoothing Index close to 1. `get_returns(unsmoothed=True)` removes first order
+        smoothing from the returns (Geltner).
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "VNQ", "HYG", "PSP"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2016-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.performance.get_smoothing_index()
+        ```
+
+        Which returns:
+
+        |                 |   AAPL |   VNQ |    HYG |   PSP |
+        |:----------------|-------:|------:|-------:|------:|
+        | Theta 0         | 0.9646 |     1 | 0.9708 |     1 |
+        | Theta 1         | 0.0354 |     0 | 0      |     0 |
+        | Theta 2         | 0      |     0 | 0.0292 |     0 |
+        | Smoothing Index | 0.9318 |     1 | 0.9433 |     1 |
+        """
+        validate_period(period)
+
+        returns = (
+            self._get_column(period, "Return", within_period=False)
+            .loc[self._start_date : self._end_date]
+            .dropna(how="all")
+        )
+
+        smoothing_index = pd.DataFrame(
+            {
+                ticker: performance_model.get_smoothing_index(
+                    returns[ticker] - returns[ticker].mean(), order
+                )
+                for ticker in returns.columns
+            }
+        )
+
+        return apply_rounding(
+            smoothing_index, rounding if rounding is not None else self._rounding
         )

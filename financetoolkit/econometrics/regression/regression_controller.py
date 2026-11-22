@@ -51,8 +51,12 @@ class RegressionEconometrics:
 
         - β̂ = (X'X)⁻¹X'y, with y the dependent ticker's `column` (Return by default) and X the
           independent tickers' `column` plus a constant column (add_constant=True)
-        - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (cov_type="nonrobust"); "HC0" to "HC3",
-          "cluster" and "HAC" (Newey-West with `maxlags`) use statsmodels' sandwich estimators
+        - Cov(β̂) = σ̂²·(X'X)⁻¹, with σ̂² = e'e / (n - k) (cov_type="nonrobust")
+        - Cov(β̂) = (X'X)⁻¹·(Σ ωₜ·xₜxₜ')·(X'X)⁻¹ for "HC0" to "HC3", with ωₜ = eₜ² (HC0),
+          eₜ²·n / (n - k) (HC1), eₜ² / (1 - hₜ) (HC2) or eₜ² / (1 - hₜ)² (HC3) and hₜ = xₜ'(X'X)⁻¹xₜ
+        - Cov(β̂) = (X'X)⁻¹·(Σₜ gₜgₜ' + Σⱼ (1 - j / (L + 1))·Σₜ (gₜgₜ₋ⱼ' + gₜ₋ⱼgₜ'))·(X'X)⁻¹ for "HAC",
+          with gₜ = xₜeₜ and L = `maxlags`; "cluster" sums gₜ within each cluster and scales the
+          sandwich by G / (G - 1)·(n - 1) / (n - k), with G the number of clusters
         - t = β̂ⱼ / SE(β̂ⱼ), with p-values from a Student-t distribution with n - k degrees of freedom
           for cov_type="nonrobust" and from the standard normal distribution for the robust
           estimators ("HC0" to "HC3", "cluster" and "HAC"), which are asymptotic results
@@ -158,7 +162,7 @@ class RegressionEconometrics:
             period, column, [dependent_ticker, *independent_tickers]
         )
 
-        # Positionally aligned by statsmodels, so it has to be reindexed onto the regression's own index first -- `returns` has already dropped any period with missing data, which a caller-supplied cluster label will not have.  # noqa: E501
+        # Positionally aligned by the fit, so it has to be reindexed onto the regression's own index first -- `returns` has already dropped any period with missing data, which a caller-supplied cluster label will not have.  # noqa: E501
         aligned_clusters = (
             clusters.reindex(returns.index) if clusters is not None else None
         )

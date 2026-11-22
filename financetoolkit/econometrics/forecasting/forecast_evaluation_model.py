@@ -7,7 +7,6 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 from scipy import stats
-from statsmodels.tools.eval_measures import meanabs, rmse
 
 from financetoolkit.risk import risk_model
 from financetoolkit.utilities.statistics_model import newey_west_long_run_variance
@@ -238,8 +237,7 @@ def get_rmse(
     actual: pd.Series | pd.DataFrame, forecast: pd.Series | pd.DataFrame
 ) -> float | pd.Series:
     """
-    Calculate the Root Mean Squared Error (RMSE) between realized and forecast values,
-    via `statsmodels.tools.eval_measures.rmse`.
+    Calculate the Root Mean Squared Error (RMSE) between realized and forecast values.
 
     Also known as: RMSD (Root Mean Squared Deviation).
 
@@ -264,6 +262,9 @@ def get_rmse(
 
     Raises:
         TypeError: If `actual` is not a `pd.Series` or `pd.DataFrame`.
+
+    Notes:
+        Referenced against statsmodels' `rmse`.
 
     As an example:
 
@@ -293,7 +294,8 @@ def get_rmse(
     if isinstance(actual, pd.Series):
         aligned = pd.concat([actual, forecast], axis=1, join="inner").dropna()
         aligned.columns = ["actual", "forecast"]
-        return float(rmse(aligned["actual"].to_numpy(), aligned["forecast"].to_numpy()))
+        errors = aligned["actual"].to_numpy() - aligned["forecast"].to_numpy()
+        return float(np.sqrt(np.mean(errors**2)))
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 
@@ -302,8 +304,7 @@ def get_mae(
     actual: pd.Series | pd.DataFrame, forecast: pd.Series | pd.DataFrame
 ) -> float | pd.Series:
     """
-    Calculate the Mean Absolute Error (MAE) between realized and forecast values, via
-    `statsmodels.tools.eval_measures.meanabs`.
+    Calculate the Mean Absolute Error (MAE) between realized and forecast values.
 
     Also known as: MAD (Mean Absolute Deviation).
 
@@ -327,6 +328,9 @@ def get_mae(
 
     Raises:
         TypeError: If `actual` is not a `pd.Series` or `pd.DataFrame`.
+
+    Notes:
+        Referenced against statsmodels' `meanabs`.
 
     As an example:
 
@@ -356,9 +360,8 @@ def get_mae(
     if isinstance(actual, pd.Series):
         aligned = pd.concat([actual, forecast], axis=1, join="inner").dropna()
         aligned.columns = ["actual", "forecast"]
-        return float(
-            meanabs(aligned["actual"].to_numpy(), aligned["forecast"].to_numpy())
-        )
+        errors = aligned["actual"].to_numpy() - aligned["forecast"].to_numpy()
+        return float(np.mean(np.abs(errors)))
 
     raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
 

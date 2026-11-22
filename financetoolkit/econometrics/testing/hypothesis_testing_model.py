@@ -4,8 +4,9 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-from statsmodels.stats.weightstats import ttest_ind
+from scipy import stats
 
+from financetoolkit.econometrics.least_squares_model import get_wald_statistic
 from financetoolkit.econometrics.regression.regression_model import (
     _to_design_matrix,
     _to_target_vector,
@@ -22,7 +23,7 @@ def get_two_sample_t_test(
 ) -> pd.Series:
     """
     Calculate a two-sample t-test for a difference in means between `sample_a` and
-    `sample_b`, via `statsmodels.stats.weightstats.ttest_ind`.
+    `sample_b`.
 
     Also known as: independent samples t-test, Welch's t-test (when `equal_variance`
     is False), Student's t-test (when `equal_variance` is True).
@@ -33,10 +34,16 @@ def get_two_sample_t_test(
     t-test, which does not assume the two samples share a common variance:
 
     - t = (mean_a - mean_b) / sqrt(s_a^2 / n_a + s_b^2 / n_b)
+    - df = (s_a^2 / n_a + s_b^2 / n_b)^2 / ((s_a^2 / n_a)^2 / (n_a - 1) + (s_b^2 / n_b)^2 / (n_b - 1))
 
-    With degrees of freedom given by the Welch-Satterthwaite equation. Setting
-    `equal_variance=True` instead pools the two sample variances into a single
-    estimate (Student's original two-sample t-test), which is more powerful but only
+    With `s^2` the sample variances (ddof=1) and the degrees of freedom from the
+    Welch-Satterthwaite equation. Setting `equal_variance=True` instead pools the two
+    sample variances into a single estimate (Student's original two-sample t-test):
+
+    - s_p^2 = ((n_a - 1) * s_a^2 + (n_b - 1) * s_b^2) / (n_a + n_b - 2)
+    - t = (mean_a - mean_b) / sqrt(s_p^2 * (1 / n_a + 1 / n_b)), df = n_a + n_b - 2
+
+    The two-sided p-value is 2 * P(T_df > |t|). The pooled test is more powerful but only
     valid when the two samples genuinely share the same variance -- Welch's version is
     the safer default since it reduces to Student's test when variances happen to be
     equal, but remains valid when they are not.
@@ -60,17 +67,35 @@ def get_two_sample_t_test(
 
     Raises:
         TypeError: If `sample_a` or `sample_b` is not one of the accepted types.
+
+    Notes:
+        Referenced against statsmodels' `ttest_ind` with `usevar="unequal"` (Welch) and
+        `usevar="pooled"` (Student).
     """
     sample_a_values = _to_target_vector(sample_a)
     sample_b_values = _to_target_vector(sample_b)
     sample_a_values = sample_a_values[~np.isnan(sample_a_values)]
     sample_b_values = sample_b_values[~np.isnan(sample_b_values)]
 
-    t_statistic, p_value, degrees_of_freedom = ttest_ind(
-        sample_a_values,
-        sample_b_values,
-        usevar="pooled" if equal_variance else "unequal",
-    )
+    n_a, n_b = len(sample_a_values), len(sample_b_values)
+    variance_a = np.var(sample_a_values, ddof=1)
+    variance_b = np.var(sample_b_values, ddof=1)
+
+    if equal_variance:
+        degrees_of_freedom = n_a + n_b - 2
+        pooled_variance = (
+            (n_a - 1) * variance_a + (n_b - 1) * variance_b
+        ) / degrees_of_freedom
+        standard_error = np.sqrt(pooled_variance * (1 / n_a + 1 / n_b))
+    else:
+        squared_error_a, squared_error_b = variance_a / n_a, variance_b / n_b
+        standard_error = np.sqrt(squared_error_a + squared_error_b)
+        degrees_of_freedom = (squared_error_a + squared_error_b) ** 2 / (
+            squared_error_a**2 / (n_a - 1) + squared_error_b**2 / (n_b - 1)
+        )
+
+    t_statistic = (np.mean(sample_a_values) - np.mean(sample_b_values)) / standard_error
+    p_value = 2 * stats.t.sf(np.abs(t_statistic), degrees_of_freedom)
 
     return pd.Series(
         {
@@ -109,33 +134,26 @@ def _validate_nested_models(result_restricted: dict, result_unrestricted: dict) 
     return result_unrestricted["n_parameters"] - result_restricted["n_parameters"]
 
 
-def _refit(result: dict):
+def _require_fit(result: dict) -> None:
     """
-    Returns the fitted `statsmodels` results object behind `result` (a regression result
-    dict produced by `regression_model.get_ols`/`get_wls`/`get_gls`), so the nested-model
-    comparison and restriction-testing functions below can delegate to `statsmodels`' own
-    `compare_f_test`/`compare_lr_test`/`wald_test` machinery rather than reimplementing
-    the RSS-ratio/quadratic-form formulas by hand.
-
-    The fitted object is reused rather than refitted. Refitting as a plain OLS on the
-    stored design matrix would discard the robust or clustered covariance type as well as
-    the WLS weights and the GLS covariance structure, so a test on a robust or weighted
-    fit would silently report the result for an unweighted, non-robust one instead.
+    Checks that `result` is a regression result dict produced by
+    `regression_model.get_ols`/`get_wls`/`get_gls`, which carries the residual sum of
+    squares, log-likelihood and inference degrees of freedom the nested-model and
+    restriction tests below need. They use the fit's own covariance estimator, WLS
+    weights and GLS covariance structure, so a test on a robust or weighted fit reports
+    the result for that fit rather than for an unweighted, non-robust one.
     """
-    if result.get("statsmodels_result") is None:
+    if "log_likelihood" not in result:
         raise ValueError(
             "This regression result carries no fitted model, so it cannot be used in a "
             "nested-model test. Fit it with get_ols, get_wls or get_gls first."
         )
 
-    return result["statsmodels_result"]
-
 
 def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
     """
     Calculate a nested-model F-test for the joint significance of the extra
-    regressors in `result_unrestricted` relative to `result_restricted`, via
-    `statsmodels`' `RegressionResults.compare_f_test`.
+    regressors in `result_unrestricted` relative to `result_restricted`.
 
     Also known as: nested F-test, restricted vs. unrestricted F-test, partial F-test.
 
@@ -153,7 +171,9 @@ def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
     p-value) result means the extra regressors meaningfully improve the fit and
     should not be dropped. This is the same nested-F construction used internally by
     `causality_model.get_granger_causality`, exposed here as a general-purpose
-    primitive for any two nested regression result dicts.
+    primitive for any two nested regression result dicts. For WLS/GLS fits the RSS is
+    the weighted (whitened) one, and the F-statistic always uses the RSS, whichever
+    covariance estimator the fits used.
 
     Args:
         result_restricted (dict): The fitted restricted model (fewer
@@ -171,14 +191,27 @@ def get_f_test(result_restricted: dict, result_unrestricted: dict) -> pd.Series:
         ValueError: If `result_unrestricted` does not have strictly more parameters
         than `result_restricted`, or if the two were not fit on the same number of
         observations.
+
+    Notes:
+        Referenced against statsmodels' `RegressionResults.compare_f_test`.
     """
     q = _validate_nested_models(result_restricted, result_unrestricted)
+    _require_fit(result_restricted)
+    _require_fit(result_unrestricted)
 
-    sm_restricted = _refit(result_restricted)
-    sm_unrestricted = _refit(result_unrestricted)
-
-    f_statistic, p_value, _ = sm_unrestricted.compare_f_test(sm_restricted)
     degrees_of_freedom_denominator = result_unrestricted["degrees_of_freedom"]
+    degrees_of_freedom_numerator = (
+        result_restricted["degrees_of_freedom"] - degrees_of_freedom_denominator
+    )
+    residual_sum_of_squares = result_unrestricted["sum_of_squared_residuals"]
+    f_statistic = (
+        (result_restricted["sum_of_squared_residuals"] - residual_sum_of_squares)
+        / degrees_of_freedom_numerator
+        / (residual_sum_of_squares / degrees_of_freedom_denominator)
+    )
+    p_value = stats.f.sf(
+        f_statistic, degrees_of_freedom_numerator, degrees_of_freedom_denominator
+    )
 
     return pd.Series(
         {
@@ -198,7 +231,7 @@ def get_wald_test(
 ) -> pd.Series:
     """
     Calculate a Wald test of `q` general linear restriction(s) on the coefficients of
-    a single fitted regression result dict, via `statsmodels`' `RegressionResults.wald_test`.
+    a single fitted regression result dict.
 
     Also known as: Wald chi-squared test.
 
@@ -218,7 +251,11 @@ def get_wald_test(
     small-sample F(q, n - k) interpretation and is reported alongside the chi-squared
     version -- for a single restriction (`q = 1`) this F-statistic is an exact
     algebraic identity with the corresponding coefficient's own squared t-statistic
-    (`F = t^2`), since both use the same `Cov(beta_hat)`.
+    (`F = t^2`), since both use the same `Cov(beta_hat)`. `Cov(beta_hat)` is the fit's
+    own covariance estimator, and the F denominator degrees of freedom are `n - k`, or
+    the number of clusters minus one for a "cluster" fit. When restrictions are
+    linearly dependent, the inverse is the Moore-Penrose pseudo-inverse and `q` counts
+    the independent ones (see `least_squares_model.get_wald_statistic`).
 
     For more information about the method, see the following paper:
 
@@ -244,6 +281,9 @@ def get_wald_test(
         ValueError: If `restriction_matrix`'s number of columns does not match
         `result["n_parameters"]`, or `restriction_values`'s length does not match
         `restriction_matrix`'s number of rows.
+
+    Notes:
+        Referenced against statsmodels' `RegressionResults.wald_test`.
     """
     restriction_matrix = np.atleast_2d(np.asarray(restriction_matrix, dtype=float))
     n_restrictions, n_coefficients = restriction_matrix.shape
@@ -264,18 +304,23 @@ def get_wald_test(
                 f"restriction_matrix has {n_restrictions} rows -- these must match."
             )
 
-    sm_result = _refit(result)
-    wald = sm_result.wald_test(
-        (restriction_matrix, restriction_values), scalar=True, use_f=False
-    )
-    wald_f = sm_result.wald_test(
-        (restriction_matrix, restriction_values), scalar=True, use_f=True
+    _require_fit(result)
+    wald_statistic, independent_restrictions = get_wald_statistic(
+        result["coefficients"],
+        result["covariance_matrix"],
+        restriction_matrix,
+        restriction_values,
     )
 
-    wald_statistic = float(wald.statistic)
-    chi2_p_value = float(wald.pvalue)
-    f_statistic = float(wald_f.statistic)
-    f_p_value = float(wald_f.pvalue)
+    chi2_p_value = float(stats.chi2.sf(wald_statistic, independent_restrictions))
+    f_statistic = wald_statistic / independent_restrictions
+    f_p_value = float(
+        stats.f.sf(
+            f_statistic,
+            independent_restrictions,
+            result["inference_degrees_of_freedom"],
+        )
+    )
 
     return pd.Series(
         {
@@ -294,7 +339,7 @@ def get_likelihood_ratio_test(
 ) -> pd.Series:
     """
     Calculate a nested-model Likelihood Ratio (LR) test, the Maximum Likelihood
-    analogue of `get_f_test`, via `statsmodels`' `RegressionResults.compare_lr_test`.
+    analogue of `get_f_test`.
 
     Also known as: LR test, Wilks' likelihood ratio test.
 
@@ -304,7 +349,7 @@ def get_likelihood_ratio_test(
     statistic reduces to a simple function of each model's Residual Sum of Squares
     (RSS):
 
-    - LR = n * ln(RSS_restricted / RSS_unrestricted)
+    - LR = -2 * (ln L_restricted - ln L_unrestricted) = n * ln(RSS_restricted / RSS_unrestricted)
 
     Which is asymptotically chi-squared(q) distributed under the null that the `q`
     extra regressors in the unrestricted model are all jointly zero, where
@@ -332,13 +377,24 @@ def get_likelihood_ratio_test(
         ValueError: If `result_unrestricted` does not have strictly more parameters
         than `result_restricted`, or if the two were not fit on the same number of
         observations.
+
+    Notes:
+        The log-likelihoods are those of the fits themselves (with the WLS weights or GLS
+        covariance structure), whichever covariance estimator they used.
+        Referenced against statsmodels' `RegressionResults.compare_lr_test`.
     """
     q = _validate_nested_models(result_restricted, result_unrestricted)
+    _require_fit(result_restricted)
+    _require_fit(result_unrestricted)
 
-    sm_restricted = _refit(result_restricted)
-    sm_unrestricted = _refit(result_unrestricted)
-
-    lr_statistic, p_value, _ = sm_unrestricted.compare_lr_test(sm_restricted)
+    lr_statistic = -2 * (
+        result_restricted["log_likelihood"] - result_unrestricted["log_likelihood"]
+    )
+    p_value = stats.chi2.sf(
+        lr_statistic,
+        result_restricted["degrees_of_freedom"]
+        - result_unrestricted["degrees_of_freedom"],
+    )
 
     return pd.Series(
         {

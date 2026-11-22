@@ -244,7 +244,7 @@ def _from_panel_result(
 ) -> dict:
     """
     Translates a fitted `linearmodels` panel results object into the same
-    regression result dict shape `regression_model._from_statsmodels_ols` returns
+    regression result dict shape `regression_model._to_regression_result` returns
     (see its docstring for the full key list) -- keeps `PanelOLS`/`RandomEffects`
     fits interchangeable with OLS/WLS/GLS fits everywhere downstream.
     """

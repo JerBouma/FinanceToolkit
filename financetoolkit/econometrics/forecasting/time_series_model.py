@@ -337,8 +337,8 @@ def get_var_forecast(data: pd.DataFrame, lags: int, forecast_steps: int = 1) -> 
     Maximum Likelihood estimator of a VAR reduces to `k` separate Ordinary Least
     Squares regressions, one per equation -- no iterative fitting is needed, and no
     separate `statsmodels.tsa.vector_ar.var_model.VAR` call is needed either: each
-    equation here is fit via `regression_model.get_ols`, i.e. `statsmodels.api.OLS`
-    directly, which is mathematically identical to (and was cross-checked against)
+    equation here is fit via `regression_model.get_ols` directly, which is
+    mathematically identical to (and was cross-checked against)
     `statsmodels.tsa.vector_ar.var_model.VAR`'s own OLS-based estimation.
 
     Forecasts are produced by iterating the fitted recursion forward `forecast_steps`

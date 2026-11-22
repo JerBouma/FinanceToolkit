@@ -837,3 +837,45 @@ def test_trailing_windows_count_calendar_periods():
     summed = helpers.trailing_sum(annual, 2).iloc[0]
     assert summed.isna().tolist() == [True, False, True, False]
     assert summed.iloc[[1, 3]].tolist() == [3.0, 7.0]
+
+
+def test_handle_portfolio_keeps_the_portfolios_own_values():
+    """A Portfolio calculated from its own return series is not replaced by a weighted average."""
+
+    class MockSelf:
+        def __init__(self):
+            self._tickers = ["AAPL", "MSFT", "Portfolio"]
+            self._rounding = 4
+            self._quarterly = False
+            self._portfolio_weights = {
+                "yearly": pd.DataFrame(
+                    {"AAPL": [0.5, 0.5], "MSFT": [0.5, 0.5]},
+                    index=pd.PeriodIndex(["2020", "2021"], freq="Y"),
+                )
+            }
+
+    @helpers.handle_portfolio
+    def by_columns(self):
+        return pd.DataFrame(
+            {"AAPL": [0.2, 0.3], "MSFT": [0.2, 0.3], "Portfolio": [0.01, 0.02]},
+            index=pd.PeriodIndex(["2020", "2021"], freq="Y"),
+        )
+
+    @helpers.handle_portfolio
+    def by_rows(self):
+        return pd.DataFrame(
+            {"AAPL": [0.2, 0.2], "MSFT": [0.3, 0.3], "Portfolio": [0.01, np.nan]},
+            index=pd.PeriodIndex(["2020", "2021"], freq="Y"),
+        ).T
+
+    @helpers.handle_portfolio
+    def without_values(self):
+        return pd.DataFrame(
+            {"AAPL": [0.2, 0.3], "MSFT": [0.4, 0.5], "Portfolio": [np.nan, np.nan]},
+            index=pd.PeriodIndex(["2020", "2021"], freq="Y"),
+        )
+
+    assert by_columns(MockSelf())["Portfolio"].tolist() == [0.01, 0.02]
+    assert by_rows(MockSelf()).loc["Portfolio"].iloc[0] == 0.01
+    # Without values of its own (e.g. the ratios of financial statements) it is the weighted average.
+    assert without_values(MockSelf())["Portfolio"].tolist() == pytest.approx([0.3, 0.4])

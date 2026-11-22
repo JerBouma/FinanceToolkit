@@ -98,7 +98,12 @@ class Portfolio:
         - transactions: a DataFrame, CSV or Excel file with one row per trade and the columns
           Date, Ticker (or Symbol, Identifier, ISIN), Volume (or Quantity, Shares; negative
           for a sale) and optionally Price, Costs (negative) and Currency. A missing Price is
-          filled with the closing price of the day;
+          filled with the closing price of the day. The historical prices are adjusted for
+          stock splits, so a trade from before a split is valued on today's share basis: one
+          given as the broker confirmed it at the time (1 share at 830.40 before a ten for
+          one split) is restated to that basis (10 shares at 83.04) when its price is closer
+          to the close of its day on the old basis, which needs the stock splits and an API
+          key. A date with a time of day ("%Y-%m-%d %H:%M:%S") orders the trades of a day;
         - a definition (`PortfolioDefinition`), as the classic portfolios of
           `Portfolio.from_preset` are.
 
@@ -440,6 +445,40 @@ class Portfolio:
         )
 
         return benchmark_currency, ticker_currencies
+
+    def _clear_collected_data(self, benchmark_only: bool = False) -> None:
+        """
+        Forget the data collected for the transactions and the benchmark, and everything
+        calculated from it, so the next method collects it again: the benchmark and what
+        depends on it when the benchmark changes, and also the prices of the tickers when the
+        transactions are read again (they are converted to the reporting currency in place
+        when the prices are collected). The exchange rates are kept, as they do not change.
+        """
+        if not benchmark_only:
+            self._toolkit = None
+            self._ticker_combinations = {}
+            self._daily_historical_data = pd.DataFrame()
+            self._weekly_historical_data = pd.DataFrame()
+            self._historical_statistics = pd.DataFrame()
+            self._latest_price = pd.Series()
+            self._positions_overview = pd.DataFrame()
+
+        self._benchmark_toolkit = None
+        self._toolkit_instance = None
+        self._benchmark_tickers = {}
+        self._daily_benchmark_data = pd.DataFrame()
+        self._weekly_benchmark_data = pd.DataFrame()
+        self._benchmark_specific_prices = pd.Series()
+        self._benchmark_transaction_dividends = pd.Series()
+        self._benchmark_prices_per_ticker = pd.DataFrame()
+        self._benchmark_dividends_per_ticker = pd.DataFrame()
+        self._latest_benchmark_price = pd.Series()
+        self._portfolio_volatilities = pd.Series()
+        self._portfolio_beta = pd.Series()
+        self._portfolio_overview = pd.DataFrame()
+        self._portfolio_performance = pd.DataFrame()
+        self._transactions_performance = pd.DataFrame()
+        self._transactions_overview = pd.DataFrame()
 
     def _collect_data(self) -> bool:
         """
@@ -896,11 +935,18 @@ class Portfolio:
         historical data of the assets or the benchmark cannot be collected, an empty
         DataFrame is returned instead.
 
-        Next to the historical data, the portfolio weights are also
-        loaded in the Toolkit class. This, together with the "Portfolio" ticker, enables
-        the possibility to calculate any Toolkit metric for all assets in the portfolio
-        in combination with the Portfolio itself which is a weighted average of other
-        results based on the portfolio weights over time.
+        The Toolkit holds the historical data of every asset, the benchmark as "Benchmark",
+        and the Portfolio itself as the "Portfolio" ticker: its daily time-weighted total
+        return, every day each position's total return with its weight at the previous
+        close (purchases and sales change the weights and are no return themselves), with
+        Close, Adj Close and Cumulative Return as an index that starts at 1 on the first day
+        something is held. The risk metrics (volatility, Value at Risk, drawdowns and the
+        other measures of the return distribution) and the technical indicators of the close
+        are calculated on that series, so they include how the holdings move together: a
+        stock next to its inverse fund has a low volatility, not the average of two high
+        ones. The other metrics, such as the ratios of the financial statements and the
+        performance ratios, are the weighted average of the assets' results with the
+        portfolio weights of each period.
 
         As an example:
 
@@ -973,13 +1019,17 @@ class Portfolio:
 
         # A copy: the benchmark belongs in the Toolkit's data only, as a ticker of the Portfolio's own data it would duplicate the benchmark of every position.  # noqa: E501
         historical = self._daily_historical_data.copy()
+        portfolio_series = self._portfolio_return_index()
         for column in historical_columns:
             historical[column, "Benchmark"] = benchmark_data[column]
+            historical[column, "Portfolio"] = portfolio_series.get(
+                column, pd.Series(np.nan, index=historical.index)
+            )
 
         historical = (
             historical.sort_index(axis=1)
             .reindex(historical_columns, axis=1, level=0)
-            .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)
+            .reindex(list(self._tickers) + ["Portfolio", "Benchmark"], axis=1, level=1)
         )
 
         if not self._toolkit_instance:
@@ -997,6 +1047,41 @@ class Portfolio:
             self._toolkit_instance._portfolio_weights = portfolio_weights
 
         return self._toolkit_instance
+
+    def _portfolio_return_index(self) -> pd.DataFrame:
+        """
+        The daily time-weighted total return of the holdings, as a Return and as an index
+        that starts at 1 on the first day something is held (Close, Adj Close and Cumulative
+        Return): every day each position earns its total return with its weight at the
+        previous close, so purchases and sales change the weights and are no return
+        themselves (see `get_return_contributions`). A position that did not trade on a day
+        another did keeps its price, a return of 0.
+        """
+        weights = self._unrounded_positions()["Current Weight"].astype(float)
+        returns = (
+            self._daily_historical_data["Return"]
+            .reindex(index=weights.index, columns=weights.columns)
+            .astype(float)
+        )
+        previous_weights = weights.shift(1)
+        held = previous_weights.fillna(0.0).abs().sum(axis=1) > 0
+        portfolio_return = (
+            (previous_weights * returns.fillna(0.0))
+            .sum(axis=1, min_count=1)
+            .where(held)
+        )
+        # From the first day anything is held, the day before the first return.
+        started = (weights.fillna(0.0).abs().sum(axis=1) > 0).cummax()
+        index = (1 + portfolio_return.fillna(0.0)).cumprod().where(started)
+
+        return pd.DataFrame(
+            {
+                "Close": index,
+                "Adj Close": index,
+                "Return": portfolio_return,
+                "Cumulative Return": index,
+            }
+        )
 
     def read_portfolio_dataset(
         self,
@@ -1055,6 +1140,8 @@ class Portfolio:
                 - For missing cost or income columns, an exception is raised if no valid configuration is found.
 
         Notes:
+            - Reading the transactions again, after data was collected, starts over: the prices, the benchmark
+            and every overview are collected and calculated again for the transactions that are read.
             - Duplicates are handled according to configuration settings ('self._cfg["general"]["adjust_duplicates"]').
             - If duplicate data is found in the combination of datasets, it will be removed to prevent double-counting.
             - The date columns are converted to datetime objects, and transaction descriptions are treated as
@@ -1126,6 +1213,11 @@ class Portfolio:
             column_mapping if column_mapping else self._cfg["general"]["column_mapping"]
         )
 
+        # The data collected for the transactions read before belongs to those transactions and is in their reporting
+        # currency.
+        if not self._daily_historical_data.empty or self._toolkit_instance is not None:
+            self._clear_collected_data()
+
         if not self._raw_portfolio_dataset.empty:
             (
                 self._portfolio_dataset,
@@ -1179,6 +1271,11 @@ class Portfolio:
                 costs_columns=costs_columns,
                 column_mapping=column_mapping,
             )
+
+        # Transactions with a time of day are in the order they were made in within each day.
+        self._ordered_by_time = bool(
+            self._portfolio_dataset.attrs.get("ordered_by_time", False)
+        )
 
         # Written the way the Toolkit writes them, so "aapl" and "AAPL" are one holding and
         # each ticker matches its own data. An ISIN is converted once here; when it resolves
@@ -1260,8 +1357,10 @@ class Portfolio:
         on the portfolio tickers. The resulting benchmark data is returned in a structured DataFrame.
 
         Args:
-            benchmark_ticker (str | None): The benchmark ticker symbol. Defaults to None, the benchmark ticker
-                given to the Portfolio, or the one of the configuration file when none was given.
+            benchmark_ticker (str | None): The benchmark ticker symbol. Another ticker than the current
+                benchmark replaces it for every later method of the Portfolio, such as the Benchmark Return,
+                Alpha and Beta of the overviews. Defaults to None, the current benchmark: the one given to
+                the Portfolio, or the one of the configuration file when none was given.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -1327,8 +1426,12 @@ class Portfolio:
             if self._daily_historical_data.empty:
                 return pd.DataFrame()
 
-        # The constructor already fell back to the configuration's benchmark.
-        benchmark_ticker = benchmark_ticker or self._benchmark_ticker
+        # The constructor already fell back to the configuration's benchmark. Another benchmark replaces it, with
+        # everything calculated from the one collected before.
+        if benchmark_ticker and benchmark_ticker != self._benchmark_ticker:
+            self._benchmark_ticker = benchmark_ticker
+            self._clear_collected_data(benchmark_only=True)
+        benchmark_ticker = self._benchmark_ticker
 
         if not self._benchmark_toolkit:
             self._benchmark_tickers = dict.fromkeys(
@@ -1414,9 +1517,14 @@ class Portfolio:
             return pd.DataFrame()
 
         # Aligned with carried-forward prices: filling a missing date with the next quote would copy that day's return onto the earlier date as well and price it with information from the future.  # noqa: E501
+        # The prices are carried forward before the conversion, on the dates of the portfolio as well, so a date the
+        # benchmark's exchange is closed is converted at its own exchange rate.
+        benchmark_on_portfolio_dates = daily_benchmark_data.reindex(
+            daily_benchmark_data.index.union(self._daily_historical_data.index)
+        )
         aligned_by_currency = {
             main_currency: portfolio_model.align_benchmark_data(
-                convert(daily_benchmark_data, main_currency),
+                convert(benchmark_on_portfolio_dates, main_currency),
                 self._daily_historical_data.index,
             )
         }
@@ -1442,7 +1550,7 @@ class Portfolio:
             currency = ticker_currencies.get(ticker, main_currency)
             if currency not in aligned_by_currency:
                 aligned_by_currency[currency] = portfolio_model.align_benchmark_data(
-                    convert(daily_benchmark_data, currency),
+                    convert(benchmark_on_portfolio_dates, currency),
                     self._daily_historical_data.index,
                 )
             aligned = aligned_by_currency[currency]
@@ -1803,6 +1911,7 @@ class Portfolio:
             )
 
         self._daily_historical_data = convert(self._daily_historical_data)
+        self._restate_split_transactions()
 
         # The weekly data is aggregated from the converted daily data, so each day's Open, High,
         # Low and Dividends is converted at that day's exchange rate rather than the week's last.
@@ -1847,6 +1956,88 @@ class Portfolio:
             self._daily_historical_data,
             rounding if rounding is not None else self._rounding,
         )
+
+    def _restate_split_transactions(self) -> None:
+        """
+        Restate the transactions from before a stock split that are given on the share basis of
+        their own day, as a broker confirms them, to the split-adjusted basis of the historical
+        data (see `portfolio_model.get_split_factors`): the volume times the split ratio and the
+        price divided by it, so the amount stays the same. Only the tickers with a transaction
+        priced far from the close of its day are checked, which needs their stock splits.
+        """
+        if "Close" not in self._daily_historical_data.columns.get_level_values(0):
+            return
+        prices = self._portfolio_dataset[self._price_column].astype(float)
+        closes = self._values_at_transactions(self._daily_historical_data["Close"])
+        ratios = (prices / closes).abs()
+        suspects = (ratios > portfolio_model.SPLIT_PRICE_FACTOR) | (
+            ratios < 1 / portfolio_model.SPLIT_PRICE_FACTOR
+        )
+        if not suspects.any():
+            return
+
+        tickers = self._portfolio_dataset.index.get_level_values(1)
+        suspect_tickers = list(dict.fromkeys(tickers[suspects.to_numpy()]))
+        data_tickers = [
+            self._data_tickers.get(ticker, ticker) for ticker in suspect_tickers
+        ]
+        stock_splits = (
+            Toolkit(
+                api_key=self._api_key,
+                tickers=data_tickers,
+                benchmark_ticker=None,
+                start_date=self._start_date,
+                use_cached_data=self._use_cached_data,
+                progress_bar=False,
+            ).get_stock_splits()
+            if self._api_key
+            else None
+        )
+
+        splits: dict[str, pd.Series] = {}
+        if isinstance(stock_splits, pd.DataFrame) and not stock_splits.empty:
+            # A single ticker comes back without the ticker level.
+            if stock_splits.index.nlevels == 1:
+                stock_splits = pd.concat({data_tickers[0]: stock_splits})
+            for data_ticker, ticker_splits in stock_splits.groupby(level=0):
+                ratio = ticker_splits["Numerator"].astype(float) / ticker_splits[
+                    "Denominator"
+                ].astype(float)
+                splits[
+                    self._ticker_combinations.get(str(data_ticker), str(data_ticker))
+                ] = ratio.droplevel(0)
+
+        factors = portfolio_model.get_split_factors(
+            prices,
+            closes,
+            self._portfolio_dataset.index.get_level_values(0),
+            tickers,
+            splits,
+        )
+        restated = factors != 1
+        if restated.any():
+            self._portfolio_dataset[self._volume_column] = (
+                self._portfolio_dataset[self._volume_column] * factors
+            )
+            self._portfolio_dataset[self._price_column] = prices / factors
+            logger.info(
+                "Restated %d transactions of %s from before a stock split to the split-adjusted share basis "
+                "of the prices (the volume times the split ratio, the price divided by it).",
+                int(restated.sum()),
+                ", ".join(map(str, dict.fromkeys(tickers[restated.to_numpy()]))),
+            )
+
+        unexplained = suspects & ~restated
+        if unexplained.any():
+            logger.warning(
+                "The price of %d transactions of %s is more than %.0f%% away from the close of its day, and no "
+                "stock split explains it%s. A transaction from before a split is valued on today's share basis: "
+                "give its volume times the split ratio and its price divided by it.",
+                int(unexplained.sum()),
+                ", ".join(map(str, dict.fromkeys(tickers[unexplained.to_numpy()]))),
+                (portfolio_model.SPLIT_PRICE_FACTOR - 1) * 100,
+                "" if self._api_key else " (the stock splits need an API key)",
+            )
 
     def get_positions_overview(
         self, rounding: int | None = None, show_columns: str | list[str] | None = None
@@ -2317,7 +2508,9 @@ class Portfolio:
                 in the Cumulative PnL column. Pass False to see the PnL of each sale. Defaults to True.
             pnl_method (str): The method for calculating profit & loss. Options are:
                 'FIFO' (First In, First Out), 'LIFO' (Last In, First Out), or 'AVERAGE'.
-                Defaults to 'FIFO'.
+                The purchases of a day come before its sales, unless the dates of the
+                transactions include a time of day ("%Y-%m-%d %H:%M:%S"), which orders them
+                within the day. Defaults to 'FIFO'.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
                 on every column level, or the rows when no column has those names (such as the line
                 items of a financial statement). Names that do not exist are logged, and when none
@@ -2419,6 +2612,7 @@ class Portfolio:
                 volume_column=self._volume_column,
                 price_column=self._price_column,
                 method=pnl_method,
+                purchases_first=not self._ordered_by_time,
             )
 
             # Ensure the indices are unique before concatenation
@@ -2729,7 +2923,8 @@ class Portfolio:
         flow_dates = trading_days[self._transaction_locations()]
 
         # The dividends received per day follow from the cumulative dividends of the positions, dated on the ex-dividend date.  # noqa: E501
-        positions_dividends = self.get_positions_overview()["Dividends"]
+        # Unrounded: the dividends of a small position would otherwise take the Portfolio's rounding.
+        positions_dividends = self._unrounded_positions()["Dividends"]
         daily_dividends = positions_dividends.diff().fillna(positions_dividends)
         daily_dividends.index = pd.to_datetime(
             to_period_index(daily_dividends.index).to_timestamp()
@@ -2807,9 +3002,18 @@ class Portfolio:
             result, rounding if rounding is not None else self._rounding
         )
 
+    def _unrounded_positions(self) -> pd.DataFrame:
+        """
+        The positions overview as it is calculated: `get_positions_overview` rounds what it
+        returns to the Portfolio's rounding when it is given none, which would round the
+        weights, values and dividends other methods calculate with.
+        """
+        self.get_positions_overview()
+        return self._positions_overview
+
     def _get_position_values(self) -> pd.DataFrame:
         """The value of every position per day, in the currency of the portfolio."""
-        positions = self.get_positions_overview(rounding=None)
+        positions = self._unrounded_positions()
         if positions.empty:
             raise ValueError("The Portfolio has no positions.")
         return positions["Current Value"].astype(float)
@@ -3087,38 +3291,38 @@ class Portfolio:
 
         | Date   |    ASML |    MSFT |    NVDA |    AMZN |   Portfolio |
         |:-------|--------:|--------:|--------:|--------:|------------:|
-        | 2000   |  0.0919 | -0.2261 |  0      | -0.0066 |     -0.3338 |
+        | 2000   |  0.0919 | -0.2261 |  0      | -0.0067 |     -0.3338 |
         | 2001   | -0.0367 |  0.1306 |  0      | -0.0005 |      0.4238 |
-        | 2002   | -0.0308 | -0.0517 |  0      |  0.0004 |     -0.1472 |
-        | 2003   |  0.1081 |  0.0148 |  0.0002 |  0.002  |      0.3674 |
+        | 2002   | -0.0307 | -0.0517 |  0      |  0.0004 |     -0.1471 |
+        | 2003   |  0.1081 |  0.0148 |  0.0002 |  0.002  |      0.3673 |
         | 2004   | -0.0334 |  0.0131 |  0      |  0.0003 |      0.1162 |
-        | 2005   |  0.0401 |  0      |  0.0002 |  0.0002 |      0.1154 |
+        | 2005   |  0.0401 |  0      |  0.0001 |  0.0002 |      0.1153 |
         | 2006   |  0.0407 |  0.0222 |  0.0006 | -0.0003 |      0.0813 |
-        | 2007   |  0.042  |  0.0235 |  0.0004 |  0.007  |      0.0048 |
+        | 2007   |  0.042  |  0.0235 |  0.0004 |  0.007  |      0.0047 |
         | 2008   | -0.0793 | -0.0579 | -0.0012 | -0.0049 |     -0.4002 |
-        | 2009   |  0.1632 |  0.0634 |  0.0009 |  0.0144 |      0.4882 |
-        | 2010   |  0.028  | -0.0073 | -0.0002 |  0.004  |      0.1288 |
+        | 2009   |  0.1632 |  0.0634 |  0.0009 |  0.0144 |      0.488  |
+        | 2010   |  0.028  | -0.0073 | -0.0002 |  0.004  |      0.1289 |
         | 2011   |  0.0237 | -0.0038 | -0.0001 | -0.0004 |     -0.0446 |
-        | 2012   |  0.097  |  0.0059 | -0.0001 |  0.0056 |      0.2122 |
-        | 2013   |  0.1062 |  0.0274 |  0.0001 |  0.0091 |      0.4159 |
-        | 2014   |  0.0363 |  0.018  |  0.0001 | -0.004  |      0.1042 |
-        | 2015   | -0.0417 |  0.0158 |  0.0004 |  0.0202 |      0.1087 |
-        | 2016   |  0.0488 |  0.0123 |  0.0018 |  0.0038 |      0.2379 |
-        | 2017   |  0.0992 |  0.0287 |  0.0017 |  0.0199 |      0.4316 |
-        | 2018   | -0.0159 |  0.0138 | -0.0006 |  0.0124 |      0.0286 |
-        | 2019   |  0.1419 |  0.0426 |  0.0012 |  0.0127 |      0.592  |
-        | 2020   |  0.1134 |  0.0316 |  0.0019 |  0.0353 |      0.513  |
+        | 2012   |  0.097  |  0.0059 | -0.0001 |  0.0056 |      0.2123 |
+        | 2013   |  0.1062 |  0.0274 |  0.0002 |  0.0091 |      0.416  |
+        | 2014   |  0.0363 |  0.018  |  0.0001 | -0.004  |      0.1043 |
+        | 2015   | -0.0417 |  0.0158 |  0.0004 |  0.0202 |      0.1086 |
+        | 2016   |  0.0488 |  0.0123 |  0.0018 |  0.0038 |      0.238  |
+        | 2017   |  0.0992 |  0.0287 |  0.0017 |  0.02   |      0.4316 |
+        | 2018   | -0.0159 |  0.0138 | -0.0006 |  0.0124 |      0.0287 |
+        | 2019   |  0.1419 |  0.0426 |  0.0011 |  0.0127 |      0.592  |
+        | 2020   |  0.1134 |  0.0316 |  0.002  |  0.0353 |      0.5131 |
         | 2021   |  0.1187 |  0.037  |  0.0034 |  0.0014 |      0.3203 |
         | 2022   | -0.0695 | -0.0226 | -0.0023 | -0.0218 |     -0.2619 |
-        | 2023   |  0.0827 |  0.0431 |  0.0071 |  0.0233 |      0.6118 |
-        | 2024   | -0.0108 |  0.0094 |  0.0106 |  0.014  |      0.2951 |
+        | 2023   |  0.0827 |  0.0431 |  0.0071 |  0.0233 |      0.6117 |
+        | 2024   | -0.0108 |  0.0094 |  0.0106 |  0.014  |      0.295  |
         | 2025   |  0.0672 |  0.0093 |  0.0049 |  0.0018 |      0.234  |
-        | 2026   |  0.029  |  0.0005 | -0.0046 |  0.0021 |     -0.0438 |
+        | 2026   |  0.029  |  0.0006 | -0.0046 |  0.002  |     -0.0437 |
         """
         if not self._collect_data():
             return pd.DataFrame()
         frequency = None if period == "daily" else self._period_frequency(period)
-        positions = self.get_positions_overview(rounding=None)
+        positions = self._unrounded_positions()
         weights = positions["Current Weight"].astype(float)
         returns = (
             self._daily_historical_data["Return"]

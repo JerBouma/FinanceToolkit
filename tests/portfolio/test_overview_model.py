@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from financetoolkit.portfolio.overview_model import (
+    _calculate_portfolio_volatility,
     calculate_contributed_capital,
     create_portfolio_overview,
     create_positions_overview,
@@ -837,3 +838,52 @@ def test_units_bought_without_a_price_have_an_unknown_value_in_the_transactions(
     assert performance.loc[
         (pd.Period("2023", freq="Y"), "A"), "Return"
     ] == pytest.approx(0.1)
+
+
+@pytest.mark.parametrize("method", ["FIFO", "LIFO", "AVERAGE"])
+def test_a_sale_in_the_morning_is_matched_before_a_purchase_in_the_afternoon(method):
+    dates = pd.PeriodIndex(["2021-01-04", "2022-01-03", "2022-01-03"], freq="D")
+    # In the order they were made: bought, sold at 09:30 and bought back at 15:59.
+    transactions = pd.DataFrame(
+        {
+            "Identifier": ["AAPL"] * 3,
+            "Volume": [10.0, -10.0, 10.0],
+            "Price": [129.41, 177.83, 182.01],
+        },
+        index=pd.Index(dates, name="Date"),
+    ).set_index("Identifier", append=True)
+
+    in_order = create_profit_and_loss_overview(
+        transactions, "Identifier", "Volume", "Price", method, purchases_first=False
+    )
+    purchases_first = create_profit_and_loss_overview(
+        transactions, "Identifier", "Volume", "Price", method
+    )
+
+    # Every method sells the units bought in 2021: 10 x (177.83 - 129.41).
+    assert in_order["PnL"].tolist() == pytest.approx([0.0, 484.2, 0.0])
+    if method == "LIFO":
+        assert purchases_first["PnL"].tolist() == pytest.approx([0.0, -41.8, 0.0])
+
+
+def test_the_portfolio_volatility_uses_one_set_of_dates_for_every_pair():
+    rng = np.random.default_rng(1)
+    index = pd.period_range("2022-01-03", periods=250, freq="D")
+    market = rng.normal(0, 0.03, 250)
+    returns = pd.DataFrame(
+        {"LONG": market, "SHORT": -market + rng.normal(0, 0.001, 250)}, index=index
+    )
+    # The inverse fund lists later and misses a holiday of its own.
+    returns.iloc[:116, 1] = np.nan
+    returns.iloc[200, 1] = np.nan
+    weights = pd.Series({"LONG": 0.5, "SHORT": 0.5, "SOLD": 0.0})
+
+    volatility = _calculate_portfolio_volatility(
+        weights, pd.Series({"LONG": 0.5, "SHORT": 0.5, "SOLD": 0.5}), returns
+    )
+
+    common = returns.iloc[116:].fillna(0.0)
+    expected = float((common @ weights.drop("SOLD")).std() * np.sqrt(252))
+    assert volatility == pytest.approx(expected)
+    # Far below either asset's volatility of about 0.48, as they offset each other.
+    assert volatility < 0.1

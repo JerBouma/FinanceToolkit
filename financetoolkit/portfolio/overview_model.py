@@ -217,7 +217,13 @@ def _calculate_portfolio_volatility(
         asset_returns (pd.DataFrame | None): Daily returns for each asset, indexed by date/period,
             with one column per ticker. When available, the most recent 252 trading days of returns
             are used to build the covariance matrix, the same window as the individual asset
-            volatilities (see `calculate_trailing_volatility`).
+            volatilities (see `calculate_trailing_volatility`). The covariance matrix is estimated
+            on the dates of that window on which every held asset has a price: from the date the
+            last of them has its first return, with a return of 0 on a date an asset did not trade
+            while another did (its price is carried forward, as in the value of the portfolio).
+            Each pair estimated on the dates it shares and each variance on the asset's own dates
+            would mix windows into a matrix that need not be a covariance matrix of any one set of
+            returns, and can make the volatility of two opposite assets much larger than it was.
 
     Returns:
         float: The annualized portfolio volatility (standard deviation).
@@ -226,7 +232,9 @@ def _calculate_portfolio_volatility(
         Markowitz, H. (1952). Portfolio Selection. The Journal of Finance, 7(1), 77-91.
     """
     if asset_returns is not None and not asset_returns.empty:
-        returns_for_covariance = asset_returns.reindex(columns=weights.index)
+        # Only the held assets count: a sold position has no returns in the window to restrict it by.  # noqa: E501
+        held = weights.index[weights.notna() & (weights != 0)]
+        returns_for_covariance = asset_returns.reindex(columns=held)
 
         # The most recent 252 trading days, matching the individual Volatility column.
         recent_returns = returns_for_covariance.iloc[-TRADING_DAYS_PER_YEAR:]
@@ -234,7 +242,13 @@ def _calculate_portfolio_volatility(
         # Columns that are entirely missing would propagate NaNs across the matrix.
         recent_returns = recent_returns.dropna(axis=1, how="all")
 
-        if not recent_returns.empty:
+        # One set of dates for every pair: from the first date every held asset has a return, with 0 on the dates an asset
+        # did not trade.
+        recent_returns = recent_returns[
+            recent_returns.notna().cummax().all(axis=1)
+        ].fillna(0.0)
+
+        if len(recent_returns) > 1:
             annualized_covariance = recent_returns.cov() * TRADING_DAYS_PER_YEAR
             aligned_weights = weights.reindex(annualized_covariance.index).fillna(0.0)
 
@@ -1191,6 +1205,7 @@ def create_profit_and_loss_overview(
     volume_column: str,
     price_column: str,
     method="FIFO",
+    purchases_first: bool = True,
 ):
     """
     Calculate Profit and Loss (PnL) using FIFO, LIFO, or Average Price methods for multiple tickers.
@@ -1208,6 +1223,9 @@ def create_profit_and_loss_overview(
         price_column (str): The column name representing the transaction prices.
         method (str, optional): Method for inventory valuation.
             Can be 'FIFO', 'LIFO', or 'AVERAGE'. Default is 'FIFO'.
+        purchases_first (bool, optional): Whether the purchases of a day come before its sales.
+            False keeps the order of the rows within a day, for transactions that are in the
+            order they were made in (dated with a time of day). Defaults to True.
 
     Returns:
         pd.DataFrame: DataFrame with the columns 'PnL' (realized profit and loss per transaction)
@@ -1220,7 +1238,10 @@ def create_profit_and_loss_overview(
         - AVERAGE: Uses the average cost of all assets in inventory for PnL calculation.
         - The inventory is built up in date order. Within a day the purchases come before the
           sales, so a position bought and sold on the same day realizes its PnL whatever the
-          order of the rows; otherwise the rows keep their order.
+          order of the rows; otherwise the rows keep their order. With `purchases_first=False`,
+          as the Portfolio passes for transactions dated with a time of day, the rows keep
+          their order within the day as well, so a sale in the morning is matched against the
+          units held before a purchase in the afternoon.
         - Transaction costs are deliberately excluded from the realized PnL. They are carried by the
           invested amount instead, so that a cost is counted once rather than in both places.
         - Selling more units than the inventory holds realizes the PnL of the units that were held
@@ -1304,12 +1325,14 @@ def create_profit_and_loss_overview(
     # The rows are addressed by position rather than by label, since a groupby-apply returns the groups concatenated in group order whenever the index is not unique, which would attach every PnL figure to the wrong transaction once two trades share a date.  # noqa: E501
     ordered_transactions = transactions_overview.reset_index()
 
-    # Within a day the purchases come first, so a sale is matched against the units bought that day whatever the order of the rows in the file.  # noqa: E501
+    # Within a day the purchases come first, so a sale is matched against the units bought that day whatever the order of
+    # the rows in the file; transactions in the order they were made keep it.
     ordered_transactions = ordered_transactions.loc[
         pd.DataFrame(
             {
                 "date": transactions_overview.index.get_level_values(0),
-                "sell": (ordered_transactions[volume_column] < 0).to_numpy(),
+                "sell": (ordered_transactions[volume_column] < 0).to_numpy()
+                & purchases_first,
             }
         )
         .sort_values(["date", "sell"], kind="stable")

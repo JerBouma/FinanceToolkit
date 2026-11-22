@@ -48,13 +48,33 @@ def call(tool, arguments):
         ("discovery", "price_higher"),
         ("discovery", "dividend_lower"),
         ("discovery", "dividend_higher"),
-        ("volatility", "num_std_dev"),
         ("volatility", "atr_multiplier"),
         ("options", "time_to_expiration"),
     ],
 )
 def test_a_fractional_parameter_is_a_number(schemas, tool, parameter):
     assert types_of(schemas[tool][parameter]) == {"number"}
+
+
+@pytest.mark.parametrize(
+    ("indicator", "given", "expected"),
+    [
+        ("get_bollinger_bands", 2.5, 2.5),
+        ("get_standard_deviation_channel", "1,2", [1.0, 2.0]),
+        ("get_standard_deviation_channel", [1, 2.5], [1.0, 2.5]),
+    ],
+)
+def test_the_band_width_is_a_number_or_a_list_of_bands(
+    schemas, captured, indicator, given, expected
+):
+    # The Bollinger Bands take one width; the Standard Deviation Channel takes several bands.
+    assert "number" in types_of(schemas["volatility"]["num_std_dev"])
+    call(
+        "volatility",
+        {"indicator": indicator, "tickers": "AAPL", "num_std_dev": given},
+    )
+
+    assert captured[-1]["num_std_dev"] == expected
 
 
 def test_the_screener_takes_a_fractional_beta(captured):

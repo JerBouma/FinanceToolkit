@@ -47,14 +47,6 @@ def test_collect_volatility_indicators(recorder, technical_module):
     )
 
 
-def test_collect_statistics_indicators(recorder, technical_module):
-    recorder.capture(technical_module.collect_statistics_indicators())
-    recorder.capture(technical_module.collect_statistics_indicators(growth=True))
-    recorder.capture(
-        technical_module.collect_statistics_indicators(growth=True, lag=[1, 2, 3])
-    )
-
-
 def test_collect_cycle_indicators(recorder, technical_module):
     recorder.capture(technical_module.collect_cycle_indicators())
     recorder.capture(technical_module.collect_cycle_indicators(growth=True))
@@ -1445,19 +1437,6 @@ def test_collected_bollinger_bands_keep_their_own_window(technical_module):
     )
 
 
-def test_get_linear_regression(recorder, technical_module):
-    recorder.capture(technical_module.get_linear_regression())
-    recorder.capture(technical_module.get_linear_regression(window=20))
-    recorder.capture(technical_module.get_linear_regression(growth=True, lag=[1, 2]))
-
-
-def test_get_slope(recorder, technical_module):
-    recorder.capture(technical_module.get_slope())
-    recorder.capture(technical_module.get_slope(window=5))
-    recorder.capture(technical_module.get_slope(as_angle=True))
-    recorder.capture(technical_module.get_slope(growth=True, lag=[1, 2]))
-
-
 def test_get_correlation_trend_indicator(recorder, technical_module):
     recorder.capture(technical_module.get_correlation_trend_indicator())
     recorder.capture(technical_module.get_correlation_trend_indicator(window=12))
@@ -1490,68 +1469,6 @@ def test_get_standard_deviation_channel(recorder, technical_module):
     )
 
 
-def test_get_rolling_correlation(recorder, technical_module):
-    recorder.capture(technical_module.get_rolling_correlation())
-    recorder.capture(
-        technical_module.get_rolling_correlation(close_column="High", against="Low")
-    )
-    recorder.capture(technical_module.get_rolling_correlation(against="MSFT"))
-    recorder.capture(technical_module.get_rolling_correlation(growth=True, lag=[1, 2]))
-
-
-def test_get_rolling_median(recorder, technical_module):
-    recorder.capture(technical_module.get_rolling_median())
-    recorder.capture(technical_module.get_rolling_median(window=9))
-    recorder.capture(technical_module.get_rolling_median(growth=True, lag=[1, 2]))
-
-
-def test_get_rolling_percentile(recorder, technical_module):
-    recorder.capture(technical_module.get_rolling_percentile())
-    recorder.capture(
-        technical_module.get_rolling_percentile(window=30, percentile=0.75)
-    )
-    recorder.capture(technical_module.get_rolling_percentile(method="linear"))
-    recorder.capture(technical_module.get_rolling_percentile(growth=True, lag=[1, 2]))
-
-
-def test_get_percent_rank(recorder, technical_module):
-    recorder.capture(technical_module.get_percent_rank())
-    recorder.capture(technical_module.get_percent_rank(window=30))
-    recorder.capture(technical_module.get_percent_rank(growth=True, lag=[1, 2]))
-
-
-def test_get_rolling_z_score(recorder, technical_module):
-    recorder.capture(technical_module.get_rolling_z_score())
-    recorder.capture(technical_module.get_rolling_z_score(window=20))
-    recorder.capture(technical_module.get_rolling_z_score(growth=True, lag=[1, 2]))
-
-
-def test_get_rolling_mean_absolute_deviation(recorder, technical_module):
-    recorder.capture(technical_module.get_rolling_mean_absolute_deviation())
-    recorder.capture(technical_module.get_rolling_mean_absolute_deviation(window=30))
-    recorder.capture(
-        technical_module.get_rolling_mean_absolute_deviation(growth=True, lag=[1, 2])
-    )
-
-
-def test_get_rolling_standard_error(recorder, technical_module):
-    recorder.capture(technical_module.get_rolling_standard_error())
-    recorder.capture(technical_module.get_rolling_standard_error(window=30))
-    recorder.capture(
-        technical_module.get_rolling_standard_error(growth=True, lag=[1, 2])
-    )
-
-
-def test_get_rolling_entropy(recorder, technical_module):
-    recorder.capture(technical_module.get_rolling_entropy())
-    recorder.capture(technical_module.get_rolling_entropy(window=20, base=np.e))
-    recorder.capture(technical_module.get_rolling_entropy(growth=True, lag=[1, 2]))
-
-
-def test_rolling_correlation_with_an_unknown_series_is_empty(technical_module):
-    assert technical_module.get_rolling_correlation(against="UNKNOWN").empty
-
-
 def test_standard_deviation_channel_is_fitted_over_the_date_range(technical_module):
     channel = technical_module.get_standard_deviation_channel(num_std_dev=2)
 
@@ -1561,7 +1478,7 @@ def test_standard_deviation_channel_is_fitted_over_the_date_range(technical_modu
     assert (channel["Upper Band 2"] > channel["Lower Band 2"]).all().all()
 
 
-def test_statistics_default_windows():
+def test_regression_indicator_default_windows():
     import inspect  # noqa: PLC0415
 
     from financetoolkit.technicals.technicals_controller import (  # noqa: PLC0415
@@ -1570,19 +1487,9 @@ def test_statistics_default_windows():
 
     # The TA-Lib defaults, and pandas-ta-classic's where TA-Lib has no such function.
     for method, window in (
-        (Technicals.get_linear_regression, 14),
         (Technicals.get_correlation_trend_indicator, 20),
         (Technicals.get_forecast_oscillator, 5),
-        (Technicals.get_rolling_correlation, 30),
-        (Technicals.get_rolling_median, 30),
-        (Technicals.get_rolling_percentile, 100),
-        (Technicals.get_percent_rank, 100),
-        (Technicals.get_rolling_mean_absolute_deviation, 14),
-        (Technicals.get_rolling_z_score, 30),
-        (Technicals.get_rolling_standard_error, 14),
-        (Technicals.get_rolling_entropy, 10),
         (Technicals.get_projection_oscillator, 14),
-        (Technicals.get_slope, 1),
     ):
         assert inspect.signature(method).parameters["window"].default == window
 

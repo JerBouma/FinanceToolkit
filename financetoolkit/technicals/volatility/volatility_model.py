@@ -8,11 +8,13 @@ import math
 import numpy as np
 import pandas as pd
 
+from financetoolkit.econometrics.statistics.statistics_model import (
+    get_linear_regression,
+)
 from financetoolkit.technicals.overlap import overlap_model
 from financetoolkit.technicals.overlap.overlap_model import (
     get_exponential_moving_average,
 )
-from financetoolkit.technicals.statistics.statistics_model import get_linear_regression
 
 # Number of trading days used to annualize realized volatility.
 TRADING_DAYS_PER_YEAR = 252
@@ -1614,3 +1616,83 @@ def get_squeeze_momentum(
     )["Linear Regression"]
 
     return pd.concat([momentum, squeeze], keys=["Momentum", "Squeeze"], axis=1)
+
+
+def get_standard_deviation_channel(
+    prices: pd.Series,
+    window: int | None = None,
+    num_std_dev: float | list[float] | None = None,
+) -> pd.DataFrame:
+    """
+    Calculate the Standard Deviation Channel of a price series: one least-squares line
+    through all prices of the period (or the last `window` of them), with bands at a number
+    of standard deviations of the prices above and below it.
+
+    The channel shows the trend of the whole period and how far the prices stray from it: a
+    price near an outer band lies far from the trend of the period. It is the thinkorswim
+    study StDevAll, which draws the regression line of all bars (InertiaAll) with bands at
+    1, 2 and 3 standard deviations.
+
+    The formula is as follows:
+
+    - Linear Regression = b0 + b1 * x, the least-squares line through the prices, x = 0, ..., n - 1
+    - Upper Band k = Linear Regression + k * StdDev(Close)
+    - Lower Band k = Linear Regression - k * StdDev(Close)
+
+    Also known as: standard deviation channel, StDevAll, linear regression channel, regression
+    bands.
+
+    Reference: thinkorswim (TD Ameritrade). thinkScript studies StDevAll and InertiaAll.
+
+    Referenced against pandas-ta-classic's tos_stdevall
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Equals pandas-ta-classic's tos_stdevall, with the sample standard deviation of
+          the prices (ddof=1).
+        - The line is fitted over the whole period at once, so every value depends on the
+          later prices of the period and the channel is redrawn as prices are added. It
+          describes a period, and is not a signal that was known at the time.
+        - Missing prices are left out of the fit and stay missing.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int | None): The number of latest periods the line is fitted over, at
+            least 2. Defaults to None, which uses all prices.
+        num_std_dev (float | list[float] | None): The number or numbers of standard
+            deviations of the bands. Defaults to None, which uses 1, 2 and 3.
+
+    Returns:
+        pd.DataFrame: Linear Regression with a Lower Band k and Upper Band k per number of
+        standard deviations k.
+    """
+    if num_std_dev is None:
+        num_std_dev = [1, 2, 3]
+    elif not isinstance(num_std_dev, list | tuple):
+        num_std_dev = [num_std_dev]
+
+    fitted = prices.dropna()
+    if window is not None:
+        if window < 2:  # noqa: PLR2004
+            raise ValueError("The window of a linear regression is at least 2 periods.")
+        fitted = fitted.iloc[-window:]
+
+    channel = pd.DataFrame(index=prices.index)
+    if len(fitted) < 2:  # noqa: PLR2004
+        channel["Linear Regression"] = np.nan
+        for deviations in num_std_dev:
+            channel[f"Lower Band {deviations:g}"] = np.nan
+            channel[f"Upper Band {deviations:g}"] = np.nan
+        return channel
+
+    time = np.arange(len(fitted))
+    slope, intercept = np.polyfit(time, fitted.to_numpy(dtype=float), 1)
+    line = pd.Series(intercept + slope * time, index=fitted.index)
+    standard_deviation = fitted.std(ddof=1)
+
+    channel["Linear Regression"] = line
+    for deviations in num_std_dev:
+        channel[f"Lower Band {deviations:g}"] = line - deviations * standard_deviation
+        channel[f"Upper Band {deviations:g}"] = line + deviations * standard_deviation
+
+    return channel

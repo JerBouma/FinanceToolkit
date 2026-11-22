@@ -7,7 +7,12 @@ import math
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
+from financetoolkit.econometrics.statistics.statistics_model import (
+    get_linear_regression,
+    get_percent_rank,
+)
 from financetoolkit.technicals.overlap.overlap_model import (
     apply_to_rolling_windows,
     get_double_exponential_moving_average,
@@ -19,10 +24,6 @@ from financetoolkit.technicals.overlap.overlap_model import (
     get_triangular_moving_average,
     get_volume_weighted_moving_average,
     get_weighted_moving_average,
-)
-from financetoolkit.technicals.statistics.statistics_model import (
-    get_linear_regression,
-    get_percent_rank,
 )
 from financetoolkit.technicals.volatility.volatility_model import (
     get_average_true_range,
@@ -3816,3 +3817,176 @@ def get_ttm_trend(
     return pd.Series(
         np.where(prices_close > average_midpoint, 1.0, -1.0), index=prices_close.index
     ).where(average_midpoint.notna() & prices_close.notna())
+
+
+def get_correlation_trend_indicator(prices: pd.Series, window: int = 20) -> pd.Series:
+    """
+    Calculate the Correlation Trend Indicator (CTI) of a price series: the Pearson
+    correlation of the prices with a straight line rising over time.
+
+    Ehlers (2020) measures the trend by how closely the prices follow an upward-sloping
+    line: +1 when they rise in a straight line, -1 when they fall in one, and around 0 when
+    they move sideways or in a cycle. Unlike the slope, it is bounded and does not depend on
+    the price level, so it compares across securities.
+
+    The formula is as follows:
+
+    - CTI = Correlation(Close, x, window), x = 0, ..., window - 1 from the oldest price to
+      the latest
+
+    Also known as: CTI, correlation trend, Ehlers correlation trend indicator.
+
+    Reference: Ehlers, J.F. (2020). "Correlation As A Trend Indicator." Technical Analysis of
+    Stocks & Commodities, 38(5), 24-27.
+
+    Referenced against TA-Lib's CTI (https://ta-lib.org/functions/cti.html).
+
+    Notes:
+        - Equals TA-Lib's CTI and pandas-ta-classic's cti. TA-Lib defaults to a window of
+          20 and pandas-ta-classic to 12.
+        - A window of flat prices has no correlation and is missing, where TA-Lib gives 0.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods, at least 2. Defaults to 20.
+
+    Returns:
+        pd.Series: CTI values between -1 and 1.
+    """
+    if window < 2:  # noqa: PLR2004
+        raise ValueError("The window of a correlation is at least 2 periods.")
+
+    values = prices.to_numpy(dtype=float)
+    correlation = np.full(len(values), np.nan)
+
+    if len(values) >= window:
+        windows = sliding_window_view(values, window)
+        deviations = windows - windows.mean(axis=1, keepdims=True)
+        time = np.arange(window) - (window - 1) / 2
+        with np.errstate(divide="ignore", invalid="ignore"):
+            correlation[window - 1 :] = (deviations @ time) / np.sqrt(
+                (deviations**2).sum(axis=1) * (time @ time)
+            )
+
+    # A window without variation has no correlation (0 / 0), rather than an infinite one.
+    correlation = pd.Series(correlation, index=prices.index)
+
+    return correlation.where(np.isfinite(correlation))
+
+
+def get_forecast_oscillator(prices: pd.Series, window: int = 5) -> pd.Series:
+    """
+    Calculate the Forecast Oscillator of a price series: how far the price lies from the
+    Time Series Forecast made for it one period earlier, as a share of the price.
+
+    Chande's Forecast Oscillator measures the error of the linear regression forecast: it
+    is positive when the price comes in above the forecast of the previous period and
+    negative when below it. A forecast that keeps being too low points to a trend that
+    accelerates, and the oscillator crossing zero to a change in the direction of the error.
+
+    The formula is as follows:
+
+    - Time Series Forecast(t - 1) = b0 + b1 * window, the least-squares line over the
+      `window` periods up to t - 1, extended to t
+    - Forecast Oscillator = (Close - Time Series Forecast(t - 1)) / Close
+
+    Also known as: FOSC, Chande Forecast Oscillator, CFO, forecast error.
+
+    Reference: Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+
+    Referenced against TA-Lib's FOSC (https://ta-lib.org/functions/fosc.html).
+
+    Notes:
+        - Equals TA-Lib's FOSC and Tulip Indicators' fosc divided by 100: the Toolkit gives
+          a decimal (0.01 is 1%) where they give a percentage.
+        - pandas-ta-classic's fosc and cfo compare the price with the forecast of the same
+          period, which includes that price, rather than with the forecast made the period
+          before.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods the forecast line is fitted over, at least 2.
+            Defaults to 5.
+
+    Returns:
+        pd.Series: Forecast Oscillator values as decimals.
+    """
+    forecast = get_linear_regression(prices, window)["Time Series Forecast"]
+
+    return (prices - forecast.shift(1)) / prices
+
+
+def get_projection_oscillator(
+    prices_high: pd.Series,
+    prices_low: pd.Series,
+    prices_close: pd.Series,
+    window: int = 14,
+) -> pd.Series:
+    """
+    Calculate the Projection Oscillator of a price series: where the close lies within
+    Widner's Projection Bands, 0 on the lower band and 1 on the upper band.
+
+    Widner (1995) projects every high and low of the window forward to the latest period
+    along the least-squares slope of the highs and of the lows over the window. The upper
+    Projection Band is the highest of the projected highs and the lower band the lowest of
+    the projected lows, so the bands follow the trend of the window rather than lying flat
+    like the highest high and lowest low of a stochastic oscillator. The Projection
+    Oscillator is the stochastic within those bands.
+
+    The formula is as follows:
+
+    - Slope High, Slope Low = the least-squares slopes of the highs and of the lows over the window
+    - Upper Band = Max(High(t - i) + i * Slope High), i = 0, ..., window - 1
+    - Lower Band = Min(Low(t - i) + i * Slope Low), i = 0, ..., window - 1
+    - Projection Oscillator = (Close - Lower Band) / (Upper Band - Lower Band)
+
+    Also known as: PO, Projection Oscillator, Projection Bands, Widner.
+
+    Reference: Widner, M. (1995). "Signaling Change with Projection Bands." Technical Analysis
+    of Stocks & Commodities, 13(7), 275-281.
+
+    pandas-ta-classic: po (https://github.com/xgboosted/pandas-ta-classic).
+
+    Notes:
+        - Widner gives the oscillator from 0 to 100; the Toolkit gives a decimal from 0 to 1.
+        - pandas-ta-classic's po is a simpler measure under the same name, the distance of
+          the close from the end point of its linear regression in percent,
+          100 * (Close - Linear Regression) / Linear Regression, which follows from
+          `get_linear_regression`.
+        - A window whose bands coincide has no position within them and is missing.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        prices_close (pd.Series): Series of closing prices.
+        window (int): Number of periods, at least 2. Defaults to 14.
+
+    Returns:
+        pd.Series: Projection Oscillator values as decimals.
+    """
+    # The oldest price of each window is window - 1 periods back from the latest, which is 0.
+    steps = np.arange(window)[::-1]
+    bands = {}
+    for name, prices, extreme in (
+        ("Upper", prices_high, np.max),
+        ("Lower", prices_low, np.min),
+    ):
+        slope = get_linear_regression(prices, window)["Slope"].to_numpy()
+        values = prices.to_numpy(dtype=float)
+        bands[name] = np.full(len(values), np.nan)
+        if len(values) >= window:
+            projected = sliding_window_view(values, window) + np.outer(
+                slope[window - 1 :], steps
+            )
+            bands[name][window - 1 :] = extreme(projected, axis=1)
+
+    upper_band, lower_band = bands["Upper"], bands["Lower"]
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        oscillator = (prices_close.to_numpy(dtype=float) - lower_band) / (
+            upper_band - lower_band
+        )
+
+    oscillator = pd.Series(oscillator, index=prices_close.index)
+
+    return oscillator.where(np.isfinite(oscillator))

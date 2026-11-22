@@ -17,11 +17,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from financetoolkit.econometrics.statistics import statistics_model as statistics
 from financetoolkit.technicals.breadth import breadth_model as breadth
 from financetoolkit.technicals.momentum import momentum_model as momentum
 from financetoolkit.technicals.overlap import overlap_model as overlap
 from financetoolkit.technicals.pattern import pattern_model as pattern
-from financetoolkit.technicals.statistics import statistics_model as statistics
 from financetoolkit.technicals.volatility import volatility_model as volatility
 
 WINDOW = 14
@@ -417,17 +417,17 @@ PER_SECURITY_INDICATORS = {
         close, 5
     ),
     "get_correlation_trend_indicator": (
-        lambda high, low, close, opening, volume: statistics.get_correlation_trend_indicator(
+        lambda high, low, close, opening, volume: momentum.get_correlation_trend_indicator(
             close, 20
         )
     ),
     "get_forecast_oscillator": (
-        lambda high, low, close, opening, volume: statistics.get_forecast_oscillator(
+        lambda high, low, close, opening, volume: momentum.get_forecast_oscillator(
             close, 5
         )
     ),
     "get_projection_oscillator": (
-        lambda high, low, close, opening, volume: statistics.get_projection_oscillator(
+        lambda high, low, close, opening, volume: momentum.get_projection_oscillator(
             high, low, close, WINDOW
         )
     ),

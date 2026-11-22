@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from financetoolkit.econometrics.regression import panel_data_model, regression_model
 
@@ -561,3 +562,41 @@ def test_get_fixed_effects_two_way_on_a_weakly_connected_panel():
     coefficients = np.linalg.lstsq(dummies, y.to_numpy(), rcond=None)[0]
     np.testing.assert_allclose(beta, coefficients[0], rtol=1e-10)
     np.testing.assert_allclose(fitted, dummies @ coefficients, rtol=1e-10, atol=1e-10)
+
+
+def test_get_hausman_test_with_a_negative_statistic_has_no_p_value(monkeypatch):
+    # Var(b_RE) above Var(b_FE) makes the statistic negative, which floored at 0 read as a
+    # p-value of 1; the common variance options rescale one covariance by the ratio of
+    # the residual variances.
+    fe = {
+        "feature_names": ["a"],
+        "coefficients": np.array([1.1]),
+        "covariance_matrix": np.array([[0.01]]),
+        "residual_variance": 1.0,
+    }
+    re = {
+        "feature_names": ["Intercept", "a"],
+        "coefficients": np.array([0.0, 1.0]),
+        "covariance_matrix": np.array([[1.0, 0.0], [0.0, 0.012]]),
+        "residual_variance": 1.5,
+    }
+    monkeypatch.setattr(
+        panel_data_model, "get_fixed_effects", lambda *_, **__: {"regression": fe}
+    )
+    monkeypatch.setattr(panel_data_model, "get_random_effects", lambda *_, **__: re)
+
+    separate = panel_data_model.get_hausman_test(None, None)
+    np.testing.assert_allclose(separate["Hausman Statistic"], 0.1**2 / -0.002)
+    assert np.isnan(separate["P-Value"])
+    assert pd.isna(separate["Prefer Fixed Effects (5%)"])
+
+    # Efficient: 0.01 * 1.5 - 0.012 = 0.003. Consistent: 0.01 - 0.012 / 1.5 = 0.002.
+    efficient = panel_data_model.get_hausman_test(None, None, variance="efficient")
+    consistent = panel_data_model.get_hausman_test(None, None, variance="consistent")
+    np.testing.assert_allclose(efficient["Hausman Statistic"], 0.1**2 / 0.003)
+    np.testing.assert_allclose(consistent["Hausman Statistic"], 0.1**2 / 0.002)
+    np.testing.assert_allclose(consistent["P-Value"], stats.chi2.sf(0.1**2 / 0.002, 1))
+    assert consistent["Prefer Fixed Effects (5%)"] is True
+
+    with pytest.raises(ValueError, match="variance must be one of"):
+        panel_data_model.get_hausman_test(None, None, variance="pooled")

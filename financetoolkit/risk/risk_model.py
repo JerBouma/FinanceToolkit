@@ -26,6 +26,11 @@ MULTI_PERIOD_INDEX_LEVELS = 2
 # The returns a period needs for a quantile of their distribution.
 MINIMUM_QUANTILE_OBSERVATIONS = 2
 
+# A wealth path that comes back to exactly its old high lands within rounding of it rather than
+# on it, as it is compounded from the returns (closes of 100, 99, 95 and 100 give 0.9999999999999999),
+# so a wealth within this relative distance of its peak is at the peak.  # noqa: E501
+PEAK_TOLERANCE = 1e-12
+
 
 def get_quantile(
     returns: pd.Series | pd.DataFrame, quantile: float
@@ -81,6 +86,10 @@ def get_wealth_and_peak(
     between it and its peak is the absolute (uncompounded) drawdown of Riskfolio-Lib and
     skfolio.
 
+    A wealth within a relative 1e-12 of its peak (`PEAK_TOLERANCE`) is set to the peak, so
+    a path that returns exactly to its old high counts as back at it despite the rounding
+    of the compounding.
+
     Args:
         returns (pd.Series | pd.DataFrame): The returns, missing returns counting as 0.
         compounded (bool, optional): Whether to compound the returns. Defaults to True.
@@ -95,7 +104,9 @@ def get_wealth_and_peak(
         else 1 + returns.fillna(0).cumsum()
     )
 
-    return wealth, wealth.cummax().clip(lower=1)
+    peak = wealth.cummax().clip(lower=1)
+
+    return wealth.mask(wealth >= peak * (1 - PEAK_TOLERANCE), peak), peak
 
 
 def apply_to_stacked_windows(
@@ -948,8 +959,12 @@ def _drawdown_trough(
     )
 
     if method != "level":
-        # The wealth starts at 1 before the first return, see get_wealth_and_peak.
+        # The wealth starts at 1 before the first return and is at its peak within
+        # PEAK_TOLERANCE, see get_wealth_and_peak.
         running_max = np.maximum(running_max, 1.0)
+        computed = np.where(
+            computed >= running_max * (1 - PEAK_TOLERANCE), running_max, computed
+        )
     drawdowns = (
         computed - running_max if method == "level" else computed / running_max - 1
     )
@@ -1832,7 +1847,7 @@ def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
 
     Returns:
         pd.Series: The ACF value for each lag from 1 up to and including `lags`, indexed
-        by lag number.
+        by lag number, NaN for a lag at or beyond the number of values.
     """
     if not isinstance(data, pd.Series):
         raise TypeError("Expects pd.Series, no other value.")
@@ -1843,6 +1858,10 @@ def get_autocorrelation(data: pd.Series, lags: int = 10) -> pd.Series:
 
     acf_values = {}
     for lag in range(1, lags + 1):
+        # A lag at or beyond the number of values has no pairs to correlate.
+        if lag >= len(values):
+            acf_values[lag] = np.nan
+            continue
         covariance = np.sum((values[:-lag] - mean) * (values[lag:] - mean))
         acf_values[lag] = covariance / variance
 

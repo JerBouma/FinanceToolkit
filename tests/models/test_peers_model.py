@@ -47,3 +47,14 @@ def test_a_ratio_without_periods_is_missing():
     latest = peers_model.get_latest_values(pd.Series(dtype=object))
 
     assert latest.isna().all()
+
+
+def test_a_peer_counts_once_in_any_case():
+    metrics = pd.DataFrame({"P/E": [30.0, 10.0, 20.0]}, index=["A", "B", "C"])
+
+    # Listed twice, in lower case and with the company itself among them.
+    result = peers_model.get_peer_comparison(metrics, "A", ["B", "b", " c", "a"])
+
+    assert result.loc["P/E", "Peers"] == 2
+    assert result.loc["P/E", "Peer Median"] == 15
+    assert result.loc["P/E", "Percentile"] == 1

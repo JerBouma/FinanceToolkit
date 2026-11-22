@@ -132,3 +132,20 @@ def test_get_drawdown_statistics():
     assert row["Average Length"] == 2
     assert row["Average To Recovery"] == 1
     assert statistics.loc["B"].isna().all()
+
+
+def test_a_path_back_at_exactly_its_old_high_ends_the_episode():
+    # Closes of 100, 99, 95, 100, 98 and 96 are two drawdowns of -5% and -4%, though the
+    # compounded wealth at the second 100 is 0.9999999999999999.
+    closes = np.array([100.0, 99.0, 95.0, 100.0, 98.0, 96.0])
+    samples = (closes[1:] / closes[:-1] - 1)[None, :]
+
+    drawdowns = drawdown_model.get_drawdown_samples(samples)
+
+    assert drawdowns[0, 2] == 0
+    np.testing.assert_allclose(
+        drawdown_model.get_drawdown_troughs(drawdowns[0]), [-0.05, -0.04]
+    )
+    assert drawdown_model.get_average_drawdown(
+        pd.Series(samples[0]), method="episode"
+    ) == pytest.approx(-0.045)

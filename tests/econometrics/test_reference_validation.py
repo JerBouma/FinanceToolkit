@@ -278,6 +278,29 @@ def test_panel_hausman_test(grunfeld):
     )
 
 
+@pytest.mark.parametrize("variance", ["efficient", "consistent"])
+def test_panel_hausman_test_on_a_common_disturbance_variance(grunfeld, variance):
+    # Stata's sigmamore ("efficient") and sigmaless ("consistent") base both covariances on
+    # the residual variance of Random Effects or of Fixed Effects, from linearmodels' fits.
+    y, x = grunfeld
+    fixed_effects = PanelOLS(y, x, entity_effects=True).fit()
+    random_effects = RandomEffects(y, sm.add_constant(x)).fit()
+    slopes = ["value", "capital"]
+    difference = (fixed_effects.params - random_effects.params[slopes]).to_numpy()
+    covariance_fe = fixed_effects.cov.loc[slopes, slopes].to_numpy()
+    covariance_re = random_effects.cov.loc[slopes, slopes].to_numpy()
+    if variance == "efficient":
+        covariance_fe = covariance_fe * random_effects.s2 / fixed_effects.s2
+    else:
+        covariance_re = covariance_re * fixed_effects.s2 / random_effects.s2
+    expected = difference @ np.linalg.inv(covariance_fe - covariance_re) @ difference
+
+    hausman = panel_data_model.get_hausman_test(y, x, variance=variance)
+
+    np.testing.assert_allclose(hausman["Hausman Statistic"], expected, rtol=1e-9)
+    np.testing.assert_allclose(hausman["P-Value"], st.chi2.sf(expected, 2), rtol=1e-9)
+
+
 # ── Instrumental variables ────────────────────────────────────────────────────
 def test_instrumental_variables_on_mroz():
     data = mroz.load().dropna(subset=["lwage"])

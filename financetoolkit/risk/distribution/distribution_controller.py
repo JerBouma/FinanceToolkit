@@ -1071,7 +1071,8 @@ class DistributionRisk:
         - ACF(k) = Σ (r_t - Mean) * (r_(t+k) - Mean) / Σ (r_t - Mean)^2
 
         Where r_t are the n daily returns (missing values dropped), the numerator runs over t = 1, ..., n - k,
-        the denominator over all n returns, and k = 1, ..., `lags` (10 by default).
+        the denominator over all n returns, and k = 1, ..., `lags` (10 by default). A lag of n or more has
+        no pairs of returns and is NaN.
 
         Args:
             lags (int, optional): The number of lags to calculate the ACF for. Defaults to 10.

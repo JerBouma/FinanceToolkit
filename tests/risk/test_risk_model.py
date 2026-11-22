@@ -1156,3 +1156,48 @@ def test_moves_that_differ_in_the_last_bits_are_ties():
     # Four earlier moves of +0.001 and one of -0.011: the last +0.001 is a tie with four.
     assert significance["Percentile"].iloc[-1] == pytest.approx((0 + 0.5 * 4) / 5)
     assert significance["Largest Since"].iloc[-1] == "2024-01-05"
+
+
+def test_a_drawdown_back_at_exactly_its_old_high_is_recovered():
+    # Closes of 100, 99, 95 and 100 compound to a wealth of 0.9999999999999999, which read
+    # as below the peak left the drawdown open (to 101) or merged it with the next one.
+    dates = pd.period_range("2024-01-01", periods=7, freq="D")
+    closes = pd.DataFrame(
+        {
+            "New High": [100.0, 99.0, 95.0, 100.0, 101.0, 101.0, 101.0],
+            "Falls Again": [100.0, 99.0, 95.0, 100.0, 98.0, 96.0, 100.0],
+        },
+        index=dates,
+    )
+    returns = closes.pct_change()
+    assert (1 + returns["New High"].iloc[1:4]).prod() < 1
+
+    table = risk_model.get_drawdown_table(returns)
+
+    new_high = table.loc["New High"].iloc[0]
+    assert new_high["Recovery"] == pd.Period("2024-01-04", freq="D")
+    assert new_high["Length"] == 3
+    assert len(table.loc["New High"]) == 1
+
+    falls_again = table.loc["Falls Again"]
+    assert len(falls_again) == 2
+    assert falls_again["Recovery"].tolist() == [
+        pd.Period("2024-01-04", freq="D"),
+        pd.Period("2024-01-07", freq="D"),
+    ]
+    assert (risk_model.get_drawdown_series(returns).iloc[[0, 3]] == 0).all().all()
+
+    # The recovery time of the deepest drawdown ends on the same row (one period after the
+    # trough rather than two), per column and per series.
+    measured = returns.iloc[1:]
+    assert risk_model.get_max_drawdown_recovery_time(measured)["New High"] == 1
+    assert risk_model.get_max_drawdown_recovery_time(measured["New High"]) == 1
+
+
+def test_get_autocorrelation_is_missing_at_lags_without_pairs():
+    # Four values have pairs up to lag 3 (as statsmodels' acf, which stops there); the
+    # empty sums beyond gave 0.
+    result = risk_model.get_autocorrelation(pd.Series([1.0, 2.0, 3.0, 4.0]), lags=6)
+
+    np.testing.assert_allclose(result.loc[1:3], [0.25, -0.3, -0.45])
+    assert result.loc[4:].isna().all()

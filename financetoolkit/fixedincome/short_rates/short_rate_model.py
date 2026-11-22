@@ -122,7 +122,8 @@ def get_model_yields(
         - Vasicek: B = (1 - e^(-aT)) / a,
           ln A = (B - T)(a²b - σ²/2) / a² - σ² B² / (4a)
         - CIR: γ = √(a² + 2σ²), B = 2(e^(γT) - 1) / ((γ + a)(e^(γT) - 1) + 2γ),
-          A = [2γ e^((a + γ)T/2) / ((γ + a)(e^(γT) - 1) + 2γ)]^(2ab/σ²)
+          A = [2γ e^((a + γ)T/2) / ((γ + a)(e^(γT) - 1) + 2γ)]^(2ab/σ²), evaluated with
+          e^(-γT) in place of e^(γT) so that it holds for any speed and maturity
 
     Args:
         maturities (np.ndarray): The maturities in years.
@@ -144,12 +145,17 @@ def get_model_yields(
             a**2 * b - sigma**2 / 2
         ) / a**2 - sigma**2 * big_b**2 / (4 * a)
     elif model == "cir":
+        # B and ln A divided by e^(γT) above and below, as e^(γT) overflows once γT passes
+        # 709.78 (a fitted speed of 35 at 30 years). With e = e^(-γT), x = 2σ²/(γ + a)² and
+        # γ - a = 2σ²/(γ + a), ln A = -2abT/(γ + a) + (2ab/σ²)·ln(1 + x(1 - e)/(1 + xe)),
+        # whose log1p keeps its precision when σ is small and 2ab/σ² is very large.  # noqa: E501
         gamma = np.sqrt(a**2 + 2 * sigma**2)
-        growth = np.exp(gamma * t) - 1
-        denominator = (gamma + a) * growth + 2 * gamma
-        big_b = 2 * growth / denominator
-        log_a = (2 * a * b / sigma**2) * np.log(
-            2 * gamma * np.exp((a + gamma) * t / 2) / denominator
+        decay = np.exp(-gamma * t)
+        growth = -np.expm1(-gamma * t)
+        big_b = 2 * growth / ((gamma + a) * growth + 2 * gamma * decay)
+        ratio = 2 * sigma**2 / (gamma + a) ** 2
+        log_a = -2 * a * b * t / (gamma + a) + (2 * a * b / sigma**2) * np.log1p(
+            ratio * growth / (1 + ratio * decay)
         )
     else:
         raise ValueError(f"The model must be one of {', '.join(MODELS)}.")

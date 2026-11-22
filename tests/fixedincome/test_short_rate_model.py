@@ -290,3 +290,44 @@ def test_option_adjusted_spread_refuses_a_tree_that_is_too_large():
             zero_rates=np.array([0.04, 0.045]),
             frequency=12,
         )
+
+
+def test_cir_yields_hold_for_a_high_speed_and_a_small_volatility():
+    # A speed of 34.78 makes e^(γT) overflow at 30 years (NaN before). The expected yields
+    # are the closed form as written, evaluated with 60 digits (mpmath).
+    yields = short_rate_model.get_model_yields(
+        np.array([20.0, 30.0]), "cir", 34.781365, 0.0004, 0.02, 0.0004
+    )
+    np.testing.assert_allclose(
+        yields, [0.00039999993401289009, 0.00039999993396535768], rtol=1e-12
+    )
+
+    # A volatility near zero gives the Vasicek yield without volatility, rather than losing
+    # the precision of 2ab/σ² times the log of a number close to 1 (0.020866 at 5 years).
+    for maturity in (0.25, 5.0, 30.0):
+        cir = short_rate_model.get_model_yields(
+            np.array([maturity]), "cir", 0.3, 0.04, 1e-8, 0.03
+        )
+        vasicek = short_rate_model.get_model_yields(
+            np.array([maturity]), "vasicek", 0.3, 0.04, 1e-8, 0.03
+        )
+        np.testing.assert_allclose(cir, vasicek, rtol=1e-9)
+
+
+def test_cir_yields_match_the_closed_form():
+    # The closed form with e^(γT) as written, at maturities where it does not overflow.
+    a, b, sigma, rate = 1.2, 0.02, 0.1, 0.05
+    maturities = np.array([0.25, 1.0, 5.0, 10.0, 30.0])
+    gamma = np.sqrt(a**2 + 2 * sigma**2)
+    growth = np.exp(gamma * maturities) - 1
+    denominator = (gamma + a) * growth + 2 * gamma
+    log_a = (2 * a * b / sigma**2) * np.log(
+        2 * gamma * np.exp((a + gamma) * maturities / 2) / denominator
+    )
+    expected = -(log_a - 2 * growth / denominator * rate) / maturities
+
+    np.testing.assert_allclose(
+        short_rate_model.get_model_yields(maturities, "cir", a, b, sigma, rate),
+        expected,
+        rtol=1e-12,
+    )

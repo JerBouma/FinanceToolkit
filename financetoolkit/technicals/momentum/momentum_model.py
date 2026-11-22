@@ -559,7 +559,11 @@ def get_percentage_price_oscillator(
 
 
 def get_percentage_volume_oscillator(
-    volumes: pd.Series, short_window: int, long_window: int, signal_window: int
+    volumes: pd.Series,
+    short_window: int,
+    long_window: int,
+    signal_window: int,
+    moving_average: str = "exponential",
 ) -> pd.DataFrame:
     """
     Calculate the Percentage Volume Oscillator (PVO) for a given volume series.
@@ -572,25 +576,32 @@ def get_percentage_volume_oscillator(
 
     The formula is as follows:
 
-    - PVO = (EMA(Volume, short_window) - EMA(Volume, long_window)) / EMA(Volume, long_window)
+    - PVO = (MA(Volume, short_window) - MA(Volume, long_window)) / MA(Volume, long_window)
     - Signal Line = EMA(PVO, signal_window)
     - Histogram = PVO - Signal Line
 
-    The conventional parameters are 12, 26 and 9 periods, as for MACD and the PPO.
+    with MA the Exponential Moving Average by default. With the Simple Moving Average
+    (`moving_average="simple"`) it is the Volume Oscillator of StockCharts, pandas-ta-classic
+    (`vosc`, 14 and 28 periods) and Tulip Indicators (`vosc`, 2 and 5 periods). The
+    conventional parameters are 12, 26 and 9 periods, as for MACD and the PPO.
 
-    Also known as: PVO, volume oscillator.
+    Also known as: PVO, volume oscillator, VOSC.
 
     Reference: StockCharts ChartSchool, "Percentage Volume Oscillator (PVO)". The PVO is the
     volume counterpart of the Percentage Price Oscillator, a normalized variant of Appel's
     Moving Average Convergence Divergence (Appel, G. (1979). "The Moving Average
     Convergence-Divergence Trading Method." Signalert Corp.).
 
-    TA-Lib: PVO, the reference implementation (https://ta-lib.org/functions/pvo.html).
+    TA-Lib: PVO, the reference implementation (https://ta-lib.org/functions/pvo.html), with
+    the moving average as its `matype` (1 for the EMA, 0 for the SMA).
 
     Notes:
         - Every EMA is seeded with the Simple Moving Average of its first values (see
           `get_exponential_moving_average`), so the PVO starts on period `long_window` - 1
           and the signal line and histogram `signal_window` - 1 periods later.
+        - With either moving average the PVO equals TA-Lib's PVO with the matching `matype`,
+          pandas-ta-classic's `vosc` and Tulip's `vosc` (for the SMA) divided by 100: they
+          are in percent and have no signal line.
         - A long-term EMA of zero (a series without volume, such as an index or a currency
           pair with no reported volume) has no PVO rather than an infinite one.
 
@@ -599,15 +610,30 @@ def get_percentage_volume_oscillator(
         short_window (int): Number of periods for the short-term EMA.
         long_window (int): Number of periods for the long-term EMA.
         signal_window (int): Number of periods for the signal line EMA.
+        moving_average (str): The moving average of the volume, "exponential" or "simple".
+            Defaults to "exponential".
 
     Returns:
         pd.DataFrame: The Percentage Volume Oscillator, Signal Line and Histogram as
         columns, as decimals (0.02 is 2%).
-    """
-    short_ema = get_exponential_moving_average(volumes, short_window)
-    long_ema = get_exponential_moving_average(volumes, long_window)
 
-    pvo = (short_ema - long_ema) / long_ema.where(long_ema != 0)
+    Raises:
+        ValueError: If `moving_average` is not "exponential" or "simple".
+    """
+    if moving_average not in ("exponential", "simple"):
+        raise ValueError(
+            f"moving_average must be exponential or simple, not {moving_average}."
+        )
+
+    average = (
+        get_exponential_moving_average
+        if moving_average == "exponential"
+        else get_moving_average
+    )
+    short_average = average(volumes, short_window)
+    long_average = average(volumes, long_window)
+
+    pvo = (short_average - long_average) / long_average.where(long_average != 0)
     signal_line = get_exponential_moving_average(pvo, signal_window)
 
     return pd.concat(

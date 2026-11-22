@@ -24,7 +24,8 @@ PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 # whose level reflects how many shares trade, the running totals in price units (Williams' accumulation/distribution),
 # the price volume rank (four categories), the volume profile (not per date), the pivot points, Fibonacci levels,
 # price transforms and Zig Zag, which only restate the latest high, low and close or swing, and Wilder's swing
-# index, which is scaled by a limit move in price units and accumulates from the first date of the data.
+# index, which is scaled by a limit move in price units and accumulates from the first date of the data, and the
+# trend flags of Archer's moving averages trends and the TTM Trend (two values each).
 FACTOR_COLLECTIONS = {
     "momentum": [
         "get_money_flow_index",
@@ -74,6 +75,13 @@ FACTOR_COLLECTIONS = {
         "get_quantitative_qualitative_estimation",
         "get_dynamic_momentum_index",
         "get_price_zone_oscillator",
+        "get_connors_relative_strength_index",
+        "get_inertia",
+        "get_bias",
+        "get_brar",
+        "get_pretty_good_oscillator",
+        "get_psychological_line",
+        "get_volatility_based_momentum",
     ],
     "overlap": [
         "get_moving_average",

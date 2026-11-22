@@ -378,20 +378,33 @@ class PortfolioConstructionBase:
             table, rounding if rounding is not None else self._rounding
         )
 
-    def _get_profile(self) -> pd.DataFrame:
-        """The company profiles, retrieved once."""
+    def _get_profile(self, alternative: str = "") -> pd.DataFrame:
+        """
+        The company profiles, retrieved once. Without them (no API key, or none returned)
+        a ValueError names what needs them and, as the alternative, the argument that
+        supplies the same information; nothing is cached, so a later call tries again.
+        """
         if self._profile is None:
-            if self._profile_function is None:
-                raise ValueError("Company profiles are not available for this Toolkit.")
-            self._profile = self._profile_function()
+            profile = (
+                self._profile_function() if self._profile_function is not None else None
+            )
+            if profile is None or profile.empty:
+                raise ValueError(
+                    "Company profiles (market capitalizations, sectors and countries) are "
+                    "not available: they need a Financial Modeling Prep API key."
+                    + (f" Alternatively, {alternative}." if alternative else "")
+                )
+            self._profile = profile
         return self._profile
 
-    def _get_classification(self, assets: list[str], row: str) -> pd.Series:
+    def _get_classification(
+        self, assets: list[str], row: str, alternative: str = ""
+    ) -> pd.Series:
         """
         The sector or country of each asset from the company profiles, with countries
         named in full ("United States" rather than "US"); empty for an asset without one.
         """
-        profile = self._get_profile()
+        profile = self._get_profile(alternative)
         values = (
             profile.loc[row].reindex(assets)
             if row in profile.index

@@ -122,25 +122,32 @@ class OptimizationConstruction:
                 index=with_cash, columns=with_cash, fill_value=0.0
             )
         volatility = pd.Series(np.sqrt(np.diag(covariance)), index=covariance.index)
-        contributions = optimization_model.get_risk_contributions(weights, covariance)
+        statistics = optimization_model.get_portfolio_statistics(
+            weights, expected_returns, covariance, risk_free_rate
+        )
+        # A portfolio without volatility (a market neutral optimum that holds nothing) has
+        # no risk to share out, so its risk contributions are NaN, as is its Sharpe ratio.
+        if statistics["Volatility"] > optimization_model.ZERO_VOLATILITY_TOLERANCE:
+            shares = optimization_model.get_risk_contributions(weights, covariance)[
+                "Percentage Contribution"
+            ]
+        else:
+            shares = pd.Series(np.nan, index=weights.index)
         table = pd.DataFrame(
             {
                 "Weight": weights,
                 "Expected Return": expected_returns,
                 "Volatility": volatility,
                 "Sharpe Ratio": (expected_returns - risk_free_rate) / volatility,
-                "Risk Contribution": contributions["Percentage Contribution"],
+                "Risk Contribution": shares,
             }
-        )
-        statistics = optimization_model.get_portfolio_statistics(
-            weights, expected_returns, covariance, risk_free_rate
         )
         table.loc[PORTFOLIO_TICKER] = [
             weights.sum(),
             statistics["Expected Return"],
             statistics["Volatility"],
             statistics["Sharpe Ratio"],
-            contributions["Percentage Contribution"].sum(),
+            shares.sum(min_count=1),
         ]
         table = self._add_turnover(table, assets, current)
         if transaction_cost and current is not None:
@@ -180,7 +187,12 @@ class OptimizationConstruction:
         if bounds:
             groups = pd.DataFrame(
                 {
-                    classification: self._get_classification(assets, classification)
+                    classification: self._get_classification(
+                        assets,
+                        classification,
+                        "bound the assets one by one with minimum_weight and "
+                        "maximum_weight",
+                    )
                     for classification in bounds
                 }
             )
@@ -1178,7 +1190,9 @@ class OptimizationConstruction:
 
         Args:
             risk_budget (dict[str, float] | None, optional): The share of the risk per
-                asset, e.g. {"AAPL": 0.4, "MSFT": 0.2, ...}; it is scaled to sum to one.
+                asset, e.g. {"AAPL": 0.4, "MSFT": 0.2, ...}, positive for every asset;
+                it is scaled to sum to one. A budget that names an asset outside the
+                portfolio or leaves an asset out raises a ValueError that lists them.
                 Defaults to None, an equal share for every asset.
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
@@ -4846,7 +4860,9 @@ class OptimizationConstruction:
         if market_weights is not None:
             market = pd.Series(market_weights, dtype=float).reindex(assets)
         else:
-            profile = self._get_profile()
+            profile = self._get_profile(
+                "pass the market weights of the assets with market_weights"
+            )
             market = pd.to_numeric(
                 profile.loc["Market Capitalization"].reindex(assets), errors="coerce"
             )

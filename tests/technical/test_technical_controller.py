@@ -1079,13 +1079,16 @@ def test_candlestick_patterns_per_pattern_and_ticker(technical_module):
         pattern_model.PATTERN_LOOKBACK
     )
     values = patterns.to_numpy().ravel()
-    assert set(values[~pd.isna(values)]) <= {
-        -1.0,
-        -0.8,
-        0.0,
-        0.8,
-        1.0,
-    }
+    # 2 and -2 only mark a confirmed hikkake.
+    assert set(values[~pd.isna(values)]) <= {-2.0, -1.0, -0.8, 0.0, 0.8, 1.0, 2.0}
+    hikkakes = patterns[["Hikkake", "Modified Hikkake"]].to_numpy().ravel()
+    others = (
+        patterns.drop(columns=["Hikkake", "Modified Hikkake"], level=0)
+        .to_numpy()
+        .ravel()
+    )
+    assert {-2.0, 2.0} <= set(hikkakes)
+    assert set(others[~pd.isna(others)]) <= {-1.0, -0.8, 0.0, 0.8, 1.0}
     chosen = technical_module.get_candlestick_patterns(patterns="Hammer, Doji")
     assert list(dict.fromkeys(chosen.columns.get_level_values(0))) == [
         "Hammer",
@@ -1709,6 +1712,12 @@ def test_get_candlestick_patterns(recorder, technical_module):
             signals_only=True,
         )
     )
+    recorder.capture(
+        technical_module.get_candlestick_patterns(
+            patterns="Hikkake, ladder bottom, three-line strike, rising/falling three methods",
+            signals_only=True,
+        )
+    )
 
 
 def test_get_heikin_ashi(recorder, technical_module):
@@ -1721,6 +1730,20 @@ def test_get_williams_fractal(recorder, technical_module):
     recorder.capture(
         technical_module.get_williams_fractal(
             left_bars=3, right_bars=1, signals_only=True
+        )
+    )
+
+
+def test_get_td_sequential(recorder, technical_module):
+    recorder.capture(technical_module.get_td_sequential())
+    recorder.capture(technical_module.get_td_sequential(period="weekly"))
+
+
+def test_get_liquidity_sweep(recorder, technical_module):
+    recorder.capture(technical_module.get_liquidity_sweep())
+    recorder.capture(
+        technical_module.get_liquidity_sweep(
+            window=5, wick_multiple=1.0, signals_only=True
         )
     )
 

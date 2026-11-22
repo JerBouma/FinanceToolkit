@@ -91,7 +91,7 @@ def test_patterns_are_empty_until_the_lookback_of_ta_lib():
         assert patterns[name].iloc[:lookback].isna().all()
         assert patterns[name].iloc[lookback:].notna().all()
     # Identical white candles of an average size form no pattern.
-    assert (patterns.iloc[13:] == 0).all().all()
+    assert (patterns.iloc[14:] == 0).all().all()
 
 
 def test_a_crossover_marks_the_period_a_line_is_crossed():
@@ -598,3 +598,229 @@ def test_three_candle_patterns_match_ta_lib_on_the_test_data():
             ) == counts[
                 position
             ], (ticker, name)
+
+
+def test_four_and_five_candle_patterns():
+    three_line_strike = candles_after_a_calm_market(
+        (100.0, 101.5, 0.1, 0.1),
+        (101.3, 102.8, 0.1, 0.1),
+        (102.6, 104.0, 0.1, 0.1),
+        (
+            104.3,
+            99.8,
+            0.1,
+            0.1,
+        ),  # opens above the third close, closes below the first open
+    )
+    concealing_baby_swallow = candles_after_a_calm_market(
+        (103.0, 101.5, 0.05, 0.05),
+        (101.5, 100.0, 0.05, 0.05),
+        (99.5, 99.0, 0.8, 0.1),  # gaps down with an upper shadow up to 100.3
+        (100.5, 98.5, 0.2, 0.2),
+    )
+    breakaway = candles_after_a_calm_market(
+        (103.0, 100.0, 0.1, 0.1),
+        (99.5, 99.0, 0.1, 0.1),
+        (98.9, 98.6, 0.1, 0.1),
+        (98.5, 98.1, 0.1, 0.1),
+        (98.2, 99.8, 0.1, 0.1),  # closes inside the gap between 99.5 and 100
+    )
+    ladder_bottom = candles_after_a_calm_market(
+        (103.0, 102.0, 0.1, 0.1),
+        (102.5, 101.5, 0.1, 0.1),
+        (102.0, 101.0, 0.1, 0.1),
+        (101.5, 100.5, 0.6, 0.1),
+        (101.6, 102.5, 0.1, 0.1),
+    )
+    mat_hold = candles_after_a_calm_market(
+        (100.0, 103.0, 0.05, 0.05),
+        (103.8, 103.5, 0.05, 0.05),
+        (103.2, 102.9, 0.05, 0.05),
+        (103.05, 102.7, 0.05, 0.05),
+        (103.0, 104.8, 0.05, 0.05),
+    )
+
+    assert three_line_strike["Three-Line Strike"].iloc[-1] == 1
+    assert concealing_baby_swallow["Concealing Baby Swallow"].iloc[-1] == 1
+    assert breakaway["Breakaway"].iloc[-1] == 1
+    assert ladder_bottom["Ladder Bottom"].iloc[-1] == 1
+    assert mat_hold["Mat Hold"].iloc[-1] == 1
+
+
+def test_rising_and_falling_three_methods():
+    rising = candles_after_a_calm_market(
+        (100.0, 103.0, 0.2, 0.2),
+        (102.8, 102.5, 0.1, 0.1),
+        (102.6, 102.2, 0.1, 0.1),
+        (102.3, 101.9, 0.1, 0.1),
+        (102.0, 104.0, 0.1, 0.1),
+    )
+    falling = candles_after_a_calm_market(
+        (103.0, 100.0, 0.2, 0.2),
+        (100.2, 100.5, 0.1, 0.1),
+        (100.4, 100.8, 0.1, 0.1),
+        (100.7, 101.1, 0.1, 0.1),
+        (101.0, 99.0, 0.1, 0.1),
+    )
+
+    assert rising["Rising/Falling Three Methods"].iloc[-1] == 1
+    assert falling["Rising/Falling Three Methods"].iloc[-1] == -1
+
+
+def test_a_hikkake_and_its_confirmation():
+    hikkake = candles_after_a_calm_market(
+        (100.0, 101.0, 1.0, 1.0),
+        (100.3, 100.7, 0.1, 0.1),  # an inside bar from 100.2 to 100.8
+        (100.2, 99.8, 0.1, 0.2),  # a false breakdown: a lower high and a lower low
+        (99.9, 101.2, 0.1, 0.1),  # a close above the inside bar's high
+    )
+    modified_hikkake = candles_after_a_calm_market(
+        (100.0, 101.0, 1.0, 1.0),
+        (100.2, 99.6, 0.3, 0.05),  # an inside bar closing near its low
+        (99.8, 100.0, 0.1, 0.1),  # a second inside bar from 99.7 to 100.1
+        (99.7, 99.5, 0.2, 0.2),
+        (99.6, 100.5, 0.1, 0.1),
+    )
+
+    assert hikkake["Hikkake"].iloc[-3:].tolist() == [0, 1, 2]
+    assert modified_hikkake["Modified Hikkake"].iloc[-3:].tolist() == [0, 1, 2]
+    assert modified_hikkake["Hikkake"].iloc[-3:].tolist() == [0, 1, 2]
+
+
+def test_a_hikkake_is_confirmed_once_and_only_within_three_candles():
+    pattern = [
+        (100.0, 101.0, 1.0, 1.0),
+        (100.3, 100.7, 0.1, 0.1),
+        (100.2, 99.8, 0.1, 0.2),
+    ]
+    quiet = [(99.9, 100.0, 0.05, 0.05)] * 3
+
+    late = candles_after_a_calm_market(*pattern, *quiet, (100.0, 101.2, 0.1, 0.1))
+    twice = candles_after_a_calm_market(
+        *pattern, (99.9, 101.2, 0.1, 0.1), (101.2, 101.5, 0.1, 0.1)
+    )
+
+    assert late["Hikkake"].iloc[-5:].tolist() == [1, 0, 0, 0, 0]
+    assert twice["Hikkake"].iloc[-3:].tolist() == [1, 2, 0]
+
+
+def test_four_and_five_candle_patterns_match_ta_lib_on_the_test_data():
+    data = pd.read_pickle(
+        Path(__file__).resolve().parents[1] / "datasets" / "historical_dataset.pickle"
+    )
+
+    # TA-Lib 0.8.3's CDL functions on these candles: the counts of +100, -100, +200 and -200 for
+    # AAPL, MSFT and the Benchmark (200 is a confirmed hikkake, 2 here).
+    ta_lib_counts = {
+        "Three-Line Strike": [(0, 0, 0, 0), (0, 0, 0, 0), (0, 1, 0, 0)],
+        "Ladder Bottom": [(2, 0, 0, 0), (1, 0, 0, 0), (2, 0, 0, 0)],
+        "Rising/Falling Three Methods": [(1, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0)],
+        "Hikkake": [(20, 37, 6, 15), (22, 35, 4, 11), (24, 26, 8, 4)],
+    }
+    for position, ticker in enumerate(["AAPL", "MSFT", "Benchmark"]):
+        candles = (
+            data[["Open", "High", "Low", "Close"]].xs(ticker, axis=1, level=1).dropna()
+        )
+        patterns = pattern_model.get_candlestick_patterns(
+            candles["Open"], candles["High"], candles["Low"], candles["Close"]
+        )
+        for name, counts in ta_lib_counts.items():
+            assert (
+                tuple(int(patterns[name].eq(value).sum()) for value in (1, -1, 2, -2))
+                == counts[position]
+            ), (ticker, name)
+
+
+def test_td_sequential_counts_a_setup_and_a_countdown():
+    # Ten rising closes and then a steady fall of 1.5 a day, with a high and low 0.5 around each close.
+    close = pd.Series(np.r_[np.arange(100.0, 110.0), np.arange(107.5, 55.0, -1.5)])
+    td = pattern_model.get_td_sequential(close + 0.5, close - 0.5, close)
+
+    buy_setup = td["Buy Setup"].to_numpy()
+    first = int(np.flatnonzero(buy_setup == 1)[0])
+    # The 12th close is the first below the close four bars earlier, right after one above it: the flip.
+    assert first == 11
+    assert buy_setup[first : first + 9].tolist() == list(range(1, 10))
+    assert (buy_setup[first + 9 :] == 0).all()
+    # Every close from the ninth setup bar on is below the low two bars earlier.
+    countdown = td["Buy Countdown"].to_numpy()
+    assert countdown[first + 8 : first + 21].tolist() == list(range(1, 14))
+    assert (countdown[first + 21 :] == 0).all()
+    assert td["Sell Countdown"].sum() == 0
+    assert td.iloc[:4].isna().all().all()
+
+
+def test_a_close_above_the_setup_cancels_the_buy_countdown():
+    # The setup completes on the 20th bar and the countdown counts four bars, then a close jumps above the
+    # highest true high of the setup (107.5) and the fall resumes.
+    close = pd.Series(
+        np.r_[
+            np.arange(100.0, 110.0),
+            np.arange(107.5, 89.0, -1.5),
+            110.0,
+            88.0,
+            86.5,
+            85.0,
+        ]
+    )
+    td = pattern_model.get_td_sequential(close + 0.5, close - 0.5, close)
+
+    countdown = td["Buy Countdown"].to_numpy()
+    assert np.nanmax(countdown) == 4
+    assert (countdown[np.flatnonzero(close.to_numpy() == 110.0)[0] :] == 0).all()
+
+
+def test_td_sequential_matches_pandas_ta_classic_on_the_test_data():
+    data = pd.read_pickle(
+        Path(__file__).resolve().parents[1] / "datasets" / "historical_dataset.pickle"
+    )
+
+    # pandas-ta-classic 0.9.0's td_seq on these candles: the bars counted 9 for a sell (up) and a
+    # buy (down) setup per ticker. AAPL has one run of nine without a price flip before it.
+    pandas_ta_nines = {"AAPL": (14, 8), "MSFT": (14, 7), "Benchmark": (18, 7)}
+    flip_nines = {"AAPL": (13, 8), "MSFT": (14, 7), "Benchmark": (18, 7)}
+    thirteens = {"AAPL": (2, 4), "MSFT": (3, 4), "Benchmark": (2, 10)}
+    for ticker, nines in pandas_ta_nines.items():
+        candles = data[["High", "Low", "Close"]].xs(ticker, axis=1, level=1).dropna()
+        td = pattern_model.get_td_sequential(
+            candles["High"], candles["Low"], candles["Close"]
+        )
+        ours = (int(td["Sell Setup"].eq(9).sum()), int(td["Buy Setup"].eq(9).sum()))
+        assert ours == flip_nines[ticker]
+        assert ours[0] <= nines[0] and ours[1] <= nines[1]
+        assert (
+            int(td["Buy Countdown"].eq(13).sum()),
+            int(td["Sell Countdown"].eq(13).sum()),
+        ) == thirteens[ticker]
+
+
+def test_liquidity_sweep():
+    calm = [(100.0, 101.5, 99.5, 101.0)] * 15
+    # A white candle wicking below the lows to 98 and closing back above them, a long lower shadow.
+    frame = pd.DataFrame(
+        calm + [(99.8, 100.0, 98.0, 99.9), (101.0, 102.5, 100.8, 100.9)],
+        columns=["Open", "High", "Low", "Close"],
+    )
+    sweeps = pattern_model.get_liquidity_sweep(
+        frame["Open"], frame["High"], frame["Low"], frame["Close"]
+    )
+
+    assert sweeps.iloc[:15].isna().all()
+    assert sweeps.iloc[-2:].tolist() == [1, -1]
+
+
+def test_liquidity_sweep_matches_pandas_ta_classic_on_the_test_data():
+    data = pd.read_pickle(
+        Path(__file__).resolve().parents[1] / "datasets" / "historical_dataset.pickle"
+    )
+
+    # pandas-ta-classic 0.9.0's smc_sweep (length 15, wick_mult 1.5): bullish and bearish sweeps.
+    pandas_ta_counts = {"AAPL": (11, 11), "MSFT": (7, 10), "Benchmark": (5, 8)}
+    for ticker, counts in pandas_ta_counts.items():
+        candles = (
+            data[["Open", "High", "Low", "Close"]].xs(ticker, axis=1, level=1).dropna()
+        )
+        sweeps = pattern_model.get_liquidity_sweep(
+            candles["Open"], candles["High"], candles["Low"], candles["Close"]
+        )
+        assert (int(sweeps.eq(1).sum()), int(sweeps.eq(-1).sum())) == counts

@@ -30,8 +30,8 @@ class PatternTechnicals:
     """
     Candlestick patterns, the signals of the indicators and the summary of an indicator's history.
 
-    The candlestick patterns are those described by Steve Nison and Thomas Bulkowski, in the measurable
-    form TA-Lib (Mario Fortier) defines them.
+    The candlestick patterns are those described by Steve Nison, Thomas Bulkowski and Daniel Chesler (the
+    hikkake), in the measurable form TA-Lib (Mario Fortier) defines them.
     """
 
     @handle_errors
@@ -44,7 +44,7 @@ class PatternTechnicals:
         show_columns: str | list[str] | None = None,
     ) -> pd.DataFrame:
         """
-        Recognise 54 classic candlestick patterns in every ticker's candles, with the definitions
+        Recognise 62 classic candlestick patterns in every ticker's candles, with the definitions
         of TA-Lib's CDL functions. Candlestick charting reads the open, high, low and close of a
         period as one candle: the real body between the open and the close and the shadows up to
         the high and down to the low. Certain shapes and sequences are read as a sign that a move
@@ -56,7 +56,9 @@ class PatternTechnicals:
         (TA-Lib's 80). The dojis (doji, dragonfly, gravestone and long-legged doji, rickshaw man
         and takuri) are indecision rather than a direction and are 1 when present; a marubozu, a
         spinning top, a belt-hold, a closing marubozu, a high-wave, long line and short line candle
-        and an inside bar take the colour of the candle (1 white, -1 black).
+        and an inside bar take the colour of the candle (1 white, -1 black). A hikkake and a
+        modified hikkake are 1 or -1 on the candle that completes them and 2 or -2 on the later
+        candle that confirms them (TA-Lib's +200 and -200 divided by 100, like every other value).
 
         The patterns:
 
@@ -139,6 +141,29 @@ class PatternTechnicals:
           short white candle opening above that low.
         - Gap Three Methods (Upside or Downside): two candles of one colour with a gap between them
           and a candle of the opposite colour that closes the gap, in the direction of the gap.
+        - Three-Line Strike: three candles of one colour with ever higher (white) or lower (black)
+          closes, struck back by a candle of the other colour that closes beyond the first open,
+          in the direction of the three.
+        - Concealing Baby Swallow (bullish): two black candles without shadows, a black candle
+          that gaps down with an upper shadow reaching into the second body, and a black candle
+          that engulfs it including its shadows.
+        - Breakaway: a long candle, a candle of its colour that gaps away from it, two candles that
+          move further away and a candle of the other colour that closes inside the gap, in the
+          direction of the last candle.
+        - Ladder Bottom (bullish): three black candles with lower opens and closes, a black candle
+          with an upper shadow and a white candle that opens above its open and closes above its
+          high.
+        - Mat Hold (bullish): a long white candle, a short black candle that gaps above it and two
+          more short falling candles that hold in the upper half of its body, followed by a white
+          candle that closes above all three.
+        - Rising/Falling Three Methods: a long candle, three short falling (rising) candles of the
+          other colour within its range and a long candle of the first colour that closes beyond
+          the first close, in the direction of the first candle.
+        - Hikkake: an inside bar followed by a candle that breaks out of it with a lower high and
+          low (1, a false breakdown) or a higher high and low (-1, a false breakout), confirmed
+          (2 or -2) by the first close beyond the other side of the inside bar within 3 candles;
+          Modified Hikkake: the same after two inside bars in a row, the first closing near its
+          low (bullish) or high (bearish).
 
         Sizes are relative to the ticker's own recent candles, as in TA-Lib: a real body is long
         (short) when it is longer (shorter) than the average real body of the 10 previous candles,
@@ -154,6 +179,7 @@ class PatternTechnicals:
         - Nison, S. (1991). "Japanese Candlestick Charting Techniques." New York Institute of
           Finance.
         - Bulkowski, T.N. (2008). "Encyclopedia of Candlestick Charts." Wiley.
+        - Chesler, D. (2004). "Trading False Moves with the Hikkake Pattern." Active Trader, April 2004.
         - Referenced against TA-Lib's CDL functions (https://ta-lib.org/functions/).
         - pandas-ta-classic: cdl_inside, for the inside bar (https://github.com/xgboosted/pandas-ta-classic).
 
@@ -166,7 +192,8 @@ class PatternTechnicals:
         stalled pattern, upside gap side-by-side white lines, downside gap side-by-side white
         lines, identical three crows, stick sandwich, upside tasuki gap, downside tasuki gap, tri
         star, unique three river bottom, upside gap two crows, upside gap three methods, downside
-        gap three methods.
+        gap three methods, three line strike, concealing baby swallow, breakaway, ladder bottom, mat
+        hold, rising three methods, falling three methods, hikkake, modified hikkake.
 
         Args:
             period (str, optional): The time period to consider for historical data.
@@ -177,7 +204,7 @@ class PatternTechnicals:
                 uses the candles as traded (split-adjusted).
             patterns (str | list[str] | None, optional): The patterns to return, e.g. ["Hammer",
                 "Engulfing"] or "hammer, engulfing" (in any casing). Defaults to None, which returns
-                all 54.
+                all 62.
             signals_only (bool, optional): Whether to return only the periods in which at least one
                 of the returned patterns occurs for at least one ticker. Defaults to False.
             show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
@@ -187,14 +214,15 @@ class PatternTechnicals:
 
         Returns:
             pd.DataFrame: The patterns per date, with a column per pattern and ticker: 1 (bullish),
-            -1 (bearish), 0.8 / -0.8 (the weaker engulfing, harami and harami cross) or 0.
+            -1 (bearish), 0.8 / -0.8 (the weaker engulfing, harami and harami cross), 2 / -2 (a
+            confirmed hikkake) or 0.
 
         Notes:
         - The patterns are TA-Lib's definitions (Mario Fortier, https://ta-lib.org/functions/) of the
           patterns described by Nison and Bulkowski, and match TA-Lib candle for candle, including its
           default candle settings and penetrations (30% for the stars, doji stars and abandoned baby,
-          50% for the dark cloud cover); the inside bar matches pandas-ta-classic's cdl_inside.
-        - A pattern is empty until TA-Lib's lookback has passed: the 2 to 13 candles its
+          50% for the dark cloud cover and the mat hold); the inside bar matches pandas-ta-classic's cdl_inside.
+        - A pattern is empty until TA-Lib's lookback has passed: the 2 to 14 candles its
           averages and the pattern itself need (1 for the inside bar, which pandas-ta-classic
           sets to 0 on the first candle), counted from the ticker's own first candle.
         - TA-Lib marks the gravestone doji, which candlestick analysis reads as bearish after a
@@ -206,7 +234,11 @@ class PatternTechnicals:
           continuation pattern in candlestick analysis, follow the second candle, the in-neck,
           on-neck and thrusting, bearish continuation patterns after a decline, are -1 whatever
           the trend, and the tasuki gap, side-by-side white lines and gap three methods follow
-          the direction of their gap.
+          the direction of their gap. The breakaway follows its last candle, and the three-line
+          strike, mat hold and rising/falling three methods their first candles.
+        - A hikkake is confirmed by a close beyond the inside bar (TA-Lib's measurable form of
+          Chesler's breakout) within 3 candles. Its confirmation keeps its sign at twice the size,
+          so 1 / -1 marks the setups and 2 / -2 the confirmations.
 
         As an example:
 
@@ -556,6 +588,274 @@ class PatternTechnicals:
             fractals = fractals[fractals.abs().gt(0).any(axis=1)]
 
         return fractals
+
+    @handle_errors
+    def get_td_sequential(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Count Tom DeMark's TD Sequential for every ticker: the TD Setup of nine closes in a row
+        beyond the close four bars earlier, and the TD Countdown to 13 that follows it. DeMark
+        designed it to find where a trend exhausts itself: a completed buy setup (nine lower
+        closes) and above all a completed buy countdown (13) point to a low, a completed sell
+        setup and countdown to a high.
+
+        The rules are DeMark's:
+
+        - Price Flip: a buy setup starts on a close below the close four bars earlier right
+          after a close above the close four bars before that one, a sell setup on the reverse.
+        - TD Buy Setup: from the flip on, every close below the close four bars earlier counts 1
+          to 9, and a close that is not below breaks it. The setup is complete on its ninth bar;
+          the count then stops until the next flip. The TD Sell Setup counts closes above the
+          close four bars earlier.
+        - TD Buy Countdown: starts on the bar that completes a buy setup and counts every bar, not
+          necessarily in a row, that closes at or below the low two bars earlier, up to 13. The
+          13th bar also needs a low at or below the close of the eighth countdown bar, else the
+          countdown waits at 12. The TD Sell Countdown counts closes at or above the high two bars
+          earlier, its 13th bar a high at or above the close of the eighth.
+        - Cancellation: a buy countdown ends when a sell setup completes (which starts the sell
+          countdown) or when a close rises above the TDST level of its setup, the highest true
+          high (the high, or the previous close when higher) of its nine bars; a sell countdown
+          ends on a completed buy setup or a close below the lowest true low of its setup.
+
+        For more information, see the following sources:
+
+        - DeMark, T.R. (1994). "The New Science of Technical Analysis." Wiley.
+        - Perl, J. (2008). "DeMark Indicators." Bloomberg Press.
+        - Referenced against pandas-ta-classic's td_seq (https://github.com/xgboosted/pandas-ta-classic),
+          which counts the setup only.
+
+        TD Sequential, TD Setup, TD Countdown and TDST are Tom DeMark's names for his indicator
+        and its parts.
+
+        Also known as: TD Sequential, DeMark Sequential, Tom DeMark, TD Setup, TD Countdown, TDST,
+        TD9, TD13, DeMark 9 13, td_seq.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the high and low prices are adjusted for
+                dividends in the same way. "Close" uses the prices as traded (split-adjusted).
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The Buy Setup and Sell Setup (1 to 9 on the bars of a setup) and the Buy
+            Countdown and Sell Countdown (1 to 13 on the bars that count) per date and ticker, 0
+            otherwise.
+
+        Notes:
+        - A new setup in the same direction during a countdown does not restart it: DeMark's
+          recycling, which compares the size of the two setups, is left out, as are the
+          "perfection" of a setup and the "intersection" filter of the countdown.
+        - pandas-ta-classic's td_seq counts every run of closes beyond the close four bars
+          earlier, also one without a price flip before it, and continues past 9 up to 13; on the
+          bars of a setup that starts on a flip, its counts 1 to 9 are the same as here.
+        - The counts carry over from the ticker's own first bar, so the first setups after the
+          Toolkit's start date depend on where the history starts; the first four bars are empty.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        td_sequential = toolkit.technicals.get_td_sequential()
+
+        td_sequential.xs("AAPL", level=1, axis="columns").tail()
+        ```
+
+        Which returns:
+
+        | Date       |   Buy Setup |   Sell Setup |   Buy Countdown |   Sell Countdown |
+        |:-----------|------------:|-------------:|----------------:|-----------------:|
+        | 2025-12-24 |           0 |            2 |               0 |                0 |
+        | 2025-12-26 |           1 |            0 |               0 |                1 |
+        | 2025-12-29 |           0 |            1 |               0 |                0 |
+        | 2025-12-30 |           0 |            2 |               0 |                0 |
+        | 2025-12-31 |           1 |            0 |               0 |                0 |
+        """
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        def get_td_sequential(
+            high_prices: pd.Series, low_prices: pd.Series, close_prices: pd.Series
+        ) -> pd.DataFrame:
+            # The counts run over the ticker's own complete bars.
+            prices = pd.concat([high_prices, low_prices, close_prices], axis=1).dropna()
+            return pattern_model.get_td_sequential(
+                prices.iloc[:, 0], prices.iloc[:, 1], prices.iloc[:, 2]
+            ).reindex(close_prices.index)
+
+        columns = ["Buy Setup", "Sell Setup", "Buy Countdown", "Sell Countdown"]
+        td_sequential = calculate_per_ticker(
+            historical_data, ["High", "Low", close_column], get_td_sequential
+        ).loc[self._start_date : self._end_date][columns]
+
+        return td_sequential.reindex(
+            columns=historical_data[close_column].columns, level=1
+        )
+
+    @handle_errors
+    def get_liquidity_sweep(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int = 15,
+        wick_multiple: float = 1.5,
+        signals_only: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Mark the liquidity sweeps in every ticker's candles: a candle that trades through the
+        lowest low (or highest high) of the previous 15 bars, where stop orders tend to rest,
+        and closes back inside with a long wick. Traders read it as a stop hunt that has run
+        its course, so a sweep below the lows (bullish) hints at a move up and a sweep above the
+        highs (bearish) at a move down.
+
+        The formula is as follows:
+
+        - Swing Low = lowest Low of the `window` bars before the candle, Swing High = their
+          highest High
+        - Bullish Sweep (1): Low < Swing Low, Close > Swing Low, Close > Open and lower shadow >
+          wick_multiple x real body
+        - Bearish Sweep (-1): High > Swing High, Close < Swing High, Close < Open and upper
+          shadow > wick_multiple x real body
+
+        The real body is |Close - Open|, the lower shadow runs from the bottom of the body to
+        the Low and the upper shadow from the top of the body to the High.
+
+        The liquidity sweep (or stop hunt) is a pattern defined by the ICT (Inner Circle Trader)
+        and Smart Money Concepts community, without a primary publication. The measurable form
+        with a swing over the previous 15 bars and a wick longer than 1.5 times the body is
+        pandas-ta-classic's.
+
+        For more information, see the following sources:
+
+        - Referenced against pandas-ta-classic's smc_sweep (https://github.com/xgboosted/pandas-ta-classic).
+
+        Also known as: liquidity sweep, liquidity grab, stop hunt, stop run, smart money concepts,
+        SMC, ICT, swing failure, smc_sweep.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close", in which case the open, high and low prices are adjusted
+                for dividends in the same way. "Close" uses the candles as traded (split-adjusted).
+            window (int, optional): The number of previous bars the swing low and high are taken
+                over. Defaults to 15.
+            wick_multiple (float, optional): How many times the real body the wick through the
+                swing must exceed. Defaults to 1.5.
+            signals_only (bool, optional): Whether to return only the periods in which at least one
+                ticker has a sweep. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: The sweeps per date and ticker: 1 (bullish), -1 (bearish) or 0.
+
+        Notes:
+        - The values equal pandas-ta-classic's smc_sweep, also in its first `window` bars, which
+          are empty.
+        - Smart Money Concepts traders often take the swing low and high from swing points (see
+          `get_williams_fractal`) rather than from the extremes of a fixed window.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2025-01-01",
+            end_date="2025-12-31",
+        )
+
+        sweeps = toolkit.technicals.get_liquidity_sweep(signals_only=True)
+
+        sweeps.tail()
+        ```
+
+        Which returns:
+
+        | Date       |   AAPL |   MSFT |   Benchmark |
+        |:-----------|-------:|-------:|------------:|
+        | 2025-10-02 |      0 |     -1 |           0 |
+        | 2025-10-03 |      0 |      0 |          -1 |
+        | 2025-10-30 |     -1 |      0 |           0 |
+        | 2025-11-25 |      0 |      1 |           0 |
+        | 2025-12-26 |      0 |      0 |          -1 |
+        """
+        if period not in PERIODS:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._get_historical_data(period, close_column)
+
+        def get_liquidity_sweep(
+            open_prices: pd.Series,
+            high_prices: pd.Series,
+            low_prices: pd.Series,
+            close_prices: pd.Series,
+        ) -> pd.Series:
+            # The swing is taken over the ticker's own complete candles.
+            candles = pd.concat(
+                [open_prices, high_prices, low_prices, close_prices], axis=1
+            ).dropna()
+            return pattern_model.get_liquidity_sweep(
+                candles.iloc[:, 0],
+                candles.iloc[:, 1],
+                candles.iloc[:, 2],
+                candles.iloc[:, 3],
+                window,
+                wick_multiple,
+            ).reindex(close_prices.index)
+
+        sweeps = calculate_per_ticker(
+            historical_data,
+            ["Open", "High", "Low", close_column],
+            get_liquidity_sweep,
+        ).loc[self._start_date : self._end_date]
+        sweeps = sweeps[historical_data[close_column].columns]
+
+        if signals_only:
+            # A sweep is a rare event, so most periods are all zeros.
+            sweeps = sweeps[sweeps.abs().gt(0).any(axis=1)]
+
+        return sweeps
 
     @handle_errors
     def get_signals(

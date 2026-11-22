@@ -210,9 +210,9 @@ _PARAM_DESCRIPTIONS: dict[str, str] = {
         "return over, e.g. [5, 21, 63] for about a week, a month and a quarter."
     ),
     "signals_only": (
-        "get_signals, get_candlestick_patterns and get_williams_fractal only: set to true to "
-        "return only the periods with a signal, pattern or fractal, e.g. with limit=-5 for the "
-        "last five."
+        "get_signals, get_candlestick_patterns, get_williams_fractal and get_liquidity_sweep "
+        "only: set to true to return only the periods with a signal, pattern, fractal or sweep, "
+        "e.g. with limit=-5 for the last five."
     ),
     "show_crossings": (
         "get_indicator_summary only: set to true for a row per crossing (date, value, its "

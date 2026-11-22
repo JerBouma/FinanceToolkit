@@ -2560,6 +2560,19 @@ def test_align_employee_count_matches_the_fiscal_year_ends():
     assert aligned.loc["AAPL"].tolist() == [154000, 164000]
     assert aligned.loc["NVDA"].tolist() == [22473, 26196]
 
+    # A 52/53-week year ending on 25 December (Intel) is that December's count.
+    intel = pd.DataFrame(
+        [["2021-09-25", "2021-12-25", "2022-12-31"]],
+        index=["INTC"],
+        columns=[pd.Period(quarter, "Q") for quarter in ["2021Q3", "2021Q4", "2022Q4"]],
+    )
+    counts = pd.DataFrame(
+        {"INTC": [100, 110, 120]},
+        index=pd.PeriodIndex(["2020", "2021", "2022"], freq="Y"),
+    )
+    aligned = align_employee_count(counts, intel, quarterly=True)
+    assert aligned.loc["INTC"].tolist() == [100, 110, 120]
+
 
 def test_toolkit_passes_the_employee_counts_on_the_fiscal_year_ends(
     test_toolkit, monkeypatch

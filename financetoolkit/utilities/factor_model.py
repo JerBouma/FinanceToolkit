@@ -811,12 +811,24 @@ def get_factor_analysis(
             result.index.name = "Date"
         return result
 
+    # Fewer tickers than quantiles leave every period without quantiles to compare.
+    if all(
+        "Top Minus Bottom" not in analysis["quantile_returns"].T
+        for analysis in analyses.values()
+    ):
+        raise ValueError(
+            f"{quantiles} quantiles need at least {quantiles} tickers with a value in a "
+            "period; add tickers or lower quantiles."
+        )
+
     summaries = {}
     for name, analysis in analyses.items():
         summary = summarize_information_coefficient(
             analysis["information_coefficient"]
         ).T
-        summary["Top Minus Bottom"] = analysis["quantile_returns"].T["Top Minus Bottom"]
+        summary["Top Minus Bottom"] = analysis["quantile_returns"].T.get(
+            "Top Minus Bottom", np.nan
+        )
         turnover = analysis["quantile_turnover"]
         summary["Quantile Turnover"] = (
             turnover.iloc[:, [0, -1]].stack().mean() if not turnover.empty else np.nan

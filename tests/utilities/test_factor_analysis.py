@@ -214,3 +214,23 @@ def test_fewer_than_three_tickers_or_an_unknown_metric_return_no_result():
 
     assert ratios.get_factor_analysis("get_price_to_earnings_ratio").empty
     assert FakeRatios().get_factor_analysis("get_unknown_ratio").empty
+
+
+def test_fewer_tickers_than_quantiles_say_so(monkeypatch):
+    # Three tickers can't fill five quantiles: a clear error (logged, with an empty result)
+    # instead of a missing column.
+    performance = Performance(
+        tickers=[*TICKERS[:3], "Benchmark"],
+        historical_data={"daily": daily_prices()},
+        risk_free_rate_data={},
+        rounding=None,
+        start_date="2020-01-01",
+        end_date="2022-12-31",
+    )
+    factor = future_monthly_return_factor()[TICKERS[:3]]
+
+    assert performance.get_factor_analysis(factor, horizons=1).empty
+    monkeypatch.setenv("FINANCETOOLKIT_STRICT_ERRORS", "1")
+    with pytest.raises(ValueError, match="5 quantiles need at least 5 tickers"):
+        performance.get_factor_analysis(factor, horizons=1)
+    assert not performance.get_factor_analysis(factor, horizons=1, quantiles=3).empty

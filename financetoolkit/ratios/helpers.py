@@ -138,9 +138,11 @@ def align_employee_count(
     end_dates = period_end_dates.apply(pd.to_datetime)
 
     if quarterly:
-        # The calendar year the quarter ends in, minus one unless it ends in December.
-        count_years = (end_dates + pd.Timedelta(days=6)).apply(
-            lambda dates: dates.dt.year - 1
+        # The calendar year the quarter ends in, minus one unless it ends in December, so a
+        # 52/53-week year ending on 24 December or in the first days of January takes the
+        # count of the December it belongs to.
+        count_years = end_dates.apply(
+            lambda dates: dates.dt.year - (dates.dt.month != 12)  # noqa: PLR2004
         )
     else:
         count_years = end_dates.apply(lambda dates: dates.dt.year)

@@ -1,0 +1,11 @@
+,,2020,2021,2022
+AAPL,Relative Size (RELSIZE),-6.115,-6.115,-6.115
+AAPL,Excess Return (EXRET),0.6399,0.0592,-0.0823
+AAPL,Idiosyncratic Volatility (SIGMA),0.0681,0.0617,0.0506
+AAPL,Shumway Score,-9.6071,-8.4666,-8.2829
+AAPL,Bankruptcy Probability,0.0001,0.0002,0.0003
+MSFT,Relative Size (RELSIZE),-6.115,-6.115,-6.115
+MSFT,Excess Return (EXRET),0.242,0.2375,-0.0985
+MSFT,Idiosyncratic Volatility (SIGMA),0.0486,0.0431,0.0327
+MSFT,Shumway Score,-8.9746,-9.0189,-8.4253
+MSFT,Bankruptcy Probability,0.0001,0.0001,0.0002

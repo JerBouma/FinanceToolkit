@@ -1231,33 +1231,32 @@ def test_synthetic_credit_rating_without_interest_expense(models_module, monkeyp
 
     models = copy.copy(models_module)
     income = models_module._income_statement.copy()
-    balance = models_module._balance_sheet_statement.copy()
     period = income.columns[-1]
-    # A reported zero without debt means nothing to cover, a missing interest expense is unknown.
+    # No interest expense with a positive EBIT is an infinite coverage (Damodaran): the
+    # highest rating, whether the interest expense is zero or not reported, and also next to
+    # debt whose interest the statements do not report separately.
     income.loc[("AAPL", "Interest Expense"), period] = 0.0
-    balance.loc[("AAPL", "Total Debt"), period] = 0.0
     income.loc[("MSFT", "Interest Expense"), period] = np.nan
+    assert (
+        models_module._balance_sheet_statement.loc[("AAPL", "Total Debt"), period] > 0
+    )
     models._income_statement = income
-    models._balance_sheet_statement = balance
 
     rating = models.get_synthetic_credit_rating(firm_type="large")
     assert rating.loc[("AAPL", "Rating"), period] == "AAA"
-    assert pd.isna(rating.loc[("MSFT", "Rating"), period])
-
-    # A zero interest expense next to debt is unreported interest: no rating, not the best.
-    models._balance_sheet_statement = models_module._balance_sheet_statement
-    rating = models.get_synthetic_credit_rating(firm_type="large")
-    assert period not in rating.columns or pd.isna(
-        rating.loc[("AAPL", "Rating"), period]
-    )
-    models._balance_sheet_statement = balance
+    assert rating.loc[("MSFT", "Rating"), period] == "AAA"
+    assert rating.loc[("AAPL", "Default Spread"), period] == pytest.approx(0.004)
+    # The infinite ratio itself shows as NaN.
+    assert pd.isna(rating.loc[("AAPL", "Interest Coverage Ratio"), period])
 
     # Without interest but with an operating loss there is nothing the coverage says about a
-    # rating: no rating rather than the best one.
+    # rating, and without an EBIT there is no ratio: no rating rather than the best one.
     income.loc[("AAPL", "Operating Income"), period] = -1e9
+    income.loc[("MSFT", "Operating Income"), period] = np.nan
     rating = models.get_synthetic_credit_rating(firm_type="large")
-    assert period not in rating.columns or pd.isna(
-        rating.loc[("AAPL", "Rating"), period]
+    assert period not in rating.columns or (
+        pd.isna(rating.loc[("AAPL", "Rating"), period])
+        and pd.isna(rating.loc[("MSFT", "Rating"), period])
     )
 
 
@@ -2697,3 +2696,130 @@ def test_quarterly_intrinsic_valuation_sums_the_quarters_of_a_year():
     assert (
         models.get_intrinsic_valuation(historical=True, **settings).isna().all().all()
     )
+
+
+def test_get_fundamental_growth_rate(recorder, models_module):
+    recorder.capture(models_module.get_fundamental_growth_rate())
+    recorder.capture(models_module.get_fundamental_growth_rate(growth=True))
+
+
+def test_get_rule_of_40(recorder, models_module):
+    recorder.capture(models_module.get_rule_of_40())
+    recorder.capture(models_module.get_rule_of_40(margin="ebitda"))
+    assert models_module.get_rule_of_40(margin="operating").empty
+
+
+def test_get_owner_earnings(recorder, models_module):
+    recorder.capture(models_module.get_owner_earnings())
+    recorder.capture(models_module.get_owner_earnings(method="greenwald"))
+
+
+def test_get_return_on_incremental_invested_capital(recorder, models_module):
+    recorder.capture(models_module.get_return_on_incremental_invested_capital())
+    recorder.capture(models_module.get_return_on_incremental_invested_capital(years=2))
+
+
+def test_get_unlevered_beta(recorder, models_module):
+    recorder.capture(models_module.get_unlevered_beta())
+    recorder.capture(models_module.get_unlevered_beta(rounding=2))
+
+
+def test_get_capitalized_research_and_development(recorder, models_module):
+    recorder.capture(
+        models_module.get_capitalized_research_and_development(amortization_years=2)
+    )
+    recorder.capture(
+        models_module.get_capitalized_research_and_development(amortization_years=1)
+    )
+    # The four years of the offline statements are too few for the default five-year life.
+    default = models_module.get_capitalized_research_and_development()
+    assert default.xs("Research Asset", level=1).isna().all().all()
+
+
+def test_get_cash_flow_return_on_investment(recorder, models_module):
+    recorder.capture(models_module.get_cash_flow_return_on_investment())
+    recorder.capture(models_module.get_cash_flow_return_on_investment(rounding=2))
+
+
+def test_get_beneish_five_variable_m_score(recorder, models_module):
+    five = models_module.get_beneish_m_score(model="five", rounding=10)
+    recorder.capture(five)
+    eight = models_module.get_beneish_m_score(rounding=10)[five.columns]
+    indices = eight.xs("Days Sales in Receivables Index", level=1)
+    pd.testing.assert_frame_equal(
+        five.xs("Days Sales in Receivables Index", level=1), indices
+    )
+    expected = (
+        -6.065
+        + 0.823 * indices
+        + 0.906 * eight.xs("Gross Margin Index", level=1)
+        + 0.593 * eight.xs("Asset Quality Index", level=1)
+        + 0.717 * eight.xs("Sales Growth Index", level=1)
+        + 0.107 * eight.xs("Depreciation Index", level=1)
+    )
+    pd.testing.assert_frame_equal(
+        five.xs("Beneish M-Score", level=1), expected, atol=1e-8
+    )
+    assert models_module.get_beneish_m_score(model="six").empty
+
+
+def test_get_shumway_score(recorder, models_module, monkeypatch):
+    # The S&P 500 offline, as in the Campbell-Hilscher-Szilagyi test.
+    benchmark = models_module._historical_data["daily"]["Adj Close"]["Benchmark"]
+    benchmark.index = benchmark.index.to_timestamp()
+
+    def sp500(start: str, end: str) -> tuple[pd.DataFrame, pd.Series]:  # noqa: ARG001
+        index_data = pd.DataFrame(
+            {"Price Index": benchmark, "Total Return Index": benchmark}
+        )
+        return index_data, pd.Series({benchmark.index[-1]: 3e13})
+
+    monkeypatch.setattr(models_module, "_sp500_function", sp500)
+    recorder.capture(models_module.get_shumway_score())
+    recorder.capture(models_module.get_shumway_score(model="market"))
+
+    # Without the S&P 500, the relative size and the probability are NaN.
+    monkeypatch.setattr(models_module, "_sp500_function", None)
+    result = models_module.get_shumway_score()
+    assert result.xs("Bankruptcy Probability", level=1).isna().all().all()
+
+
+def test_get_graham_criteria(recorder, models_module):
+    recorder.capture(models_module.get_graham_criteria())
+    recorder.capture(models_module.get_graham_criteria(minimum_revenue=3e11))
+
+
+def long_history_models():
+    """A company with 25 years of statements, for the measures that need long histories."""
+    rng = np.random.default_rng(7)
+    years = 25
+    trend = 1.05 ** np.arange(years)
+    net_income = 60 * trend + 10 * rng.standard_normal(years)
+    items = {
+        "Total Assets": 1000 * trend * (1 + 0.05 * rng.standard_normal(years)),
+        "Operating Cash Flow": 80 * trend + 15 * rng.standard_normal(years),
+        "Change in Working Capital": 10 * rng.standard_normal(years),
+        "Net Income": net_income,
+        "Net Income from Continuing Operations": net_income,
+        "Weighted Average Shares": np.full(years, 10.0),
+        "Revenue": 900 * 1.06 ** np.arange(years) + 30 * rng.standard_normal(years),
+        "Property, Plant and Equipment": 300 * 1.04 ** np.arange(years),
+    }
+    return synthetic_models(
+        {row: {"A": list(values)} for row, values in items.items()}, quarterly=False
+    )
+
+
+def test_get_accrual_quality(recorder, models_module):
+    # The offline statements are too short for a regression of eight years.
+    short = models_module.get_accrual_quality()
+    assert short.xs("Accrual Quality", level=1).isna().all().all()
+    models = long_history_models()
+    recorder.capture(models.get_accrual_quality())
+    recorder.capture(models.get_accrual_quality(method="mcnichols", window=10))
+
+
+def test_get_earnings_attributes(recorder):
+    models = long_history_models()
+    recorder.capture(models.get_earnings_attributes())
+    recorder.capture(models.get_earnings_attributes(window=5))

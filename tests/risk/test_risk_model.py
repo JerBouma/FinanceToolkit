@@ -1140,3 +1140,19 @@ def test_the_pain_index_skips_the_rows_before_a_later_listing():
         risk_model.get_pain_index(alone)["Later"]
     )
     assert np.isnan(risk_model.get_pain_index(pd.Series([np.nan, np.nan])))
+
+
+def test_moves_that_differ_in_the_last_bits_are_ties():
+    # Changes of a rate quoted to four decimals: 0.001 comes out as 0.000999...994 or
+    # 0.001...009 depending on the levels, which must still rank as the same move.
+    levels = pd.Series(
+        [4.2513, 4.2523, 4.2533, 4.2543, 4.2553, 4.2443, 4.2453],
+        index=pd.date_range("2024-01-01", periods=7),
+    )
+    returns = levels.diff().dropna()
+
+    significance = risk_model.get_move_significance(returns, window=2)
+
+    # Four earlier moves of +0.001 and one of -0.011: the last +0.001 is a tie with four.
+    assert significance["Percentile"].iloc[-1] == pytest.approx((0 + 0.5 * 4) / 5)
+    assert significance["Largest Since"].iloc[-1] == "2024-01-05"

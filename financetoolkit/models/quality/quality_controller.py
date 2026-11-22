@@ -324,6 +324,7 @@ class QualityModels:
     @handle_errors
     def get_beneish_m_score(
         self,
+        model: str = "eight",
         rounding: int | None = None,
         growth: bool = False,
         lag: int | list[int] = 1,
@@ -358,7 +359,11 @@ class QualityModels:
         With `trailing`, the flows are summed over the trailing periods, while the balance sheet items are taken
         at the end of each period.
 
-        The -1.78 threshold belongs to this eight-variable model; the five-variable version uses -2.22.
+        The five-variable model of Beneish (1997), with model="five", leaves out SGAI, LVGI and TATA:
+
+        - M-Score (five variables) = -6.065 + 0.823 * DSRI + 0.906 * GMI + 0.593 * AQI + 0.717 * SGI + 0.107 * DEPI
+
+        The -1.78 threshold belongs to the eight-variable model; the five-variable version uses -2.22.
         Fast-growing companies are flagged more often because sales growth itself raises the score, and the
         model was estimated without financial companies and is not suited to banks and insurers, so a score
         above the threshold is a prompt to read the accounts, not a finding.
@@ -366,6 +371,9 @@ class QualityModels:
         Also known as: Beneish M-Score, earnings manipulation score.
 
         Args:
+            model (str, optional): The model: "eight" for the eight-variable model of Beneish (1999) or
+                "five" for the five-variable model of Beneish (1997), which returns its five indices
+                and score. Defaults to "eight".
             rounding (int, optional): The number of decimals to round the results to. Defaults to None.
             growth (bool, optional): Whether to calculate the growth of the values. Defaults to False.
             lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
@@ -397,6 +405,9 @@ class QualityModels:
         as one line, where Beneish (1999) uses depreciation alone.
 
         References:
+        - Beneish, Messod D. "Detecting GAAP Violation: Implications for Assessing Earnings
+        Management among Firms with Extreme Financial Performance." Journal of Accounting and
+        Public Policy, Vol. 16, No. 3, 1997, pp. 271-309.
         - Beneish, Messod D. "The Detection of Earnings Manipulation." Financial Analysts Journal,
         Vol. 55, No. 5, 1999, pp. 24-36.
         - Beneish, Messod D., Charles M. C. Lee, and D. Craig Nichols. "Earnings Manipulation and
@@ -425,6 +436,9 @@ class QualityModels:
         | DIS   | -2.5143 | -2.5357 | -2.6392 | -2.6963 | -2.595  |
         | NFLX  | -1.6697 | -1.3345 | -2.5628 | -2.3319 | -2.1611 |
         """
+        model = model.lower()
+        if model not in ("eight", "five"):
+            raise ValueError("The model must be 'eight' or 'five'.")
         # The score was estimated on yearly statements, so quarterly data is summed into a
         # year (a trailing twelve months) unless a trailing period is given.
         if trailing is None and self._quarterly:
@@ -523,6 +537,32 @@ class QualityModels:
                 total_assets=total_assets,
             )
         )
+
+        if model == "five":
+            five_variables = {
+                name: beneish_m_score[name]
+                for name in [
+                    "Days Sales in Receivables Index",
+                    "Gross Margin Index",
+                    "Asset Quality Index",
+                    "Sales Growth Index",
+                    "Depreciation Index",
+                ]
+            }
+            five_variables["Beneish M-Score"] = (
+                beneish_model.get_beneish_five_variable_m_score(
+                    days_sales_in_receivables_index=five_variables[
+                        "Days Sales in Receivables Index"
+                    ],
+                    gross_margin_index=five_variables["Gross Margin Index"],
+                    asset_quality_index=five_variables["Asset Quality Index"],
+                    sales_growth_index=five_variables["Sales Growth Index"],
+                    depreciation_index=five_variables["Depreciation Index"],
+                )
+            )
+            return self._finalize_components(
+                five_variables, rounding, growth, lag, standardize
+            )
 
         beneish_m_score["Beneish M-Score"] = beneish_model.get_beneish_m_score(
             days_sales_in_receivables_index=beneish_m_score[
@@ -1305,6 +1345,383 @@ class QualityModels:
             first_columns=growth_lag + ((trailing or 1) - 1),
             name="The Quality Score",
         )
+
+    @handle_errors
+    def get_accrual_quality(
+        self,
+        method: str = "dechow_dichev",
+        window: int = 8,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the accrual quality of Dechow and Dichev (2002): how well a company's working
+        capital accruals map into its operating cash flows of the year before, the year itself
+        and the year after. Accruals anticipate cash flows (a sale on credit is collected next
+        year), so accruals that the cash flows do not explain are estimation errors; their
+        standard deviation measures the quality of the accruals and of the earnings they are part
+        of. A higher value means lower quality. Francis et al. (2005) found that companies with
+        poor accrual quality have a higher cost of capital.
+
+        The regression is estimated per company over the `window` years before the period:
+
+            - ΔWC (t) = b0 + b1 CFO (t - 1) + b2 CFO (t) + b3 CFO (t + 1) + e (t)
+            - McNichols (2002), method="mcnichols": ΔWC (t) = b0 + b1 CFO (t - 1) + b2 CFO (t) +
+              b3 CFO (t + 1) + b4 ΔRevenue (t) + b5 PP&E (t) + e (t)
+            - Accrual Quality = σ(e), the standard deviation of the residuals (ddof=1)
+
+        with ΔWC the increase in working capital (minus the Change in Working Capital of the cash
+        flow statement: the change in receivables and inventory less the change in payables,
+        taxes payable and other working capital) and every variable divided by the average total
+        assets of its year.
+
+        For more information, see the following sources:
+
+        - Dechow, P. M. and Dichev, I. D. (2002). "The Quality of Accruals and Earnings: The Role
+          of Accrual Estimation Errors." The Accounting Review, 77(Supplement), 35-59.
+        - McNichols, M. F. (2002). "Discussion of The Quality of Accruals and Earnings: The Role of
+          Accrual Estimation Errors." The Accounting Review, 77(Supplement), 61-69.
+        - Francis, J., LaFond, R., Olsson, P. and Schipper, K. (2005). "The Market Pricing of
+          Accruals Quality." Journal of Accounting and Economics, 39(2), 295-327.
+
+        Also known as: Dechow-Dichev model, accruals quality, AQ, DD model, McNichols model.
+
+        Args:
+            method (str, optional): "dechow_dichev" or "mcnichols" (adds the change in revenue and
+                the property, plant and equipment). Defaults to "dechow_dichev".
+            window (int, optional): The number of years every regression is estimated on. Dechow
+                and Dichev required at least 8 years per company. Defaults to 8.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the Working Capital Accruals and the Cash Flow from
+            Operations (both over the average total assets) and the Accrual Quality.
+
+        Notes:
+        - No look-ahead: the regression needs the cash flow of the year after each accrual, so the
+          Accrual Quality of period T uses the accruals of the `window` years up to T - 1, whose
+          next-year cash flow is known at T at the latest. It therefore needs `window` + 2 years of
+          statements: set a start_date at least that many years back.
+        - Dechow and Dichev estimate one regression per company over its whole history and
+          Francis et al. (2005) estimate them per industry and year; this rolls a regression per
+          company over the window, so the measure is known at each period.
+        - On quarterly data the flows are summed over the trailing twelve months and the years of
+          the regression are four quarters apart.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2010-01-01",
+            end_date="2025-12-31",
+        )
+
+        # The last six years, each estimated on the eight years before it
+        toolkit.models.get_accrual_quality().xs("Accrual Quality", level=1).iloc[:, -6:]
+        ```
+
+        Which returns:
+
+        |      |   2020 |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:-----|-------:|-------:|-------:|-------:|-------:|-------:|
+        | AAPL | 0.0295 | 0.0282 | 0.0291 | 0.0199 | 0.0216 | 0.0216 |
+        | MSFT | 0.0546 | 0.054  | 0.0346 | 0.0352 | 0.0225 | 0.0197 |
+        """
+        method = method.lower()
+        if method not in ("dechow_dichev", "mcnichols"):
+            raise ValueError("The method must be 'dechow_dichev' or 'mcnichols'.")
+        year = 4 if self._quarterly else 1
+        trailing = year if self._quarterly else None
+
+        total_assets = self._rows(self._balance_sheet_statement, "Total Assets")
+        average_assets = (total_assets + total_assets.shift(year, axis=1)) / 2
+        average_assets = average_assets.where(average_assets > 0)
+
+        def scaled_flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing) / average_assets
+
+        working_capital_accruals = -scaled_flow(
+            self._cash_flow_statement, "Change in Working Capital"
+        )
+        operating_cash_flow = scaled_flow(
+            self._cash_flow_statement, "Operating Cash Flow"
+        )
+        extra = {}
+        if method == "mcnichols":
+            revenue = trailing_sum(
+                self._rows(self._income_statement, "Revenue"), trailing
+            )
+            extra = {
+                "change_in_revenue": (revenue - revenue.shift(year, axis=1))
+                / average_assets,
+                "property_plant_and_equipment": self._rows(
+                    self._balance_sheet_statement, "Property, Plant and Equipment"
+                )
+                / average_assets,
+            }
+
+        results = {
+            "Working Capital Accruals": working_capital_accruals,
+            "Cash Flow from Operations": operating_cash_flow,
+            "Accrual Quality": quality_model.get_accrual_quality(
+                working_capital_accruals=working_capital_accruals,
+                operating_cash_flow=operating_cash_flow,
+                window=window,
+                lag=year,
+                **extra,
+            ),
+        }
+
+        return self._finish_score(results, rounding, first_columns=0)
+
+    @handle_errors
+    def get_earnings_attributes(
+        self,
+        window: int = 10,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the accounting-based earnings attributes of Francis, LaFond, Olsson and Schipper
+        (2004): the persistence, predictability and smoothness of a company's earnings over the
+        past years. Persistent and predictable earnings are more useful to forecast with, and the
+        paper finds that companies with less favourable attributes have a higher cost of equity.
+        Together with the accrual quality (`get_accrual_quality`) they are the paper's accounting
+        attributes.
+
+        The formula is as follows, each over the `window` years up to the period:
+
+            - Persistence = φ1 of the regression EPS (t) = φ0 + φ1 EPS (t - 1) + ν (t)
+            - Predictability = sqrt(σ²(ν)), the square root of the error variance of that
+              regression, sqrt(Σ ν² / (N - 2))
+            - Smoothness = σ(Net Income (t) / Total Assets (t - 1)) / σ(Cash Flow from Operations
+              (t) / Total Assets (t - 1)), the standard deviations with ddof=1
+
+        with EPS the net income from continuing operations (the earnings before extraordinary
+        items of the paper) over the weighted average shares. A persistence near 1 means earnings
+        shocks last; larger predictability and smoothness values mean less predictable and less
+        smooth earnings (as in the paper, larger values are less desirable).
+
+        For more information, see the following sources:
+
+        - Francis, J., LaFond, R., Olsson, P. M. and Schipper, K. (2004). "Costs of Equity and
+          Earnings Attributes." The Accounting Review, 79(4), 967-1010.
+
+        Also known as: earnings persistence, earnings predictability, earnings smoothness, earnings
+        quality attributes, Francis LaFond Olsson Schipper.
+
+        Args:
+            window (int, optional): The number of years of every window; the paper uses 10.
+                Defaults to 10.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the Persistence, Predictability and Smoothness.
+
+        Notes:
+        - The windows only use the years up to the period (no look-ahead) and need every one of
+          them, plus the year before for the lagged EPS and the beginning total assets: set a
+          start_date at least `window` + 1 years back.
+        - The net income from continuing operations falls back on the net income where the
+          statements do not report it.
+        - On quarterly data the flows are summed over the trailing twelve months and the years of
+          the window are four quarters apart.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2010-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_earnings_attributes()
+        ```
+
+        Which returns:
+
+        |                            |    2018 |    2019 |   2020 |   2021 |   2022 |   2023 |   2024 |   2025 |
+        |:---------------------------|--------:|--------:|-------:|-------:|-------:|-------:|-------:|-------:|
+        | ('AAPL', 'Persistence')    |  0.9719 |  0.8779 | 0.8644 | 1.3562 | 1.1528 | 0.9926 | 0.9229 | 1.015  |
+        | ('AAPL', 'Predictability') |  0.3459 |  0.3408 | 0.3384 | 0.7336 | 0.7608 | 0.7721 | 0.7744 | 0.8457 |
+        | ('AAPL', 'Smoothness')     |  0.7622 |  0.7474 | 0.7391 | 0.8799 | 0.8643 | 0.9365 | 0.9284 | 1.1048 |
+        | ('MSFT', 'Persistence')    | -0.0581 | -0.3582 | 0.6982 | 1.1725 | 1.1663 | 1.0312 | 1.0803 | 1.0464 |
+        | ('MSFT', 'Predictability') |  0.5798 |  1.0244 | 1.2588 | 1.4298 | 1.3595 | 1.4282 | 1.4569 | 1.2686 |
+        | ('MSFT', 'Smoothness')     |  1.2413 |  1.2008 | 1.2202 | 1.1846 | 1.5726 | 1.616  | 1.4189 | 1.3102 |
+        """
+        year = 4 if self._quarterly else 1
+        trailing = year if self._quarterly else None
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        earnings = flow(
+            self._income_statement, "Net Income from Continuing Operations"
+        ).combine_first(flow(self._income_statement, "Net Income"))
+        shares = self._rows(self._income_statement, "Weighted Average Shares")
+        beginning_assets = self._rows(
+            self._balance_sheet_statement, "Total Assets"
+        ).shift(year, axis=1)
+        beginning_assets = beginning_assets.where(beginning_assets > 0)
+
+        results = quality_model.get_earnings_attributes(
+            earnings_per_share=earnings / shares.where(shares > 0),
+            earnings_to_assets=earnings / beginning_assets,
+            cash_flow_to_assets=flow(self._cash_flow_statement, "Operating Cash Flow")
+            / beginning_assets,
+            window=window,
+            lag=year,
+        )
+
+        return self._finish_score(results, rounding, first_columns=0)
+
+    @handle_errors
+    def get_graham_criteria(
+        self,
+        minimum_revenue: float = 800_000_000,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the seven criteria Benjamin Graham sets for the stocks of the defensive investor
+        in The Intelligent Investor (chapter 14), with the number met: an adequate size, a strong
+        financial condition, earnings stability, a dividend record, earnings growth, a moderate
+        price to earnings and a moderate price to assets. Graham meant them as a minimum of
+        quality and a maximum of price for an investor who does not want to analyse companies in
+        depth.
+
+        The formula is as follows:
+
+            - Adequate Size: Revenue >= minimum_revenue
+            - Strong Financial Condition: Current Assets >= 2 * Current Liabilities and Long Term
+              Debt <= Current Assets - Current Liabilities (net current assets)
+            - Earnings Stability: a positive Net Income in each of the past 10 years
+            - Dividend Record: dividends paid in each of the past 20 years
+            - Earnings Growth: the average EPS of the last 3 years at least a third above the
+              average EPS of the 3 years ending ten years earlier
+            - Moderate Price to Earnings: Price <= 15 * the average EPS of the last 3 years
+            - Moderate Price to Assets: Price / Earnings * Price / Book Value <= 22.5, with the
+              earnings the average EPS of the last 3 years (Graham's 15 times earnings and 1.5
+              times book value, a lower multiple of the one allowing a higher multiple of the
+              other)
+            - Criteria Met = the number of criteria met; Criteria Evaluated = the number that
+              could be evaluated
+
+        Every criterion is 1 when met, 0 when not and NaN when the statements do not go back far
+        enough (the dividend record needs 20 years of statements, the earnings growth 13).
+
+        For more information, see the following sources:
+
+        - Graham, B. (1973). "The Intelligent Investor." Harper & Row, 4th revised edition,
+          chapter 14 (Stock Selection for the Defensive Investor).
+
+        Also known as: Graham defensive investor criteria, Graham screen, Graham's seven criteria,
+        defensive stock selection.
+
+        Args:
+            minimum_revenue (float, optional): The yearly revenue of the size criterion, in the
+                reporting currency. Graham asked for at least $100 million of sales for an
+                industrial company in 1971, about $800 million in 2025 prices (the US consumer price
+                index rose about eightfold). Defaults to 800,000,000.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the seven criteria (1, 0 or NaN), Criteria Met and
+            Criteria Evaluated.
+
+        Notes:
+        - Graham's criteria for public utilities differ (debt below twice the equity at book
+          value instead of the current ratio); these are the criteria for industrial companies.
+        - The price is the close at the end of the fiscal period (traded, adjusted for splits),
+          the EPS the diluted EPS and the book value the Total Shareholder Equity over the diluted
+          weighted average shares. The dividend record counts a year with dividends paid on the
+          cash flow statement.
+        - On quarterly data the flows are summed over the trailing twelve months and the years
+          are four quarters apart.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["KO", "JNJ", "PG"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2000-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_graham_criteria().loc["KO"].iloc[:, -3:]
+        ```
+
+        Which returns:
+
+        |                            |   2023 |   2024 |   2025 |
+        |:---------------------------|-------:|-------:|-------:|
+        | Adequate Size              |      1 |      1 |      1 |
+        | Strong Financial Condition |      0 |      0 |      0 |
+        | Earnings Stability         |      1 |      1 |      1 |
+        | Dividend Record            |      1 |      1 |      1 |
+        | Earnings Growth            |      0 |      0 |      1 |
+        | Moderate Price to Earnings |      0 |      0 |      0 |
+        | Moderate Price to Assets   |      0 |      0 |      0 |
+        | Criteria Met               |      3 |      3 |      4 |
+        | Criteria Evaluated         |      7 |      7 |      7 |
+        """
+        year = 4 if self._quarterly else 1
+        trailing = year if self._quarterly else None
+        balance = self._balance_sheet_statement
+
+        def flow(statement: pd.DataFrame, row: str) -> pd.DataFrame:
+            return trailing_sum(self._rows(statement, row), trailing)
+
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        criteria = quality_model.get_graham_criteria(
+            revenue=flow(self._income_statement, "Revenue"),
+            total_current_assets=self._rows(balance, "Total Current Assets"),
+            total_current_liabilities=self._rows(balance, "Total Current Liabilities"),
+            long_term_debt=self._rows(balance, "Long Term Debt"),
+            net_income=flow(self._income_statement, "Net Income"),
+            dividends_paid=flow(self._cash_flow_statement, "Dividends Paid"),
+            earnings_per_share=flow(self._income_statement, "EPS Diluted"),
+            share_price=self._period_prices(),
+            book_value_per_share=self._rows(balance, "Total Shareholder Equity")
+            / shares.where(shares > 0),
+            minimum_revenue=minimum_revenue,
+            lag=year,
+        )
+        frames = list(criteria.values())
+        criteria["Criteria Met"] = sum(frame.fillna(0) for frame in frames).where(
+            sum(frame.notna() for frame in frames) > 0
+        )
+        criteria["Criteria Evaluated"] = sum(
+            frame.notna().astype(float) for frame in frames
+        ).where(sum(frame.notna() for frame in frames) > 0)
+
+        return self._finish_score(criteria, rounding, first_columns=0)
 
     @handle_errors
     def get_accruals_ratio(

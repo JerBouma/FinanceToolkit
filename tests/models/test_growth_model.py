@@ -196,3 +196,26 @@ def test_daily_pvgo_applies_the_earnings_from_the_fiscal_period_end():
     pd.testing.assert_frame_equal(
         result, pd.DataFrame({"A": [30.0, 31.0, 22.0, 23.0]}, index=days)
     )
+
+
+def test_damodaran_reinvestment_and_fundamental_growth():
+    reinvestment_rate = growth_model.get_reinvestment_rate(
+        net_capital_expenditure=pd.Series([30.0, 10.0]),
+        change_in_working_capital=pd.Series([10.0, 5.0]),
+        net_operating_profit_after_taxes=pd.Series([100.0, -20.0]),
+    )
+    assert reinvestment_rate[0] == pytest.approx(0.4)
+    # A loss has no reinvestment rate.
+    assert pd.isna(reinvestment_rate[1])
+    assert growth_model.get_fundamental_growth_rate(
+        reinvestment_rate[0], 0.15
+    ) == pytest.approx(0.06)
+    ratio = growth_model.get_sales_to_capital_ratio(
+        revenue=pd.Series([500.0, 500.0]), invested_capital=pd.Series([250.0, -10.0])
+    )
+    assert ratio[0] == pytest.approx(2.0)
+    assert pd.isna(ratio[1])
+
+
+def test_get_rule_of_40():
+    assert growth_model.get_rule_of_40(0.3, 0.12) == pytest.approx(0.42)

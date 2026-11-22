@@ -990,7 +990,7 @@ class DistributionRisk:
         |           |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
         |:----------|---------:|----------------------:|---------------:|-------------:|:----------------|
         | NVDA      |  -0.1697 |               -5.0682 |        -3.4613 |       0.9976 | 2020-03-16      |
-        | KO        |   0.0318 |                3.891  |         2.3363 |       0.9818 | 2022-11-10      |
+        | KO        |   0.0315 |                3.8515 |         2.3126 |       0.981  | 2022-11-10      |
         | Benchmark |  -0.0141 |               -1.76   |        -1.026  |       0.8632 | 2025-01-10      |
         """
         if period not in ["daily", "weekly", "monthly", "quarterly", "yearly"]:

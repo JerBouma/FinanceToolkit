@@ -2108,19 +2108,27 @@ def get_move_significance(
     for position in range(1, count):
         earlier = values[:position]
 
+        # Moves of rates quoted to a few decimals are differences of rounded numbers, so
+        # equal moves differ in their last bits (0.001 as 0.000999...994 or 0.001...009):
+        # compare with a relative tolerance so they count as ties in every run.
+        same_size = np.isclose(
+            absolute[:position], absolute[position], rtol=1e-9, atol=0
+        )
+        same_move = np.isclose(earlier, values[position], rtol=1e-9, atol=0)
+
         if position >= window:
             # The mid-rank of the move among the earlier ones, as get_level_significance
             # ranks a level: ties count as half, so a run of unchanged days is not at 0.
             percentile[position] = np.mean(
-                absolute[:position] < absolute[position]
-            ) + 0.5 * np.mean(absolute[:position] == absolute[position])
+                (absolute[:position] < absolute[position]) & ~same_size
+            ) + 0.5 * np.mean(same_size)
 
         # The same direction, so a fall is compared with falls ("the largest drop since")
         # and a rise with rises; a flat day has no direction and gets no date.
         if values[position] < 0:
-            as_large = np.flatnonzero(earlier <= values[position])
+            as_large = np.flatnonzero((earlier <= values[position]) | same_move)
         elif values[position] > 0:
-            as_large = np.flatnonzero(earlier >= values[position])
+            as_large = np.flatnonzero((earlier >= values[position]) | same_move)
         else:
             continue
 

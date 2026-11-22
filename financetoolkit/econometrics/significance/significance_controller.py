@@ -359,7 +359,7 @@ class SignificanceEconometrics:
         |         |   Return |   Volatility Multiple |   VaR Multiple |   Percentile | Largest Since   |
         |:--------|---------:|----------------------:|---------------:|-------------:|:----------------|
         | 2 Year  |   0.0017 |                3.5345 |         2.4286 |       0.9935 | 2025-04-09      |
-        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9654 | 2026-09-23      |
+        | 10 Year |   0.001  |                2.2808 |         1.6667 |       0.9633 | 2026-09-23      |
         """
         period = period if period else "daily"
 

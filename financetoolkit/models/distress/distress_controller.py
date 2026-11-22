@@ -19,6 +19,7 @@ from financetoolkit.models.distress import (
     fulmer_model,
     grover_model,
     ohlson_model,
+    shumway_model,
     springate_model,
     taffler_model,
     zmijewski_model,
@@ -1593,6 +1594,47 @@ class DistressModels:
 
         return self._finish_score(results, rounding, first_columns=0)
 
+    def _sp500_market_data(
+        self, close: pd.DataFrame, consequence: str
+    ) -> tuple[pd.Series, pd.Series]:
+        """
+        The S&P 500 total return index and the total market value of its companies on every
+        day from the first date of the prices up to today (its total market value is known
+        for the latest date only and scaled back with the price index), the market of the
+        Campbell-Hilscher-Szilagyi and Shumway models.
+
+        Args:
+            close (pd.DataFrame): The daily prices with a DatetimeIndex, whose first date the
+                index data starts at.
+            consequence (str): What a missing total market value leaves NaN, for the warning.
+
+        Returns:
+            tuple[pd.Series, pd.Series]: The daily total return index and total market value,
+            empty or NaN where not available.
+        """
+        index_data, latest_market_value = (
+            self._sp500_function(
+                close.index.min().strftime("%Y-%m-%d"),
+                pd.Timestamp.today().strftime("%Y-%m-%d"),
+            )
+            if self._sp500_function is not None and not close.empty
+            else (pd.DataFrame(), pd.Series(dtype=float))
+        )
+        price_index = index_data.get("Price Index", pd.Series(dtype=float))
+        total_return_index = index_data.get(
+            "Total Return Index", pd.Series(dtype=float)
+        )
+        index_market_value = chs_model.get_index_market_value(
+            price_index, latest_market_value
+        )
+        if index_market_value.dropna().empty:
+            logger.warning(
+                "The total market value of the S&P 500 (its constituents and their market "
+                "capitalizations from FinancialModelingPrep) is not available, so %s.",
+                consequence,
+            )
+        return total_return_index, index_market_value
+
     @handle_errors
     def get_campbell_hilscher_szilagyi_score(
         self,
@@ -1755,29 +1797,9 @@ class DistressModels:
         daily_returns = daily["Return"].reindex(columns=tickers)
         daily_returns.index = daily_returns.index.to_timestamp()
 
-        # The S&P 500 over the prices' dates and up to today, as its total market value is
-        # known for the latest date only.
-        index_data, latest_market_value = (
-            self._sp500_function(
-                close.index.min().strftime("%Y-%m-%d"),
-                pd.Timestamp.today().strftime("%Y-%m-%d"),
-            )
-            if self._sp500_function is not None and not close.empty
-            else (pd.DataFrame(), pd.Series(dtype=float))
+        total_return_index, index_market_value = self._sp500_market_data(
+            close, "the relative size (RSIZE) and the failure probability are NaN"
         )
-        price_index = index_data.get("Price Index", pd.Series(dtype=float))
-        total_return_index = index_data.get(
-            "Total Return Index", pd.Series(dtype=float)
-        )
-        index_market_value = chs_model.get_index_market_value(
-            price_index, latest_market_value
-        )
-        if index_market_value.dropna().empty:
-            logger.warning(
-                "The total market value of the S&P 500 (its constituents and their market "
-                "capitalizations from FinancialModelingPrep) is not available, so the "
-                "relative size (RSIZE) and the failure probability are NaN."
-            )
 
         price = helpers.values_on_or_before(close, dates)
         shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
@@ -1887,6 +1909,217 @@ class DistressModels:
         )
 
     @handle_errors
+    def get_shumway_score(
+        self,
+        model: str = "combined",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the bankruptcy probability of Shumway's (2001) hazard model, which combines two
+        accounting ratios of Zmijewski's model with three market variables: the company's size
+        relative to the market, its excess return over the past year and the volatility of its
+        returns that the market does not explain. Shumway estimated it as a discrete-time hazard
+        model (a logit on every firm year), which uses every year a company is observed rather
+        than one per company, and found that the market variables predict bankruptcy better than
+        most accounting ratios.
+
+        The model is Table 6 of the paper, panel B (model="combined") or panel A (model="market"):
+
+            - Combined: H = -13.303 - 1.982 NI/TA + 3.593 TL/TA - 0.467 RELSIZE - 1.809 EXRET +
+              5.791 SIGMA
+            - Market: H = -12.027 - 0.503 RELSIZE - 2.072 EXRET + 9.834 SIGMA
+            - Bankruptcy Probability = e^H / (1 + e^H)
+
+        with:
+
+            - NI/TA = Net Income / Total Assets
+            - TL/TA = Total Liabilities / Total Assets
+            - RELSIZE = ln(Market Value of Equity / Total Market Value of the S&P 500)
+            - EXRET = the return of the shares over the past twelve months (cumulated from the
+              monthly returns) minus that of the S&P 500 total return index
+            - SIGMA = the standard deviation of the residuals of a regression of the twelve
+              monthly returns of the shares on those of the S&P 500 (the standard error of the
+              regression, sqrt(Σ e² / (12 - 2))), a monthly figure
+
+        The probability is that of a bankruptcy filing in the year after the period, the
+        statements and market data being known at its end. For comparison, 300 of the 39,745 firm
+        years in Shumway's sample ended in bankruptcy (0.75%).
+
+        For more information, see the following sources:
+
+        - Shumway, T. (2001). "Forecasting Bankruptcy More Accurately: A Simple Hazard Model."
+          The Journal of Business, 74(1), 101-124.
+        - Zmijewski, M. E. (1984). "Methodological Issues Related to the Estimation of Financial
+          Distress Prediction Models." Journal of Accounting Research, 22, 59-82.
+
+        Also known as: Shumway hazard model, hazard model bankruptcy probability, Shumway score.
+
+        Args:
+            model (str, optional): "combined" for the market and accounting variables (Table 6,
+                panel B) or "market" for the market variables only (panel A), which also works
+                for companies without statements. Defaults to "combined".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per ticker and period the variables as they enter the model (NI/TA and
+            TL/TA only for the combined model), the Shumway Score (H) and the Bankruptcy
+            Probability (a decimal).
+
+        Notes:
+        - Truncation: Shumway truncates every variable at the 1st and 99th percentiles of his
+          sample, which a calculation per company cannot repeat. Each variable is clipped instead
+          to the range it spans in the paper's sample after truncation (Table 1, minimum and
+          maximum): NI/TA -0.329 to 0.231, TL/TA 0.090 to 1.028, RELSIZE -13.616 to -6.115,
+          EXRET -0.817 to 2.181 and SIGMA 0.030 to 0.325. A company larger than about 0.2% of the
+          S&P 500 has the largest RELSIZE the paper used.
+        - The market: Shumway compares with all NYSE and AMEX companies (the value-weighted CRSP
+          index and their total market value); this uses the S&P 500, its total return index
+          (^SP500TR) and the total market value of its companies (see
+          `get_campbell_hilscher_szilagyi_score`), which holds most of the US market value. As
+          RELSIZE enters with -0.467, a total market value 25% too low moves the score by about
+          -0.1. Without an API key that has access to the constituents, RELSIZE and the
+          probability are NaN.
+        - The market value of equity is the closing price times the diluted weighted average
+          shares, the returns are total returns (Adj Close), and every market variable is
+          measured up to the day each period's figures apply from (the fiscal period end, or the
+          filing day with point_in_time): no later data is used. Shumway lags the statements by
+          at least six months so they are known; set point_in_time on the Toolkit to measure on
+          the filing day instead.
+        - On quarterly statements the net income is that of the trailing twelve months, as the
+          model was estimated on yearly figures.
+        - A month without a price leaves EXRET and SIGMA NaN, where Shumway substitutes the
+          market return for a missing month.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["F", "AAPL"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.models.get_shumway_score().loc["F"]
+        ```
+
+        Which returns:
+
+        |                                     |    2021 |    2022 |    2023 |    2024 |    2025 |
+        |:------------------------------------|--------:|--------:|--------:|--------:|--------:|
+        | Net Income to Total Assets (NI/TA)  |  0.0698 | -0.0077 |  0.0159 |  0.0206 | -0.0283 |
+        | Liabilities to Total Assets (TL/TA) |  0.8108 |  0.8313 |  0.8434 |  0.8427 |  0.8756 |
+        | Relative Size (RELSIZE)             | -6.2444 | -6.6131 | -6.7763 | -7.1989 | -7.0795 |
+        | Excess Return (EXRET)               |  1.0878 | -0.2407 | -0.1047 | -0.3812 |  0.2447 |
+        | Idiosyncratic Volatility (SIGMA)    |  0.111  |  0.0861 |  0.1102 |  0.0533 |  0.036  |
+        | Shumway Score                       | -8.9366 | -6.2785 | -6.3123 | -5.9556 | -7.0292 |
+        | Bankruptcy Probability              |  0.0001 |  0.0019 |  0.0018 |  0.0026 |  0.0009 |
+        """
+        model = model.lower()
+        if model not in ("combined", "market"):
+            raise ValueError("The model must be 'combined' or 'market'.")
+
+        balance = self._balance_sheet_statement
+        periods = balance.columns
+        tickers = self._tickers
+        dates = self._market_dates()
+
+        # The daily data from a year before the start date, so that the first periods have their twelve months of returns.  # noqa: E501
+        daily = self._historical_data.get("lookback")
+        if daily is None or daily.empty:
+            daily = self._historical_data["daily"]
+        close = daily["Close"].reindex(columns=tickers)
+        close.index = close.index.to_timestamp()
+        adjusted_close = daily["Adj Close"].reindex(columns=tickers)
+        adjusted_close.index = adjusted_close.index.to_timestamp()
+
+        total_return_index, index_market_value = self._sp500_market_data(
+            close, "the relative size (RELSIZE) and the bankruptcy probability are NaN"
+        )
+
+        price = helpers.values_on_or_before(close, dates)
+        shares = self._rows(self._income_statement, "Weighted Average Shares Diluted")
+        market_equity = price * shares.reindex(index=tickers, columns=periods)
+        index_value = helpers.values_on_or_before(
+            pd.DataFrame(
+                {ticker: index_market_value for ticker in tickers},
+                index=index_market_value.index,
+            ),
+            dates,
+        )
+
+        company_returns = shumway_model.get_monthly_returns(adjusted_close, dates)
+        market_returns = shumway_model.get_monthly_returns(
+            pd.DataFrame(
+                {ticker: total_return_index.dropna() for ticker in tickers},
+                index=total_return_index.dropna().index,
+            ),
+            dates,
+        )
+
+        variables = {
+            "RELSIZE": shumway_model.get_truncated_variable(
+                chs_model.get_relative_size(market_equity, index_value), "RELSIZE"
+            ),
+            "EXRET": shumway_model.get_truncated_variable(
+                shumway_model.get_excess_return(company_returns, market_returns),
+                "EXRET",
+            ),
+            "SIGMA": shumway_model.get_truncated_variable(
+                shumway_model.get_residual_sigma(company_returns, market_returns),
+                "SIGMA",
+            ),
+        }
+        if model == "combined":
+            total_assets = self._rows(balance, "Total Assets")
+            total_assets = total_assets.where(total_assets > 0)
+            net_income = trailing_sum(
+                self._rows(self._income_statement, "Net Income"),
+                4 if self._quarterly else None,
+            )
+            variables["NI/TA"] = shumway_model.get_truncated_variable(
+                net_income / total_assets, "NI/TA"
+            )
+            variables["TL/TA"] = shumway_model.get_truncated_variable(
+                self._rows(balance, "Total Liabilities") / total_assets, "TL/TA"
+            )
+
+        score = shumway_model.get_shumway_score(
+            net_income_to_total_assets=variables.get("NI/TA", 0.0),
+            total_liabilities_to_total_assets=variables.get("TL/TA", 0.0),
+            relative_size=variables["RELSIZE"],
+            excess_return=variables["EXRET"],
+            sigma=variables["SIGMA"],
+            model=model,
+        )
+
+        results = {}
+        if model == "combined":
+            results["Net Income to Total Assets (NI/TA)"] = variables["NI/TA"]
+            results["Liabilities to Total Assets (TL/TA)"] = variables["TL/TA"]
+        results["Relative Size (RELSIZE)"] = variables["RELSIZE"]
+        results["Excess Return (EXRET)"] = variables["EXRET"]
+        results["Idiosyncratic Volatility (SIGMA)"] = variables["SIGMA"]
+        results["Shumway Score"] = score
+        results["Bankruptcy Probability"] = (
+            shumway_model.get_shumway_bankruptcy_probability(score)
+        )
+
+        return self._finish_score(
+            {name: frame.astype(float) for name, frame in results.items()},
+            rounding,
+            first_columns=0,
+        )
+
+    @handle_errors
     def get_synthetic_credit_rating(
         self,
         firm_type: str = "auto",
@@ -1934,11 +2167,14 @@ class DistressModels:
             Spread, Risk Free Rate and Pre-tax Cost of Debt.
 
         Notes:
-        - A company without debt that reports an interest expense of zero and a positive EBIT
-          gets the best rating; its coverage ratio, which is infinite, shows as NaN. A period
-          without a reported interest expense, with an interest expense of zero next to debt
-          (interest the statements do not report) or with an interest expense of zero and an
-          operating loss gets no rating.
+        - A period without interest expense (reported as zero or not reported) and with a
+          positive EBIT has an infinite coverage ratio, which Damodaran's tables map to the
+          highest rating (Aaa/AAA): there is no interest the operating income has to cover.
+          Its coverage ratio shows as NaN. This also holds for a company with debt whose
+          statements do not report its interest separately, such as Apple from its fiscal
+          year 2024. The rating is NaN where the EBIT (Operating Income) is missing, and for
+          an operating loss without interest expense, as the coverage ratio then says
+          nothing about the rating the company would get if it borrowed.
         - A coverage ratio below the lowest bound of the table gets the worst rating.
         - The market capitalization is compared with five billion in the reporting
           currency; for companies that do not report in US dollars, pass the firm type.
@@ -1992,16 +2228,13 @@ class DistressModels:
 
         ebit = self._rows(self._income_statement, "Operating Income")
         interest = self._rows(self._income_statement, "Interest Expense").abs()
-        debt = self._rows(self._balance_sheet_statement, "Total Debt")
-        # Only a reported interest expense of zero with a positive EBIT and no debt means there
-        # is nothing to cover (an infinite ratio, the best rating). An interest expense of zero
-        # next to debt is interest the statements do not report (or include in another line
-        # item), so the ratio is unknown, as it is for a missing interest expense and for an
-        # operating loss without interest, which says nothing about the rating the company
-        # would get if it borrowed.
+        # Damodaran treats a company without interest expense as having an infinite coverage
+        # ratio, the highest rating: a positive EBIT with an interest expense of zero or none
+        # reported. An operating loss without interest says nothing about the rating the
+        # company would get if it borrowed, and without an EBIT there is no ratio: both NaN.
         coverage = (
             (ebit / interest.where(interest > 0))
-            .mask((interest == 0) & (ebit > 0) & (debt == 0), float("inf"))
+            .mask(~(interest > 0) & (ebit > 0), float("inf"))
             .where(ebit.notna())
         )
 

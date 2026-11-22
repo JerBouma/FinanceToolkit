@@ -477,3 +477,24 @@ def test_graham_intrinsic_value_needs_positive_earnings_and_bond_yield():
     assert values.iloc[0] == pytest.approx(2.0 * 18.5 * 4.4 / 5)
     assert values.iloc[1:].isna().all()
     assert np.isnan(intrinsic_model.get_graham_intrinsic_value(-1.0, 0.05, 0.05))
+
+
+def test_get_owner_earnings_adds_back_depreciation_and_subtracts_maintenance():
+    result = intrinsic_model.get_owner_earnings(
+        net_income=pd.Series([100.0]),
+        depreciation_and_amortization=pd.Series([30.0]),
+        maintenance_capital_expenditure=pd.Series([25.0]),
+        change_in_working_capital=pd.Series([5.0]),
+    )
+    assert result[0] == pytest.approx(100.0)
+
+
+def test_get_greenwald_maintenance_capital_expenditure():
+    result = intrinsic_model.get_greenwald_maintenance_capital_expenditure(
+        capital_expenditure=pd.Series([50.0, 50.0, 10.0]),
+        property_plant_and_equipment_to_revenue=pd.Series([0.5, 0.5, 0.5]),
+        change_in_revenue=pd.Series([40.0, -40.0, 100.0]),
+    )
+    # 50 - 0.5 * 40; a fall in revenue requires no growth investment; growth above the
+    # capital expenditure leaves no maintenance part rather than a negative one.
+    assert list(result) == pytest.approx([30.0, 50.0, 0.0])

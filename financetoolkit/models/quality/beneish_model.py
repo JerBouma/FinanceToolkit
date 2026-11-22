@@ -363,3 +363,51 @@ def get_beneish_m_score(
         + 4.679 * total_accruals_to_total_assets
         - 0.327 * leverage_index
     )
+
+
+def get_beneish_five_variable_m_score(
+    days_sales_in_receivables_index: pd.Series | pd.DataFrame,
+    gross_margin_index: pd.Series | pd.DataFrame,
+    asset_quality_index: pd.Series | pd.DataFrame,
+    sales_growth_index: pd.Series | pd.DataFrame,
+    depreciation_index: pd.Series | pd.DataFrame,
+) -> pd.Series | pd.DataFrame:
+    """
+    The five-variable Beneish M-Score of Beneish (1997): five of the eight indices of the
+    eight-variable model, without the SG&A expenses index, the leverage index and the total
+    accruals, each with its own coefficient.
+
+    The formula is as follows:
+
+        M-Score = -6.065 + 0.823 * DSRI + 0.906 * GMI + 0.593 * AQI + 0.717 * SGI + 0.107 * DEPI
+
+    Also known as: five-variable M-Score, Beneish 1997 model.
+
+    Args:
+        days_sales_in_receivables_index (pd.Series | pd.DataFrame): The Days Sales in
+        Receivables Index (DSRI).
+        gross_margin_index (pd.Series | pd.DataFrame): The Gross Margin Index (GMI).
+        asset_quality_index (pd.Series | pd.DataFrame): The Asset Quality Index (AQI).
+        sales_growth_index (pd.Series | pd.DataFrame): The Sales Growth Index (SGI).
+        depreciation_index (pd.Series | pd.DataFrame): The Depreciation Index (DEPI).
+
+    Returns:
+        pd.Series | pd.DataFrame: The five-variable Beneish M-Score.
+
+    Notes:
+    - A M-Score greater than -2.22 suggests that the company is likely to be an earnings
+    manipulator; the -1.78 threshold belongs to the eight-variable model.
+
+    References:
+    - Beneish, Messod D. "Detecting GAAP Violation: Implications for Assessing Earnings
+    Management among Firms with Extreme Financial Performance." Journal of Accounting and
+    Public Policy, Vol. 16, No. 3, 1997, pp. 271-309.
+    """
+    return (
+        -6.065
+        + 0.823 * days_sales_in_receivables_index
+        + 0.906 * gross_margin_index
+        + 0.593 * asset_quality_index
+        + 0.717 * sales_growth_index
+        + 0.107 * depreciation_index
+    )

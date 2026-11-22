@@ -705,6 +705,36 @@ def test_fractional_kelly_with_a_net_exposure_holds_the_rest_in_cash(test_toolki
     assert table.loc["Cash", "Weight"] == pytest.approx(0.6)
 
 
+def test_l2_regularization(recorder, portfolio_module):
+    recorder.capture(
+        portfolio_module.get_minimum_variance_weights(l2_regularization=0.05)
+    )
+    recorder.capture(
+        portfolio_module.get_maximum_sharpe_weights(
+            maximum_weight=0.8, l2_regularization=0.05
+        )
+    )
+    recorder.capture(portfolio_module.get_mean_variance_weights(l2_regularization=0.05))
+    recorder.capture(
+        portfolio_module.get_efficient_frontier(points=4, l2_regularization=0.05)
+    )
+
+    # A higher γ brings the weights closer to equal weights.
+    distances = [
+        (
+            portfolio_module.get_minimum_variance_weights(
+                l2_regularization=gamma, rounding=10
+            )["Weight"].drop("Portfolio")
+            - 0.5
+        )
+        .abs()
+        .sum()
+        for gamma in (0.0, 0.05, 1.0)
+    ]
+    assert distances == sorted(distances, reverse=True)
+    assert portfolio_module.get_minimum_variance_weights(l2_regularization=-1).empty
+
+
 def test_get_optimization_backtest(recorder, portfolio_module):
     summary = portfolio_module.get_optimization_backtest(transaction_cost=0.001)
     recorder.capture(summary)
@@ -729,6 +759,38 @@ def test_get_optimization_backtest(recorder, portfolio_module):
     )
     recorder.capture(weights)
     assert np.allclose(weights.T.groupby(level=0).sum().T, 1, atol=1e-3)
+
+
+def test_the_backtest_runs_the_mean_risk_and_random_portfolios(
+    recorder, portfolio_module
+):
+    methods = "minimum_mad,minimum_semideviation,random"
+    summary = portfolio_module.get_optimization_backtest(
+        methods=methods, rebalancing="quarterly", transaction_cost=0.001
+    )
+    recorder.capture(summary)
+    assert list(summary.index) == [
+        "Minimum MAD",
+        "Minimum Semideviation",
+        "Random",
+        "Equal Weight",
+        "Benchmark",
+    ]
+    weights = portfolio_module.get_optimization_backtest(
+        methods=methods, rebalancing="quarterly", maximum_weight=0.7, output="weights"
+    )
+    recorder.capture(weights)
+    assert np.allclose(weights.T.groupby(level=0).sum().T, 1, atol=1e-6)
+    assert (weights[["Minimum MAD", "Minimum Semideviation"]] <= 0.7 + 1e-6).all().all()
+
+    # One generator seeded at 0 per backtest: the random portfolios are the successive
+    # draws of that generator (to the Toolkit's rounding), the same on every run.
+    generator = np.random.default_rng(0)
+    draws = [
+        optimization_model.get_random_weights(weights["Random"].columns, generator)
+        for _ in weights.index
+    ]
+    np.testing.assert_allclose(weights["Random"], draws, atol=1e-4)
 
 
 def test_get_optimization_backtest_refuses_unknown_methods(portfolio_module):

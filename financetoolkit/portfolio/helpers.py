@@ -282,6 +282,27 @@ def get_view_vector(view: str, names: pd.Index) -> np.ndarray:
     return row
 
 
+def get_regularized_covariance(
+    covariance: np.ndarray, l2_regularization: float
+) -> np.ndarray:
+    """
+    The covariance matrix with the L2 penalty γ w'w on the weights folded in, Σ + γI, so
+    that w'(Σ + γI)w = w'Σw + γ w'w. With weights that sum to one, w'w is the squared
+    distance from the equal weights plus 1/N, so the penalty pulls a portfolio towards
+    equal weights.
+
+    Args:
+        covariance (np.ndarray): The covariance matrix Σ.
+        l2_regularization (float): The weight γ of the penalty, in the units of Σ.
+
+    Returns:
+        np.ndarray: The matrix Σ + γI.
+    """
+    if l2_regularization < 0:
+        raise ValueError("The L2 regularization cannot be negative.")
+    return covariance + l2_regularization * np.eye(len(covariance))
+
+
 def get_linear_regression(target: np.ndarray, regressors: np.ndarray) -> dict:
     """
     The ordinary least squares regression of a target on regressors and a constant, with

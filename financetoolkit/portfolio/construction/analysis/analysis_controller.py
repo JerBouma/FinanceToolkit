@@ -36,8 +36,15 @@ BACKTEST_METHODS = {
     "minimum_drawdown": "Minimum Drawdown",
     "maximum_omega": "Maximum Omega",
     "maximum_cvar_ratio": "Maximum CVaR Ratio",
+    "minimum_mad": "Minimum MAD",
+    "minimum_semideviation": "Minimum Semideviation",
+    "random": "Random",
     "equal_weight": "Equal Weight",
 }
+
+# The seed of the generator that draws the random portfolios, one per backtest, so the
+# same backtest gives the same random portfolios.
+RANDOM_BACKTEST_SEED = 0
 
 # The expected return estimators, with the names they are shown under.
 EXPECTED_RETURN_NAMES = {
@@ -689,11 +696,18 @@ class AnalysisConstruction:
         estimation error in the expected returns outweighs the gain from optimizing; a
         backtest shows whether that holds for these assets.
 
-        For more information, see the following paper:
+        For more information, see the following papers:
 
         - DeMiguel, V., Garlappi, L. and Uppal, R. (2009). "Optimal Versus Naive
           Diversification: How Inefficient Is the 1/N Portfolio Strategy?" The Review of
           Financial Studies, 22(5), 1915-1953.
+        - Konno, H. and Yamazaki, H. (1991). "Mean-Absolute Deviation Portfolio
+          Optimization Model and Its Applications to Tokyo Stock Market." Management
+          Science, 37(5), 519-531.
+        - Estrada, J. (2008). "Mean-Semivariance Optimization: A Heuristic Approach."
+          Journal of Applied Finance, 18(1), 57-72.
+        - Rubin, D. B. (1981). "The Bayesian Bootstrap." The Annals of Statistics, 9(1),
+          130-134.
 
         Also known as: walk-forward backtest, out-of-sample backtest, rolling
         optimization, 1/N comparison.
@@ -706,8 +720,13 @@ class AnalysisConstruction:
                 "nested_clustered_optimization" (minimum variance within and across
                 the clusters), "inverse_volatility", "maximum_diversification",
                 "minimum_cvar" (95%), "minimum_drawdown" (the 95% CDaR),
-                "maximum_omega" (a minimum acceptable return of 0) and
-                "maximum_cvar_ratio" (95%). Equal weights and the benchmark are always
+                "maximum_omega" (a minimum acceptable return of 0),
+                "maximum_cvar_ratio" (95%), "minimum_mad" (the lowest mean absolute
+                deviation, Konno and Yamazaki, 1991), "minimum_semideviation" (the
+                lowest semideviation below a return of 0, Estrada, 2008) and "random"
+                (weights drawn uniformly from all long-only portfolios, a flat
+                Dirichlet, with a generator seeded at 0 so the backtest is
+                reproducible). Equal weights and the benchmark are always
                 included. Defaults to None, which backtests
                 minimum variance, maximum Sharpe, risk parity, Hierarchical Risk Parity,
                 maximum diversification and inverse volatility.
@@ -764,7 +783,8 @@ class AnalysisConstruction:
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
                 every asset, or per asset, for the optimizers that take weight bounds (all
-                but inverse volatility and nested clustered optimization). Defaults to 0.
+                but inverse volatility, nested clustered optimization and random).
+                Defaults to 0.
             maximum_weight (float | dict[str, float], optional): The highest weight of
                 every asset, or per asset, for the optimizers that take weight bounds.
                 Defaults to 1.
@@ -903,9 +923,23 @@ class AnalysisConstruction:
             return estimates[window.index[-1]]
 
         def strategy(method: str) -> Callable[[pd.DataFrame], pd.Series]:
+            # One generator per backtest, drawing a new portfolio on every date.
+            generator = np.random.default_rng(RANDOM_BACKTEST_SEED)
+
             def weights(window: pd.DataFrame) -> pd.Series:
                 if method == "equal_weight":
                     return pd.Series(1 / window.shape[1], index=window.columns)
+                if method == "random":
+                    return optimization_model.get_random_weights(
+                        window.columns, generator
+                    )
+                if method in ("minimum_mad", "minimum_semideviation"):
+                    return optimization_model.get_mean_risk_weights(
+                        window,
+                        risk_measure=method.removeprefix("minimum_"),
+                        minimum_weight=minimum_weight,
+                        maximum_weight=maximum_weight,
+                    )
                 if method == "minimum_cvar":
                     return optimization_model.get_minimum_cvar_weights(
                         window,

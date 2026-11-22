@@ -107,6 +107,7 @@ class StationarityEconometrics:
         Notes:
         - The method retrieves historical price data based on the specified `period` and runs the ADF
         test for each asset in the Toolkit instance.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -222,6 +223,7 @@ class StationarityEconometrics:
         Notes:
         - The method retrieves historical price data based on the specified `period` and runs the
         KPSS test for each asset in the Toolkit instance.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -338,6 +340,7 @@ class StationarityEconometrics:
         Notes:
         - The method retrieves historical price data based on the specified `period` and runs the
         Phillips-Perron test for each asset in the Toolkit instance.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -464,6 +467,7 @@ class StationarityEconometrics:
         Notes:
         - The method retrieves historical price data based on the specified `period` and runs the
         Zivot-Andrews test for each asset in the Toolkit instance.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -584,6 +588,7 @@ class StationarityEconometrics:
         Notes:
         - The method retrieves historical price data based on the specified `period` for every
         ticker in the Toolkit instance and runs the Engle-Granger test on every ordered pair.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -712,6 +717,7 @@ class StationarityEconometrics:
         Notes:
         - The method retrieves historical price data based on the specified `period` for every ticker
         in the Toolkit instance and runs the Johansen test jointly across all of them.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 

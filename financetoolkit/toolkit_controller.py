@@ -1419,8 +1419,9 @@ class Toolkit:
         This class is closely related to the Risk class, which houses the risk measures (VaR,
         CVaR, GARCH) that these tests often inform the choice of.
 
-        Requires the optional `financetoolkit[econometrics]` extra (`statsmodels` and
-        `linearmodels`) -- install with `pip install financetoolkit[econometrics]`.
+        The module works without further installs. The methods built on `statsmodels` or
+        `linearmodels` need the optional extra, `pip install financetoolkit[econometrics]`, and
+        say so in their docstrings.
 
         See the following link for more information: https://www.jeroenbouma.com/projects/financetoolkit/docs/econometrics
 
@@ -1434,16 +1435,9 @@ class Toolkit:
         toolkit.econometrics.get_augmented_dickey_fuller(period='yearly')
         ```
         """
-        try:
-            from financetoolkit.econometrics.econometrics_controller import (  # noqa: PLC0415
-                Econometrics,
-            )
-        except ImportError as error:
-            raise ImportError(
-                "The Econometrics module requires the optional 'econometrics' extra "
-                "(statsmodels and linearmodels). Install it with: "
-                "pip install financetoolkit[econometrics]"
-            ) from error
+        from financetoolkit.econometrics.econometrics_controller import (  # noqa: PLC0415
+            Econometrics,
+        )
 
         # The prices of a period are retrieved when a method first asks for that period.
         econometrics = Econometrics(

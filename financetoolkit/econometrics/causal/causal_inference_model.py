@@ -4,10 +4,10 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
-from linearmodels.iv import IV2SLS
 from scipy import stats
 from scipy.optimize import minimize
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.regression.regression_model import (
     _to_design_matrix,
     _to_target_vector,
@@ -169,8 +169,10 @@ def get_iv_2sls(
     endog_frame = pd.DataFrame(endogenous_values, columns=endogenous_names)
     instrument_frame = pd.DataFrame(instrument_values, columns=instrument_names)
 
+    iv = import_optional("linearmodels.iv", "The IV-2SLS regression")
+
     try:
-        sm_result = IV2SLS(
+        sm_result = iv.IV2SLS(
             y_values,
             exog_frame if exogenous_names else None,
             endog_frame,

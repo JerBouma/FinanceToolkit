@@ -2,7 +2,9 @@
 
 __docformat__ = "google"
 
+import importlib
 from collections.abc import Callable
+from types import ModuleType
 
 import pandas as pd
 
@@ -91,3 +93,28 @@ def calculate_per_series(
         return pd.DataFrame(results, index=data.index)
 
     return pd.concat(results, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)
+
+
+def import_optional(module_name: str, feature: str) -> ModuleType:
+    """
+    Imports a module of statsmodels or linearmodels when a method first needs it, so the
+    Econometrics module itself works without the optional `financetoolkit[econometrics]`
+    extra and only the methods built on these libraries ask for it.
+
+    Args:
+        module_name (str): The module, e.g. "statsmodels.tsa.arima.model".
+        feature (str): The method or feature that needs it, named in the error.
+
+    Returns:
+        ModuleType: The imported module.
+
+    Raises:
+        ImportError: When the library is not installed, saying how to install it.
+    """
+    try:
+        return importlib.import_module(module_name)
+    except ImportError as error:
+        raise ImportError(
+            f"{feature} needs {module_name.partition('.')[0]}. Install it with: "
+            "pip install financetoolkit[econometrics]"
+        ) from error

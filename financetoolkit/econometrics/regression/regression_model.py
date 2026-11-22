@@ -6,9 +6,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
-from statsmodels.tools.sm_exceptions import IterationLimitWarning
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.least_squares_model import (
     COVARIANCE_TYPES,
     fit_least_squares,
@@ -695,6 +694,10 @@ def _fit_binary_glm(
             f"strictly more observations than parameters."
         )
 
+    sm = import_optional(
+        "statsmodels.api",
+        f"The {'Logistic' if link == 'logit' else 'Probit'} regression",
+    )
     model_cls = sm.Logit if link == "logit" else sm.Probit
     sm_result = model_cls(y, x).fit(
         disp=0, maxiter=max_iterations, tol=tolerance, warn_convergence=False
@@ -917,6 +920,10 @@ def get_quantile_regression(
 
     _validate_design(x_values, y_values)
 
+    sm = import_optional("statsmodels.api", "The Quantile regression")
+    iteration_limit_warning = import_optional(
+        "statsmodels.tools.sm_exceptions", "The Quantile regression"
+    ).IterationLimitWarning
     sm_result = sm.QuantReg(y_values, x_values).fit(q=tau)
 
     standard_errors = np.asarray(sm_result.bse)
@@ -928,7 +935,7 @@ def get_quantile_regression(
             sample_indices = rng.integers(0, n, size=n)
 
             with warnings.catch_warnings(record=True) as raised:
-                warnings.simplefilter("always", IterationLimitWarning)
+                warnings.simplefilter("always", iteration_limit_warning)
                 replicate = sm.QuantReg(
                     y_values[sample_indices], x_values[sample_indices]
                 ).fit(q=tau, max_iter=BOOTSTRAP_MAX_ITERATIONS)
@@ -936,7 +943,7 @@ def get_quantile_regression(
             hit_iteration_limit = False
 
             for entry in raised:
-                if entry.category is IterationLimitWarning:
+                if entry.category is iteration_limit_warning:
                     hit_iteration_limit = True
                 else:
                     # Re-emitted: recording captures every category, not just this one.

@@ -7,50 +7,68 @@ import warnings
 import numpy as np
 import pandas as pd
 from scipy import optimize, signal
-from statsmodels.tsa.statespace.mlemodel import MLEModel
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.risk.volatility import garch_model
 
 
-class _TimeVaryingRegression(MLEModel):
+def _time_varying_regression(endog: np.ndarray, exog: np.ndarray):
     """
-    y_t = α_t + β_t x_t + ε_t, with α and β random walks: the state space form of a
-    regression whose coefficients drift, estimated with the Kalman filter.
+    The state space model of `get_time_varying_beta`. It subclasses statsmodels' MLEModel, so
+    the class is defined when the method is first called and statsmodels is only needed then.
+
+    Args:
+        endog (np.ndarray): The dependent series.
+        exog (np.ndarray): The independent series.
+
+    Returns:
+        MLEModel: The unfitted model.
     """
+    mlemodel = import_optional(
+        "statsmodels.tsa.statespace.mlemodel", "The time-varying beta"
+    )
 
-    def __init__(self, endog: np.ndarray, exog: np.ndarray):
-        design = np.column_stack([np.ones_like(exog), exog]).T[np.newaxis]
-        super().__init__(endog, k_states=2, initialization="diffuse")
-        self["design"] = design
-        self["transition"] = np.eye(2)
-        self["selection"] = np.eye(2)
+    class _TimeVaryingRegression(mlemodel.MLEModel):
+        """
+        y_t = α_t + β_t x_t + ε_t, with α and β random walks: the state space form of a
+        regression whose coefficients drift, estimated with the Kalman filter.
+        """
 
-    @property
-    def param_names(self) -> list[str]:
-        return ["observation variance", "alpha variance", "beta variance"]
+        def __init__(self, endog: np.ndarray, exog: np.ndarray):
+            design = np.column_stack([np.ones_like(exog), exog]).T[np.newaxis]
+            super().__init__(endog, k_states=2, initialization="diffuse")
+            self["design"] = design
+            self["transition"] = np.eye(2)
+            self["selection"] = np.eye(2)
 
-    @property
-    def start_params(self) -> np.ndarray:
-        variance = float(np.nanvar(self.endog))
-        return np.array([variance, variance * 1e-3, 1e-3])
+        @property
+        def param_names(self) -> list[str]:
+            return ["observation variance", "alpha variance", "beta variance"]
 
-    def transform_params(self, unconstrained: np.ndarray) -> np.ndarray:
-        return unconstrained**2
+        @property
+        def start_params(self) -> np.ndarray:
+            variance = float(np.nanvar(self.endog))
+            return np.array([variance, variance * 1e-3, 1e-3])
 
-    def untransform_params(self, constrained: np.ndarray) -> np.ndarray:
-        return constrained**0.5
+        def transform_params(self, unconstrained: np.ndarray) -> np.ndarray:
+            return unconstrained**2
 
-    def update(
-        self, params, transformed=True, includes_fixed=False, complex_step=False
-    ):
-        params = super().update(
-            params,
-            transformed=transformed,
-            includes_fixed=includes_fixed,
-            complex_step=complex_step,
-        )
-        self["obs_cov", 0, 0] = params[0]
-        self["state_cov"] = np.diag(params[1:])
+        def untransform_params(self, constrained: np.ndarray) -> np.ndarray:
+            return constrained**0.5
+
+        def update(
+            self, params, transformed=True, includes_fixed=False, complex_step=False
+        ):
+            params = super().update(
+                params,
+                transformed=transformed,
+                includes_fixed=includes_fixed,
+                complex_step=complex_step,
+            )
+            self["obs_cov", 0, 0] = params[0]
+            self["state_cov"] = np.diag(params[1:])
+
+    return _TimeVaryingRegression(endog, exog)
 
 
 def get_time_varying_beta(
@@ -98,7 +116,7 @@ def get_time_varying_beta(
     # steps with the beta variance still at its starting value, far from the maximum of the
     # likelihood, which makes a constant beta wander. Scaling only changes the units:
     # y / s_y = α_t / s_y + (β_t s_x / s_y) x / s_x + ε_t / s_y.
-    model = _TimeVaryingRegression(y / scale_y, x / scale_x)
+    model = _time_varying_regression(y / scale_y, x / scale_x)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         fit = model.fit(disp=False, maxiter=200)

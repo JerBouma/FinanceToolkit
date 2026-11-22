@@ -6,9 +6,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from statsmodels.tsa.adfvalues import mackinnoncrit, mackinnonp
-from statsmodels.tsa.stattools import adfuller, kpss, zivot_andrews
 
+from financetoolkit.econometrics.helpers import import_optional
 from financetoolkit.econometrics.least_squares_model import fit_least_squares
 from financetoolkit.utilities.statistics_model import newey_west_long_run_variance
 
@@ -96,6 +95,9 @@ def get_augmented_dickey_fuller(
         )
 
     values = series.dropna().to_numpy()
+    stattools = import_optional(
+        "statsmodels.tsa.stattools", "The Augmented Dickey-Fuller test"
+    )
 
     try:
         if len(values) < MINIMUM_TEST_OBSERVATIONS:
@@ -107,7 +109,7 @@ def get_augmented_dickey_fuller(
                 "ignore", message="adfuller currently returns", category=FutureWarning
             )
             adf_statistic, p_value, used_lag, n_observations, critical_values, _ = (
-                adfuller(
+                stattools.adfuller(
                     values,
                     maxlag=(
                         max_lag if max_lag is not None else default_max_lag(len(values))
@@ -206,6 +208,7 @@ def get_kpss_test(
 
     values = series.dropna().to_numpy()
     n = len(values)
+    stattools = import_optional("statsmodels.tsa.stattools", "The KPSS test")
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -213,7 +216,7 @@ def get_kpss_test(
             if n < MINIMUM_TEST_OBSERVATIONS:
                 raise ValueError("Too few observations for the test.")
 
-            kpss_statistic, p_value, used_lags, critical_values = kpss(
+            kpss_statistic, p_value, used_lags, critical_values = stattools.kpss(
                 values,
                 regression=regression,
                 nlags=lags if lags is not None else "auto",
@@ -383,10 +386,11 @@ def get_phillips_perron_test(
     )
 
     # Finite-sample critical values for the n regression observations, as arch reports them.
-    critical_value_1, critical_value_5, critical_value_10 = mackinnoncrit(
+    adfvalues = import_optional("statsmodels.tsa.adfvalues", "The Phillips-Perron test")
+    critical_value_1, critical_value_5, critical_value_10 = adfvalues.mackinnoncrit(
         N=1, regression=regression, nobs=n
     )
-    p_value = float(mackinnonp(z_t_statistic, regression=regression, N=1))
+    p_value = float(adfvalues.mackinnonp(z_t_statistic, regression=regression, N=1))
 
     return pd.Series(
         {
@@ -469,14 +473,17 @@ def get_zivot_andrews_test(
         raise ValueError("trim must be in the range [0, 1/3).")
 
     values = series.dropna().to_numpy()
+    stattools = import_optional("statsmodels.tsa.stattools", "The Zivot-Andrews test")
 
     try:
-        za_statistic, p_value, critical_values, used_lag, break_index = zivot_andrews(
-            values,
-            trim=trim,
-            maxlag=max_lag if max_lag is not None else default_max_lag(len(values)),
-            regression=regression,
-            autolag="AIC",
+        za_statistic, p_value, critical_values, used_lag, break_index = (
+            stattools.zivot_andrews(
+                values,
+                trim=trim,
+                maxlag=max_lag if max_lag is not None else default_max_lag(len(values)),
+                regression=regression,
+                autolag="AIC",
+            )
         )
     except (ValueError, IndexError, np.linalg.LinAlgError):
         return pd.Series(

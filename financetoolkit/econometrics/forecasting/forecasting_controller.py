@@ -238,6 +238,7 @@ class ForecastingEconometrics:
         for every ticker in the Toolkit instance and fits an ARIMA model to each.
         - See `time_series_model.get_arima_forecast`'s `Notes` for this estimator's
         practical limitations (in particular, keep `p + q` small).
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -740,6 +741,7 @@ class ForecastingEconometrics:
         - The method retrieves historical price data based on the specified `period`
         for every ticker in the Toolkit instance and fits the VECM jointly across all
         of them.
+        - Requires statsmodels (`pip install financetoolkit[econometrics]`).
 
         As an example:
 
@@ -1066,6 +1068,10 @@ class ForecastingEconometrics:
         Raises:
             ValueError: If `model` is not "arima" or "var", or (for `model="var"`)
             fewer than 2 tickers are available to form a VAR system.
+
+        Notes:
+        - Requires statsmodels with `model="arima"`, the default; `model="var"` does not
+        (`pip install financetoolkit[econometrics]`).
 
         As an example:
 

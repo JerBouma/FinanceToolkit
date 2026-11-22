@@ -327,9 +327,7 @@ class OptionsBase:
         Implied Volatility, whether the option is In The Money and the Currency.
 
         The data comes from Yahoo Finance. When Yahoo Finance has no options for a ticker,
-        Cboe's delayed quotes (15 minutes) are used, which cover every option listed on a US
-        equity or index, such as "^SPX" with expiries several years out. If neither has
-        data, it is advised to use the theoretical calculations as provided by the
+        it is advised to use the theoretical calculations as provided by the
         Black Scholes Model as well as the Greeks to get a better understanding of the
         option prices over time.
 
@@ -449,7 +447,7 @@ class OptionsBase:
     def _spot_price(self, ticker: str, *chains: pd.DataFrame) -> float:
         """
         The price of the underlying to combine with live option chains: the price quoted
-        with the chain (Yahoo Finance's regular market price or Cboe's current price) when
+        with the chain (Yahoo Finance's regular market price) when
         the source provides one, otherwise the traded Close of the last historical date.
         The Adjusted Close is not used, since it is scaled down for later dividends and so
         is not a price the strikes can be compared with.

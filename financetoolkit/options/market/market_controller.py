@@ -100,21 +100,6 @@ class MarketOptions:
         puts = options_model.get_option_chains([ticker], expiration_date, True)
         calls = calls.loc[ticker] if not calls.empty else calls
         puts = puts.loc[ticker] if not puts.empty else puts
-
-        # Outside market hours Yahoo Finance often returns chains without bids, while Cboe's
-        # delayed quotes keep the last ones; the better quoted chain is used.
-        def quoted(chain: pd.DataFrame) -> int:
-            return int((pd.to_numeric(chain.get("Bid"), errors="coerce") > 0).sum())
-
-        if quoted(calls) + quoted(puts) < (len(calls) + len(puts)) / 2:
-            cboe_calls = options_model._get_cboe_option_chain(  # noqa: SLF001
-                ticker, expiration_date, False
-            )
-            cboe_puts = options_model._get_cboe_option_chain(  # noqa: SLF001
-                ticker, expiration_date, True
-            )
-            if quoted(cboe_calls) + quoted(cboe_puts) > quoted(calls) + quoted(puts):
-                calls, puts = cboe_calls, cboe_puts
         stock_price = self._spot_price(ticker, calls, puts)
         # The time left up to the close on the expiration date, so that an expiry this
         # afternoon is not priced as a whole day away.
@@ -399,11 +384,11 @@ class MarketOptions:
           investors sell calls (covered calls) the sign of that part flips.
         - Gamma uses each option's own implied volatility (Black-Scholes).
         - The stock price is the price of the underlying quoted with the live option chain
-          (Yahoo Finance's regular market price or Cboe's current price), so both come from
-          the same moment; when the chain quotes none, the traded Close of the last
-          historical date is used. The risk free rate and dividend yield come from the
-          historical data as well, so leave end_date at today: a warning is logged when the
-          history ends more than 5 days before today.
+          (Yahoo Finance's regular market price), so both come from the same moment; when
+          the chain quotes none, the traded Close of the last historical date is used. The
+          risk free rate and dividend yield come from the historical data as well, so
+          leave end_date at today: a warning is logged when the history ends more than 5
+          days before today.
 
         As an example:
 
@@ -513,11 +498,11 @@ class MarketOptions:
 
         Notes:
         - The stock price is the price of the underlying quoted with the live option chain
-          (Yahoo Finance's regular market price or Cboe's current price), so both come from
-          the same moment; when the chain quotes none, the traded Close of the last
-          historical date is used. The risk free rate and dividend yield come from the
-          historical data as well, so leave end_date at today: a warning is logged when the
-          history ends more than 5 days before today.
+          (Yahoo Finance's regular market price), so both come from the same moment; when
+          the chain quotes none, the traded Close of the last historical date is used. The
+          risk free rate and dividend yield come from the historical data as well, so
+          leave end_date at today: a warning is logged when the history ends more than 5
+          days before today.
 
         As an example:
 
@@ -603,11 +588,11 @@ class MarketOptions:
 
         Notes:
         - The stock price is the price of the underlying quoted with the live option chain
-          (Yahoo Finance's regular market price or Cboe's current price), so both come from
-          the same moment; when the chain quotes none, the traded Close of the last
-          historical date is used. The risk free rate and dividend yield come from the
-          historical data as well, so leave end_date at today: a warning is logged when the
-          history ends more than 5 days before today.
+          (Yahoo Finance's regular market price), so both come from the same moment; when
+          the chain quotes none, the traded Close of the last historical date is used. The
+          risk free rate and dividend yield come from the historical data as well, so
+          leave end_date at today: a warning is logged when the history ends more than 5
+          days before today.
 
         As an example:
 
@@ -685,11 +670,11 @@ class MarketOptions:
         - The move up to an expiry after earnings also includes the ordinary daily moves
           until then; the closer the expiry is to the announcement, the purer the measure.
         - The stock price is the price of the underlying quoted with the live option chain
-          (Yahoo Finance's regular market price or Cboe's current price), so both come from
-          the same moment; when the chain quotes none, the traded Close of the last
-          historical date is used. The risk free rate and dividend yield come from the
-          historical data as well, so leave end_date at today: a warning is logged when the
-          history ends more than 5 days before today.
+          (Yahoo Finance's regular market price), so both come from the same moment; when
+          the chain quotes none, the traded Close of the last historical date is used. The
+          risk free rate and dividend yield come from the historical data as well, so
+          leave end_date at today: a warning is logged when the history ends more than 5
+          days before today.
 
         As an example:
 
@@ -795,8 +780,7 @@ class MarketOptions:
             if strip.empty:
                 raise ValueError(
                     f"{ticker} has no bid quotes for its {date} options to build the strip from. "
-                    "Outside US market hours Yahoo Finance reports a bid and ask of 0, and Cboe's "
-                    "delayed quotes, which keep the last bid and ask, could not be used; try again "
+                    "Outside US market hours Yahoo Finance reports a bid and ask of 0; try again "
                     "during market hours."
                 )
             terms.append((date, calls, puts, time, rate))
@@ -879,10 +863,9 @@ class MarketOptions:
 
         Notes:
         - Options without a bid are left out of the strip, as in the Cboe method. Outside
-          market hours the last bid and ask of Cboe's delayed quotes are used where Yahoo
-          Finance reports 0; when neither has bids (Cboe's quotes unreachable), a ValueError
-          names the ticker and expiry. Last traded prices are not used instead: they are of
-          different moments of the session, so put-call parity and the tails no longer agree.
+          market hours Yahoo Finance reports a bid and ask of 0, so a ValueError names the
+          ticker and expiry. Last traded prices are not used instead: they are of different
+          moments of the session, so put-call parity and the tails no longer agree.
         - A target shorter than the nearest usable expiry (at least 7 days away) is
           extrapolated from the two nearest terms, as in the Cboe method. A target beyond
           the longest usable expiry raises a ValueError naming the ticker and that expiry,
@@ -1288,12 +1271,10 @@ class MarketOptions:
         - A target shorter than the nearest usable expiry (at least 7 days away) is
           extrapolated from the two nearest terms, as in the Cboe method. A target beyond
           the longest usable expiry raises a ValueError naming the ticker and that expiry.
-        - Outside market hours (at the weekend) the strip uses the last bid and ask of Cboe's
-          delayed quotes where Yahoo Finance reports 0. When neither has bids (Cboe's quotes
-          unreachable), a ValueError names the ticker and expiry instead of a NaN index. Last
-          traded prices are not used: they are of different moments of the session, which
-          gives a forward price and tails that do not agree (for ^SPX a skewness of -12 on a
-          Sunday).
+        - Outside market hours (at the weekend) Yahoo Finance reports a bid and ask of 0, so
+          a ValueError names the ticker and expiry instead of a NaN index. Last traded
+          prices are not used: they are of different moments of the session, which gives a
+          forward price and tails that do not agree (for ^SPX a skewness of -12 on a Sunday).
         - The near and next term are the expiries just before and after `days` (at least 7
           days away), whichever weekday they expire on. The Cboe VIX only uses the SPX
           options that expire on a Friday, more than 23 and less than 37 days away, so for

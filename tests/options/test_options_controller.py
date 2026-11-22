@@ -1284,8 +1284,8 @@ def test_the_skew_index_uses_the_terms_of_the_model_free_volatility(option_marke
 
 
 def test_the_skew_index_reports_a_chain_without_bids(option_market, monkeypatch):
-    # At the weekend Yahoo Finance reports a bid and ask of 0 and Cboe's delayed quotes may be
-    # unreachable: the index is reported as missing quotes, not computed from last prices.
+    # At the weekend Yahoo Finance reports a bid and ask of 0: the index is reported as
+    # missing quotes, not computed from last prices.
     from financetoolkit.options import options_model  # noqa: PLC0415
 
     module, _ = option_market
@@ -1296,9 +1296,6 @@ def test_the_skew_index_reports_a_chain_without_bids(option_market, monkeypatch)
         return quoted(tickers, expiration_date, put_option).assign(Bid=0.0, Ask=0.0)
 
     monkeypatch.setattr(options_model, "get_option_chains", closed)
-    monkeypatch.setattr(
-        options_model, "_get_cboe_option_chain", lambda *_: pd.DataFrame()
-    )
     with pytest.raises(ValueError, match=f"{ticker} has no bid quotes"):
         module._skew_index(ticker, days=30)
     assert module.get_skew_index().empty

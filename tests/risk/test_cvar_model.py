@@ -352,3 +352,37 @@ def test_get_cvar_historic_of_a_period_with_a_single_return_is_nan():
 
     assert np.isnan(result.loc[pd.Period("2021", "Y"), "A"])
     assert result.loc[pd.Period("2022", "Y"), "A"] == pytest.approx(-0.03)
+
+
+# Forty returns of a Student-t(4) draw; the kernel reference is the integral of the return
+# times scipy's gaussian_kde(bw_method="silverman") density below its 5% quantile, over 0.05.
+KERNEL_REFERENCE_RETURNS = pd.Series(
+    [0.0004, -0.0137, 0.0009, -0.0064, 0.0025, 0.0177, -0.0455, -0.0052, 0.0026, -0.0068,
+     -0.0241, -0.007, 0.0001, -0.001, -0.0152, -0.0147, -0.0041, -0.0149, -0.0015, 0.0059,
+     0.0036, -0.0195, 0.0084, -0.0079, -0.0059, 0.0107, -0.0016, -0.0031, -0.0039, -0.0035,
+     0.0002, 0.0143, -0.0145, -0.0299, 0.0015, -0.0072, -0.0021, 0.0113, 0.0011, -0.0077]
+)  # fmt: skip
+
+
+def test_get_cvar_kernel_reference_value():
+    assert np.isclose(
+        cvar_model.get_cvar_kernel(KERNEL_REFERENCE_RETURNS, 0.05),
+        -0.039120756350325525,
+        atol=1e-12,
+    )
+    assert cvar_model.get_cvar_kernel(
+        KERNEL_REFERENCE_RETURNS, 0.05
+    ) < var_model.get_var_kernel(KERNEL_REFERENCE_RETURNS, 0.05)
+
+
+def test_get_weighted_cvar():
+    frame = pd.DataFrame({"A": KERNEL_REFERENCE_RETURNS})
+    first = cvar_model.get_cvar_historic(frame, 0.05)
+    second = cvar_model.get_cvar_historic(frame, 0.2)
+    weighted = cvar_model.get_weighted_cvar([first, second], [0.25, 0.75])
+    assert np.isclose(weighted["A"], 0.25 * first["A"] + 0.75 * second["A"])
+
+    with pytest.raises(ValueError):
+        cvar_model.get_weighted_cvar([first, second], [0.5, 0.6])
+    with pytest.raises(ValueError):
+        cvar_model.get_weighted_cvar([first, second], [1.0])

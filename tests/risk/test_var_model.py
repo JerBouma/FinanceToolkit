@@ -527,3 +527,33 @@ def test_get_liquidity_adjusted_value_at_risk_per_asset():
         )
     # The less liquid asset carries the larger adjustment.
     assert (value_at_risk - result)["B"] > (value_at_risk - result)["A"]
+
+
+# Forty returns of a Student-t(4) draw; the kernel reference is the quantile of scipy's
+# gaussian_kde(bw_method="silverman") on them.
+KERNEL_REFERENCE_RETURNS = pd.Series(
+    [0.0004, -0.0137, 0.0009, -0.0064, 0.0025, 0.0177, -0.0455, -0.0052, 0.0026, -0.0068,
+     -0.0241, -0.007, 0.0001, -0.001, -0.0152, -0.0147, -0.0041, -0.0149, -0.0015, 0.0059,
+     0.0036, -0.0195, 0.0084, -0.0079, -0.0059, 0.0107, -0.0016, -0.0031, -0.0039, -0.0035,
+     0.0002, 0.0143, -0.0145, -0.0299, 0.0015, -0.0072, -0.0021, 0.0113, 0.0011, -0.0077]
+)  # fmt: skip
+
+
+def test_get_var_kernel_reference_value():
+    assert np.isclose(
+        var_model.get_var_kernel(KERNEL_REFERENCE_RETURNS, 0.05),
+        -0.028146773187185482,
+        atol=1e-12,
+    )
+
+
+def test_get_var_kernel_frame(recorder):
+    frame = pd.DataFrame(
+        {"A": KERNEL_REFERENCE_RETURNS, "B": KERNEL_REFERENCE_RETURNS * 2}
+    )
+    result = var_model.get_var_kernel(frame, 0.05)
+    # The bandwidth scales with the returns, so the quantile does too.
+    assert np.isclose(result["B"], 2 * result["A"])
+    recorder.capture(result.round(10))
+    # A sample without spread is its own quantile.
+    assert var_model.get_var_kernel(pd.Series([0.01, 0.01, 0.01]), 0.05) == 0.01

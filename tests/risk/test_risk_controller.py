@@ -1428,3 +1428,133 @@ def test_get_skewness_kurtosis_ratio(recorder, risk_module):
     recorder.capture(
         risk_module.get_skewness_kurtosis_ratio(period="monthly", rolling=12)
     )
+
+
+def test_get_value_at_risk_kernel(recorder, risk_module):
+    recorder.capture(risk_module.get_value_at_risk(distribution="kernel"))
+    recorder.capture(
+        risk_module.get_value_at_risk(
+            period="yearly", within_period=True, distribution="kernel", alpha=0.01
+        )
+    )
+
+
+def test_get_conditional_value_at_risk_weighted(recorder, risk_module):
+    recorder.capture(risk_module.get_conditional_value_at_risk(distribution="kernel"))
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            alpha=[0.05, 0.01], alpha_weights=[0.5, 0.5]
+        )
+    )
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            period="weekly", rolling=20, alpha=[0.1, 0.05, 0.025]
+        )
+    )
+    recorder.capture(
+        risk_module.get_conditional_value_at_risk(
+            period="yearly",
+            within_period=True,
+            distribution="gaussian",
+            alpha=[0.05, 0.01],
+            alpha_weights=[0.75, 0.25],
+        )
+    )
+
+
+def test_get_entropic_value_at_risk_historic(recorder, risk_module):
+    recorder.capture(risk_module.get_entropic_value_at_risk(distribution="historic"))
+    recorder.capture(
+        risk_module.get_entropic_value_at_risk(
+            period="yearly", within_period=True, distribution="historic", growth=True
+        )
+    )
+    recorder.capture(
+        risk_module.get_entropic_value_at_risk(period="weekly", rolling=26)
+    )
+    recorder.capture(
+        risk_module.get_entropic_value_at_risk(
+            rolling=60, distribution="historic", alpha=0.1
+        )
+    )
+
+
+def test_get_entropic_risk_measure(recorder, risk_module):
+    recorder.capture(risk_module.get_entropic_risk_measure())
+    recorder.capture(
+        risk_module.get_entropic_risk_measure(
+            period="yearly", within_period=True, risk_aversion=0.01
+        )
+    )
+    recorder.capture(
+        risk_module.get_entropic_risk_measure(
+            period="weekly", rolling=26, risk_aversion=0.05
+        )
+    )
+
+
+def test_get_drawdown_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_drawdown_at_risk())
+    recorder.capture(
+        risk_module.get_drawdown_at_risk(
+            period="yearly", within_period=True, alpha=0.1, compounded=False
+        )
+    )
+    recorder.capture(risk_module.get_drawdown_at_risk(rolling=60))
+
+
+def test_get_entropic_drawdown_at_risk(recorder, risk_module):
+    recorder.capture(risk_module.get_entropic_drawdown_at_risk())
+    recorder.capture(
+        risk_module.get_entropic_drawdown_at_risk(
+            period="yearly", within_period=True, growth=True
+        )
+    )
+    recorder.capture(
+        risk_module.get_entropic_drawdown_at_risk(
+            period="weekly", rolling=26, compounded=False
+        )
+    )
+
+
+def test_get_average_drawdown(recorder, risk_module):
+    recorder.capture(risk_module.get_average_drawdown())
+    recorder.capture(risk_module.get_average_drawdown(method="observation"))
+    recorder.capture(
+        risk_module.get_average_drawdown(
+            period="yearly", within_period=True, compounded=False
+        )
+    )
+    recorder.capture(risk_module.get_average_drawdown(rolling=60))
+
+
+def test_get_drawdown_statistics(recorder, risk_module):
+    recorder.capture(risk_module.get_drawdown_statistics())
+    recorder.capture(risk_module.get_drawdown_statistics(period="weekly"))
+
+
+def test_get_maximum_drawdown_rolling_and_uncompounded(recorder, risk_module):
+    recorder.capture(risk_module.get_maximum_drawdown(rolling=60))
+    recorder.capture(risk_module.get_maximum_drawdown(compounded=False))
+    recorder.capture(
+        risk_module.get_maximum_drawdown(
+            period="yearly", within_period=True, compounded=False
+        )
+    )
+
+
+def test_drawdown_measures_uncompounded(recorder, risk_module):
+    recorder.capture(risk_module.get_conditional_drawdown_at_risk(compounded=False))
+    recorder.capture(
+        risk_module.get_conditional_drawdown_at_risk(rolling=60, compounded=False)
+    )
+    recorder.capture(risk_module.get_ulcer_index(rolling=None, compounded=False))
+
+
+def test_get_risk_range_evar(recorder, risk_module):
+    recorder.capture(risk_module.get_risk_range(measure="evar"))
+    recorder.capture(
+        risk_module.get_risk_range(
+            period="yearly", within_period=True, measure="evar", beta=0.1
+        )
+    )

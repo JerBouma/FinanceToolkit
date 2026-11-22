@@ -191,3 +191,21 @@ def test_measures_per_period_and_rolling():
     assert semi.iloc[12] == pytest.approx(
         risk_model.get_downside_deviation(RETURNS.iloc[5:13], "mean")
     )
+
+
+def test_get_risk_range_evar():
+    # riskfolio-lib's EVRG(RETURNS, 0.05, 0.1), solved with its exponential cone; with beta = alpha
+    # the worst loss and the best gain are each one twentieth of the returns, so both EVaRs are those
+    # returns and the range is max - min.
+    assert np.isclose(
+        dispersion_model.get_risk_range(RETURNS, "evar", 0.05, 0.1),
+        0.07711499516277938,
+        atol=1e-9,
+    )
+    assert np.isclose(
+        dispersion_model.get_risk_range(RETURNS, "evar", 0.05),
+        RETURNS.max() - RETURNS.min(),
+    )
+    assert dispersion_model.get_risk_range(
+        RETURNS, "evar", 0.05, 0.1
+    ) > dispersion_model.get_risk_range(RETURNS, "cvar", 0.05, 0.1)

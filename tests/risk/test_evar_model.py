@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 from scipy import stats
 
 from financetoolkit.risk.value_at_risk import evar_model
@@ -69,3 +70,67 @@ def test_get_evar_gaussian_uses_sample_standard_deviation():
     assert np.isclose(evar_model.get_evar_gaussian(returns, 0.05), expected)
     # The EVaR bounds the gaussian VaR at the same alpha.
     assert expected <= returns.mean() + stats.norm.ppf(0.05) * returns.std(ddof=1)
+
+
+# Forty returns of a Student-t(4) draw, with the reference values of skfolio (evar,
+# entropic_risk_measure) and riskfolio-lib (EVaR_Hist, Entropic_RM, EVRG), signs flipped
+# to the Toolkit's return convention.
+REFERENCE_RETURNS = pd.Series(
+    [0.0004, -0.0137, 0.0009, -0.0064, 0.0025, 0.0177, -0.0455, -0.0052, 0.0026, -0.0068,
+     -0.0241, -0.007, 0.0001, -0.001, -0.0152, -0.0147, -0.0041, -0.0149, -0.0015, 0.0059,
+     0.0036, -0.0195, 0.0084, -0.0079, -0.0059, 0.0107, -0.0016, -0.0031, -0.0039, -0.0035,
+     0.0002, 0.0143, -0.0145, -0.0299, 0.0015, -0.0072, -0.0021, 0.0113, 0.0011, -0.0077]
+)  # fmt: skip
+
+
+def test_get_evar_historic_reference_values():
+    assert np.isclose(
+        evar_model.get_evar_historic(REFERENCE_RETURNS, 0.05),
+        -0.04227204001870698,
+        atol=1e-12,
+    )
+    assert np.isclose(
+        evar_model.get_evar_historic(REFERENCE_RETURNS, 0.2),
+        -0.031652995960299385,
+        atol=1e-12,
+    )
+
+
+def test_get_evar_historic_bounds():
+    # Between the historical CVaR and the worst return, and equal to the worst return when it
+    # covers the tail on its own (a single loss is more than 5% of 3 returns).
+    returns = REFERENCE_RETURNS
+    evar = evar_model.get_evar_historic(returns, 0.05)
+    tail = returns[returns <= returns.quantile(0.05)]
+    assert returns.min() <= evar <= tail.mean()
+    assert evar_model.get_evar_historic(pd.Series([0.01, -0.02, 0.03]), 0.05) == -0.02
+
+
+def test_get_evar_historic_frame_and_rolling(recorder):
+    frame = pd.DataFrame(
+        {"A": REFERENCE_RETURNS, "B": REFERENCE_RETURNS[::-1].to_numpy() * 2}
+    )
+    recorder.capture(evar_model.get_evar_historic(frame, 0.05).round(10))
+    recorder.capture(
+        evar_model.get_evar_historic(frame, 0.05, window_size=20).round(10)
+    )
+
+
+def test_get_entropic_risk_measure_reference_values():
+    assert np.isclose(
+        evar_model.get_entropic_risk_measure(REFERENCE_RETURNS, 0.02, 0.05),
+        -0.06892219395430653,
+        atol=1e-12,
+    )
+    # Never less severe than the EVaR, which minimizes it over the risk aversion.
+    for risk_aversion in [0.001, 0.01, 0.1, 1.0]:
+        assert evar_model.get_entropic_risk_measure(
+            REFERENCE_RETURNS, risk_aversion, 0.05
+        ) <= evar_model.get_evar_historic(REFERENCE_RETURNS, 0.05)
+
+
+def test_get_entropic_risk_measure_validation():
+    with pytest.raises(ValueError):
+        evar_model.get_entropic_risk_measure(REFERENCE_RETURNS, 0, 0.05)
+    with pytest.raises(ValueError):
+        evar_model.get_evar_historic(REFERENCE_RETURNS, 1.5)

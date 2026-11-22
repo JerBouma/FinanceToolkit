@@ -1879,7 +1879,8 @@ class DistributionRisk:
         returns and the Tail Gini Range between the Tail Gini of the gains and of the losses. They measure
         the width of the distribution where it matters most, without the assumption of symmetry behind the
         standard deviation, and with beta different from alpha they weigh the gains and the losses
-        differently. The VaR Range at alpha = beta = 0.25 is the interquartile range.
+        differently. The VaR Range at alpha = beta = 0.25 is the interquartile range. The EVaR Range does the
+        same with the historic Entropic Value at Risk, the most severe of these tail measures.
 
         The formula is as follows (with the default alpha=0.05 and beta=alpha):
 
@@ -1887,25 +1888,27 @@ class DistributionRisk:
         - VaR Range = Quantile(Return, 1 - beta) - Quantile(Return, alpha)
         - CVaR Range = mean(Return >= Quantile(Return, 1 - beta)) - mean(Return <= Quantile(Return, alpha))
         - Tail Gini Range = Tail Gini of the gains (beta) - Tail Gini of the losses (alpha)
+        - EVaR Range = EVaR of the gains (beta) - EVaR of the losses (alpha)
 
         Where the quantiles are interpolated linearly and the CVaR is the average of the returns beyond the
-        quantile, as in the historic `get_value_at_risk` and `get_conditional_value_at_risk`, and the Tail
-        Gini is that of `get_tail_gini`, measured on the negated returns for the gains. The result is a
+        quantile, as in the historic `get_value_at_risk` and `get_conditional_value_at_risk`, the Tail
+        Gini is that of `get_tail_gini` and the EVaR that of `get_entropic_value_at_risk` with
+        distribution="historic", each measured on the negated returns for the gains. The result is a
         positive decimal.
 
         For more information, see the following sources:
 
         - Cajas, D. (2021). "OWA Portfolio Optimization: A Disciplined Convex Programming Framework."
         SSRN Electronic Journal.
-        - riskfolio-lib: RiskFunctions.RG, RiskFunctions.VRG, RiskFunctions.CVRG and RiskFunctions.TGRG
-        (https://github.com/dcajasn/Riskfolio-Lib).
+        - riskfolio-lib: RiskFunctions.RG, RiskFunctions.VRG, RiskFunctions.CVRG, RiskFunctions.TGRG and
+        RiskFunctions.EVRG (https://github.com/dcajasn/Riskfolio-Lib).
 
-        Also known as: return range, VaR range, CVaR range, Tail Gini range, tail spread.
+        Also known as: return range, VaR range, CVaR range, Tail Gini range, EVaR range, tail spread.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            measure (str, optional): The range to calculate: "range", "var", "cvar" or "tail_gini".
+            measure (str, optional): The range to calculate: "range", "var", "cvar", "tail_gini" or "evar".
             Defaults to "range".
             alpha (float, optional): The tail probability of the losses, between 0 and 1 (between 0.0001
             and 1 for the Tail Gini). Defaults to 0.05.
@@ -1943,13 +1946,11 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Risk Range values using the
         specified `lag`.
-        - The Range and the Tail Gini Range equal riskfolio-lib's RG and TGRG. riskfolio-lib's VRG and
-        CVRG take the order statistic at ceil(alpha * n) instead of the interpolated quantile and the exact
+        - The Range, the Tail Gini Range and the EVaR Range equal riskfolio-lib's RG, TGRG and EVRG.
+        riskfolio-lib's VRG and CVRG take the order statistic at ceil(alpha * n) instead of the interpolated quantile and the exact
         Conditional Value at Risk of Rockafellar and Uryasev (2002), so the VaR Range and CVaR Range differ
         slightly from them and equal the difference of the Toolkit's own historic Value at Risk and
         Conditional Value at Risk of the gains and the losses instead.
-        - The EVaR Range of riskfolio-lib (EVRG) needs a historical Entropic Value at Risk, which the
-        Toolkit only offers in its gaussian form.
 
         As an example:
 

@@ -132,6 +132,85 @@ def get_cvar_gaussian(
     return returns.std(ddof=1) * -stats.norm.pdf(za) / alpha + returns.mean()
 
 
+def get_cvar_kernel(
+    returns: pd.Series | pd.DataFrame, alpha: float
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the kernel Conditional Value at Risk (CVaR) of returns: the mean return below
+    the kernel VaR under a Gaussian kernel density estimate of the return distribution with
+    Silverman's bandwidth (Scaillet 2004), which has a closed form given the VaR:
+
+    - CVaR = mean(Return_i * Φ(u_i) - h * φ(u_i)) / alpha
+    - u_i = (VaR - Return_i) / h
+
+    Where VaR is the kernel VaR of `var_model.get_var_kernel`, h the bandwidth of
+    `var_model.get_kernel_bandwidth` and Φ and φ the standard normal distribution and density.
+
+    For more information see:
+
+    - Scaillet, O. (2004). "Nonparametric Estimation and Sensitivity Analysis of Expected
+    Shortfall." Mathematical Finance, 14(1), 115-129.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
+            a (period, date) index.
+        alpha (float): The tail probability (e.g., 0.05 for the 95% confidence level).
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The CVaR as a return, negative for a loss.
+    """
+    if not 0 < alpha < 1:
+        raise ValueError("Alpha must lie between 0 and 1.")
+
+    def kernel_cvar(samples: np.ndarray) -> np.ndarray:
+        value_at_risk = var_model.get_var_kernel_samples(samples, alpha)[:, np.newaxis]
+        bandwidth = var_model.get_kernel_bandwidth(samples)[:, np.newaxis]
+        # A sample of equal returns has no spread to smooth: its CVaR is that return.
+        spread = np.where(bandwidth > 0, bandwidth, 1.0)
+        standardized = (value_at_risk - samples) / spread
+        tail = (
+            samples * stats.norm.cdf(standardized)
+            - spread * stats.norm.pdf(standardized)
+        ).mean(axis=1) / alpha
+
+        return np.where(bandwidth[:, 0] > 0, tail, samples[:, 0])
+
+    return risk_model.apply_to_observations(returns, kernel_cvar)
+
+
+def get_weighted_cvar(
+    conditional_values_at_risk: list[pd.Series | pd.DataFrame], weights: list[float]
+) -> pd.Series | pd.DataFrame:
+    """
+    Combine the Conditional Value at Risk at several tail probabilities into the Weighted
+    (spectral) Conditional Value at Risk, their weighted sum (Acerbi 2002, Cajas 2021):
+
+    - Weighted CVaR = Σ_k Weight_k * CVaR(alpha_k)
+
+    With non-negative weights that sum to 1 it is a spectral risk measure: a weighted average
+    of the returns that weighs every return at least as much as any better return.
+
+    Args:
+        conditional_values_at_risk (list[pd.Series | pd.DataFrame]): The CVaR at every tail
+            probability, on the same index.
+        weights (list[float]): The weight of each, non-negative and summing to 1.
+
+    Returns:
+        pd.Series | pd.DataFrame: The Weighted CVaR as a return, negative for a loss.
+    """
+    if len(weights) != len(conditional_values_at_risk):
+        raise ValueError("Give one weight per alpha.")
+    if min(weights) < 0 or not np.isclose(sum(weights), 1):
+        raise ValueError("The weights must be non-negative and sum to 1.")
+
+    return sum(
+        weight * conditional_value_at_risk
+        for weight, conditional_value_at_risk in zip(
+            weights, conditional_values_at_risk, strict=True
+        )
+    )
+
+
 def get_cvar_studentt(
     returns: pd.Series | pd.DataFrame, alpha: float
 ) -> pd.Series | pd.DataFrame | float:

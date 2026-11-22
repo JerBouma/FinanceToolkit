@@ -618,7 +618,7 @@ def get_percentage_volume_oscillator(
         - Every EMA is seeded with the Simple Moving Average of its first values (see
           `get_exponential_moving_average`), so the PVO starts on period `long_window` - 1
           and the signal line and histogram `signal_window` - 1 periods later.
-        - With either moving average the PVO equals TA-Lib's PVO with the matching `matype`,
+        - With either moving average the PVO agrees with TA-Lib's PVO with the matching `matype`,
           pandas-ta-classic's `vosc` and Tulip's `vosc` (for the SMA) divided by 100: they
           are in percent and have no signal line.
         - A long-term EMA of zero (a series without volume, such as an index or a currency
@@ -1188,7 +1188,7 @@ def get_moving_average_convergence_divergence(
           period as the long one, which changes only the first values.
         - `moving_average` applies to both the short and the long average, as TA-Lib's
           MACDEXT with the same `fastmatype` and `slowmatype`.
-        - With "volume_weighted" for both averages the lines equal pandas-ta-classic's
+        - With "volume_weighted" for both averages the lines agree with pandas-ta-classic's
           vwmacd, which also weights the signal line by volume. finta's VW_MACD instead
           divides exponential averages of Close * Volume and of the volume, and its EV_MACD
           (20 and 40 periods by default) starts every eVWMA from 0 where the Toolkit seeds it

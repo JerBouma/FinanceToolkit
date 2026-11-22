@@ -4447,7 +4447,7 @@ class OptimizationConstruction:
           risk free rate over the period, as that implies no positive risk aversion.
         - The factor models are estimated on the periods in which the assets and the
           factors all have a return.
-        - The augmented model matches Riskfolio-Lib's augmented_black_litterman (with τ =
+        - The augmented model agrees with Riskfolio-Lib's augmented_black_litterman (with τ =
           1 / T, its choice) when the loadings hold no intercept: Riskfolio-Lib adds the
           intercepts to the posterior returns when they do, which Cheung (2009) does not.
           It does not invert the stacked covariance, which is singular when an asset is

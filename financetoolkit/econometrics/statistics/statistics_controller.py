@@ -91,7 +91,7 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Linear Regression for each
           asset, each over the dates it has a value. The first value needs a full window of data from the start date.
-        - The columns equal TA-Lib's LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE and TSF.
+        - The columns agree with TA-Lib's LINEARREG, LINEARREG_SLOPE, LINEARREG_INTERCEPT, LINEARREG_ANGLE and TSF.
         - The slope is in price per period and the angle depends on the scale of the prices, so neither compares
           across securities with different share prices; the Correlation Trend Indicator
           (`toolkit.technicals.get_correlation_trend_indicator`) does.
@@ -194,7 +194,7 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Slope for each asset, each
           over the dates it has a value. The first value needs a full window of data from the start date.
-        - The slope equals pandas-ta-classic's slope and the angle its slope with as_angle=True and
+        - The slope agrees with pandas-ta-classic's slope and the angle its slope with as_angle=True and
           to_degrees=True (pandas-ta-classic gives radians unless asked for degrees).
         - The slope is in price per period, so it does not compare across securities with different share
           prices.
@@ -307,7 +307,7 @@ class StatisticsEconometrics:
         - The method takes the `column` series of the specified `period` and correlates each asset with
           `against` over the dates both have a value, so a cryptocurrency's weekends do not count against
           a stock.
-        - The correlation equals TA-Lib's CORREL and pandas-ta-classic's correl, which take the series as
+        - The correlation agrees with TA-Lib's CORREL and pandas-ta-classic's correl, which take the series as
           given; TA-Lib's default compares the high with the low (column="High", against="Low").
         - A window in which either series is flat has no correlation and is missing, where TA-Lib and pandas-ta-
           classic give 0.
@@ -435,7 +435,7 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Median for each asset, each
           over the dates it has a value. The first value needs a full window of data from the start date.
-        - The median equals TA-Lib's MEDIAN, pandas-ta-classic's median and finta's SMM (whose default window is
+        - The median agrees with TA-Lib's MEDIAN, pandas-ta-classic's median and finta's SMM (whose default window is
           9).
 
         As an example:
@@ -538,7 +538,7 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Percentile for each asset,
           each over the dates it has a value. The first value needs a full window of data from the start date.
-        - The nearest rank equals TA-Lib's PERCENTILE, and the linear interpolation pandas-ta-classic's
+        - The nearest rank agrees with TA-Lib's PERCENTILE, and the linear interpolation pandas-ta-classic's
           quantile.
         - The percentile is a decimal (0.5 is the median) where TA-Lib takes a percentage.
 
@@ -637,7 +637,7 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Percent Rank for each asset,
           each over the dates it has a value. The first value needs a full window of data from the start date.
-        - The Percent Rank equals TA-Lib's PERCENTRANK divided by 100: a decimal between 0 and 1 where TA-Lib
+        - The Percent Rank agrees with TA-Lib's PERCENTRANK divided by 100: a decimal between 0 and 1 where TA-Lib
           gives a percentage.
         - The latest price is compared with the `window` prices before it, so the first value needs `window` + 1
           prices.
@@ -737,7 +737,7 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Z-Score for each asset, each
           over the dates it has a value. The first value needs a full window of data from the start date.
-        - The Z-Score equals pandas-ta-classic's zscore; its cdl_z applies the same score to the open, high, low
+        - The Z-Score agrees with pandas-ta-classic's zscore; its cdl_z applies the same score to the open, high, low
           and close.
         - A window of flat prices has no standard deviation and is missing, where pandas-ta-classic gives 0.
         - The `standardize` parameter instead standardizes the result over the whole date range shown.
@@ -841,7 +841,7 @@ class StatisticsEconometrics:
         - The method takes the `column` series of the specified `period` and calculates the Mean Absolute Deviation for
           each asset, each over the dates it has a value. The first value needs a full window of data from the start
           date.
-        - The deviation equals TA-Lib's AVGDEV, pandas-ta-classic's mad and md (whose default window is 30) and
+        - The deviation agrees with TA-Lib's AVGDEV, pandas-ta-classic's mad and md (whose default window is 30) and
           Tulip Indicators' md.
         - `toolkit.risk.get_mean_absolute_deviation` measures the daily returns within each period instead of
           the prices over a rolling window.
@@ -943,7 +943,7 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Standard Error for each
           asset, each over the dates it has a value. The first value needs a full window of data from the start date.
-        - The standard error equals pandas-ta-classic's stderr. Tulip Indicators' stderr uses the population
+        - The standard error agrees with pandas-ta-classic's stderr. Tulip Indicators' stderr uses the population
           standard deviation (ddof=0), which is sqrt((window - 1) / window) times this value.
 
         As an example:
@@ -1044,7 +1044,7 @@ class StatisticsEconometrics:
         Notes:
         - The method takes the `column` series of the specified `period` and calculates the Entropy for each asset, each
           over the dates it has a value. The first value needs a full window of data from the start date.
-        - The entropy equals pandas-ta-classic's entropy.
+        - The entropy agrees with pandas-ta-classic's entropy.
         - A window with a negative price or a sum of 0 has no entropy.
 
         As an example:

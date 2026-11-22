@@ -394,7 +394,7 @@ class VolatilityTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Bollinger Bands for each asset in the Toolkit instance.
-        - The bands equal TA-Lib's BBANDS with a simple moving average (`matype=0`), and with the
+        - The bands agree with TA-Lib's BBANDS with a simple moving average (`matype=0`), and with the
           exponential, weighted, double exponential, triple exponential and triangular averages its
           `matype` 1 to 5. The standard deviation stays the one around the simple average of the
           window, as in TA-Lib, whatever the middle band.
@@ -544,8 +544,8 @@ class VolatilityTechnicals:
           %B and BandWidth for each asset in the Toolkit instance.
         - A window of identical prices gives bands without width, which leaves %B missing and
           BandWidth at 0.
-        - With a simple moving average (`matype=0`), %B equals TA-Lib's PERCENTB and BandWidth
-          equals TA-Lib's BBW divided by 100, since TA-Lib's BBW is in percent.
+        - With a simple moving average (`matype=0`), %B agrees with TA-Lib's PERCENTB and BandWidth
+          agrees with TA-Lib's BBW divided by 100, since TA-Lib's BBW is in percent.
         - If `growth` is set to True, the method calculates the growth of %B and BandWidth
           using the specified `lag`.
 
@@ -671,7 +671,7 @@ class VolatilityTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           True Range for each asset in the Toolkit instance.
-        - The True Range equals TA-Lib's TRANGE from the second period on. The first period, which
+        - The True Range agrees with TA-Lib's TRANGE from the second period on. The first period, which
           has no previous close, is High — Low here and empty in TA-Lib.
         - If `growth` is set to True, the method calculates the growth of the True Range
           using the specified `lag`.
@@ -953,7 +953,7 @@ class VolatilityTechnicals:
         Notes:
         - Both EMAs are seeded with the simple average of their first values, as in TA-Lib and on
           StockCharts, so the first Mass Index is on period 2 × (`ema_window` — 1) + `sum_window`,
-          the 41st with the default windows. The Mass Index equals TA-Lib's MASSI.
+          the 41st with the default windows. The Mass Index agrees with TA-Lib's MASSI.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -1107,7 +1107,7 @@ class VolatilityTechnicals:
         - The ATR starts one period before TA-Lib's (see `get_average_true_range`), so the
           Supertrend starts one period before TA-Lib's SUPERTREND and differs from it until the two
           converge (within 0.01% after about 40 periods with the defaults). The Trend Direction
-          equals TA-Lib's `trend` from TA-Lib's first value.
+          agrees with TA-Lib's `trend` from TA-Lib's first value.
         - If `growth` is set to True, the method calculates the growth of the Supertrend and
           Trend Direction values using the specified `lag`.
 
@@ -1408,7 +1408,7 @@ class VolatilityTechnicals:
           channels differ throughout (by about 0.3% on daily data).
         - The original channel uses `window` for both averages (Keltner used 10 days with one
           average range, atr_multiplier=1) and no ATR, so `atr_window` does not apply. With
-          atr_multiplier=1 it equals ta's KeltnerChannel with original_version=True.
+          atr_multiplier=1 it agrees with ta's KeltnerChannel with original_version=True.
         - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
 
         As an example:
@@ -1549,8 +1549,8 @@ class VolatilityTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates Donchian Channels
           for each asset in the Toolkit instance.
-        - TA-Lib's DONCHIAN includes the current period, so each channel here equals TA-Lib's of the
-          previous period; with include_current=True it equals TA-Lib's DONCHIAN.
+        - TA-Lib's DONCHIAN includes the current period, so each channel here agrees with TA-Lib's of the
+          previous period; with include_current=True it agrees with TA-Lib's DONCHIAN.
         - If `growth` is set to True, the method calculates the growth of the channels using the specified `lag`.
 
         As an example:
@@ -3360,8 +3360,8 @@ class VolatilityTechnicals:
                 Channels the Bollinger Bands lie inside).
 
         Notes:
-        - The Momentum equals TA-Lib's SQZMOM and pandas-ta-classic's `squeeze(lazybear=True)`.
-          The Squeeze equals TA-Lib's squeeze output, with 0 instead of -1 for no squeeze. It starts
+        - The Momentum agrees with TA-Lib's SQZMOM and pandas-ta-classic's `squeeze(lazybear=True)`.
+          The Squeeze agrees with TA-Lib's squeeze output, with 0 instead of -1 for no squeeze. It starts
           on the `window`-th period, while TA-Lib reports it from the first Momentum on.
         - The Keltner Channel here is LazyBear's (a simple average of the close and of the True
           Range), not that of `get_keltner_channels`, and the Bollinger standard deviation is the
@@ -3507,7 +3507,7 @@ class VolatilityTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Standard Deviation Channel for each asset in the Toolkit instance.
-        - The channel equals pandas-ta-classic's tos_stdevall.
+        - The channel agrees with pandas-ta-classic's tos_stdevall.
         - The line is fitted over the whole period at once, so every value depends on the later prices of the
           period and the channel is redrawn when the date range changes. It describes a period and is not a
           signal that was known at the time, which is why `collect_volatility_indicators` leaves it out.

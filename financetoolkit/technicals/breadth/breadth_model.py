@@ -881,7 +881,7 @@ def get_klinger_volume_oscillator(
     Referenced against TA-Lib's KVO (https://ta-lib.org/functions/kvo.html).
 
     Notes:
-        - The Volume Force is TA-Lib's and Tulip Indicators' (`kvo`), with |2 * dm / cm - 1|.
+        - The Volume Force agrees with TA-Lib's and Tulip Indicators' (`kvo`), with |2 * dm / cm - 1|.
           pandas-ta-classic's `kvo` uses a simplified force, the volume signed by the change
           in the typical price, and differs.
         - Every EMA is seeded with the Simple Moving Average of its first values (see
@@ -973,7 +973,7 @@ def get_market_facilitation_index(
     (https://ta-lib.org/functions/marketfi.html).
 
     Notes:
-        - With `volume_divisor` = 1 it equals TA-Lib's MARKETFI, pandas-ta-classic's
+        - With `volume_divisor` = 1 it agrees with TA-Lib's MARKETFI, pandas-ta-classic's
           `marketfi` and Tulip Indicators' `marketfi`. A period without volume has no index
           (NaN) rather than an infinite one.
 
@@ -1020,7 +1020,7 @@ def get_williams_accumulation_distribution(
     Referenced against TA-Lib's WAD (https://ta-lib.org/functions/wad.html).
 
     Notes:
-        - It equals TA-Lib's WAD and Tulip Indicators' `wad` (which starts on the second
+        - It agrees with TA-Lib's WAD and Tulip Indicators' `wad` (which starts on the second
           period) and pandas-ta-classic's `wad` (NaN on the first period).
         - The running total starts at 0 on the first observation with a high, low and close,
           so its level depends on the first date of the data; only its direction and its
@@ -1079,7 +1079,7 @@ def get_relative_volume(volumes: pd.Series, window: int) -> pd.Series:
     Referenced against TA-Lib's RVOL (https://ta-lib.org/functions/rvol.html).
 
     Notes:
-        - It equals TA-Lib's RVOL. An average volume of zero (a series without volume, such
+        - It agrees with TA-Lib's RVOL. An average volume of zero (a series without volume, such
           as an index) gives NaN rather than an infinite ratio.
 
     Args:
@@ -1417,7 +1417,7 @@ def get_cumulative_force_index(
     Referenced against finta's CFI and WOBV (https://github.com/peerchemist/finta).
 
     Notes:
-        - With a window of 1 it equals finta's WOBV. With a larger window it equals finta's
+        - With a window of 1 it agrees with finta's WOBV. With a larger window it agrees with finta's
           CFI apart from the seed: the EMA is seeded with the Simple Moving Average of its
           first `window` values (see `overlap_model.get_exponential_moving_average`), while
           finta averages from the first value (`adjust=True`). The EMAs converge, but the
@@ -1470,7 +1470,7 @@ def get_price_volume(
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
-        - It equals pandas-ta-classic's `pvol`, also with `signed=True`, where the first
+        - It agrees with pandas-ta-classic's `pvol`, also with `signed=True`, where the first
           period has no change and therefore no signed value.
 
     Args:
@@ -1516,7 +1516,7 @@ def get_price_volume_rank(prices_close: pd.Series, volumes: pd.Series) -> pd.Ser
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
-        - It equals pandas-ta-classic's `pvr`. The first period has no change and no rank.
+        - It agrees with pandas-ta-classic's `pvr`. The first period has no change and no rank.
 
     Args:
         prices_close (pd.Series): Series of closing prices.
@@ -1728,7 +1728,7 @@ def get_archer_on_balance_volume(
     (https://github.com/xgboosted/pandas-ta-classic).
 
     Notes:
-        - It equals pandas-ta-classic's `aobv` (whose EMAs are also seeded with a Simple
+        - It agrees with pandas-ta-classic's `aobv` (whose EMAs are also seeded with a Simple
           Moving Average), except that its On-Balance Volume starts at the first period's
           volume instead of 0, as TA-Lib's: the OBV, its minimum, maximum and averages are
           that volume higher there, while the flags are equal.

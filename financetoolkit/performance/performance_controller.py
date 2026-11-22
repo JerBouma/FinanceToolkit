@@ -1763,7 +1763,7 @@ class Performance:
         single data point which will not give any meaningful results.
         - The method retrieves historical data and calculates regression parameters and residuals for each asset.
         - With `rolling` the result has a row per date, the last date of each window, and leaves out the residuals.
-        It equals pyfolio's timeseries.rolling_regression of the excess returns on the factors with a
+        It agrees with pyfolio's timeseries.rolling_regression of the excess returns on the factors with a
         rolling_window one shorter (pyfolio's windows hold rolling_window + 1 days).
         - The risk-free rate is typically represented by the return of a risk-free investment, such as a Treasury bond.
         In this case, the Risk Free Rate from the Fama and French dataset is used.
@@ -2112,7 +2112,7 @@ class Performance:
         model and therefore requires the three factor SMB.
         - The risk-free rate is the Risk Free Rate reported in the Fama and French dataset (used here, rather
         than the Toolkit's own risk-free rate, to stay consistent with the momentum factor's construction).
-        - With `rolling` the result has a row per date, the last date of each window. It equals pyfolio's
+        - With `rolling` the result has a row per date, the last date of each window. It agrees with pyfolio's
         timeseries.rolling_regression of the excess returns on the factors with a rolling_window one shorter
         (pyfolio's windows hold rolling_window + 1 days).
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
@@ -2485,7 +2485,7 @@ class Performance:
 
         Notes:
         - The method retrieves historical data and calculates the Alpha for each asset in the Toolkit instance.
-        - method="annualized" equals PerformanceAnalytics' ActivePremium on the daily returns (252 observations
+        - method="annualized" agrees with PerformanceAnalytics' ActivePremium on the daily returns (252 observations
         a year). PerformanceAnalytics compares on the dates both have a return; the Toolkit annualizes each on
         its own calendar within the ticker's history, so a cryptocurrency keeps its weekend returns.
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
@@ -3099,9 +3099,9 @@ class Performance:
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
         - `get_sharpe_ratio(method="probabilistic")` returns the probability that each Sharpe ratio is genuine,
         i.e. above `benchmark_sharpe_ratio` once the sample length, skewness and kurtosis are accounted for.
-        - method="smart" equals quantstats' smart_sharpe (stats.smart_sharpe, https://github.com/ranaroussi/quantstats)
-        on the same excess returns; quantstats returns a penalty of 1 where the autocorrelation is undefined
-        (fewer than two returns, or returns without variation), the Toolkit NaN.
+        - method="smart" agrees with quantstats' smart_sharpe (stats.smart_sharpe,
+        https://github.com/ranaroussi/quantstats) on the same excess returns; quantstats returns a penalty of 1
+        where the autocorrelation is undefined (fewer than two returns, or returns without variation), the Toolkit NaN.
 
         As an example:
 
@@ -3428,7 +3428,7 @@ class Performance:
         textbook definitions (Sharpe, 1994; the Ken French factors) use a short-term Treasury bill instead, which
         the Toolkit uses when initialised with risk_free_rate="13w".
         - If `growth` is set to True, the method calculates the growth of the ratio values using the specified `lag`.
-        - The variants equal quantstats' sortino, smart_sortino, adjusted_sortino and the probabilistic Sortino
+        - The variants agree with quantstats' sortino, smart_sortino, adjusted_sortino and the probabilistic Sortino
         ratios (with annualize=False) on the same excess returns. quantstats returns a penalty of 1 where the
         autocorrelation is undefined (fewer than two returns, or returns without variation), the Toolkit NaN.
 
@@ -4014,7 +4014,7 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Calmar Ratio for each asset in
         the Toolkit instance.
-        - method="annualized" equals PerformanceAnalytics' CalmarRatio, empyrical's calmar_ratio and quantstats'
+        - method="annualized" agrees with PerformanceAnalytics' CalmarRatio, empyrical's calmar_ratio and quantstats'
         calmar on the daily returns (252 observations a year). ffn (calc_calmar_ratio) counts the years of the
         annualized return in calendar days, which differs slightly.
         - If `growth` is set to True, the method calculates the growth of the ratio values using
@@ -4170,7 +4170,7 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Sterling Ratio for each asset in
         the Toolkit instance.
-        - method="annualized" equals PerformanceAnalytics' SterlingRatio on the daily returns (252
+        - method="annualized" agrees with PerformanceAnalytics' SterlingRatio on the daily returns (252
         observations a year, excess = `adjustment`).
         - If `growth` is set to True, the method calculates the growth of the ratio values using
         the specified `lag`.
@@ -5021,9 +5021,9 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Upside Capture Ratio for each
         asset in the Toolkit instance.
-        - method="annualized" equals empyrical's up_capture (and with rolling= its roll_up_capture) on the
+        - method="annualized" agrees with empyrical's up_capture (and with rolling= its roll_up_capture) on the
         same returns. Annualizing compounds both averages over a year, which changes the value but not the
-        ranking of tickers against the same benchmark. method="arithmetic" equals PerformanceAnalytics'
+        ranking of tickers against the same benchmark. method="arithmetic" agrees with PerformanceAnalytics'
         UpDownRatios (method="Capture").
         - See `get_capture_ratios` for the overall capture ratio, the Up/Down Capture Ratio and the Up and Down
         Numbers and Percentages in one table.
@@ -5165,9 +5165,9 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Downside Capture Ratio for each
         asset in the Toolkit instance.
-        - method="annualized" equals empyrical's down_capture (and with rolling= its roll_down_capture) on the
+        - method="annualized" agrees with empyrical's down_capture (and with rolling= its roll_down_capture) on the
         same returns. Annualizing compounds both averages over a year, which changes the value but not the
-        ranking of tickers against the same benchmark. method="arithmetic" equals PerformanceAnalytics'
+        ranking of tickers against the same benchmark. method="arithmetic" agrees with PerformanceAnalytics'
         UpDownRatios (method="Capture"), except that PerformanceAnalytics also counts the days the benchmark
         did not move as down days.
         - See `get_capture_ratios` for the overall capture ratio, the Up/Down Capture Ratio and the Up and Down
@@ -5320,7 +5320,7 @@ class Performance:
         Notes:
         - With method="annualized" the Capture Ratio, Upside, Downside and Up/Down Capture Ratios equal
         empyrical's capture, up_capture, down_capture and up_down_capture on the same daily returns. With
-        method="arithmetic" the Upside and Downside Capture Ratios equal PerformanceAnalytics' UpDownRatios,
+        method="arithmetic" the Upside and Downside Capture Ratios agree with PerformanceAnalytics' UpDownRatios,
         which also counts the days the benchmark did not move as down days for its Down Capture; its Up and
         Down Number and Percent equal the Toolkit's.
         - There is no Portfolio column: a weighted average of capture ratios or counts is not the statistic
@@ -5478,7 +5478,7 @@ class Performance:
         Notes:
         - The method retrieves historical data and calculates the Win Rate for each asset in the
         Toolkit instance.
-        - The overall Win Rate equals empyrical's batting_average and the up and down market ones its "up market"
+        - The overall Win Rate agrees with empyrical's batting_average and the up and down market ones its "up market"
         and "down market" values, except that empyrical counts a day the benchmark did not move as an up market
         day, where the Toolkit counts it as neither (as PerformanceAnalytics' Up and Down Percent do).
         - If `growth` is set to True, the method calculates the growth of the ratio values using
@@ -5587,7 +5587,7 @@ class Performance:
         - Equals the probability column of PerformanceAnalytics' table.ProbOutPerformance on the same returns.
         PerformanceAnalytics reports the counts as well; a window in which both returns are equal counts as
         neither, there as here.
-        - With relative=False and windows=[12] it equals ffn's twelve_month_win_perc, except that ffn also counts
+        - With relative=False and windows=[12] it agrees with ffn's twelve_month_win_perc, except that ffn also counts
         the window that starts at the first price, one window more than the monthly returns hold.
         - Each ticker is measured over its own history, so a later listing has fewer windows.
         - There is no Portfolio column: a weighted average of probabilities is not that of the portfolio.
@@ -5705,7 +5705,7 @@ class Performance:
             Multi Index of (ticker, statistic) as the columns.
 
         Notes:
-        - The Bull and Bear Betas and the Timing Ratio equal PerformanceAnalytics' CAPM.beta.bull, CAPM.beta.bear
+        - The Bull and Bear Betas and the Timing Ratio agree with PerformanceAnalytics' CAPM.beta.bull, CAPM.beta.bear
         and TimingRatio on the daily returns within each period, and the Alphas and Betas empyrical's up_alpha_beta
         and down_alpha_beta given the excess returns. empyrical splits the days on the sign of the benchmark return
         it is given, which market="return" does with the benchmark's own return; given a risk free rate, empyrical
@@ -6302,7 +6302,7 @@ class Performance:
             (ticker, risk) as the columns.
 
         Notes:
-        - The Systematic Risk equals PerformanceAnalytics' SystematicRisk on the daily returns of a year. Its
+        - The Systematic Risk agrees with PerformanceAnalytics' SystematicRisk on the daily returns of a year. Its
         SpecificRisk divides the squared residuals by n instead of n - 1, so it is SQRT((n - 1) / n) times the
         Toolkit's (0.2% lower for a year of daily returns), and its TotalRisk combines the two.
         - The specific risk here is that of the CAPM regression on the benchmark; the idiosyncratic volatility
@@ -6442,11 +6442,11 @@ class Performance:
             slopes belong to the benchmark and repeat for every ticker, measured over the days it has a return.
 
         Notes:
-        - The Capital Market Line Slope equals PerformanceAnalytics' CAPM.CML.slope. PerformanceAnalytics
+        - The Capital Market Line Slope agrees with PerformanceAnalytics' CAPM.CML.slope. PerformanceAnalytics
         reports the reciprocal of the market risk premium as its CAPM.SML.slope (the slope with Beta on the
         vertical axis) and its CAPM.CML multiplies the slope by the asset's mean return instead of its volatility;
         the Toolkit follows Sharpe (1964).
-        - The Regression Epsilon equals PerformanceAnalytics' CAPM.epsilon with a risk free rate of 0, where it
+        - The Regression Epsilon agrees with PerformanceAnalytics' CAPM.epsilon with a risk free rate of 0, where it
         uses the annualized returns as the period's. With a risk free rate PerformanceAnalytics adds it to the
         asset's return instead of subtracting it; the Toolkit uses excess returns throughout.
         - There is no Portfolio column, as for the market timing models.
@@ -7730,10 +7730,10 @@ class Performance:
         Notes:
         - A zero return is neither a win nor a loss: it is left out of the Win Rate and ends a
         streak. Each ticker is measured over its own returns.
-        - The Expectancy equals quantstats' avg_return (the mean of the non-zero returns), Best and Worst
+        - The Expectancy agrees with quantstats' avg_return (the mean of the non-zero returns), Best and Worst
         Return its best and worst (and ffn's best and worst day, month or year with the matching period),
         and the CPC Index, Outlier Win and Loss Ratios, Risk of Ruin and the Standard Error and Confidence
-        Limits equal quantstats' cpc_index, outlier_win_ratio, outlier_loss_ratio and risk_of_ruin and
+        Limits agree with quantstats' cpc_index, outlier_win_ratio, outlier_loss_ratio and risk_of_ruin and
         PerformanceAnalytics' mean.stderr, mean.LCL and mean.UCL. quantstats counts a zero return as a win in
         its Profit Ratio and Outlier Win Ratio, the Toolkit as neither win nor loss, so those two differ when a
         return is exactly 0. quantstats rounds the Exposure up to two decimals, the Toolkit does not, so its
@@ -8022,7 +8022,7 @@ class Performance:
         Notes:
         - The method retrieves the daily historical return data and calculates the Return for
         the specified `period` for each asset in the Toolkit instance.
-        - The daily log returns equal pandas-ta-classic's log_return and ffn's to_log_returns of the adjusted
+        - The daily log returns agree with pandas-ta-classic's log_return and ffn's to_log_returns of the adjusted
         close, the unsmoothed returns PerformanceAnalytics' Return.Geltner of the same returns.
         - If `growth` is set to True, the method calculates the growth of Return values using the specified `lag`.
 
@@ -9355,6 +9355,7 @@ class Performance:
         ```
 
         Which returns:
+
         |                                |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:-------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
         | ('Custom Factor', '1 Month')   |    0.018  |                  0.3745 |                 0.0481 |        0.498  |    0.6195 |           0.4953 |            107 |             0.004  |              0.2391 |                 0.8822 |
@@ -10111,7 +10112,7 @@ class Performance:
             pd.DataFrame | pd.Series: The ratio per period and ticker, or per ticker with within_period=False.
 
         Notes:
-        - The ratio equals skfolio's ratio measures where the risk measures are estimated alike: with the mean
+        - The ratio agrees with skfolio's ratio measures where the risk measures are estimated alike: with the mean
         absolute deviation, the first lower partial moment, the worst realization, the Gini mean difference,
         the Entropic Value at Risk, the Entropic Risk Measure and, on the drawdowns, the maximum and average
         drawdown, the Ulcer Index and the Entropic Drawdown at Risk. skfolio measures the drawdowns without
@@ -10243,7 +10244,7 @@ class Performance:
             pd.DataFrame: The probability, between 0 and 1, per period (or date) and ticker.
 
         Notes:
-        - It equals ffn's calc_prob_mom of the ticker against the benchmark over the same returns.
+        - It agrees with ffn's calc_prob_mom of the ticker against the benchmark over the same returns.
         - The returns are compared on the dates both the ticker and the benchmark have a return, as in
         `get_information_ratio`.
         - If `growth` is set to True, the method calculates the growth of the values using the specified `lag`.
@@ -10355,7 +10356,7 @@ class Performance:
         Notes:
         - A window that starts before the first close in the date range is NaN, so set start_date at least
         ten years back for the 10 year return.
-        - The month to date, 3 and 6 month, year to date and 1 year returns equal ffn's mtd, three_month,
+        - The month to date, 3 and 6 month, year to date and 1 year returns agree with ffn's mtd, three_month,
         six_month, ytd and one_year. ffn starts its 3, 5 and 10 year returns from the first close on or after
         the start of the window and does not use the month end rule for them; the Toolkit starts every window
         the same way, so these can differ by a day of returns.
@@ -10441,7 +10442,7 @@ class Performance:
 
         Notes:
         - quantstats fills a month without returns with 0 and ffn's return table does too; the Toolkit leaves
-        it NaN. The months and years otherwise equal quantstats' monthly_returns (compounded) and the Year
+        it NaN. The months and years otherwise agree with quantstats' monthly_returns (compounded) and the Year
         column equals its EOY, and `get_returns` with period="monthly" and "yearly".
 
         As an example:
@@ -10675,7 +10676,7 @@ class Performance:
             the bounds being Lower 2, Lower 1.5, Lower 1, Mean, Upper 1, Upper 1.5 and Upper 2 by default.
 
         Notes:
-        - It equals pyfolio's forecast_cone_bootstrap on the same simulated paths, apart from the standard
+        - It agrees with pyfolio's forecast_cone_bootstrap on the same simulated paths, apart from the standard
         deviation over the simulations, which pyfolio takes with ddof=0 and the Toolkit with ddof=1.
         - Every ticker draws from its own daily returns with the same seed, so a ticker's result does not
         depend on the other tickers in the Toolkit.
@@ -10784,7 +10785,7 @@ class Performance:
         Notes:
         - It needs at least two tickers; the Benchmark is not one of the candidates. The more tickers, the more
         informative the PBO: with two, the selected one is either the best or the worst out of sample.
-        - The Probability of Backtest Overfitting and the Average Out-of-Sample Rank equal ffn's
+        - The Probability of Backtest Overfitting and the Average Out-of-Sample Rank agree with ffn's
         calc_prob_backtest_overfitting with the same number of blocks. The daily returns beyond a multiple of
         `blocks` are left out from the end, as in ffn.
         - The Sharpe ratios skip missing returns, so a ticker that trades on other days than the rest (such as

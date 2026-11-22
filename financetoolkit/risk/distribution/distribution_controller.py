@@ -1313,10 +1313,10 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Partial Moment values using the
         specified `lag`.
-        - The lower partial moment of order 1 equals PerformanceAnalytics' DownsidePotential and
+        - The lower partial moment of order 1 agrees with PerformanceAnalytics' DownsidePotential and
         Riskfolio-Lib's LPM(p=1), order 0 equals DownsideFrequency (UpsideFrequency with side="upper") and
         side="upper" with order 1 and 2 equals UpsideRisk(stat="potential") and UpsideRisk(stat="variance").
-        - With minimum_acceptable_return="mean" order 1 and 4 equal skfolio's first_lower_partial_moment
+        - With minimum_acceptable_return="mean" order 1 and 4 agree with skfolio's first_lower_partial_moment
         and fourth_lower_partial_moment. Riskfolio-Lib's LPM(p=2) divides by n - 1 instead of n and
         takes the root, and PerformanceAnalytics' lpm divides by the number of returns below the
         threshold. Riskfolio-Lib's SemiKurtosis is the square of order 4 with root=True and
@@ -1447,7 +1447,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Central Moment values using the
         specified `lag`.
-        - Order 3 and 4 equal skfolio's third_central_moment and fourth_central_moment and
+        - Order 3 and 4 agree with skfolio's third_central_moment and fourth_central_moment and
         PerformanceAnalytics' centeredmoment. Riskfolio-Lib's Kurtosis is the square root of order 4 and
         its EvenMoment(p) the (order 2p) moment to the power 1 / p.
         - The moments of daily returns are small numbers (order 4 of a stock is about 1e-7), so use the
@@ -1683,7 +1683,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Gini Mean Difference values using the
         specified `lag`.
-        - The result equals Riskfolio-Lib's GMD and skfolio's gini_mean_difference.
+        - The result agrees with Riskfolio-Lib's GMD and skfolio's gini_mean_difference.
 
         As an example:
 
@@ -1806,7 +1806,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Tail Gini values using the
         specified `lag`.
-        - The result equals Riskfolio-Lib's TG with the opposite sign: Riskfolio-Lib reports the loss as
+        - The result agrees with Riskfolio-Lib's TG with the opposite sign: Riskfolio-Lib reports the loss as
         a positive number. Its Conditional Value at Risk is the exact one of Rockafellar and Uryasev
         (2002), which can differ slightly from the average of the returns below the interpolated quantile
         that `get_conditional_value_at_risk` takes.
@@ -1946,7 +1946,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Risk Range values using the
         specified `lag`.
-        - The Range, the Tail Gini Range and the EVaR Range equal Riskfolio-Lib's RG, TGRG and EVRG.
+        - The Range, the Tail Gini Range and the EVaR Range agree with Riskfolio-Lib's RG, TGRG and EVRG.
         Riskfolio-Lib's VRG and CVRG take the order statistic at ceil(alpha * n) instead of the interpolated quantile and the exact
         Conditional Value at Risk of Rockafellar and Uryasev (2002), so the VaR Range and CVaR Range differ
         slightly from them and equal the difference of the Toolkit's own historic Value at Risk and
@@ -2084,7 +2084,7 @@ class DistributionRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the L-moment values using the
         specified `lag`.
-        - The L-moments equal Riskfolio-Lib's L_Moment and scipy's stats.lmoment(standardize=False), the
+        - The L-moments agree with Riskfolio-Lib's L_Moment and scipy's stats.lmoment(standardize=False), the
         ratios scipy's stats.lmoment with standardize=True.
         - A sample needs at least `order` returns, fewer give NaN.
 
@@ -2219,7 +2219,7 @@ class DistributionRisk:
         listed later or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the L-moment Convex Risk Measure values using
         the specified `lag`.
-        - With method="crra" the result equals Riskfolio-Lib's L_Moment_CRM. For "msd" and "mss" the weights
+        - With method="crra" the result agrees with Riskfolio-Lib's L_Moment_CRM. For "msd" and "mss" the weights
         solve a small convex program over the order - 1 weights with scipy (SLSQP) where Riskfolio-Lib uses
         cvxpy with the Clarabel solver; the Toolkit's weights meet the constraints exactly and match a
         tightly solved cvxpy program, while Clarabel's default tolerances leave Riskfolio-Lib's weights

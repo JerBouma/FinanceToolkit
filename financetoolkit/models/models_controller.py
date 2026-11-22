@@ -648,6 +648,7 @@ class Models(
         ```
 
         Which returns:
+
         |                                      |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:-------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
         | ('get_piotroski_score', '12 Months') |   -0.1352 |                  0.3684 |                -0.3669 |       -3.6691 |    0.0004 |             0.31 |            100 |            -0.1482 |              0.0787 |                 0.93   |

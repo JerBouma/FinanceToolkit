@@ -1813,8 +1813,8 @@ class VolatilityRisk:
         Downside Deviation for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Downside Deviation values using
         the specified `lag`.
-        - With the default MAR of 0 the result equals PerformanceAnalytics' DownsideDeviation (method="full").
-        With minimum_acceptable_return="mean" it equals Riskfolio-Lib's SemiDeviation and skfolio's
+        - With the default MAR of 0 the result agrees with PerformanceAnalytics' DownsideDeviation (method="full").
+        With minimum_acceptable_return="mean" it agrees with Riskfolio-Lib's SemiDeviation and skfolio's
         semi_deviation (skfolio's semi_variance is its square), while PerformanceAnalytics' SemiDeviation
         divides by n.
 
@@ -1968,7 +1968,7 @@ class VolatilityRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Upside Deviation values using the
         specified `lag`.
-        - The result equals PerformanceAnalytics' UpsideRisk with the default method="full" and stat="risk".
+        - The result agrees with PerformanceAnalytics' UpsideRisk with the default method="full" and stat="risk".
 
         As an example:
 
@@ -2096,7 +2096,7 @@ class VolatilityRisk:
         or misses a date another ticker traded is measured on the returns it has).
         - If `growth` is set to True, the method calculates the growth of the Volatility Skewness values using the
         specified `lag`.
-        - The result equals PerformanceAnalytics' VolatilitySkewness with stat="volatility" or
+        - The result agrees with PerformanceAnalytics' VolatilitySkewness with stat="volatility" or
         stat="variability".
 
         As an example:

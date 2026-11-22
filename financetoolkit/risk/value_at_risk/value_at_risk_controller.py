@@ -674,7 +674,7 @@ class ValueAtRiskRisk:
         - The method retrieves historical return data based on the specified `period` and calculates EVaR for each
         asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of EVaR values using the specified `lag`.
-        - The historic EVaR equals Riskfolio-Lib's EVaR_Hist and skfolio's evar, which report the loss as a
+        - The historic EVaR agrees with Riskfolio-Lib's EVaR_Hist and skfolio's evar, which report the loss as a
         positive number; the Toolkit keeps the sign of a return, as for the VaR and CVaR.
 
         As an example:

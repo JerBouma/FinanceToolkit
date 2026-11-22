@@ -493,6 +493,7 @@ class TechnicalsBase:
         ```
 
         Which returns:
+
         |                                     |   Mean IC |   IC Standard Deviation |   IC Information Ratio |   t-Statistic |   p-Value |   Positive Share |   Observations |   Top Minus Bottom |   Quantile Turnover |   Rank Autocorrelation |
         |:------------------------------------|----------:|------------------------:|-----------------------:|--------------:|----------:|-----------------:|---------------:|-------------------:|--------------------:|-----------------------:|
         | ('get_rate_of_change', '1 Month')   |    0.0477 |                  0.3456 |                 0.1381 |        1.5063 |    0.1347 |           0.5798 |            119 |             0.0092 |              0.2626 |                 0.8582 |

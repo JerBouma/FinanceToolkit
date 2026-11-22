@@ -218,7 +218,7 @@ def get_rolling_percentile(
     (https://ta-lib.org/functions/percentile.html).
 
     Notes:
-        - The nearest rank equals TA-Lib's PERCENTILE, and the linear interpolation equals
+        - The nearest rank agrees with TA-Lib's PERCENTILE, and the linear interpolation equals
           pandas-ta-classic's quantile (window 30) and numpy's default quantile.
         - The percentile is a decimal (0.5 is the median) where TA-Lib takes a percentage.
         - A window with a missing price has no percentile.

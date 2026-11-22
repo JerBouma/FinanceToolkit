@@ -221,7 +221,7 @@ class PatternTechnicals:
         - The patterns are TA-Lib's definitions (Mario Fortier, https://ta-lib.org/functions/) of the
           patterns described by Nison and Bulkowski, and match TA-Lib candle for candle, including its
           default candle settings and penetrations (30% for the stars, doji stars and abandoned baby,
-          50% for the dark cloud cover and the mat hold); the inside bar matches pandas-ta-classic's cdl_inside.
+          50% for the dark cloud cover and the mat hold); the inside bar agrees with pandas-ta-classic's cdl_inside.
         - A pattern is empty until TA-Lib's lookback has passed: the 2 to 14 candles its
           averages and the pattern itself need (1 for the inside bar, which pandas-ta-classic
           sets to 0 on the first candle), counted from the ticker's own first candle.
@@ -230,7 +230,7 @@ class PatternTechnicals:
         - A pattern only describes the candles. The trend before it, which candlestick analysis
           requires for a reversal (a hammer after a decline, a hanging man after a rise), is not
           checked, as in TA-Lib; combine a pattern with a trend measure such as
-          `get_moving_average` or `get_signals`. The direction is TA-Lib's: separating lines, a
+          `get_moving_average` or `get_signals`. The direction follows TA-Lib: separating lines, a
           continuation pattern in candlestick analysis, follow the second candle, the in-neck,
           on-neck and thrusting, bearish continuation patterns after a decline, are -1 whatever
           the trend, and the tasuki gap, side-by-side white lines and gap three methods follow
@@ -384,7 +384,7 @@ class PatternTechnicals:
             pd.DataFrame: The Heikin-Ashi Open, High, Low and Close per date and ticker.
 
         Notes:
-        - The values equal TA-Lib's HA and pandas-ta-classic's ha on every candle, from the
+        - The values agree with TA-Lib's HA and pandas-ta-classic's ha on every candle, from the
           ticker's own first candle on.
         - The first candle's open is the seed (Open + Close) / 2, whose weight halves every
           period, so the candles of the first few periods after the Toolkit's start date depend
@@ -410,6 +410,7 @@ class PatternTechnicals:
         ```
 
         Which returns:
+
         | Date       |    Open |    High |     Low |   Close |
         |:-----------|--------:|--------:|--------:|--------:|
         | 2025-12-24 | 270.938 | 274.474 | 270.938 | 272.496 |
@@ -521,7 +522,7 @@ class PatternTechnicals:
             confirms a fractal and 0 otherwise.
 
         Notes:
-        - The fractals equal TA-Lib's FRACTAL (swinghigh and swinglow, 100 there), which also marks
+        - The fractals agree with TA-Lib's FRACTAL (swinghigh and swinglow, 100 there), which also marks
           the confirming bar. finta's WILLIAMS_FRACTAL marks the bar of the high or low itself,
           which uses the prices of the following bars (look-ahead).
         - The comparison is strict, as in TA-Lib: a high equal to one of the other highs is no
@@ -546,6 +547,7 @@ class PatternTechnicals:
         ```
 
         Which returns:
+
         | Date       |   AAPL |   MSFT |   Benchmark |
         |:-----------|-------:|-------:|------------:|
         | 2025-12-19 |      0 |      0 |           0 |
@@ -780,7 +782,7 @@ class PatternTechnicals:
             pd.DataFrame: The sweeps per date and ticker: 1 (bullish), -1 (bearish) or 0.
 
         Notes:
-        - The values equal pandas-ta-classic's smc_sweep, also in its first `window` bars, which
+        - The values agree with pandas-ta-classic's smc_sweep, also in its first `window` bars, which
           are empty.
         - Smart Money Concepts traders often take the swing low and high from swing points (see
           `get_williams_fractal`) rather than from the extremes of a fixed window.

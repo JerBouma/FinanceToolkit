@@ -845,7 +845,7 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the
           Accumulation/Distribution Line for each asset in the Toolkit instance.
-        - The Accumulation/Distribution Line equals TA-Lib's AD.
+        - The Accumulation/Distribution Line agrees with TA-Lib's AD.
         - If `growth` is set to True, the method calculates the growth of the Accumulation/Distribution Line
           using the specified `lag`.
 
@@ -1117,7 +1117,7 @@ class BreadthTechnicals:
         - There is no formal journal citation for the Chaikin Money Flow; the standard
           textbook treatment is Murphy, J.J. (1999). "Technical Analysis of the Financial
           Markets." New York Institute of Finance.
-        - The Chaikin Money Flow equals TA-Lib's CMF.
+        - The Chaikin Money Flow agrees with TA-Lib's CMF.
         - If `growth` is set to True, the method calculates the growth of the Chaikin Money
           Flow using the specified `lag`.
 
@@ -1252,7 +1252,7 @@ class BreadthTechnicals:
         - Reference: Arms, R.W. (1989). "The Arms Index (TRIN): An Introduction to the
           Volume Analysis of Stock and Bond Markets." Dow Jones-Irwin.
         - Referenced against TA-Lib's EMV (https://ta-lib.org/functions/emv.html).
-        - The Ease of Movement equals TA-Lib's EMV with its `volumedivisor` set to `volume_divisor`
+        - The Ease of Movement agrees with TA-Lib's EMV with its `volumedivisor` set to `volume_divisor`
           (TA-Lib's default is 10,000).
         - If `growth` is set to True, the method calculates the growth of the Ease of
           Movement using the specified `lag`.
@@ -1383,7 +1383,7 @@ class BreadthTechnicals:
         - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
           Profits on Wall Street." The Institute for Econometric Research.
         - Referenced against TA-Lib's NVI (https://ta-lib.org/functions/nvi.html).
-        - With the default `start_value` of 1,000, the Negative Volume Index equals TA-Lib's NVI.
+        - With the default `start_value` of 1,000, the Negative Volume Index agrees with TA-Lib's NVI.
         - If `growth` is set to True, the method calculates the growth of the Negative Volume
           Index using the specified `lag`.
 
@@ -1514,7 +1514,7 @@ class BreadthTechnicals:
         - Reference: Fosback, N.G. (1976). "Stock Market Logic: A Sophisticated Approach to
           Profits on Wall Street." The Institute for Econometric Research.
         - Referenced against TA-Lib's PVI (https://ta-lib.org/functions/pvi.html).
-        - With the default `start_value` of 1,000, the Positive Volume Index equals TA-Lib's PVI.
+        - With the default `start_value` of 1,000, the Positive Volume Index agrees with TA-Lib's PVI.
         - If `growth` is set to True, the method calculates the growth of the Positive Volume
           Index using the specified `lag`.
 
@@ -1968,7 +1968,7 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the KVO for
           each asset in the Toolkit instance.
-        - The volume force is TA-Lib's (and Tulip Indicators'). Every EMA is seeded with the simple average
+        - The volume force agrees with that of TA-Lib (and Tulip Indicators). Every EMA is seeded with the simple average
           of its first values, so the KVO starts on the 56th period, as TA-Lib's, and the signal line 12
           periods later. TA-Lib seeds the averages with the first volume force instead; on daily data of
           AAPL and MSFT the two agree to 1% of the typical KVO after about 210 periods and to 0.0001% after
@@ -2112,7 +2112,7 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the Market
           Facilitation Index for each asset in the Toolkit instance.
-        - With `volume_divisor=1` it equals TA-Lib's MARKETFI, pandas-ta-classic's `marketfi` and Tulip
+        - With `volume_divisor=1` it agrees with TA-Lib's MARKETFI, pandas-ta-classic's `marketfi` and Tulip
           Indicators' `marketfi`, whose index for a stock trading millions of shares is a fraction of a
           millionth. A period without volume has no index (NaN) rather than an infinite one.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -2249,7 +2249,7 @@ class BreadthTechnicals:
         - The method retrieves historical data based on the specified `period` and calculates Williams'
           Accumulation/Distribution for each asset in the Toolkit instance, as a running total from the
           start date.
-        - It equals TA-Lib's WAD (which also starts at 0), Tulip Indicators' `wad` (which starts on the
+        - It agrees with TA-Lib's WAD (which also starts at 0), Tulip Indicators' `wad` (which starts on the
           second period) and pandas-ta-classic's `wad` (NaN on the first period).
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
@@ -2378,7 +2378,7 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves the volumes of the specified `period` and calculates the Relative Volume for
           each asset in the Toolkit instance.
-        - It equals TA-Lib's RVOL. A ticker without volume, such as an index or a currency pair, has no
+        - It agrees with TA-Lib's RVOL. A ticker without volume, such as an index or a currency pair, has no
           Relative Volume (NaN).
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
@@ -2530,7 +2530,7 @@ class BreadthTechnicals:
           value, so start a year earlier than the dates of interest.
         - The volatility is the population standard deviation (ddof=0), as in Katsanos' MetaStock formula:
           it only sets the cutoff of the indicator's definition, so it follows the primary source, as the
-          Bollinger Bands do. The VFI equals pandas-ta-classic's `vfi` exactly. finta uses the sample
+          Bollinger Bands do. The VFI agrees with pandas-ta-classic's `vfi` exactly. finta uses the sample
           deviation (ddof=1), a 1.7% larger cutoff, and differs wherever a move falls between the two
           cutoffs.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -2675,7 +2675,7 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the FVE for
           each asset in the Toolkit instance.
-        - It equals finta's FVE divided by 100 (Katsanos and finta express it in percent, with the cutoff
+        - It agrees with finta's FVE divided by 100 (Katsanos and finta express it in percent, with the cutoff
           in percent as well), from the second value on: finta counts the first period, which has no
           change in the typical price, as neutral volume and starts one period earlier.
         - If `growth` is set to True, the method calculates the growth of the indicator values
@@ -3083,7 +3083,7 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the Cumulative
           Force Index for each asset in the Toolkit instance, as a running total from the start date.
-        - With `window=1` it equals finta's WOBV. With a larger window every change equals that of finta's
+        - With `window=1` it agrees with finta's WOBV. With a larger window every change agrees with that of finta's
           CFI once the EMAs have converged (after about 200 periods), but the EMA starts from the simple
           average of its first `window` values while finta's averages from the first value, and the
           running total keeps the difference of the warm-up as a constant offset.
@@ -3218,7 +3218,7 @@ class BreadthTechnicals:
           Price-Volume for each asset in the Toolkit instance.
         - The traded close is the default, as the value traded is a market value; the dividend-adjusted
           close would understate the value of older periods.
-        - It equals pandas-ta-classic's `pvol`, also with `signed=True`.
+        - It agrees with pandas-ta-classic's `pvol`, also with `signed=True`.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -3348,7 +3348,7 @@ class BreadthTechnicals:
         Notes:
         - The method retrieves historical data based on the specified `period` and calculates the Price
           Volume Rank for each asset in the Toolkit instance.
-        - It equals pandas-ta-classic's `pvr`.
+        - It agrees with pandas-ta-classic's `pvr`.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 

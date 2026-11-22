@@ -9,7 +9,14 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 from scipy import sparse, stats
-from scipy.cluster.hierarchy import cut_tree, fcluster, leaves_list, linkage, to_tree
+from scipy.cluster.hierarchy import (
+    cut_tree,
+    fcluster,
+    leaves_list,
+    linkage,
+    optimal_leaf_ordering,
+    to_tree,
+)
 from scipy.linalg import null_space
 from scipy.optimize import Bounds, LinearConstraint, linprog, milp, minimize
 from scipy.spatial.distance import pdist, squareform
@@ -2221,6 +2228,61 @@ def get_codependence_distance(
     return pd.DataFrame(distance, index=covariance.index, columns=covariance.index)
 
 
+def get_codependence_similarity(
+    returns: pd.DataFrame,
+    covariance: pd.DataFrame,
+    method: str = "pearson",
+    gerber_threshold: float = 0.5,
+    gerber_statistic: int = 1,
+    components: int = 1,
+    bins: str | int = "freedman",
+    tail_level: float = 0.05,
+) -> pd.DataFrame:
+    """
+    The non-negative similarity between every pair of assets that the Directed Bubble
+    Hierarchical Tree (see get_dbht_linkage) builds its planar graph on, next to the
+    distance of get_codependence_distance, from the codependence of get_codependence
+    (with the same arguments):
+
+    - "pearson", "spearman", "kendall", "gerber", "detoned": s = 1 - d² = (1 + ρ) / 2,
+      with d = √((1 - ρ) / 2) the correlation distance. Song, Di Matteo and Aste (2012)
+      take 1 + ρ, which gives the same graph and clusters.
+    - "distance", "mutual_information", "lower_tail": the codependence itself, the
+      distance correlation, the normalized mutual information or the lower tail
+      dependence, all between 0 and 1.
+
+    The choice per codependence is that of Riskfolio-Lib's HCPortfolio(linkage="DBHT").
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        covariance (pd.DataFrame): The covariance matrix of the assets, for "pearson".
+        method (str, optional): The codependence. Defaults to "pearson".
+        gerber_threshold (float, optional): The threshold of "gerber". Defaults to 0.5.
+        gerber_statistic (int, optional): The Gerber statistic. Defaults to 1.
+        components (int, optional): The components "detoned" removes. Defaults to 1.
+        bins (str | int, optional): The histogram bins of "mutual_information".
+            Defaults to "freedman".
+        tail_level (float, optional): The tail of "lower_tail". Defaults to 0.05.
+
+    Returns:
+        pd.DataFrame: The similarity matrix, in the order of the covariance matrix.
+    """
+    codependence = get_codependence(
+        returns,
+        covariance,
+        method,
+        gerber_threshold,
+        gerber_statistic,
+        components,
+        bins,
+        tail_level,
+    )
+    if method in ("distance", "mutual_information", "lower_tail"):
+        return codependence
+    return (1 + codependence.clip(-1, 1)) / 2
+
+
 def get_hierarchical_risk_parity_weights(
     covariance: pd.DataFrame,
     linkage_method: str = "single",
@@ -2232,6 +2294,7 @@ def get_hierarchical_risk_parity_weights(
     risk_measure: str = "variance",
     confidence_level: float = 0.95,
     minimum_acceptable_return: float | str = 0.0,
+    similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Hierarchical Risk Parity (López de Prado, 2016): the assets are clustered on their
@@ -2260,7 +2323,9 @@ def get_hierarchical_risk_parity_weights(
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
         linkage_method (str, optional): The linkage of the hierarchical clustering, e.g.
-            "single", "complete", "average" or "ward". Defaults to "single".
+            "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
+            Hierarchical Tree on the distance itself, see get_dbht_linkage). Defaults to
+            "single".
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
         maximum_weight (float | dict[str, float], optional): The highest weight of every
@@ -2280,6 +2345,9 @@ def get_hierarchical_risk_parity_weights(
             Defaults to 0.95.
         minimum_acceptable_return (float | str, optional): The threshold of the
             semideviation and lower partial moment per period, or "mean". Defaults to 0.
+        similarity (pd.DataFrame | None, optional): The similarity matrix of
+            linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
+            None, 1 - d² of the distance, (1 + ρ) / 2 for the correlation distance.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2301,7 +2369,9 @@ def get_hierarchical_risk_parity_weights(
             "Hierarchical Risk Parity holds long positions only; the minimum weight "
             "cannot be negative."
         )
-    order = get_hierarchical_order(covariance, linkage_method, correlation, distance)
+    order = get_hierarchical_order(
+        covariance, linkage_method, correlation, distance, similarity
+    )
     # The bisection works on positions in numpy: label lookups in pandas took most of
     # the time, which counts in a backtest that runs it on every rebalancing date.
     sigma = covariance.to_numpy()
@@ -2353,7 +2423,7 @@ def get_hierarchical_risk_parity_weights(
     return _as_series(weights, covariance.index)
 
 
-LINKAGE_METHODS = ("single", "complete", "average", "ward")
+LINKAGE_METHODS = ("single", "complete", "average", "ward", "dbht")
 
 
 def get_hierarchical_clusters(
@@ -2363,6 +2433,7 @@ def get_hierarchical_clusters(
     correlation: pd.DataFrame | None = None,
     distance: pd.DataFrame | None = None,
     cluster_criterion: str = "two_difference_gap",
+    similarity: pd.DataFrame | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Cluster the assets on their correlations: a hierarchical clustering on the
@@ -2384,6 +2455,13 @@ def get_hierarchical_clusters(
     Prado (2020), the mean of the silhouette coefficients over their standard deviation
     (see get_standardized_silhouette).
 
+    With linkage_method="dbht", the tree is the Directed Bubble Hierarchical Tree of Song,
+    Di Matteo and Aste (2012) on the distance and the similarity (see get_dbht_linkage),
+    and without a number of clusters the clusters are its own, the converging bubbles;
+    the cluster criterion then does not apply. Its heights are ranks that tie between
+    clusters, so a given number of clusters that falls within a tie returns the nearest
+    cut with fewer clusters, as SciPy's fcluster does.
+
     See Yue, S., Wang, X. and Wei, M. (2008), "Application of Two-Order Difference to Gap
     Statistic", Transactions of Tianjin University, 14(3), 217-221, and Tibshirani, R.,
     Walther, G. and Hastie, T. (2001), "Estimating the Number of Clusters in a Data Set
@@ -2392,9 +2470,10 @@ def get_hierarchical_clusters(
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
         linkage_method (str, optional): The linkage of the hierarchical clustering:
-            "single", "complete", "average" or "ward". Defaults to "ward".
+            "single", "complete", "average", "ward" or "dbht". Defaults to "ward".
         clusters (int | None, optional): The number of clusters. Defaults to None, chosen
-            by the two-order difference of the gap statistic.
+            by the two-order difference of the gap statistic (by the DBHT itself for
+            "dbht").
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
             are clustered on, e.g. a rank correlation from get_codependence. Defaults to
             None, the correlation matrix of the covariance matrix.
@@ -2404,6 +2483,8 @@ def get_hierarchical_clusters(
         cluster_criterion (str, optional): How the number of clusters is chosen when it
             is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
             "two_difference_gap".
+        similarity (pd.DataFrame | None, optional): The similarity matrix of "dbht", e.g.
+            from get_codependence_similarity. Defaults to None, 1 - d² of the distance.
 
     Returns:
         tuple[np.ndarray, np.ndarray]: The linkage matrix of the clustering and the
@@ -2440,10 +2521,24 @@ def get_hierarchical_clusters(
             )
         )
         np.fill_diagonal(distance, 0)
-    matrix = linkage(squareform(distance, checks=False), method=linkage_method)
+    if linkage_method == "dbht":
+        matrix = get_dbht_linkage(
+            distance,
+            (
+                None
+                if similarity is None
+                else similarity.loc[covariance.index, covariance.index]
+            ),
+        )
+    else:
+        matrix = linkage(squareform(distance, checks=False), method=linkage_method)
 
     if clusters is None:
-        if count == 2:  # noqa: PLR2004
+        if linkage_method == "dbht":
+            # The merges within the DBHT clusters lie at heights up to 1, those between
+            # them at 2 and above.
+            clusters = 1 + int((matrix[:, 2] > 1).sum())
+        elif count == 2:  # noqa: PLR2004
             # Two assets have no second difference; each is its own cluster.
             clusters = 2
         elif cluster_criterion == "standardized_silhouette":
@@ -2480,6 +2575,267 @@ def get_hierarchical_clusters(
     return matrix, fcluster(matrix, t=clusters, criterion="maxclust") - 1
 
 
+def get_dbht_linkage(
+    distance: pd.DataFrame | np.ndarray,
+    similarity: pd.DataFrame | np.ndarray | None = None,
+) -> np.ndarray:
+    """
+    The Directed Bubble Hierarchical Tree (DBHT) of Song, Di Matteo and Aste (2012): a
+    clustering that needs no number of clusters, found in the topology of a planar graph
+    of the strongest links between the assets rather than by merging the closest pair
+    over and over. Here the graph is the Triangulated Maximally Filtered Graph (TMFG) of
+    the similarities (Massara, Di Matteo and Aste, 2017), whose bubbles, the parts that no
+    triangle separates, are its 4-cliques, joined by the triangles that separate them
+    into a tree.
+
+    The algorithm is as follows, with S the similarities, D the distances and L the
+    shortest path distances over the TMFG with every link as long as its distance:
+
+    - The bubble tree links two 4-cliques that share a separating triangle. Removing the
+      triangle splits the graph in two, and the link points towards the side the triangle
+      is most strongly attached to, the larger sum of S between the triangle's vertices
+      and the other vertices of that side.
+    - The converging bubbles, the 4-cliques with no link pointing away, are the centres of
+      the clusters. A vertex of one converging bubble belongs to its cluster; a vertex of
+      several to the converging bubble with the largest χ = Σ_u S_vu / (3 (n_b - 2)), the
+      sum over the bubble's vertices u over its 3 (n_b - 2) links, with n_b = 4 its
+      vertices.
+    - Every other vertex belongs to the cluster with the smallest mean L to the vertices
+      assigned so far, among the converging bubbles that the vertex's bubbles flow to.
+    - Within a cluster, every vertex is assigned to one bubble: its only bubble, or the
+      bubble with the largest Σ_u S_vu over the total S of the bubble's links.
+    - The tree is built by complete linkage on L in three levels: the vertices of every
+      bubble, then the bubbles of every cluster, then the clusters. Two groups merge at the
+      largest L within their union, the smallest such value first.
+
+    The heights of the tree are ranks, as in Aste's code: the merges within a cluster of n
+    assets get the heights 1 / (n - 1), 1 / (n - 2), ..., 1 in the order they happen, and
+    a merge between clusters the number of clusters it joins, so a cut between 1 and 2
+    returns the DBHT clusters. The leaves are then ordered so that neighbouring leaves are
+    close in D (the optimal leaf ordering of Bar-Joseph, Gifford and Jaakkola, 2001),
+    which changes the order but not the tree. Up to three assets are all linked and form
+    a single bubble and cluster.
+
+    What the paper leaves open follows Aste's MATLAB code (MATLAB Central File Exchange
+    46750, the DBHT package):
+
+    - The side of a separating triangle holds all the vertices beyond it, not only those
+      of the neighbouring bubble.
+    - A vertex of several converging bubbles takes the largest χ over all converging
+      bubbles, also those it is only linked to.
+    - The bubbles are ordered from the outermost one, which lies on the outside of all
+      its separating triangles (the side with fewer vertices is the inside; with as many,
+      the side without the lowest vertex outside the triangle), level by level inwards,
+      each level in the lexicographic order of the triangles that lead to it. The
+      clusters are numbered in the order of their converging bubbles, and within a
+      cluster the bubbles merge their vertices in this order, which sets the heights.
+    - A tie in the direction of a link points away from the outermost bubble; a tie in χ,
+      the attachment to a bubble or the mean distance goes to the first in this order,
+      and a tie between pairs of groups to the pair with the lowest numbers.
+
+    Referenced against Riskfolio-Lib's DBHTs (https://github.com/dcajasn/Riskfolio-Lib),
+    whose clusters and linkage matrix it equals, with two deliberate differences: a link
+    of the TMFG stays a link when its similarity or distance is zero, which Riskfolio-Lib
+    drops from the graph, and the triangle of the first three assets counts as separating
+    when it separates the graph, which Riskfolio-Lib's FindDisjoint never does (it leaves
+    the third vertex in the graph it splits), so that there it joins two 4-cliques into one
+    bubble and can find other clusters.
+
+    See Song, W.-M., Di Matteo, T. and Aste, T. (2012), "Hierarchical Information
+    Clustering by Means of Topologically Embedded Graphs", PLoS ONE, 7(3), e31929, and
+    Massara, G. P., Di Matteo, T. and Aste, T. (2017), "Network Filtering for Big Data:
+    Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
+
+    Args:
+        distance (pd.DataFrame | np.ndarray): The N × N distance matrix D, symmetric with
+            zeros on the diagonal, e.g. the correlation distance √((1 - ρ) / 2).
+        similarity (pd.DataFrame | np.ndarray | None, optional): The N × N matrix of
+            non-negative similarities S the TMFG keeps the largest of. Defaults to None,
+            1 - D², which is (1 + ρ) / 2 for the correlation distance and the distance
+            correlation for √(1 - dCor).
+
+    Returns:
+        np.ndarray: The linkage matrix in SciPy's format, one row per merge with the two
+            clusters, the height and the number of assets.
+    """
+    distance = np.asarray(distance, dtype=float)
+    count = len(distance)
+    if count < 2:  # noqa: PLR2004
+        raise ValueError("At least two assets are needed.")
+    similarity = (
+        np.clip(1 - distance**2, 0, None)
+        if similarity is None
+        else np.asarray(similarity, dtype=float)
+    )
+    if count >= 4:  # noqa: PLR2004
+        cliques, separators = (
+            estimation_model.get_triangulated_maximally_filtered_graph(similarity)
+        )
+    else:
+        # Up to three assets are all linked: one bubble.
+        cliques, separators = np.arange(count)[None, :], np.empty((0, 3), dtype=int)
+    bubbles = len(cliques)
+    member = np.zeros((count, bubbles), dtype=bool)
+    member[cliques, np.arange(bubbles)[:, None]] = True
+    linked = (member.astype(int) @ member.T.astype(int)) > 0
+    np.fill_diagonal(linked, False)
+    strength = np.where(linked, similarity, 0.0)
+    # The shortest paths over the links; a link of zero length still counts as one.
+    paths = sparse.csgraph.shortest_path(
+        sparse.csgraph.csgraph_from_dense(
+            np.where(linked, distance, np.inf), null_value=np.inf
+        ),
+        directed=False,
+    )
+
+    # The 4-clique k ≥ 1 of the TMFG grew from a face of an earlier one, its parent in the
+    # bubble tree, across separator k - 1; the subtree of k holds every later 4-clique
+    # that grew from it.
+    parent = np.array(
+        [-1]
+        + [
+            int(np.flatnonzero(member[separator].all(axis=0)[:k])[0])
+            for k, separator in enumerate(separators, start=1)
+        ]
+    )
+    subtree = np.eye(bubbles, dtype=bool)
+    for k in range(bubbles - 1, 0, -1):
+        subtree[parent[k]] |= subtree[k]
+    # The vertices beyond every separator on the side of 4-clique k (below) and of its
+    # parent (above), and the 4-clique on the inside, the side with fewer vertices or,
+    # when both have as many, the side without the lowest vertex outside the separator.
+    sides, inside = [], []
+    for k, separator in enumerate(separators, start=1):
+        others = np.ones(count, dtype=bool)
+        others[separator] = False
+        below = member[:, subtree[k]].any(axis=1) & others
+        above = member[:, ~subtree[k]].any(axis=1) & others
+        sides.append((below, above))
+        if below.sum() == above.sum():
+            inside.append(parent[k] if below[np.flatnonzero(others)[0]] else k)
+        else:
+            inside.append(k if below.sum() < above.sum() else parent[k])
+    # The bubbles in Aste's order: from the outermost bubble, on the outside of all its
+    # separators, level by level inwards, each level in the lexicographic order of the
+    # separators that lead to it. The order breaks ties and sets which merges within a
+    # cluster come first.
+    outermost = int(np.setdiff1d(np.arange(bubbles), inside)[0])
+    order, level = [outermost], {outermost}
+    while level:
+        steps = sorted(
+            (sorted(separators[k - 1].tolist()), k if parent[k] in level else parent[k])
+            for k in range(1, bubbles)
+            if (parent[k] in level) != (k in level)
+        )
+        level = {bubble for _, bubble in steps} - set(order)
+        order += [bubble for _, bubble in steps if bubble in level]
+
+    flows = np.zeros((bubbles, bubbles), dtype=bool)
+    for k, separator in enumerate(separators, start=1):
+        # The link points to the side the separator is most strongly attached to; on a
+        # tie away from the outermost bubble.
+        below, above = sides[k - 1]
+        near, far = (k, parent[k]) if subtree[k, outermost] else (parent[k], k)
+        near_side, far_side = (
+            (below, above) if subtree[k, outermost] else (above, below)
+        )
+        if (
+            strength[np.ix_(separator, near_side)].sum()
+            > strength[np.ix_(separator, far_side)].sum()
+        ):
+            flows[far, near] = True
+        else:
+            flows[near, far] = True
+    cliques, member = cliques[order], member[:, order]
+    flows = flows[np.ix_(order, order)]
+
+    converging = np.flatnonzero(~flows.any(axis=1))
+    labels = np.zeros(count, dtype=int)
+    if len(converging) > 1:
+        # The bubbles that flow into every converging bubble, and the vertices they hold.
+        basins = np.zeros((bubbles, len(converging)), dtype=bool)
+        basins[converging, np.arange(len(converging))] = True
+        for _ in range(bubbles):
+            grown = basins | (flows.astype(int) @ basins.astype(int) > 0)
+            if (grown == basins).all():
+                break
+            basins = grown
+        reach = (member.astype(int) @ basins.astype(int)) > 0
+        centre = member[:, converging]
+        chi = (strength @ centre) / (3 * (centre.sum(axis=0) - 2))
+        assigned = centre.any(axis=1)
+        # A vertex of several converging bubbles goes to the largest χ over all of them,
+        # including those it is linked to without being their vertex, as in Aste's code.
+        core = centre & (centre.sum(axis=1) == 1)[:, None]
+        shared = centre.sum(axis=1) > 1
+        core[shared, np.argmax(chi[shared], axis=1)] = True
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mean_path = paths @ core / core.sum(axis=0)
+        labels = np.argmax(core, axis=1)
+        labels[~assigned] = np.argmin(
+            np.where(reach, mean_path, np.inf)[~assigned], axis=1
+        )
+
+    # The bubble of every vertex within its cluster.
+    internal = np.array(
+        [strength[np.ix_(clique, clique)].sum() / 2 for clique in cliques]
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        attachment = (strength @ member) / internal
+    home = np.argmax(np.where(member, attachment, -np.inf), axis=1)
+
+    rows: list[list[float]] = []
+    group = np.arange(count)
+
+    def agglomerate(vertices: np.ndarray, heights: np.ndarray | None) -> None:
+        """
+        Merges the groups of the vertices by complete linkage on the shortest paths,
+        with the given heights, or the number of groups joined when None.
+        """
+        ids = list(np.unique(group[vertices]))
+        sets = [vertices[group[vertices] == i] for i in ids]
+        farthest = np.array([paths[members].max(axis=0) for members in sets])
+        spread = np.column_stack([farthest[:, members].max(axis=1) for members in sets])
+        units = np.ones(len(ids))
+        for step in range(len(ids) - 1):
+            # The largest distance within the union of every pair of groups; the first
+            # smallest in the order of the groups' numbers is merged.
+            diameter = np.diag(spread)
+            union = np.maximum(spread, np.maximum.outer(diameter, diameter))
+            union[np.tril_indices(len(ids))] = np.inf
+            first, second = np.unravel_index(int(np.argmin(union)), union.shape)
+            height = units[first] + units[second] if heights is None else heights[step]
+            joined = np.concatenate([sets[first], sets[second]])
+            rows.append([ids[first], ids[second], height, len(joined)])
+            group[joined] = count + len(rows) - 1
+            merged = np.maximum(spread[first], spread[second])
+            merged = np.append(merged, union[first, second])
+            keep = [i for i in range(len(ids)) if i not in (first, second)]
+            spread = np.vstack(
+                [
+                    np.column_stack([spread[np.ix_(keep, keep)], merged[keep]]),
+                    merged[keep + [len(ids)]],
+                ]
+            )
+            ids = [ids[i] for i in keep] + [count + len(rows) - 1]
+            sets = [sets[i] for i in keep] + [joined]
+            units = np.append(units[keep], units[first] + units[second])
+
+    for label in np.unique(labels):
+        cluster = np.flatnonzero(labels == label)
+        heights = 1 / np.arange(len(cluster) - 1, 0, -1)
+        done = 0
+        for bubble in np.unique(home[cluster]):
+            vertices = cluster[home[cluster] == bubble]
+            agglomerate(vertices, heights[done : done + len(vertices) - 1])
+            done += len(vertices) - 1
+        agglomerate(cluster, heights[done:])
+    agglomerate(np.arange(count), None)
+
+    matrix = np.array(rows, dtype=float)
+    return optimal_leaf_ordering(matrix, squareform(distance, checks=False))
+
+
 def get_hierarchical_equal_risk_contribution_weights(
     covariance: pd.DataFrame,
     linkage_method: str = "ward",
@@ -2496,6 +2852,7 @@ def get_hierarchical_equal_risk_contribution_weights(
     minimum_acceptable_return: float | str = 0.0,
     within_clusters: str = "inverse_risk",
     cluster_criterion: str = "two_difference_gap",
+    similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Hierarchical Equal Risk Contribution (Raffinot, 2018): the assets are clustered on
@@ -2524,7 +2881,9 @@ def get_hierarchical_equal_risk_contribution_weights(
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
         linkage_method (str, optional): The linkage of the hierarchical clustering:
-            "single", "complete", "average" or "ward". Defaults to "ward", as in the paper.
+            "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
+            Hierarchical Tree and, without a number of clusters, its own clusters).
+            Defaults to "ward", as in the paper.
         clusters (int | None, optional): The number of clusters. Defaults to None, chosen
             by the two-order difference of the gap statistic.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
@@ -2557,6 +2916,9 @@ def get_hierarchical_equal_risk_contribution_weights(
         cluster_criterion (str, optional): How the number of clusters is chosen when it
             is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
             "two_difference_gap".
+        similarity (pd.DataFrame | None, optional): The similarity matrix of
+            linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
+            None, 1 - d² of the distance, (1 + ρ) / 2 for the correlation distance.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2582,6 +2944,7 @@ def get_hierarchical_equal_risk_contribution_weights(
         correlation,
         distance,
         cluster_criterion,
+        similarity,
     )
     sigma = covariance.to_numpy()
     data = None
@@ -2662,6 +3025,7 @@ def get_nested_clustered_optimization_weights(
     confidence_level: float = 0.95,
     minimum_acceptable_return: float | str = 0.0,
     cluster_criterion: str = "two_difference_gap",
+    similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Nested Clustered Optimization (López de Prado, 2019): the assets are clustered on
@@ -2699,7 +3063,9 @@ def get_nested_clustered_optimization_weights(
         risk_free_rate (float, optional): The annualized risk free rate of the maximum
             Sharpe ratio. Defaults to 0.
         linkage_method (str, optional): The linkage of the hierarchical clustering:
-            "single", "complete", "average" or "ward". Defaults to "ward".
+            "single", "complete", "average", "ward" or "dbht" (the Directed Bubble
+            Hierarchical Tree and, without a number of clusters, its own clusters).
+            Defaults to "ward".
         clusters (int | None, optional): The number of clusters. Defaults to None, chosen
             by the two-order difference of the gap statistic.
         correlation (pd.DataFrame | None, optional): The correlation matrix the assets
@@ -2720,6 +3086,9 @@ def get_nested_clustered_optimization_weights(
         cluster_criterion (str, optional): How the number of clusters is chosen when it
             is not given: "two_difference_gap" or "standardized_silhouette". Defaults to
             "two_difference_gap".
+        similarity (pd.DataFrame | None, optional): The similarity matrix of
+            linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
+            None, 1 - d² of the distance, (1 + ρ) / 2 for the correlation distance.
 
     Returns:
         pd.Series: The weight per asset.
@@ -2791,6 +3160,7 @@ def get_nested_clustered_optimization_weights(
         correlation,
         distance,
         cluster_criterion,
+        similarity,
     )
     within = pd.DataFrame(0.0, index=covariance.index, columns=np.unique(labels))
     for label in within.columns:
@@ -4624,12 +4994,17 @@ def get_hierarchical_order(
     linkage_method: str = "single",
     correlation: pd.DataFrame | None = None,
     distance: pd.DataFrame | None = None,
+    similarity: pd.DataFrame | None = None,
 ) -> np.ndarray:
     """
     The order of the assets that Hierarchical Risk Parity bisects (López de Prado, 2016,
     Stages 1 and 2): the leaves of the hierarchical clustering on the Euclidean distance
     between the columns of the correlation distance matrix d = √((1 - ρ) / 2), so that
     similar assets sit next to each other.
+
+    With linkage_method="dbht", the leaves of the Directed Bubble Hierarchical Tree of
+    the distance d itself and the similarity (see get_dbht_linkage), as the DBHT works
+    on the graph of the distances rather than on a distance between their columns.
 
     Args:
         covariance (pd.DataFrame): The covariance matrix of the assets.
@@ -4640,6 +5015,8 @@ def get_hierarchical_order(
             matrix.
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, in place of the correlation distance. Defaults to None.
+        similarity (pd.DataFrame | None, optional): The similarity matrix of "dbht".
+            Defaults to None, 1 - d² of the distance.
 
     Returns:
         np.ndarray: The positions of the assets in the order of the leaves.
@@ -4660,6 +5037,17 @@ def get_hierarchical_order(
             )
         )
         np.fill_diagonal(matrix, 0)
+    if linkage_method == "dbht":
+        return leaves_list(
+            get_dbht_linkage(
+                matrix,
+                (
+                    None
+                    if similarity is None
+                    else similarity.loc[covariance.index, covariance.index]
+                ),
+            )
+        )
     # The Euclidean distance between the columns of the distance matrix that the paper
     # clusters on (the paper's listing passes the square matrix to linkage, which reads the
     # rows as observations and does exactly this).
@@ -4717,6 +5105,7 @@ def get_schur_complementary_weights(
     maximum_weight: float | dict[str, float] = 1.0,
     correlation: pd.DataFrame | None = None,
     distance: pd.DataFrame | None = None,
+    similarity: pd.DataFrame | None = None,
 ) -> pd.Series:
     """
     Schur Complementary Allocation (Cotton, 2024): Hierarchical Risk Parity whose splits
@@ -4754,8 +5143,9 @@ def get_schur_complementary_weights(
         covariance (pd.DataFrame): The covariance matrix of the assets.
         gamma (float, optional): How much of the covariance between the halves the splits
             use, from 0 (Hierarchical Risk Parity) to 1. Defaults to 0.5.
-        linkage_method (str, optional): The linkage of the hierarchical clustering.
-            Defaults to "single", as in Hierarchical Risk Parity.
+        linkage_method (str, optional): The linkage of the hierarchical clustering, as
+            in Hierarchical Risk Parity, including "dbht". Defaults to "single", as in
+            Hierarchical Risk Parity.
         minimum_weight (float | dict[str, float], optional): The lowest weight of every
             asset, or per asset ({"AAPL": 0.05}, the others 0). Defaults to 0.
         maximum_weight (float | dict[str, float], optional): The highest weight of every
@@ -4765,6 +5155,9 @@ def get_schur_complementary_weights(
             matrix.
         distance (pd.DataFrame | None, optional): The distance matrix the assets are
             clustered on, in place of the correlation distance. Defaults to None.
+        similarity (pd.DataFrame | None, optional): The similarity matrix of
+            linkage_method="dbht", e.g. from get_codependence_similarity. Defaults to
+            None, 1 - d² of the distance, (1 + ρ) / 2 for the correlation distance.
 
     Returns:
         pd.Series: The weight per asset.
@@ -4784,7 +5177,9 @@ def get_schur_complementary_weights(
             "Schur Complementary Allocation holds long positions only; the minimum "
             "weight cannot be negative."
         )
-    order = get_hierarchical_order(covariance, linkage_method, correlation, distance)
+    order = get_hierarchical_order(
+        covariance, linkage_method, correlation, distance, similarity
+    )
     # The blocks are augmented in place, so every later split works on the augmented
     # blocks of the cluster it splits.
     sigma = covariance.to_numpy(dtype=float, copy=True)

@@ -1645,9 +1645,12 @@ class AnalysisConstruction:
             covariance (str, optional): The covariance estimator whose correlation
                 "pearson" is. Defaults to "sample".
             linkage_method (str, optional): The linkage of "hierarchical": "single",
-                "complete", "average" or "ward". Defaults to "ward".
+                "complete", "average", "ward" or "dbht" (the Directed Bubble Hierarchical
+                Tree of Song, Di Matteo and Aste, 2012, which finds the number of clusters
+                itself in the TMFG planar graph of the codependence). Defaults to "ward".
             clusters (int | None, optional): The number of clusters of "hierarchical".
-                Defaults to None, chosen by the two-order difference of the gap statistic.
+                Defaults to None, chosen by the two-order difference of the gap statistic
+                (by the DBHT itself for "dbht").
             cluster_criterion (str, optional): How "hierarchical" chooses the number of
                 clusters when it is not given: "two_difference_gap" or
                 "standardized_silhouette" (the highest mean over standard deviation of
@@ -1718,6 +1721,13 @@ class AnalysisConstruction:
                     returns, covariance_matrix, codependence
                 ),
                 cluster_criterion=cluster_criterion,
+                similarity=(
+                    optimization_model.get_codependence_similarity(
+                        returns, covariance_matrix, codependence
+                    )
+                    if linkage_method == "dbht"
+                    else None
+                ),
             )
         return pd.DataFrame({"Cluster": labels + 1}, index=covariance_matrix.index)
 

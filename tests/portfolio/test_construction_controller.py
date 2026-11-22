@@ -1601,3 +1601,32 @@ def test_get_distributionally_robust_cvar_weights(recorder, portfolio_module):
             wasserstein_radius=0.0, risk_aversion=5.0, include_benchmark=True
         )
     )
+
+
+def test_hierarchical_weights_on_the_dbht(recorder, portfolio_module):
+    # Three assets form one bubble of the TMFG, so the DBHT holds a single cluster.
+    herc = portfolio_module.get_hierarchical_equal_risk_contribution_weights(
+        linkage_method="dbht", include_benchmark=True
+    )
+    recorder.capture(herc)
+    assert (herc["Cluster"].drop("Portfolio") == 1).all()
+    recorder.capture(
+        portfolio_module.get_hierarchical_risk_parity_weights(
+            linkage_method="dbht", codependence="spearman", include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_nested_clustered_optimization_weights(
+            linkage_method="dbht", include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_schur_complementary_weights(
+            linkage_method="dbht", include_benchmark=True
+        )
+    )
+    recorder.capture(
+        portfolio_module.get_asset_clusters(
+            linkage_method="dbht", codependence="distance", include_benchmark=True
+        )
+    )

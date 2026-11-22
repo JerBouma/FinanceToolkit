@@ -23,7 +23,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class VolatilityRisk:
     """
-    Volatility: GARCH, GJR-GARCH and EGARCH fits and forecasts, realized and EWMA volatility, the HAR-RV forecast, excess volatility and the downside deviation.
+    Volatility: GARCH, GJR-GARCH and EGARCH fits and forecasts, realized and EWMA volatility, the HAR-RV forecast, excess volatility, the downside and upside deviation and the volatility skewness.
     """
 
     @handle_portfolio
@@ -1732,7 +1732,7 @@ class VolatilityRisk:
     def get_downside_deviation(
         self,
         period: str | None = None,
-        minimum_acceptable_return: float = 0.0,
+        minimum_acceptable_return: float | str = 0.0,
         within_period: bool = False,
         rolling: int | None = None,
         rounding: int | None = None,
@@ -1756,13 +1756,34 @@ class VolatilityRisk:
         Where n is the number of all returns, so returns above the MAR count as a shortfall of zero rather than
         being left out.
 
-        Also known as: semi-deviation, downside risk, downside volatility.
+        With minimum_acceptable_return="mean" it is the Semi-Deviation of Markowitz (1959), the dispersion
+        below each sample's own mean:
+
+        - Semi-Deviation = √(Σ min(Return_t - Mean, 0)^2 / (n - 1))
+
+        Divided by n - 1, as the sample variance is, since the mean is estimated from the same returns. Its
+        square is the semi-variance.
+
+        For more information, see the following sources:
+
+        - Sortino, F.A. and Price, L.N. (1994). "Performance Measurement in a Downside Risk Framework." The
+        Journal of Investing, 3(3), 59-64.
+        - Markowitz, H.M. (1959). "Portfolio Selection: Efficient Diversification of Investments." John
+        Wiley & Sons, chapter 9 (the semi-variance).
+        - riskfolio-lib: RiskFunctions.SemiDeviation (https://github.com/dcajasn/Riskfolio-Lib).
+        - skfolio: measures.semi_deviation and measures.semi_variance
+        (https://skfolio.org/api.html#module-skfolio.measures).
+        - PerformanceAnalytics (R): DownsideDeviation and SemiDeviation
+        (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: semi-deviation, semi-variance (its square), downside risk, downside volatility.
 
         Args:
             period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
                 Defaults to "daily".
-            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used as the
-            threshold below which returns are considered downside. Defaults to 0.0.
+            minimum_acceptable_return (float | str, optional): The minimum acceptable return (MAR) used as the
+            threshold below which returns are considered downside, per observation of the chosen `period`, or
+            "mean" for the Semi-Deviation below the mean. Defaults to 0.0.
             within_period (bool, optional): Whether to calculate the Downside Deviation within the specified
             period or for the entire period. Thus whether to look at the Downside Deviation within a specific
             year (if period = 'yearly') or look at the entirety of all years. Defaults to False.
@@ -1792,6 +1813,10 @@ class VolatilityRisk:
         Downside Deviation for each asset in the Toolkit instance.
         - If `growth` is set to True, the method calculates the growth of the Downside Deviation values using
         the specified `lag`.
+        - With the default MAR of 0 the result equals PerformanceAnalytics' DownsideDeviation (method="full").
+        With minimum_acceptable_return="mean" it equals riskfolio-lib's SemiDeviation and skfolio's
+        semi_deviation (skfolio's semi_variance is its square), while PerformanceAnalytics' SemiDeviation
+        divides by n.
 
         As an example:
 
@@ -1867,6 +1892,255 @@ class VolatilityRisk:
             standardize=standardize,
             axis="rows",
             apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_upside_deviation(
+        self,
+        period: str | None = None,
+        minimum_acceptable_return: float = 0.0,
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Upside Deviation of an investment portfolio or asset's returns.
+
+        The Upside Deviation is the mirror image of the Downside Deviation: it measures the dispersion of
+        the returns above a minimum acceptable return (MAR), the volatility an investor welcomes. Next to the
+        Downside Deviation it shows whether an asset's volatility comes from its gains or from its losses,
+        and their ratio is the Variability Skewness (`get_volatility_skewness`).
+
+        The formula is as follows (with the default minimum_acceptable_return of 0):
+
+        - Upside Deviation = √(Σ max(Return_t - MAR, 0)^2 / n)
+
+        Where n is the number of all returns, so returns below the MAR count as zero rather than being left
+        out. Its square is the upside variance and the upper partial moment of order 1 the upside potential
+        (`get_partial_moment` with side="upper").
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley &
+        Sons, chapter 4 (upside risk).
+        - PerformanceAnalytics (R): UpsideRisk (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: upside risk, upside volatility, upside semi-deviation.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) per
+            observation of the chosen `period` (e.g. per day), above which returns count as upside.
+            Defaults to 0.0.
+            within_period (bool, optional): Whether to calculate the Upside Deviation within the specified period or
+            for the entire period. Thus whether to look at the Upside Deviation within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Upside Deviation
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Upside Deviation values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Upside Deviation values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Upside Deviation for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Upside Deviation values using the
+        specified `lag`.
+        - The result equals PerformanceAnalytics' UpsideRisk with the default method="full" and stat="risk".
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["NEE", "DUK", "SO"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_upside_deviation(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |    NEE |    DUK |     SO |   Benchmark |
+        |:-----|-------:|-------:|-------:|------------:|
+        | 2021 | 0.0098 | 0.0077 | 0.0072 |      0.0062 |
+        | 2022 | 0.014  | 0.0091 | 0.0102 |      0.0105 |
+        | 2023 | 0.0112 | 0.0081 | 0.0085 |      0.0063 |
+        | 2024 | 0.0109 | 0.0076 | 0.0081 |      0.0058 |
+        | 2025 | 0.0124 | 0.0076 | 0.0078 |      0.0092 |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = risk_model.get_partial_moment(
+            returns,
+            order=2,
+            minimum_acceptable_return=minimum_acceptable_return,
+            side="upper",
+            root=True,
+            window_size=rolling,
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_volatility_skewness(
+        self,
+        period: str | None = None,
+        minimum_acceptable_return: float = 0.0,
+        method: str = "volatility",
+        within_period: bool = False,
+        rolling: int | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ):
+        """
+        Calculate the Volatility Skewness or Variability Skewness of an investment portfolio or asset's
+        returns.
+
+        The Volatility Skewness (Bacon 2008) divides the upside variance by the downside variance around a
+        minimum acceptable return (MAR): above 1 the returns spread out more on the gain side than on the
+        loss side, below 1 the volatility comes mostly from losses. The Variability Skewness is its square
+        root, the Upside Deviation over the Downside Deviation, on the scale of the returns. Both describe
+        the asymmetry of the return distribution without the third moment, which a single extreme return
+        can dominate.
+
+        The formula is as follows (with the default minimum_acceptable_return of 0 and method="volatility"):
+
+        - Volatility Skewness = Σ max(Return_t - MAR, 0)^2 / Σ max(MAR - Return_t, 0)^2
+        - Variability Skewness = √(Volatility Skewness) = Upside Deviation / Downside Deviation
+
+        Where the sums run over all returns of the sample, so it is the upside variance over the downside
+        variance, both divided by the number of all returns. A sample without a return below the MAR gives
+        NaN.
+
+        For more information, see the following sources:
+
+        - Bacon, C.R. (2008). "Practical Portfolio Performance Measurement and Attribution." John Wiley &
+        Sons, chapter 4.
+        - PerformanceAnalytics (R): VolatilitySkewness (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: variability skewness, upside to downside variance ratio.
+
+        Args:
+            period (str, optional): The data frequency for returns (daily, weekly, monthly, quarterly, or yearly).
+                Defaults to "daily".
+            minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) per
+            observation of the chosen `period` (e.g. per day). Defaults to 0.0.
+            method (str, optional): "volatility" for the ratio of the variances or "variability" for the
+            ratio of the deviations. Defaults to "volatility".
+            within_period (bool, optional): Whether to calculate the Volatility Skewness within the specified period or
+            for the entire period. Thus whether to look at the Volatility Skewness within a specific year (if period =
+            'yearly') or look at the entirety of all years. Defaults to False.
+            Note that this requires intraday data when period = 'daily', since a
+            single day only nests observations when intraday data was fetched.
+            rolling (int, optional): The rolling window size to use for the calculation. If set, the Volatility Skewness
+            is calculated over a rolling window of this many periods across the full return history
+            instead of per `period`. Defaults to None.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Volatility Skewness values over time.
+            Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation. Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series | pd.DataFrame: Volatility Skewness values, per ticker, or per period (or date) and ticker.
+
+        Notes:
+        - The method retrieves historical return data based on the specified `period` and calculates the
+        Volatility Skewness for each asset in the Toolkit instance, each on its own returns (a ticker that listed later
+        or misses a date another ticker traded is measured on the returns it has).
+        - If `growth` is set to True, the method calculates the growth of the Volatility Skewness values using the
+        specified `lag`.
+        - The result equals PerformanceAnalytics' VolatilitySkewness with stat="volatility" or
+        stat="variability".
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["SPY", "QQQ", "IWM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.risk.get_volatility_skewness(period="yearly", within_period=True)
+        ```
+
+        Which returns:
+
+        |      |    QQQ |    IWM |   Benchmark |
+        |:-----|-------:|-------:|------------:|
+        | 2021 | 1.1361 | 1.1843 |      1.2921 |
+        | 2022 | 0.8549 | 0.9106 |      0.9091 |
+        | 2023 | 1.7396 | 1.3442 |      1.4283 |
+        | 2024 | 1.0406 | 1.1335 |      1.1207 |
+        | 2025 | 1.2522 | 1.1954 |      1.289  |
+        """
+        period = period if period else "daily"
+        returns = self._get_measure_returns(period, within_period, rolling, growth)
+
+        result = risk_model.get_volatility_skewness(
+            returns,
+            minimum_acceptable_return=minimum_acceptable_return,
+            method=method,
+            window_size=rolling,
+        )
+
+        return self._finalize_measure(
+            result,
+            bool(rolling or within_period),
+            rounding,
+            growth,
+            lag,
+            standardize,
         )
 
     @handle_portfolio

@@ -130,6 +130,76 @@ def apply_to_stacked_windows(
     return pd.DataFrame(rolling_values, index=returns.index, columns=returns.columns)
 
 
+def apply_to_observations(
+    returns: pd.Series | pd.DataFrame,
+    function: Callable[[np.ndarray], np.ndarray],
+    window_size: int | None = None,
+    minimum_observations: int = MINIMUM_QUANTILE_OBSERVATIONS,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Apply a calculation to the observed returns of each column: over the whole series, per
+    period for a "within period" (period, date) Multi Index, or over every rolling window.
+
+    The function receives the samples as the rows of a two-dimensional array without missing
+    values (a single row for a column or period, one row per window when rolling) and returns
+    one value per row, so a measure is written once for all three cases. The missing returns of
+    a column (the dates only another ticker traded, the dates before a later listing) are left
+    out, so each ticker is measured on its own history; rolling windows run over each ticker's
+    own trading days (see `by_own_trading_days`).
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with a
+            (period, date) index.
+        function (Callable[[np.ndarray], np.ndarray]): Takes an array with one sample per row
+            and returns one value per row.
+        window_size (int | None, optional): The size of the rolling window. Defaults to None,
+            which calculates one value per column (or per period and column).
+        minimum_observations (int, optional): The returns a column or period needs, fewer give
+            NaN. Defaults to 2.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: A float for a Series, a value per column for a
+        DataFrame, per period and column for a within period index and per date and column
+        when rolling.
+    """
+    if window_size:
+        if window_size < minimum_observations:
+            raise ValueError(
+                f"The rolling window needs at least {minimum_observations} observations."
+            )
+
+        return by_own_trading_days(apply_to_stacked_windows)(
+            returns, window_size, function
+        )
+    if isinstance(returns, pd.Series):
+        values = returns.dropna().to_numpy(dtype=float)
+
+        if len(values) < minimum_observations:
+            return np.nan
+
+        return np.float64(function(values[np.newaxis, :])[0])
+    if isinstance(returns, pd.DataFrame):
+        if returns.index.nlevels == MULTI_PERIOD_INDEX_LEVELS:
+            return pd.DataFrame(
+                {
+                    period: apply_to_observations(
+                        period_returns.droplevel(0),
+                        function,
+                        minimum_observations=minimum_observations,
+                    )
+                    for period, period_returns in returns.groupby(level=0, sort=False)
+                }
+            ).T
+
+        return returns.apply(
+            apply_to_observations,
+            function=function,
+            minimum_observations=minimum_observations,
+        ).astype(float)
+
+    raise TypeError("Expects pd.DataFrame or pd.Series, no other value.")
+
+
 def mask_without_observations(
     result: pd.Series | float, returns: pd.Series | pd.DataFrame
 ) -> pd.Series | float:
@@ -1279,7 +1349,7 @@ def get_rolling_kurtosis(
 
 
 def get_downside_deviation(
-    returns: pd.Series | pd.DataFrame, minimum_acceptable_return: float = 0.0
+    returns: pd.Series | pd.DataFrame, minimum_acceptable_return: float | str = 0.0
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the Downside Deviation of returns, i.e. the square root of the average squared
@@ -1293,6 +1363,12 @@ def get_downside_deviation(
 
         Downside Deviation = sqrt((1 / N) * sum(min(Return - MAR, 0)^2))
 
+    With minimum_acceptable_return="mean" it is the semi-deviation below each sample's own
+    mean (Markowitz 1959), divided by N - 1 as the sample variance is, since the mean is
+    estimated from the same returns:
+
+        Semi-Deviation = sqrt((1 / (N - 1)) * sum(min(Return - Mean, 0)^2))
+
     Also known as: semi-deviation, downside risk, second order lower partial moment.
 
     References:
@@ -1301,8 +1377,9 @@ def get_downside_deviation(
 
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
-        minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used as
-        the threshold below which returns are considered downside. Defaults to 0.0.
+        minimum_acceptable_return (float | str, optional): The minimum acceptable return (MAR) used as
+        the threshold below which returns are considered downside, or "mean" for the semi-deviation
+        below the mean. Defaults to 0.0.
 
     Returns:
         pd.Series | pd.DataFrame: Downside Deviation values as float if returns is a pd.Series,
@@ -1333,6 +1410,17 @@ def get_downside_deviation(
         )
     if isinstance(returns, pd.Series):
         # The second order lower partial moment: shortfalls are squared and averaged over every observation, not only the ones below the threshold, and they are measured from the minimum acceptable return rather than from their own mean -- taking the standard deviation of the shortfalls alone understates the risk materially.  # noqa: E501
+        if minimum_acceptable_return == "mean":
+            # Estimating the mean from the same returns costs a degree of freedom, as in the sample variance (riskfolio-lib and skfolio divide by N - 1 as well).  # noqa: E501
+            shortfalls = (returns - returns.mean()).clip(upper=0)
+            observations = returns.count()
+
+            return (
+                np.sqrt((shortfalls**2).sum() / (observations - 1))
+                if observations > 1
+                else np.nan
+            )
+
         shortfalls = (returns - minimum_acceptable_return).clip(upper=0)
 
         return np.sqrt((shortfalls**2).mean())
@@ -1344,7 +1432,7 @@ def get_downside_deviation(
 def get_rolling_downside_deviation(
     returns: pd.Series | pd.DataFrame,
     window_size: int,
-    minimum_acceptable_return: float = 0.0,
+    minimum_acceptable_return: float | str = 0.0,
 ) -> pd.Series | pd.DataFrame:
     """
     Calculate the rolling Downside Deviation of returns, i.e. the square root of the average
@@ -1354,19 +1442,139 @@ def get_rolling_downside_deviation(
 
         Downside Deviation = sqrt((1 / N) * sum(min(Return - MAR, 0)^2))
 
+    With minimum_acceptable_return="mean" it is the semi-deviation below the mean of each
+    window, divided by N - 1 (see `get_downside_deviation`).
+
     Args:
         returns (pd.Series | pd.DataFrame): A Series or Dataframe of returns.
         window_size (int): The size of the rolling window.
-        minimum_acceptable_return (float, optional): The minimum acceptable return (MAR) used as
-        the threshold below which returns are considered downside. Defaults to 0.0.
+        minimum_acceptable_return (float | str, optional): The minimum acceptable return (MAR) used as
+        the threshold below which returns are considered downside, or "mean" for the semi-deviation
+        below the mean. Defaults to 0.0.
 
     Returns:
         pd.Series | pd.DataFrame: Rolling Downside Deviation values with time as index.
     """
+    if minimum_acceptable_return == "mean":
+        return apply_to_stacked_windows(
+            returns,
+            window_size,
+            lambda windows: np.sqrt(
+                (np.minimum(windows - windows.mean(axis=1, keepdims=True), 0) ** 2).sum(
+                    axis=1
+                )
+                / (window_size - 1)
+            ),
+        )
 
     shortfalls = (returns - minimum_acceptable_return).clip(upper=0)
 
     return np.sqrt((shortfalls**2).rolling(window=window_size).mean())
+
+
+def get_partial_moment(
+    returns: pd.Series | pd.DataFrame,
+    order: float = 1,
+    minimum_acceptable_return: float | str = 0.0,
+    side: str = "lower",
+    root: bool = False,
+    window_size: int | None = None,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the lower or upper partial moment of returns around a minimum acceptable
+    return (MAR), as in Bawa (1975) and Fishburn (1977).
+
+    The formula is as follows:
+
+        Lower Partial Moment = (1 / N) * sum(max(MAR - Return, 0)^order)
+        Upper Partial Moment = (1 / N) * sum(max(Return - MAR, 0)^order)
+
+    Where N counts every return, so the returns on the other side of the MAR count as a
+    deviation of zero. An order of 0 counts the returns strictly below (or above) the MAR,
+    the downside (upside) frequency, as 0^0 is taken as 0 there. With root=True the moment
+    is raised to the power 1 / order, e.g. the Downside Deviation for order 2.
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
+            a (period, date) index.
+        order (float, optional): The order of the moment, 0 or higher. Defaults to 1.
+        minimum_acceptable_return (float | str, optional): The threshold, or "mean" for the
+            mean of each sample. Defaults to 0.0.
+        side (str, optional): "lower" for the deviations below the MAR, "upper" for those
+            above. Defaults to "lower".
+        root (bool, optional): Whether to take the order-th root. Defaults to False.
+        window_size (int | None, optional): The size of the rolling window. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The partial moment, see `apply_to_observations`.
+    """
+    if side not in ["lower", "upper"]:
+        raise ValueError("Side must be lower or upper.")
+    if order < 0 or (root and order == 0):
+        raise ValueError(
+            "The order must be 0 or higher, and higher than 0 to take its root."
+        )
+    if (
+        isinstance(minimum_acceptable_return, str)
+        and minimum_acceptable_return != "mean"
+    ):
+        raise ValueError("The minimum acceptable return must be a number or 'mean'.")
+
+    def partial_moment(samples: np.ndarray) -> np.ndarray:
+        target = (
+            samples.mean(axis=1, keepdims=True)
+            if minimum_acceptable_return == "mean"
+            else minimum_acceptable_return
+        )
+        deviations = target - samples if side == "lower" else samples - target
+        # Multiplying by the indicator keeps 0^0 at 0 for the returns on the other side of the MAR, which makes order 0 the frequency of the deviations.  # noqa: E501
+        moment = (np.clip(deviations, 0, None) ** order * (deviations > 0)).mean(axis=1)
+
+        return moment ** (1 / order) if root else moment
+
+    return apply_to_observations(returns, partial_moment, window_size)
+
+
+def get_volatility_skewness(
+    returns: pd.Series | pd.DataFrame,
+    minimum_acceptable_return: float = 0.0,
+    method: str = "volatility",
+    window_size: int | None = None,
+) -> pd.Series | pd.DataFrame | float:
+    """
+    Calculate the Volatility Skewness or Variability Skewness of returns (Bacon 2008): the
+    upside variance over the downside variance around a minimum acceptable return (MAR), or
+    the square root of that ratio, the upside risk over the downside risk.
+
+    The formula is as follows:
+
+        Volatility Skewness = sum(max(Return - MAR, 0)^2) / sum(max(MAR - Return, 0)^2)
+        Variability Skewness = sqrt(Volatility Skewness)
+
+    Args:
+        returns (pd.Series | pd.DataFrame): A Series or DataFrame of returns, optionally with
+            a (period, date) index.
+        minimum_acceptable_return (float, optional): The MAR. Defaults to 0.0.
+        method (str, optional): "volatility" or "variability". Defaults to "volatility".
+        window_size (int | None, optional): The size of the rolling window. Defaults to None.
+
+    Returns:
+        pd.Series | pd.DataFrame | float: The ratio, NaN without a return below the MAR.
+    """
+    if method not in ["volatility", "variability"]:
+        raise ValueError("Method must be volatility or variability.")
+
+    def volatility_skewness(samples: np.ndarray) -> np.ndarray:
+        deviations = samples - minimum_acceptable_return
+        upside = (np.clip(deviations, 0, None) ** 2).sum(axis=1)
+        downside = (np.clip(-deviations, 0, None) ** 2).sum(axis=1)
+        ratio = np.divide(
+            upside, downside, out=np.full(len(samples), np.nan), where=downside > 0
+        )
+
+        return ratio if method == "volatility" else np.sqrt(ratio)
+
+    return apply_to_observations(returns, volatility_skewness, window_size)
 
 
 def get_excess_volatility(

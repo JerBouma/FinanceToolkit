@@ -879,16 +879,25 @@ def get_historical_data(
                     dividends_df.index = pd.DatetimeIndex(dividends_df.index).to_period(
                         freq="D"
                     )
+                    # An ordinary and a special dividend with the same ex-dividend date (such as Airbus in 2024 and 2025) are two records that are both paid, so they are added up; only a record that is served twice is one payment. Keeping one record per date would leave out the other dividend and its order in the response would decide which.  # noqa: E501
                     dividends_df = dividends_df[
-                        ~dividends_df.index.duplicated(keep="first")
+                        ~dividends_df.reset_index().duplicated().to_numpy()
                     ]
 
                     # The prices are split-adjusted, so the dividends are too: "dividend"
                     # is the amount as paid, which before a 4-for-1 split is four times
                     # the dividend per share of today.
-                    paid = dividends_df[
-                        ("adjDividend" if "adjDividend" in dividends_df else "dividend")
-                    ]
+                    paid = (
+                        dividends_df[
+                            (
+                                "adjDividend"
+                                if "adjDividend" in dividends_df
+                                else "dividend"
+                            )
+                        ]
+                        .groupby(level=0)
+                        .sum()
+                    )
 
                     if (
                         user_subscription == "Free"

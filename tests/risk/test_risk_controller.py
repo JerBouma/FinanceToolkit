@@ -1296,3 +1296,135 @@ def test_the_marginal_expected_shortfall_of_a_stock_ignores_a_cryptocurrency_nex
     )
     # The cryptocurrency's weekend returns are compounded into the Monday of the market.
     assert mixed.get_marginal_expected_shortfall(rounding=None)["BTC"].notna().all()
+
+
+def test_get_downside_deviation_semi_deviation(recorder, risk_module):
+    recorder.capture(
+        risk_module.get_downside_deviation(minimum_acceptable_return="mean")
+    )
+    recorder.capture(
+        risk_module.get_downside_deviation(
+            period="monthly", rolling=6, minimum_acceptable_return="mean"
+        )
+    )
+
+
+def test_get_upside_deviation(recorder, risk_module):
+    recorder.capture(risk_module.get_upside_deviation())
+    recorder.capture(
+        risk_module.get_upside_deviation(period="yearly", within_period=True)
+    )
+    recorder.capture(
+        risk_module.get_upside_deviation(minimum_acceptable_return=0.001, rolling=20)
+    )
+
+
+def test_get_volatility_skewness(recorder, risk_module):
+    recorder.capture(risk_module.get_volatility_skewness())
+    recorder.capture(
+        risk_module.get_volatility_skewness(
+            period="yearly", within_period=True, method="variability"
+        )
+    )
+    recorder.capture(risk_module.get_volatility_skewness(period="weekly", rolling=26))
+
+
+def test_get_partial_moment(recorder, risk_module):
+    recorder.capture(risk_module.get_partial_moment())
+    recorder.capture(
+        risk_module.get_partial_moment(period="yearly", within_period=True, order=0)
+    )
+    recorder.capture(
+        risk_module.get_partial_moment(
+            order=2, minimum_acceptable_return="mean", side="upper", root=True
+        )
+    )
+    recorder.capture(
+        risk_module.get_partial_moment(
+            period="yearly", within_period=True, growth=True, order=3
+        )
+    )
+    recorder.capture(risk_module.get_partial_moment(period="weekly", rolling=13))
+
+
+def test_get_central_moment(recorder, risk_module):
+    recorder.capture(risk_module.get_central_moment(rounding=12))
+    recorder.capture(
+        risk_module.get_central_moment(
+            period="yearly", within_period=True, order=4, rounding=12
+        )
+    )
+    recorder.capture(
+        risk_module.get_central_moment(period="monthly", rolling=12, rounding=10)
+    )
+
+
+def test_get_worst_realization(recorder, risk_module):
+    recorder.capture(risk_module.get_worst_realization())
+    recorder.capture(
+        risk_module.get_worst_realization(period="yearly", within_period=True)
+    )
+    recorder.capture(risk_module.get_worst_realization(period="weekly", rolling=4))
+
+
+def test_get_gini_mean_difference(recorder, risk_module):
+    recorder.capture(risk_module.get_gini_mean_difference())
+    recorder.capture(
+        risk_module.get_gini_mean_difference(
+            period="yearly", within_period=True, growth=True
+        )
+    )
+    recorder.capture(risk_module.get_gini_mean_difference(period="monthly", rolling=6))
+
+
+def test_get_tail_gini(recorder, risk_module):
+    recorder.capture(risk_module.get_tail_gini())
+    recorder.capture(
+        risk_module.get_tail_gini(period="yearly", within_period=True, alpha=0.1)
+    )
+    recorder.capture(risk_module.get_tail_gini(rolling=60, simulations=50))
+
+
+def test_get_risk_range(recorder, risk_module):
+    recorder.capture(risk_module.get_risk_range())
+    recorder.capture(risk_module.get_risk_range(measure="var", alpha=0.25))
+    recorder.capture(
+        risk_module.get_risk_range(
+            period="yearly", within_period=True, measure="cvar", beta=0.1
+        )
+    )
+    recorder.capture(risk_module.get_risk_range(measure="tail_gini", rolling=60))
+
+
+def test_get_l_moment(recorder, risk_module):
+    recorder.capture(risk_module.get_l_moment())
+    recorder.capture(
+        risk_module.get_l_moment(
+            period="yearly", within_period=True, order=4, ratio=True
+        )
+    )
+    recorder.capture(
+        risk_module.get_l_moment(period="monthly", rolling=12, order=3, ratio=True)
+    )
+
+
+def test_get_l_moment_risk_measure(recorder, risk_module):
+    recorder.capture(risk_module.get_l_moment_risk_measure())
+    recorder.capture(
+        risk_module.get_l_moment_risk_measure(
+            period="yearly", within_period=True, method="crra"
+        )
+    )
+    recorder.capture(
+        risk_module.get_l_moment_risk_measure(order=6, method="mss", rolling=120)
+    )
+
+
+def test_get_skewness_kurtosis_ratio(recorder, risk_module):
+    recorder.capture(risk_module.get_skewness_kurtosis_ratio())
+    recorder.capture(
+        risk_module.get_skewness_kurtosis_ratio(period="yearly", within_period=True)
+    )
+    recorder.capture(
+        risk_module.get_skewness_kurtosis_ratio(period="monthly", rolling=12)
+    )

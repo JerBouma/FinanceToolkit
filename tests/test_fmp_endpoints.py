@@ -1952,3 +1952,32 @@ def test_intraday_bars_of_a_single_day_are_returned(responses):
     assert str(intraday.index[0]) == "2026-11-20 09:00"
     assert str(intraday.index[-1]) == "2026-11-20 15:00"
     assert intraday["Close"].iloc[-1] == pytest.approx(115.5)
+
+
+def test_dividends_on_the_same_ex_dividend_date_are_added_up(monkeypatch):
+    # An ordinary dividend of 1.5 and a special dividend of 0.5 on the same ex-dividend
+    # date, in either order, and a record that is served twice.
+    for records in (
+        [
+            {"date": "2024-01-04", "adjDividend": 0.5, "label": "special"},
+            {"date": "2024-01-04", "adjDividend": 1.5, "label": "ordinary"},
+        ],
+        [
+            {"date": "2024-01-04", "adjDividend": 1.5, "label": "ordinary"},
+            {"date": "2024-01-04", "adjDividend": 0.5, "label": "special"},
+            {"date": "2024-01-04", "adjDividend": 0.5, "label": "special"},
+        ],
+    ):
+        _fake_prices_with_a_dividend(monkeypatch, records)
+
+        data = fmp_model.get_historical_data(
+            "X",
+            api_key="KEY",
+            start="2024-01-02",
+            end="2024-01-08",
+            user_subscription="Premium",
+        )
+
+        assert data["Dividends"].loc["2024-01-04"] == pytest.approx(2.0)
+        assert data["Adj Close"].iloc[0] == pytest.approx(100 * (1 - 2 / 101))
+        assert data["Return"].iloc[2] == pytest.approx(0)

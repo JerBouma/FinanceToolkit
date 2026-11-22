@@ -29,6 +29,9 @@ from financetoolkit.econometrics.significance.significance_controller import (
 from financetoolkit.econometrics.stationarity.stationarity_controller import (
     StationarityEconometrics,
 )
+from financetoolkit.econometrics.statistics.statistics_controller import (
+    StatisticsEconometrics,
+)
 from financetoolkit.econometrics.testing.testing_controller import TestingEconometrics
 from financetoolkit.helpers import LazyDict
 from financetoolkit.risk.helpers import (
@@ -341,6 +344,7 @@ class Econometrics(
     ForecastingEconometrics,
     DynamicsEconometrics,
     SignificanceEconometrics,
+    StatisticsEconometrics,
     EconometricsBase,
 ):
     """
@@ -350,7 +354,9 @@ class Econometrics(
     (Granger causality), and general model/residual diagnostics (ARCH effects,
     normality, autocorrelation, structural stability). These are the standard
     foundational tests behind approaches such as pairs trading, spread modeling,
-    and choosing an appropriate volatility or return model in the first place.
+    and choosing an appropriate volatility or return model in the first place. Next
+    to the tests, it holds the rolling statistics of a series: the rolling linear
+    regression, correlation, median, percentile, z-score and others.
 
     Through the Toolkit (`toolkit.econometrics`) it analyzes the prices and returns of the
     Toolkit's tickers. Standalone, `Econometrics(data=...)` analyzes any metric: ratios,

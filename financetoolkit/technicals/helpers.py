@@ -84,6 +84,9 @@ FACTOR_COLLECTIONS = {
         "get_pretty_good_oscillator",
         "get_psychological_line",
         "get_volatility_based_momentum",
+        "get_correlation_trend_indicator",
+        "get_forecast_oscillator",
+        "get_projection_oscillator",
     ],
     "overlap": [
         "get_moving_average",
@@ -185,8 +188,6 @@ FACTOR_PRICE_LINES = (
     "get_profit_maximizer",
     "get_pivot_points",
     "get_fibonacci_retracement_levels",
-    "get_rolling_median",
-    "get_rolling_percentile",
     "get_hilbert_instantaneous_trendline",
     "get_mesa_adaptive_moving_average",
 )
@@ -206,9 +207,6 @@ FACTOR_PRICE_DIFFERENCES = (
     "get_elder_ray_index",
     "get_detrended_price_oscillator",
     "get_force_index",
-    "get_slope",
-    "get_rolling_mean_absolute_deviation",
-    "get_rolling_standard_error",
     "get_hilbert_phasor_components",
 )
 

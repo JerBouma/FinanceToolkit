@@ -410,3 +410,52 @@ def test_new_volatility_indicators_stop_where_the_prices_stop():
     ):
         assert result.iloc[-3:].isna().all()
         assert result.iloc[-10:-3].notna().all()
+
+
+def random_prices() -> pd.DataFrame:
+    """80 bars of a random walk with a high and low around each close."""
+    rng = np.random.default_rng(7)
+    close = 100 + rng.normal(0, 1, 80).cumsum()
+    return pd.DataFrame(
+        {
+            "High": close + 1 + rng.random(80),
+            "Low": close - 1 - rng.random(80),
+            "Close": close,
+        }
+    )
+
+
+def test_standard_deviation_channel_matches_pandas_ta_classic():
+    """pandas-ta-classic's tos_stdevall(length=40): the line and the upper band at 2."""
+    closes = random_prices()["Close"]
+    result = volatility_model.get_standard_deviation_channel(closes, 40)
+
+    assert result["Linear Regression"].first_valid_index() == 40
+    assert [
+        result["Linear Regression"].iloc[40],
+        result["Upper Band 2"].iloc[40],
+        result["Linear Regression"].iloc[-1],
+        result["Upper Band 2"].iloc[-1],
+    ] == pytest.approx([84.766764, 87.478202, 85.791096, 88.502533], abs=1e-6)
+    assert list(result.columns) == [
+        "Linear Regression",
+        "Lower Band 1",
+        "Upper Band 1",
+        "Lower Band 2",
+        "Upper Band 2",
+        "Lower Band 3",
+        "Upper Band 3",
+    ]
+
+
+def test_standard_deviation_channel_takes_one_width():
+    result = volatility_model.get_standard_deviation_channel(
+        random_prices()["Close"], num_std_dev=1.5
+    )
+
+    assert list(result.columns) == [
+        "Linear Regression",
+        "Lower Band 1.5",
+        "Upper Band 1.5",
+    ]
+    assert result.notna().all().all()

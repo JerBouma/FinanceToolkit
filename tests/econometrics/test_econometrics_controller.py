@@ -1090,3 +1090,131 @@ def test_a_data_series_keeps_its_observations():
         econometrics.get_level_significance(period="daily").loc["Rate", "Observations"]
         == 3
     )
+
+
+def test_get_linear_regression(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_linear_regression())
+    recorder.capture(econometrics_module.get_linear_regression(window=20))
+    recorder.capture(econometrics_module.get_linear_regression(include_benchmark=True))
+
+
+def test_get_slope(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_slope())
+    recorder.capture(econometrics_module.get_slope(window=5))
+    recorder.capture(econometrics_module.get_slope(as_angle=True))
+    recorder.capture(econometrics_module.get_slope(period="weekly"))
+
+
+def test_get_rolling_correlation(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_rolling_correlation(column="Adj Close"))
+    recorder.capture(
+        econometrics_module.get_rolling_correlation(column="High", against="Low")
+    )
+    recorder.capture(
+        econometrics_module.get_rolling_correlation(column="Adj Close", against="MSFT")
+    )
+    recorder.capture(econometrics_module.get_rolling_correlation())
+
+
+def test_get_rolling_median(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_rolling_median())
+    recorder.capture(econometrics_module.get_rolling_median(window=9))
+    recorder.capture(econometrics_module.get_rolling_median(column="Return"))
+
+
+def test_get_rolling_percentile(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_rolling_percentile())
+    recorder.capture(
+        econometrics_module.get_rolling_percentile(window=30, percentile=0.75)
+    )
+    recorder.capture(econometrics_module.get_rolling_percentile(method="linear"))
+    recorder.capture(econometrics_module.get_rolling_percentile(period="weekly"))
+
+
+def test_get_percent_rank(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_percent_rank())
+    recorder.capture(econometrics_module.get_percent_rank(window=30))
+    recorder.capture(econometrics_module.get_percent_rank(column="Return"))
+
+
+def test_get_rolling_z_score(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_rolling_z_score())
+    recorder.capture(econometrics_module.get_rolling_z_score(window=20))
+    recorder.capture(econometrics_module.get_rolling_z_score(column="Return"))
+
+
+def test_get_rolling_mean_absolute_deviation(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_rolling_mean_absolute_deviation())
+    recorder.capture(econometrics_module.get_rolling_mean_absolute_deviation(window=30))
+    recorder.capture(
+        econometrics_module.get_rolling_mean_absolute_deviation(column="Return")
+    )
+
+
+def test_get_rolling_standard_error(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_rolling_standard_error())
+    recorder.capture(econometrics_module.get_rolling_standard_error(window=30))
+    recorder.capture(
+        econometrics_module.get_rolling_standard_error(include_benchmark=True)
+    )
+
+
+def test_get_rolling_entropy(recorder, econometrics_module):
+    recorder.capture(econometrics_module.get_rolling_entropy())
+    recorder.capture(econometrics_module.get_rolling_entropy(window=20, base=np.e))
+    recorder.capture(econometrics_module.get_rolling_entropy(period="weekly"))
+
+
+def test_rolling_correlation_with_an_unknown_series_is_empty(econometrics_module):
+    assert econometrics_module.get_rolling_correlation(against="UNKNOWN").empty
+
+
+def test_rolling_correlation_leaves_out_the_series_it_is_correlated_with(
+    econometrics_module,
+):
+    # MSFT against itself would be 1 everywhere; the Benchmark is left out by default.
+    correlation = econometrics_module.get_rolling_correlation(against="MSFT")
+    assert list(correlation.columns) == ["AAPL"]
+
+    with_benchmark = econometrics_module.get_rolling_correlation(
+        against="MSFT", include_benchmark=True
+    )
+    assert list(with_benchmark.columns) == ["AAPL", "Benchmark"]
+
+
+def test_rolling_statistics_skip_the_dates_a_series_has_no_value():
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+    # A monthly series next to a daily one: each window counts its own observations.
+    dates = pd.period_range("2025-01-01", periods=90, freq="D")
+    daily = pd.Series(np.arange(90.0) + 1, index=dates)
+    monthly = daily[daily.index.day == 1]
+    econometrics = Econometrics(
+        data={"Daily": daily, "Monthly": monthly}, rounding=None
+    )
+
+    median = econometrics.get_rolling_median(window=3)
+
+    assert median["Monthly"].dropna().tolist() == [32.0]
+    assert median["Daily"].dropna().iloc[0] == 2.0
+
+
+def test_rolling_statistics_default_windows():
+    import inspect
+
+    from financetoolkit.econometrics.econometrics_controller import Econometrics
+
+    # The TA-Lib defaults, and pandas-ta-classic's where TA-Lib has no such function.
+    for method, window in (
+        (Econometrics.get_linear_regression, 14),
+        (Econometrics.get_rolling_correlation, 30),
+        (Econometrics.get_rolling_median, 30),
+        (Econometrics.get_rolling_percentile, 100),
+        (Econometrics.get_percent_rank, 100),
+        (Econometrics.get_rolling_mean_absolute_deviation, 14),
+        (Econometrics.get_rolling_z_score, 30),
+        (Econometrics.get_rolling_standard_error, 14),
+        (Econometrics.get_rolling_entropy, 10),
+        (Econometrics.get_slope, 1),
+    ):
+        assert inspect.signature(method).parameters["window"].default == window

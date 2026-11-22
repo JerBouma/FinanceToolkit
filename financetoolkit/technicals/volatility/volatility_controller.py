@@ -29,7 +29,7 @@ from financetoolkit.utilities.statistics_model import (
 @track_sources
 class VolatilityTechnicals:
     """
-    Volatility indicators: the Bollinger Bands, %B and BandWidth, the true range, average true range and normalized average true range, the average day range, Chaikin's volatility, the relative volatility index, the mass index, the Supertrend, the Chandelier Exit, the Chande Kroll Stop, the Profit Maximizer, the Keltner and Donchian channels, the acceleration bands, the adaptive price zone, the aberration bands, the price distance, Elder's market thermometer, the squeeze momentum and the volatility cone.
+    Volatility indicators: the Bollinger Bands, %B and BandWidth, the true range, average true range and normalized average true range, the average day range, Chaikin's volatility, the relative volatility index, the mass index, the Supertrend, the Chandelier Exit, the Chande Kroll Stop, the Profit Maximizer, the Keltner and Donchian channels, the acceleration bands, the adaptive price zone, the aberration bands, the price distance, Elder's market thermometer, the squeeze momentum, the volatility cone and the standard deviation channel.
     """
 
     @handle_errors
@@ -77,6 +77,8 @@ class VolatilityTechnicals:
 
         Notes:
         - The method calculates several volatility-based indicators for each asset in the Toolkit instance.
+        - The Standard Deviation Channel is left out: it is fitted over the whole date range at
+          once, so its values depend on later prices.
         - If `growth` is set to True, the method calculates the growth of the indicator values
           using the specified `lag`.
 
@@ -3424,6 +3426,151 @@ class VolatilityTechnicals:
 
         return finalize_dataset(
             dataset=squeeze_momentum,
+            start_date=self._start_date,
+            end_date=self._end_date,
+            default_rounding=self._rounding,
+            growth=growth,
+            lag=lag,
+            rounding=rounding,
+            standardize=standardize,
+            axis="rows",
+            apply_slice=False,
+        )
+
+    @handle_portfolio
+    @handle_errors
+    def get_standard_deviation_channel(
+        self,
+        period: str = "daily",
+        close_column: str = "Adj Close",
+        window: int | None = None,
+        num_std_dev: float | list[float] | None = None,
+        rounding: int | None = None,
+        growth: bool = False,
+        lag: int | list[int] = 1,
+        standardize: bool = False,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.Series | pd.DataFrame:
+        """
+        Calculate the Standard Deviation Channel of a price series: one least-squares line
+        through all prices of the Toolkit's date range (or the last `window` of them), with
+        bands at a number of standard deviations of the prices above and below it.
+
+        The channel shows the trend of the whole period and how far the prices stray from it: a
+        price near an outer band lies far from the trend of the period. It is the thinkorswim
+        study StDevAll, which draws the regression line of all bars (InertiaAll) with bands at
+        1, 2 and 3 standard deviations.
+
+        The formula is as follows, with time x = 0, ..., n - 1 over the n prices of the period:
+
+        - Linear Regression = b0 + b1 * x, the least-squares line through the prices
+        - Upper Band k = Linear Regression + k * StdDev(Close)
+        - Lower Band k = Linear Regression - k * StdDev(Close)
+
+        with the sample standard deviation (ddof=1) of the prices of the period.
+
+        For more information, see the following sources:
+
+        - thinkorswim (TD Ameritrade). thinkScript studies StDevAll and InertiaAll.
+        - Referenced against pandas-ta-classic's tos_stdevall
+          (https://github.com/xgboosted/pandas-ta-classic).
+
+        Also known as: standard deviation channel, StDevAll, linear regression channel, regression bands.
+
+        Args:
+            period (str, optional): The time period to consider for historical data.
+                Can be "intraday", "daily", "weekly", "monthly", "quarterly" or "yearly". Defaults to "daily".
+            close_column (str, optional): The column name for closing prices in the historical data.
+                Defaults to "Adj Close".
+            window (int | None, optional): The number of latest periods the line is fitted over,
+                at least 2. Defaults to None, which uses every period of the Toolkit's date range.
+            num_std_dev (float | list[float] | None, optional): The number or numbers of standard
+                deviations of the bands. Defaults to None, which uses 1, 2 and 3.
+            rounding (int | None, optional): The number of decimals to round the results to. Defaults to None, which uses
+                the rounding of the Toolkit (4 unless set otherwise).
+            growth (bool, optional): Whether to calculate the growth of the Standard Deviation Channel.
+                Defaults to False.
+            lag (int | list[int], optional): The lag to use for the growth calculation.
+                Defaults to 1.
+            standardize (bool, optional): Whether to standardize (Z-Score) the result. When
+                combined with growth=True, standardizes the growth values instead of the raw
+                values. Defaults to False.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.Series or pd.DataFrame:
+            Linear Regression with a Lower Band k and Upper Band k per number of standard deviations k.
+
+        Notes:
+        - The method retrieves historical data based on the specified `period` and calculates the
+          Standard Deviation Channel for each asset in the Toolkit instance.
+        - The channel equals pandas-ta-classic's tos_stdevall.
+        - The line is fitted over the whole period at once, so every value depends on the later prices of the
+          period and the channel is redrawn when the date range changes. It describes a period and is not a
+          signal that was known at the time, which is why `collect_volatility_indicators` leaves it out.
+        - If `growth` is set to True, the method calculates the growth of the Standard Deviation Channel
+          using the specified `lag`.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            tickers=["AAPL", "MSFT"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.technicals.get_standard_deviation_channel(num_std_dev=[1, 2]).xs("AAPL", level=1, axis="columns").tail(5)
+        ```
+
+        Which returns:
+
+        | Date       |   Linear Regression |   Lower Band 1 |   Lower Band 2 |   Upper Band 1 |   Upper Band 2 |
+        |:-----------|--------------------:|---------------:|---------------:|---------------:|---------------:|
+        | 2025-12-24 |             240.281 |        200.328 |        160.375 |        280.234 |        320.188 |
+        | 2025-12-26 |             240.38  |        200.426 |        160.473 |        280.333 |        320.286 |
+        | 2025-12-29 |             240.478 |        200.525 |        160.572 |        280.431 |        320.385 |
+        | 2025-12-30 |             240.577 |        200.623 |        160.67  |        280.53  |        320.483 |
+        | 2025-12-31 |             240.675 |        200.722 |        160.769 |        280.628 |        320.582 |
+        """
+        if period not in [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "yearly",
+        ]:
+            raise ValueError(
+                "Period must be intraday, daily, weekly, monthly, quarterly, or yearly."
+            )
+        if period == "intraday":
+            if self._historical_data[period].empty:
+                raise ValueError(
+                    "Please define the 'intraday_period' parameter when initializing the Toolkit."
+                )
+            close_column = "Close"
+
+        historical_data = self._historical_data[period].loc[
+            self._start_date : self._end_date
+        ]
+
+        standard_deviation_channel = calculate_per_ticker(
+            historical_data,
+            [close_column],
+            volatility_model.get_standard_deviation_channel,
+            window,
+            num_std_dev,
+        )
+
+        return finalize_dataset(
+            dataset=standard_deviation_channel,
             start_date=self._start_date,
             end_date=self._end_date,
             default_rounding=self._rounding,

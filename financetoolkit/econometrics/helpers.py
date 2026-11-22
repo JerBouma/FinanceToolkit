@@ -2,6 +2,8 @@
 
 __docformat__ = "google"
 
+from collections.abc import Callable
+
 import pandas as pd
 
 # The synthetic benchmark series, excluded unless `include_benchmark=True`.
@@ -52,3 +54,40 @@ def get_observations_per_year(index: pd.Index) -> int:
             return observations
 
     return 1
+
+
+def calculate_per_series(
+    data: pd.DataFrame,
+    function: Callable[..., pd.Series | pd.DataFrame],
+    *args,
+    **kwargs,
+) -> pd.DataFrame:
+    """
+    Calculates a rolling statistic per series over the dates the series has a value, and
+    places the result back on every date of the data, NaN on the other dates.
+
+    A window counts observations, so the dates on which a ticker did not trade (NaN in the
+    prices the Econometrics module reads, see `mask_non_trading_days`) or a series observed
+    at other dates than the others are left out rather than counted as periods without a
+    move.
+
+    Args:
+        data (pd.DataFrame): The series, a column per series.
+        function (Callable[..., pd.Series | pd.DataFrame]): The statistic, which takes a
+            Series followed by `args` and `kwargs`.
+        *args: The further positional arguments of the function, such as the window.
+        **kwargs: The further keyword arguments of the function.
+
+    Returns:
+        pd.DataFrame: The statistic with a column per series when the function returns a
+        Series, and (statistic column, series) columns when it returns a DataFrame.
+    """
+    results = {
+        series: function(data[series].dropna(), *args, **kwargs).reindex(data.index)
+        for series in data.columns
+    }
+
+    if all(isinstance(result, pd.Series) for result in results.values()):
+        return pd.DataFrame(results, index=data.index)
+
+    return pd.concat(results, axis=1).swaplevel(1, 0, axis=1).sort_index(axis=1)

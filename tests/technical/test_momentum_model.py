@@ -1246,3 +1246,68 @@ def test_ttm_trend_matches_pandas_ta_classic():
 
     assert result.first_valid_index() == 6
     assert result.iloc[-10:].tolist() == [1.0, 1.0] + [-1.0] * 8
+
+
+def random_prices() -> pd.DataFrame:
+    """80 bars of a random walk with a high and low around each close."""
+    rng = np.random.default_rng(7)
+    close = 100 + rng.normal(0, 1, 80).cumsum()
+    return pd.DataFrame(
+        {
+            "High": close + 1 + rng.random(80),
+            "Low": close - 1 - rng.random(80),
+            "Close": close,
+        }
+    )
+
+
+def last_three(values: pd.Series) -> list[float]:
+    return values.iloc[-3:].tolist()
+
+
+def test_correlation_trend_indicator_matches_talib():
+    """TA-Lib's CTI(20); a straight rise is +1 and flat prices have no correlation."""
+    result = momentum_model.get_correlation_trend_indicator(
+        random_prices()["Close"], 20
+    )
+
+    assert last_three(result) == pytest.approx(
+        [-0.809991, -0.78511, -0.673336], abs=1e-6
+    )
+    assert momentum_model.get_correlation_trend_indicator(
+        pd.Series(np.arange(10.0)), 5
+    ).iloc[-1] == pytest.approx(1)
+    assert np.isnan(
+        momentum_model.get_correlation_trend_indicator(pd.Series([3.0] * 10), 5).iloc[
+            -1
+        ]
+    )
+
+
+def test_forecast_oscillator_matches_talib():
+    """TA-Lib's FOSC(5), as a decimal rather than a percentage."""
+    result = momentum_model.get_forecast_oscillator(random_prices()["Close"], 5)
+
+    assert result.first_valid_index() == 5
+    assert last_three(result * 100) == pytest.approx(
+        [-1.45417, -1.272173, 1.713765], abs=1e-6
+    )
+
+
+def test_projection_oscillator_against_the_projected_bands():
+    prices = random_prices()
+    result = momentum_model.get_projection_oscillator(
+        prices["High"], prices["Low"], prices["Close"], 14
+    )
+
+    # The bands of the last window, projected along the slopes of the highs and lows.
+    window = prices.iloc[-14:]
+    steps = np.arange(14)[::-1]
+    upper = (window["High"] + steps * np.polyfit(range(14), window["High"], 1)[0]).max()
+    lower = (window["Low"] + steps * np.polyfit(range(14), window["Low"], 1)[0]).min()
+
+    assert result.iloc[-1] == pytest.approx(
+        (prices["Close"].iloc[-1] - lower) / (upper - lower)
+    )
+    assert result.first_valid_index() == 13
+    assert result.dropna().between(0, 1).all()

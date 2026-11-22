@@ -183,13 +183,17 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -353,23 +357,31 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
             expected_returns (str, optional): The estimator of the expected returns:
-                "mean" (the historical average), "exponential" (the exponentially
-                weighted average, recent periods weigh most), "capm" (the returns the
-                Capital Asset Pricing Model implies from each asset's beta to the
-                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
-                that of the minimum variance portfolio, Jorion, 1986). Defaults to
-                "mean".
+                "mean" (the historical average), "geometric" (the compounded average),
+                "exponential" (the exponentially weighted average, recent periods weigh
+                most), "exponential_geometric" (that average compounded over a year),
+                "capm" (the returns the Capital Asset Pricing Model implies from each
+                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
+                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
+                "james_stein" (the averages shrunk towards their grand mean, James and
+                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
+                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+                Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
@@ -420,8 +432,9 @@ class OptimizationConstruction:
         Notes:
         - The expected returns are the noisiest input of the optimization, so with the
           historical averages the weights tend to concentrate in the assets that happened
-          to do best. A maximum weight, the CAPM or James-Stein expected returns or the
-          Black-Litterman returns temper that.
+          to do best. A maximum weight, the CAPM or shrunk (Bayes-Stein, James-Stein,
+          Bodnar-Okhrin-Parolya) expected returns or the Black-Litterman returns temper
+          that.
         - A transaction cost lowers the expected return of the portfolio by the cost
           times the turnover from the current weights, so the optimizer only trades when
           the gain in Sharpe ratio pays for it. The cost
@@ -546,23 +559,31 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
             expected_returns (str, optional): The estimator of the expected returns:
-                "mean" (the historical average), "exponential" (the exponentially
-                weighted average, recent periods weigh most), "capm" (the returns the
-                Capital Asset Pricing Model implies from each asset's beta to the
-                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
-                that of the minimum variance portfolio, Jorion, 1986). Defaults to
-                "mean".
+                "mean" (the historical average), "geometric" (the compounded average),
+                "exponential" (the exponentially weighted average, recent periods weigh
+                most), "exponential_geometric" (that average compounded over a year),
+                "capm" (the returns the Capital Asset Pricing Model implies from each
+                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
+                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
+                "james_stein" (the averages shrunk towards their grand mean, James and
+                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
+                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+                Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
@@ -730,23 +751,31 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
             expected_returns (str, optional): The estimator of the expected returns:
-                "mean" (the historical average), "exponential" (the exponentially
-                weighted average, recent periods weigh most), "capm" (the returns the
-                Capital Asset Pricing Model implies from each asset's beta to the
-                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
-                that of the minimum variance portfolio, Jorion, 1986). Defaults to
-                "mean".
+                "mean" (the historical average), "geometric" (the compounded average),
+                "exponential" (the exponentially weighted average, recent periods weigh
+                most), "exponential_geometric" (that average compounded over a year),
+                "capm" (the returns the Capital Asset Pricing Model implies from each
+                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
+                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
+                "james_stein" (the averages shrunk towards their grand mean, James and
+                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
+                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+                Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
@@ -896,13 +925,17 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1021,12 +1054,20 @@ class OptimizationConstruction:
             linkage_method (str, optional): The linkage of the hierarchical clustering:
                 "single", "complete", "average" or "ward". Defaults to "single", as in the
                 paper.
-            codependence (str, optional): The correlation the assets are clustered on,
-                through the distance √((1 - ρ) / 2): "pearson" (the linear correlation of
-                the covariance matrix), "spearman" (the rank correlation of the returns,
-                Spearman, 1904) or "kendall" (the rank correlation τ_b of the returns,
-                Kendall, 1938). The rank correlations depend only on the order of the
-                returns, so a few extreme returns weigh less. Defaults to "pearson".
+            codependence (str, optional): The codependence the assets are clustered on:
+                "pearson" (the linear correlation of the covariance matrix), "spearman"
+                (the rank correlation of the returns, Spearman, 1904), "kendall" (the
+                rank correlation τ_b of the returns, Kendall, 1938), "gerber"
+                (co-movements beyond half a standard deviation, Gerber et al., 2022) or
+                "detoned" (the correlation without the market component, López de Prado,
+                2020), all through the distance √((1 - ρ) / 2), "distance" (the distance
+                correlation, Székely et al., 2007, through √(1 - dCor)),
+                "mutual_information" (through the variation of information, Meilă, 2007)
+                or "lower_tail" (how often two assets fall into their lowest 5% of
+                returns together, through -ln λ). The rank correlations depend only on
+                the order of the returns, so a few extreme returns weigh less; the
+                distance correlation and mutual information also capture non-linear
+                co-movement. Defaults to "pearson".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix: "sample"
@@ -1034,13 +1075,17 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1103,7 +1148,7 @@ class OptimizationConstruction:
             linkage_method,
             minimum_weight,
             maximum_weight,
-            optimization_model.get_codependence(
+            distance=optimization_model.get_codependence_distance(
                 returns, covariance_matrix, codependence
             ),
         )
@@ -1159,12 +1204,20 @@ class OptimizationConstruction:
                 paper.
             clusters (int | None, optional): The number of clusters. Defaults to None,
                 chosen by the two-order difference of the gap statistic.
-            codependence (str, optional): The correlation the assets are clustered on,
-                through the distance √((1 - ρ) / 2): "pearson" (the linear correlation of
-                the covariance matrix), "spearman" (the rank correlation of the returns,
-                Spearman, 1904) or "kendall" (the rank correlation τ_b of the returns,
-                Kendall, 1938). The rank correlations depend only on the order of the
-                returns, so a few extreme returns weigh less. Defaults to "pearson".
+            codependence (str, optional): The codependence the assets are clustered on:
+                "pearson" (the linear correlation of the covariance matrix), "spearman"
+                (the rank correlation of the returns, Spearman, 1904), "kendall" (the
+                rank correlation τ_b of the returns, Kendall, 1938), "gerber"
+                (co-movements beyond half a standard deviation, Gerber et al., 2022) or
+                "detoned" (the correlation without the market component, López de Prado,
+                2020), all through the distance √((1 - ρ) / 2), "distance" (the distance
+                correlation, Székely et al., 2007, through √(1 - dCor)),
+                "mutual_information" (through the variation of information, Meilă, 2007)
+                or "lower_tail" (how often two assets fall into their lowest 5% of
+                returns together, through -ln λ). The rank correlations depend only on
+                the order of the returns, so a few extreme returns weigh less; the
+                distance correlation and mutual information also capture non-linear
+                co-movement. Defaults to "pearson".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix, which
@@ -1173,13 +1226,17 @@ class OptimizationConstruction:
                 "ledoit_wolf_constant_correlation" (towards the average correlation,
                 Ledoit and Wolf, 2004), "ledoit_wolf_single_factor" (towards the
                 covariance that the benchmark as a single factor implies, Ledoit and
-                Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the clusters
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10% towards
+                the scaled identity), "semicovariance" (the co-movement below a zero
+                return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                clusters when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1247,7 +1304,7 @@ class OptimizationConstruction:
         returns, expected_returns, covariance_matrix, risk_free_rate = self._get_inputs(
             period, include_benchmark, covariance, covariance_span
         )
-        correlation = optimization_model.get_codependence(
+        distance = optimization_model.get_codependence_distance(
             returns, covariance_matrix, codependence
         )
         weights = optimization_model.get_hierarchical_equal_risk_contribution_weights(
@@ -1261,13 +1318,13 @@ class OptimizationConstruction:
                 sector_bounds,
                 country_bounds,
             ),
-            correlation=correlation,
+            distance=distance,
         )
         table = self._weights_table(
             weights, expected_returns, covariance_matrix, risk_free_rate, rounding
         )
         _, labels = optimization_model.get_hierarchical_clusters(
-            covariance_matrix, linkage_method, clusters, correlation
+            covariance_matrix, linkage_method, clusters, distance=distance
         )
         table["Cluster"] = pd.Series(labels + 1, index=covariance_matrix.index)
         return table
@@ -1321,12 +1378,20 @@ class OptimizationConstruction:
                 "single", "complete", "average" or "ward". Defaults to "ward".
             clusters (int | None, optional): The number of clusters. Defaults to None,
                 chosen by the two-order difference of the gap statistic.
-            codependence (str, optional): The correlation the assets are clustered on,
-                through the distance √((1 - ρ) / 2): "pearson" (the linear correlation of
-                the covariance matrix), "spearman" (the rank correlation of the returns,
-                Spearman, 1904) or "kendall" (the rank correlation τ_b of the returns,
-                Kendall, 1938). The rank correlations depend only on the order of the
-                returns, so a few extreme returns weigh less. Defaults to "pearson".
+            codependence (str, optional): The codependence the assets are clustered on:
+                "pearson" (the linear correlation of the covariance matrix), "spearman"
+                (the rank correlation of the returns, Spearman, 1904), "kendall" (the
+                rank correlation τ_b of the returns, Kendall, 1938), "gerber"
+                (co-movements beyond half a standard deviation, Gerber et al., 2022) or
+                "detoned" (the correlation without the market component, López de Prado,
+                2020), all through the distance √((1 - ρ) / 2), "distance" (the distance
+                correlation, Székely et al., 2007, through √(1 - dCor)),
+                "mutual_information" (through the variation of information, Meilă, 2007)
+                or "lower_tail" (how often two assets fall into their lowest 5% of
+                returns together, through -ln λ). The rank correlations depend only on
+                the order of the returns, so a few extreme returns weigh less; the
+                distance correlation and mutual information also capture non-linear
+                co-movement. Defaults to "pearson".
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             covariance (str, optional): The estimator of the covariance matrix, which
@@ -1337,20 +1402,26 @@ class OptimizationConstruction:
                 "ledoit_wolf_constant_correlation" (towards the average correlation,
                 Ledoit and Wolf, 2004), "ledoit_wolf_single_factor" (towards the
                 covariance that the benchmark as a single factor implies, Ledoit and
-                Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007) or "exponential" (recent
-                periods weigh most, RiskMetrics). Defaults to "denoised", as in the
-                paper.
+                Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10% towards
+                the scaled identity), "semicovariance" (the co-movement below a zero
+                return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics), "denoised_spectral", "denoised_shrink" (López de Prado,
+                2020) or "gerber" (Gerber et al., 2022). Defaults to "denoised", as in
+                the paper.
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
             expected_returns (str, optional): The estimator of the expected returns of
                 the "maximum_sharpe" objective: "mean" (the historical average),
-                "exponential" (the exponentially weighted average, recent periods weigh
-                most), "capm" (the returns the Capital Asset Pricing Model implies from
-                each asset's beta to the benchmark, Sharpe, 1964) or "james_stein" (the
-                averages shrunk towards that of the minimum variance portfolio, Jorion,
-                1986). Defaults to "mean".
+                "geometric" (the compounded average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "exponential_geometric"
+                (that average compounded over a year), "capm" (the returns the Capital
+                Asset Pricing Model implies from each asset's beta to the benchmark,
+                Sharpe, 1964) "bayes_stein" (the averages shrunk towards that of the
+                minimum variance portfolio, Jorion, 1986), "james_stein" (the averages
+                shrunk towards their grand mean, James and Stein, 1961) or
+                "bodnar_okhrin_parolya" (the averages and their grand mean combined with
+                optimal weights, Bodnar, Okhrin and Parolya, 2019). Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             include_benchmark (bool, optional): Whether to include the benchmark as an
@@ -1414,7 +1485,7 @@ class OptimizationConstruction:
             expected_returns,
             expected_returns_span,
         )
-        correlation = optimization_model.get_codependence(
+        distance = optimization_model.get_codependence_distance(
             returns, covariance_matrix, codependence
         )
         weights = optimization_model.get_nested_clustered_optimization_weights(
@@ -1424,13 +1495,13 @@ class OptimizationConstruction:
             risk_free_rate,
             linkage_method,
             clusters,
-            correlation,
+            distance=distance,
         )
         table = self._weights_table(
             weights, expected, covariance_matrix, risk_free_rate, rounding
         )
         _, labels = optimization_model.get_hierarchical_clusters(
-            covariance_matrix, linkage_method, clusters, correlation
+            covariance_matrix, linkage_method, clusters, distance=distance
         )
         table["Cluster"] = pd.Series(labels + 1, index=covariance_matrix.index)
         return table
@@ -1460,13 +1531,17 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -1875,12 +1950,16 @@ class OptimizationConstruction:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             expected_returns (str, optional): The estimator of the expected returns:
-                "mean" (the historical average), "exponential" (the exponentially
-                weighted average, recent periods weigh most), "capm" (the returns the
-                Capital Asset Pricing Model implies from each asset's beta to the
-                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
-                that of the minimum variance portfolio, Jorion, 1986). Defaults to
-                "mean".
+                "mean" (the historical average), "geometric" (the compounded average),
+                "exponential" (the exponentially weighted average, recent periods weigh
+                most), "exponential_geometric" (that average compounded over a year),
+                "capm" (the returns the Capital Asset Pricing Model implies from each
+                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
+                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
+                "james_stein" (the averages shrunk towards their grand mean, James and
+                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
+                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+                Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
@@ -2046,12 +2125,16 @@ class OptimizationConstruction:
             period (str, optional): The frequency of the returns (daily, weekly, monthly,
                 quarterly or yearly). Defaults to "daily".
             expected_returns (str, optional): The estimator of the expected returns:
-                "mean" (the historical average), "exponential" (the exponentially
-                weighted average, recent periods weigh most), "capm" (the returns the
-                Capital Asset Pricing Model implies from each asset's beta to the
-                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
-                that of the minimum variance portfolio, Jorion, 1986). Defaults to
-                "mean".
+                "mean" (the historical average), "geometric" (the compounded average),
+                "exponential" (the exponentially weighted average, recent periods weigh
+                most), "exponential_geometric" (that average compounded over a year),
+                "capm" (the returns the Capital Asset Pricing Model implies from each
+                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
+                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
+                "james_stein" (the averages shrunk towards their grand mean, James and
+                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
+                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+                Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
@@ -2222,13 +2305,17 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
@@ -2397,21 +2484,29 @@ class OptimizationConstruction:
                 "ledoit_wolf_constant_correlation" (towards the average correlation,
                 Ledoit and Wolf, 2004), "ledoit_wolf_single_factor" (towards the
                 covariance that the benchmark as a single factor implies, Ledoit and
-                Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). Defaults to "sample".
+                Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10% towards
+                the scaled identity), "semicovariance" (the co-movement below a zero
+                return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
             expected_returns (str, optional): The estimator of the expected returns:
-                "mean" (the historical average), "exponential" (the exponentially
-                weighted average, recent periods weigh most), "capm" (the returns the
-                Capital Asset Pricing Model implies from each asset's beta to the
-                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
-                that of the minimum variance portfolio, Jorion, 1986). Defaults to
-                "mean".
+                "mean" (the historical average), "geometric" (the compounded average),
+                "exponential" (the exponentially weighted average, recent periods weigh
+                most), "exponential_geometric" (that average compounded over a year),
+                "capm" (the returns the Capital Asset Pricing Model implies from each
+                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
+                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
+                "james_stein" (the averages shrunk towards their grand mean, James and
+                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
+                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+                Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
@@ -2613,21 +2708,29 @@ class OptimizationConstruction:
                 and Wolf, 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). Defaults to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
             expected_returns (str, optional): The estimator of the expected returns:
-                "mean" (the historical average), "exponential" (the exponentially
-                weighted average, recent periods weigh most), "capm" (the returns the
-                Capital Asset Pricing Model implies from each asset's beta to the
-                benchmark, Sharpe, 1964) or "james_stein" (the averages shrunk towards
-                that of the minimum variance portfolio, Jorion, 1986). Defaults to
-                "mean".
+                "mean" (the historical average), "geometric" (the compounded average),
+                "exponential" (the exponentially weighted average, recent periods weigh
+                most), "exponential_geometric" (that average compounded over a year),
+                "capm" (the returns the Capital Asset Pricing Model implies from each
+                asset's beta to the benchmark, Sharpe, 1964) "bayes_stein" (the averages
+                shrunk towards that of the minimum variance portfolio, Jorion, 1986),
+                "james_stein" (the averages shrunk towards their grand mean, James and
+                Stein, 1961) or "bodnar_okhrin_parolya" (the averages and their grand
+                mean combined with optimal weights, Bodnar, Okhrin and Parolya, 2019).
+                Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
@@ -2829,21 +2932,29 @@ class OptimizationConstruction:
                 "ledoit_wolf_constant_correlation" (towards the average correlation,
                 Ledoit and Wolf, 2004), "ledoit_wolf_single_factor" (towards the
                 covariance that the benchmark as a single factor implies, Ledoit and
-                Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). Defaults to "sample".
+                Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10% towards
+                the scaled identity), "semicovariance" (the co-movement below a zero
+                return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.
             expected_returns (str, optional): The estimator of the expected returns the
                 "parametric" draws are centred on: "mean" (the historical average),
-                "exponential" (the exponentially weighted average, recent periods weigh
-                most), "capm" (the returns the Capital Asset Pricing Model implies from
-                each asset's beta to the benchmark, Sharpe, 1964) or "james_stein" (the
-                averages shrunk towards that of the minimum variance portfolio, Jorion,
-                1986). Defaults to "mean".
+                "geometric" (the compounded average), "exponential" (the exponentially
+                weighted average, recent periods weigh most), "exponential_geometric"
+                (that average compounded over a year), "capm" (the returns the Capital
+                Asset Pricing Model implies from each asset's beta to the benchmark,
+                Sharpe, 1964) "bayes_stein" (the averages shrunk towards that of the
+                minimum variance portfolio, Jorion, 1986), "james_stein" (the averages
+                shrunk towards their grand mean, James and Stein, 1961) or
+                "bodnar_okhrin_parolya" (the averages and their grand mean combined with
+                optimal weights, Bodnar, Okhrin and Parolya, 2019). Defaults to "mean".
             expected_returns_span (int, optional): The span in periods of the
                 "exponential" expected returns. Defaults to 180.
             minimum_weight (float | dict[str, float], optional): The lowest weight of
@@ -3063,13 +3174,17 @@ class OptimizationConstruction:
                 2004), "ledoit_wolf_constant_correlation" (towards the average
                 correlation, Ledoit and Wolf, 2004), "ledoit_wolf_single_factor"
                 (towards the covariance that the benchmark as a single factor implies,
-                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "semicovariance" (the
-                co-movement below a zero return, Estrada, 2007), "exponential" (recent
-                periods weigh most, RiskMetrics) or "denoised" (the eigenvalues of the
-                correlation matrix that random returns could produce averaged, Laloux et
-                al., 2000). The shrinkage and denoised estimators stabilize the weights
-                when there are many assets compared to the number of periods. Defaults
-                to "sample".
+                Ledoit and Wolf, 2003), "oas" (Chen et al., 2010), "shrunk" (a fixed 10%
+                towards the scaled identity), "semicovariance" (the co-movement below a
+                zero return, Estrada, 2007), "exponential" (recent periods weigh most,
+                RiskMetrics) "denoised" (the eigenvalues of the correlation matrix that
+                random returns could produce averaged, Laloux et al., 2000),
+                "denoised_spectral" (those eigenvalues set to zero), "denoised_shrink"
+                (the noise correlations shrunk towards their diagonal, López de Prado,
+                2020) or "gerber" (co-movements beyond half a standard deviation, Gerber
+                et al., 2022). The shrinkage and denoised estimators stabilize the
+                weights when there are many assets compared to the number of periods.
+                Defaults to "sample".
             covariance_span (int, optional): The span in periods of the "exponential"
                 covariance; the weight of a period halves after about span / 2.9
                 periods. Defaults to 180.

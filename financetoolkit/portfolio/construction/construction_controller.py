@@ -321,7 +321,10 @@ class PortfolioConstruction(
     expected shortfall, semideviation, mean absolute deviation and drawdowns, the risk
     metrics of given weights, a whole-share allocation of the weights, diversification
     metrics, historical stress tests,
-    look-through exposure and a Brinson-Fachler attribution against the benchmark. The
+    look-through exposure and a Brinson-Fachler attribution against the benchmark, and
+    the estimates behind the weights: expected returns, covariance and codependence
+    matrices, asset clusters, coskewness and cokurtosis and their bootstrapped
+    uncertainty. The
     optimizers take weight bounds per asset, sector and country bounds from the company
     profiles, for long-short portfolios a net and gross exposure and, from current
     weights, a maximum turnover.

@@ -150,7 +150,7 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "")
 class Toolkit:
     """
     The Finance Toolkit is an open-source toolkit in which
-    all 500+ financial methods
+    all 900+ financial methods
     are written down in the most simplistic way allowing for complete transparency
     of the calculation method. This allows you to not have to rely on metrics
     from other providers and, given a financial statement, allow for efficient manual

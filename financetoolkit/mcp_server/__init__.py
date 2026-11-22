@@ -1,1 +1,1 @@
-"""Finance Toolkit MCP Server — 500+ method financial analyst."""
+"""Finance Toolkit MCP Server — 900+ method financial analyst."""

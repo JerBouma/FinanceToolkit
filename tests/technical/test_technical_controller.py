@@ -1263,3 +1263,99 @@ def test_statistics_default_windows():
         (Technicals.get_slope, 1),
     ):
         assert inspect.signature(method).parameters["window"].default == window
+
+
+def test_get_moving_average_triple_exponential(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="triple_exponential"))
+    recorder.capture(
+        technical_module.get_moving_average(method="triple_exponential", window=30)
+    )
+    recorder.capture(
+        technical_module.get_moving_average(
+            method="triple_exponential", growth=True, lag=[1, 2]
+        )
+    )
+
+
+def test_get_moving_average_zero_lag(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="zero_lag"))
+    recorder.capture(technical_module.get_moving_average(method="zero_lag", window=30))
+    recorder.capture(
+        technical_module.get_moving_average(method="zero_lag", growth=True, lag=[1, 2])
+    )
+
+
+def test_get_moving_average_wilder(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="wilder"))
+    recorder.capture(technical_module.get_moving_average(method="wilder", window=30))
+    recorder.capture(
+        technical_module.get_moving_average(method="wilder", growth=True, lag=[1, 2])
+    )
+
+
+def test_get_moving_average_sine(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="sine"))
+    recorder.capture(technical_module.get_moving_average(method="sine", window=30))
+    recorder.capture(
+        technical_module.get_moving_average(method="sine", growth=True, lag=[1, 2])
+    )
+
+
+def test_get_moving_average_fibonacci(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="fibonacci"))
+    recorder.capture(technical_module.get_moving_average(method="fibonacci", window=30))
+    recorder.capture(
+        technical_module.get_moving_average(method="fibonacci", growth=True, lag=[1, 2])
+    )
+
+
+def test_get_moving_average_pascal(recorder, technical_module):
+    recorder.capture(technical_module.get_moving_average(method="pascal"))
+    recorder.capture(technical_module.get_moving_average(method="pascal", window=30))
+    recorder.capture(
+        technical_module.get_moving_average(method="pascal", growth=True, lag=[1, 2])
+    )
+
+
+def test_get_t3_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_t3_moving_average())
+    recorder.capture(
+        technical_module.get_t3_moving_average(window=10, volume_factor=0.8)
+    )
+    recorder.capture(technical_module.get_t3_moving_average(growth=True))
+
+
+def test_get_arnaud_legoux_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_arnaud_legoux_moving_average())
+    recorder.capture(
+        technical_module.get_arnaud_legoux_moving_average(
+            window=20, sigma=4.0, offset=0.5
+        )
+    )
+    recorder.capture(technical_module.get_arnaud_legoux_moving_average(growth=True))
+
+
+def test_get_volume_weighted_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_volume_weighted_moving_average())
+    recorder.capture(technical_module.get_volume_weighted_moving_average(window=30))
+    recorder.capture(technical_module.get_volume_weighted_moving_average(growth=True))
+
+
+def test_get_mcginley_dynamic(recorder, technical_module):
+    recorder.capture(technical_module.get_mcginley_dynamic())
+    recorder.capture(technical_module.get_mcginley_dynamic(window=10, constant=0.6))
+    recorder.capture(technical_module.get_mcginley_dynamic(growth=True))
+
+
+def test_get_variable_index_dynamic_average(recorder, technical_module):
+    recorder.capture(technical_module.get_variable_index_dynamic_average())
+    recorder.capture(
+        technical_module.get_variable_index_dynamic_average(window=14, cmo_window=14)
+    )
+    recorder.capture(technical_module.get_variable_index_dynamic_average(growth=True))
+
+
+def test_get_fractal_adaptive_moving_average(recorder, technical_module):
+    recorder.capture(technical_module.get_fractal_adaptive_moving_average())
+    recorder.capture(technical_module.get_fractal_adaptive_moving_average(window=10))
+    recorder.capture(technical_module.get_fractal_adaptive_moving_average(growth=True))

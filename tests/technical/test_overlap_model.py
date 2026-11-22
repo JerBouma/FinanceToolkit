@@ -352,3 +352,165 @@ def test_exponential_and_adaptive_averages_stop_where_the_prices_stop():
     assert ema.iloc[41] == pytest.approx(
         alpha * close.iloc[41] + (1 - alpha) * ema.iloc[39]
     )
+
+
+def _sample_close():
+    return sample_prices()["Close"].reset_index(drop=True)
+
+
+@pytest.mark.parametrize(
+    ("function", "window", "expected"),
+    [
+        # TA-Lib's TEMA(5), ZLEMA(10), ALMA(9, 6, 0.85) and RMA(10) on the sample closes.
+        (
+            overlap_model.get_triple_exponential_moving_average,
+            5,
+            {12: 100.75899484, 30: 106.79819427, 59: 120.77284896},
+        ),
+        (
+            overlap_model.get_zero_lag_exponential_moving_average,
+            10,
+            {13: 102.81230492, 30: 108.04664238, 59: 119.3767005},
+        ),
+        (
+            overlap_model.get_arnaud_legoux_moving_average,
+            9,
+            {8: 105.10209182, 30: 108.84582542, 59: 117.43482412},
+        ),
+        # pandas-ta-classic's sinwma(10), fwma(10), pwma(10) and swma(4), the last the
+        # triangular moving average of four periods (weights 1, 2, 2, 1).
+        (
+            overlap_model.get_sine_weighted_moving_average,
+            10,
+            {9: 104.2356613, 30: 109.95994981, 59: 114.52446796},
+        ),
+        (
+            overlap_model.get_fibonacci_weighted_moving_average,
+            10,
+            {9: 104.11680672, 30: 108.13368517, 59: 118.42361213},
+        ),
+        (
+            overlap_model.get_pascal_weighted_moving_average,
+            10,
+            {9: 104.86909262, 30: 110.46700675, 59: 114.12374555},
+        ),
+        (
+            overlap_model.get_triangular_moving_average,
+            4,
+            {3: 102.27173332, 30: 108.26443887, 59: 118.43487169},
+        ),
+    ],
+)
+def test_moving_averages_match_reference_libraries(function, window, expected):
+    result = function(_sample_close(), window)
+
+    first = min(expected)
+    assert result.iloc[:first].isna().all()
+    assert result.iloc[list(expected)].tolist() == pytest.approx(
+        list(expected.values())
+    )
+
+
+def test_t3_moving_average_matches_talib():
+    result = overlap_model.get_t3_moving_average(_sample_close(), 5, 0.7)
+
+    # Six EMAs of five periods, each seeded on its first five values: 6 * (5 - 1).
+    assert result.iloc[:24].isna().all()
+    assert result.iloc[[24, 40, 59]].tolist() == pytest.approx(
+        [109.35472636, 110.82298153, 116.70945961]
+    )
+
+
+def test_volume_weighted_moving_average_matches_talib():
+    prices = sample_prices().reset_index(drop=True)
+    result = overlap_model.get_volume_weighted_moving_average(
+        prices["Close"], prices["Volume"].astype(float), 10
+    )
+
+    assert result.iloc[:9].isna().all()
+    assert result.iloc[[9, 30, 59]].tolist() == pytest.approx(
+        [103.92016157, 109.66672188, 114.74797246]
+    )
+
+    # A window without any volume has no average instead of 0 / 0.
+    no_volume = overlap_model.get_volume_weighted_moving_average(
+        prices["Close"], prices["Volume"].astype(float) * 0, 10
+    )
+    assert no_volume.isna().all()
+
+
+def test_mcginley_dynamic_is_seeded_with_simple_moving_average():
+    close = _sample_close()
+    result = overlap_model.get_mcginley_dynamic(close, 10)
+
+    seed = close.iloc[:10].mean()
+    step = seed + (close.iloc[10] - seed) / (10 * (close.iloc[10] / seed) ** 4)
+
+    assert result.iloc[:9].isna().all()
+    assert result.iloc[9] == pytest.approx(seed)
+    assert result.iloc[10] == pytest.approx(step)
+    # TA-Lib's MCGD(10) starts from the first close; 50 periods later the seeds have
+    # decayed to within 0.02 of each other.
+    assert result.iloc[59] == pytest.approx(114.04219027, abs=0.02)
+
+
+def test_variable_index_dynamic_average_matches_pandas_ta_with_equal_windows():
+    # pandas-ta-classic's vidya(10) seeds with the simple average of ten closes, as here.
+    result = overlap_model.get_variable_index_dynamic_average(_sample_close(), 10, 10)
+
+    assert result.iloc[:9].isna().all()
+    assert result.iloc[[9, 10, 30, 59]].tolist() == pytest.approx(
+        [103.74406291, 103.67382461, 108.31405927, 115.07059807]
+    )
+
+
+def test_variable_index_dynamic_average_starts_after_both_windows():
+    close = _sample_close()
+    result = overlap_model.get_variable_index_dynamic_average(close, 12, 9)
+
+    # The seed is the simple average of twelve closes on period 11 (TA-Lib starts from
+    # the first close and its VIDYA(12, 9) is 114.97523489 on period 59).
+    assert result.iloc[:11].isna().all()
+    assert result.iloc[11] == pytest.approx(close.iloc[:12].mean())
+    assert result.iloc[59] == pytest.approx(114.97523489, abs=0.01)
+
+    # Flat prices give an oscillator of 0 / 0, which leaves the average where it is.
+    flat = overlap_model.get_variable_index_dynamic_average(
+        pd.Series([10.0] * 30), 5, 5
+    )
+    assert flat.iloc[4:].eq(10.0).all()
+
+
+def test_fractal_adaptive_moving_average_matches_talib_after_the_seed():
+    prices = sample_prices().reset_index(drop=True)
+    median = (prices["High"] + prices["Low"]) / 2
+    result = overlap_model.get_fractal_adaptive_moving_average(
+        prices["High"], prices["Low"], 10
+    )
+
+    assert result.iloc[:9].isna().all()
+    assert result.iloc[9] == pytest.approx(median.iloc[:10].mean())
+    # TA-Lib's FRAMA(10) seeds with the median price of period 9; the seeds have decayed
+    # by period 59.
+    assert result.iloc[59] == pytest.approx(118.40431387)
+
+    with pytest.raises(ValueError, match="even"):
+        overlap_model.get_fractal_adaptive_moving_average(
+            prices["High"], prices["Low"], 9
+        )
+
+
+def test_new_moving_averages_stop_where_the_prices_stop():
+    close = _sample_close().copy()
+    close.iloc[-3:] = float("nan")
+    close.iloc[40] = float("nan")
+
+    for result in (
+        overlap_model.get_triple_exponential_moving_average(close, 5),
+        overlap_model.get_zero_lag_exponential_moving_average(close, 5),
+        overlap_model.get_mcginley_dynamic(close, 5),
+        overlap_model.get_variable_index_dynamic_average(close, 5, 5),
+        overlap_model.get_sine_weighted_moving_average(close, 5),
+    ):
+        assert result.iloc[-3:].isna().all()
+        assert pd.isna(result.iloc[40])

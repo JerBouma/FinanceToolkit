@@ -2,8 +2,10 @@
 
 __docformat__ = "google"
 
+import math
 from collections.abc import Callable
 
+import numpy as np
 import pandas as pd
 
 from financetoolkit.helpers import get_non_trading_days
@@ -62,6 +64,12 @@ FACTOR_COLLECTIONS = {
         "get_moving_average",
         "get_trix",
         "get_kaufman_adaptive_moving_average",
+        "get_t3_moving_average",
+        "get_arnaud_legoux_moving_average",
+        "get_volume_weighted_moving_average",
+        "get_mcginley_dynamic",
+        "get_variable_index_dynamic_average",
+        "get_fractal_adaptive_moving_average",
         "get_volume_weighted_average_price",
         "get_parabolic_sar",
     ],
@@ -92,6 +100,12 @@ FACTOR_COLLECTIONS["all"] = [
 FACTOR_PRICE_LINES = (
     "get_moving_average",
     "get_kaufman_adaptive_moving_average",
+    "get_t3_moving_average",
+    "get_arnaud_legoux_moving_average",
+    "get_volume_weighted_moving_average",
+    "get_mcginley_dynamic",
+    "get_variable_index_dynamic_average",
+    "get_fractal_adaptive_moving_average",
     "get_volume_weighted_average_price",
     "get_parabolic_sar",
     "get_ichimoku_cloud",
@@ -232,4 +246,55 @@ def get_observations_per_year(prices: pd.Series) -> int:
         CALENDAR_DAYS_PER_YEAR
         if bool((dates.dayofweek >= 5).any())  # noqa: PLR2004
         else TRADING_DAYS_PER_YEAR
+    )
+
+
+def apply_variable_smoothing(
+    prices: pd.Series, smoothing_factors: pd.Series, window: int
+) -> pd.Series:
+    """
+    Smooths prices with a smoothing factor that changes every period, as the adaptive
+    averages do (the Variable Index Dynamic Average and the Fractal Adaptive Moving
+    Average): Average(t) = Average(t-1) + Factor(t) * (Price(t) - Average(t-1)).
+
+    The recursion is seeded with the simple average of `window` prices, placed on the
+    period before the first factor that follows a full window, with the periods before it
+    missing, as the Toolkit seeds its exponential moving averages (TA-Lib's `ta_EMA.c`).
+    A period without a factor keeps the last average, and a period without a price is
+    missing while the recursion continues from the last average on the next price.
+
+    Args:
+        prices (pd.Series): The prices to smooth.
+        smoothing_factors (pd.Series): The smoothing factor per period, between 0 and 1,
+            on the index of `prices`.
+        window (int): The number of prices of the simple average that seeds the recursion.
+
+    Returns:
+        pd.Series: The smoothed prices, missing before the seed.
+    """
+    averages = [math.nan] * len(prices)
+    simple_moving_average = prices.rolling(window=window).mean().to_numpy(dtype=float)
+    factors = smoothing_factors.to_numpy(dtype=float)
+    price_values = prices.to_numpy(dtype=float)
+
+    # The recursion starts on the first factor whose previous period has a full window.
+    eligible = np.isfinite(factors[1:]) & np.isfinite(simple_moving_average[:-1])
+    if not eligible.any():
+        return pd.Series(averages, index=prices.index, dtype="float64")
+
+    start = int(np.argmax(eligible)) + 1
+    previous_average = simple_moving_average[start - 1]
+    averages[start - 1] = previous_average
+
+    # The recursion runs on plain Python floats, since writing a pandas Series one element
+    # at a time costs tens of microseconds per element.
+    for i, (price, factor) in enumerate(
+        zip(price_values[start:].tolist(), factors[start:].tolist()), start=start
+    ):
+        if not (math.isnan(price) or math.isnan(factor)):
+            previous_average = previous_average + factor * (price - previous_average)
+        averages[i] = previous_average
+
+    return pd.Series(averages, index=prices.index, dtype="float64").where(
+        prices.notna()
     )

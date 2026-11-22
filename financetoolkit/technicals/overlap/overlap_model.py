@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+from financetoolkit.technicals.helpers import apply_variable_smoothing
+
 
 def get_moving_average(prices: pd.Series, window: int) -> pd.Series:
     """
@@ -433,6 +435,535 @@ def get_hull_moving_average(prices: pd.Series, window: int) -> pd.Series:
     raw_hma = 2 * half_window_wma - full_window_wma
 
     return get_weighted_moving_average(raw_hma, max(int(np.sqrt(window)), 1))
+
+
+def get_triple_exponential_moving_average(prices: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate the Triple Exponential Moving Average (TEMA) of a given price series.
+
+    TEMA takes the lag out of an Exponential Moving Average further than DEMA does: it
+    combines a single, a double and a triple smoothed EMA so that the lag of the single
+    EMA is cancelled by the lag of the smoother ones, while the result stays smooth.
+
+    The formula is as follows:
+
+    - EMA1 = EMA(Close, window)
+    - EMA2 = EMA(EMA1, window)
+    - EMA3 = EMA(EMA2, window)
+    - TEMA = 3 * EMA1 - 3 * EMA2 + EMA3
+
+    Also known as: TEMA.
+
+    Reference: Mulloy, P.G. (1994). "Smoothing Data with Less Lag." Technical Analysis of
+    Stocks & Commodities, 12(2).
+
+    TA-Lib: TEMA, the reference implementation (https://ta-lib.org/functions/tema.html).
+
+    Notes:
+        - Each EMA is seeded with the simple average of its first `window` values, so TEMA
+          starts at period 3 * (window - 1), as in TA-Lib's `ta_TEMA.c`.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of each of the three EMAs.
+
+    Returns:
+        pd.Series: TEMA values.
+    """
+    ema_first = get_exponential_moving_average(prices, window)
+    ema_second = get_exponential_moving_average(ema_first, window)
+    ema_third = get_exponential_moving_average(ema_second, window)
+
+    return 3 * ema_first - 3 * ema_second + ema_third
+
+
+def get_t3_moving_average(
+    prices: pd.Series, window: int = 5, volume_factor: float = 0.7
+) -> pd.Series:
+    """
+    Calculate the Tillson T3 Moving Average of a given price series.
+
+    The T3 applies Tillson's Generalized DEMA, GD(x) = (1 + a) * EMA(x) - a * EMA(EMA(x)),
+    three times in a row. The volume factor a sets how much of the lag correction of DEMA is
+    used: 0 gives a plain EMA of an EMA of an EMA, 1 gives three DEMAs in a row. The result
+    is a smooth average with little lag and little overshoot.
+
+    The formula is as follows:
+
+    - E1 = EMA(Close, window), E2 = EMA(E1, window), ..., E6 = EMA(E5, window)
+    - c1 = -a^3, c2 = 3a^2 + 3a^3, c3 = -6a^2 - 3a - 3a^3, c4 = 1 + 3a + a^3 + 3a^2
+    - T3 = c1 * E6 + c2 * E5 + c3 * E4 + c4 * E3
+
+    Also known as: T3, Tillson T3.
+
+    Reference: Tillson, T. (1998). "Smoothing Techniques for More Accurate Signals."
+    Technical Analysis of Stocks & Commodities, 16(1).
+
+    TA-Lib: T3, the reference implementation (https://ta-lib.org/functions/t3.html).
+
+    Notes:
+        - Each of the six EMAs is seeded with the simple average of its first `window`
+          values, so T3 starts at period 6 * (window - 1), as in TA-Lib's `ta_T3.c`.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of each of the six EMAs. Defaults to 5.
+        volume_factor (float): The volume factor a, between 0 and 1. Defaults to 0.7.
+
+    Returns:
+        pd.Series: T3 values.
+    """
+    emas = [prices]
+    for _ in range(6):
+        emas.append(get_exponential_moving_average(emas[-1], window))
+
+    a = volume_factor
+    c1 = -(a**3)
+    c2 = 3 * a**2 + 3 * a**3
+    c3 = -6 * a**2 - 3 * a - 3 * a**3
+    c4 = 1 + 3 * a + a**3 + 3 * a**2
+
+    return c1 * emas[6] + c2 * emas[5] + c3 * emas[4] + c4 * emas[3]
+
+
+def get_zero_lag_exponential_moving_average(
+    prices: pd.Series, window: int
+) -> pd.Series:
+    """
+    Calculate the Zero Lag Exponential Moving Average (ZLEMA) of a given price series.
+
+    An EMA lags the price by about (window - 1) / 2 periods. ZLEMA adds the change over
+    that lag to the price before averaging, so the average is taken of a price that is
+    extrapolated by its own lag, which takes most of the lag out of the EMA.
+
+    The formula is as follows:
+
+    - Lag = (window - 1) / 2, rounded down
+    - De-lagged Close = Close + (Close - Close(t - Lag)) = 2 * Close - Close(t - Lag)
+    - ZLEMA = EMA(De-lagged Close, window)
+
+    Also known as: ZLEMA, ZLMA, zero lag moving average.
+
+    Reference: Ehlers, J.F. & Way, R. (2010). "Zero Lag (Well, Almost)." Technical Analysis
+    of Stocks & Commodities, November 2010.
+
+    TA-Lib: ZLEMA, the reference implementation (https://ta-lib.org/functions/zlema.html).
+
+    Notes:
+        - The EMA is seeded with the simple average of the first `window` de-lagged prices,
+          so ZLEMA starts at period Lag + window - 1, as in TA-Lib.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the EMA.
+
+    Returns:
+        pd.Series: ZLEMA values.
+    """
+    lag = (window - 1) // 2
+
+    return get_exponential_moving_average(2 * prices - prices.shift(lag), window)
+
+
+def get_arnaud_legoux_moving_average(
+    prices: pd.Series, window: int = 9, sigma: float = 6.0, offset: float = 0.85
+) -> pd.Series:
+    """
+    Calculate the Arnaud Legoux Moving Average (ALMA) of a given price series.
+
+    ALMA weights the prices in the window with a Gaussian curve whose peak sits at `offset`
+    of the way from the oldest to the latest price. An offset close to 1 puts the weight on
+    recent prices (less lag), close to 0 on older ones (more smoothing), and `sigma` sets
+    how narrow the curve is.
+
+    The formula is as follows:
+
+    - m = floor(offset * (window - 1)), s = window / sigma
+    - Weight(i) = exp(-(i - m)^2 / (2 * s^2)), for i = 0 (the oldest price) to window - 1
+    - ALMA = Sum(Weight(i) * Price(i)) / Sum(Weight(i))
+
+    Also known as: ALMA.
+
+    Reference: Legoux, A. & Kouzis-Loukas, D. (2009). "ALMA: Arnaud Legoux Moving
+    Average." arnaudlegoux.com.
+
+    TA-Lib: ALMA, the reference implementation (https://ta-lib.org/functions/alma.html).
+
+    Notes:
+        - The peak of the curve m is rounded down to a whole period, as in TA-Lib.
+          pandas-ta-classic's alma (and TradingView's ta.alma by default) keep the
+          unrounded m, which moves the weights by a fraction of a period.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods to consider. Defaults to 9.
+        sigma (float): The width of the Gaussian curve, as the number of standard
+            deviations that fit in the window. Defaults to 6.0.
+        offset (float): The position of the peak of the curve in the window, from 0
+            (the oldest price) to 1 (the latest price). Defaults to 0.85.
+
+    Returns:
+        pd.Series: ALMA values.
+    """
+    peak = math.floor(offset * (window - 1))
+    width = window / sigma
+    weights = np.exp(-((np.arange(window) - peak) ** 2) / (2 * width**2))
+
+    return apply_to_rolling_windows(
+        prices, window, lambda windows: windows @ weights / weights.sum()
+    )
+
+
+def get_volume_weighted_moving_average(
+    prices: pd.Series, volumes: pd.Series, window: int
+) -> pd.Series:
+    """
+    Calculate the Volume Weighted Moving Average (VWMA) of a given price series.
+
+    The VWMA weights every closing price in the window by the volume traded in its period,
+    so prices at which much was traded count more than those of quiet periods. It differs
+    from the rolling VWAP only in the price that is averaged: the close instead of the
+    typical price.
+
+    The formula is as follows:
+
+    - VWMA = Sum(Close * Volume, window) / Sum(Volume, window)
+
+    Also known as: VWMA.
+
+    Reference: Dormeier, B.P. (2011). "Investing with Volume Analysis." FT Press.
+
+    TA-Lib: VWMA, the reference implementation (https://ta-lib.org/functions/vwma.html).
+
+    Args:
+        prices (pd.Series): Series of closing prices.
+        volumes (pd.Series): Series of trading volumes.
+        window (int): Number of periods to consider.
+
+    Returns:
+        pd.Series: VWMA values, missing for a window without volume.
+    """
+    total_volume = volumes.rolling(window=window).sum()
+
+    return (prices * volumes).rolling(window=window).sum() / total_volume.where(
+        total_volume != 0
+    )
+
+
+def get_mcginley_dynamic(
+    prices: pd.Series, window: int = 14, constant: float = 1.0
+) -> pd.Series:
+    """
+    Calculate the McGinley Dynamic of a given price series.
+
+    The McGinley Dynamic is a moving average that adjusts its own speed to the market: the
+    step towards the price is divided by (Price / MD)^4, so the average moves slowly when
+    the price runs above it (rising markets) and quickly when the price falls below it,
+    hugging the price more closely than an average with a fixed speed.
+
+    The formula is as follows:
+
+    - First MD = SMA(Close, window), on the window-th period
+    - MD(t) = MD(t-1) + (Close(t) - MD(t-1)) / (constant * window * (Close(t) / MD(t-1))^4)
+
+    Also known as: MCGD, McGinley Dynamic Indicator.
+
+    Reference: McGinley, J.R. (1997). "The McGinley Dynamic." Journal of Technical Analysis
+    (Market Technicians Association).
+
+    TA-Lib: MCGD, the reference implementation (https://ta-lib.org/functions/mcgd.html).
+
+    Notes:
+        - The recursion is seeded with the simple average of the first `window` prices, as
+          the Toolkit seeds its exponential moving averages. TA-Lib's MCGD and
+          pandas-ta-classic's mcgd start the recursion from the first price instead; the
+          difference fades as the seed's weight decays, by about a factor 1 - 1 / window
+          per period.
+        - McGinley suggested a constant of 0.6 to make the average follow the price more
+          closely; TA-Lib and pandas-ta-classic use 1.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods, the N of the formula. Defaults to 14.
+        constant (float): The constant k that multiplies the window. Defaults to 1.0.
+
+    Returns:
+        pd.Series: McGinley Dynamic values.
+    """
+    simple_moving_average = prices.rolling(window=window).mean()
+    dynamic = pd.Series(index=prices.index, dtype="float64")
+
+    first_valid_index = simple_moving_average.first_valid_index()
+    if first_valid_index is None:
+        return dynamic
+
+    start_position = prices.index.get_loc(first_valid_index)
+    previous_dynamic = float(simple_moving_average.iloc[start_position])
+    price_values = prices.to_numpy(dtype="float64").tolist()
+    averages = [math.nan] * len(prices)
+    averages[start_position] = previous_dynamic
+
+    # The recursion runs on plain Python lists, since writing a pandas Series one element
+    # at a time costs tens of microseconds per element.
+    for i in range(start_position + 1, len(prices)):
+        price = price_values[i]
+        if not math.isnan(price) and previous_dynamic != 0:
+            previous_dynamic = previous_dynamic + (price - previous_dynamic) / (
+                constant * window * (price / previous_dynamic) ** 4
+            )
+        averages[i] = previous_dynamic
+
+    # A period without a price has no average, while the recursion carries on from the
+    # last one, so a series that ends early stops instead of repeating its last value.
+    return pd.Series(averages, index=prices.index, dtype="float64").where(
+        prices.notna()
+    )
+
+
+def get_variable_index_dynamic_average(
+    prices: pd.Series, window: int = 12, cmo_window: int = 9
+) -> pd.Series:
+    """
+    Calculate the Variable Index Dynamic Average (VIDYA) of a given price series.
+
+    VIDYA is an exponential moving average whose smoothing factor is scaled by the
+    strength of the trend, measured by the absolute Chande Momentum Oscillator: in a strong
+    trend (|CMO| near 1) it moves like an EMA of `window` periods, in a market that goes
+    nowhere (|CMO| near 0) it hardly moves at all.
+
+    The formula is as follows:
+
+    - Gains = Sum(max(Close(t) - Close(t-1), 0), cmo_window)
+    - Losses = Sum(max(Close(t-1) - Close(t), 0), cmo_window)
+    - |CMO| = |Gains - Losses| / (Gains + Losses), and 0 when prices did not move
+    - Alpha = 2 / (window + 1)
+    - VIDYA(t) = Alpha * |CMO(t)| * Close(t) + (1 - Alpha * |CMO(t)|) * VIDYA(t-1)
+
+    Also known as: VIDYA, Chande's Variable Index Dynamic Average.
+
+    For more information, see the following sources:
+
+    - Chande, T.S. (1992). "Adapting Moving Averages to Market Volatility." Technical
+      Analysis of Stocks & Commodities, 10(3).
+    - Chande, T.S. & Kroll, S. (1994). "The New Technical Trader." Wiley.
+
+    TA-Lib: VIDYA, the reference implementation (https://ta-lib.org/functions/vidya.html).
+
+    Notes:
+        - The volatility index is the absolute Chande Momentum Oscillator over unsmoothed
+          sums (Chande & Kroll, 1994), as in TA-Lib and pandas-ta-classic. Chande's 1992
+          article and Tulip Indicators' vidya use the ratio of a short to a long standard
+          deviation instead.
+        - The recursion is seeded with the simple average of `window` prices on the period
+          before the first oscillator value that follows a full window, as the Toolkit
+          seeds its exponential moving averages and as pandas-ta-classic does. TA-Lib starts
+          the recursion from the first price, with the oscillator over the changes available
+          so far, and shows it from period `cmo_window` on; the difference fades by a factor
+          1 - Alpha * |CMO| per period.
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods of the exponential moving average. Defaults to 12.
+        cmo_window (int): Number of periods of the Chande Momentum Oscillator. Defaults
+            to 9.
+
+    Returns:
+        pd.Series: VIDYA values.
+    """
+    change = prices.diff()
+    gains = change.clip(lower=0).rolling(window=cmo_window).sum()
+    losses = (-change).clip(lower=0).rolling(window=cmo_window).sum()
+    movement = gains + losses
+
+    # Without any movement the oscillator is 0 / 0, and an average that does not move
+    # follows a market that does not move either, so the factor is 0 there.
+    absolute_cmo = ((gains - losses) / movement.where(movement != 0)).abs()
+    absolute_cmo = absolute_cmo.where(movement != 0, 0.0).where(movement.notna())
+
+    return apply_variable_smoothing(prices, 2 / (window + 1) * absolute_cmo, window)
+
+
+def get_fractal_adaptive_moving_average(
+    prices_high: pd.Series, prices_low: pd.Series, window: int = 16
+) -> pd.Series:
+    """
+    Calculate the Fractal Adaptive Moving Average (FRAMA) of a given price series.
+
+    FRAMA is an exponential moving average of the median price whose smoothing factor
+    follows the fractal dimension of the prices over the window. The dimension compares the
+    ranges of the two halves of the window with the range of the whole: in a trend the
+    ranges of the halves add up to the range of the whole (dimension 1) and FRAMA follows
+    the price closely, in a range-bound market each half covers most of the range
+    (dimension towards 2) and FRAMA barely moves.
+
+    The formula is as follows:
+
+    - Price = (High + Low) / 2
+    - N1 = (Highest High - Lowest Low) / (window / 2) over the latest window / 2 periods
+    - N2 = (Highest High - Lowest Low) / (window / 2) over the window / 2 periods before
+    - N3 = (Highest High - Lowest Low) / window over the whole window
+    - D = (log(N1 + N2) - log(N3)) / log(2)
+    - Alpha = exp(-4.6 * (D - 1)), limited to between 0.01 and 1
+    - FRAMA(t) = Alpha(t) * Price(t) + (1 - Alpha(t)) * FRAMA(t-1)
+
+    Also known as: FRAMA.
+
+    Reference: Ehlers, J.F. (2005). "FRAMA - Fractal Adaptive Moving Average." Technical
+    Analysis of Stocks & Commodities, October 2005.
+
+    TA-Lib: FRAMA, the reference implementation (https://ta-lib.org/functions/frama.html).
+
+    Notes:
+        - The recursion is seeded with the simple average of the first `window` median
+          prices, on the window-th period, as the Toolkit seeds its exponential moving
+          averages. Ehlers and TA-Lib start from the median price of that period, which
+          TA-Lib does not show, so TA-Lib's FRAMA starts one period later; the
+          difference fades by a factor 1 - Alpha per period.
+        - A half without a range still gives a dimension, as in TA-Lib: a flat latest half
+          next to a moving earlier one is a dimension of 1, so FRAMA moves to the price.
+          Ehlers' code keeps the last dimension whenever one of the ranges is zero. Without
+          any range in the window, or in both halves, the last dimension is kept.
+
+    Args:
+        prices_high (pd.Series): Series of high prices.
+        prices_low (pd.Series): Series of low prices.
+        window (int): Number of periods over which the fractal dimension is measured, an
+            even number. Defaults to 16.
+
+    Returns:
+        pd.Series: FRAMA values.
+
+    Raises:
+        ValueError: If `window` is not an even number of at least 2.
+    """
+    if window < 2 or window % 2:  # noqa: PLR2004
+        raise ValueError("The window of FRAMA must be an even number of at least 2.")
+
+    half = window // 2
+    half_range = (
+        prices_high.rolling(window=half).max() - prices_low.rolling(window=half).min()
+    )
+    first_half = half_range.shift(half) / half
+    second_half = half_range / half
+    whole = (
+        prices_high.rolling(window=window).max()
+        - prices_low.rolling(window=window).min()
+    ) / window
+
+    # A flat half still measures the dimension (a flat latest half next to a moving one is
+    # a dimension of 1, so FRAMA jumps to the price, as in TA-Lib); only without any range
+    # in the window or in both halves is it undefined and the last dimension kept.
+    defined = (first_half + second_half > 0) & (whole > 0)
+    dimension = (
+        (
+            np.log((first_half + second_half).where(defined))
+            - np.log(whole.where(defined))
+        )
+        / np.log(2)
+    ).ffill()
+    alpha = np.exp(-4.6 * (dimension - 1)).clip(lower=0.01, upper=1)
+
+    return apply_variable_smoothing((prices_high + prices_low) / 2, alpha, window)
+
+
+def get_sine_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate the Sine Weighted Moving Average (SINWMA) of a given price series.
+
+    The weights follow the first half of a sine wave over the window, so the middle of the
+    window counts most and both ends least, a rounder version of the triangular weights of
+    the Triangular Moving Average.
+
+    The formula is as follows:
+
+    - Weight(i) = sin(i * pi / (window + 1)), for i = 1 to window
+    - SINWMA = Sum(Weight(i) * Price(i)) / Sum(Weight(i))
+
+    Also known as: SINWMA.
+
+    Reference: Everget (2018). "Sine Weighted Moving Average." TradingView script.
+
+    pandas-ta-classic: sinwma (https://github.com/xgboosted/pandas-ta-classic).
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods to consider.
+
+    Returns:
+        pd.Series: SINWMA values.
+    """
+    weights = np.sin(np.arange(1, window + 1) * np.pi / (window + 1))
+
+    return apply_to_rolling_windows(
+        prices, window, lambda windows: windows @ weights / weights.sum()
+    )
+
+
+def get_fibonacci_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate the Fibonacci Weighted Moving Average (FWMA) of a given price series.
+
+    The weights are the Fibonacci numbers 1, 1, 2, 3, 5, ... from the oldest to the latest
+    price, so the weight grows by about the golden ratio (1.618) per period and the latest
+    prices dominate, more so than with the linear weights of the WMA.
+
+    The formula is as follows:
+
+    - Weight(1) = Weight(2) = 1, Weight(i) = Weight(i-1) + Weight(i-2), from the oldest
+      (i = 1) to the latest price (i = window)
+    - FWMA = Sum(Weight(i) * Price(i)) / Sum(Weight(i))
+
+    Also known as: FWMA.
+
+    pandas-ta-classic: fwma, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods to consider.
+
+    Returns:
+        pd.Series: FWMA values.
+    """
+    weights = np.ones(window)
+    for i in range(2, window):
+        weights[i] = weights[i - 1] + weights[i - 2]
+
+    return apply_to_rolling_windows(
+        prices, window, lambda windows: windows @ weights / weights.sum()
+    )
+
+
+def get_pascal_weighted_moving_average(prices: pd.Series, window: int) -> pd.Series:
+    """
+    Calculate the Pascal's Weighted Moving Average (PWMA) of a given price series.
+
+    The weights are row window - 1 of Pascal's triangle (the binomial coefficients), a
+    bell-shaped set of weights around the middle of the window that approaches a Gaussian
+    curve as the window grows.
+
+    The formula is as follows:
+
+    - Weight(i) = (window - 1)! / (i! * (window - 1 - i)!), for i = 0 to window - 1
+    - PWMA = Sum(Weight(i) * Price(i)) / Sum(Weight(i))
+
+    Also known as: PWMA.
+
+    pandas-ta-classic: pwma, the reference implementation
+    (https://github.com/xgboosted/pandas-ta-classic).
+
+    Args:
+        prices (pd.Series): Series of prices.
+        window (int): Number of periods to consider.
+
+    Returns:
+        pd.Series: PWMA values.
+    """
+    weights = np.array([math.comb(window - 1, i) for i in range(window)], dtype=float)
+
+    return apply_to_rolling_windows(
+        prices, window, lambda windows: windows @ weights / weights.sum()
+    )
 
 
 def get_volume_weighted_average_price(

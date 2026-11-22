@@ -147,6 +147,13 @@ FACTOR_COLLECTIONS = {
         "get_hilbert_sine_wave",
         "get_hilbert_instantaneous_trendline",
         "get_mesa_adaptive_moving_average",
+        "get_swiss_army_knife_filter",
+        "get_super_smoother_filter",
+        "get_even_better_sinewave",
+        "get_detrended_synthetic_price",
+        "get_mesa_sine_wave",
+        "get_center_of_gravity_oscillator",
+        "get_laguerre_relative_strength_index",
     ],
 }
 FACTOR_COLLECTIONS["all"] = [
@@ -190,6 +197,7 @@ FACTOR_PRICE_LINES = (
     "get_fibonacci_retracement_levels",
     "get_hilbert_instantaneous_trendline",
     "get_mesa_adaptive_moving_average",
+    "get_super_smoother_filter",
 )
 FACTOR_PRICE_DIFFERENCES = (
     "get_true_range",
@@ -208,6 +216,8 @@ FACTOR_PRICE_DIFFERENCES = (
     "get_detrended_price_oscillator",
     "get_force_index",
     "get_hilbert_phasor_components",
+    "get_swiss_army_knife_filter",
+    "get_detrended_synthetic_price",
 )
 
 

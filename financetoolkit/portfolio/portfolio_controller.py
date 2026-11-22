@@ -971,11 +971,13 @@ class Portfolio:
                 "Current Weight"
             ].unstack()
 
+        # A copy: the benchmark belongs in the Toolkit's data only, as a ticker of the Portfolio's own data it would duplicate the benchmark of every position.  # noqa: E501
+        historical = self._daily_historical_data.copy()
         for column in historical_columns:
-            self._daily_historical_data[column, "Benchmark"] = benchmark_data[column]
+            historical[column, "Benchmark"] = benchmark_data[column]
 
         historical = (
-            self._daily_historical_data.sort_index(axis=1)
+            historical.sort_index(axis=1)
             .reindex(historical_columns, axis=1, level=0)
             .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)
         )

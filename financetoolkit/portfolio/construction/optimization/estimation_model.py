@@ -4,8 +4,12 @@ __docformat__ = "google"
 
 import numpy as np
 import pandas as pd
+from scipy import linalg, stats
+from scipy.optimize import minimize
 from scipy.spatial.distance import pdist, squareform
+from scipy.special import logsumexp
 
+from financetoolkit.portfolio.helpers import get_linear_regression, get_view_vector
 from financetoolkit.risk.dependence import copula_model
 
 # pylint: disable=too-many-arguments,too-many-locals
@@ -308,6 +312,463 @@ def get_detoned_covariance(returns: pd.DataFrame, components: int = 1) -> pd.Dat
         correlation * np.outer(volatility, volatility),
         index=returns.columns,
         columns=returns.columns,
+    )
+
+
+def get_minimum_covariance_determinant(
+    returns: pd.DataFrame,
+    support_fraction: float | None = None,
+    reweight: bool = True,
+    seed: int | None = 0,
+) -> pd.DataFrame:
+    """
+    The Minimum Covariance Determinant (MCD) covariance matrix: the covariance of the h
+    periods whose covariance matrix has the smallest determinant, so that the periods far
+    from the bulk of the returns (crashes, squeezes, data errors) do not inflate it. With
+    T periods and N assets, h = ⌈(T + N + 1) / 2⌉ by default, the largest share of
+    outliers the estimator withstands.
+
+    The FastMCD algorithm of Rousseeuw and Van Driessen (1999) finds that subset with
+    C-steps: from a subset with mean μ and covariance S, the next subset is the h periods
+    with the smallest Mahalanobis distance d²_t = (r_t - μ)' S⁻¹ (r_t - μ), which never
+    raises the determinant. It starts from random subsets, keeps the 10 best after two
+    C-steps and iterates those to convergence; above 500 periods it first does so within
+    random parts of about 300 periods and merges the best subsets of each part.
+
+    The raw estimate is then made consistent at the normal distribution and reweighted:
+    the distances are divided by c(N, h / T) with c(N, α) = α / F_(N+2)(χ²_N(α)) (Croux and
+    Haesbroeck, 1999), the periods with a distance below the 97.5% quantile of χ²_N are
+    kept, and their covariance is multiplied by c(N, 0.975).
+
+    This equals scikit-learn's MinCovDet(random_state=seed).fit(returns).covariance_ for the
+    same seed (it draws the random subsets with numpy's RandomState in the same order).
+    With reweight=False it is the raw covariance of the best subset, without the
+    consistency factor, which PyPortfolioOpt's risk_models.min_cov_determinant returns.
+    Both divide the covariances by the number of periods (ddof=0), on which the
+    consistency factors are based, and so does this function.
+
+    See Rousseeuw, P. J. and Van Driessen, K. (1999), "A Fast Algorithm for the Minimum
+    Covariance Determinant Estimator", Technometrics, 41(3), 212-223, and Croux, C. and
+    Haesbroeck, G. (1999), "Influence Function and Efficiency of the Minimum Covariance
+    Determinant Scatter Matrix Estimator", Journal of Multivariate Analysis, 71(2), 161-190.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, at least two assets, without missing
+            values.
+        support_fraction (float | None, optional): The share of the periods h / T in the
+            subset, between 0 and 1. Defaults to None, ⌈(T + N + 1) / 2⌉ periods.
+        reweight (bool, optional): Whether to make the estimate consistent and reweight
+            it. Defaults to True.
+        seed (int | None, optional): The seed of the random subsets, so the same returns
+            give the same estimate. Defaults to 0.
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    data = returns.to_numpy(dtype=float)
+    periods, assets = data.shape
+    if assets < 2:  # noqa: PLR2004
+        raise ValueError(
+            "The minimum covariance determinant needs at least two assets."
+        )
+    if support_fraction is None:
+        size = min(int(np.ceil(0.5 * (periods + assets + 1))), periods)
+    elif 0 < support_fraction <= 1:
+        size = int(support_fraction * periods)
+    else:
+        raise ValueError("The support fraction must lie between 0 and 1.")
+    if size <= assets:
+        raise ValueError(
+            "The minimum covariance determinant needs more periods than assets."
+        )
+    generator = np.random.RandomState(seed)  # noqa: NPY002 (scikit-learn's draws)
+
+    def log_determinant(covariance: np.ndarray) -> float:
+        sign, value = np.linalg.slogdet(covariance)
+        return value if sign > 0 else -np.inf
+
+    def c_steps(sample: np.ndarray, size: int, iterations: int, start=None) -> tuple:
+        # The C-steps of scikit-learn's _c_step, from a random subset or from a location and
+        # covariance; the distances it returns use the covariance before the last step.
+        if start is None:
+            selected = generator.permutation(len(sample))[:size]
+        else:
+            centred = sample - start[0]
+            distance = ((centred @ linalg.pinvh(start[1])) * centred).sum(axis=1)
+            selected = np.argpartition(distance, size - 1)[:size]
+        location = sample[selected].mean(axis=0)
+        covariance = np.cov(sample[selected].T, bias=True)
+        determinant = log_determinant(covariance)
+        precision = linalg.pinvh(covariance)
+        previous = (location, covariance, np.inf)
+        while determinant < previous[2] and iterations > 0 and np.isfinite(determinant):
+            previous = (location, covariance, determinant)
+            precision = linalg.pinvh(covariance)
+            centred = sample - location
+            distance = ((centred @ precision) * centred).sum(axis=1)
+            selected = np.argpartition(distance, size - 1)[:size]
+            location = sample[selected].mean(axis=0)
+            covariance = np.cov(sample[selected].T, bias=True)
+            determinant = log_determinant(covariance)
+            iterations -= 1
+        if (
+            iterations > 0
+            and determinant > previous[2]
+            and not np.isclose(determinant, previous[2])
+        ):
+            location, covariance, determinant = previous
+        centred = sample - location
+        return (
+            location,
+            covariance,
+            determinant,
+            ((centred @ precision) * centred).sum(1),
+        )
+
+    def select(
+        sample: np.ndarray, size: int, starts, keep: int, iterations: int
+    ) -> list:
+        # The `keep` results with the smallest determinant, from random or given starts.
+        if isinstance(starts, int):
+            results = [c_steps(sample, size, iterations) for _ in range(starts)]
+        else:
+            results = [c_steps(sample, size, iterations, start) for start in starts]
+        order = np.argsort([result[2] for result in results])[:keep]
+        return [results[index] for index in order]
+
+    if periods > 500:  # noqa: PLR2004
+        parts = periods // 300
+        part_size = periods // parts
+        shuffle = generator.permutation(periods)
+        part_support = int(np.ceil(part_size * (size / float(periods))))
+        candidates = []
+        for part in range(parts):
+            candidates += select(
+                data[shuffle[part * part_size : (part + 1) * part_size]],
+                part_support,
+                max(10, 500 // parts),
+                10,
+                2,
+            )
+        merged_size = min(1500, periods)
+        selection = generator.permutation(periods)[:merged_size]
+        merged = select(
+            data[selection],
+            int(np.ceil(merged_size * (size / float(periods)))),
+            [result[:2] for result in candidates],
+            10 if periods > 1500 else 1,  # noqa: PLR2004
+            30,
+        )
+        if periods < 1500:  # noqa: PLR2004
+            location, covariance, _, merged_distance = merged[0]
+            distance = np.zeros(periods)
+            distance[selection] = merged_distance
+        else:
+            location, covariance, _, distance = select(
+                data, size, [result[:2] for result in merged], 1, 30
+            )[0]
+    else:
+        best = select(data, size, 30, 10, 2)
+        location, covariance, _, distance = select(
+            data, size, [result[:2] for result in best], 1, 30
+        )[0]
+
+    if reweight:
+        alpha = size / periods
+        distance = distance / (
+            alpha / stats.chi2.cdf(stats.chi2.ppf(alpha, assets), assets + 2)
+        )
+        kept = distance < stats.chi2(assets).isf(0.025)
+        covariance = (
+            np.cov(data[kept].T, bias=True)
+            * 0.975
+            / stats.chi2.cdf(stats.chi2.ppf(0.975, assets), assets + 2)
+        )
+    return pd.DataFrame(covariance, index=returns.columns, columns=returns.columns)
+
+
+def get_triangulated_maximally_filtered_graph(
+    weights: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The Triangulated Maximally Filtered Graph (TMFG) of a matrix of non-negative weights
+    (such as similarities between assets): a planar graph that keeps the strongest links,
+    3(N - 2) of the N(N - 1) / 2, built from 4-cliques (tetrahedra) joined by 3-cliques
+    (triangles, the separators).
+
+    It starts from the tetrahedron of the four vertices with the largest strength (the
+    sum of their weights above the average weight) and inserts the other vertices one by
+    one: each time the vertex and triangular face with the largest gain (the sum of the
+    weights from the vertex to the three corners of the face) are joined, which turns the
+    face into a separator, adds the 4-clique of the face and the vertex and splits the face
+    into three new ones.
+
+    This is a port of Riskfolio-Lib's PMFG_T2s (DBHT.py, BSD 3-Clause License, Copyright
+    (c) 2020-2026 Dany Cajas, after Tomaso Aste's MATLAB code), with the same order of
+    insertion and the same tie-breaking (the gains rounded to six decimals).
+
+    See Massara, G. P., Di Matteo, T. and Aste, T. (2016), "Network Filtering for Big Data:
+    Triangulated Maximally Filtered Graph", Journal of Complex Networks, 5(2), 161-178.
+
+    Args:
+        weights (np.ndarray): A symmetric N × N matrix of non-negative weights, N ≥ 4.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: The N - 3 4-cliques (rows of four vertex indices)
+        and the N - 4 separators (rows of three vertex indices).
+    """
+    vertices = len(weights)
+    if vertices < 4:  # noqa: PLR2004
+        raise ValueError("The TMFG needs at least four vertices.")
+    strength = np.sum(weights * (weights > np.mean(weights)), axis=1)
+    inserted = list(np.argsort(strength)[::-1][:4])
+    remaining = np.setdiff1d(np.arange(vertices), inserted)
+    first, second, third, fourth = inserted
+    triangles = np.zeros((2 * vertices - 4, 3), dtype=int)
+    triangles[:4] = [
+        [first, second, third],
+        [second, third, fourth],
+        [first, second, fourth],
+        [first, third, fourth],
+    ]
+    separators = np.zeros((vertices - 4, 3), dtype=int)
+    gain = np.zeros((vertices, 2 * vertices - 4))
+    for face in range(4):
+        gain[remaining, face] = np.sum(
+            weights[np.ix_(remaining, triangles[face])], axis=1
+        )
+
+    last = 3
+    for step in range(4, vertices):
+        if len(remaining) == 1:
+            position, face = 0, int(np.argmax(gain[remaining, :]))
+        else:
+            best = np.argmax(gain[remaining, :], axis=0)
+            face = int(np.argmax(np.round(np.max(gain[remaining, :], axis=0), 6)))
+            position = best[face]
+        vertex = remaining[position]
+        remaining = np.delete(remaining, position)
+        inserted.append(vertex)
+        separators[step - 4] = triangles[face]
+        corner_one, corner_two, corner_three = triangles[face]
+        triangles[last + 1] = [corner_one, corner_three, vertex]
+        triangles[last + 2] = [corner_two, corner_three, vertex]
+        triangles[face] = [corner_one, corner_two, vertex]
+        gain[vertex, :] = 0
+        for new_face in (face, last + 1, last + 2):
+            gain[remaining, new_face] = np.sum(
+                weights[np.ix_(remaining, triangles[new_face])], axis=1
+            )
+        last += 2
+
+    cliques = np.vstack(
+        [np.array(inserted[:4]), np.column_stack([separators, inserted[4:]])]
+    ).astype(int)
+    return cliques, separators
+
+
+def get_logo_covariance(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    The j-LoGo covariance matrix: the inverse of the sparse inverse covariance (precision
+    matrix) that the Local-Global (LoGo) method builds on the TMFG of the correlations.
+    Two assets that the planar graph does not link are conditionally independent given
+    the others, so most of the precision matrix is zero and far fewer parameters are
+    estimated than in the full matrix.
+
+    With S the sample covariance (ddof=1) and the TMFG of the similarities 1 - d²_ij =
+    (1 + ρ_ij) / 2 (see get_triangulated_maximally_filtered_graph), the precision matrix is
+    the sum of the local inverses over the 4-cliques C minus those over the separators S:
+
+    - J = Σ_C [S_CC]⁻¹ - Σ_S [S_SS]⁻¹ (each inverse added to the rows and columns of its
+      vertices), and Σ = J⁻¹.
+
+    With four or fewer assets the graph links every pair and the estimate is the sample
+    covariance.
+
+    This equals Riskfolio-Lib's covar_matrix(method="jlogo") and its j_LoGo with PMFG_T2s
+    (DBHT.py, BSD 3-Clause License, Copyright (c) 2020-2026 Dany Cajas), of which the
+    graph is a port.
+
+    See Barfuss, W., Massara, G. P., Di Matteo, T. and Aste, T. (2016), "Parsimonious
+    Modeling with Information Filtering Networks", Physical Review E, 94(6), 062306.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    sample = returns.cov().to_numpy(dtype=float)
+    if len(sample) <= 4:  # noqa: PLR2004
+        return pd.DataFrame(sample, index=returns.columns, columns=returns.columns)
+    correlation = np.corrcoef(returns.to_numpy(dtype=float), rowvar=False)
+    cliques, separators = get_triangulated_maximally_filtered_graph(
+        1 - np.clip((1 - correlation) / 2, 0.0, 1.0)
+    )
+    precision = np.zeros_like(sample)
+    for vertices, sign in [(clique, 1) for clique in cliques] + [
+        (separator, -1) for separator in separators
+    ]:
+        precision[np.ix_(vertices, vertices)] += sign * np.linalg.inv(
+            sample[np.ix_(vertices, vertices)]
+        )
+    return pd.DataFrame(
+        np.linalg.inv(precision), index=returns.columns, columns=returns.columns
+    )
+
+
+def get_geodesic_shrinkage_covariance(
+    returns: pd.DataFrame, shrinkage: float = 0.1, target: str = "scaled_identity"
+) -> pd.DataFrame:
+    """
+    The covariance matrix shrunk towards a target along the geodesic of the positive
+    definite matrices rather than along a straight line. With S the sample covariance
+    (ddof=1), T the target and α the shrinkage intensity:
+
+    - Σ(α) = S^(1/2) (S^(-1/2) T S^(-1/2))^α S^(1/2), so Σ(0) = S and Σ(1) = T.
+    - For the scaled identity T = (tr(S) / N) I, the eigenvectors of S are kept and its
+      eigenvalues interpolated geometrically, λ_i^(1 - α) (tr(S) / N)^α, where linear
+      shrinkage (see get_shrunk_covariance) gives (1 - α) λ_i + α tr(S) / N. The condition
+      number becomes κ(S)^(1 - α), and the estimate stays positive definite for every α.
+    - For the diagonal target T = diag(S), the correlations shrink towards zero, and Σ(α)
+      = B Λ^(1 - α) B' with S V = T V Λ, V' T V = I and B = T V.
+
+    Unlike linear shrinkage, the trace is not kept at intermediate α. A sample covariance
+    that is not positive definite is first replaced by the nearest one (see
+    get_nearest_correlation).
+
+    This equals skfolio's GeodesicShrinkageCovariance on its default EmpiricalCovariance
+    (ddof=1), with the same default intensity of 0.1.
+
+    See Bhatia, R. (2007), Positive Definite Matrices, Princeton University Press, and
+    Musolas, A., Smith, S. T. and Marzouk, Y. (2021), "Geodesically Parameterized
+    Covariance Estimation", SIAM Journal on Matrix Analysis and Applications, 42(2),
+    528-556.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        shrinkage (float, optional): The shrinkage intensity α between 0 (the sample
+            covariance) and 1 (the target). Defaults to 0.1.
+        target (str, optional): The target: "scaled_identity" or "diagonal". Defaults to
+            "scaled_identity".
+
+    Returns:
+        pd.DataFrame: The covariance matrix per period.
+    """
+    if not 0 <= shrinkage <= 1:
+        raise ValueError("The shrinkage intensity must lie between 0 and 1.")
+    if target not in ("scaled_identity", "diagonal"):
+        raise ValueError("The target must be 'scaled_identity' or 'diagonal'.")
+    sample = returns.cov().to_numpy(dtype=float)
+    try:
+        np.linalg.cholesky(sample)
+    except np.linalg.LinAlgError:
+        volatility = np.sqrt(np.diag(sample))
+        sample = get_nearest_correlation(
+            sample / np.outer(volatility, volatility)
+        ) * np.outer(volatility, volatility)
+    if target == "scaled_identity":
+        end = np.trace(sample) / len(sample) * np.eye(len(sample))
+    else:
+        end = np.diag(np.diag(sample))
+    if shrinkage in (0, 1):
+        covariance = sample if shrinkage == 0 else end
+    elif target == "scaled_identity":
+        eigenvalues, eigenvectors = np.linalg.eigh(sample)
+        eigenvalues = eigenvalues ** (1 - shrinkage) * end[0, 0] ** shrinkage
+        covariance = (eigenvectors * eigenvalues) @ eigenvectors.T
+    else:
+        eigenvalues, eigenvectors = linalg.eigh(sample, end)
+        basis = end @ eigenvectors
+        covariance = (basis * eigenvalues ** (1 - shrinkage)) @ basis.T
+    return pd.DataFrame(
+        (covariance + covariance.T) / 2, index=returns.columns, columns=returns.columns
+    )
+
+
+def get_regime_adjusted_exponential_covariance(
+    returns: pd.DataFrame, half_life: float = 40
+) -> tuple[pd.DataFrame, float]:
+    """
+    The exponentially weighted covariance matrix rescaled by a short-term volatility
+    update (STVU): a multiplier φ that compares the risk the covariance predicted with the
+    risk that followed, so the estimate catches up when volatility changes faster than the
+    exponential average can follow.
+
+    With λ = 2^(-1 / half_life), the returns r_t taken around zero and the recursion
+    started at zero, the covariance after t periods is S_t = λ S_(t-1) + (1 - λ) r_t r_t',
+    divided by 1 - λ^t to remove the bias of the zero start. From period half_life on,
+    every period compares the return of the inverse volatility portfolio w_t (from the
+    covariance before that period) with its predicted volatility:
+
+    - z_t = |w_t' r_t| / √(w_t' S_(t-1) w_t) / √(2 / π), which averages 1 when the risk
+      is predicted well (E|Z| = √(2 / π) for a standard normal Z).
+    - φ is the exponential average of z_t with half-life half_life / 2, started at the
+      first z_t and used once there are half_life / 2 of them, clipped to [0.7, 1.6].
+    - Σ = φ² S_T.
+
+    The volatility of the portfolio is calibrated rather than every direction of the
+    covariance (the Mahalanobis distance), since the directions of the smallest
+    eigenvalues, which an inverse volatility portfolio hardly holds, are estimated worst.
+
+    This equals skfolio's RegimeAdjustedEWCovariance with its defaults (half_life=40, the
+    PORTFOLIO target with inverse volatility weights, the FIRST_MOMENT method, the
+    multiplier clipped to (0.7, 1.6), assume_centered=True, no HAC correction).
+
+    See Paleologo, G. A. (2025), The Elements of Quantitative Investing, Wiley Finance,
+    and Hawkins, D. M. and Maboudou-Tchao, E. M. (2008), "Multivariate Exponentially
+    Weighted Moving Covariance Matrix", Technometrics, 50(2), 155-166.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset, without
+            missing values.
+        half_life (float, optional): The half-life in periods of the exponential weights.
+            Defaults to 40.
+
+    Returns:
+        tuple[pd.DataFrame, float]: The covariance matrix per period and the multiplier φ.
+    """
+    if half_life <= 0:
+        raise ValueError("The half-life must be positive.")
+    values = returns.to_numpy(dtype=float)
+    periods, assets = values.shape
+    if periods < max(1, int(half_life)):
+        raise ValueError(
+            f"The regime adjusted covariance needs at least {int(half_life)} periods."
+        )
+    decay = 2 ** (-1 / half_life)
+    regime_decay = 2 ** (-1 / (half_life / 2))
+    covariance = np.zeros((assets, assets))
+    multiplier, comparisons = 0.0, 0
+    for period, row in enumerate(values):
+        if period >= max(1, int(half_life)):
+            predicted = covariance / (1 - decay**period)
+            weights = 1 / np.sqrt(np.maximum(np.diag(predicted), 1e-12))
+            weights = weights / weights.sum()
+            variance = max(weights @ predicted @ weights, 1e-12)
+            surprise = abs(weights @ row) / np.sqrt(variance) / np.sqrt(2 / np.pi)
+            multiplier = (
+                surprise
+                if comparisons == 0
+                else regime_decay * multiplier + (1 - regime_decay) * surprise
+            )
+            comparisons += 1
+        covariance = decay * covariance + (1 - decay) * np.outer(row, row)
+    covariance = covariance / (1 - decay**periods)
+    multiplier = (
+        float(np.clip(multiplier, 0.7, 1.6))
+        if comparisons >= max(1, int(half_life / 2))
+        else 1.0
+    )
+    return (
+        pd.DataFrame(
+            multiplier**2 * (covariance + covariance.T) / 2,
+            index=returns.columns,
+            columns=returns.columns,
+        ),
+        multiplier,
     )
 
 
@@ -912,3 +1373,561 @@ def get_bootstrap_estimates(
         pd.DataFrame(covariance_lower, index=columns, columns=columns),
         pd.DataFrame(covariance_upper, index=columns, columns=columns),
     )
+
+
+FACTOR_SELECTIONS = ("ols", "forward", "backward", "pcr")
+SELECTION_CRITERIA = ("pvalue", "aic", "bic", "r_squared", "adjusted_r_squared")
+
+
+def get_stepwise_factors(
+    returns: pd.Series,
+    factors: pd.DataFrame,
+    direction: str = "forward",
+    criterion: str = "pvalue",
+    threshold: float = 0.05,
+) -> list[str]:
+    """
+    The factors a stepwise regression of an asset's returns on factor returns (with a
+    constant) selects, as Riskfolio-Lib's forward_regression and backward_regression do.
+
+    - direction="forward", criterion="pvalue": starting without factors, add the factor
+      with the lowest p-value among those that keep every p-value of the model at or below
+      the threshold, until no factor qualifies.
+    - direction="backward", criterion="pvalue": starting with every factor, drop the
+      factor with the highest p-value until every p-value is at or below the threshold.
+      With either direction, when no factor qualifies the single factor with the lowest
+      p-value is kept, so the model always holds one factor.
+    - criterion="aic", "bic", "r_squared" or "adjusted_r_squared": add (forward) or drop
+      (backward) the factor that improves the criterion most (a lower information
+      criterion, a higher R squared) for as long as it improves.
+
+    The p-values are those of the t-statistics of the OLS coefficients and the criteria
+    are defined as statsmodels defines them (see helpers.get_linear_regression).
+
+    See Riskfolio-Lib's forward_regression and backward_regression
+    (https://github.com/dcajasn/Riskfolio-Lib).
+
+    Args:
+        returns (pd.Series): The returns per period of the asset.
+        factors (pd.DataFrame): The factor returns per period, on the same periods.
+        direction (str, optional): "forward" or "backward". Defaults to "forward".
+        criterion (str, optional): "pvalue", "aic", "bic", "r_squared" or
+            "adjusted_r_squared". Defaults to "pvalue".
+        threshold (float, optional): The highest p-value a selected factor may have.
+            Defaults to 0.05.
+
+    Returns:
+        list[str]: The selected factors, in the order they were selected (forward) or in
+        the order of the factors (backward).
+    """
+    if direction not in ("forward", "backward"):
+        raise ValueError("The direction must be forward or backward.")
+    if criterion not in SELECTION_CRITERIA:
+        raise ValueError(
+            f"The criterion must be one of {', '.join(SELECTION_CRITERIA)}, not "
+            f"'{criterion}'."
+        )
+    target = returns.to_numpy(dtype=float)
+
+    def fit(names: list[str]) -> dict:
+        return get_linear_regression(target, factors[names].to_numpy(dtype=float))
+
+    def best_single() -> list[str]:
+        pvalues = {name: fit([name])["pvalues"][0] for name in factors.columns}
+        return [min(pvalues, key=pvalues.__getitem__)]
+
+    lower_is_better = criterion in ("pvalue", "aic", "bic")
+    if criterion == "pvalue":
+        if direction == "forward":
+            included: list[str] = []
+            while True:
+                candidates = {}
+                for name in factors.columns.difference(included, sort=False):
+                    pvalues = fit([*included, name])["pvalues"]
+                    if pvalues.max() <= threshold:
+                        candidates[name] = pvalues[-1]
+                if not candidates:
+                    break
+                included.append(min(candidates, key=candidates.__getitem__))
+            return included or best_single()
+        included = list(factors.columns)
+        while included:
+            pvalues = fit(included)["pvalues"]
+            if pvalues.max() <= threshold:
+                break
+            included.pop(int(np.argmax(pvalues)))
+        return included or best_single()
+
+    def score(names: list[str]) -> float:
+        value = fit(names)[criterion]
+        return value if lower_is_better else -value
+
+    if direction == "forward":
+        included, current = [], np.inf
+        remaining = list(factors.columns)
+        while remaining:
+            scores = {name: score([*included, name]) for name in remaining}
+            name = min(scores, key=scores.__getitem__)
+            if scores[name] >= current:
+                break
+            included.append(name)
+            remaining.remove(name)
+            current = scores[name]
+        return included
+    included = list(factors.columns)
+    current = score(included)
+    while included:
+        scores = {
+            name: score([other for other in included if other != name])
+            for name in included
+        }
+        name = min(scores, key=scores.__getitem__)
+        if scores[name] >= current:
+            break
+        included.remove(name)
+        current = scores[name]
+    return included
+
+
+def get_principal_components_loadings(
+    returns: pd.Series, factors: pd.DataFrame, components: float = 0.95
+) -> pd.Series:
+    """
+    The intercept and factor loadings of a principal components regression (PCR) of an
+    asset's returns on factor returns, as Riskfolio-Lib's PCR estimates them. The factors
+    are standardized (ddof=1), their first k principal components Z = X_std V_k are the
+    regressors of an OLS regression with a constant, and the coefficients γ of the
+    components are mapped back to the factors: β = V_k γ / σ_f and the intercept
+    α = mean(r) - Σ β_f mean(f). Leaving out the components with little variance removes
+    the instability that correlated factors give OLS loadings.
+
+    See Jolliffe, I. T. (1982), "A Note on the Use of Principal Components in
+    Regression", Journal of the Royal Statistical Society, Series C, 31(3), 300-303, and
+    Riskfolio-Lib's PCR (https://github.com/dcajasn/Riskfolio-Lib).
+
+    Args:
+        returns (pd.Series): The returns per period of the asset.
+        factors (pd.DataFrame): The factor returns per period, on the same periods.
+        components (float, optional): The number of components to keep (1 or more), or,
+            between 0 and 1, the smallest number whose share of the variance of the
+            standardized factors exceeds it, as scikit-learn's PCA counts them. Defaults
+            to 0.95.
+
+    Returns:
+        pd.Series: The Intercept and the loading of every factor.
+    """
+    if components <= 0:
+        raise ValueError("The number of components must be positive.")
+    data = factors.to_numpy(dtype=float)
+    mean = data.mean(axis=0)
+    deviation = data.std(axis=0, ddof=1)
+    standardized = (data - mean) / deviation
+    _, singular_values, vectors = np.linalg.svd(standardized, full_matrices=False)
+    if components < 1:
+        explained = singular_values**2 / np.sum(singular_values**2)
+        kept = int(np.searchsorted(np.cumsum(explained), components, side="right")) + 1
+    else:
+        kept = int(components)
+    kept = min(kept, len(singular_values))
+    loadings = vectors[:kept].T
+    regression = get_linear_regression(
+        returns.to_numpy(dtype=float), standardized @ loadings
+    )
+    betas = loadings @ regression["params"][1:] / deviation
+    intercept = float(returns.mean()) - float(betas @ mean)
+    return pd.Series(
+        np.concatenate([[intercept], betas]), index=["Intercept", *factors.columns]
+    )
+
+
+def get_factor_loadings(
+    returns: pd.DataFrame,
+    factors: pd.DataFrame,
+    selection: str = "ols",
+    criterion: str = "pvalue",
+    threshold: float = 0.05,
+    components: float = 0.95,
+) -> pd.DataFrame:
+    """
+    The loadings matrix of a time series factor model: the intercept and factor loadings
+    of the regression of every asset's returns on the factor returns, r_i,t = α_i +
+    Σ_f β_i,f F_f,t + ε_i,t (Fama and French, 1993; Connor, 1995), as Riskfolio-Lib's
+    loadings_matrix estimates it.
+
+    - "ols": every factor, ordinary least squares.
+    - "forward", "backward": the factors a stepwise regression selects (see
+      get_stepwise_factors), the others with a loading of zero.
+    - "pcr": a principal components regression (see get_principal_components_loadings).
+
+    See Fama, E. F. and French, K. R. (1993), "Common Risk Factors in the Returns on
+    Stocks and Bonds", Journal of Financial Economics, 33(1), 3-56, and Connor, G.
+    (1995), "The Three Types of Factor Models: A Comparison of Their Explanatory Power",
+    Financial Analysts Journal, 51(3), 42-46.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        factors (pd.DataFrame): The factor returns per period, on the same periods, without
+            missing values.
+        selection (str, optional): "ols", "forward", "backward" or "pcr". Defaults to "ols".
+        criterion (str, optional): The criterion of the stepwise selection. Defaults to
+            "pvalue".
+        threshold (float, optional): The highest p-value of the stepwise selection.
+            Defaults to 0.05.
+        components (float, optional): The components of "pcr". Defaults to 0.95.
+
+    Returns:
+        pd.DataFrame: Per asset the Intercept (per period) and the loading of every factor.
+    """
+    if selection not in FACTOR_SELECTIONS:
+        raise ValueError(
+            f"The selection must be one of {', '.join(FACTOR_SELECTIONS)}, not "
+            f"'{selection}'."
+        )
+    if not returns.index.equals(factors.index):
+        raise ValueError("The returns and the factors must cover the same periods.")
+    loadings = pd.DataFrame(
+        0.0, index=returns.columns, columns=["Intercept", *factors.columns]
+    )
+    for asset in returns.columns:
+        if selection == "pcr":
+            loadings.loc[asset] = get_principal_components_loadings(
+                returns[asset], factors, components
+            )
+            continue
+        selected = (
+            list(factors.columns)
+            if selection == "ols"
+            else get_stepwise_factors(
+                returns[asset], factors, selection, criterion, threshold
+            )
+        )
+        params = get_linear_regression(
+            returns[asset].to_numpy(dtype=float),
+            factors[selected].to_numpy(dtype=float),
+        )["params"]
+        loadings.loc[asset, ["Intercept", *selected]] = params
+    return loadings
+
+
+def get_factor_model(
+    returns: pd.DataFrame, factors: pd.DataFrame, loadings: pd.DataFrame
+) -> tuple[pd.Series, pd.DataFrame, pd.Series]:
+    """
+    The expected returns and covariance matrix a time series factor model implies, as
+    Riskfolio-Lib's risk_factors and skfolio's FactorModel compute them: with B the
+    loadings, α the intercepts, μ_f and Σ_f the mean and sample covariance (ddof=1) of the
+    factor returns and D the diagonal matrix of the variances (ddof=1) of the residuals
+    ε = r - α - F B',
+
+    - μ = α + B μ_f
+    - Σ = B Σ_f B' + D
+
+    The factors explain the co-movement of the assets and the residuals are taken to be
+    uncorrelated, which leaves N K + N parameters to estimate instead of N (N + 1) / 2:
+    a covariance matrix that is better conditioned when there are many assets. With an
+    intercept, the OLS residuals average zero, so μ equals the average return of each asset
+    over the same periods; the factor model changes the covariance, not the means.
+
+    See Connor, G. (1995), "The Three Types of Factor Models: A Comparison of Their
+    Explanatory Power", Financial Analysts Journal, 51(3), 42-46.
+
+    Args:
+        returns (pd.DataFrame): The returns per period, one column per asset.
+        factors (pd.DataFrame): The factor returns per period, on the same periods.
+        loadings (pd.DataFrame): The Intercept and factor loadings per asset (see
+            get_factor_loadings).
+
+    Returns:
+        tuple[pd.Series, pd.DataFrame, pd.Series]: The expected returns, the covariance
+        matrix and the residual variance per asset, all per period.
+    """
+    intercept = loadings["Intercept"].reindex(returns.columns).to_numpy(dtype=float)
+    beta = loadings[factors.columns].reindex(returns.columns).to_numpy(dtype=float)
+    data = factors.to_numpy(dtype=float)
+    residuals = returns.to_numpy(dtype=float) - intercept - data @ beta.T
+    residual_variance = residuals.var(axis=0, ddof=1)
+    covariance = beta @ np.cov(data, rowvar=False, ddof=1).reshape(
+        len(factors.columns), len(factors.columns)
+    ) @ beta.T + np.diag(residual_variance)
+    return (
+        pd.Series(intercept + beta @ data.mean(axis=0), index=returns.columns),
+        pd.DataFrame(covariance, index=returns.columns, columns=returns.columns),
+        pd.Series(residual_variance, index=returns.columns),
+    )
+
+
+VIEW_OPERATORS = ("==", ">=", "<=")
+
+
+def get_entropy_pooling(
+    returns: pd.DataFrame,
+    mean_views: dict | None = None,
+    volatility_views: dict | None = None,
+    correlation_views: dict | None = None,
+    prior_probabilities: np.ndarray | None = None,
+) -> pd.Series:
+    """
+    The posterior probabilities of the historical scenarios (periods) under views, by
+    Entropy Pooling (Meucci, 2008): the probabilities p closest to the prior probabilities
+    q (equal, 1 / T, by default) in relative entropy, KL(p ‖ q) = Σ p_t ln(p_t / q_t), that
+    satisfy the views. The scenarios stay as they were; only their weights change, so the
+    posterior keeps the fat tails and co-movements of the history.
+
+    A view is linear in p: a mean view E_p[r_i] = Σ p_t r_i,t (or of r_i - r_j for a
+    relative view "AAPL-MSFT"), a volatility view Σ p_t (r_i,t - m_i)² = σ² with m_i the
+    mean after the mean views, and a correlation view Σ p_t r_i,t r_j,t = m_i m_j +
+    ρ √(v_i v_j) with the means and variances after the mean and volatility views, which
+    are then held at those values, the sequential scheme of skfolio's EntropyPooling. A
+    view is an equality (a number) or an inequality, (">=", value) or ("<=", value).
+
+    The problem is solved through its dual (Csiszár, 1975; Boyd and Vandenberghe, 2004,
+    5.2.3): with the constraints A'p = b and A'p ≤ b (every column of A scaled to unit
+    length), p_t = q_t exp(-1 - a_t'λ) at the multipliers λ that minimize
+    Σ q_t exp(-1 - a_t'λ) + λ'b, with λ ≥ 0 for the inequalities, by SciPy's truncated
+    Newton method (TNC), as skfolio does. The multipliers of the moments held fixed are
+    bounded to ±1000, which relaxes them when the views cannot be met exactly.
+
+    See Meucci, A. (2008), "Fully Flexible Views: Theory and Practice", Risk, 21(10),
+    97-102, and skfolio's EntropyPooling (https://github.com/skfolio/skfolio).
+
+    Args:
+        returns (pd.DataFrame): The returns per period (the scenarios), one column per
+            asset, without missing values.
+        mean_views (dict | None, optional): The mean return per period of an asset
+            ("AAPL") or of the difference of two ("AAPL-MSFT"). Defaults to None.
+        volatility_views (dict | None, optional): The standard deviation per period of an
+            asset. Defaults to None.
+        correlation_views (dict | None, optional): The correlation of two assets
+            ("AAPL-MSFT"), between -1 and 1. Defaults to None.
+        prior_probabilities (np.ndarray | None, optional): The prior probability of every
+            scenario. Defaults to None, equal probabilities.
+
+    Returns:
+        pd.Series: The posterior probability of every scenario, summing to one.
+    """
+    data = returns.to_numpy(dtype=float)
+    periods, assets = data.shape
+    names = returns.columns
+    prior = (
+        np.full(periods, 1 / periods)
+        if prior_probabilities is None
+        else np.asarray(prior_probabilities, dtype=float)
+    )
+    if len(prior) != periods or np.any(prior < 0) or not np.isclose(prior.sum(), 1):
+        raise ValueError(
+            "The prior probabilities must be one non-negative number per period, summing "
+            "to one."
+        )
+    # Each kind holds the columns of A and the values of b: equalities, inequalities
+    # (A'p ≤ b) and the moments held fixed.
+    constraints: dict[str, list] = {"equality": [], "inequality": [], "fixed": []}
+
+    def add(kind: str, column: np.ndarray, value: float) -> None:
+        scale = np.linalg.norm(column)
+        if scale == 0:
+            raise ValueError("A view does not vary across the scenarios.")
+        constraints[kind].append((column / scale, value / scale))
+
+    def add_view(view_value, column: np.ndarray, transform=None) -> None:
+        # The transform turns the value of the view into the value of the constraint,
+        # e.g. a volatility into the variance the constraint holds.
+        operator, value = (
+            ("==", view_value)
+            if isinstance(view_value, int | float)
+            else tuple(view_value)
+        )
+        if operator not in VIEW_OPERATORS:
+            raise ValueError(
+                f"A view is a number or a pair (operator, value) with the operator one of "
+                f"{', '.join(VIEW_OPERATORS)}, not {operator!r}."
+            )
+        target = float(value) if transform is None else float(transform(float(value)))
+        if operator == "==":
+            add("equality", column, target)
+        elif operator == "<=":
+            add("inequality", column, target)
+        else:
+            add("inequality", -column, -target)
+
+    def solve() -> np.ndarray:
+        if not any(constraints.values()):
+            return prior
+        columns = [np.full(periods, 1 / np.sqrt(periods))]
+        values = [1 / np.sqrt(periods)]
+        bounds: list[tuple[float | None, float | None]] = [(None, None)]
+        for kind, bound in (
+            ("equality", (None, None)),
+            ("inequality", (0, None)),
+            ("fixed", (-1000, 1000)),
+        ):
+            for column, value in constraints[kind]:
+                columns.append(column)
+                values.append(value)
+                bounds.append(bound)
+        matrix = np.column_stack(columns)
+        target = np.array(values)
+
+        def dual(multipliers: np.ndarray) -> tuple[float, np.ndarray]:
+            weights = prior * np.exp(-matrix @ multipliers - 1)
+            return weights.sum() + multipliers @ target, target - matrix.T @ weights
+
+        solution = minimize(
+            dual,
+            x0=np.zeros(len(target)),
+            jac=True,
+            bounds=bounds,
+            method="TNC",
+            options={
+                "maxfun": 5000,
+                "ftol": 1e-11,
+                "xtol": 1e-8,
+                "gtol": 1e-8,
+                "stepmx": 1,
+            },
+        )
+        if not solution.success:
+            raise ValueError(
+                "The views cannot be met by reweighting the scenarios; they conflict or "
+                f"are too extreme ({solution.message})."
+            )
+        posterior = np.clip(prior * np.exp(-1 - matrix @ solution.x), 0, 1)
+        return posterior / posterior.sum()
+
+    fixed_mean = np.zeros(assets, dtype=bool)
+    fixed_variance = np.zeros(assets, dtype=bool)
+
+    def fix(selected: np.ndarray, mean: np.ndarray, variance=None) -> None:
+        for index in np.flatnonzero(selected & ~fixed_mean):
+            add("fixed", data[:, index], mean[index])
+            fixed_mean[index] = True
+        if variance is not None:
+            for index in np.flatnonzero(selected & ~fixed_variance):
+                add("fixed", (data[:, index] - mean[index]) ** 2, variance[index])
+                fixed_variance[index] = True
+
+    for view, value in (mean_views or {}).items():
+        add_view(value, data @ get_view_vector(view, names))
+    probabilities = solve()
+
+    if volatility_views:
+        mean = probabilities @ data
+        selected = np.zeros(assets, dtype=bool)
+        for view, value in volatility_views.items():
+            if view not in names:
+                raise ValueError(f"The volatility view {view!r} names no asset.")
+            index = names.get_loc(view)
+            add_view(
+                value,
+                (data[:, index] - mean[index]) ** 2,
+                lambda volatility: volatility**2,
+            )
+            selected[index] = True
+        fix(selected, mean)
+        probabilities = solve()
+
+    if correlation_views:
+        mean = probabilities @ data
+        variance = probabilities @ (data - mean) ** 2
+        selected = np.zeros(assets, dtype=bool)
+        for view, value in correlation_views.items():
+            pick = get_view_vector(view, names)
+            if np.count_nonzero(pick) != 2:  # noqa: PLR2004
+                raise ValueError(
+                    f"The correlation view {view!r} must name two assets, 'NAME-NAME'."
+                )
+            first, second = np.flatnonzero(pick == 1)[0], np.flatnonzero(pick == -1)[0]
+            add_view(
+                value,
+                data[:, first] * data[:, second],
+                lambda correlation, i=first, j=second: mean[i] * mean[j]
+                + correlation * np.sqrt(variance[i] * variance[j]),
+            )
+            selected[[first, second]] = True
+        fix(selected, mean, variance)
+        probabilities = solve()
+
+    return pd.Series(probabilities, index=returns.index)
+
+
+POOLING_METHODS = ("linear", "logarithmic")
+
+
+def get_opinion_pooling(
+    probabilities: pd.DataFrame,
+    opinion_weights: list[float] | None = None,
+    method: str = "linear",
+    divergence_penalty: float = 0.0,
+) -> pd.Series:
+    """
+    The consensus of several sets of scenario probabilities, the opinions of different
+    experts (e.g. each an Entropy Pooling posterior), as skfolio's OpinionPooling combines
+    them. The weight π_k of each opinion lies between 0 and 1; when they sum to less than
+    one, the rest goes to the prior (equal probabilities).
+
+    - "linear": p = Σ π_k p_k, the arithmetic mixture (Stone, 1961), which keeps every
+      scenario any opinion gives a probability.
+    - "logarithmic": p ∝ Π p_k^π_k, the geometric mixture (Genest and Zidek, 1986), which
+      minimizes the weighted relative entropy to the opinions and gives no probability to
+      a scenario that any opinion rules out.
+
+    With a divergence penalty α > 0 the weights become π̃_k ∝ π_k exp(-α KL(p_k ‖ c)), with
+    c = Σ π_k p_k the linear consensus, which weighs down the opinions far from the others.
+
+    See Stone, M. (1961), "The Opinion Pool", The Annals of Mathematical Statistics,
+    32(4), 1339-1342; Genest, C. and Zidek, J. V. (1986), "Combining Probability
+    Distributions: A Critique and an Annotated Bibliography", Statistical Science, 1(1),
+    114-135; and skfolio's OpinionPooling (https://github.com/skfolio/skfolio).
+
+    Args:
+        probabilities (pd.DataFrame): The probability of every scenario (rows) per opinion
+            (columns), each column summing to one.
+        opinion_weights (list[float] | None, optional): The weight of every opinion.
+            Defaults to None, equal weights summing to one.
+        method (str, optional): "linear" or "logarithmic". Defaults to "linear".
+        divergence_penalty (float, optional): The penalty α. Defaults to 0.
+
+    Returns:
+        pd.Series: The pooled probability of every scenario, summing to one.
+    """
+    if method not in POOLING_METHODS:
+        raise ValueError("The pooling method must be linear or logarithmic.")
+    if divergence_penalty < 0:
+        raise ValueError("The divergence penalty must not be negative.")
+    opinions = probabilities.to_numpy(dtype=float).T
+    count, periods = opinions.shape
+    weights = (
+        np.full(count, 1 / count)
+        if opinion_weights is None
+        else np.asarray(opinion_weights, dtype=float)
+    )
+    if len(weights) != count:
+        raise ValueError("There must be one weight per opinion.")
+    if np.any(weights < 0) or np.any(weights > 1) or weights.sum() > 1 + 1e-12:
+        raise ValueError(
+            "The opinion weights must lie between 0 and 1 and sum to at most one."
+        )
+    if np.isclose(weights.sum(), 1):
+        weights = weights / weights.sum()
+    else:
+        opinions = np.vstack([opinions, np.full(periods, 1 / periods)])
+        weights = np.append(weights, 1 - weights.sum())
+    if divergence_penalty > 0:
+        consensus = weights @ opinions
+        divergence = np.array(
+            [
+                np.sum(
+                    opinion[opinion > 0]
+                    * np.log(opinion[opinion > 0] / consensus[opinion > 0])
+                )
+                for opinion in opinions
+            ]
+        )
+        weights = weights * np.exp(-divergence_penalty * divergence)
+        weights = weights / weights.sum()
+    if method == "linear":
+        pooled = weights @ opinions
+    else:
+        with np.errstate(divide="ignore"):
+            logarithm = weights @ np.log(opinions)
+        pooled = np.exp(logarithm - logsumexp(logarithm))
+    return pd.Series(pooled, index=probabilities.index)

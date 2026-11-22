@@ -105,6 +105,30 @@ def test_get_money_weighted_return(recorder):
     recorder.capture(portfolio.get_money_weighted_return())
 
 
+def test_get_turnover(recorder):
+    daily = portfolio.get_turnover(rounding=8)
+    recorder.capture(daily[daily["Traded Value"] > 0])
+    # The first purchase is a turnover of 2: the gross value of the empty day before
+    # halves the average (up to the difference between the trade price and the close).
+    assert daily["Turnover"].iloc[0] == pytest.approx(2, rel=1e-4)
+    recorder.capture(portfolio.get_turnover(denominator="net_value", period="yearly"))
+
+
+def test_get_gross_leverage(recorder):
+    table = portfolio.get_gross_leverage(period="yearly")
+    recorder.capture(table)
+    # The portfolio holds no short positions.
+    assert np.allclose(table["Gross Leverage"].dropna(), 1)
+
+
+def test_get_return_contributions(recorder):
+    table = portfolio.get_return_contributions(period="yearly", rounding=8)
+    recorder.capture(table)
+    assert np.allclose(
+        table.drop(columns="Portfolio").sum(axis=1), table["Portfolio"], atol=1e-7
+    )
+
+
 def _offline_price_toolkit(self, tickers, start_date):  # noqa: ARG001
     self._toolkit = Toolkit(
         tickers=tickers,
@@ -1153,3 +1177,57 @@ def test_the_weekly_data_converts_each_day_at_its_own_rate(monkeypatch):
         / 100
         / float(pounds_per_dollar.loc[first_day.to_timestamp(), "USDGBP=X"])
     )
+
+
+def _offline_portfolio():
+    """A Portfolio of the test dataset on copies of the offline prices, set up as the shared one above."""
+    held = Portfolio(portfolio_dataset="tests/datasets/portfolio_test.xlsx")
+    held._daily_historical_data = historical.copy()
+    held._daily_benchmark_data = benchmark.copy()
+    held._currency_column = None  # type: ignore # noqa
+    held._benchmark_tickers = dict.fromkeys(
+        held._original_tickers, held._cfg["general"]["benchmark_ticker"]
+    )
+    held._benchmark_toolkit = Toolkit(
+        tickers=list(set(held._benchmark_tickers.values())),
+        historical=held._daily_benchmark_data,
+        benchmark_ticker=None,
+        start_date=held._start_date,
+        sleep_timer=False,
+    )
+    held._toolkit = Toolkit(
+        tickers=held._tickers,
+        benchmark_ticker=None,
+        start_date=held._start_date,
+        historical=held._daily_historical_data,
+        sleep_timer=False,
+    )
+    held.collect_historical_data()
+    return held
+
+
+def test_the_toolkit_leaves_the_portfolio_data_untouched():
+    untouched = _offline_portfolio()
+    touched = _offline_portfolio()
+    daily_historical_data = touched._daily_historical_data.copy()
+
+    assert isinstance(touched.toolkit, Toolkit)
+    # The Toolkit holds the benchmark next to the tickers; the Portfolio's own data does not.
+    pd.testing.assert_frame_equal(touched._daily_historical_data, daily_historical_data)
+
+    for method, kwargs in [
+        ("get_portfolio_overview", {}),
+        ("get_positions_overview", {}),
+        ("get_portfolio_performance", {"period": "yearly"}),
+        ("get_transactions_overview", {}),
+        ("get_transactions_performance", {"period": "yearly"}),
+        ("get_money_weighted_return", {}),
+        ("get_turnover", {"period": "yearly"}),
+        ("get_gross_leverage", {"period": "yearly"}),
+        ("get_return_contributions", {"period": "yearly"}),
+    ]:
+        pd.testing.assert_frame_equal(
+            getattr(touched, method)(**kwargs),
+            getattr(untouched, method)(**kwargs),
+            obj=method,
+        )

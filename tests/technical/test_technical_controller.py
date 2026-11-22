@@ -702,6 +702,89 @@ def test_get_price_zone_oscillator(recorder, technical_module):
     )
 
 
+def test_get_volume_weighted_macd(recorder, technical_module):
+    recorder.capture(
+        technical_module.get_moving_average_convergence_divergence(
+            moving_average="volume_weighted"
+        )
+    )
+    recorder.capture(
+        technical_module.get_moving_average_convergence_divergence(
+            moving_average="volume_weighted", signal_moving_average="volume_weighted"
+        )
+    )
+    recorder.capture(
+        technical_module.get_moving_average_convergence_divergence(
+            short_window=20, long_window=40, moving_average="elastic_volume_weighted"
+        )
+    )
+
+
+def test_get_connors_relative_strength_index(recorder, technical_module):
+    recorder.capture(technical_module.get_connors_relative_strength_index())
+    recorder.capture(
+        technical_module.get_connors_relative_strength_index(
+            window=4, streak_window=3, rank_window=50
+        )
+    )
+    recorder.capture(
+        technical_module.get_connors_relative_strength_index(period="weekly")
+    )
+
+
+def test_get_inertia(recorder, technical_module):
+    recorder.capture(technical_module.get_inertia())
+    recorder.capture(technical_module.get_inertia(method="refined"))
+    recorder.capture(technical_module.get_inertia(window=10, std_window=14))
+
+
+def test_get_bias(recorder, technical_module):
+    recorder.capture(technical_module.get_bias())
+    recorder.capture(technical_module.get_bias(window=10, moving_average="exponential"))
+    recorder.capture(technical_module.get_bias(growth=True))
+
+
+def test_get_brar(recorder, technical_module):
+    recorder.capture(technical_module.get_brar())
+    recorder.capture(technical_module.get_brar(window=10))
+    recorder.capture(technical_module.get_brar(period="weekly"))
+
+
+def test_get_pretty_good_oscillator(recorder, technical_module):
+    recorder.capture(technical_module.get_pretty_good_oscillator())
+    recorder.capture(technical_module.get_pretty_good_oscillator(window=21))
+    recorder.capture(technical_module.get_pretty_good_oscillator(growth=True))
+
+
+def test_get_psychological_line(recorder, technical_module):
+    recorder.capture(technical_module.get_psychological_line())
+    recorder.capture(technical_module.get_psychological_line(method="open"))
+    recorder.capture(technical_module.get_psychological_line(window=24))
+
+
+def test_get_volatility_based_momentum(recorder, technical_module):
+    recorder.capture(technical_module.get_volatility_based_momentum())
+    recorder.capture(
+        technical_module.get_volatility_based_momentum(window=20, atr_window=14)
+    )
+    recorder.capture(technical_module.get_volatility_based_momentum(period="weekly"))
+
+
+def test_get_archer_moving_average_trends(recorder, technical_module):
+    recorder.capture(technical_module.get_archer_moving_average_trends())
+    recorder.capture(
+        technical_module.get_archer_moving_average_trends(
+            short_window=5, long_window=15, lookback=3, moving_average="simple"
+        )
+    )
+
+
+def test_get_ttm_trend(recorder, technical_module):
+    recorder.capture(technical_module.get_ttm_trend())
+    recorder.capture(technical_module.get_ttm_trend(window=10))
+    recorder.capture(technical_module.get_ttm_trend(period="weekly"))
+
+
 def test_get_kaufman_adaptive_moving_average(recorder, technical_module):
     recorder.capture(technical_module.get_kaufman_adaptive_moving_average())
     recorder.capture(technical_module.get_kaufman_adaptive_moving_average(growth=True))
@@ -1706,6 +1789,11 @@ def test_get_candlestick_patterns(recorder, technical_module):
     recorder.capture(
         technical_module.get_candlestick_patterns(
             patterns="belt-hold, Inside Bar", signals_only=True
+        )
+    )
+    recorder.capture(
+        technical_module.get_candlestick_patterns(
+            patterns="Three Outside, kicking by length, harami cross", signals_only=True
         )
     )
 

@@ -376,3 +376,123 @@ def test_williams_fractal_matches_ta_lib_on_the_test_data():
         24,
         29,
     ]
+
+
+def test_kicking_and_kicking_by_length():
+    # A black marubozu and a white one gapping above its high, with bodies of the same length.
+    patterns = candles_after_a_calm_market(
+        (101.0, 98.5, 0.05, 0.05), (101.5, 104.0, 0.05, 0.05)
+    )
+    longer_white = candles_after_a_calm_market(
+        (101.0, 98.5, 0.05, 0.05), (101.5, 104.5, 0.05, 0.05)
+    )
+
+    assert patterns["Kicking"].iloc[-1] == 1
+    # The white body is not longer than the black one, so the black marubozu decides.
+    assert patterns["Kicking by Length"].iloc[-1] == -1
+    assert longer_white["Kicking by Length"].iloc[-1] == 1
+
+
+def test_a_white_candle_opening_below_a_long_black_one():
+    # A long black candle closing at 99.0 with its low at 98.9; "equal" is 0.1 here.
+    first = (101.0, 99.0, 0.1, 0.1)
+    in_neck = candles_after_a_calm_market(first, (98.5, 99.05, 0.1, 0.1))
+    on_neck = candles_after_a_calm_market(first, (98.0, 98.9, 0.1, 0.1))
+    thrusting = candles_after_a_calm_market(first, (98.0, 99.6, 0.1, 0.1))
+
+    names = ["In-Neck", "On-Neck", "Thrusting"]
+    assert in_neck[names].iloc[-1].tolist() == [-1, 0, 0]
+    assert on_neck[names].iloc[-1].tolist() == [0, -1, 0]
+    assert thrusting[names].iloc[-1].tolist() == [0, 0, -1]
+
+
+def test_two_black_candles_matching_low_and_homing_pigeon():
+    matching_low = candles_after_a_calm_market(
+        (101.0, 99.0, 0.1, 0.1), (100.5, 99.02, 0.1, 0.1)
+    )
+    homing_pigeon = candles_after_a_calm_market(
+        (101.0, 99.0, 0.1, 0.1), (100.5, 99.8, 0.1, 0.1)
+    )
+
+    assert matching_low[["Matching Low", "Homing Pigeon"]].iloc[-1].tolist() == [1, 0]
+    assert homing_pigeon[["Matching Low", "Homing Pigeon"]].iloc[-1].tolist() == [0, 1]
+
+
+def test_counterattack_and_separating_lines():
+    # A long white candle closing at the previous close, and one opening at the previous open.
+    counterattack = candles_after_a_calm_market(
+        (102.0, 100.0, 0.1, 0.1), (98.0, 100.05, 0.1, 0.1)
+    )
+    separating_lines = candles_after_a_calm_market(
+        (102.0, 100.0, 0.1, 0.1), (102.0, 104.0, 0.1, 0.05)
+    )
+
+    assert counterattack["Counterattack"].iloc[-1] == 1
+    assert counterattack["Separating Lines"].iloc[-1] == 0
+    assert separating_lines["Separating Lines"].iloc[-1] == 1
+    assert separating_lines["Counterattack"].iloc[-1] == 0
+
+
+def test_three_inside_and_three_outside():
+    three_inside_down = candles_after_a_calm_market(
+        (100.0, 103.0, 0.1, 0.1), (102.0, 101.5, 0.1, 0.1), (101.4, 99.5, 0.1, 0.1)
+    )
+    three_outside_up = candles_after_a_calm_market(
+        (101.0, 100.0, 0.1, 0.1), (99.8, 101.5, 0.1, 0.1), (101.5, 102.0, 0.1, 0.1)
+    )
+
+    assert three_inside_down["Harami"].iloc[-2] == -1
+    assert three_inside_down["Three Inside"].iloc[-1] == -1
+    assert three_outside_up["Engulfing"].iloc[-2] == 1
+    assert three_outside_up["Three Outside"].iloc[-1] == 1
+
+
+def test_the_doji_patterns_of_two_and_three_candles():
+    morning_doji_star = candles_after_a_calm_market(
+        (103.0, 100.0, 0.1, 0.1),  # a long black body
+        (99.5, 99.52, 0.1, 0.1),  # a doji gapping down
+        (99.8, 102.0, 0.1, 0.1),  # a white body closing 30% into the first
+    )
+    harami_cross = candles_after_a_calm_market(
+        (100.0, 103.0, 0.1, 0.1), (101.5, 101.52, 0.1, 0.1)
+    )
+
+    # The doji after the black body is a bullish doji star.
+    assert morning_doji_star["Doji Star"].iloc[-2] == 1
+    assert morning_doji_star["Morning Doji Star"].iloc[-1] == 1
+    assert morning_doji_star["Evening Doji Star"].iloc[-1] == 0
+    assert harami_cross["Harami Cross"].iloc[-1] == -1
+
+
+def test_two_and_three_candle_patterns_match_ta_lib_on_the_test_data():
+    data = pd.read_pickle(
+        Path(__file__).resolve().parents[1] / "datasets" / "historical_dataset.pickle"
+    )
+    candles = (
+        data[["Open", "High", "Low", "Close"]].xs("AAPL", axis=1, level=1).dropna()
+    )
+    patterns = pattern_model.get_candlestick_patterns(
+        candles["Open"], candles["High"], candles["Low"], candles["Close"]
+    )
+
+    # TA-Lib 0.8.3's CDL functions on these candles: (+100 count, -100 count).
+    ta_lib_counts = {
+        "Counterattack": (1, 0),
+        "Doji Star": (10, 13),
+        "Harami Cross": (5, 15),
+        "Homing Pigeon": (5, 0),
+        "In-Neck": (0, 1),
+        "On-Neck": (0, 7),
+        "Thrusting": (0, 11),
+        "Matching Low": (11, 0),
+        "Separating Lines": (2, 1),
+        "Three Inside": (5, 9),
+        "Three Outside": (12, 19),
+        "Morning Doji Star": (2, 0),
+        "Evening Doji Star": (0, 1),
+    }
+    for name, (bullish, bearish) in ta_lib_counts.items():
+        assert (patterns[name].eq(1).sum(), patterns[name].eq(-1).sum()) == (
+            bullish,
+            bearish,
+        ), name

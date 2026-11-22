@@ -1342,3 +1342,87 @@ def create_profit_and_loss_overview(
     profit_and_loss.index = transactions_overview.index
 
     return profit_and_loss
+
+
+TURNOVER_DENOMINATORS = ("gross_value", "net_value")
+
+
+def get_turnover(
+    traded_values: pd.Series,
+    position_values: pd.DataFrame,
+    denominator: str = "gross_value",
+) -> pd.DataFrame:
+    """
+    The turnover of a portfolio per day, the value traded as a share of the value held, as
+    pyfolio's get_turnover calculates it:
+
+    - Traded Value_t = Σ |volume × price| of the day's transactions
+    - Gross Value_t = Σ_i |value of position i| (pyfolio's "actual gross book")
+    - Turnover_t = Traded Value_t / ((Gross Value_t + Gross Value_t-1) / 2), the average of
+      the gross value of the day and the day before (half the gross value on the first
+      day), or Traded Value_t / Net Value_t with denominator="net_value" (pyfolio's
+      "portfolio_value"), Net Value_t = Σ_i value of position i.
+
+    A purchase of a whole portfolio in one day is a turnover of 2 on that day, as the
+    gross value averages to half its size.
+
+    See pyfolio's get_turnover (https://github.com/stefan-jansen/pyfolio-reloaded).
+
+    Args:
+        traded_values (pd.Series): The value traded per day, positive.
+        position_values (pd.DataFrame): The value of every position (columns) per day.
+        denominator (str, optional): "gross_value" or "net_value". Defaults to
+            "gross_value".
+
+    Returns:
+        pd.DataFrame: The Traded Value, the Gross Value (or Net Value) and the Turnover per
+        day, 0 on days without trades.
+    """
+    if denominator not in TURNOVER_DENOMINATORS:
+        raise ValueError(
+            f"The denominator must be one of {', '.join(TURNOVER_DENOMINATORS)}, not "
+            f"'{denominator}'."
+        )
+    traded = traded_values.reindex(position_values.index).fillna(0)
+    if denominator == "gross_value":
+        value = position_values.abs().sum(axis=1)
+        average = value.rolling(2).mean()
+        average.iloc[0] = value.iloc[0] / 2
+        name = "Gross Value"
+    else:
+        value = position_values.sum(axis=1)
+        average = value
+        name = "Net Value"
+    turnover = (traded / average.where(average != 0)).fillna(0)
+    return pd.DataFrame({"Traded Value": traded, name: value, "Turnover": turnover})
+
+
+def get_gross_leverage(position_values: pd.DataFrame) -> pd.DataFrame:
+    """
+    The gross leverage of a portfolio per day, the value of its long and short positions
+    together as a multiple of its net value, as pyfolio's gross_lev calculates it:
+
+    - Gross Leverage_t = Σ_i |value of position i| / Σ_i value of position i
+
+    A portfolio of long positions has a gross leverage of 1; short positions raise it (a
+    130/30 portfolio has 1.6). The positions hold no cash, so the net value is that of the
+    positions, where pyfolio adds the cash.
+
+    See pyfolio's gross_lev (https://github.com/stefan-jansen/pyfolio-reloaded).
+
+    Args:
+        position_values (pd.DataFrame): The value of every position (columns) per day.
+
+    Returns:
+        pd.DataFrame: The Gross Value, Net Value and Gross Leverage per day, NaN on days
+        without a positive net value.
+    """
+    gross = position_values.abs().sum(axis=1)
+    net = position_values.sum(axis=1)
+    return pd.DataFrame(
+        {
+            "Gross Value": gross,
+            "Net Value": net,
+            "Gross Leverage": gross / net.where(net > 0),
+        }
+    )

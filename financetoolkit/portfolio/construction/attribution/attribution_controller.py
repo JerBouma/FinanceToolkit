@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from financetoolkit.portfolio.construction.attribution import attribution_model
+from financetoolkit.portfolio.construction.optimization import estimation_model
 from financetoolkit.utilities.dataframe_model import filter_shown_columns
 from financetoolkit.utilities.error_model import handle_errors
 from financetoolkit.utilities.logger_model import get_logger
@@ -32,7 +33,8 @@ SUB_PERIODS = {
 @track_sources
 class AttributionConstruction:
     """
-    Exposures and attribution: the stress test, the look-through exposure and the Brinson attribution.
+    Exposures and attribution: the stress test, the look-through exposure, the Brinson attribution and the
+    factor attribution.
     """
 
     def _get_prices(self, tickers: list[str], start: str, end: str) -> pd.DataFrame:
@@ -656,4 +658,140 @@ class AttributionConstruction:
                 linking,
             )
         table.index.name = "Sector"
+        return self._round(table, rounding)
+
+    @handle_errors
+    def get_factor_attribution(
+        self,
+        weights: dict[str, float] | None = None,
+        selection: str = "ols",
+        factors: pd.DataFrame | None = None,
+        region: str = "United States",
+        period: str = "daily",
+        include_benchmark: bool = False,
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Attribute the return of a portfolio in every period to factors, by default the five
+        factors of Fama and French (market, size, value, profitability and investment): the
+        part of the return its exposure to each factor explains, and the specific return
+        that is left. The loadings of the assets on the factors come from a regression over
+        the whole period (see get_factor_loadings), and the portfolio's exposure to a
+        factor is the weighted sum of its assets' loadings.
+
+        - Exposure_f,t = Σ_i w_i,t β_i,f
+        - Contribution_f,t = Exposure_f,t × Factor Return_f,t
+        - Common Return = Σ_f Contribution_f,t
+        - Specific Return = Total Return - Common Return
+        - Tilt Return = Σ_f Average Exposure_f × Factor Return_f,t
+        - Timing Return = Common Return - Tilt Return
+
+        The Specific Return holds the alphas of the assets (and the risk free rate, as the
+        Fama and French factors are excess returns) and their residual returns. The Tilt
+        Return is what the average exposure earned and the Timing Return what moving the
+        exposures around it added, which is zero for weights that stay the same.
+
+        The weights are those of the Portfolio the Toolkit came from at the end of the
+        period before, or, when weights are given (or there is no Portfolio), those weights
+        restored every period.
+
+        For more information, see the following sources:
+
+        - Grinold, R. C. and Kahn, R. N. (2000). "Active Portfolio Management." 2nd
+          edition, McGraw-Hill, chapter 17.
+        - Fama, E. F. and French, K. R. (2015). "A Five-Factor Asset Pricing Model."
+          Journal of Financial Economics, 116(1), 1-22.
+        - empyrical: perf_attrib, compute_exposures
+          (https://github.com/stefan-jansen/empyrical-reloaded).
+        - pyfolio: perf_attrib (https://github.com/stefan-jansen/pyfolio-reloaded).
+
+        Also known as: performance attribution to risk factors, factor return attribution,
+        returns-based attribution, common and specific returns.
+
+        Args:
+            weights (dict[str, float] | None, optional): The weight per asset. Defaults to
+                None, which uses the weights of the Portfolio the Toolkit came from over
+                time, or equal weights.
+            selection (str, optional): How the loadings are estimated: "ols", "forward",
+                "backward" or "pcr" (see get_factor_loadings). Defaults to "ols".
+            factors (pd.DataFrame | None, optional): The factor returns, one column per
+                factor, at the frequency of the period. Defaults to None, the Fama and
+                French five factors of the region.
+            region (str, optional): The region of the Fama and French factors. Defaults to
+                "United States".
+            period (str, optional): The frequency of the returns (daily, weekly, monthly,
+                quarterly or yearly). Defaults to "daily".
+            include_benchmark (bool, optional): Whether to include the benchmark as an
+                asset. Defaults to False.
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Toolkit's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the contribution of every factor and the Common,
+            Specific, Total, Tilt and Timing Return, on the periods in which the assets and
+            the factors all have a return.
+
+        Notes:
+        - Equals empyrical's perf_attrib with the regression loadings for every period.
+          The loadings are estimated on the whole period, so the attribution of an early
+          period uses information from later ones; it explains the past, it does not
+          forecast.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Toolkit
+
+        toolkit = Toolkit(
+            ["AAPL", "MSFT", "JNJ", "XOM"],
+            api_key="FINANCIAL_MODELING_PREP_KEY",
+            start_date="2021-01-01",
+            end_date="2025-12-31",
+        )
+
+        toolkit.portfolio.get_factor_attribution(
+            weights={"AAPL": 0.4, "MSFT": 0.3, "JNJ": 0.2, "XOM": 0.1}, period="monthly"
+        ).tail(4).T
+        ```
+
+        Which returns:
+
+        |                 |   2025-09 |   2025-10 |   2025-11 |   2025-12 |
+        |:----------------|----------:|----------:|----------:|----------:|
+        | Mkt-RF          |    0.0297 |    0.017  |   -0.0012 |   -0.003  |
+        | SMB             |    0.0043 |    0.0028 |   -0.0033 |    0.0004 |
+        | HML             |    0.0019 |    0.0058 |   -0.0068 |   -0.0042 |
+        | RMW             |   -0.005  |   -0.013  |    0.0032 |    0.0006 |
+        | CMA             |   -0.003  |   -0.0055 |    0.0008 |    0.0005 |
+        | Common Return   |    0.0278 |    0.0071 |   -0.0072 |   -0.0058 |
+        | Specific Return |    0.0256 |    0.0227 |    0.0284 |   -0.0055 |
+        | Total Return    |    0.0534 |    0.0298 |    0.0213 |   -0.0113 |
+        | Tilt Return     |    0.0278 |    0.0071 |   -0.0072 |   -0.0058 |
+        | Timing Return   |    0      |    0      |    0      |    0      |
+        """
+        if weights is None and self._portfolio_weights:
+            assets = self._get_loaded_assets(period, include_benchmark)
+        else:
+            assets = self._get_held_weights(
+                weights, period, include_benchmark
+            ).index.tolist()
+        returns, factor_returns = self._align_factors(
+            self._get_returns(period, include_benchmark, assets),
+            self._get_factor_returns(period, factors, region),
+        )
+        loadings = estimation_model.get_factor_loadings(
+            returns, factor_returns, selection
+        ).drop(columns="Intercept")
+        table = attribution_model.get_factor_attribution(
+            returns,
+            self._get_weights_over_time(weights, period, assets, returns.index),
+            loadings,
+            factor_returns,
+        )
+        table.index.name = "Date"
         return self._round(table, rounding)

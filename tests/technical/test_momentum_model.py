@@ -1081,3 +1081,168 @@ def test_price_zone_oscillator_matches_ema_of_the_signed_closes():
     assert result.iloc[-3:].tolist() == pytest.approx(
         [-11.746324, -23.335871, -33.393339], abs=1e-6
     )
+
+
+def test_connors_relative_strength_index_matches_talib():
+    """TA-Lib's CRSI(3, 2, 100)."""
+    closes = random_bars()["Close"]
+    result = momentum_model.get_connors_relative_strength_index(closes, 3, 2, 100)
+
+    assert result.first_valid_index() == 101
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [16.732125, 24.08288, 19.184298], abs=1e-6
+    )
+
+
+def test_connors_relative_strength_index_counts_the_streak():
+    """Three rises give a streak of 3, a fall restarts it at -1 and no change resets it to 0."""
+    closes = pd.Series([10.0, 11, 12, 13, 12, 12, 13, 14, 15, 16, 17, 18])
+    streak = pd.Series([np.nan, 1, 2, 3, -1, 0, 1, 2, 3, 4, 5, 6])
+    result = momentum_model.get_connors_relative_strength_index(closes, 2, 2, 3)
+
+    # The last return, 18 / 17 - 1, is below the three before it: a percent rank of 0.
+    expected = (
+        momentum_model.get_relative_strength_index(closes, 2)
+        + momentum_model.get_relative_strength_index(streak, 2)
+    ) / 3
+
+    assert result.iloc[-1] == pytest.approx(expected.iloc[-1])
+
+
+def test_inertia_matches_pandas_ta_classic():
+    """pandas-ta-classic's inertia(20, 14, mamode='rma'), which takes the standard deviation
+    over the RVI window."""
+    bars = random_bars()
+    high, low, close = bars["High"], bars["Low"], bars["Close"]
+
+    original = momentum_model.get_inertia(high, low, close, 20, 14, 14)
+    refined = momentum_model.get_inertia(high, low, close, 20, 14, 14, "refined")
+
+    assert original.first_valid_index() == 45
+    assert original.iloc[-3:].tolist() == pytest.approx(
+        [58.827239, 56.756035, 53.74869], abs=1e-6
+    )
+    assert refined.iloc[-3:].tolist() == pytest.approx(
+        [65.164302, 64.431529, 63.433379], abs=1e-6
+    )
+
+
+def test_bias_matches_pandas_ta_classic():
+    closes = random_bars()["Close"]
+    result = momentum_model.get_bias(closes, 26)
+
+    assert result.first_valid_index() == 25
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-0.013261, -0.015268, -0.018741], abs=1e-6
+    )
+
+
+def test_brar_matches_pandas_ta_classic():
+    bars = random_bars()
+    result = momentum_model.get_brar(
+        bars["Open"], bars["High"], bars["Low"], bars["Close"], 26
+    )
+
+    assert result["AR"].iloc[-3:].tolist() == pytest.approx(
+        [97.36672, 109.338875, 109.656967], abs=1e-6
+    )
+    assert result["BR"].first_valid_index() == 26
+    assert result["BR"].iloc[-3:].tolist() == pytest.approx(
+        [89.784805, 99.756681, 98.112754], abs=1e-6
+    )
+
+
+def test_brar_is_missing_without_a_downward_move():
+    """A window in which the price never fell below the open has no AR, not an infinite one."""
+    opened = pd.Series([10.0, 10, 10, 10])
+    result = momentum_model.get_brar(opened, opened + 1, opened, opened + 0.5, 2)
+
+    assert result["AR"].isna().all()
+
+
+def test_pretty_good_oscillator_matches_pandas_ta_classic():
+    """pandas-ta-classic's pgo(14), once Wilder's ATR has forgotten its first range."""
+    bars = random_bars()
+    result = momentum_model.get_pretty_good_oscillator(
+        bars["High"], bars["Low"], bars["Close"], 14
+    )
+
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-1.146025, -1.191006, -1.334609], abs=1e-6
+    )
+
+
+def test_psychological_line_matches_pandas_ta_classic():
+    bars = random_bars()
+
+    close = momentum_model.get_psychological_line(bars["Open"], bars["Close"], 12)
+    opened = momentum_model.get_psychological_line(
+        bars["Open"], bars["Close"], 12, "open"
+    )
+
+    assert close.first_valid_index() == 12
+    assert close.iloc[-3:].tolist() == pytest.approx(
+        [50.0, 41.666667, 33.333333], abs=1e-6
+    )
+    assert opened.first_valid_index() == 11
+    assert opened.iloc[-3:].tolist() == pytest.approx(
+        [58.333333, 50.0, 41.666667], abs=1e-6
+    )
+
+
+def test_volume_weighted_macd_matches_pandas_ta_classic():
+    """pandas-ta-classic's vwmacd(12, 26, 9), which also weights the signal line by volume."""
+    bars = random_bars()
+    volumes = pd.Series(np.random.default_rng(5).uniform(1e5, 1e6, len(bars)))
+    result = momentum_model.get_moving_average_convergence_divergence(
+        bars["Close"],
+        12,
+        26,
+        9,
+        "volume_weighted",
+        "volume_weighted",
+        volumes=volumes,
+    )
+
+    for column, expected in {
+        "MACD Line": [0.554314, 0.288027, -0.012207],
+        "Signal Line": [0.674294, 0.63705, 0.604113],
+        "Histogram": [-0.11998, -0.349023, -0.61632],
+    }.items():
+        assert result[column].iloc[-3:].tolist() == pytest.approx(expected, abs=1e-6)
+
+
+def test_volume_weighted_macd_needs_the_volumes():
+    with pytest.raises(ValueError, match="needs the volumes"):
+        momentum_model.get_moving_average_convergence_divergence(
+            random_bars()["Close"], 12, 26, 9, "elastic_volume_weighted"
+        )
+
+
+def test_volatility_based_momentum_divides_the_change_by_the_atr():
+    """(Close - Close 12 periods ago) / pandas-ta-classic's atr(26), Wilder's ATR."""
+    bars = random_bars()
+    result = momentum_model.get_volatility_based_momentum(
+        bars["High"], bars["Low"], bars["Close"], 12, 26
+    )
+
+    assert result.iloc[-3:].tolist() == pytest.approx(
+        [-0.556143, -1.557564, -1.954465], abs=1e-5
+    )
+
+
+def test_archer_moving_average_trends_matches_pandas_ta_classic():
+    closes = random_bars()["Close"]
+    result = momentum_model.get_archer_moving_average_trends(closes, 8, 21, 2)
+
+    assert result.first_valid_index() == 22
+    assert result["Long Run"].iloc[-10:].tolist() == [1.0] * 3 + [0.0] * 7
+    assert result["Short Run"].iloc[-10:].tolist() == [0.0] * 3 + [1.0] * 7
+
+
+def test_ttm_trend_matches_pandas_ta_classic():
+    bars = random_bars()
+    result = momentum_model.get_ttm_trend(bars["High"], bars["Low"], bars["Close"], 6)
+
+    assert result.first_valid_index() == 6
+    assert result.iloc[-10:].tolist() == [1.0, 1.0] + [-1.0] * 8

@@ -15,6 +15,7 @@ from financetoolkit.portfolio import (
     overview_model,
     portfolio_model,
 )
+from financetoolkit.portfolio.construction.attribution import attribution_model
 from financetoolkit.portfolio.definition_model import PortfolioDefinition
 from financetoolkit.toolkit_controller import Toolkit
 from financetoolkit.utilities import logger_model, requests_model, validation_model
@@ -970,11 +971,13 @@ class Portfolio:
                 "Current Weight"
             ].unstack()
 
+        # A copy: the benchmark belongs in the Toolkit's data only, as a ticker of the Portfolio's own data it would duplicate the benchmark of every position.  # noqa: E501
+        historical = self._daily_historical_data.copy()
         for column in historical_columns:
-            self._daily_historical_data[column, "Benchmark"] = benchmark_data[column]
+            historical[column, "Benchmark"] = benchmark_data[column]
 
         historical = (
-            self._daily_historical_data.sort_index(axis=1)
+            historical.sort_index(axis=1)
             .reindex(historical_columns, axis=1, level=0)
             .reindex(list(self._tickers) + ["Benchmark"], axis=1, level=1)
         )
@@ -2798,3 +2801,342 @@ class Portfolio:
         return apply_rounding(
             result, rounding if rounding is not None else self._rounding
         )
+
+    def _get_position_values(self) -> pd.DataFrame:
+        """The value of every position per day, in the currency of the portfolio."""
+        positions = self.get_positions_overview(rounding=None)
+        if positions.empty:
+            raise ValueError("The Portfolio has no positions.")
+        return positions["Current Value"].astype(float)
+
+    def get_turnover(
+        self,
+        denominator: str = "gross_value",
+        period: str = "daily",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the turnover of the portfolio, the value traded as a share of the value
+        held: how much of the portfolio the transactions replace. A turnover of 0.1 on a
+        day means that a tenth of the portfolio's value was bought or sold.
+
+        - Traded Value = Σ |volume × price| of the day's transactions
+        - Gross Value = Σ |value of every position|
+        - Turnover = Traded Value / ((Gross Value_t + Gross Value_t-1) / 2)
+
+        With denominator="net_value" the traded value is divided by the net value of the
+        positions that day instead. Over weeks, months, quarters or years the traded
+        values and the daily turnovers are added up and the value is that at the end of
+        the period.
+
+        For more information, see the following sources:
+
+        - Bacon, C. R. (2008). "Practical Portfolio Performance Measurement and
+          Attribution." 2nd edition, Wiley.
+        - pyfolio: get_turnover (https://github.com/stefan-jansen/pyfolio-reloaded).
+
+        Also known as: portfolio turnover, turnover rate, trading activity.
+
+        Args:
+            denominator (str, optional): "gross_value" (pyfolio's "AGB", the average of
+                the gross value of the day and the day before) or "net_value" (pyfolio's
+                "portfolio_value"). Defaults to "gross_value".
+            period (str, optional): daily, weekly, monthly, quarterly or yearly. Defaults
+                to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the Traded Value, the Gross Value (or Net Value) and
+            the Turnover.
+
+        Notes:
+        - Equals pyfolio's get_turnover on the daily positions; the positions hold no
+          cash, so the net value is that of the positions, where pyfolio adds the cash.
+        - The first purchase of the portfolio is a turnover of 2: the average gross value
+          of that day and the empty day before is half the value bought.
+        - A transaction on a day without prices counts on the next day that has one.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_turnover(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   Traded Value |   Gross Value |   Turnover |
+        |:-------|---------------:|--------------:|-----------:|
+        | 2000   |       3657.08  |       2392.28 |     4.1243 |
+        | 2001   |       1569.55  |       4798.28 |     0.4154 |
+        | 2002   |       1693.63  |       5422.3  |     0.3135 |
+        | 2003   |       1456.49  |       8204.56 |     0.2284 |
+        | 2004   |       1518.38  |      10365.3  |     0.1683 |
+        | 2005   |       1918.15  |      13539.3  |     0.1678 |
+        | 2006   |       2377.66  |      16209    |     0.1559 |
+        | 2007   |       3585.34  |      19071.4  |     0.2099 |
+        | 2008   |       1123.91  |      12108.2  |     0.0745 |
+        | 2009   |       3013.99  |      20985.5  |     0.1933 |
+        | 2010   |       2621.67  |      25801.1  |     0.1206 |
+        | 2011   |       3174.61  |      26933.1  |     0.1253 |
+        | 2012   |       5141.61  |      34851.3  |     0.1546 |
+        | 2013   |        522.848 |      49217.5  |     0.0121 |
+        | 2014   |       3364.75  |      54772.7  |     0.0674 |
+        | 2015   |       2003.66  |      61747.1  |     0.0349 |
+        | 2016   |       2364.38  |      78378.2  |     0.0384 |
+        | 2017   |       7271.19  |     117708    |     0.0743 |
+        | 2018   |       6702.23  |     125233    |     0.0507 |
+        | 2019   |       7866.05  |     206431    |     0.0445 |
+        | 2020   |      15353.6   |     328089    |     0.0631 |
+        | 2021   |       5121.04  |     435818    |     0.0137 |
+        | 2022   |      18121.5   |     337393    |     0.0569 |
+        | 2023   |       6215.22  |     547989    |     0.0142 |
+        | 2024   |      35203.6   |     739785    |     0.051  |
+        | 2025   |          0     |     908218    |     0      |
+        | 2026   |          0     |     865290    |     0      |
+        """
+        if not self._collect_data():
+            return pd.DataFrame()
+        values = self._get_position_values()
+        if self._transactions_overview.empty:
+            self.get_transactions_overview()
+        transactions = self._transactions_overview
+        traded = (transactions["Volume"] * transactions["Price"]).abs().to_numpy()
+        dates = to_period_index(transactions.index.get_level_values(0))
+        # A transaction on a day without prices is booked on the next day with one.
+        locations = values.index.get_indexer(dates, method="backfill")
+        traded_values = (
+            pd.Series(traded[locations >= 0])
+            .groupby(values.index[locations[locations >= 0]])
+            .sum()
+        )
+        table = overview_model.get_turnover(traded_values, values, denominator)
+        if period != "daily":
+            grouped = table.groupby(table.index.asfreq(self._period_frequency(period)))
+            table = grouped.sum()
+            table[table.columns[1]] = grouped[table.columns[1]].last()
+        return apply_rounding(
+            table, rounding if rounding is not None else self._rounding
+        )
+
+    def get_gross_leverage(
+        self,
+        period: str = "daily",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the gross leverage of the portfolio, the value of its long and short
+        positions together as a multiple of its net value:
+
+        - Gross Leverage = Σ |value of every position| / Σ value of every position
+
+        A portfolio of long positions has a gross leverage of 1; short positions raise it,
+        e.g. to 1.6 for a 130/30 portfolio. Over weeks, months, quarters or years the
+        values at the end of the period are shown.
+
+        For more information, see the following sources:
+
+        - pyfolio: gross_lev (https://github.com/stefan-jansen/pyfolio-reloaded).
+
+        Also known as: gross exposure, leverage ratio.
+
+        Args:
+            period (str, optional): daily, weekly, monthly, quarterly or yearly. Defaults
+                to "daily".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the Gross Value, Net Value and Gross Leverage, NaN when
+            the net value is not positive.
+
+        Notes:
+        - Equals pyfolio's gross_lev without cash: the positions hold no cash, so the net
+          value is that of the positions.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_gross_leverage(period="yearly")
+        ```
+
+        Which returns:
+
+        | Date   |   Gross Value |   Net Value |   Gross Leverage |
+        |:-------|--------------:|------------:|-----------------:|
+        | 2000   |       2392.28 |     2392.28 |                1 |
+        | 2001   |       4798.28 |     4798.28 |                1 |
+        | 2002   |       5422.3  |     5422.3  |                1 |
+        | 2003   |       8204.56 |     8204.56 |                1 |
+        | 2004   |      10365.3  |    10365.3  |                1 |
+        | 2005   |      13539.3  |    13539.3  |                1 |
+        | 2006   |      16209    |    16209    |                1 |
+        | 2007   |      19071.4  |    19071.4  |                1 |
+        | 2008   |      12108.2  |    12108.2  |                1 |
+        | 2009   |      20985.5  |    20985.5  |                1 |
+        | 2010   |      25801.1  |    25801.1  |                1 |
+        | 2011   |      26933.1  |    26933.1  |                1 |
+        | 2012   |      34851.3  |    34851.3  |                1 |
+        | 2013   |      49217.5  |    49217.5  |                1 |
+        | 2014   |      54772.7  |    54772.7  |                1 |
+        | 2015   |      61747.1  |    61747.1  |                1 |
+        | 2016   |      78378.2  |    78378.2  |                1 |
+        | 2017   |     117708    |   117708    |                1 |
+        | 2018   |     125233    |   125233    |                1 |
+        | 2019   |     206431    |   206431    |                1 |
+        | 2020   |     328089    |   328089    |                1 |
+        | 2021   |     435818    |   435818    |                1 |
+        | 2022   |     337393    |   337393    |                1 |
+        | 2023   |     547989    |   547989    |                1 |
+        | 2024   |     739785    |   739785    |                1 |
+        | 2025   |     908218    |   908218    |                1 |
+        | 2026   |     865290    |   865290    |                1 |
+        """
+        if not self._collect_data():
+            return pd.DataFrame()
+        table = overview_model.get_gross_leverage(self._get_position_values())
+        if period != "daily":
+            table = table.groupby(
+                table.index.asfreq(self._period_frequency(period))
+            ).last()
+        return apply_rounding(
+            table, rounding if rounding is not None else self._rounding
+        )
+
+    def get_return_contributions(
+        self,
+        period: str = "monthly",
+        rounding: int | None = None,
+        show_columns: str | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate how much each position added to the portfolio's return in every period
+        (week, month, quarter or year), so the contributions add up to the portfolio's
+        return of that period. Every day a position contributes its weight in the
+        portfolio at the previous close times its return, c_i,t = w_i,t-1 r_i,t, and over
+        a longer period the daily contributions are carried by the growth of the portfolio
+        since the period began, C_i = Σ_t c_i,t Π_(s<t) (1 + R_s), so they add up to the
+        compounded return of the portfolio (Bacon, 2008; PerformanceAnalytics'
+        to.period.contributions). It is `toolkit.portfolio.get_return_contributions` with
+        the weights of the positions as they moved from day to day.
+
+        The returns are the total returns of the assets (dividends reinvested) and the
+        weights the Current Weight of the positions overview, so a purchase or a sale
+        changes the weights from the next day on and is no return itself.
+
+        For more information, see the following sources:
+
+        - Bacon, C. R. (2008). "Practical Portfolio Performance Measurement and
+          Attribution." 2nd edition, Wiley, chapter 5.
+        - PerformanceAnalytics: to.period.contributions
+          (https://github.com/braverock/PerformanceAnalytics).
+
+        Also known as: contribution to return, return attribution by position.
+
+        Args:
+            period (str, optional): The period to add the contributions up over: daily,
+                weekly, monthly, quarterly or yearly. Defaults to "monthly".
+            rounding (int | None, optional): The number of decimals to round the results to.
+                Defaults to None, which uses the Portfolio's rounding.
+            show_columns (str | list[str] | None): The columns to keep, a name or a list of names, matched
+                on every column level, or the rows when no column has those names (such as the line
+                items of a financial statement). Names that do not exist are logged, and when none
+                exist the result is returned in full. Defaults to None, which keeps every column.
+
+        Returns:
+            pd.DataFrame: Per period the contribution of every position and the Portfolio
+            return.
+
+        As an example:
+
+        ```python
+        from financetoolkit import Portfolio
+
+        portfolio = Portfolio(example=True, api_key="FINANCIAL_MODELING_PREP_KEY")
+
+        portfolio.get_return_contributions(period="yearly")[
+            ["ASML", "MSFT", "NVDA", "AMZN", "Portfolio"]
+        ]
+        ```
+
+        Which returns:
+
+        | Date   |    ASML |    MSFT |    NVDA |    AMZN |   Portfolio |
+        |:-------|--------:|--------:|--------:|--------:|------------:|
+        | 2000   |  0.0919 | -0.2261 |  0      | -0.0066 |     -0.3338 |
+        | 2001   | -0.0367 |  0.1306 |  0      | -0.0005 |      0.4238 |
+        | 2002   | -0.0308 | -0.0517 |  0      |  0.0004 |     -0.1472 |
+        | 2003   |  0.1081 |  0.0148 |  0.0002 |  0.002  |      0.3674 |
+        | 2004   | -0.0334 |  0.0131 |  0      |  0.0003 |      0.1162 |
+        | 2005   |  0.0401 |  0      |  0.0002 |  0.0002 |      0.1154 |
+        | 2006   |  0.0407 |  0.0222 |  0.0006 | -0.0003 |      0.0813 |
+        | 2007   |  0.042  |  0.0235 |  0.0004 |  0.007  |      0.0048 |
+        | 2008   | -0.0793 | -0.0579 | -0.0012 | -0.0049 |     -0.4002 |
+        | 2009   |  0.1632 |  0.0634 |  0.0009 |  0.0144 |      0.4882 |
+        | 2010   |  0.028  | -0.0073 | -0.0002 |  0.004  |      0.1288 |
+        | 2011   |  0.0237 | -0.0038 | -0.0001 | -0.0004 |     -0.0446 |
+        | 2012   |  0.097  |  0.0059 | -0.0001 |  0.0056 |      0.2122 |
+        | 2013   |  0.1062 |  0.0274 |  0.0001 |  0.0091 |      0.4159 |
+        | 2014   |  0.0363 |  0.018  |  0.0001 | -0.004  |      0.1042 |
+        | 2015   | -0.0417 |  0.0158 |  0.0004 |  0.0202 |      0.1087 |
+        | 2016   |  0.0488 |  0.0123 |  0.0018 |  0.0038 |      0.2379 |
+        | 2017   |  0.0992 |  0.0287 |  0.0017 |  0.0199 |      0.4316 |
+        | 2018   | -0.0159 |  0.0138 | -0.0006 |  0.0124 |      0.0286 |
+        | 2019   |  0.1419 |  0.0426 |  0.0012 |  0.0127 |      0.592  |
+        | 2020   |  0.1134 |  0.0316 |  0.0019 |  0.0353 |      0.513  |
+        | 2021   |  0.1187 |  0.037  |  0.0034 |  0.0014 |      0.3203 |
+        | 2022   | -0.0695 | -0.0226 | -0.0023 | -0.0218 |     -0.2619 |
+        | 2023   |  0.0827 |  0.0431 |  0.0071 |  0.0233 |      0.6118 |
+        | 2024   | -0.0108 |  0.0094 |  0.0106 |  0.014  |      0.2951 |
+        | 2025   |  0.0672 |  0.0093 |  0.0049 |  0.0018 |      0.234  |
+        | 2026   |  0.029  |  0.0005 | -0.0046 |  0.0021 |     -0.0438 |
+        """
+        if not self._collect_data():
+            return pd.DataFrame()
+        frequency = None if period == "daily" else self._period_frequency(period)
+        positions = self.get_positions_overview(rounding=None)
+        weights = positions["Current Weight"].astype(float)
+        returns = (
+            self._daily_historical_data["Return"]
+            .reindex(index=weights.index, columns=weights.columns)
+            .fillna(0)
+        )
+        # Every day a position earns its weight at the previous close; the first day has
+        # no close before it.
+        contributions = (weights.shift(1) * returns).iloc[1:]
+        if frequency is None:
+            table = contributions.assign(Portfolio=contributions.sum(axis=1))
+        else:
+            table = attribution_model.get_period_contributions(contributions, frequency)
+        table.index.name = "Date"
+        return apply_rounding(
+            table, rounding if rounding is not None else self._rounding
+        )
+
+    @staticmethod
+    def _period_frequency(period: str) -> str:
+        """The pandas frequency of a period longer than a day."""
+        frequencies = {"weekly": "W", "monthly": "M", "quarterly": "Q", "yearly": "Y"}
+        if period not in frequencies:
+            raise ValueError(
+                "Period must be daily, weekly, monthly, quarterly, or yearly."
+            )
+        return frequencies[period]

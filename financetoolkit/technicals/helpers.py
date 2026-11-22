@@ -26,7 +26,8 @@ PERIODS = ("intraday", "daily", "weekly", "monthly", "quarterly", "yearly")
 # price transforms and Zig Zag, which only restate the latest high, low and close or swing, Wilder's swing
 # index, which is scaled by a limit move in price units and accumulates from the first date of the data, the
 # Hilbert dominant cycle phase (an angle that wraps from 315 to -45 degrees every cycle, so its rank says
-# nothing) and the Hilbert trend mode (1 or 0, no ranking).
+# nothing), and the Hilbert trend mode and the trend flags of Archer's moving averages trends and the TTM Trend
+# (two values each, no ranking).
 FACTOR_COLLECTIONS = {
     "momentum": [
         "get_money_flow_index",
@@ -76,6 +77,13 @@ FACTOR_COLLECTIONS = {
         "get_quantitative_qualitative_estimation",
         "get_dynamic_momentum_index",
         "get_price_zone_oscillator",
+        "get_connors_relative_strength_index",
+        "get_inertia",
+        "get_bias",
+        "get_brar",
+        "get_pretty_good_oscillator",
+        "get_psychological_line",
+        "get_volatility_based_momentum",
     ],
     "overlap": [
         "get_moving_average",

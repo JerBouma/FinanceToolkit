@@ -20,6 +20,7 @@ import pytest
 from financetoolkit.technicals.breadth import breadth_model as breadth
 from financetoolkit.technicals.momentum import momentum_model as momentum
 from financetoolkit.technicals.overlap import overlap_model as overlap
+from financetoolkit.technicals.pattern import pattern_model as pattern
 from financetoolkit.technicals.statistics import statistics_model as statistics
 from financetoolkit.technicals.volatility import volatility_model as volatility
 
@@ -463,6 +464,17 @@ PER_SECURITY_INDICATORS = {
         lambda high, low, close, opening, volume: breadth.get_archer_on_balance_volume(
             close, volume, 4, 12, 2, 2
         )
+    ),
+    "get_candlestick_patterns": (
+        lambda high, low, close, opening, volume: pattern.get_candlestick_patterns(
+            opening, high, low, close
+        )
+    ),
+    "get_heikin_ashi": lambda high, low, close, opening, volume: pattern.get_heikin_ashi(
+        opening, high, low, close
+    ),
+    "get_williams_fractal": lambda high, low, close, opening, volume: pattern.get_williams_fractal(
+        high, low, 2, 2
     ),
 }
 

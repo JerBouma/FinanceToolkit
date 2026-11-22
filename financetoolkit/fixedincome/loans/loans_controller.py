@@ -65,15 +65,17 @@ class LoansFixedIncome:
         """
         Calculates the monthly payment of a new 30-year fixed-rate mortgage at every weekly US
         mortgage rate: what the same loan costs a buyer at each date, with the total interest
-        over its life and the interest in its first payment. By default the loan is 400,000
-        US dollars, so the payment of the same house at the same price can be followed through
-        the rate cycle (1,611.86 a month at the 2.65% of January 2021, 2,709.74 at 7.18%).
+        over its life, the interest in its first payment and how the payment compares with the
+        one at the start date. By default the loan is 400,000 US dollars, so the payment of the
+        same house at the same price can be followed through the rate cycle (1,611.86 a month
+        at the 2.65% of January 2021, 2,709.74 at 7.18%, 68.1% more).
 
         The loan is an annuity, repaid in equal payments. The formula is as follows:
 
         - Payment = L * r / (1 - (1 + r)^-n), or L / n when r is zero
         - Total Interest = Payment * n - L
         - First Payment Interest = L * r
+        - Change = Payment / Payment(first date) - 1
 
         Where:
 
@@ -106,7 +108,9 @@ class LoansFixedIncome:
         Returns:
             pd.DataFrame: Per survey date the Rate (a decimal), the Payment, the Total Interest
             over the life of the loan and the First Payment Interest, in the currency of the
-            principal.
+            principal, and the Change of the Payment since the first date (a decimal), as the
+            Change of `get_affordable_loan`. The change between two other dates follows from
+            narrowing start_date to the first of them.
 
         As an example:
 
@@ -120,10 +124,10 @@ class LoansFixedIncome:
 
         Which returns:
 
-        | Date       |   Rate |   Payment |   Total Interest |   First Payment Interest |
-        |:-----------|-------:|----------:|-----------------:|-------------------------:|
-        | 2021-01-07 | 0.0265 | 1611.8552 |      180267.8595 |                 883.3333 |
-        | 2026-11-05 | 0.0718 | 2709.7393 |      575506.1579 |                2393.3333 |
+        | Date       |   Rate |   Payment |   Total Interest |   First Payment Interest |   Change |
+        |:-----------|-------:|----------:|-----------------:|-------------------------:|---------:|
+        | 2021-01-07 | 0.0265 |   1611.86 |           180268 |                  883.333 |   0      |
+        | 2026-11-05 | 0.0718 |   2709.74 |           575506 |                 2393.33  |   0.6811 |
         """
         rates = self._get_mortgage_rates()
         payment = loan_model.get_loan_payment(
@@ -136,6 +140,7 @@ class LoansFixedIncome:
                 "Payment": payment,
                 "Total Interest": payment * years * payments_per_year - principal,
                 "First Payment Interest": principal * rates / payments_per_year,
+                "Change": payment / payment.iloc[0] - 1,
             }
         )
 

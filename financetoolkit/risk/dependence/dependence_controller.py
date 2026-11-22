@@ -41,6 +41,11 @@ class DependenceRisk:
         Callable[[], tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]]
         | None
     ) = None
+    # The Toolkit sets these to the benchmark ticker (reported as "Benchmark") and to a function
+    # returning the returns of tickers outside the Toolkit for a period, so a market or system
+    # ticker can be named as it trades, also when it is not one of the tickers.
+    _benchmark_name: str | None = None
+    _other_returns_function: Callable[[list[str], str], pd.DataFrame] | None = None
 
     def _resolve_ticker_pairs(
         self, ticker_a: str | None, ticker_b: str | None
@@ -65,7 +70,19 @@ class DependenceRisk:
     def _benchmark_pairs(
         self, varying: str | None, counterpart: str | None
     ) -> list[tuple[str, str]]:
-        # The (varying, counterpart) pairs of a pairwise measure: the counterpart defaults to the benchmark and the varying side to every other ticker, so a given ticker keeps the role of its own parameter.  # noqa: E501
+        # The (varying, counterpart) pairs of a pairwise measure: the counterpart defaults to the benchmark and the varying side to every other ticker, so a given ticker keeps the role of its own parameter. The benchmark named as it trades (SPY) is the "Benchmark" column, unless it is also one of the tickers.  # noqa: E501
+        varying, counterpart = (
+            (
+                "Benchmark"
+                if name is not None
+                and self._benchmark_name
+                and name not in self._tickers
+                and name.upper() == self._benchmark_name.upper()
+                and "Benchmark" in self._tickers
+                else name
+            )
+            for name in (varying, counterpart)
+        )
         if counterpart is None:
             if "Benchmark" not in self._tickers:
                 raise ValueError(
@@ -84,6 +101,27 @@ class DependenceRisk:
         )
 
         return [(ticker, counterpart) for ticker in others]
+
+    def _add_other_returns(
+        self, returns: pd.DataFrame, tickers: list[str], period: str
+    ) -> pd.DataFrame:
+        # The returns of tickers that are not in the Toolkit (a market index such as ^GSPC) are retrieved for the same dates, sorted as a PeriodIndex union keeps the order of the frames.  # noqa: E501
+        missing = list(dict.fromkeys(t for t in tickers if t not in returns.columns))
+        if not missing:
+            return returns
+        if self._other_returns_function is None:
+            raise ValueError(
+                f"{', '.join(missing)} is not part of the Toolkit; add it to the tickers or "
+                "set it as the benchmark_ticker."
+            )
+
+        return pd.concat(
+            [
+                returns,
+                self._other_returns_function(missing, period).reindex(columns=missing),
+            ],
+            axis=1,
+        ).sort_index()
 
     @handle_errors
     def get_tail_dependence_coefficient(
@@ -138,7 +176,9 @@ class DependenceRisk:
         Args:
             ticker_a (str | None, optional): The first asset. Defaults to None, which pairs every other ticker
             in the Toolkit instance (the benchmark included when `ticker_b` is given) with `ticker_b`.
-            ticker_b (str | None, optional): The second asset. Defaults to None, which uses the benchmark.
+            ticker_b (str | None, optional): The second asset, the benchmark by its own ticker (SPY) or as
+                "Benchmark", or a ticker outside the Toolkit, whose returns are retrieved for the same dates
+                (with column="Return"). Defaults to None, which uses the benchmark.
             period (str, optional): The data frequency (daily, weekly, monthly, quarterly, or yearly). Defaults to
                 "daily", since a dependence estimate needs far more observations than a
                 lower frequency provides -- at "yearly" a decade of history is only ten
@@ -197,6 +237,10 @@ class DependenceRisk:
         period = period if period else "daily"
         returns = self._get_price_column(period, column)
         pairs = self._benchmark_pairs(ticker_a, ticker_b)
+        if column == "Return":
+            returns = self._add_other_returns(
+                returns, [name for pair in pairs for name in pair], period
+            )
 
         result = pd.DataFrame(
             {
@@ -789,8 +833,10 @@ class DependenceRisk:
         Also known as: Conditional Value at Risk (systemic risk sense), Delta-CoVaR.
 
         Args:
-            ticker (str | None, optional): The asset whose conditional VaR is being measured (the system).
-            Defaults to None, which uses the benchmark.
+            ticker (str | None, optional): The asset whose conditional VaR is being measured (the system),
+            the benchmark by its own ticker (SPY) or as "Benchmark", or a ticker outside the Toolkit, whose
+            returns are retrieved for the same dates (with column="Return"). Defaults to None, which uses the
+            benchmark.
             conditioning_ticker (str | None, optional): The asset whose distress `ticker` is conditioned on.
             Defaults to None, which conditions `ticker` on every other ticker in the Toolkit instance in turn
             (the benchmark included when `ticker` is given), a row each.
@@ -846,6 +892,10 @@ class DependenceRisk:
         returns = self._get_price_column(period, column)
         # The conditioning ticker varies and the system (`ticker`) defaults to the benchmark.
         pairs = self._benchmark_pairs(conditioning_ticker, ticker)
+        if column == "Return":
+            returns = self._add_other_returns(
+                returns, [name for pair in pairs for name in pair], period
+            )
 
         result = pd.DataFrame(
             {
@@ -866,10 +916,11 @@ class DependenceRisk:
     def _market_pairs(
         self, ticker: str | None, market_ticker: str | None
     ) -> tuple[list[str], str]:
-        # The firms and the market of a systemic risk measure: every ticker against the benchmark by default.
+        # The firms and the market of a systemic risk measure: every ticker against the benchmark by default. With another market (^GSPC) the benchmark is a market index too, not a firm.  # noqa: E501
         pairs = self._benchmark_pairs(ticker, market_ticker)
+        firms = [firm for firm, _ in pairs if ticker is not None or firm != "Benchmark"]
 
-        return [firm for firm, _ in pairs], pairs[0][1]
+        return firms, pairs[0][1]
 
     @handle_errors
     def get_marginal_expected_shortfall(
@@ -917,9 +968,11 @@ class DependenceRisk:
 
         Args:
             ticker (str | None, optional): The ticker whose MES to calculate. Defaults to None, which
-                uses every ticker except the market.
-            market_ticker (str | None, optional): The ticker that represents the market (the system).
-                Defaults to None, which uses the benchmark.
+                uses every ticker except the market and the benchmark.
+            market_ticker (str | None, optional): The ticker that represents the market (the system): the
+                benchmark by its own ticker (SPY) or as "Benchmark", one of the tickers, or a ticker outside
+                the Toolkit (such as ^GSPC), whose returns are retrieved for the same dates. Defaults to None,
+                which uses the benchmark.
             period (str, optional): The period of each estimate (monthly, quarterly or yearly). Defaults
                 to "yearly", as in the paper.
             alpha (float, optional): The tail probability of the market returns. Defaults to 0.05, the
@@ -989,7 +1042,9 @@ class DependenceRisk:
             raise ValueError("Period must be monthly, quarterly, or yearly.")
 
         tickers, market = self._market_pairs(ticker, market_ticker)
-        returns = self._historical_data["daily"]["Return"]
+        returns = self._add_other_returns(
+            self._historical_data["daily"]["Return"], [market], "daily"
+        )
 
         marginal_expected_shortfall = covar_model.get_marginal_expected_shortfall(
             returns[tickers], returns[market], alpha, period, rolling
@@ -1067,9 +1122,11 @@ class DependenceRisk:
 
         Args:
             ticker (str | None, optional): The ticker whose SRISK to calculate. Defaults to None, which
-                uses every ticker except the market.
-            market_ticker (str | None, optional): The ticker that represents the market. Defaults to None,
-                which uses the benchmark.
+                uses every ticker except the market and the benchmark.
+            market_ticker (str | None, optional): The ticker that represents the market: the benchmark by
+                its own ticker (SPY) or as "Benchmark", one of the tickers, or a ticker outside the Toolkit
+                (such as ^GSPC), whose returns are retrieved for the same dates. Defaults to None, which uses
+                the benchmark.
             period (str, optional): The period of each estimate (monthly, quarterly or yearly). Defaults
                 to "yearly".
             decline (float, optional): The fall of the market over six months that defines the crisis, as a
@@ -1157,7 +1214,9 @@ class DependenceRisk:
             )
 
         tickers, market = self._market_pairs(ticker, market_ticker)
-        returns = self._historical_data["daily"]["Return"]
+        returns = self._add_other_returns(
+            self._historical_data["daily"]["Return"], [market], "daily"
+        )
 
         beta = covar_model.get_market_beta(
             returns[tickers], returns[market], period, rolling

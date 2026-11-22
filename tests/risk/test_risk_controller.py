@@ -1256,6 +1256,36 @@ def test_get_srisk(recorder, risk_module):
     )
 
 
+def test_get_srisk_takes_the_market_by_its_ticker(risk_module, monkeypatch):
+    # The benchmark named as it trades (SPY) is the "Benchmark" column.
+    pd.testing.assert_frame_equal(
+        risk_module.get_srisk(market_ticker="SPY"), risk_module.get_srisk()
+    )
+    pd.testing.assert_frame_equal(
+        risk_module.get_marginal_expected_shortfall(market_ticker="spy"),
+        risk_module.get_marginal_expected_shortfall(),
+    )
+
+    # A market outside the Toolkit is retrieved for the same dates; here it has the returns of
+    # the benchmark, which is then left out of the firms as a market index.
+    requested = []
+
+    def other_returns(tickers, period):
+        requested.append((tickers, period))
+        returns = risk_module._historical_data[period]["Return"]
+        return returns[["Benchmark"]].set_axis(tickers, axis=1)
+
+    monkeypatch.setattr(risk_module, "_other_returns_function", other_returns)
+    pd.testing.assert_frame_equal(
+        risk_module.get_srisk(market_ticker="^GSPC"), risk_module.get_srisk()
+    )
+    assert requested == [(["^GSPC"], "daily")]
+
+    # Without a way to retrieve it, the missing market is reported.
+    monkeypatch.setattr(risk_module, "_other_returns_function", None)
+    assert risk_module.get_srisk(market_ticker="^GSPC").empty
+
+
 def test_get_srisk_takes_a_fiscal_period_that_ends_on_a_weekend(risk_module):
     # A fiscal quarter that ends on Saturday 31 December 2022, after the last trading day of
     # the year, still belongs to 2022.

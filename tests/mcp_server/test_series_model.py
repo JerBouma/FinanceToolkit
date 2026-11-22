@@ -278,3 +278,32 @@ def test_a_daily_analysis_asks_statement_ratios_for_their_daily_values(
     )
 
     assert "show_daily" not in indicator_answers[0][3]
+
+
+def test_a_reference_passes_arguments_to_its_indicator(indicator_answers):
+    reference = series_model.parse_series_references(
+        "rates:get_outstanding_mortgage_rates:United States:Below 4%:cumulative=true"
+    )[0]
+    assert reference.entities == ["United States"]
+    assert reference.column == "Below 4%"
+    assert reference.arguments == {"cumulative": "true"}
+
+    # The argument reaches the indicator typed as it takes it.
+    call_econometrics(
+        indicator="get_level_significance",
+        series="rates:get_outstanding_mortgage_rates:United States:cumulative=true",
+        start_date="2013-01-01",
+    )
+    module_name, method_name, _, kwargs = indicator_answers[-1]
+    assert (module_name, method_name) == (
+        "economics",
+        "get_outstanding_mortgage_rates",
+    )
+    assert kwargs["cumulative"] is True
+
+    # An argument the indicator does not take is named.
+    answer = call_econometrics(
+        indicator="get_level_significance",
+        series="rates:get_outstanding_mortgage_rates:United States:cumulativ=true",
+    )
+    assert "takes no argument cumulativ" in answer
